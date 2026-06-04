@@ -1,0 +1,13 @@
+FORECAST PLATFORM — SESSION REPORT
+============================================================
+Run ID: session_sess_87b_fb2af919_20260602_093830
+Completed: 2026-06-02T15:38:32.897633
+
+METRICS SUMMARY
+----------------------------------------
+  ets: MAE=1.4624 WAPE=None
+  naive: MAE=10.4167 WAPE=0.0896
+  prophet: MAE=354.1678 WAPE=None
+  lightgbm: MAE=4.9422 WAPE=0.0426
+  historical_avg: MAE=10.0477 WAPE=0.0864
+  seasonal_naive: MAE=2.5 WAPE=0.0215

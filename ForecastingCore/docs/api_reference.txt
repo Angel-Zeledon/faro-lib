@@ -1,0 +1,169 @@
+================================================================================
+Forecasting Platform API — Endpoint Reference
+================================================================================
+
+Base URL: http://localhost:8000
+Docs:     http://localhost:8000/docs
+
+Start:    uvicorn api.main:app --reload --port 8000
+
+All ML/pandas logic is in forecasting_core. Endpoints only orchestrate.
+
+================================================================================
+SESSIONS
+================================================================================
+
+POST /sessions
+    Create a new forecasting session.
+    Body: {"name": "my_session", "config": {...}}  (both optional)
+    Returns: {session_id, name, status, created_at}
+
+GET /sessions
+    List all active sessions.
+    Returns: [{session_id, name, status, ...}]
+
+GET /sessions/{id}
+    Get session metadata.
+    Returns: {session_id, name, status, error, file_path, ...}
+
+PATCH /sessions/{id}/config
+    Replace full config from a dict.
+    Body: {"config": {...}}
+    Returns: {ok, config_hash}
+
+DELETE /sessions/{id}
+    Destroy session (204 No Content).
+
+================================================================================
+DATASETS
+================================================================================
+
+POST /sessions/{id}/upload
+    Upload CSV / Excel / Parquet file.
+    Body: multipart/form-data, field "file"
+    Returns: {session_id, filename, rows, cols, columns, status}
+
+GET /sessions/{id}/profile
+    Full dataset profile (column types, stats, recommendations).
+    Returns: {columns: [...], recommended: {...}, stats: {...}}
+
+GET /sessions/{id}/columns
+    Dropdown data for column selection.
+    Returns: {date_candidates, target_candidates, group_candidates, exog_candidates}
+
+POST /sessions/{id}/columns
+    Set column mapping.
+    Body: {"target": "sales", "date": "date", "sku": "item_id", "exogenous": []}
+    Returns: {ok, columns}
+
+GET /sessions/{id}/quality
+    Per-SKU data quality report.
+    Returns: {sku: {quality_score, series_type, warnings}}
+
+GET /sessions/{id}/routing-plan
+    Model routing preview.
+    Returns: {sku: [model_names]}
+
+================================================================================
+CONFIGURATION
+================================================================================
+
+GET /config/schema
+    Full parameter schema for building frontend forms.
+    Returns: {training, features, forecast, business, available_models}
+
+GET /models/available
+    All supported model names.
+    Returns: {models: ["arima", "croston", "ets", "lightgbm", ...]}
+
+POST /sessions/{id}/config/features
+    Body: {"lags": [1,7,14], "rolling": [7,14,28], "diffs": [1], "calendar": true, "ewm_spans": []}
+
+POST /sessions/{id}/config/training
+    Body: {"train_ratio": 0.8, "walk_forward": true, "wfv_splits": 3,
+           "min_history": 20, "seasonal_period": 7}
+
+POST /sessions/{id}/config/forecast
+    Body: {"horizon": 14, "quantiles": [0.5, 0.9, 0.95]}
+
+POST /sessions/{id}/config/business
+    Body: {"service_level": 0.95, "lead_time_days": 7,
+           "holding_cost_pct": 0.20, "stockout_cost_multiplier": 3.0}
+
+POST /sessions/{id}/config/models
+    Body: {"models": ["lightgbm", "prophet"], "hyperparams": {"lightgbm": {"n_estimators": 500}}}
+
+================================================================================
+TRAINING & RESULTS
+================================================================================
+
+POST /sessions/{id}/train
+    Start training in background.
+    Returns: {session_id, status: "training_started"}
+
+GET /sessions/{id}/train/status
+    Poll training status.
+    Returns: {session_id, status: "training"|"trained"|"error", error}
+
+GET /sessions/{id}/metrics
+    Training metrics.
+    Returns: {rows: [...], by_model: {model: {avg_mae, avg_rmse, avg_wape}}}
+
+GET /sessions/{id}/inventory
+    Inventory recommendations.
+    Returns: {recommendations: [{sku, reorder_point, safety_stock, stockout_risk, action}]}
+
+GET /sessions/{id}/report
+    Full report: metrics + inventory + config + run_id.
+
+GET /sessions/{id}/export-config
+    Current config as serializable dict.
+
+================================================================================
+HEALTH
+================================================================================
+
+GET /health
+    Returns: {status: "ok"}
+
+================================================================================
+WORKFLOW EXAMPLE
+================================================================================
+
+    # 1. Create session
+    POST /sessions
+    → {session_id: "abc-123", ...}
+
+    # 2. Upload data
+    POST /sessions/abc-123/upload  (multipart)
+    → {rows: 10000, cols: 5, ...}
+
+    # 3. Inspect available columns
+    GET /sessions/abc-123/columns
+    → {date_candidates: ["date"], target_candidates: ["sales"], ...}
+
+    # 4. Choose columns
+    POST /sessions/abc-123/columns
+    {"target": "sales", "date": "date", "sku": "item_id"}
+
+    # 5. Check quality
+    GET /sessions/abc-123/quality
+
+    # 6. Preview routing
+    GET /sessions/abc-123/routing-plan
+
+    # 7. Configure
+    POST /sessions/abc-123/config/models  {"models": ["lightgbm", "prophet"]}
+    POST /sessions/abc-123/config/training {"walk_forward": true, "wfv_splits": 3}
+    POST /sessions/abc-123/config/forecast {"horizon": 14}
+
+    # 8. Train
+    POST /sessions/abc-123/train
+
+    # 9. Poll
+    GET /sessions/abc-123/train/status   (until status == "trained")
+
+    # 10. Results
+    GET /sessions/abc-123/metrics
+    GET /sessions/abc-123/inventory
+    GET /sessions/abc-123/report

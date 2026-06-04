@@ -1,0 +1,55 @@
+{
+  "name": "session_1",
+  "data": {
+    "path": "sales.csv",
+    "sql_engine": "",
+    "encoding": "utf-8",
+    "date_freq": null
+  },
+  "columns": {
+    "target": "sales",
+    "date": "date",
+    "group": "sku",
+    "exogenous": []
+  },
+  "features": {
+    "lags": [1, 7, 14],
+    "diffs": [1, 7],
+    "rolling": [7, 14, 28],
+    "calendar": true,
+    "ewm_spans": [7, 14]
+  },
+  "models": {
+    "lightgbm": {
+      "n_estimators": 300,
+      "learning_rate": 0.05,
+      "num_leaves": 31
+    },
+    "xgboost": {
+      "n_estimators": 200,
+      "learning_rate": 0.1
+    },
+    "prophet": {},
+    "ets": {}
+  },
+  "training": {
+    "train_ratio": 0.8,
+    "walk_forward": true,
+    "wfv_splits": 3,
+    "min_history": 20,
+    "seasonal_period": 7
+  },
+  "forecast": {
+    "horizon": 14,
+    "quantiles": [0.5, 0.9, 0.95]
+  },
+  "business": {
+    "service_level": 0.95,
+    "lead_time_days": 7,
+    "holding_cost_pct": 0.20,
+    "stockout_cost_multiplier": 3.0
+  },
+  "routing": {
+    "enabled": true
+  }
+}

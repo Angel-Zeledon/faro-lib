@@ -1,0 +1,201 @@
+================================================================================
+ForecastEngine — SDK Reference
+================================================================================
+
+The ForecastEngine is the single entry point for all forecasting operations.
+It exposes a fluent (chainable) API that mirrors the full ML pipeline.
+
+IMPORT
+------
+    from forecasting_core import ForecastEngine
+
+CONSTRUCTORS
+------------
+
+    ForecastEngine()
+        Create a blank engine. Configure manually via method chaining.
+
+    ForecastEngine.from_config(path: str) -> ForecastEngine
+        Load engine from a session_config.json file.
+        Raises: FileNotFoundError, ConfigError
+
+    ForecastEngine.from_dict(config_dict: dict) -> ForecastEngine
+        Build engine from a Python dict (used by the API layer).
+        Raises: ConfigError on invalid config
+
+STEP 1 — LOAD DATA
+------------------
+
+    engine.load_data(source) -> ForecastEngine
+        Load a dataset from file path or DataFrame.
+
+        Args:
+            source: str  → file path (CSV, Excel, Parquet)
+                    pd.DataFrame → loaded directly
+
+        Returns: self (for chaining)
+        Raises: EngineError if file cannot be read
+
+        Example:
+            engine.load_data("sales.csv")
+            engine.load_data(my_dataframe)
+
+STEP 2 — INSPECT (drives API/frontend UI)
+-----------------------------------------
+These methods query the loaded data and return metadata that the
+API forwards to the frontend for dynamic UI rendering.
+
+    engine.get_profile() -> dict
+        Full dataset profile: column types, stats, recommendations.
+        Returns: {columns, recommended, stats}
+        Used by: frontend column picker, API GET /sessions/{id}/profile
+
+    engine.get_column_options() -> dict
+        Candidate columns for each role.
+        Returns: {date_candidates, target_candidates, group_candidates, exog_candidates}
+        Used by: frontend dropdowns, API GET /sessions/{id}/columns
+
+    engine.get_data_quality_report() -> dict
+        Per-SKU quality scores, warnings, series classification.
+        Returns: {sku: {quality_score, series_type, warnings, ...}}
+        Requires: choose_columns() called first
+
+    engine.get_config_schema() -> dict
+        All configurable parameters with types, defaults, and ranges.
+        Returns: {training: {...}, features: {...}, forecast: {...}, business: {...}}
+        Used by: frontend form builder, API GET /config/schema
+
+    engine.get_available_models() -> list
+        All supported model names.
+        Returns: ["arima", "croston", "ets", "lightgbm", "lstm", "prophet", "xgboost"]
+
+    engine.get_routing_plan() -> dict
+        Model-to-SKU assignment preview.
+        Returns: {sku: [model_names]}
+        Requires: choose_columns() called first
+
+STEP 3 — CONFIGURE
+-------------------
+
+    engine.choose_columns(target, date, sku=None, exogenous=None) -> ForecastEngine
+        Set column mapping.
+        Args:
+            target     (str)       — column to forecast
+            date       (str)       — date/timestamp column
+            sku        (str|None)  — group/SKU column (None = single series)
+            exogenous  (list|None) — additional regressor columns
+
+    engine.configure_features(lags, rolling, diffs, calendar, ewm_spans) -> ForecastEngine
+        Set feature engineering parameters.
+        Args:
+            lags      (list[int])  — lag periods, e.g. [1, 7, 14]
+            rolling   (list[int])  — rolling windows, e.g. [7, 14, 28]
+            diffs     (list[int])  — differencing periods
+            calendar  (bool)       — include calendar/holiday features
+            ewm_spans (list[int])  — exponential weighted mean spans
+
+    engine.configure_training(train_ratio, walk_forward, wfv_splits,
+                              min_history, seasonal_period) -> ForecastEngine
+        Set training strategy.
+        Args:
+            train_ratio    (float) — fraction of data for training (default 0.8)
+            walk_forward   (bool)  — use expanding-window WFV (default True)
+            wfv_splits     (int)   — number of WFV folds (default 3)
+            min_history    (int)   — minimum rows per SKU (default 20)
+            seasonal_period(int)   — seasonality for metrics/routing (default 7)
+
+    engine.configure_forecast(horizon, quantiles) -> ForecastEngine
+        Set forecast horizon and quantile levels.
+        Args:
+            horizon   (int)        — steps ahead to forecast (default 14)
+            quantiles (list[float])— quantile levels, e.g. [0.5, 0.9, 0.95]
+
+    engine.configure_business(service_level, lead_time_days,
+                              holding_cost_pct, stockout_cost_multiplier) -> ForecastEngine
+        Set business rules for inventory recommendations.
+        Args:
+            service_level            (float) — 0.95 = 95% fill rate
+            lead_time_days           (int)   — supplier lead time
+            holding_cost_pct         (float) — inventory holding cost fraction
+            stockout_cost_multiplier (float) — stockout penalty multiplier
+
+    engine.select_models(models, hyperparams=None) -> ForecastEngine
+        Choose which models to train.
+        Args:
+            models     (list[str])       — model names to include
+            hyperparams(dict|None)       — {model_name: {param: value}} overrides
+
+    engine.set_config(config_dict: dict) -> ForecastEngine
+        Replace full configuration from a dict. Used by the API layer.
+
+STEP 4 — TRAIN
+--------------
+
+    engine.train() -> ForecastEngine
+        Run the full training pipeline.
+
+        Internally: quality check → routing → features → ML training (WFV)
+                    → statistical models → ensemble → inventory → registry
+
+        Returns: self
+        Raises: EngineError if not configured
+
+STEP 5 — RESULTS
+----------------
+
+    engine.get_metrics() -> dict
+        Training metrics per model/SKU.
+        Returns: {rows: [...], by_model: {model: {avg_mae, avg_rmse, avg_wape}}}
+
+    engine.get_forecast() -> dict
+        Point forecast per SKU (requires predict() to be called first).
+
+    engine.predict(horizon=None) -> pd.DataFrame
+        Generate future forecasts using last trained models.
+        Returns: DataFrame with [sku, date, forecast, p90_lo, p90_hi]
+
+    engine.get_inventory_report() -> dict
+        Inventory recommendations per SKU.
+        Returns: {recommendations: [{sku, reorder_point, safety_stock, stockout_risk, action}]}
+
+    engine.generate_report() -> dict
+        Full report: metrics + inventory + config hash + run_id.
+
+    engine.export_config(path: str)
+        Save current config to JSON for reproducibility.
+
+CHAINING EXAMPLE
+----------------
+
+    from forecasting_core import ForecastEngine
+
+    report = (
+        ForecastEngine()
+        .load_data("sales.csv")
+        .choose_columns(target="sales", date="date", sku="item_id")
+        .configure_features(lags=[1, 7, 14], rolling=[7, 14, 28])
+        .configure_training(walk_forward=True, wfv_splits=3)
+        .configure_business(service_level=0.95, lead_time_days=7)
+        .select_models(["lightgbm", "prophet", "ets"])
+        .train()
+        .generate_report()
+    )
+
+FROM CONFIG FILE
+----------------
+
+    engine = ForecastEngine.from_config("session_config.json")
+    engine.train()
+    print(engine.get_metrics())
+
+STATE MACHINE
+-------------
+
+    INIT → loaded → configured → trained → forecasted
+
+    Each step requires the previous:
+    - get_profile()             requires load_data()
+    - choose_columns()          requires load_data()
+    - get_data_quality_report() requires choose_columns()
+    - train()                   requires choose_columns() + select_models()
+    - get_metrics()             requires train()

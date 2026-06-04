@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+*.pyc
+*.pyo
+
+# Environment / secrets
+.env
+.env.*
+*.env
+secrets.json
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+.nuxt/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
+
+# Claude Code local settings
+.claude/
+
+# Personal notes / memory
+memory/
+
+# MCP config (contains project refs)
+.mcp.json
+
+# Build copies created by faro_prep_build
+ForecastingCore/faro_prep_build/forecastlib/
+ForecastingCore/faro_prep_build/build/
+ForecastingCore/faro_prep_build/*.egg-info/

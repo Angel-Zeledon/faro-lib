@@ -1,0 +1,85 @@
+{
+  "name": "session_sess_be7",
+  "data": {
+    "path": "C:\\Users\\Jahir\\Documents\\forecasting\\backend\\storage\\datasets\\ten_acme_demo_001\\ds_e9edfe0d5823\\data.csv",
+    "sql_engine": "",
+    "encoding": "utf-8",
+    "date_freq": null,
+    "registry_path": "registry.json"
+  },
+  "columns": {
+    "target": "ventas",
+    "date": "fecha",
+    "group": "sku",
+    "exogenous": []
+  },
+  "transforms": {
+    "columns": {},
+    "auto_apply": false
+  },
+  "features": {
+    "lags": [
+      1,
+      7,
+      14,
+      28
+    ],
+    "diffs": [
+      1
+    ],
+    "rolling": [
+      7,
+      14,
+      28
+    ],
+    "calendar": true,
+    "ewm_spans": [
+      14
+    ],
+    "fourier_periods": [],
+    "fourier_K": 2
+  },
+  "models": {
+    "lightgbm": {},
+    "prophet": {},
+    "ets": {},
+    "lstm": {},
+    "arima": {},
+    "xgboost": {}
+  },
+  "training": {
+    "train_ratio": 0.8,
+    "walk_forward": true,
+    "wfv_splits": 3,
+    "min_history": 20,
+    "seasonal_period": 7,
+    "tuning": false,
+    "tuning_trials": 30
+  },
+  "forecast": {
+    "horizon": 14,
+    "quantiles": [
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9,
+      0.95
+    ]
+  },
+  "business": {
+    "service_level": 0.95,
+    "lead_time_days": 7,
+    "holding_cost_pct": 0.2,
+    "stockout_cost_multiplier": 3.0
+  },
+  "routing": {
+    "enabled": true,
+    "thresholds": {
+      "intermittency": 0.4,
+      "cv_volatile": 1.5,
+      "seasonal_strength": 0.3
+    }
+  }
+}

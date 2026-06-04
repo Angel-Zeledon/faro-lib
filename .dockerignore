@@ -1,0 +1,26 @@
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/*.egg-info
+**/.venv
+**/venv
+**/.eggs
+
+# Node
+Frontend/node_modules
+Frontend/.next
+
+# Git / IDE
+.git
+.gitignore
+**/.DS_Store
+
+# Docs / scripts
+docs/
+scripts/
+*.md
+
+# Storage (mounted as volume)
+storage/

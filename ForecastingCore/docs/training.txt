@@ -1,0 +1,116 @@
+================================================================================
+Training System — Reference
+================================================================================
+
+OVERVIEW
+--------
+Training in forecasting_core uses walk-forward validation (WFV) by default,
+an expanding-window cross-validation strategy designed for time series.
+
+Unlike random k-fold, WFV respects temporal order — no future data leaks into
+training folds.
+
+WALK-FORWARD VALIDATION
+------------------------
+Given a time series of N observations:
+
+    Fold 1:  train=[0..cut1]      test=[cut1..cut1+step]
+    Fold 2:  train=[0..cut2]      test=[cut2..cut2+step]
+    Fold 3:  train=[0..cut3]      test=[cut3..cut3+step]
+
+Each fold expands the training window (expanding window, not sliding).
+The final reported metric is the mean across all folds.
+
+Configuration:
+    train_ratio  = 0.8      # initial training fraction
+    wfv_splits   = 3        # number of folds
+    walk_forward = True     # False → single train/test split
+
+Code path:
+    forecasting_core/training/trainer.py → WalkForwardSplitter, Trainer
+
+MODEL ROUTING
+-------------
+The ModelRouter assigns models to SKUs based on series characteristics:
+
+    Series type     → Assigned models
+    ─────────────────────────────────
+    stable          → lightgbm, xgboost, prophet
+    seasonal        → lightgbm, prophet, ets
+    volatile        → lightgbm, xgboost, arima
+    intermittent    → croston, ets
+    short           → ets, arima
+
+Routing can be disabled (routing.enabled = false) to run all selected models
+on all SKUs.
+
+Code path:
+    forecasting_core/training/router.py → ModelRouter, ROUTING_TABLE
+
+DATA QUALITY
+------------
+Before routing, each SKU is profiled by DataQualityChecker:
+
+    quality_score:  0–100 composite score
+    series_type:    stable / seasonal / volatile / intermittent / short
+    warnings:       list of data issues (gaps, outliers, short history)
+    n_rows:         usable observation count
+    missing_pct:    fraction of missing dates
+
+SKUs below min_history are excluded from ML training but may still get
+statistical models.
+
+Code path:
+    forecasting_core/data/quality.py → DataQualityChecker, SKUReport, classify_series
+
+SUPPORTED MODELS
+----------------
+
+ML (sklearn-compatible, trained per SKU with WFV):
+    lightgbm  — gradient boosting, best for large datasets
+    xgboost   — gradient boosting, good general baseline
+
+Statistical (per-SKU, run on raw time series):
+    arima     — ARIMA via statsmodels auto-order selection
+    prophet   — Facebook Prophet with optional regressors
+    ets       — Holt-Winters exponential smoothing (auto-selection)
+    croston   — Croston's method for intermittent/sporadic demand
+
+Deep Learning:
+    lstm      — LSTM RNN (requires tensorflow, longer training)
+
+ENSEMBLE
+--------
+After training, a WeightedEnsemble combines model predictions per SKU.
+Weights are computed as inverse-MAE: better models get higher weight.
+
+    weight_model_i = (1/mae_i) / sum(1/mae_j for all j)
+
+Code path:
+    forecasting_core/ensemble/ensemble.py → WeightedEnsemble
+
+METRICS REPORTED
+----------------
+Per model, per SKU, per fold:
+
+    mae       — Mean Absolute Error
+    rmse      — Root Mean Squared Error
+    wape      — Weighted Absolute Percentage Error
+    bias      — Mean signed error (over- vs under-forecast)
+    n_folds   — Number of WFV folds completed
+    validation — "walk_forward" or "train_test"
+
+Baselines (always computed for comparison):
+    naive            — last observed value
+    seasonal_naive   — same weekday last week/period
+    historical_avg   — mean of training set
+
+CONFIGURATION REFERENCE
+------------------------
+All training parameters live in SessionConfig.training:
+
+    train_ratio     float   0.8    Initial training fraction (0.5 – 0.95)
+    walk_forward    bool    True   Use WFV (True) or single split (False)
+    wfv_splits      int     3      Number of WFV folds (min 1)
+    min_history     int     20     Minimum rows to train a model on a SKU
+    seasonal_period int     7      Seasonality for ETS/routing/metrics (7=weekly)

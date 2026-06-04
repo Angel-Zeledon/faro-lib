@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "next.config.mjs"],
+  "exclude": ["node_modules", "**/*.jsx", "**/*.js", "src/components/Upload.jsx",
+              "src/components/Sessions.jsx", "src/components/Train.jsx",
+              "src/components/Results.jsx", "src/components/Registry.jsx",
+              "src/components/ColumnPicker.jsx", "src/components/ConfigForm.jsx",
+              "src/components/RoutingPreview.jsx", "src/components/Inventory.jsx",
+              "src/App.jsx", "src/main.jsx", "src/api.js"]
+}

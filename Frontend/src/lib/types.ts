@@ -1,0 +1,802 @@
+// ── Session ──────────────────────────────────────────────────────────────────
+export type SessionStatus =
+  | 'DRAFT' | 'DATASET_LOADED' | 'INSPECTED'
+  | 'COLUMNS_CONFIGURED' | 'FEATURES_CONFIGURED' | 'MODELS_CONFIGURED'
+  | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+
+export interface SessionInfo {
+  session_id:   string
+  name:         string
+  status:       SessionStatus
+  created_at:   string
+  updated_at:   string
+  error:        string | null
+  file_path:    string | null
+  dataset_id?:  string | null
+}
+
+// ── Dataset ───────────────────────────────────────────────────────────────────
+export interface DatasetMeta {
+  id:                string
+  name:              string
+  original_filename: string
+  file_type:         string
+  file_path:         string
+  size_bytes:        number
+  row_count:         number | null
+  column_count:      number | null
+  uploaded_at:       string
+}
+
+export interface ProfileColumn {
+  name:      string
+  dtype:     string
+  role_hint: string | null
+  n_unique:  number
+  null_pct:  number
+  sample:    unknown[]
+}
+
+export interface DataQualityIssue {
+  type:     string
+  severity: 'error' | 'warning' | 'info'
+  message:  string
+  [key: string]: unknown
+}
+
+export interface SkuOutlierInfo {
+  count:   number
+  pct:     number
+  iqr_lo:  number
+  iqr_hi:  number
+  n_rows:  number
+}
+
+export interface OutlierInfo {
+  total_count: number
+  total_pct:   number
+  per_sku:     Record<string, SkuOutlierInfo>
+}
+
+export interface DataQuality {
+  issues:          DataQualityIssue[]
+  gap_fill_needed: boolean
+  outliers?:       OutlierInfo
+}
+
+export interface OutlierConfig {
+  strategy:           string   // leave | winsorize_sigma | winsorize_pct | iqr_fence | remove | log1p
+  n_sigma:            number
+  percentile:         number
+  iqr_k:              number
+  per_sku_overrides:  Record<string, string>
+  per_sku_n_sigma:    Record<string, number>
+  per_sku_percentile: Record<string, number>
+  per_sku_iqr_k:      Record<string, number>
+}
+
+export interface DataProfile {
+  columns:       ProfileColumn[]
+  recommended:   { date: string | null; target: string | null; group: string | null; freq: string | null }
+  stats:         { n_rows: number; n_cols: number; n_skus?: number; date_min?: string; date_max?: string }
+  warnings:      string[]
+  data_quality?: DataQuality
+}
+
+export interface ColumnOptions {
+  date_candidates:   string[]
+  target_candidates: string[]
+  group_candidates:  string[]
+  exog_candidates:   string[]
+}
+
+export interface QualityReport {
+  [sku: string]: {
+    quality_score: number
+    series_type:   string
+    n_rows:        number
+    missing_pct:   number | null
+    n_outliers:    number
+    warnings:      string[]
+    is_valid:      boolean
+  }
+}
+
+// ── Inspection result (from GET /sessions/{id}/inspect) ───────────────────────
+export interface InspectionResult {
+  profile:        DataProfile
+  column_options: ColumnOptions
+  config_schema:  ConfigSchema | null
+  inspected_at:   string
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+export interface FieldSchema {
+  type:    'float' | 'int' | 'bool' | 'int_list' | 'float_list'
+  default: unknown
+  min?:    number
+  max?:    number
+  label:   string
+}
+
+export interface ConfigSchema {
+  training:         Record<string, FieldSchema>
+  features:         Record<string, FieldSchema>
+  forecast:         Record<string, FieldSchema>
+  business:         Record<string, FieldSchema>
+  available_models: string[]
+}
+
+export interface ChooseColumnsBody {
+  target_column:  string
+  date_column:    string
+  sku_column?:    string | null
+  exogenous?:     string[]
+  transforms?:    Record<string, { impute?: string; encode?: string; scale?: string }>
+  gap_fill?:      string          // zero | mean | forward | interpolate | leave
+  outlier_config?: OutlierConfig
+}
+
+// ── Dataset Analysis (GET /sessions/{id}/analysis) ────────────────────────────
+export interface DatasetAnalysisColumn {
+  name:     string
+  dtype:    string
+  role:     'numeric' | 'categorical'
+  null_pct: number
+  n_unique: number
+}
+
+export interface DatasetAnalysis {
+  columns:      DatasetAnalysisColumn[]
+  n_rows:       number
+  n_cols:       number
+  n_duplicates: number
+  memory_mb:    number
+  temporal: {
+    date_min:   string
+    date_max:   string
+    n_periods:  number
+    freq_days:  number
+    gap_count:  number
+    freq_label: string
+  } | null
+  seasonality: {
+    dominant_period:   number | null
+    top_periods:       number[]
+    seasonal_strength: number
+    classification:    'none' | 'weak' | 'moderate' | 'strong'
+  } | null
+  sku_stats: {
+    n_skus:             number
+    intermittent_count: number
+    short_series_count: number
+    avg_zero_pct:       number
+    min_series_len:     number
+    max_series_len:     number
+  } | null
+  analyzed_at: string
+}
+
+// ── Model hyperparameter schema ───────────────────────────────────────────────
+export interface HyperparamDef {
+  name:     string
+  type:     'int' | 'float' | 'bool' | 'select'
+  default:  unknown
+  min?:     number
+  max?:     number
+  options?: string[]
+  desc:     string
+}
+
+// ── Job (training) ────────────────────────────────────────────────────────────
+export interface JobProgress {
+  percent:  number
+  step:     string
+  message:  string
+}
+
+export interface JobResponse {
+  id:           string
+  session_id:   string
+  status:       'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  progress:     JobProgress
+  error:        string | null
+  created_at:   string
+  started_at:   string | null
+  completed_at: string | null
+}
+
+// ── Metrics & Results ─────────────────────────────────────────────────────────
+export interface MetricRow {
+  model:      string
+  type:       string
+  sku:        string | null
+  mae:        number | null
+  rmse:       number | null
+  wape:       number | null
+  bias:       number | null
+  n_folds:    number | null
+  validation: string | null
+}
+
+export interface MetricsResponse {
+  rows:     MetricRow[]
+  by_model: Record<string, { avg_mae: number; avg_rmse: number; avg_wape: number }>
+}
+
+export interface InventoryRecommendation {
+  sku:            string
+  reorder_point:  number | null
+  safety_stock:   number | null
+  stockout_risk:  number | null
+  holding_cost?:  number | null
+  days_coverage?: number | null
+  forecast_mean?: number | null
+  overstock_alert?: boolean
+  action:         'REORDER' | 'OVERSTOCK' | 'OK'
+}
+
+export interface InventoryResponse {
+  recommendations: InventoryRecommendation[]
+}
+
+export interface RoutingPlan {
+  [sku: string]: string[]
+}
+
+// ── Data Health Check ─────────────────────────────────────────────────────────
+export interface SKUHealthReport {
+  sku:             string
+  n_rows:          number
+  series_type:     string
+  missing_dates:   number
+  outliers:        number
+  zero_ratio:      number
+  quality_score:   number
+  has_min_history: boolean
+  warnings:        string[]
+}
+
+export interface HealthDiagnosis {
+  executive_summary: string
+  risks:             string
+  recommendation:    string
+}
+
+export interface DataHealthReport {
+  global_score:  number
+  status:        'HEALTHY' | 'NEEDS_ATTENTION' | 'POOR'
+  can_train:     boolean
+  n_skus:        number
+  sku_reports:   Record<string, SKUHealthReport>
+  diagnosis:     HealthDiagnosis | null
+  columns_used:  { date: string; target: string; group: string | null }
+  analyzed_at:   string
+}
+
+// ── AI Analyst Chats ──────────────────────────────────────────────────────────
+
+export interface Chat {
+  id:                   string
+  title:                string
+  is_favorite:          boolean
+  session_id:           string | null
+  data_sources:         string[]
+  last_message_at:      string
+  message_count:        number
+  created_at:           string
+  last_message_preview: string | null
+}
+
+export interface ChatMessage {
+  id:               string
+  chat_id:          string
+  role:             'user' | 'assistant'
+  content:          string
+  source?:          string
+  retrieved_count?: number
+  created_at:       string
+}
+
+export interface MessagesPage {
+  messages: ChatMessage[]
+  has_more: boolean
+}
+
+export interface ChatSourceType {
+  id:    string
+  label: string
+}
+
+// ── Data Sources ──────────────────────────────────────────────────────────────
+export type DataSourceType = 'file' | 'sql'
+export type ConnectionStatus = 'connected' | 'pending' | 'error'
+export type SqlEngine = 'postgresql' | 'mysql' | 'mssql' | 'oracle'
+
+export interface SqlConfig {
+  host:     string
+  port:     number
+  database: string
+  username: string
+  engine:   SqlEngine
+}
+
+export interface DataSource {
+  id:                string
+  name:              string
+  description:       string | null
+  source_type:       DataSourceType
+  connection_status: ConnectionStatus
+  original_filename: string | null
+  file_type:         string | null
+  file_path:         string | null
+  size_bytes:        number | null
+  row_count:         number | null
+  column_count:      number | null
+  sql_config:        SqlConfig | null
+  saved_query:       string | null
+  uploaded_by:       string | null
+  uploaded_at:       string
+  updated_at:        string | null
+}
+
+export interface DataPreview {
+  columns:      string[]
+  rows:         Record<string, unknown>[]
+  row_count:    number
+  sheets:       string[] | null
+  active_sheet: string | null
+  truncated:    boolean
+}
+
+export interface SqlQueryResult {
+  columns:   string[]
+  rows:      Record<string, unknown>[]
+  row_count: number
+  truncated: boolean
+}
+
+// ── Forecast Series (ECharts) ─────────────────────────────────────────────────
+export interface ForecastPoint {
+  date:   string
+  value:  number
+  lower?: number
+  upper?: number
+}
+
+export interface ForecastSeries {
+  sku:              string
+  model:            string | null
+  historical:       { date: string; value: number }[]
+  forecast:         ForecastPoint[]
+  available_models: string[]
+}
+
+// ── User Preferences ──────────────────────────────────────────────────────────
+export type BusinessProfile = 'retail' | 'distributor' | 'manufacturer'
+
+export interface UserPreferences {
+  language:         'es' | 'en'
+  theme:            'dark' | 'light'
+  business_profile?: BusinessProfile
+  advanced_mode?:   boolean
+}
+
+// ── Activity Logs ─────────────────────────────────────────────────────────────
+export interface ActivityLog {
+  id:         string
+  action:     string
+  resource:   string | null
+  context:    Record<string, unknown>
+  status:     'success' | 'error'
+  created_at: string
+}
+
+export interface ActivityLogsResponse {
+  items: ActivityLog[]
+  total: number
+}
+
+// ── Platform Models ───────────────────────────────────────────────────────────
+export interface PlatformModel {
+  name:        string
+  category:    'ML' | 'Statistical' | 'Deep Learning'
+  status:      'available' | 'beta' | 'disabled'
+  description: string
+}
+
+// ── Statistical Analysis ──────────────────────────────────────────────────────
+export interface AnalysisSummaryRow {
+  sku:                   string | null
+  n:                     number | null
+  mean:                  number | null
+  std:                   number | null
+  min:                   number | null
+  max:                   number | null
+  median:                number | null
+  cv:                    number | null
+  skewness:              number | null
+  kurtosis:              number | null
+  zero_pct:              number | null
+  outlier_pct:           number | null
+  best_distribution:     string | null
+  croston_class:         string | null
+  adi:                   number | null
+  cv2:                   number | null
+  stationarity:          string | null
+  diff_order:            number | null
+  dominant_period:       number | null
+  seasonal_strength:     number | null
+  seasonality_class:     string | null
+  trend_direction:       string | null
+  trend_pvalue:          number | null
+  sens_slope:            number | null
+  linear_r2:             number | null
+  n_change_points:       number | null
+  suggested_ar_order:    number | null
+  suggested_ma_order:    number | null
+  is_white_noise:        boolean | null
+  error?:                string
+  [key: string]:         unknown
+}
+
+export interface AnalysisResult {
+  date_col:   string
+  target_col: string
+  sku_col:    string | null
+  detected:   { date_col: string | null; target_col: string | null; sku_col: string | null }
+  columns:    string[]
+  summary:    AnalysisSummaryRow[]
+}
+
+export interface OutlierPoint {
+  date:         string
+  value:        number
+  z_score:      number
+  lower_bound:  number
+  upper_bound:  number
+  reason:       string
+}
+
+export interface SkuDetailResult {
+  sku:      string
+  report:   Record<string, unknown>
+  series:   { date: string; value: number | null }[]
+  outliers: OutlierPoint[]
+}
+
+// ── Forecast Overrides ────────────────────────────────────────────────────────
+export interface ForecastOverride {
+  sku:      string
+  date:     string
+  original: number
+  override: number
+  reason?:  string
+}
+
+// ── Accuracy Tracking ─────────────────────────────────────────────────────────
+export interface AccuracySnapshot {
+  sku:        string
+  date:       string
+  forecasted: number
+  actual:     number | null
+  mae:        number | null
+  wape:       number | null
+}
+
+export interface AccuracyReport {
+  snapshots:    AccuracySnapshot[]
+  overall_wape: number | null
+  threshold:    number
+}
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+export interface ApiKey {
+  id:         string
+  name:       string
+  last_used:  string | null
+  created_at: string
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+export interface Webhook {
+  id:         string
+  url:        string
+  events:     string[]
+  created_at: string
+}
+
+// ── Job Schedule ──────────────────────────────────────────────────────────────
+export interface JobSchedule {
+  id:         string
+  session_id: string
+  cron_expr:  string
+  next_run:   string
+  enabled:    boolean
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────────
+export type InventorySignal = 'PEDIR_YA' | 'PEDIR_PRONTO' | 'OK' | 'SOBRESTOCK' | 'SIN_DATOS'
+
+export interface InventoryStock {
+  id?:            string
+  sku:            string
+  display_name:   string | null
+  stock_actual:   number
+  stock_minimo:   number
+  lead_time_dias: number
+  costo_unitario: number | null
+  moq:            number
+  proveedor:      string | null
+  notas:          string | null
+  product_type?:  string
+  updated_at?:    string
+}
+
+export interface InventoryCalcExplanation {
+  demanda_diaria:    number
+  lead_time_dias:    number
+  demanda_lead_time: number
+  safety_stock:      number
+  stock_actual:      number
+  antes_moq:         number
+  moq:               number
+  cantidad_final:    number
+}
+
+export interface InventoryEvent {
+  id:         string
+  tenant_id:  string
+  name:       string
+  start_date: string
+  end_date:   string
+  multiplier: number
+  notes:      string | null
+  created_at: string
+}
+
+export interface InventoryStatusItem extends InventoryStock {
+  has_forecast:         boolean
+  has_stock:            boolean
+  demanda_diaria:       number | null
+  demanda_lead_time:    number | null
+  dias_cobertura:       number | null
+  signal:               InventorySignal
+  cantidad_recomendada: number | null
+  valor_inventario:     number | null
+  n_models:             number
+  abc:                  string
+  xyz:                  string
+  abc_xyz:              string
+  stock_history:        { stock: number; date: string }[]
+  calc_explanation:     InventoryCalcExplanation | null
+}
+
+export type ProductType =
+  | 'finished_good' | 'semi_finished' | 'component'
+  | 'raw_material'  | 'packaging'     | 'service'
+
+export interface BomItem {
+  id:           string
+  parent_sku:   string
+  child_sku:    string
+  child_name:   string | null
+  quantity:     number
+  unit:         string | null
+  notes:        string | null
+  child_stock:  number | null
+  child_type:   string | null
+  child_cost:   number | null
+}
+
+export interface ProductionRequirement {
+  child_sku:          string
+  display_name:       string
+  product_type:       string
+  quantity_per_unit:  number
+  unit:               string | null
+  required_quantity:  number
+  current_stock:      number
+  shortage:           number
+  status:             'SHORTAGE' | 'OK'
+}
+
+export interface FinishedGoodPlan {
+  sku:             string
+  display_name:    string
+  product_type:    string
+  forecast_demand: number
+  current_stock:   number
+  to_produce:      number
+  signal:          string
+  requirements:    ProductionRequirement[]
+}
+
+export interface RawMaterialSummary {
+  sku:            string
+  display_name:   string
+  product_type:   string
+  unit:           string | null
+  total_required: number
+  current_stock:  number
+  shortage:       number
+  status:         'SHORTAGE' | 'OK'
+  must_order:     number
+  estimated_cost: number | null
+}
+
+export interface ProductionPlan {
+  session_id:           string
+  horizon_days:         number
+  finished_goods_count: number
+  has_shortages:        boolean
+  total_shortage_value: number
+  finished_goods:       FinishedGoodPlan[]
+  raw_material_summary: RawMaterialSummary[]
+}
+
+export interface InventoryStatusResponse {
+  items: InventoryStatusItem[]
+  summary: {
+    total_skus:               number
+    pedir_ya:                 number
+    pedir_pronto:             number
+    ok:                       number
+    sobrestock:               number
+    sin_datos:                number
+    valor_total_inventario:   number
+  }
+}
+
+export interface InventoryDashboardSummary {
+  session_id:             string
+  total_skus:             number
+  pedir_ya:               number
+  pedir_pronto:           number
+  ok:                     number
+  sobrestock:             number
+  sin_datos:              number
+  valor_total_inventario: number
+  top_critical:           { sku: string; display_name: string | null; dias_cobertura: number | null }[]
+}
+
+// ── Inventory ROI ─────────────────────────────────────────────────────────────
+export interface InventoryROISummary {
+  total_pos_generated:       number
+  total_skus_protected:      number
+  total_units_ordered:       number
+  estimated_value_protected: number
+  first_po_at:               string | null
+  last_po_at:                string | null
+  active_days:               number
+  pos_this_month:            number
+  pos_last_month:            number
+}
+
+export interface POLogEntry {
+  id:                string
+  session_id:        string
+  generated_at:      string
+  sku_count:         number
+  total_units:       number
+  total_value:       number | null
+  skus_pedir_ya:     number
+  skus_pedir_pronto: number
+}
+
+// ── Suppliers ─────────────────────────────────────────────────────────────────
+
+export interface Supplier {
+  id:             string
+  tenant_id:      string
+  name:           string
+  email:          string | null
+  phone:          string | null
+  whatsapp:       string | null
+  lead_time_dias: number
+  lead_time_std:  number
+  payment_terms:  string | null
+  notes:          string | null
+  active:         boolean
+  created_at:     string
+}
+
+export interface SkuSupplier {
+  id:             string
+  sku:            string
+  supplier_id:    string
+  is_primary:     boolean
+  unit_cost:      number | null
+  moq:            number
+  lead_time_dias: number | null  // override; null = use supplier default
+  notes:          string | null
+  // Joined supplier fields:
+  supplier_name:  string
+  supplier_email: string | null
+  supplier_phone: string | null
+  effective_lead_time: number   // sku_suppliers.lead_time_dias ?? suppliers.lead_time_dias
+}
+
+// ── Morning Briefing ──────────────────────────────────────────────────────────
+export interface BriefingRecommendation {
+  priority:  number
+  sku:       string
+  name:      string
+  rec_type:  'STOCKOUT_RISK' | 'REORDER_SOON' | 'DEMAND_UP' | 'DEMAND_DOWN' | 'OVERSTOCK'
+  text:      string
+  action:    string
+  signal:    string
+}
+
+export interface MorningBriefingKPIs {
+  total_skus:            number
+  pedir_ya:              number
+  pedir_pronto:          number
+  ok:                    number
+  sobrestock:            number
+  sin_datos:             number
+  avg_accuracy:          number | null
+  total_inventory_value: number
+  capital_in_overstock:  number
+  demand_alerts:         number
+}
+
+export interface MorningBriefing {
+  date:             string
+  session_id:       string
+  session_name:     string
+  has_data:         boolean
+  risks:            InventoryStatusItem[]
+  warnings:         InventoryStatusItem[]
+  overstocked:      InventoryStatusItem[]
+  demand_changes:   (InventoryStatusItem & { demand_trend_pct: number })[]
+  recommendations:  BriefingRecommendation[]
+  kpis:             MorningBriefingKPIs
+}
+
+// ── SKU Intelligence ──────────────────────────────────────────────────────────
+export interface SkuIntelligenceData {
+  sku:                     string
+  model:                   string | null
+  available_models:        string[]
+  original_freq:           string
+  applied_granularity:     string
+  available_granularities: string[]
+  historical:              { date: string; value: number }[]
+  forecast:                ForecastPoint[]
+  metrics:                 MetricRow[]
+  quality:                 QualityReport[string] | null
+  stats: {
+    mean:   number
+    std:    number
+    min:    number
+    max:    number
+    median: number
+    n:      number
+  } | null
+}
+
+// ── AI Narratives ─────────────────────────────────────────────────────────────
+export interface MorningNarrative {
+  narrative:   string
+  key_points:  string[]
+  urgency:     'critical' | 'warning' | 'ok'
+  fallback:    boolean
+  error?:      string
+}
+
+export interface InventoryInsight {
+  insight:  string
+  urgency:  'critical' | 'warning' | 'ok'
+  fallback: boolean
+}
+
+export interface ForecastExplanation {
+  explanation: string
+  fallback:    boolean
+}
+
+export interface SuggestedQuestion {
+  text: string
+  icon: string
+}

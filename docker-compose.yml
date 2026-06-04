@@ -1,0 +1,45 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - backend/.env
+    volumes:
+      # Hot-reload: mount source so --reload picks up changes
+      - ./backend:/app/backend
+      - ./ForecastingCore:/app/ForecastingCore
+      # Persist uploaded datasets and model artifacts
+      - forecast_storage:/app/storage
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot-reload: mount source
+      - ./Frontend/src:/app/src
+      - ./Frontend/public:/app/public
+    environment:
+      - BACKEND_URL=http://backend:8001
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  forecast_storage:

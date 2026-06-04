@@ -1,0 +1,91 @@
+================================================================================
+Dataset Layer — Reference
+================================================================================
+
+LOADING
+-------
+    engine.load_data("sales.csv")          # CSV (any delimiter)
+    engine.load_data("sales.xlsx")         # Excel
+    engine.load_data("sales.parquet")      # Parquet
+    engine.load_data(my_dataframe)         # pandas DataFrame
+
+    Via Pipeline config:
+        config.data.path = "sales.csv"
+        config.data.sql_engine = "sqlite:///mydb.sqlite"  # SQL query support
+
+Code path: forecasting_core/data/loader.py → DataLoader
+
+PROFILING
+---------
+    profile = engine.get_profile()
+
+    Returns:
+        columns: list of {name, dtype, role_hint, n_unique, null_pct, sample}
+        recommended: {date, target, group, freq}  — auto-detected roles
+        stats: {n_rows, n_cols, date_range, n_skus, avg_series_length}
+
+    The profiler auto-detects:
+        - Date columns (by dtype or column name patterns)
+        - Target columns (numeric, non-ID, non-date)
+        - Group columns (low-cardinality strings/ints)
+        - Frequency (D / W / MS from date gaps)
+
+Code path: forecasting_core/data/profiler.py → DataProfiler
+
+COLUMN OPTIONS
+--------------
+    options = engine.get_column_options()
+
+    Returns:
+        date_candidates:    [col names that look like dates]
+        target_candidates:  [numeric columns, sorted by variance desc]
+        group_candidates:   [low-cardinality columns]
+        exog_candidates:    [remaining numeric columns]
+
+    Used by the frontend to populate column-selection dropdowns.
+
+COLUMN MAPPING
+--------------
+    engine.choose_columns(
+        target="sales",
+        date="date",
+        sku="item_id",          # None → single time series
+        exogenous=["price"],    # optional regressors (Prophet/SARIMAX)
+    )
+
+DATA QUALITY
+------------
+    report = engine.get_data_quality_report()
+
+    Returns per-SKU dict:
+        quality_score   int     0–100 composite score
+        series_type     str     stable | seasonal | volatile | intermittent | short
+        n_rows          int     usable observation count
+        missing_pct     float   fraction of missing dates
+        n_outliers      int     IQR-detected outliers
+        warnings        list    human-readable warnings
+        is_valid        bool    True if n_rows >= min_history
+
+    Series type classification (forecasting_core/data/quality.py):
+        short        — fewer than min_history rows
+        intermittent — zero fraction > 40%
+        stable       — CV < 0.5 and no strong trend/seasonality
+        seasonal     — STL seasonal component dominant
+        volatile     — CV >= 0.5 or high IQR outlier rate
+
+SUPPORTED FILE FORMATS
+-----------------------
+    .csv      — any delimiter (auto-detected via pandas sniffing)
+    .xlsx     — Excel (first sheet by default)
+    .xls      — legacy Excel
+    .parquet  — Apache Parquet (fastest for large files)
+    SQL       — via SQLAlchemy engine string in config.data.sql_engine
+                Example: "sqlite:///db.sqlite?query=SELECT * FROM sales"
+
+PREPROCESSING (automatic, inside DataLoader)
+--------------------------------------------
+    - String whitespace stripping on column names
+    - Duplicate row removal
+    - Date column parsing to datetime64
+    - Numeric target coercion (non-numeric → NaN)
+    - Sort by [group, date] if group column present

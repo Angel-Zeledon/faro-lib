@@ -1,0 +1,35 @@
+A continuación, tienes las instrucciones arquitectónicas y de diseño lúdico-operativo completamente expandidas para integrar el Módulo de Diagnóstico y Salud de Datos (Data Health Check) dentro de tu backend. Estas directrices están redactadas de forma conceptual y agnóstica para que cualquier entorno de desarrollo (como Claude Code) las ejecute sin depender de nombres de variables fijos o infraestructuras amarradas.
+------------------------------
+## 1. Fase de Extracción y Perfilamiento Estadístico Automatizado
+Esta fase se ejecuta en el backend de cómputo inmediatamente después de recibir la señal de que un archivo fue cargado o un pipeline de base de datos fue activado. Debe operar de forma previa a cualquier algoritmo predictivo.
+
+* Instrucción de Análisis de Continuidad Temporal: El sistema debe recorrer cronológicamente el campo identificado como el eje del tiempo. Su tarea es calcular la distancia exacta entre cada registro consecutivo basado en la frecuencia declarada (horas, días, semanas). El motor debe contabilizar y agrupar todos aquellos saltos donde la secuencia se rompa, identificando periodos de inactividad informática o vacíos de registro.
+* Instrucción de Detección de Vacíos y Ausencia de Datos: El backend debe escanear el total de registros de la columna objetivo. Debe cuantificar la proporción exacta de celdas que se encuentren vacías, con valores nulos o con registros en cero que no correspondan a la naturaleza del negocio. Esta métrica de densidad determinará si el volumen de información es lo suficientemente sólido para alimentar modelos predictivos.
+* Instrucción de Aislamiento de Valores Atípicos (Outliers): El componente de cómputo debe calcular la media móvil y la desviación estándar de la serie temporal. Posteriormente, debe barrer el archivo para identificar y aislar de forma matemática aquellos picos de datos que se ubiquen fuera de los umbrales de control estadístico razonables. El backend debe registrar la cantidad exacta de estas anomalías para evaluar el nivel de ruido en los sistemas de origen del cliente.
+* Instrucción de Cálculo del Indicador Global de Salud (Score): Mediante una fórmula ponderada preestablecida en tu lógica de negocio, el backend debe cruzar los resultados de continuidad temporal, valores nulos y registros atípicos. El resultado final debe ser un número entero unificado que represente la fidelidad general de la base de datos de cara a procesos de Inteligencia Artificial.
+
+------------------------------
+## 2. Fase de Orquestación y Enriquecimiento Cognitivo (Capa del LLM)
+Una vez que el backend cuenta con los indicadores numéricos descriptivos del archivo del cliente, se activa la capa del Modelo de Lenguaje para traducir la fría estadística en un lenguaje apto para la toma de decisiones gerenciales.
+
+* Instrucción de Inyección de Contexto Semántico: El backend debe empaquetar de forma estructurada tanto los metadatos de negocio ingresados por el usuario (giro de la empresa, qué mide la columna) como las cuatro métricas resultantes del perfilamiento estadístico. Este bloque consolidado servirá como el único sustrato de verdad para el modelo de lenguaje.
+* Instrucción de Restricción del Comportamiento del LLM: El prompt del sistema debe configurar al modelo de lenguaje bajo reglas operativas estrictas de negocio. Debe exigirle que actúe exclusivamente como un auditor de datos empresarial. Se le debe prohibir taxativamente inventar datos o métricas que no estén en el bloque inyectado, y se le debe ordenar omitir cualquier tecnicismo matemático complejo (como nombrar algoritmos o percentiles), forzándolo a utilizar términos de pérdidas financieras y eficiencia de bodega.
+* Instrucción de Formateo de Salida Estricto (JSON Enforcement): Para evitar fallas de lectura en la API web, se debe instruir al LLM a responder única y exclusivamente con un objeto estructurado. Este objeto debe contener tres campos independientes de texto limpio: el dictamen ejecutivo global, la traducción de los riesgos operativos para la empresa y la recomendación de acción inmediata para solucionar el desorden de datos.
+
+------------------------------
+## 3. Fase de Control de Flujo Comercial en la Interfaz (Estrategia de Paywalls)
+Esta fase determina qué ve el cliente en el frontend según el resultado numérico del Indicador Global de Salud calculado en el paso uno.
+
+* Instrucción para Flujo Óptimo (Datos Saludables): Si el indicador global de salud supera el umbral de aceptación definido para el negocio, el backend debe marcar el proyecto en estado apto. La interfaz del usuario liberará inmediatamente el acceso al entrenamiento de Machine Learning avanzado y a los gráficos de proyecciones probabilísticas.
+* Instrucción para Flujo Restringido con Activación de Upsell (Datos con Ruido): Si el indicador de salud se ubica en un rango regular, el backend debe suspender temporalmente el pipeline predictivo tradicional. La interfaz web debe congelar los botones de entrenamiento y desplegar dinámicamente un panel informativo que alerte al cliente sobre las deficiencias de su información. En esta misma pantalla, se debe activar un componente de pago para desbloquear el módulo de "Auto-Sanado Inteligente", permitiendo al cliente pagar un extra mensual para que tu backend aplique algoritmos automáticos de limpieza sobre su archivo ruidoso.
+* Instrucción para Bloqueo Crítico y Desvío a Consultoría (Datos Corruptos): Si las métricas de nulos o saltos temporales superan el límite físico donde los modelos de Machine Learning pierden total viabilidad, el sistema debe bloquear el proyecto por completo. La pantalla de la interfaz debe mostrar el dictamen negativo del LLM y reemplazar todas las opciones de automatización por un formulario directo de contacto corporativo premium, ofreciendo al cliente la contratación de servicios de consultoría e ingeniería de datos manual para reestructurar sus pipelines desde la raíz.
+
+------------------------------
+## 4. Fase de Almacenamiento y Optimización de Consultas (Caché de Diagnóstico)
+
+* Instrucción de Persistencia Única: El backend debe asegurarse de que el pipeline de diagnóstico estadístico y la llamada al LLM ocurran una sola vez por cada archivo nuevo cargado o por cada actualización programada de base de datos.
+* Instrucción de Lectura Eficiente: Los textos generados por el LLM y los indicadores numéricos deben guardarse de forma indexada en tu base de datos persistente. Cada vez que el usuario entre a revisar la sección de salud de ese proyecto en el frontend, el backend debe servir los registros almacenados directamente, reduciendo a cero el costo por consumo de tokens y acelerando el tiempo de respuesta de la interfaz web a milisegundos.
+
+------------------------------
+¿Cómo te gustaría proceder con la ejecución de estas directrices conceptuales? Si estás listo, podemos pasar a diseñar los mensajes de prospección para LinkedIn para buscar a los primeros directores de operaciones y probar esta propuesta de valor en el mercado de Costa Rica.
+

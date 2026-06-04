@@ -1,0 +1,433 @@
+ ---
+  Seguridad crítica   
+
+  1. Contraseñas SQL guardadas en base64, no encriptadas
+  datasources/service.py — _enc()/_dec() usan base64, que es encoding, no cifrado. Cualquiera con acceso a la DB decodifica las credenciales en segundos. Necesita
+  cryptography.Fernet o similar.
+
+  2. Sin rate limiting en login ni en verificación OTP
+  api/v1/auth.py — Los endpoints de login y OTP aceptan intentos infinitos. Un código de 6 dígitos (1,000,000 combinaciones) se rompe por fuerza bruta en segundos.
+
+  3. Logout no invalida el refresh token
+  api/v1/auth.py línea ~222 — Al hacer logout solo se bloquea el access token. El refresh token sigue vivo en la DB. Cualquiera que lo tenga puede seguir generando
+  access tokens.
+
+  4. Refresh token en localStorage (vulnerable a XSS)
+  Frontend/src/lib/auth.ts — localStorage es accesible desde cualquier script. Si hay XSS en cualquier parte de la app, el refresh token (que dura mucho más) queda
+  expuesto.
+
+  ---
+  Bugs de lógica
+
+  5. Cambio de email no cierra las sesiones activas
+  api/v1/users.py línea ~162 — Al cambiar el email de un usuario, sus refresh tokens no se revocan. Sigue logueado con el email viejo.
+
+  6. Las URL de verificación de email se loguean en plaintext
+  api/v1/auth.py línea ~90 — log.info(f"[signup] verify_url={verify_url}") expone el token de verificación en los logs. Cualquiera con acceso a logs puede usarlo.   
+
+  7. Preview silencia errores de lectura de archivos
+  datasources/service.py línea ~336 — except Exception: pass en el bloque que actualiza row/column count. El usuario nunca sabe que falló.
+
+  ---
+  Malas prácticas
+
+  8. Construcción dinámica de SQL con f-strings
+  users/service.py y api/v1/sessions.py — Se construyen cláusulas WHERE con f-strings en lugar de parámetros. Actualmente no es explotable (las keys están
+  hardcodeadas), pero es frágil y va en contra de la regla de siempre usar queries parametrizadas.
+
+  9. Sin timeout de queries para fuentes SQL externas
+  datasources/service.py — Se crea un create_engine con connect_timeout: 10 pero sin statement_timeout. Una DB maliciosa o lenta puede bloquear el worker
+  indefinidamente.
+
+  10. No hay CSP (Content Security Policy)
+  Frontend/src/app/layout.tsx — Sin headers CSP, un XSS puede ejecutar scripts arbitrarios sin restricción.
+
+  11. Logs de password reset no deben incluir la URL completa
+  api/v1/users.py — Al fallar el envío de email, se loguea el verify_url completo con el token. Útil para debug, pero es un leak si los logs no están bien
+  protegidos.
+
+  12. Sin límite de memoria en pd.read_excel
+  datasources/service.py — Un Excel malformado de varios GB puede tirar el worker por OOM.
+ Prompt — Instancia 1: Backend seguridad, validación y auth  
+  Eres un engineer senior. Tienes que arreglar bugs específicos en el backend de una app
+  FastAPI + PostgreSQL. Lee cada archivo antes de editarlo. No hagas preguntas, ejecuta.
+
+  STACK:
+  - FastAPI + Pydantic v2, Python 3.11
+  - PostgreSQL via psycopg2 (backend/db/connection.py con execute(), query_one(), query())
+  - Respuestas wrapped: ok(data) → {"success": True, "data": data}
+  - settings vienen de backend/config.py (pydantic-settings desde .env)
+  - log = logging.getLogger(__name__) en cada módulo
+
+  ════════════════════════════════════════════════════
+
+  BUG 1 — Data loss: el reemplazo de archivo borra el viejo antes de guardar el nuevo
+  Archivo: C:\Users\Jahir\Documents\forecasting\Backend\datasources\service.py
+  Función: replace_file_source
+
+  Problema: hace old.unlink() antes de confirmar que el nuevo archivo se escribió
+  correctamente. Si la escritura falla (disco lleno, archivo muy grande), el datasource
+  queda sin ningún archivo.
+
+  Fix requerido: escritura atómica.
+  1. Escribir el contenido nuevo en file_path.with_suffix('.tmp')
+  2. Validar que el archivo temporal tiene el tamaño correcto (len(content) bytes)
+  3. Eliminar los archivos viejos (glob "data.*")
+  4. Renombrar el .tmp al nombre final (Path.replace() es atómico en el mismo filesystem)
+  Si el paso 2 falla, eliminar el .tmp y lanzar ValueError con mensaje claro.
+
+  ════════════════════════════════════════════════════
+
+  BUG 2 — Validación manual con dict crudo en datasources endpoints
+  Archivo: C:\Users\Jahir\Documents\forecasting\Backend\api\v1\datasources.py
+
+  Problema: varios endpoints reciben body: dict y validan campos con
+  `required - body.keys()`. Si llega "port": "abc", el `int(body["port"])`
+  da 500 interno en vez de 422 con mensaje útil.
+
+  Fix requerido:
+  1. Leer el archivo y encontrar todos los endpoints con body: dict
+  2. Crear modelos Pydantic para cada uno (CreateSqlSourceRequest,
+     UpdateSqlConfigRequest, etc.) con los tipos correctos
+  3. Reemplazar body: dict por body: NombreDelModelo en cada endpoint
+  4. Eliminar las validaciones manuales que esos modelos hacen innecesarias
+  Los modelos van en el mismo archivo o en backend/schemas/ si ya existe ese patrón.
+
+  ════════════════════════════════════════════════════
+
+  BUG 3 — load_dataframe() con SQL source sin query guardada falla silenciosamente
+  Archivo: C:\Users\Jahir\Documents\forecasting\Backend\datasources\service.py
+  Función: load_dataframe (o la función que carga el DataFrame para análisis)
+
+  Problema: si el source_type es 'sql' y saved_query es NULL, la función probablemente
+  retorna un DataFrame vacío o None sin ningún error. El código que llama esto recibe
+  datos vacíos sin saber por qué.
+
+  Fix requerido: al inicio de la rama SQL, verificar saved_query:
+    saved_q = src.get("saved_query")
+    if not saved_q:
+        raise ValueError(
+            "No query saved for this SQL source. "
+            "Go to the data source and save a query first."
+        )
+  Esto convierte el error en un 400 claro en el endpoint que lo llame.
+
+  ════════════════════════════════════════════════════
+
+  BUG 4 — Signup crea el usuario aunque el email no pueda enviarse, sin informar
+  Archivo: C:\Users\Jahir\Documents\forecasting\Backend\api\v1\auth.py
+  Endpoint: POST /auth/signup
+
+  Problema: se crea el tenant + usuario, luego llama send_verification_email().
+  Si SMTP no está configurado (smtp_user vacío), la función hace log.warning y
+  retorna False. El usuario existe en la DB sin poder verificarse y la API devuelve
+  201 como si todo hubiera funcionado.
+
+  Fix requerido: send_verification_email ya retorna bool. Úsalo:
+    email_sent = send_verification_email(body.email, body.full_name or "", verify_url)
+    return ok({
+        "user": user,
+        "tenant": {"id": tenant["id"], "name": tenant["name"]},
+        "email_sent": email_sent,
+        "message": (
+            "Account created. Check your email to verify."
+            if email_sent else
+            "Account created but verification email could not be sent. "
+            "Contact your administrator."
+        ),
+    })
+  No hacer rollback del usuario. Solo informar en la respuesta.
+
+  ════════════════════════════════════════════════════
+
+  BUG 5 — Logout en users.py loguea verify_url con el token completo
+  Archivo: C:\Users\Jahir\Documents\forecasting\Backend\api\v1\users.py
+
+  Busca cualquier log.warning o log.info que incluya setup_url o verify_url
+  en su mensaje. El token de verificación no debe aparecer en logs.
+
+  Fix: reemplazar cualquier log que incluya la URL completa por solo el user_id:
+    # MAL:
+    log.warning("... verify URL: %s", setup_url)
+    # BIEN:
+    log.warning("... check SMTP config for user=%s", user_id)
+
+  ---
+  Prompt — Instancia 2: Backend performance
+
+  Eres un engineer senior. Tienes que arreglar 3 problemas de performance en el backend
+  de una app FastAPI. Lee cada archivo antes de editarlo. No hagas preguntas, ejecuta.
+
+  STACK:
+  - FastAPI + Python 3.11, pandas disponible
+  - PostgreSQL via backend/db/connection.py (execute(), query_one())
+  - Los workers/jobs están en algún módulo de background tasks
+  - No cambies los contratos de API (mismos endpoints, mismos response shapes)
+
+  ════════════════════════════════════════════════════
+
+  PROBLEMA 1 — analyze_source carga el DataFrame completo y usa iterrows
+  Archivos a leer primero:
+    C:\Users\Jahir\Documents\forecasting\Backend\api\v1\datasources.py
+    C:\Users\Jahir\Documents\forecasting\Backend\datasources\service.py
+
+  Busca la función o endpoint de análisis/profiling de una fuente de datos
+  (puede llamarse analyze_source, profile_source, o endpoint /analyze).
+
+  Problema:
+  a) Carga el DataFrame entero en memoria sin límite de filas
+  b) Usa .iterrows() para calcular estadísticas columna por columna, que es
+     el método más lento de pandas (10-100x más lento que operaciones vectorizadas)
+
+  Fix requerido:
+  1. Limitar la carga a máximo 50_000 filas para el análisis:
+     - CSV: pd.read_csv(path, nrows=50_000)
+     - Excel: pd.read_excel(path, nrows=50_000)
+     - JSON: pd.read_json(path).head(50_000)
+  2. Reemplazar cualquier loop con iterrows() por operaciones vectorizadas:
+     - Tipos de columna: df.dtypes.to_dict()
+     - Valores nulos: df.isnull().sum().to_dict()
+     - Valores únicos: df.nunique().to_dict()
+     - Estadísticas numéricas: df.describe().to_dict()
+     - Muestra de valores: {col: df[col].dropna().head(5).tolist() for col in df.columns}
+  3. Si hay lógica de detección de tipo personalizada en un loop, refactorizarla
+     para operar sobre series completas.
+
+  ════════════════════════════════════════════════════
+
+  PROBLEMA 2 — get_preview() lee el archivo dos veces
+  Archivo: C:\Users\Jahir\Documents\forecasting\Backend\datasources\service.py
+  Función: get_preview
+
+  Problema: cuando row_count no está en la DB, la función lee el archivo una primera
+  vez para la preview (nrows limitado) y luego lo lee COMPLETO una segunda vez para
+  contar las filas totales. Doble I/O por cada llamada a preview.
+
+  Fix requerido — una sola lectura por tipo de archivo:
+
+  Para CSV (el caso más común):
+    # Leer preview normalmente
+    df = pd.read_csv(file_path, nrows=rows)
+    # Contar total de filas sin cargar en memoria (cuenta líneas del archivo)
+    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+        total_rows = sum(1 for _ in f) - 1  # -1 por el header
+
+  Para Excel y JSON (ya se carga completo de todos modos):
+    # Leer completo una vez
+    full_df = pd.read_excel(file_path, ...) / pd.read_json(file_path)
+    total_rows = len(full_df)
+    df = full_df.head(rows)  # truncar para la preview
+
+  Para Parquet:
+    import pyarrow.parquet as pq
+    total_rows = pq.read_metadata(file_path).num_rows
+    df = pd.read_parquet(file_path).head(rows)
+
+  El UPDATE de row_count en la DB debe usar el total_rows calculado sin segunda lectura.
+
+  ════════════════════════════════════════════════════
+
+  PROBLEMA 3 — Health check hace trabajo costoso
+  Archivos a leer primero:
+    C:\Users\Jahir\Documents\forecasting\Backend\main.py
+    (Si no existe, buscar app.py o buscar el endpoint /health con Glob)
+
+  También busca el módulo del worker/job queue (puede ser en workers/ o jobs/).
+
+  Problema: el endpoint /health llama alguna función que itera la cola de jobs
+  en memoria (worker.peek(), worker.get_all(), o similar). Con muchos jobs,
+  esto puede tardar segundos y hacer que el load balancer marque el servidor como down.
+
+  Fix requerido: el health check debe ser O(1):
+  1. Solo verificar DB con query_one("SELECT 1 AS ok")
+  2. Para el conteo de jobs activos, usar una query COUNT a la tabla de jobs
+     (asumiendo que los jobs se persisten en DB):
+     query_one("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('running', 'queued')")
+  3. Si el conteo viene de una estructura en memoria (dict, list), usar len()
+     directamente en vez de iterar.
+  4. Respuesta máxima en < 200ms. Si hay algo que tarde más, excluirlo del
+     health check básico o moverlo a un endpoint /health/detailed separado.
+
+  El response del health check debe mantener el mismo shape que tiene actualmente.
+
+  ---
+  Prompt — Instancia 3: Frontend UX y estado
+
+  Eres un engineer senior. Tienes que arreglar 6 problemas de UX y estado en el
+  frontend de una app Next.js 14. Lee cada archivo antes de editarlo. No preguntes, ejecuta.
+
+  STACK:
+  - Next.js 14.2.5, App Router, TypeScript estricto
+  - Todos los componentes relevantes son 'use client'
+  - Sin librería de toasts — los errores se muestran con elementos inline
+  - Variables CSS del sistema: var(--text), var(--dim), var(--border), var(--surface),
+    var(--accent) = #818cf8
+  - Colores de estado: error=#ef4444, warning=#f59e0b, success=#22c55e, muted=#64748b
+  - No instales dependencias nuevas
+  - No cambies el diseño visual general
+
+  ════════════════════════════════════════════════════
+
+  BUG 1 — Cambio de status falla en silencio
+  Archivo: C:\Users\Jahir\Documents\forecasting\Frontend\src\app\users\page.tsx
+  Componente: StatusDropdown
+
+  Problema: en la función pick(), el catch está vacío. Si setUserStatus() falla,
+  el spinner desaparece y el admin asume que el cambio se aplicó.
+
+  Fix: añadir estado de error al componente:
+    const [error, setError] = useState<string | null>(null)
+
+    async function pick(s: string) {
+      setOpen(false)
+      if (s === target.status) return
+      setLoading(true)
+      setError(null)
+      try {
+        await setUserStatus(target.id, s)
+        onChanged()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to update status')
+        setTimeout(() => setError(null), 4000)
+      } finally { setLoading(false) }
+    }
+
+  Mostrar el error como un tooltip o mensaje debajo del botón:
+    {error && (
+      <div style={{
+        position: 'absolute', top: '100%', right: 0, marginTop: 4,
+        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+        borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#ef4444',
+        whiteSpace: 'nowrap', zIndex: 10,
+      }}>
+        {error}
+      </div>
+    )}
+
+  ════════════════════════════════════════════════════
+
+  BUG 2 — Lista de usuarios no muestra error cuando el API falla
+  Archivo: C:\Users\Jahir\Documents\forecasting\Frontend\src\app\users\page.tsx
+  Función: load (dentro de UsersPage)
+
+  Problema: catch { /* ignore */ } — si listAdminUsers() falla, el usuario ve
+  "No users found" en vez de un mensaje de error.
+
+  Fix:
+  1. Añadir estado: const [loadError, setLoadError] = useState<string | null>(null)
+  2. En load():
+     try {
+       setLoadError(null)
+       const res = await listAdminUsers(...)
+       ...
+     } catch (e) {
+       setLoadError(e instanceof Error ? e.message : 'Failed to load users')
+     }
+  3. En el render, mostrar el error encima de la tabla cuando loadError !== null:
+     {loadError && (
+       <div style={{
+         marginBottom: 12, padding: '10px 16px', borderRadius: 8,
+         background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+         color: '#ef4444', fontSize: 13,
+         display: 'flex', alignItems: 'center', gap: 8,
+       }}>
+         <AlertTriangle size={14} />
+         {loadError}
+       </div>
+     )}
+     AlertTriangle ya está importado en el archivo.
+
+  ════════════════════════════════════════════════════
+
+  BUG 3 — Race condition cuando múltiples requests devuelven 401 simultáneamente
+  Archivo: C:\Users\Jahir\Documents\forecasting\Frontend\src\lib\api.ts
+  Función: request (líneas ~27-31)
+
+  Problema: si hay 3 requests en vuelo y todas dan 401, clearAuth() y el redirect
+  a /login ocurren 3 veces seguidas, causando estado inconsistente.
+
+  Fix: variable de módulo para que solo el primero en llegar haga el redirect:
+    // fuera de la función request, a nivel de módulo:
+    let _redirectingToLogin = false
+
+    // dentro del if (res.status === 401):
+    if (!_redirectingToLogin) {
+      _redirectingToLogin = true
+      clearAuth()
+      window.location.href = '/login'
+    }
+    throw new Error('Session expired')
+
+  ════════════════════════════════════════════════════
+
+  BUG 4 — isAuthenticated() no detecta tokens expirados que están cerca del límite
+  Archivo: C:\Users\Jahir\Documents\forecasting\Frontend\src\lib\auth.ts
+  Función: isAuthenticated
+
+  Problema actual: `return payload.exp > Date.now() / 1000`
+  Si el token expira en 10 segundos, isAuthenticated devuelve true pero el request
+  que se inicia ahora puede fallar por expiración durante el vuelo.
+
+  Fix: añadir margen de 30 segundos y validar que el payload tiene los campos mínimos:
+    export function isAuthenticated(): boolean {
+      const token = getToken()
+      if (!token) return false
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        // Validar campos mínimos esperados
+        if (!payload.sub || !payload.tenant_id || !payload.exp) return false
+        // Margen de 30s para evitar que expire durante requests en vuelo
+        return payload.exp > (Date.now() / 1000) + 30
+      } catch {
+        return false
+      }
+    }
+
+  ════════════════════════════════════════════════════
+
+  BUG 5 — Versión y puerto de API hardcodeados en el Sidebar
+  Archivo: C:\Users\Jahir\Documents\forecasting\Frontend\src\components\layout\Sidebar.tsx
+  Archivo adicional: C:\Users\Jahir\Documents\forecasting\Frontend\next.config.mjs
+                     (o next.config.js — verifica cuál existe)
+
+  Problema: el footer del sidebar tiene "v1.0.0 · API :8001" literal en el código.
+
+  Fix en dos partes:
+
+  1. En next.config.mjs, exponer la versión del package.json:
+     Leer primero el next.config.mjs actual para no romper lo que ya tiene.
+     Añadir dentro del objeto de configuración:
+       env: {
+         NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version ?? '1.0.0',
+       },
+
+  2. En Sidebar.tsx, reemplazar el string hardcodeado:
+     // Antes:
+     v1.0.0 · API :8001
+     // Después:
+     {process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
+
+     Eliminar la parte " · API :8001" — el puerto del backend no es info
+     relevante para el usuario final.
+
+  ════════════════════════════════════════════════════
+
+  BUG 6 — STATUS_META muestra strings técnicos crudos para estados desconocidos
+  Archivo: C:\Users\Jahir\Documents\forecasting\Frontend\src\app\users\page.tsx
+  Componente: StatusBadge
+
+  Problema: si el backend devuelve un status no listado en STATUS_META
+  (ej: "pending_email_change"), el label que se muestra es el string técnico crudo.
+
+  Fix: en el fallback de STATUS_META, formatear el string para que sea legible:
+    const m = STATUS_META[status] ?? {
+      label: status
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase()),
+      color: '#94a3b8',
+      bg: 'rgba(148,163,184,0.1)',
+    }
+
+  Así "pending_email_change" → "Pending Email Change", sin necesidad de
+  actualizar el frontend cada vez que el backend añade un status nuevo.
+  
