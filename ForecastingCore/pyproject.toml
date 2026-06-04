@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "faro-core"
-version = "1.0.0"
+version = "1.0.1"
 description = "Enterprise-grade multi-SKU time-series forecasting engine"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
     {name = "Angel Zeledon", email = "angel.zeledon.fernandez@gmail.com"}
 ]

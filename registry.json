@@ -1284,6 +1284,17 @@
         "n_skus": 1,
         "n_rows": 90
       }
+    },
+    {
+      "run_id": "session_sess_679_d866a16c_20260603_191200",
+      "session": "session_sess_679",
+      "config_hash": "d866a16c",
+      "timestamp": "2026-06-03T19:12:00.554713",
+      "results": {},
+      "metadata": {
+        "n_skus": 5,
+        "n_rows": 2280
+      }
     }
   ]
 }
