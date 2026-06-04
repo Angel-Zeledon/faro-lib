@@ -119,9 +119,32 @@ ds = ds.select(
 ## Cleaning
 
 ```python
-ds = ds.clean.fix_datetime()      # Parse date strings → datetime64
-ds = ds.clean.drop_duplicates()   # Remove exact duplicate rows
-ds = ds.clean.sort(by="date")     # Sort by any column
+ds = ds.clean.fix_datetime()                            # Parse date strings → datetime64
+ds = ds.clean.fix_datetime(format="%d/%m/%Y")           # Explicit format
+ds = ds.cols(["date_str"]).clean.fix_datetime()         # On specific columns
+
+ds = ds.clean.drop_duplicates()                         # Remove exact duplicate rows
+ds = ds.clean.drop_duplicates(subset=["date", "store"]) # Consider only these columns
+ds = ds.clean.drop_duplicates(keep="last")              # keep: "first" | "last" | False
+
+ds = ds.clean.drop_nulls()                              # Drop rows with any null
+ds = ds.clean.drop_nulls(subset=["sales", "date"])      # Only check these columns
+ds = ds.clean.drop_nulls(thresh=5)                      # Require at least 5 non-null values
+
+ds = ds.clean.drop_constant()                           # Remove columns with a single unique value
+
+ds = ds.cols(["price"]).clean.clip(lower=0)             # Clip to minimum
+ds = ds.cols(["age"]).clean.clip(lower=0, upper=120)    # Clip to range
+
+ds = ds.categorical().clean.strip()                     # Strip whitespace from string columns
+
+ds = ds.clean.fix_dtypes()                              # Auto-cast: numeric strings→float, low-cardinality→category
+
+ds = ds.clean.rename({"old_col": "new_col"})            # Rename columns
+
+ds = ds.clean.sort(by="date")                           # Sort ascending by column
+ds = ds.clean.sort(by=["store", "date"])                # Sort by multiple columns
+ds = ds.clean.sort(by="date", ascending=False)          # Descending sort
 ```
 
 ---
@@ -129,19 +152,42 @@ ds = ds.clean.sort(by="date")     # Sort by any column
 ## Filling Missing Values
 
 ```python
-ds = ds.fill.smart()              # Median for numeric, mode for categorical
-ds = ds.fill.forward()            # Forward fill
-ds = ds.fill.backward()           # Backward fill
-ds = ds.fill.median()             # Median of each column
-ds = ds.fill.mean()               # Mean of each column
-ds = ds.fill.constant(0)          # Fill all NaN with a constant
-ds = ds.fill.interpolate()        # Linear interpolation
+# Smart auto-select per column (recommended starting point)
+ds = ds.fill.smart()
+# Logic: numeric <5% nulls → median, numeric ≥5% → interpolate, categorical → mode, datetime → ffill
+
+# Statistical fills
+ds = ds.fill.mean()               # Column mean (numeric only)
+ds = ds.fill.median()             # Column median (numeric only)
+ds = ds.fill.mode()               # Most frequent value (any dtype)
+ds = ds.fill.constant(0)          # Fixed constant for all NaN
+
+# Temporal fills
+ds = ds.fill.forward()            # Forward fill (ffill)
+ds = ds.fill.forward(limit=3)     # Forward fill but at most 3 consecutive NaNs
+ds = ds.fill.backward()           # Backward fill (bfill)
+ds = ds.fill.backward(limit=3)    # Backward fill with limit
+
+# Interpolation
+ds = ds.fill.interpolate()               # Linear interpolation (default)
+ds = ds.fill.interpolate(method="time")  # Time-based interpolation
+ds = ds.fill.interpolate(method="polynomial")  # Any method from pd.Series.interpolate
+
+# Panel-aware fill (group-aware — correct for multi-SKU data)
+ds = ds.fill.time_series()
+# Fills within each group separately; remaining leading NaNs → bfill → 0
+
+# KNN imputation
+ds = ds.numeric().fill.knn()              # Default 5 neighbors
+ds = ds.numeric().fill.knn(n_neighbors=3)
 ```
 
-Apply fill to specific columns:
+Apply any fill to specific columns:
 
 ```python
 ds = ds.cols(["sales", "price"]).fill.forward()
+ds = ds.cols(["sales"]).fill.interpolate(method="time")
+ds = ds.numeric().fill.knn()
 ```
 
 ---
@@ -172,10 +218,21 @@ ds.numeric().exclude(["sales"])    # All numeric except "sales"
 ## Encoding Categorical Columns
 
 ```python
-ds = ds.categorical().encode.auto()         # Automatic: one-hot for low cardinality, label for high
-ds = ds.categorical().encode.one_hot()      # One-hot encoding (drops original column)
-ds = ds.categorical().encode.label()        # Label encoding (0, 1, 2, ...)
-ds = ds.categorical().encode.ordinal()      # Ordinal encoding
+# Auto: one-hot for ≤15 categories, label for ≤200, binary for >200
+ds = ds.categorical().encode.auto()
+
+# One-hot: creates <col>_<value> binary columns, drops original
+ds = ds.categorical().encode.one_hot()
+ds = ds.categorical().encode.one_hot(drop_first=True)   # Drop first category (avoids multicollinearity)
+
+# Label encoding: replaces values with integer codes 0..n-1
+ds = ds.categorical().encode.label()
+
+# Ordinal: encode with a specific order
+ds = ds.cols(["size"]).encode.ordinal()
+
+# Binary (hash-based): for very high cardinality (>200 unique values)
+ds = ds.cols(["product_id"]).encode.binary()
 
 # Target specific columns
 ds = ds.cols(["region", "channel"]).encode.one_hot()
@@ -187,16 +244,18 @@ ds = ds.cols(["category"]).encode.label()
 ## Scaling Numeric Columns
 
 ```python
-ds = ds.numeric().scale.standard()   # Z-score: (x - mean) / std
-ds = ds.numeric().scale.minmax()     # Scale to [0, 1]
-ds = ds.numeric().scale.robust()     # Median-centered, IQR-scaled (outlier-resistant)
-ds = ds.numeric().scale.log()        # Natural log transform
+ds = ds.numeric().scale.standard()          # Z-score: (x - mean) / std
+ds = ds.numeric().scale.minmax()            # Scale to [0, 1]
+ds = ds.numeric().scale.robust()            # Median-centered, IQR-scaled (outlier-resistant)
+ds = ds.numeric().scale.log()               # Natural log: log(x + 1)
+ds = ds.numeric().scale.power()             # Yeo-Johnson power transform (handles negatives)
 
 # Scale features, leave target untouched
 ds = ds.numeric().exclude(["sales"]).scale.standard()
 
 # Scale specific columns
 ds = ds.cols(["price", "promo"]).scale.minmax()
+ds = ds.cols(["revenue"]).scale.log()
 ```
 
 ---
@@ -283,7 +342,8 @@ ds.columns        # List of column names
 ds.dtypes         # Series of dtypes
 ds.head(n=5)      # First n rows as DataFrame
 ds.to_dataframe() # Full pandas DataFrame
-ds.copy()         # Deep copy (independent of original)
+ds.copy()         # Deep copy — fully independent from the original
+                  # (mutations to ds do not affect the copy and vice versa)
 ```
 
 ---

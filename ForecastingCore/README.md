@@ -23,6 +23,28 @@ pip install faro-core[dev]   # Development tools (pytest, ruff, black)
 
 ---
 
+## Constructors
+
+```python
+# Default
+engine = ForecastEngine()
+
+# From JSON config file
+engine = ForecastEngine.from_config("session_config.json")
+
+# From a Python dict (used by API integrations)
+engine = ForecastEngine.from_dict({
+    "data":    {"path": "sales.csv"},
+    "columns": {"target": "sales", "date": "date", "group": "item_id"},
+    "models":  {"lightgbm": {}, "prophet": {}},
+})
+
+# Replace full config on an existing engine
+engine.set_config(config_dict)
+```
+
+---
+
 ## Quick Start
 
 ```python
@@ -233,6 +255,20 @@ engine.train(on_progress=on_progress)
 
 ```python
 # Training metrics per model/SKU
+metrics = engine.get_metrics()
+# {
+#   "rows": [{"sku": "A", "model": "lightgbm", "mae": 12.3, "rmse": 15.1, ...}],
+#   "by_model": {"lightgbm": {"avg_mae": 12.3, "avg_rmse": 15.1, "avg_wape": 0.08}},
+#   "shap": {"SKU_A": {"lightgbm": {"price": 0.42, "lag1": 0.35, ...}}}
+# }
+
+# Forecast as JSON-serializable dict (dates as ISO strings)
+forecast_json = engine.get_forecast()
+# {"rows": [...], "n_skus": 3, "horizon": 14}
+# Each row: {sku, model, date, forecast, p90_lo, p90_hi, step}
+
+# Point forecasts as DataFrame
+# Tries cached → re-generates from fitted models → fallback to full pipeline
 metrics = engine.get_metrics()
 # {
 #   "rows": [{"sku": "A", "model": "lightgbm", "mae": 12.3, "rmse": 15.1, ...}],
