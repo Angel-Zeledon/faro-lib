@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
 
     # CORS
-    allowed_origins: List[str] = ["http://localhost:3000", "http://localhost:4000","http://localhost:5173"]
+    allowed_origins: List[str] = ["http://localhost:3000", "http://localhost:4000","http://localhost:5000"]
 
     # Storage
     storage_path: Path = BASE_DIR / "storage"

@@ -176,13 +176,39 @@ export default function HoyPage() {
  if (sessionId) load(sessionId)
  }, [sessionId, load])
 
+ // Generates a fallback narrative from briefing data — no API required
+ function buildFallbackNarrative(b: MorningBriefing): MorningNarrative {
+   const k = b.kpis
+   const urgency = k.pedir_ya > 0 ? 'critical' : k.pedir_pronto > 0 ? 'warning' : 'ok'
+   const parts: string[] = []
+   if (k.pedir_ya > 0) {
+     const names = b.risks.slice(0,3).map(r => r.display_name || r.sku).join(', ')
+     parts.push(`${k.pedir_ya} producto${k.pedir_ya > 1 ? 's' : ''} en riesgo inmediato de quiebre: ${names}.`)
+   }
+   if (k.pedir_pronto > 0)
+     parts.push(`${k.pedir_pronto} producto${k.pedir_pronto > 1 ? 's' : ''} necesitan pedido esta semana.`)
+   if (k.sobrestock > 0 && k.capital_in_overstock > 0)
+     parts.push(`$${(k.capital_in_overstock/1_000_000).toFixed(1)}M inmovilizados en sobrestock — considera pausar esos pedidos.`)
+   if (k.pedir_ya === 0 && k.pedir_pronto === 0)
+     parts.push('El inventario está bajo control hoy. No hay acciones urgentes pendientes.')
+   if (k.avg_accuracy)
+     parts.push(`Precisión del forecast: ${(k.avg_accuracy*100).toFixed(1)}%.`)
+   return { narrative: parts.join(' '), key_points: [], urgency, fallback: true }
+ }
+
  useEffect(() => {
- if (!briefing || !sessionId || !profile) return
- setLoadingNarrative(true)
- getMorningNarrative(sessionId, profile || 'distributor')
- .then(setNarrative)
- .catch(() => {})
- .finally(() => setLoadingNarrative(false))
+   if (!briefing || !sessionId) return
+   setLoadingNarrative(true)
+   // 8-second timeout — always shows something, with or without Anthropic key
+   const timeout = setTimeout(() => {
+     setNarrative(buildFallbackNarrative(briefing))
+     setLoadingNarrative(false)
+   }, 8000)
+   getMorningNarrative(sessionId, profile || 'distributor')
+     .then(data => { clearTimeout(timeout); setNarrative(data) })
+     .catch(() => { clearTimeout(timeout); setNarrative(buildFallbackNarrative(briefing)) })
+     .finally(() => setLoadingNarrative(false))
+   return () => clearTimeout(timeout)
  }, [briefing?.session_id, profile])
 
  // ── No session state ──────────────────────────────────────────────────────

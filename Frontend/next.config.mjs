@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8002'
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
 const isDev = process.env.NODE_ENV === 'development'
 
 const CSP = [
