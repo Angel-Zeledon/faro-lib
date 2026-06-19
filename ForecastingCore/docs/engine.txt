@@ -145,7 +145,7 @@ STEP 5 — RESULTS
 
     engine.get_metrics() -> dict
         Training metrics per model/SKU.
-        Returns: {rows: [...], by_model: {model: {avg_mae, avg_rmse, avg_wape}}}
+        Returns: {rows: [...], by_model: {model: {avg_mae, avg_rmse, avg_wape, avg_bias, avg_mape, avg_smape}}}
 
     engine.get_forecast() -> dict
         Point forecast per SKU (requires predict() to be called first).

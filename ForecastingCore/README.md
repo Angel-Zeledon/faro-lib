@@ -277,7 +277,7 @@ The pipeline runs: DataTransformer → DataQualityChecker → ModelRouter → Fe
 metrics = engine.get_metrics()
 # {
 #   "rows": [{"sku": "A", "model": "lightgbm", "mae": 12.3, "rmse": 15.1, "wape": 0.08}],
-#   "by_model": {"lightgbm": {"avg_mae": 12.3, "avg_rmse": 15.1, "avg_wape": 0.08}},
+#   "by_model": {"lightgbm": {"avg_mae": 12.3, "avg_rmse": 15.1, "avg_wape": 0.08, "avg_bias": -0.4, "avg_mape": 0.09, "avg_smape": 0.10}},
 #   "shap": {"SKU_A": {"lightgbm": {"price": 0.42, "sales_lag7": 0.35, ...}}}
 # }
 

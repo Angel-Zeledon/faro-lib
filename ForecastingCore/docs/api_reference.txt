@@ -107,7 +107,7 @@ GET /sessions/{id}/train/status
 
 GET /sessions/{id}/metrics
     Training metrics.
-    Returns: {rows: [...], by_model: {model: {avg_mae, avg_rmse, avg_wape}}}
+    Returns: {rows: [...], by_model: {model: {avg_mae, avg_rmse, avg_wape, avg_bias, avg_mape, avg_smape}}}
 
 GET /sessions/{id}/inventory
     Inventory recommendations.
