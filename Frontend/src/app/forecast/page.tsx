@@ -1571,8 +1571,8 @@ function Step9({
         {Object.entries(data.by_model).map(([model, m]) => (
           <div key={model} style={{ padding: '14px 16px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{model}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              {[['MAE', m.avg_mae], ['RMSE', m.avg_rmse], ['WAPE', m.avg_wape]].map(([k, v]) => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+              {[['MAE', m.avg_mae], ['RMSE', m.avg_rmse], ['WAPE', m.avg_wape], ['MAPE', m.avg_mape], ['sMAPE', m.avg_smape]].map(([k, v]) => (
                 <div key={String(k)}>
                   <div style={{ fontSize: 10, color: 'var(--dim)' }}>{k}</div>
                   <div style={{ fontSize: 14, fontWeight: 700 }}>{Number(v).toFixed(4)}</div>
@@ -1595,7 +1595,7 @@ function Step9({
       </div>
       <table className="data-table">
         <thead>
-          <tr><th>Model</th><th>Type</th><th>SKU</th><th>MAE</th><th>RMSE</th><th>WAPE</th><th>Folds</th></tr>
+          <tr><th>Model</th><th>Type</th><th>SKU</th><th>MAE</th><th>RMSE</th><th>WAPE</th><th>MAPE</th><th>sMAPE</th><th>Folds</th></tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
@@ -1606,6 +1606,8 @@ function Step9({
               <td>{r.mae?.toFixed(4) ?? '—'}</td>
               <td>{r.rmse?.toFixed(4) ?? '—'}</td>
               <td>{r.wape?.toFixed(4) ?? '—'}</td>
+              <td>{r.mape?.toFixed(4) ?? '—'}</td>
+              <td>{r.smape?.toFixed(4) ?? '—'}</td>
               <td style={{ color: 'var(--dim)' }}>{r.n_folds ?? '—'}</td>
             </tr>
           ))}
