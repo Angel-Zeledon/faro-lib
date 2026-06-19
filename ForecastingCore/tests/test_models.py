@@ -235,10 +235,9 @@ class TestStatModelsReportFullMetrics:
         results = run_ets_core(df, "date", "sales", "sku", 0.8, 20, 7)
         assert self.FULL_KEYS.issubset(results["A"].keys())
 
-    def test_croston_reports_full_metrics(self):
-        df = _make_stat_df()
-        results = run_croston_core(df, "date", "sales", "sku", 0.8, 20, 7)
-        assert self.FULL_KEYS.issubset(results["A"].keys())
+    def test_croston_reports_full_metrics(self, df_intermittent):
+        results = run_croston_core(df_intermittent, "date", "sales", "sku", 0.8, 20, 7)
+        assert self.FULL_KEYS.issubset(results["X"].keys())
 
 
 class TestWeightedEnsemble:
