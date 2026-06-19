@@ -11,6 +11,7 @@ When horizon=0 only the evaluation metrics are computed (faster).
 
 import logging
 import numpy as np
+from forecasting_core.evaluation.metrics import evaluate_all
 
 log = logging.getLogger(__name__)
 
@@ -204,8 +205,7 @@ def run_lstm_core(
                 y_te.reshape(-1, 1)
             ).flatten()
 
-            mae_val = float(np.mean(np.abs(y_te_real - preds_real)))
-            result = {"mae": mae_val}
+            result = evaluate_all(y_te_real, preds_real)
 
             if horizon > 0:
                 last_window = scaled[-window:]

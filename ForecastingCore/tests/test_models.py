@@ -9,6 +9,7 @@ import pandas as pd
 from forecasting_core.models.arima import run_arima_core
 from forecasting_core.models.ets import run_ets_core
 from forecasting_core.models.croston import croston_forecast, run_croston_core
+from forecasting_core.models.lstm import run_lstm_core
 from forecasting_core.models.factory import ModelFactory
 from forecasting_core.ensemble.ensemble import WeightedEnsemble
 
@@ -238,6 +239,12 @@ class TestStatModelsReportFullMetrics:
     def test_croston_reports_full_metrics(self, df_intermittent):
         results = run_croston_core(df_intermittent, "date", "sales", "sku", 0.8, 20, 7)
         assert self.FULL_KEYS.issubset(results["X"].keys())
+
+    def test_lstm_reports_full_metrics(self):
+        df = _make_stat_df()
+        results = run_lstm_core(df, "date", "sales", "sku", 0.8, 20, 7)
+        if results:  # LSTM returns empty dict if TensorFlow is not installed
+            assert self.FULL_KEYS.issubset(results["A"].keys())
 
 
 class TestWeightedEnsemble:
