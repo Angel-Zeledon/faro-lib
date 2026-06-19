@@ -230,6 +230,44 @@ class TestPipelineRun:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Test _flatten() metric forwarding — Tasks 1-3 metric completeness
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFlattenForwardsFullMetricSet:
+    """Verify that _flatten() forwards all metrics for stat/dl and new metrics for ml."""
+
+    def test_stat_model_rows_have_full_metric_columns(self, tmp_path, df_standard, base_config):
+        """Test that stat models include rmse, wape, bias, mape, smape."""
+        csv = str(tmp_path / "data.csv")
+        df_standard.to_csv(csv, index=False)
+        cfg = SessionConfig.from_dict({**base_config,
+                                       "data": {"path": csv},
+                                       "models": {"arima": {}}})
+        results = Pipeline(cfg).run()
+        df = results.metrics_df
+        stat_rows = df[df["type"].isin(["stat", "dl"])]
+        assert not stat_rows.empty, "fixture must include at least one stat/dl model"
+        for col in ["rmse", "wape", "bias", "mape", "smape"]:
+            assert col in stat_rows.columns, f"missing column {col} in stat rows"
+            assert stat_rows[col].notna().any(), f"{col} is all-null for stat/dl rows"
+
+    def test_ml_model_rows_have_mape_and_smape(self, tmp_path, df_standard, base_config):
+        """Test that ML models include mape and smape."""
+        csv = str(tmp_path / "data.csv")
+        df_standard.to_csv(csv, index=False)
+        cfg = SessionConfig.from_dict({**base_config,
+                                       "data": {"path": csv},
+                                       "models": {"lightgbm": {"n_estimators": 10}}})
+        results = Pipeline(cfg).run()
+        df = results.metrics_df
+        ml_rows = df[df["type"] == "ml"]
+        assert not ml_rows.empty, "fixture must include at least one ml model"
+        for col in ["mape", "smape"]:
+            assert col in ml_rows.columns, f"missing column {col} in ml rows"
+            assert ml_rows[col].notna().any(), f"{col} is all-null for ml rows"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Pipeline._inventory — unit tests for real-forecast-based inventory
 # ─────────────────────────────────────────────────────────────────────────────
 

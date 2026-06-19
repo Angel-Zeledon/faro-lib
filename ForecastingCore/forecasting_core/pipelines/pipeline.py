@@ -584,14 +584,22 @@ class Pipeline:
                 "model": res.get("model", key), "type": "ml",
                 "sku": res.get("sku", key), "mae": res.get("mae"),
                 "rmse": res.get("rmse"), "wape": res.get("wape"),
-                "bias": res.get("bias"), "n_folds": res.get("n_folds"),
+                "bias": res.get("bias"), "mape": res.get("mape"),
+                "smape": res.get("smape"), "n_folds": res.get("n_folds"),
                 "validation": res.get("validation"),
             })
         for model_name, res_dict in results_stat.items():
             model_type = "dl" if model_name == "lstm" else "stat"
             for sku, res in res_dict.items():
-                mae_val = res.get("mae") if isinstance(res, dict) else float(res)
-                rows.append({"model": model_name, "type": model_type, "sku": sku, "mae": mae_val})
+                if isinstance(res, dict):
+                    rows.append({
+                        "model": model_name, "type": model_type, "sku": sku,
+                        "mae": res.get("mae"), "rmse": res.get("rmse"),
+                        "wape": res.get("wape"), "bias": res.get("bias"),
+                        "mape": res.get("mape"), "smape": res.get("smape"),
+                    })
+                else:
+                    rows.append({"model": model_name, "type": model_type, "sku": sku, "mae": float(res)})
         for sku, blines in baselines.items():
             for bname, bm in blines.items():
                 rows.append({"model": bname, "type": "baseline", "sku": sku, **bm})
