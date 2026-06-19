@@ -219,6 +219,13 @@ class TestEngineTrainAndResults:
         assert "rows" in metrics and "by_model" in metrics
         assert len(metrics["rows"]) > 0
 
+    def test_by_model_includes_all_avg_metrics(self, tmp_path):
+        engine = _trained_engine(tmp_path)
+        metrics = engine.get_metrics()
+        for model_stats in metrics["by_model"].values():
+            for key in ["avg_mae", "avg_rmse", "avg_wape", "avg_bias", "avg_mape", "avg_smape"]:
+                assert key in model_stats, f"{key} missing from by_model entry: {model_stats}"
+
     def test_get_forecast_after_train(self, tmp_path):
         engine = _trained_engine(tmp_path)
         fc = engine.get_forecast()
