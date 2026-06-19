@@ -219,6 +219,28 @@ class TestModelFactory:
 # WeightedEnsemble
 # ─────────────────────────────────────────────────────────────────────────────
 
+class TestStatModelsReportFullMetrics:
+    """Every stat model must report the full metric set, not just MAE (regression
+    guard for the bug where wrappers called evaluate_all() then kept only ['mae'])."""
+
+    FULL_KEYS = {"mae", "rmse", "wape", "bias", "mape", "smape"}
+
+    def test_arima_reports_full_metrics(self):
+        df = _make_stat_df()
+        results = run_arima_core(df, "date", "sales", "sku", 0.8, 20, 7, order=(1, 1, 0))
+        assert self.FULL_KEYS.issubset(results["A"].keys())
+
+    def test_ets_reports_full_metrics(self):
+        df = _make_stat_df()
+        results = run_ets_core(df, "date", "sales", "sku", 0.8, 20, 7)
+        assert self.FULL_KEYS.issubset(results["A"].keys())
+
+    def test_croston_reports_full_metrics(self):
+        df = _make_stat_df()
+        results = run_croston_core(df, "date", "sales", "sku", 0.8, 20, 7)
+        assert self.FULL_KEYS.issubset(results["A"].keys())
+
+
 class TestWeightedEnsemble:
 
     def test_fit_and_predict(self):

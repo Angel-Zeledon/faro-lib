@@ -27,8 +27,7 @@ def run_ets_core(df, dt, target, group, train_ratio, min_rows, seasonal_period,
                 seasonal_periods=seasonal_period if use_seasonal else None,
                 initialization_method="estimated",
             ).fit(optimized=True)
-            mae_val = evaluate_all(test, model.forecast(len(test)))["mae"]
-            result = {"mae": mae_val}
+            result = evaluate_all(test, model.forecast(len(test)))
             if horizon > 0:
                 full_model = ExponentialSmoothing(
                     series, trend="add",

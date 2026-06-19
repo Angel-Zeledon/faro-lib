@@ -37,8 +37,7 @@ def run_croston_core(df, dt, target, group, train_ratio, min_rows, seasonal_peri
         key = str(sku) if sku is not None else "__all__"
         try:
             preds = croston_forecast(series[:cut], alpha=alpha, n_ahead=len(series) - cut)
-            mae_val = evaluate_all(series[cut:], preds)["mae"]
-            result = {"mae": mae_val}
+            result = evaluate_all(series[cut:], preds)
             if horizon > 0:
                 result["forecast"] = croston_forecast(series, alpha=alpha, n_ahead=horizon)
                 train_preds = croston_forecast(series[:cut], alpha=alpha, n_ahead=len(series[:cut]))

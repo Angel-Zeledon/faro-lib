@@ -92,6 +92,15 @@ class TestRunProphetCore:
         assert "mae" in results["A"]
 
 
+    def test_reports_full_metrics(self):
+        df = _make_df(n=80, skus=["A"])
+        results = run_prophet_core(df, dt="date", target="sales", group="sku",
+                                   train_ratio=0.8, min_rows=20, seasonal_period=7)
+        full_keys = {"mae", "rmse", "wape", "bias", "mape", "smape"}
+        sku_result = next(iter(results.values()))
+        assert full_keys.issubset(sku_result.keys())
+
+
 # ---------------------------------------------------------------------------
 # Edge / error cases
 # ---------------------------------------------------------------------------

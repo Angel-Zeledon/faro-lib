@@ -118,8 +118,7 @@ def run_sarimax_core(
                 exog=exog_test,
             )
             from forecasting_core.evaluation.metrics import evaluate_all
-            mae_val = evaluate_all(series.iloc[cut:].values, fc_test.values)["mae"]
-            result = {"mae": mae_val}
+            result = evaluate_all(series.iloc[cut:].values, fc_test.values)
 
             if horizon > 0:
                 # Re-fit on full series for future forecast

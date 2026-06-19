@@ -120,6 +120,12 @@ class TestRunSarimaxCore:
             results = self._run(horizon=h)
             assert len(results["A"]["forecast"]) == h
 
+    def test_reports_full_metrics(self):
+        results = self._run()
+        full_keys = {"mae", "rmse", "wape", "bias", "mape", "smape"}
+        sku_result = next(iter(results.values()))
+        assert full_keys.issubset(sku_result.keys())
+
 
 # ---------------------------------------------------------------------------
 # Edge / error cases

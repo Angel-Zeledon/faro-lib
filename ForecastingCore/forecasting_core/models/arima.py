@@ -27,8 +27,7 @@ def run_arima_core(df, dt, target, group, train_ratio, min_rows, seasonal_period
         try:
             model = ARIMA(series.iloc[:cut], order=order).fit()
             preds = model.forecast(len(series) - cut)
-            mae_val = evaluate_all(series.iloc[cut:].values, preds.values)["mae"]
-            result = {"mae": mae_val}
+            result = evaluate_all(series.iloc[cut:].values, preds.values)
             if horizon > 0:
                 full_model = ARIMA(series, order=order).fit()
                 fc_obj = full_model.get_forecast(steps=horizon)

@@ -26,8 +26,7 @@ def run_prophet_core(df, dt, target, group, train_ratio, min_rows, seasonal_peri
             for col in avail: m.add_regressor(col)
             m.fit(d.iloc[:cut])
             fc = m.predict(d.iloc[cut:][["ds"] + avail])
-            mae_val = evaluate_all(d.iloc[cut:]["y"].values, fc["yhat"].values)["mae"]
-            result = {"mae": mae_val}
+            result = evaluate_all(d.iloc[cut:]["y"].values, fc["yhat"].values)
             if horizon > 0:
                 full_m = Prophet(yearly_seasonality=True, weekly_seasonality=True,
                                  daily_seasonality=False)
