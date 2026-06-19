@@ -15,6 +15,24 @@ const BASE = '/api'
 
 let _redirectingToLogin = false
 
+// FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
+// instead of a string. Without this, `new Error(detail)` stringifies the array
+// to "[object Object]" and the UI shows that literal text to the user.
+function extractErrorMessage(err: unknown): string | undefined {
+  const detail = (err as { detail?: unknown })?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e: { loc?: unknown[]; msg?: string }) => {
+        const field = Array.isArray(e?.loc) ? e.loc[e.loc.length - 1] : undefined
+        return field ? `${field}: ${e.msg}` : e.msg
+      })
+      .filter(Boolean)
+      .join('; ')
+  }
+  return (err as { error?: { message?: string } })?.error?.message
+}
+
 async function request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
   const isForm = body instanceof FormData
   const token  = getToken()
@@ -40,11 +58,7 @@ async function request<T = unknown>(method: string, path: string, body?: unknown
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(
-      (err as { detail?: string; error?: { message?: string } }).detail
-      || (err as { error?: { message?: string } }).error?.message
-      || `HTTP ${res.status}`
-    )
+    throw new Error(extractErrorMessage(err) || `HTTP ${res.status}`)
   }
 
   // Backend wraps responses as { success, data, meta } — unwrap automatically
