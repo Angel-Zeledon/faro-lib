@@ -5,7 +5,7 @@ Tests for forecasting_core.evaluation.metrics and evaluation.baselines.
 import numpy as np
 import pytest
 from forecasting_core.evaluation.metrics import (
-    mae, rmse, wape, bias, mape,
+    mae, rmse, wape, bias, mape, smape,
     evaluate_all, evaluate_by_horizon,
     forecast_intervals, global_wape, business_loss,
 )
@@ -56,8 +56,25 @@ class TestScalarMetrics:
         result = mape([0, 10], [1, 10])
         assert np.isfinite(result)
 
+    def test_smape_perfect(self):
+        assert smape([10, 20, 30], [10, 20, 30]) == 0.0
+
+    def test_smape_zero_protection(self):
+        # both y and yhat zero → denominator guarded by eps, must not raise/inf/nan
+        result = smape([0, 0], [0, 0])
+        assert np.isfinite(result)
+
+    def test_smape_known_value(self):
+        # |10-12| = 2, denom = (10+12)/2 = 11 → 2/11 ≈ 0.1818
+        assert smape([10], [12]) == pytest.approx(2 * 2 / 22, abs=1e-6)
+
+    def test_smape_bounded(self):
+        # sMAPE is bounded in [0, 2] by construction
+        result = smape([1, 1000], [1000, 1])
+        assert 0.0 <= result <= 2.0
+
     def test_all_metrics_return_floats(self):
-        for fn in [mae, rmse, wape, bias, mape]:
+        for fn in [mae, rmse, wape, bias, mape, smape]:
             result = fn([10, 20], [11, 19])
             assert isinstance(result, float), f"{fn.__name__} must return float"
 
@@ -70,7 +87,7 @@ class TestEvaluateAll:
 
     def test_returns_all_keys(self):
         result = evaluate_all([1, 2, 3], [1, 2, 3])
-        assert set(result.keys()) == {"mae", "rmse", "wape", "bias", "mape"}
+        assert set(result.keys()) == {"mae", "rmse", "wape", "bias", "mape", "smape"}
 
     def test_perfect_preds_all_zero(self):
         result = evaluate_all([5, 10, 15], [5, 10, 15])
@@ -134,6 +151,22 @@ class TestForecastIntervals:
         forecast = np.array([1.0, 2.0, 3.0])
         result = forecast_intervals(residuals, forecast, quantiles=[0.9])
         assert len(result["p90_lo"]) == 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# global_wape delegates to wape
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGlobalWapeDelegatesToWape:
+
+    def test_matches_wape_exactly_on_random_data(self):
+        rng = np.random.default_rng(42)
+        y = rng.normal(100, 20, 50)
+        yhat = y + rng.normal(0, 5, 50)
+        assert global_wape(y, yhat) == wape(y, yhat)
+
+    def test_matches_wape_on_zero_actuals(self):
+        assert global_wape([0, 0, 0], [1, 2, 3]) == wape([0, 0, 0], [1, 2, 3])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
