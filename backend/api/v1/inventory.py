@@ -6,6 +6,7 @@ GET                   /inventory/status    — semáforo + recomendaciones
 POST                  /inventory/bulk      — importación masiva CSV
 """
 
+import asyncio
 import csv
 import io
 import logging
@@ -13,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.inventory import service as svc
@@ -145,12 +146,25 @@ async def bulk_import(
         if v is not None:
             parsed["lead_time_dias"] = v
 
-        rows.append(parsed)
+        # Validate against the same constraints as the direct PUT/PATCH endpoints
+        # (e.g. stock_actual/costo_unitario/moq >= 0) — without this, CSV import
+        # is the only write path that lets negative quantities into the DB.
+        try:
+            validated = StockPatch(**{k: v for k, v in parsed.items() if k != "sku"})
+        except ValidationError as e:
+            log.warning(f"bulk_import: skipped invalid row sku={parsed['sku']}: {e}")
+            continue
+        rows.append({"sku": parsed["sku"], **validated.model_dump(exclude_none=True)})
 
     if not rows:
         raise HTTPException(status_code=422, detail="No valid rows found in CSV. Ensure 'sku' column exists.")
 
-    count = svc.bulk_upsert(user.tenant_id, rows)
+    # bulk_upsert does one synchronous (blocking) DB round-trip per row. Without
+    # offloading to a thread, a large CSV freezes the asyncio event loop — and
+    # with it the entire backend, for every tenant — for the whole duration of
+    # the import (confirmed: a 10k-row file blocked even the unrelated /health
+    # endpoint for other tenants).
+    count = await asyncio.to_thread(svc.bulk_upsert, user.tenant_id, rows)
     return ok({"imported": count, "total_rows": len(rows)})
 
 

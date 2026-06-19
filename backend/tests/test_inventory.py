@@ -200,6 +200,32 @@ class TestBulkImport:
         )
         assert resp.status_code == 422
 
+    def test_bulk_import_rejects_negative_quantities(self, client, auth_headers):
+        """CSV import must enforce the same ge=0 constraints as the direct
+        PUT/PATCH endpoints — a regression guard for the bug where bulk_import
+        parsed rows manually and never validated them, letting negative
+        stock_actual/costo_unitario/moq into the DB."""
+        good_sku, bad_sku = _sku(), _sku()
+        csv_bytes = self._make_csv([
+            {"sku": good_sku, "stock_actual": 50, "stock_minimo": 0,
+             "costo_unitario": 1.0, "moq": 1},
+            {"sku": bad_sku, "stock_actual": -50, "stock_minimo": -5,
+             "costo_unitario": -2.5, "moq": -1},
+        ])
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            headers=auth_headers,
+            files={"file": ("stock.csv", csv_bytes, "text/csv")},
+        )
+        data = _ok(resp)
+        assert data["imported"] == 1
+
+        good_row = client.get(f"/api/v1/inventory/stock/{good_sku}", headers=auth_headers).json()["data"]
+        assert good_row["stock_actual"] == 50
+
+        bad_resp = client.get(f"/api/v1/inventory/stock/{bad_sku}", headers=auth_headers)
+        assert bad_resp.status_code == 404
+
 
 # ── Signal calculation (unit-level, no DB) ────────────────────────────────────
 
