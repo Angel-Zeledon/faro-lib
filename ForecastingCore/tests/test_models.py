@@ -222,29 +222,42 @@ class TestModelFactory:
 
 class TestStatModelsReportFullMetrics:
     """Every stat model must report the full metric set, not just MAE (regression
-    guard for the bug where wrappers called evaluate_all() then kept only ['mae'])."""
+    guard for the bug where wrappers called evaluate_all() then kept only ['mae']).
+
+    Checking key presence alone is a false-positive risk: a wrapper could regress
+    to e.g. result["rmse"] = None and `FULL_KEYS.issubset(keys())` would still pass.
+    So every assertion here also checks the values are real, finite numbers."""
 
     FULL_KEYS = {"mae", "rmse", "wape", "bias", "mape", "smape"}
+
+    @staticmethod
+    def _assert_full_and_finite(metrics: dict):
+        assert TestStatModelsReportFullMetrics.FULL_KEYS.issubset(metrics.keys())
+        for key in TestStatModelsReportFullMetrics.FULL_KEYS:
+            value = metrics[key]
+            assert value is not None, f"{key} is None"
+            assert isinstance(value, (int, float)), f"{key} is not numeric: {value!r}"
+            assert np.isfinite(value), f"{key} is not finite: {value!r}"
 
     def test_arima_reports_full_metrics(self):
         df = _make_stat_df()
         results = run_arima_core(df, "date", "sales", "sku", 0.8, 20, 7, order=(1, 1, 0))
-        assert self.FULL_KEYS.issubset(results["A"].keys())
+        self._assert_full_and_finite(results["A"])
 
     def test_ets_reports_full_metrics(self):
         df = _make_stat_df()
         results = run_ets_core(df, "date", "sales", "sku", 0.8, 20, 7)
-        assert self.FULL_KEYS.issubset(results["A"].keys())
+        self._assert_full_and_finite(results["A"])
 
     def test_croston_reports_full_metrics(self, df_intermittent):
         results = run_croston_core(df_intermittent, "date", "sales", "sku", 0.8, 20, 7)
-        assert self.FULL_KEYS.issubset(results["X"].keys())
+        self._assert_full_and_finite(results["X"])
 
     def test_lstm_reports_full_metrics(self):
         df = _make_stat_df()
         results = run_lstm_core(df, "date", "sales", "sku", 0.8, 20, 7)
         if results:  # LSTM returns empty dict if TensorFlow is not installed
-            assert self.FULL_KEYS.issubset(results["A"].keys())
+            self._assert_full_and_finite(results["A"])
 
 
 class TestWeightedEnsemble:

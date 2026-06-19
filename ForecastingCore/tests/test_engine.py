@@ -220,11 +220,20 @@ class TestEngineTrainAndResults:
         assert len(metrics["rows"]) > 0
 
     def test_by_model_includes_all_avg_metrics(self, tmp_path):
-        engine = _trained_engine(tmp_path)
+        # Train both an ML and a stat model: the default (lightgbm-only) fixture
+        # would only exercise the ml code path through _flatten/get_metrics, and
+        # checking `key in model_stats` alone is a false-positive risk (a NaN
+        # average — e.g. from an all-null column — would still satisfy `in`).
+        engine = _trained_engine(tmp_path, models={"lightgbm": {"n_estimators": 10}, "arima": {}})
         metrics = engine.get_metrics()
-        for model_stats in metrics["by_model"].values():
+        assert set(metrics["by_model"].keys()) >= {"lightgbm", "arima"}
+        for model_name, model_stats in metrics["by_model"].items():
             for key in ["avg_mae", "avg_rmse", "avg_wape", "avg_bias", "avg_mape", "avg_smape"]:
                 assert key in model_stats, f"{key} missing from by_model entry: {model_stats}"
+                value = model_stats[key]
+                assert value is not None, f"{model_name}.{key} is None"
+                assert pd.notna(value), f"{model_name}.{key} is NaN"
+                assert np.isfinite(value), f"{model_name}.{key} is not finite: {value!r}"
 
     def test_get_forecast_after_train(self, tmp_path):
         engine = _trained_engine(tmp_path)

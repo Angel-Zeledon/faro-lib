@@ -124,7 +124,14 @@ class TestRunSarimaxCore:
         results = self._run()
         full_keys = {"mae", "rmse", "wape", "bias", "mape", "smape"}
         sku_result = next(iter(results.values()))
+        # Key presence alone is a false-positive risk (a None value would still
+        # pass `issubset`), so also assert every value is a real finite number.
         assert full_keys.issubset(sku_result.keys())
+        for key in full_keys:
+            value = sku_result[key]
+            assert value is not None, f"{key} is None"
+            assert isinstance(value, (int, float)), f"{key} is not numeric: {value!r}"
+            assert np.isfinite(value), f"{key} is not finite: {value!r}"
 
 
 # ---------------------------------------------------------------------------
