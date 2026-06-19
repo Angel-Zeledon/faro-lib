@@ -215,13 +215,22 @@ export interface MetricRow {
   rmse:       number | null
   wape:       number | null
   bias:       number | null
+  mape:       number | null
+  smape:      number | null
   n_folds:    number | null
   validation: string | null
 }
 
 export interface MetricsResponse {
   rows:     MetricRow[]
-  by_model: Record<string, { avg_mae: number; avg_rmse: number; avg_wape: number }>
+  by_model: Record<string, {
+    avg_mae:   number
+    avg_rmse:  number
+    avg_wape:  number
+    avg_bias:  number
+    avg_mape:  number
+    avg_smape: number
+  }>
 }
 
 export interface InventoryRecommendation {
