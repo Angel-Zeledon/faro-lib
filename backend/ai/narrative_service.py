@@ -61,7 +61,7 @@ def _get_client():
             log.warning("Narrative service: ANTHROPIC_API_KEY not configured — running in fallback mode")
             return None
         import anthropic
-        return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        return anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
     except Exception as e:
         log.warning("Narrative service: Anthropic client unavailable: %s", e)
         return None

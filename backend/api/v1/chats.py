@@ -28,6 +28,10 @@ from backend.sessions import service as session_svc
 router = APIRouter(tags=["chats"])
 log = logging.getLogger(__name__)
 
+MAX_QUESTION_LENGTH = 4000
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_MAX_MESSAGES = 20
+
 # Available data source types (for frontend display)
 DATA_SOURCE_TYPES = [
     {"id": "dataset_profile",  "label": "Data Overview"},
@@ -169,6 +173,19 @@ async def send_message(
     question = (body.get("question") or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="'question' is required")
+    if len(question) > MAX_QUESTION_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'question' exceeds maximum length of {MAX_QUESTION_LENGTH} characters",
+        )
+
+    recent = chat_store.count_recent_user_messages(user.tenant_id, RATE_LIMIT_WINDOW_SECONDS)
+    if recent >= RATE_LIMIT_MAX_MESSAGES:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {RATE_LIMIT_MAX_MESSAGES} messages per "
+                   f"{RATE_LIMIT_WINDOW_SECONDS}s per organization. Please wait and try again.",
+        )
 
     sku        = body.get("sku") or None
     session_id = body.get("session_id") or chat.get("session_id")
@@ -252,7 +269,7 @@ def _auto_title(question: str) -> str:
         return question[:40].strip()
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=30,
@@ -279,7 +296,7 @@ def _general_answer(question: str, history: list[dict]) -> str:
         )
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
         messages = [
             {"role": m["role"], "content": m["content"]}
             for m in (history or [])[-6:]

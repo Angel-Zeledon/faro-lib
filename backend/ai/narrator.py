@@ -62,7 +62,7 @@ def narrate(
 
     try:
         from backend.config import settings
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
     except Exception as exc:
         log.error("Narrator: client init failed: %s", exc)
         return {"narrative": "Could not connect to AI service.", "source": "error",

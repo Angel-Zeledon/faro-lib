@@ -128,7 +128,7 @@ class RAGService:
         try:
             import anthropic
             from backend.config import settings as s
-            self._anthro = anthropic.Anthropic(api_key=s.anthropic_api_key)
+            self._anthro = anthropic.Anthropic(api_key=s.anthropic_api_key, timeout=60.0)
         except ImportError:
             log.warning("RAG disabled — install anthropic: pip install anthropic")
             self._ready = False

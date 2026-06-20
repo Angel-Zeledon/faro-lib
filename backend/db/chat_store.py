@@ -6,6 +6,7 @@ Schema:
   chat_messages — individual messages within a chat, ordered by created_at ASC
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from backend.db.connection import query, query_one, execute
@@ -180,6 +181,23 @@ def add_message(
         (chat_id, tenant_id, role, content, source, retrieved_count),
     )
     return rows[0]
+
+
+def count_recent_user_messages(tenant_id: str, seconds: int = 60) -> int:
+    """
+    Count user messages sent by this tenant in the last `seconds` — used for rate limiting.
+
+    The cutoff is computed in Python (not via `NOW()` in SQL) — under Supabase's
+    transaction-mode pooler, a server-side `NOW()` expression can get bound to a
+    stale value when the underlying connection is reused, causing the count to
+    plateau instead of tracking real time.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+    row = query_one(
+        "SELECT COUNT(*) AS cnt FROM chat_messages WHERE tenant_id = %s AND role = 'user' AND created_at > %s",
+        (tenant_id, cutoff),
+    )
+    return row["cnt"] if row else 0
 
 
 def get_history_for_context(chat_id: str, tenant_id: str, n_turns: int = 6) -> list[dict]:

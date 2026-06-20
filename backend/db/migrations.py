@@ -163,6 +163,40 @@ _MIGRATIONS = [
      )"""),
     ("create_inventory_po_log_idx",
      "CREATE INDEX IF NOT EXISTS po_log_tenant_idx ON inventory_po_log (tenant_id, generated_at DESC)"),
+    # Adoption metrics on the PO header: how many recommendations Faro made vs.
+    # how many the buyer actually approved / modified / rejected. Lets us prove
+    # value ("you followed 8 of 10") instead of just counting downloads.
+    ("add_po_log_suggested_count",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS suggested_count INT NOT NULL DEFAULT 0"),
+    ("add_po_log_approved_count",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS approved_count INT NOT NULL DEFAULT 0"),
+    ("add_po_log_modified_count",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS modified_count INT NOT NULL DEFAULT 0"),
+    ("add_po_log_rejected_count",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS rejected_count INT NOT NULL DEFAULT 0"),
+    # Per-line record of every recommendation in a PO, with the buyer's decision.
+    # cantidad_recomendada = what Faro suggested; cantidad_final = what the buyer
+    # kept; status ∈ approved | modified | rejected. Rejected lines are stored
+    # too (not in the order) so adoption rate is measurable.
+    ("create_inventory_po_items",
+     """CREATE TABLE IF NOT EXISTS inventory_po_items (
+         id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         po_log_id            TEXT NOT NULL REFERENCES inventory_po_log(id) ON DELETE CASCADE,
+         tenant_id            TEXT NOT NULL,
+         sku                  TEXT NOT NULL,
+         display_name         TEXT,
+         proveedor            TEXT,
+         signal               TEXT,
+         cantidad_recomendada FLOAT NOT NULL DEFAULT 0,
+         cantidad_final       FLOAT NOT NULL DEFAULT 0,
+         costo_unitario       FLOAT,
+         status               TEXT NOT NULL DEFAULT 'approved',
+         created_at           TIMESTAMPTZ DEFAULT NOW()
+     )"""),
+    ("create_inventory_po_items_log_idx",
+     "CREATE INDEX IF NOT EXISTS po_items_log_idx ON inventory_po_items (po_log_id)"),
+    ("create_inventory_po_items_sku_idx",
+     "CREATE INDEX IF NOT EXISTS po_items_sku_idx ON inventory_po_items (tenant_id, sku)"),
     ("create_suppliers",
      """CREATE TABLE IF NOT EXISTS suppliers (
          id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -215,6 +249,56 @@ _MIGRATIONS = [
      "CREATE INDEX IF NOT EXISTS bom_items_parent_idx ON bom_items (tenant_id, parent_sku)"),
     ("create_bom_items_child_idx",
      "CREATE INDEX IF NOT EXISTS bom_items_child_idx ON bom_items (tenant_id, child_sku)"),
+    ("add_service_level_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS service_level FLOAT NOT NULL DEFAULT 0.95"),
+    ("create_jobs",
+     """CREATE TABLE IF NOT EXISTS jobs (
+         id           TEXT PRIMARY KEY,
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+         created_by   TEXT NOT NULL,
+         status       TEXT NOT NULL DEFAULT 'QUEUED',
+         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         started_at   TIMESTAMPTZ,
+         completed_at TIMESTAMPTZ,
+         progress     JSONB NOT NULL DEFAULT '{}',
+         error        TEXT,
+         worker_id    TEXT
+     )"""),
+    ("create_jobs_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_jobs_tenant ON jobs (tenant_id)"),
+    ("create_jobs_session_idx",
+     "CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs (session_id)"),
+    ("create_jobs_status_idx",
+     "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status)"),
+    ("create_chats",
+     """CREATE TABLE IF NOT EXISTS chats (
+         id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id       TEXT NOT NULL,
+         user_id         TEXT NOT NULL,
+         session_id      TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+         title           TEXT NOT NULL DEFAULT 'New Chat',
+         is_favorite     BOOLEAN NOT NULL DEFAULT FALSE,
+         data_sources    TEXT[] NOT NULL DEFAULT '{}',
+         last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         message_count   INT NOT NULL DEFAULT 0,
+         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_chats_tenant_user_idx",
+     "CREATE INDEX IF NOT EXISTS idx_chats_tenant_user_ts ON chats (tenant_id, user_id, last_message_at DESC)"),
+    ("create_chat_messages",
+     """CREATE TABLE IF NOT EXISTS chat_messages (
+         id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         chat_id         TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+         tenant_id       TEXT NOT NULL,
+         role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+         content         TEXT NOT NULL,
+         source          TEXT,
+         retrieved_count INT,
+         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_chat_messages_chat_idx",
+     "CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_created ON chat_messages (chat_id, created_at)"),
 ]
 
 

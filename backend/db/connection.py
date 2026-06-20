@@ -62,12 +62,21 @@ def _json(val: Any) -> psycopg2.extras.Json:
 
 
 def query(sql: str, params: tuple = ()) -> list[dict]:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            if cur.description:
-                return [dict(row) for row in cur.fetchall()]
-            return []
+    # Retry once on a dead connection — Supabase's pooler can silently drop a
+    # pooled connection server-side; the pool only discovers this when the
+    # connection is next used, so a single retry against a fresh connection
+    # is needed instead of surfacing a transient error to the caller.
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    if cur.description:
+                        return [dict(row) for row in cur.fetchall()]
+                    return []
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise
 
 
 def query_one(sql: str, params: tuple = ()) -> Optional[dict]:
@@ -76,6 +85,12 @@ def query_one(sql: str, params: tuple = ()) -> Optional[dict]:
 
 
 def execute(sql: str, params: tuple = ()) -> None:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+            return
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise

@@ -144,6 +144,8 @@ async def upload_document(
         raise HTTPException(400, f"Unsupported file type '.{ext}'. Allowed: {sorted(ALLOWED_TYPES)}")
 
     content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(400, "File is empty — nothing to index.")
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(413, f"File too large ({len(content)//1024//1024} MB). Max 50 MB.")
 

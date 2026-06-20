@@ -9,6 +9,32 @@ from uuid import uuid4
 
 
 @pytest.mark.integration
+class TestMigrations:
+    """
+    Regression guard for the schema-drift finding: jobs/chats/chat_messages
+    were used throughout the app but had no CREATE TABLE in migrations.py,
+    so a fresh deployment would 500 on first use of Forecast Studio training
+    or the AI Analyst chat.
+    """
+
+    def test_run_all_does_not_raise(self):
+        from backend.db.migrations import run_all
+        run_all()  # idempotent — must succeed even when tables already exist
+
+    def test_jobs_chats_chat_messages_tables_exist(self):
+        from backend.db.connection import query
+        rows = query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name IN ('jobs', 'chats', 'chat_messages')
+            """
+        )
+        found = {r["table_name"] for r in rows}
+        assert found == {"jobs", "chats", "chat_messages"}
+
+
+@pytest.mark.integration
 class TestConnectionPool:
     def test_query_returns_list(self):
         from backend.db.connection import query
