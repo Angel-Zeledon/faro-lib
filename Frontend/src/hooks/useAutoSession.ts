@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 
@@ -9,32 +9,51 @@ export interface AutoSessionResult {
   currentSession:    SessionInfo | undefined
   completedSessions: SessionInfo[]
   loading:           boolean
+  /** Set when the session list failed to load — distinct from "no sessions exist yet". */
+  error:             string | null
+  refresh:           () => void
 }
 
 export function useAutoSession(): AutoSessionResult {
   const [sessions,   setSessions]   = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId]  = useState('')
   const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
 
-  useEffect(() => {
+  // `load` is created once (stable identity, called only from the mount
+  // effect and manual refresh) — it must read the *current* sessionId, not
+  // the '' it closed over at creation time. Without this ref, every refresh()
+  // call (e.g. the "Reintentar" button after a transient fetch error) would
+  // silently overwrite a session the user had since picked manually, because
+  // the closure's `!sessionId` check would always see the original ''.
+  const sessionIdRef = useRef(sessionId)
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+
+  const load = useCallback(() => {
+    setLoading(true)
+    setError(null)
     getSessions()
       .then(list => {
         setSessions(list)
         const completed = list
           .filter(s => s.status === 'COMPLETED')
           .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-        if (completed.length && !sessionId) {
+        if (completed.length && !sessionIdRef.current) {
           setSessionId(completed[0].session_id)
         }
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'No se pudo cargar la lista de sesiones. Verifica tu conexión e intenta de nuevo.')
+      })
       .finally(() => setLoading(false))
-  }, [])  // eslint-disable-line
+  }, [])
+
+  useEffect(() => { load() }, [load])
 
   const currentSession    = sessions.find(s => s.session_id === sessionId)
   const completedSessions = sessions
     .filter(s => s.status === 'COMPLETED')
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 
-  return { sessionId, setSessionId, currentSession, completedSessions, loading }
+  return { sessionId, setSessionId, currentSession, completedSessions, loading, error, refresh: load }
 }
