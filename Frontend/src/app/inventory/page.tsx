@@ -5,11 +5,11 @@ import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
- listSuppliers,
+ listSuppliers, getDeadStock,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
- InventoryCalcExplanation, InventoryEvent, Supplier,
+ InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
@@ -17,7 +17,7 @@ import Spinner from '@/components/ui/Spinner'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
- X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck,
+ X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -47,21 +47,34 @@ function SignalBadge({ s }: { s: InventorySignal }) {
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
- const [show, setShow] = useState(false)
+ const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+
  return (
- <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4 }}
- onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+ <span
+ style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+ onMouseEnter={e => {
+ const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+ setPos({ x: rect.left + rect.width / 2, y: rect.top })
+ }}
+ onMouseLeave={() => setPos(null)}
+ >
  {children}
- {show && (
+ {pos && (
  <span style={{
- position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+ position: 'fixed',
+ left: pos.x, top: pos.y - 8,
+ transform: 'translate(-50%, -100%)',
  background: '#1e293b', color: '#e2e8f0', fontSize: 11, lineHeight: 1.55,
- padding: '8px 11px', borderRadius: 7, width: 230, zIndex: 200,
+ padding: '8px 11px', borderRadius: 7, width: 230, zIndex: 9999,
  border: '1px solid #334155', boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
  pointerEvents: 'none', whiteSpace: 'normal',
  }}>
  {text}
- <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #1e293b' }} />
+ <span style={{
+ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+ borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
+ borderTop: '5px solid #1e293b',
+ }} />
  </span>
  )}
  </span>
@@ -285,9 +298,9 @@ function EventsPanel({ events, onAdd, onDelete }: {
 }
 
 // ── Inline edit state ─────────────────────────────────────────────────────────
-interface EditState { stock_actual: string; lead_time_dias: string; costo_unitario: string; moq: string; proveedor: string; display_name: string }
+interface EditState { stock_actual: string; lead_time_dias: string; costo_unitario: string; moq: string; proveedor: string; display_name: string; service_level: string }
 function rowToEdit(item: InventoryStatusItem): EditState {
- return { stock_actual: String(item.stock_actual ?? ''), lead_time_dias: String(item.lead_time_dias ?? 15), costo_unitario: String(item.costo_unitario ?? ''), moq: String(item.moq ?? 1), proveedor: item.proveedor ?? '', display_name: item.display_name ?? '' }
+ return { stock_actual: String(item.stock_actual ?? ''), lead_time_dias: String(item.lead_time_dias ?? 15), costo_unitario: String(item.costo_unitario ?? ''), moq: String(item.moq ?? 1), proveedor: item.proveedor ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95) }
 }
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
@@ -323,15 +336,150 @@ function ProviderGroup({ name, items, onEdit }: { name: string; items: Inventory
 function fmt(n: number | null | undefined, d = 1) { if (n == null) return '—'; return n.toLocaleString(undefined, { maximumFractionDigits: d }) }
 function fmtCurrency(n: number | null | undefined) { if (n == null) return '—'; return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 }) }
 
+// ── Simulator helpers ─────────────────────────────────────────────────────────
+function simulateRecommendation(
+ stockActual: number,
+ demandaDiaria: number,
+ avgStd: number,
+ leadTime: number,
+ moq: number,
+ serviceLevel = 0.95,
+): number {
+ const Z_MAP: Record<number, number> = { 0.90: 1.282, 0.95: 1.645, 0.97: 1.881, 0.99: 2.326 }
+ const z = Z_MAP[serviceLevel] ?? 1.645
+ const demandaLT = demandaDiaria * leadTime
+ const safetyStock = z * avgStd * Math.sqrt(leadTime)
+ const raw = Math.max(0, demandaLT + safetyStock - stockActual)
+ if (moq > 0) return Math.ceil(raw / moq) * moq
+ return Math.round(raw)
+}
+
+function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
+ const exp = item.calc_explanation
+ if (!exp || !item.demanda_diaria || item.demanda_diaria <= 0) return null
+
+ const [ltDelta,    setLtDelta]    = useState(0)
+ const [demandMult, setDemandMult] = useState(100)
+ const [stockDelta, setStockDelta] = useState(0)
+
+ const simLeadTime = Math.max(1, (item.lead_time_dias ?? 15) + ltDelta)
+ const simDemand   = (item.demanda_diaria ?? 0) * demandMult / 100
+ const simStock    = Math.max(0, (item.stock_actual ?? 0) + stockDelta)
+
+ // Approximate avgStd from safety stock and original lead_time
+ // safety_stock = z * avgStd * sqrt(lead_time) → avgStd ≈ safety_stock / (z * sqrt(lead_time))
+ const origLT = item.lead_time_dias ?? 15
+ const origSS = exp.safety_stock ?? 0
+ const z      = 1.645
+ const avgStd = origLT > 0 ? origSS / (z * Math.sqrt(origLT)) : 0
+
+ const simRecommended = simulateRecommendation(simStock, simDemand, avgStd, simLeadTime, item.moq ?? 1)
+ const originalRec    = item.cantidad_recomendada ?? 0
+ const delta          = simRecommended - originalRec
+ const deltaColor     = delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.muted
+
+ const sliderS: React.CSSProperties = { width: '100%', cursor: 'pointer', accentColor: '#818cf8' }
+
+ return (
+  <div style={{
+   background: 'rgba(129,140,248,0.04)', border: '1px solid rgba(129,140,248,0.15)',
+   borderRadius: 8, padding: '16px 18px', marginTop: 8,
+  }}>
+   <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', marginBottom: 14,
+    textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+    Simulador de escenarios
+   </div>
+
+   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+    {/* Lead time slider */}
+    <div>
+     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
+      <span>Lead time del proveedor</span>
+      <span style={{ fontWeight: 700, color: ltDelta !== 0 ? '#f59e0b' : C.text }}>
+       {simLeadTime}d {ltDelta > 0 ? `(+${ltDelta})` : ltDelta < 0 ? `(${ltDelta})` : ''}
+      </span>
+     </div>
+     <input type="range" min={-10} max={30} value={ltDelta}
+      onChange={e => setLtDelta(Number(e.target.value))} style={sliderS} />
+     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
+      <span>-10d</span><span>+30d</span>
+     </div>
+    </div>
+
+    {/* Demand slider */}
+    <div>
+     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
+      <span>Variación en demanda</span>
+      <span style={{ fontWeight: 700, color: demandMult !== 100 ? '#f59e0b' : C.text }}>
+       {demandMult}% {demandMult !== 100 ? `(${simDemand.toFixed(1)} und/día)` : ''}
+      </span>
+     </div>
+     <input type="range" min={50} max={200} step={5} value={demandMult}
+      onChange={e => setDemandMult(Number(e.target.value))} style={sliderS} />
+     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
+      <span>-50%</span><span>+100%</span>
+     </div>
+    </div>
+
+    {/* Stock slider */}
+    <div>
+     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
+      <span>Stock adicional en bodega</span>
+      <span style={{ fontWeight: 700, color: stockDelta !== 0 ? '#f59e0b' : C.text }}>
+       {stockDelta > 0 ? `+${stockDelta}` : stockDelta} und
+      </span>
+     </div>
+     <input type="range" min={-(item.stock_actual ?? 0)} max={(item.stock_actual ?? 0) * 2}
+      step={Math.max(1, Math.floor((item.stock_actual ?? 50) / 10))}
+      value={stockDelta}
+      onChange={e => setStockDelta(Number(e.target.value))} style={sliderS} />
+     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
+      <span>-{item.stock_actual ?? 0}</span><span>+{(item.stock_actual ?? 0) * 2}</span>
+     </div>
+    </div>
+   </div>
+
+   {/* Result */}
+   <div style={{
+    marginTop: 16, padding: '12px 16px', borderRadius: 8,
+    background: 'var(--surface)', border: `1px solid ${C.border}`,
+    display: 'flex', alignItems: 'center', gap: 16,
+   }}>
+    <div>
+     <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>Recomendación original</div>
+     <div style={{ fontSize: 20, fontWeight: 800, color: C.muted }}>{originalRec.toLocaleString('es')} und</div>
+    </div>
+    <div style={{ fontSize: 20, color: C.dim }}>→</div>
+    <div>
+     <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>Con estos cambios</div>
+     <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
+      {simRecommended.toLocaleString('es')} und
+     </div>
+    </div>
+    {delta !== 0 && (
+     <div style={{ fontSize: 13, color: deltaColor, fontWeight: 600 }}>
+      {delta > 0 ? `+${delta.toLocaleString('es')} unidades más` : `${Math.abs(delta).toLocaleString('es')} unidades menos`}
+     </div>
+    )}
+    <button onClick={() => { setLtDelta(0); setDemandMult(100); setStockDelta(0) }}
+     style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', fontSize: 11,
+      color: C.dim, padding: '4px 10px', border: `1px solid ${C.border}`, borderRadius: 6 }}>
+     Resetear
+    </button>
+   </div>
+  </div>
+ )
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
- const { sessionId, setSessionId, currentSession, completedSessions } = useAutoSession()
+ const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number> } | null>(null)
  const [loading, setLoading] = useState(false)
  const [error, setError] = useState<string | null>(null)
  const [signalFilter, setSignalFilter] = useState<InventorySignal | ''>('')
  const [search, setSearch] = useState('')
- const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update'>(() =>
+ const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'dead'>(() =>
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
  const [expandedSku, setExpandedSku] = useState<string | null>(null)
@@ -348,6 +496,9 @@ export default function InventoryPage() {
  const [updatedSkus, setUpdatedSkus] = useState<Set<string>>(new Set())
  const [suppliers, setSuppliers] = useState<Supplier[]>([])
  const importRef = useRef<HTMLInputElement>(null)
+ const savingRef = useRef(false)
+ const [deadStock,   setDeadStock]   = useState<DeadStockResponse | null>(null)
+ const [loadingDead, setLoadingDead] = useState(false)
 
  useEffect(() => {
  listInventoryEvents().then(setEvents).catch(() => {})
@@ -357,12 +508,22 @@ export default function InventoryPage() {
  const load = useCallback(async (sid: string) => {
  if (!sid) return
  setLoading(true); setError(null)
- try { setData(await getInventoryStatus(sid) as any) }
+ try { setData(await getInventoryStatus(sid)) }
  catch (e: unknown) { setError(e instanceof Error ? e.message : 'Error cargando inventario') }
  finally { setLoading(false) }
  }, [])
 
  useEffect(() => { if (sessionId) load(sessionId) }, [sessionId, load])
+
+ // ── Dead stock load ────────────────────────────────────────────────────────
+ useEffect(() => {
+ if (viewMode !== 'dead' || !sessionId) return
+ setLoadingDead(true)
+ getDeadStock(sessionId)
+  .then(setDeadStock)
+  .catch((e: unknown) => { setError(e instanceof Error ? e.message : 'Error cargando inventario inmovilizado') })
+  .finally(() => setLoadingDead(false))
+ }, [viewMode, sessionId])
 
  // ── Update-draft initialization ────────────────────────────────────────────
  useEffect(() => {
@@ -444,12 +605,17 @@ export default function InventoryPage() {
  function cancelEdit() { setEditId(null); setEditState(null) }
 
  async function commitEdit(sku: string) {
- if (!editState) return; setSaving(true)
+ // Guard with a ref, not just the `saving` state: a fast double-click fires
+ // this handler twice before React re-renders the disabled button, and both
+ // calls would otherwise close over the same stale saving=false and both
+ // PUT to the backend.
+ if (!editState || savingRef.current) return
+ savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, stock_actual: parseFloat(editState.stock_actual) || 0, lead_time_dias: parseInt(editState.lead_time_dias) || 15, costo_unitario: editState.costo_unitario ? parseFloat(editState.costo_unitario) : undefined, moq: parseFloat(editState.moq) || 1, proveedor: editState.proveedor || undefined })
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, stock_actual: parseFloat(editState.stock_actual) || 0, lead_time_dias: parseInt(editState.lead_time_dias) || 15, costo_unitario: editState.costo_unitario ? parseFloat(editState.costo_unitario) : undefined, moq: parseFloat(editState.moq) || 1, proveedor: editState.proveedor || undefined, service_level: parseFloat(editState.service_level) || 0.95 })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Error guardando') }
- finally { setSaving(false) }
+ finally { savingRef.current = false; setSaving(false) }
  }
 
  async function handleDelete(sku: string) {
@@ -525,8 +691,9 @@ export default function InventoryPage() {
  ['simple', <Package size={13} />, 'Simple'],
  ['provider', <Layers size={13} />, 'Proveedor'],
  ['update', <PencilLine size={13} />, 'Actualizar stock'],
+ ['dead', <Package size={13} />, 'Inmovilizado'],
  ] as [string, React.ReactNode, string][]).map(([mode, icon, label]) => (
- <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
+ <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'dead')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
  {icon}{label}
  </button>
  ))}
@@ -624,6 +791,15 @@ export default function InventoryPage() {
 
  {loading ? (
  <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+ ) : sessionsError ? (
+ /* ── Session list failed to load ──────────────────────────── */
+ <div style={{ padding: '40px 32px', textAlign: 'center' }}>
+ <AlertTriangle size={32} color={C.red} style={{ margin: '0 auto 12px', opacity: 0.7 }} />
+ <div style={{ fontSize: 14, color: C.text, marginBottom: 16, maxWidth: 420, margin: '0 auto 16px' }}>{sessionsError}</div>
+ <button onClick={refreshSessions} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 8, background: C.indigo, color: '#fff', fontSize: 13, fontWeight: 600 }}>
+ <RefreshCw size={12} /> Reintentar
+ </button>
+ </div>
  ) : !sessionId ? (
  /* ── Onboarding empty state ───────────────────────────────── */
  <div style={{ padding: '40px 48px', maxWidth: 520, margin: '0 auto', textAlign: 'center' }}>
@@ -796,6 +972,113 @@ export default function InventoryPage() {
  ))}
  </div>
 
+ ) : viewMode === 'dead' ? (
+ /* ── Inventario inmovilizado ──────────────────────────────── */
+ <div style={{ padding: 16 }}>
+  {loadingDead ? (
+   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !deadStock ? (
+   <div style={{ padding: 48, textAlign: 'center', color: C.dim, fontSize: 13 }}>
+    Selecciona una sesión para ver el inventario inmovilizado.
+   </div>
+  ) : deadStock.sku_count === 0 ? (
+   <div style={{ padding: '40px 0', textAlign: 'center' }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.green, marginBottom: 8 }}>
+     Sin inventario inmovilizado detectado
+    </div>
+    <div style={{ fontSize: 13, color: C.dim }}>
+     No encontramos productos con más de 30 días sin movimiento significativo.
+    </div>
+   </div>
+  ) : (
+   <>
+    {/* Summary bar */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
+     {[
+      { label: 'SKUs inmovilizados', value: deadStock.sku_count, color: C.amber },
+      { label: 'Capital atrapado',
+       value: deadStock.total_capital_trapped >= 1_000_000
+        ? `$${(deadStock.total_capital_trapped / 1_000_000).toFixed(1)}M`
+        : `$${(deadStock.total_capital_trapped / 1_000).toFixed(0)}K`,
+       color: C.red },
+      { label: 'Costo de bodegaje/mes',
+       value: `$${(deadStock.total_holding_cost_monthly / 1_000).toFixed(0)}K`,
+       color: C.amber },
+     ].map(({ label, value, color }) => (
+      <div key={label} style={{
+       background: C.surface, border: `1px solid ${C.border}`,
+       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${color}`,
+      }}>
+       <div style={{ fontSize: 20, fontWeight: 800, color }}>{value}</div>
+       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{label}</div>
+      </div>
+     ))}
+    </div>
+
+    {/* Items table */}
+    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+       <tr style={{ background: C.card }}>
+        {['Producto', 'Días parado', 'Stock', 'Capital atrapado', 'Costo/mes', 'Categoría', 'Acción sugerida'].map(h => (
+         <th key={h} style={{
+          padding: '9px 12px', textAlign: 'left',
+          color: C.dim, fontWeight: 600, fontSize: 10,
+          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
+          letterSpacing: '0.06em',
+         }}>{h}</th>
+        ))}
+       </tr>
+      </thead>
+      <tbody>
+       {deadStock.items.map((item, i: number) => (
+        <tr key={item.sku} style={{
+         background: i % 2 === 0 ? C.surface : C.card,
+         borderBottom: `1px solid ${C.border}`,
+        }}>
+         <td style={{ padding: '10px 12px' }}>
+          <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
+          <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
+          {item.proveedor && <div style={{ fontSize: 10, color: C.muted }}>{item.proveedor}</div>}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.red, fontWeight: 700 }}>
+          {item.days_without_movement}d
+         </td>
+         <td style={{ padding: '10px 12px', color: C.text }}>
+          {item.stock_actual?.toLocaleString()}
+         </td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: C.red }}>
+          {item.capital_trapped >= 1_000_000
+           ? `$${(item.capital_trapped / 1_000_000).toFixed(1)}M`
+           : `$${(item.capital_trapped / 1_000).toFixed(0)}K`}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.amber, fontSize: 11 }}>
+          ${(item.holding_cost_monthly / 1_000).toFixed(0)}K/mes
+         </td>
+         <td style={{ padding: '10px 12px' }}>
+          <span style={{
+           fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+           background: item.abc === 'A' ? 'rgba(34,197,94,0.1)' : item.abc === 'B' ? 'rgba(245,158,11,0.1)' : 'rgba(100,116,139,0.1)',
+           color: item.abc === 'A' ? '#22c55e' : item.abc === 'B' ? '#f59e0b' : '#64748b',
+          }}>{item.abc}</span>
+         </td>
+         <td style={{ padding: '10px 12px', fontSize: 11, color: C.muted }}>
+          {item.action_suggested}
+         </td>
+        </tr>
+       ))}
+      </tbody>
+     </table>
+    </div>
+
+    <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>
+     Productos con menos del 20% de la depleción esperada en los últimos 30 días.
+     El costo de bodegaje se estima al 25% anual del valor del inventario.
+    </div>
+   </>
+  )}
+ </div>
+
  ) : (
  /* ── Tabla completa ───────────────────────────────────────── */
  <div style={{ overflowX: 'auto' }}>
@@ -839,30 +1122,16 @@ export default function InventoryPage() {
  </td>
  <td colSpan={2} style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}`, color: C.dim, fontSize: 11 }}>Se recalcula al guardar</td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
- {(() => {
- const matched = suppliers.find(s => s.name.toLowerCase() === (editState.proveedor ?? '').trim().toLowerCase())
- return (
- <>
- <input
- style={{ ...inputS, width: 120 }}
- placeholder="Proveedor"
+ <select
+ style={{ ...inputS, width: 160 }}
  value={editState.proveedor}
  onChange={e => setEditState(s => s ? { ...s, proveedor: e.target.value } : s)}
- list="suppliers-datalist"
- />
- <datalist id="suppliers-datalist">
- {suppliers.map(s => <option key={s.id} value={s.name} />)}
- </datalist>
- {editState.proveedor && (
- <div style={{ fontSize: 10, marginTop: 2, color: matched ? C.green : C.amber }}>
- {matched
- ? `Vinculado a ${matched.name}`
- : 'Escribe el nombre exacto de un proveedor o créalo en Proveedores'}
- </div>
- )}
- </>
- )
- })()}
+ >
+ <option value="">— Sin proveedor —</option>
+ {suppliers.map(s => (
+ <option key={s.id} value={s.name}>{s.name}</option>
+ ))}
+ </select>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <input style={{ ...inputS, width: 60 }} type="number" min={1} max={365} value={editState.lead_time_dias} onChange={e => setEditState(s => s ? { ...s, lead_time_dias: e.target.value } : s)} />
@@ -879,6 +1148,14 @@ export default function InventoryPage() {
  <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder="0" value={editState.costo_unitario} onChange={e => setEditState(s => s ? { ...s, costo_unitario: e.target.value } : s)} />
  </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>Precio proveedor / und</div>
+ <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>Nivel de servicio (0-1)</div>
+ <select style={{ ...inputS, width: 90 }} value={editState.service_level}
+ onChange={e => setEditState(s => s ? { ...s, service_level: e.target.value } : s)}>
+ <option value="0.90">90% — Bajo</option>
+ <option value="0.95">95% — Normal</option>
+ <option value="0.97">97% — Alto</option>
+ <option value="0.99">99% — Máximo</option>
+ </select>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', gap: 4 }}>
@@ -945,6 +1222,14 @@ export default function InventoryPage() {
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11, color: C.muted }}>{item.valor_inventario != null ? fmtCurrency(item.valor_inventario) : '—'}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', gap: 4 }}>
+ {item.calc_explanation && item.demanda_diaria && (
+  <button onClick={() => setExpandedSku(isExpanded ? null : item.sku)} title="Simular escenarios"
+   style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: isExpanded ? C.indigo : C.dim, display: 'flex' }}
+   onMouseEnter={e => (e.currentTarget.style.color = C.indigo)}
+   onMouseLeave={e => (e.currentTarget.style.color = isExpanded ? C.indigo : C.dim)}>
+   <Sliders size={13} />
+  </button>
+ )}
  <button onClick={() => startEdit(item)} title="Editar" style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: C.dim, display: 'flex' }} onMouseEnter={e => (e.currentTarget.style.color = C.indigo)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}><Edit2 size={13} /></button>
  {item.has_stock && <button onClick={() => handleDelete(item.sku)} title="Eliminar" style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: C.dim, display: 'flex' }} onMouseEnter={e => (e.currentTarget.style.color = C.red)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}><Trash2 size={13} /></button>}
  </div>
@@ -955,6 +1240,7 @@ export default function InventoryPage() {
  <tr key={`${item.sku}-exp`}>
  <td colSpan={13} style={{ padding: '0 16px 12px 48px', borderBottom: `1px solid ${C.border}`, background: crit ? 'rgba(239,68,68,0.01)' : rowBg }}>
  <CalcExplainer exp={item.calc_explanation} moq={item.moq} />
+ <SimulatorPanel item={item} />
  </td>
  </tr>
  )}
