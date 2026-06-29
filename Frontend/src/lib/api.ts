@@ -219,34 +219,19 @@ export const getJobLogs = (job_id: string) =>
 
 // ── Results ───────────────────────────────────────────────────────────────────
 export const getMetrics = (id: string) =>
-  request<MetricsResponse>('GET', `/sessions/${id}/metrics`).then((data) => {
-    console.log('getMetrics:', data)
-    return data
-  })
+  request<MetricsResponse>('GET', `/sessions/${id}/metrics`)
 
 export const getInventory = (id: string) =>
-  request<InventoryResponse>('GET', `/sessions/${id}/inventory`).then((data) => {
-    console.log('getInventory:', data)
-    return data
-  })
+  request<InventoryResponse>('GET', `/sessions/${id}/inventory`)
 
 export const getResults = (id: string) =>
-  request<Record<string, unknown>>('GET', `/sessions/${id}/results`).then((data) => {
-    console.log('getResults:', data)
-    return data
-  })
+  request<Record<string, unknown>>('GET', `/sessions/${id}/results`)
 
 export const getRoutingPlan = (id: string) =>
-  request<RoutingPlan>('GET', `/sessions/${id}/routing`).then((data) => {
-    console.log('getRoutingPlan:', data)
-    return data
-  })
+  request<RoutingPlan>('GET', `/sessions/${id}/routing`)
 
 export const exportConfig = (id: string) =>
-  request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`).then((data) => {
-    console.log('exportConfig:', data)
-    return data
-  })
+  request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`)
 // ── Forecast Series (ECharts) ─────────────────────────────────────────────────
 export const getForecastSeries = (sessionId: string, sku: string, model?: string) =>
   request<ForecastSeries>(
