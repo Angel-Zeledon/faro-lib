@@ -84,10 +84,26 @@ export interface DataProfile {
 }
 
 export interface ColumnOptions {
-  date_candidates:   string[]
-  target_candidates: string[]
-  group_candidates:  string[]
-  exog_candidates:   string[]
+  date_candidates:        string[]
+  target_candidates:      string[]
+  group_candidates:       string[]
+  exog_candidates:        string[]
+  canonical_suggestions?: CanonicalMapping   // NEW
+}
+
+// ── Canonical mapping (14-field schema) ──────────────────────────────────────
+export interface CanonicalFieldSuggestion {
+  top:             string | null
+  candidates:      string[]
+  confidence:      number
+  can_use_default: boolean
+}
+
+export type CanonicalMapping = Record<string, CanonicalFieldSuggestion>
+
+export interface CanonicalColumnsBody {
+  canonical_mapping:  Record<string, string | null>
+  defaults_override?: Record<string, unknown>
 }
 
 export interface QualityReport {
@@ -104,10 +120,11 @@ export interface QualityReport {
 
 // ── Inspection result (from GET /sessions/{id}/inspect) ───────────────────────
 export interface InspectionResult {
-  profile:        DataProfile
-  column_options: ColumnOptions
-  config_schema:  ConfigSchema | null
-  inspected_at:   string
+  profile:                DataProfile
+  column_options:         ColumnOptions
+  canonical_suggestions?: CanonicalMapping   // NEW (also nested in column_options)
+  config_schema:          ConfigSchema | null
+  inspected_at:           string
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -211,6 +228,7 @@ export interface MetricRow {
   model:      string
   type:       string
   sku:        string | null
+  store:      string | null   // NEW
   mae:        number | null
   rmse:       number | null
   wape:       number | null
@@ -539,6 +557,7 @@ export interface InventoryStock {
   proveedor:      string | null
   notas:          string | null
   product_type?:  string
+  service_level?: number
   updated_at?:    string
 }
 
@@ -644,8 +663,17 @@ export interface ProductionPlan {
   raw_material_summary: RawMaterialSummary[]
 }
 
+// A product that was uploaded but left out of the forecast, with the reason.
+export interface ExcludedSku {
+  sku:     string
+  n_rows:  number
+  reason:  'insufficient_history' | 'no_forecast' | string
+  detail:  string
+}
+
 export interface InventoryStatusResponse {
   items: InventoryStatusItem[]
+  excluded_skus?: ExcludedSku[]
   summary: {
     total_skus:               number
     pedir_ya:                 number
@@ -675,6 +703,11 @@ export interface InventoryROISummary {
   total_skus_protected:      number
   total_units_ordered:       number
   estimated_value_protected: number
+  // Adoption metrics (decision tracking)
+  total_suggested:           number
+  total_approved:            number
+  total_rejected:            number
+  adoption_rate:             number | null
   first_po_at:               string | null
   last_po_at:                string | null
   active_days:               number
@@ -691,6 +724,23 @@ export interface POLogEntry {
   total_value:       number | null
   skus_pedir_ya:     number
   skus_pedir_pronto: number
+  // Adoption metrics (present once a cart with decisions is logged)
+  suggested_count?:  number
+  approved_count?:   number
+  modified_count?:   number
+  rejected_count?:   number
+}
+
+// A single buyer decision sent to /inventory/log-po when a PO is downloaded.
+export interface POLineDecision {
+  sku:                   string
+  display_name?:         string | null
+  proveedor?:            string | null
+  signal?:               string | null
+  cantidad_recomendada:  number
+  cantidad_final:        number
+  status:                'approved' | 'modified' | 'rejected'
+  costo_unitario?:       number | null
 }
 
 // ── Suppliers ─────────────────────────────────────────────────────────────────
@@ -748,6 +798,24 @@ export interface MorningBriefingKPIs {
   total_inventory_value: number
   capital_in_overstock:  number
   demand_alerts:         number
+  demand_spikes?:        number
+}
+
+// Proactive future-peak alert: a spike the forecast sees ahead, with the
+// latest date to order (peak_date − lead_time) so it's covered.
+export interface DemandSpike {
+  sku:             string
+  display_name:    string
+  proveedor:       string | null
+  baseline_diaria: number
+  peak_value:      number
+  uplift_pct:      number
+  peak_date:       string | null
+  days_until_peak: number
+  lead_time_dias:  number
+  order_by_date:   string | null
+  already_late:    boolean
+  signal:          string | null
 }
 
 export interface MorningBriefing {
@@ -759,6 +827,8 @@ export interface MorningBriefing {
   warnings:         InventoryStatusItem[]
   overstocked:      InventoryStatusItem[]
   demand_changes:   (InventoryStatusItem & { demand_trend_pct: number })[]
+  demand_spikes?:   DemandSpike[]
+  excluded_skus?:   ExcludedSku[]
   recommendations:  BriefingRecommendation[]
   kpis:             MorningBriefingKPIs
 }
@@ -808,4 +878,29 @@ export interface ForecastExplanation {
 export interface SuggestedQuestion {
   text: string
   icon: string
+}
+
+// ── Dead Stock / Inventario Inmovilizado ──────────────────────────────────────
+export interface DeadStockItem {
+  sku:                    string
+  display_name:           string | null
+  proveedor:              string | null
+  stock_actual:           number
+  costo_unitario:         number | null
+  capital_trapped:        number
+  holding_cost_monthly:   number
+  days_without_movement:  number
+  depletion_pct:          number
+  avg_daily_demand:       number
+  signal:                 string
+  abc:                    string
+  action_suggested:       string
+}
+
+export interface DeadStockResponse {
+  items:                        DeadStockItem[]
+  total_capital_trapped:        number
+  total_holding_cost_monthly:   number
+  sku_count:                    number
+  min_days_static:              number
 }
