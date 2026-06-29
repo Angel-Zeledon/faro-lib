@@ -15,8 +15,9 @@ import copy
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from forecasting_core.data.canonical import series_key
 from forecasting_core.evaluation.metrics import evaluate_all
 
 log = logging.getLogger(__name__)
@@ -69,47 +70,84 @@ class Trainer:
         self,
         df: pd.DataFrame,
         models: dict,
-        group_col: str,
-        target: str,
-        dt: str,
+        group_cols: Optional[List[str]] = None,
+        target: str = "",
+        dt: str = "",
+        group_col: Optional[str] = None,   # deprecated alias — ignored if group_cols given
     ) -> Dict[str, dict]:
         """
-        Train models per SKU.
+        Train models per SKU / (SKU, store) group.
 
         Args:
-            df:        Feature-engineered DataFrame.
-            models:    {model_name: sklearn_model}
-            group_col: Column name of the SKU/group identifier.
-            target:    Column name of the target variable.
-            dt:        Column name of the date.
+            df:         Feature-engineered DataFrame.
+            models:     {model_name: sklearn_model}
+            group_cols: Column names of the group identifier(s).
+                        When len == 1 → sku only, store defaults to "Tienda única".
+                        When len == 2 → (sku, store).
+            target:     Column name of the target variable.
+            dt:         Column name of the date.
+            group_col:  Deprecated single-column alias; normalised to group_cols=[group_col].
 
         Returns:
-            {f"{model}_{sku}": {mae, rmse, wape, bias, sku, model, n, validation}}
+            {f"{model}_{series_key(sku, store)}": {mae, rmse, wape, bias, sku, store, model, n, validation}}
         """
-        has_group = group_col and group_col in df.columns
-        exclude = {dt, target, group_col} if has_group else {dt, target}
+        # Normalise: accept str (legacy positional), deprecated single-col kwarg, or list
+        if isinstance(group_cols, str):
+            # Legacy: positional string call, e.g. train(df, m, "sku", target, dt)
+            group_cols = [group_cols] if group_cols else []
+        elif group_cols is None and group_col:
+            group_cols = [group_col]
+        elif group_cols is None:
+            group_cols = []
+
+        has_group = bool(group_cols) and all(c in df.columns for c in group_cols)
+        exclude = {dt, target} | set(group_cols)
         trainable = {n: m for n, m in models.items() if hasattr(m, "fit")}
         results = {}
 
-        groups = df.groupby(group_col) if has_group else [("__all__", df)]
-        for sku, g in groups:
+        if has_group:
+            if len(group_cols) == 1:
+                groups = df.groupby(group_cols[0])
+            else:
+                groups = df.groupby(group_cols)
+        else:
+            groups = [("__all__", df)]
+
+        for group_val, g in groups:
+            if isinstance(group_val, tuple):
+                sku_val   = str(group_val[0]) if len(group_val) > 0 else "__all__"
+                store_val = str(group_val[1]) if len(group_val) > 1 else "Tienda única"
+            elif isinstance(group_val, str):
+                sku_val   = group_val
+                store_val = "Tienda única"
+            else:
+                sku_val   = str(group_val)
+                store_val = "Tienda única"
+
             g = g.sort_values(dt).reset_index(drop=True)
             X = g.drop(columns=[c for c in exclude if c in g.columns])
+            non_numeric = X.select_dtypes(exclude=["number", "bool"]).columns.tolist()
+            if non_numeric:
+                log.warning(
+                    f"SKU {sku_val} | dropping non-numeric feature column(s) {non_numeric} "
+                    "— not selected as group_col/target/dt but unsuitable as a raw ML feature"
+                )
+                X = X.drop(columns=non_numeric)
             y = g[target].astype(float)
 
             if self.walk_forward:
-                res = self._wfv(X, y, trainable, str(sku))
+                res = self._wfv(X, y, trainable, sku_val, store_val)
             else:
-                res = self._simple(X, y, trainable, str(sku))
+                res = self._simple(X, y, trainable, sku_val, store_val)
             results.update(res)
 
         return results
 
-    def _wfv(self, X, y, models, sku):
+    def _wfv(self, X, y, models, sku_val, store_val="Tienda única"):
         splitter = WalkForwardSplitter(self.wfv_splits, self.train_ratio / 2)
         splits = splitter.split(len(X))
         if not splits:
-            return self._simple(X, y, models, sku)
+            return self._simple(X, y, models, sku_val, store_val)
 
         fold_metrics  = {n: [] for n in models}
         oof_residuals = {n: [] for n in models}   # validation-set residuals per fold
@@ -124,13 +162,14 @@ class Trainer:
                         (y.iloc[te_idx].values - preds).tolist()
                     )
                 except Exception as e:
-                    log.warning(f"SKU {sku} | {name} | fold error: {e}")
+                    log.warning(f"SKU {sku_val} | {name} | fold error: {e}")
 
         results = {}
         cut = int(len(X) * self.train_ratio)
         feature_names = list(X.columns)
         train_X = X.iloc[:cut] if cut < len(X) else X
         train_y = y.iloc[:cut] if cut < len(y) else y
+        sk = series_key(sku_val, store_val)
 
         for name, folds in fold_metrics.items():
             if not folds:
@@ -157,10 +196,10 @@ class Trainer:
                 from forecasting_core.explainability import compute_shap
                 shap_importance = compute_shap(final, train_X)
             except Exception as e:
-                log.warning(f"SKU {sku} | {name} | final fit failed: {e}")
+                log.warning(f"SKU {sku_val} | {name} | final fit failed: {e}")
 
-            results[f"{name}_{sku}"] = {
-                **avg, "sku": sku, "model": name, "n": len(X),
+            results[f"{name}_{sk}"] = {
+                **avg, "sku": sku_val, "store": store_val, "model": name, "n": len(X),
                 "n_folds": len(folds), "validation": "wfv",
                 "fitted_model": fitted_model,
                 "feature_names": feature_names,
@@ -170,13 +209,14 @@ class Trainer:
             }
         return results
 
-    def _simple(self, X, y, models, sku):
+    def _simple(self, X, y, models, sku_val, store_val="Tienda única"):
         cut = int(len(X) * self.train_ratio)
         if cut < 2 or cut >= len(X):
             return {}
         results = {}
         feature_names = list(X.columns)
         train_X, train_y = X.iloc[:cut], y.iloc[:cut]
+        sk = series_key(sku_val, store_val)
 
         for name, model in models.items():
             try:
@@ -188,8 +228,8 @@ class Trainer:
                 residuals = y.iloc[cut:].values - preds   # validation-set (OOF) residuals
                 from forecasting_core.explainability import compute_shap
                 shap_importance = compute_shap(copy.deepcopy(final), train_X)
-                results[f"{name}_{sku}"] = {
-                    **metrics, "sku": sku, "model": name, "n": len(X),
+                results[f"{name}_{sk}"] = {
+                    **metrics, "sku": sku_val, "store": store_val, "model": name, "n": len(X),
                     "validation": "simple",
                     "fitted_model": copy.deepcopy(final),
                     "feature_names": feature_names,
@@ -198,7 +238,7 @@ class Trainer:
                     "shap_importance": shap_importance,
                 }
             except Exception as e:
-                log.warning(f"SKU {sku} | {name} | error: {e}")
+                log.warning(f"SKU {sku_val} | {name} | error: {e}")
         return results
 
     # ------------------------------------------------------------------
