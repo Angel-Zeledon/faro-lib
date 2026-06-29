@@ -102,6 +102,7 @@ class DataProfiler:
         """
         sample = df.head(self.MAX_SAMPLE)
         date_cands, target_cands, group_cands, exog_cands = [], [], [], []
+        single_valued_cands: list = []  # fallback for single-product catalogues
 
         for col in df.columns:
             s = sample[col]
@@ -118,6 +119,26 @@ class DataProfiler:
                 n_u = s.nunique()
                 if 2 <= n_u <= len(s) * 0.5:
                     group_cands.append(col)
+                elif n_u == 1:
+                    # A single-product file: the SKU/product column has just one
+                    # value. Excluding it forces training into the "__all__"
+                    # single-series mode, which DROPS the product identity — the
+                    # forecast and inventory can then never be matched back to
+                    # that SKU (it shows up as "Serie única" and any stock entered
+                    # for the real SKU stays SIN_DATOS forever). Keep it as a
+                    # fallback so a 1-SKU upload still trains per-SKU.
+                    single_valued_cands.append(col)
+
+        # Only fall back to single-valued columns when there is NO real
+        # multi-valued grouping column — so multi-SKU files are unaffected.
+        if not group_cands and single_valued_cands:
+            def _sku_score(name: str) -> int:
+                n = str(name).lower()
+                return 0 if any(k in n for k in (
+                    "sku", "product", "producto", "item", "codigo", "código",
+                    "code", "ref", "id",
+                )) else 1
+            group_cands = sorted(single_valued_cands, key=_sku_score)
 
         return {
             "date_candidates":   date_cands,
@@ -125,6 +146,106 @@ class DataProfiler:
             "group_candidates":  group_cands,
             "exog_candidates":   exog_cands,
         }
+
+    # ------------------------------------------------------------------
+    # Canonical field mapping
+    # ------------------------------------------------------------------
+
+    # Alias lists for each canonical field — ordered by match strength.
+    # First alias in each list is the highest-priority match.
+    _CANONICAL_ALIASES: dict = {
+        "sku":           ["sku", "producto", "product", "articulo", "item",
+                          "codigo", "code", "referencia", "ref", "id"],
+        "date":          ["fecha", "date", "dt", "timestamp", "periodo", "mes", "semana"],
+        "demand":        ["demanda", "demand", "ventas", "sales", "cantidad",
+                          "qty", "units", "unidades", "pedidos"],
+        "store":         ["tienda", "store", "sucursal", "punto_venta", "pdv",
+                          "local", "canal", "negocio"],
+        "region":        ["region", "zona", "area", "territory", "ciudad", "city"],
+        "inventory":     ["inventario", "inventory", "stock", "existencias",
+                          "disponible", "on_hand"],
+        "lead_time":     ["lead_time", "leadtime", "tiempo_entrega",
+                          "reposicion", "lt", "plazo"],
+        "price":         ["precio", "price", "precio_venta", "pvp", "selling_price"],
+        "cost":          ["costo", "cost", "precio_costo", "cog", "unit_cost"],
+        "regular_price": ["precio_regular", "regular_price", "precio_base",
+                          "precio_lista", "list_price"],
+        "promo_price":   ["precio_promo", "promo_price", "precio_promocional",
+                          "promotional_price"],
+        "promo":         ["promocion", "promo", "oferta", "promotion",
+                          "is_promo", "en_promo"],
+        "promo_type":    ["tipo_promo", "promo_type", "tipo_oferta",
+                          "tipo_promocion", "promotion_type"],
+        "discount":      ["descuento", "discount", "pct_descuento",
+                          "descuento_pct", "disc_pct"],
+    }
+
+    _REQUIRED_CANONICAL: frozenset = frozenset({"sku", "date", "demand"})
+
+    def get_canonical_mapping(self, df: pd.DataFrame) -> dict:
+        """
+        Suggest which source column maps to each of the 14 canonical fields.
+
+        Matching strategy:
+          - Exact alias match:    confidence = 1.0 (decays slightly by alias rank)
+          - Substring alias match: confidence = 0.6 (decays slightly by alias rank)
+          - Type-compatibility bonus applied after name match
+          - No match:             confidence = 0.0
+
+        Returns:
+            {
+              canonical_field: {
+                "top":             str | None,  # best candidate column name
+                "candidates":      list[str],   # all matches, ranked best-first
+                "confidence":      float,       # 0.0–1.0
+                "can_use_default": bool,        # True for optional (non-required) fields
+              }
+            }
+        """
+        col_names_lower = {c: c.lower().replace(" ", "_") for c in df.columns}
+        result: dict = {}
+
+        for field_name, aliases in self._CANONICAL_ALIASES.items():
+            candidates: list = []  # list of (score, col)
+
+            for col, col_lower in col_names_lower.items():
+                score = 0.0
+                for rank, alias in enumerate(aliases):
+                    if col_lower == alias:
+                        score = 1.0 - rank * 0.03   # exact match; decays by alias rank
+                        break
+                    if alias in col_lower or col_lower in alias:
+                        score = max(score, 0.6 - rank * 0.02)
+
+                # Type-compatibility bonus
+                if score > 0:
+                    if field_name == "date" and self._is_date(df[col]):
+                        score = min(1.0, score + 0.2)
+                    elif field_name in (
+                        "demand", "inventory", "price", "cost",
+                        "regular_price", "promo_price", "discount", "lead_time",
+                    ):
+                        if pd.api.types.is_numeric_dtype(df[col]):
+                            score = min(1.0, score + 0.1)
+                    elif field_name == "promo":
+                        if df[col].dropna().nunique() <= 2:
+                            score = min(1.0, score + 0.15)
+
+                if score > 0:
+                    candidates.append((score, col))
+
+            candidates.sort(key=lambda x: -x[0])
+            top_score = candidates[0][0] if candidates else 0.0
+            top_col   = candidates[0][1] if candidates else None
+
+            result[field_name] = {
+                "top":             top_col,
+                "candidates":      [c for _, c in candidates],
+                "confidence":      round(top_score, 2),
+                "can_use_default": field_name not in self._REQUIRED_CANONICAL,
+            }
+
+        return result
 
     # ------------------------------------------------------------------
     # Data-quality checks
@@ -441,7 +562,10 @@ class DataProfiler:
     # ------------------------------------------------------------------
 
     def _profile_column(self, name: str, series: pd.Series) -> dict:
-        null_pct = round(series.isna().mean() * 100, 2)
+        # series.isna().mean() is NaN for a zero-row column (header-only file),
+        # and Starlette's JSONResponse rejects NaN floats outright (allow_nan=False),
+        # turning an empty-file upload into an opaque 500 instead of a clean response.
+        null_pct = round(series.isna().mean() * 100, 2) if len(series) > 0 else 0.0
         n_unique = series.nunique()
         sample_vals = series.dropna().head(3).tolist()
 
@@ -493,10 +617,42 @@ class DataProfiler:
         warnings.append("No date column detected automatically")
         return None
 
+    # Column-name substrings that strongly imply a SKU/group identifier, even when the
+    # values are low-cardinality numeric codes that would otherwise fail the cardinality
+    # heuristic below (e.g. two SKUs "1001"/"1002" only have n_unique=2).
+    _GROUP_NAME_HINTS = (
+        "sku", "product", "producto", "item", "articulo", "artículo",
+        "group", "grupo", "store", "tienda", "cliente", "customer",
+        "codigo", "código", "id",
+    )
+    # Column-name substrings that strongly imply the demand/target measure — excluded from
+    # competing as a group candidate so a target column never wins group detection by default.
+    _TARGET_NAME_HINTS = (
+        "target", "sales", "venta", "demanda", "demand", "qty",
+        "quantity", "cantidad", "units", "unidades",
+    )
+
     def _detect_group(self, df, dt_col, warnings) -> Optional[str]:
+        # Name-hint pre-pass: a column whose name clearly identifies it as a SKU/group
+        # column should win immediately, before the cardinality heuristic gets a chance
+        # to misread it (e.g. numeric SKU codes with very few distinct values).
+        for col in df.columns:
+            if col == dt_col:
+                continue
+            name = str(col).strip().lower()
+            if any(hint in name for hint in self._GROUP_NAME_HINTS):
+                n_u = df[col].nunique()
+                n = len(df)
+                if 1 <= n_u < n:
+                    return col
+
         best, best_score = None, -1
         for col in df.columns:
             if col == dt_col:
+                continue
+            name = str(col).strip().lower()
+            # Don't let an obvious target/measure column win group detection by default.
+            if any(hint in name for hint in self._TARGET_NAME_HINTS):
                 continue
             # Skip purely numeric columns — group/SKU columns are almost always categorical.
             # Numeric integer-ID columns may still qualify if they look like IDs (high cardinality).
@@ -524,6 +680,16 @@ class DataProfiler:
         if not numeric:
             warnings.append("No numeric target column detected")
             return None
+
+        # Name-hint pre-pass: a numeric column whose name clearly identifies it as the
+        # demand/sales measure should win immediately, before the variance heuristic below
+        # gets a chance to prefer an unrelated numeric column (e.g. a stock/inventory level,
+        # which tends to have higher variance than steady demand) just because of variance.
+        for col in numeric:
+            name = str(col).strip().lower()
+            if any(hint in name for hint in self._TARGET_NAME_HINTS):
+                return col
+
         scores = {}
         for col in numeric:
             s = df[col].dropna()
