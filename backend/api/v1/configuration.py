@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
@@ -28,9 +29,9 @@ from backend.datasets.service import get_dataset, update_stats
 from backend.db import session_store
 from backend.schemas.common import ok
 from backend.schemas.configuration import (
-    AttachDatasetRequest, BusinessConfigRequest, ColumnsConfigRequest,
-    FeaturesConfigRequest, ForecastConfigRequest, ModelsConfigRequest,
-    ValidationConfigRequest,
+    AttachDatasetRequest, BusinessConfigRequest, CanonicalColumnsRequest,
+    ColumnsConfigRequest, FeaturesConfigRequest, ForecastConfigRequest,
+    ModelsConfigRequest, ValidationConfigRequest,
 )
 from backend.sessions import service as session_svc
 
@@ -100,15 +101,20 @@ def inspect_dataset(
 
     try:
         from forecasting_core.engine import ForecastEngine
+        from forecasting_core.data.profiler import DataProfiler
         engine = ForecastEngine()
         engine.load_data(ds_meta["file_path"])
         profile = engine.get_profile()
         col_options = engine.get_column_options()
         config_schema = engine.get_config_schema()
 
+        profiler = DataProfiler()
+        canonical_suggestions = profiler.get_canonical_mapping(engine._df)
+
         inspection = {
             "profile": profile,
             "column_options": col_options,
+            "canonical_suggestions": canonical_suggestions,
             "config_schema": config_schema,
             "inspected_at": _now(),
         }
@@ -128,6 +134,22 @@ def inspect_dataset(
 
     except ImportError:
         raise HTTPException(status_code=503, detail="ML library not available")
+    except pd.errors.EmptyDataError:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"The file for session '{s['name']}' is empty or has no columns. "
+                "Upload a CSV file with at least a header row and data."
+            ),
+        )
+    except pd.errors.ParserError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Could not read the file for session '{s['name']}': invalid CSV format ({e}). "
+                "Make sure the file is not corrupted and try again."
+            ),
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inspection failed: {e}")
 
@@ -137,13 +159,72 @@ def inspect_dataset(
 @router.post("/sessions/{session_id}/configure/columns")
 def configure_columns(
     session_id: str,
-    body: ColumnsConfigRequest,
+    body: dict,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    s = _get_session_or_404(user.tenant_id, session_id)
-    config = {**body.model_dump(), "configured_at": _now(), "configured_by": user.user_id}
-    session_store.set_field(user.tenant_id, session_id, "columns_cfg", config)
+    from pydantic import ValidationError
 
+    # Determine request schema from body shape. Validate old-style schema eagerly
+    # (before the session lookup) so that missing required fields return 422 rather
+    # than 404 from the resource check below.
+    is_canonical = "canonical_mapping" in body
+    if not is_canonical:
+        try:
+            _req_pre = ColumnsConfigRequest(**body)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors())
+
+    s = _get_session_or_404(user.tenant_id, session_id)
+    inspection = session_store.get_field(user.tenant_id, session_id, "inspection") or {}
+    real_columns = [c["name"] for c in inspection.get("profile", {}).get("columns", [])]
+
+    if is_canonical:
+        req = CanonicalColumnsRequest(**body)
+        try:
+            req.validate_required(real_columns)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        config = {
+            **req.model_dump(),
+            "schema_version": "canonical_v1",
+            "configured_at":  _now(),
+            "configured_by":  user.user_id,
+        }
+    else:
+        req_old = _req_pre  # reuse validated instance from early check
+
+        def _require_column(value: Optional[str], field_label: str):
+            if not value or not value.strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"The '{field_label}' column is required and was not provided. "
+                        f"Select one of the available columns: {', '.join(real_columns)}."
+                    ),
+                )
+            if real_columns and value not in real_columns:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Column '{value}' does not exist in the uploaded file. "
+                        f"Available columns: {', '.join(real_columns)}."
+                    ),
+                )
+
+        _require_column(req_old.date_column, "Date")
+        _require_column(req_old.target_column, "Target")
+        if req_old.sku_column is not None and req_old.sku_column.strip():
+            if real_columns and req_old.sku_column not in real_columns:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Column '{req_old.sku_column}' (SKU) does not exist in the uploaded file. "
+                        f"Available columns: {', '.join(real_columns)}."
+                    ),
+                )
+        config = {**req_old.model_dump(), "configured_at": _now(), "configured_by": user.user_id}
+
+    session_store.set_field(user.tenant_id, session_id, "columns_cfg", config)
     if s["status"] in ("INSPECTED", "COLUMNS_CONFIGURED", "FEATURES_CONFIGURED",
                         "MODELS_CONFIGURED", "COMPLETED", "FAILED"):
         try:
@@ -291,7 +372,7 @@ def get_columns_alias(session_id: str, user: CurrentUser = Depends(get_current_u
 @router.post("/sessions/{session_id}/columns")
 def post_columns_alias(
     session_id: str,
-    body: ColumnsConfigRequest,
+    body: dict,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     return configure_columns(session_id, body, user)
@@ -546,13 +627,18 @@ def _get_dataset_analysis_impl(session_id: str, user):
 
     n_duplicates = int(df.duplicated().sum())
     memory_mb    = round(float(df.memory_usage(deep=True).sum() / 1024 / 1024), 2)
+    
+    col_cfg    = session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {}
+    recommended = inspection.get("profile", {}).get("recommended", {})
+
+    dt_col     = col_cfg.get("date_column")   or recommended.get("date")
+    target_col = col_cfg.get("target_column") or recommended.get("target")
+    group_col  = col_cfg.get("sku_column")    or recommended.get("group")
 
     # Temporal analysis
     profile      = inspection.get("profile", {})
     recommended  = profile.get("recommended", {})
-    dt_col       = recommended.get("date")
-    target_col   = recommended.get("target")
-    group_col    = recommended.get("group")
+    
 
     temporal: dict = {}
     if dt_col and dt_col in df.columns:
@@ -614,9 +700,10 @@ def _get_dataset_analysis_impl(session_id: str, user):
                 "min_series_len":     int(sizes.min()),
                 "max_series_len":     int(sizes.max()),
             }
+            print("SKU stats:", sku_stats)
         except Exception:
             pass
-
+    
     result = {
         "columns":     col_analysis,
         "n_rows":      int(len(df)),
@@ -628,6 +715,7 @@ def _get_dataset_analysis_impl(session_id: str, user):
         "sku_stats":   sku_stats,
         "analyzed_at": _now(),
     }
+    print("Dataset analysis result:", result)
 
     try:
         session_store.set_field(user.tenant_id, session_id, "inspection", {**inspection, "analysis": result})
