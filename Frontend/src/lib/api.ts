@@ -1,13 +1,13 @@
 import type {
   SessionInfo, DatasetMeta, DataProfile, ColumnOptions, InspectionResult,
-  QualityReport, ConfigSchema, ChooseColumnsBody,
+  QualityReport, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
   JobResponse, MetricsResponse, InventoryResponse, RoutingPlan,
   ForecastSeries, DataHealthReport,
   Chat, ChatMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
-  InventoryEvent, InventoryROISummary, POLogEntry,
-  Supplier, SkuSupplier, MorningBriefing,
+  InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
+  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse,
 } from './types'
 import { getToken, clearAuth } from './auth'
 
@@ -159,6 +159,9 @@ export const getColumns = (id: string) => inspectSession(id).then(r => r.column_
 export const chooseColumns = (id: string, body: ChooseColumnsBody) =>
   request<{ ok: boolean }>('POST', `/sessions/${id}/configure/columns`, body)
 
+export const chooseColumnsCanonical = (id: string, body: CanonicalColumnsBody) =>
+  request<{ ok: boolean }>('POST', `/sessions/${id}/configure/columns`, body)
+
 export const setFeatures = (id: string, body: Record<string, unknown>) =>
   request<{ ok: boolean }>('POST', `/sessions/${id}/configure/features`, body)
 
@@ -179,10 +182,10 @@ export const setValidationConfig = (id: string, body: Record<string, unknown>) =
   request<{ ok: boolean }>('POST', `/sessions/${id}/configure/validation`, body)
 
 export const setForecastConfig = (id: string, body: Record<string, unknown>) =>
-  request<{ ok: boolean }>('POST', `/sessions/${id}/configure/forecast`, body)
+  request<{ ok: boolean }>('POST', `/sessions/${id}/config/forecast`, body)
 
 export const setBusinessConfig = (id: string, body: Record<string, unknown>) =>
-  request<{ ok: boolean }>('POST', `/sessions/${id}/configure/business`, body)
+  request<{ ok: boolean }>('POST', `/sessions/${id}/config/business`, body)
 
 export const getConfigSchema = (id: string) =>
   request<ConfigSchema>('GET', `/sessions/${id}/config-schema`)
@@ -215,13 +218,35 @@ export const getJobLogs = (job_id: string) =>
   request<{ job_id: string; lines: string[]; total: number }>('GET', `/jobs/${job_id}/logs`)
 
 // ── Results ───────────────────────────────────────────────────────────────────
-export const getMetrics   = (id: string) => request<MetricsResponse>('GET', `/sessions/${id}/metrics`)
-export const getInventory = (id: string) => request<InventoryResponse>('GET', `/sessions/${id}/inventory`)
-export const getResults   = (id: string) => request<Record<string, unknown>>('GET', `/sessions/${id}/results`)
-export const getRoutingPlan = (id: string) => request<RoutingPlan>('GET', `/sessions/${id}/routing`)
-export const exportConfig = (id: string) =>
-  request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`)
+export const getMetrics = (id: string) =>
+  request<MetricsResponse>('GET', `/sessions/${id}/metrics`).then((data) => {
+    console.log('getMetrics:', data)
+    return data
+  })
 
+export const getInventory = (id: string) =>
+  request<InventoryResponse>('GET', `/sessions/${id}/inventory`).then((data) => {
+    console.log('getInventory:', data)
+    return data
+  })
+
+export const getResults = (id: string) =>
+  request<Record<string, unknown>>('GET', `/sessions/${id}/results`).then((data) => {
+    console.log('getResults:', data)
+    return data
+  })
+
+export const getRoutingPlan = (id: string) =>
+  request<RoutingPlan>('GET', `/sessions/${id}/routing`).then((data) => {
+    console.log('getRoutingPlan:', data)
+    return data
+  })
+
+export const exportConfig = (id: string) =>
+  request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`).then((data) => {
+    console.log('exportConfig:', data)
+    return data
+  })
 // ── Forecast Series (ECharts) ─────────────────────────────────────────────────
 export const getForecastSeries = (sessionId: string, sku: string, model?: string) =>
   request<ForecastSeries>(
@@ -586,8 +611,12 @@ export const getInventoryROI = () =>
 export const getPOHistory = (limit = 20) =>
   request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`)
 
-export const logPOGeneration = (sessionId: string) =>
-  request<POLogEntry>('POST', `/inventory/log-po?session_id=${sessionId}`)
+export const logPOGeneration = (sessionId: string, items?: POLineDecision[]) =>
+  request<POLogEntry>(
+    'POST',
+    `/inventory/log-po?session_id=${sessionId}`,
+    items && items.length ? { items } : undefined,
+  )
 
 export const getMorningBriefing = (sessionId: string, serviceLevel = 0.95) =>
   request<MorningBriefing>(
@@ -734,6 +763,10 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
     method: 'DELETE',
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
+
+// ── Dead Stock / Inventario Inmovilizado ──────────────────────────────────────
+export const getDeadStock = (sessionId: string, minDays = 30) =>
+  request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
 
 // ── AI Narrative Intelligence ─────────────────────────────────────────────────
 export const getMorningNarrative = (sessionId: string, profile = 'distributor') =>
