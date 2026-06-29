@@ -37,6 +37,36 @@ class ColumnsConfigRequest(BaseModel):
     outlier_config: OutlierConfig = OutlierConfig()
 
 
+class CanonicalColumnsRequest(BaseModel):
+    """New canonical 14-field column mapping request."""
+    canonical_mapping: Dict[str, Optional[str]] = {}
+    defaults_override: Dict[str, Any] = {}
+
+    def validate_required(self, available_columns: list[str]) -> None:
+        """
+        Raise HTTPException-compatible ValueError if required fields are missing
+        or mapped to columns that don't exist.
+        """
+        from forecasting_core.data.canonical import REQUIRED_FIELDS
+        errors: list[str] = []
+        for field in REQUIRED_FIELDS:
+            src = self.canonical_mapping.get(field)
+            if not src:
+                errors.append(f"'{field}' es requerido y no tiene columna mapeada.")
+            elif src not in available_columns:
+                errors.append(
+                    f"'{field}' → columna '{src}' no existe en el archivo. "
+                    f"Columnas disponibles: {', '.join(available_columns)}."
+                )
+        for field, src in self.canonical_mapping.items():
+            if src and src not in available_columns and field not in REQUIRED_FIELDS:
+                errors.append(
+                    f"'{field}' → columna '{src}' no existe en el archivo."
+                )
+        if errors:
+            raise ValueError("; ".join(errors))
+
+
 class FeaturesConfigRequest(BaseModel):
     lags: List[int] = [1, 7, 14, 28]
     rolling: List[int] = [7, 14, 28]
