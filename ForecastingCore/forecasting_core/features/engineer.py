@@ -14,17 +14,30 @@ Example:
 
 import numpy as np
 import pandas as pd
-from typing import Optional
+from typing import List, Optional
 
 
 class FeatureEngineer:
 
     def __init__(self, features_config, dt_col: str = "date",
-                 target: str = "sales", group: Optional[str] = None):
+                 target: str = "sales",
+                 group_cols: Optional[List[str]] = None,
+                 group: Optional[str] = None):   # kept for one-step backward compat
+        # Normalize: accept old single-string form during transition
+        if group_cols is None:
+            group_cols = [group] if group else []
+        self._group_cols = group_cols
         self.cfg    = features_config
         self.dt_col = dt_col
         self.target = target
-        self.group  = group
+
+    def _groupby(self, df: pd.DataFrame):
+        """Return a DataFrameGroupBy using the configured group columns, or None."""
+        if not self._group_cols:
+            return None
+        if len(self._group_cols) == 1:
+            return df.groupby(self._group_cols[0])
+        return df.groupby(self._group_cols)
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if self.target in df.columns and not pd.api.types.is_numeric_dtype(df[self.target]):
@@ -109,18 +122,19 @@ class FeatureEngineer:
         return df
 
     def _lags(self, df):
-        g = df.groupby(self.group) if self.group else None
+        g = self._groupby(df)
         for l in self.cfg.lags:
-            col = df[self.target] if g is None else g[self.target]
-            df[f"lag_{l}"] = col.shift(l) if g is None else g[self.target].shift(l)
+            df[f"lag_{l}"] = (g[self.target].shift(l) if g is not None
+                              else df[self.target].shift(l))
         for d in self.cfg.diffs:
-            col = df[self.target] if g is None else g[self.target]
-            df[f"diff_{d}"]      = col.diff(d)         if g is None else g[self.target].diff(d)
-            df[f"pct_change_{d}"] = col.pct_change(d)  if g is None else g[self.target].pct_change(d)
+            df[f"diff_{d}"]       = (g[self.target].diff(d)       if g is not None
+                                     else df[self.target].diff(d))
+            df[f"pct_change_{d}"] = (g[self.target].pct_change(d) if g is not None
+                                     else df[self.target].pct_change(d))
         return df
 
     def _rolling(self, df):
-        grp = df.groupby(self.group) if self.group else None
+        grp = self._groupby(df)
         for w in self.cfg.rolling:
             shifted = (df[self.target].shift(1) if grp is None
                        else grp[self.target].shift(1))
@@ -138,7 +152,7 @@ class FeatureEngineer:
         return df
 
     def _ewm(self, df):
-        grp = df.groupby(self.group) if self.group else None
+        grp = self._groupby(df)
         for span in self.cfg.ewm_spans:
             if grp is None:
                 df[f"ewm_{span}"] = df[self.target].shift(1).ewm(span=span).mean()
