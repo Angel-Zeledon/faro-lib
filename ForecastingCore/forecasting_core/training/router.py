@@ -77,6 +77,10 @@ class ModelRouter:
         """Return list of SKUs that should run a specific model."""
         return [sku for sku, models in routing.items() if model in models]
 
+    def series_for_model(self, routing: Dict[str, Set[str]], model: str) -> List[str]:
+        """Return list of series keys that should run a specific model."""
+        return [key for key, models in routing.items() if model in models]
+
     def summary(self, routing: Dict[str, Set[str]]) -> str:
         counter: Counter = Counter()
         for models in routing.values():

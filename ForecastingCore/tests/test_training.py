@@ -289,6 +289,18 @@ class TestModelRouter:
         skus = router.skus_for_model(routing, "lightgbm")
         assert isinstance(skus, list)
 
+    def test_series_for_model(self):
+        router = ModelRouter({"lightgbm": {}, "xgboost": {}}, enabled=True)
+        reports = {
+            "S1": self._make_report("S1", SERIES_STABLE),
+            "S2": self._make_report("S2", SERIES_STABLE),
+        }
+        routing = router.route(reports)
+        series_keys = router.series_for_model(routing, "lightgbm")
+        assert isinstance(series_keys, list)
+        # Currently series_for_model returns the same keys as routing (SKU strings)
+        # In future versions it will convert to series_key(sku, store) format
+
     def test_summary_string_non_empty(self):
         router = ModelRouter({"lightgbm": {}}, enabled=True)
         reports = {"A": self._make_report("A", SERIES_STABLE)}
