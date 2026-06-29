@@ -698,7 +698,10 @@ class ForecastEngine:
         """
         self._ensure_config()
         hp = hyperparams or {}
-        self._config.models = {m: hp.get(m, {}) for m in models}
+        self._config.models = {
+            m: {**self._config.models.get(m, {}), **hp.get(m, {})}
+            for m in models
+        }
         return self
 
     def set_config(self, config_dict: dict) -> "ForecastEngine":

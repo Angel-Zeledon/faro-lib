@@ -47,15 +47,17 @@ class PipelineStatus(Enum):
 @dataclass
 class PipelineResults:
     """All outputs from a full pipeline run."""
-    metrics_df:    Optional[pd.DataFrame] = None
-    forecast_df:   Optional[pd.DataFrame] = None
-    inventory_df:  Optional[pd.DataFrame] = None
-    quality_df:    Optional[pd.DataFrame] = None
-    run_id:        str = ""
-    config_hash:   str = ""
-    metadata:      dict = field(default_factory=dict)
-    fitted_models: dict = field(default_factory=dict)   # {key: ML trainer result}
-    stat_forecasts: dict = field(default_factory=dict)  # {model: {sku: {forecast, residuals}}}
+    metrics_df:           Optional[pd.DataFrame] = None
+    forecast_df:          Optional[pd.DataFrame] = None
+    forecast_by_sku_df:   Optional[pd.DataFrame] = None   # rollup: sum by SKU across stores
+    forecast_by_store_df: Optional[pd.DataFrame] = None   # rollup: sum by store across SKUs
+    inventory_df:         Optional[pd.DataFrame] = None
+    quality_df:           Optional[pd.DataFrame] = None
+    run_id:               str = ""
+    config_hash:          str = ""
+    metadata:             dict = field(default_factory=dict)
+    fitted_models:        dict = field(default_factory=dict)   # {key: ML trainer result}
+    stat_forecasts:       dict = field(default_factory=dict)   # {model: {sku: {forecast, residuals}}}
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +118,7 @@ def _config_as_validation_dict(cfg) -> dict:
     return {
         "dt":                 cfg.columns.date,
         "target":             cfg.columns.target,
-        "group_id":           cfg.columns.group,
+        "group_id":           cfg.columns.group_keys[0] if cfg.columns.group_keys else None,
         "data":               cfg.data.path,
         "models":             cfg.models,
         "train_ratio":        cfg.training.train_ratio,
@@ -217,6 +219,11 @@ class Pipeline:
             [c.group, c.date] if c.group else [c.date]
         ).reset_index(drop=True)
 
+        # Resolve group_cols: use configured group_keys filtered to columns
+        # actually present in the DataFrame so that multi-key configs (e.g.
+        # ["sku", "store"]) degrade gracefully on single-key datasets.
+        group_cols: List[str] = [k for k in c.group_keys if k in df.columns]
+
         _progress(10, "Validating data", PipelineStatus.VALIDATING)
 
         # 2. Validation layers (WARNING mode — issues logged, never abort)
@@ -234,7 +241,7 @@ class Pipeline:
         log.info("Pipeline: data quality check...")
         rt = cfg.routing.thresholds
         checker = DataQualityChecker(
-            dt_col=c.date, target_col=c.target, group_col=c.group,
+            dt_col=c.date, target_col=c.target, group_col=c.group_keys[0] if c.group_keys else None,
             min_history=t.min_history, seasonal_period=t.seasonal_period,
             freq=cfg.data.date_freq,
             intermittency_threshold=rt.intermittency,
@@ -259,13 +266,33 @@ class Pipeline:
 
         # 5. Feature Engineering
         log.info("Pipeline: feature engineering...")
-        engineer = FeatureEngineer(cfg.features, dt_col=c.date, target=c.target, group=c.group)
+        engineer = FeatureEngineer(
+            cfg.features, dt_col=c.date, target=c.target,
+            group_cols=group_cols,
+        )
         df_ml = engineer.transform(df)
 
         # 6. Baselines
         baselines = self._compute_baselines(df, c, t)
 
         _progress(50, "Training ML models", PipelineStatus.TRAINING)
+        
+        def sanitize_ml_dataframe(df):
+            df = df.copy()
+
+            for col in df.columns:
+                if df[col].dtype == "object":
+                    # intentar convertir a numérico
+                    converted = pd.to_numeric(df[col], errors="coerce")
+
+                    # si casi todo se pudo convertir → usar numérico
+                    if converted.notna().mean() > 0.8:
+                        df[col] = converted
+                    else:
+                        # si es categórica real → category (solo si usas LightGBM correctamente)
+                        df[col] = df[col].astype("category")
+
+            return df
 
         # 7. Train ML — derive ML model names from factory (not hardcoded)
         log.info("Pipeline: training ML models...")
@@ -275,11 +302,18 @@ class Pipeline:
         for mn in factory.ml_names():
             ml_skus.update(router.skus_for_model(routing, mn))
         df_ml_f = df_ml[df_ml[c.group].astype(str).isin(ml_skus)] if c.group and ml_skus else df_ml
+
+        # 🔧 FIX CRÍTICO: sanitizar features antes de ML
+        df_ml_f = sanitize_ml_dataframe(df_ml_f)
         trainer = Trainer(
             t.train_ratio, t.walk_forward, t.wfv_splits,
             tuning=t.tuning, tuning_trials=t.tuning_trials,
         )
-        results_ml = trainer.train(df_ml_f, ml_models, c.group or None, c.target, c.date) if ml_models else {}
+        results_ml = trainer.train(
+            df_ml_f, ml_models,
+            group_cols=group_cols,
+            target=c.target, dt=c.date,
+        ) if ml_models else {}
 
         # 7b. Quantile ML models — train p10/p50/p90 regressors and attach to results
         if ml_models:
@@ -287,7 +321,11 @@ class Pipeline:
             for q_level, key_suffix in [(0.1, "p10"), (0.5, "p50"), (0.9, "p90")]:
                 try:
                     q_models = factory.build_quantile_ml(q_level)
-                    q_results = trainer.train(df_ml_f, q_models, c.group or None, c.target, c.date)
+                    q_results = trainer.train(
+                        df_ml_f, q_models,
+                        group_cols=group_cols,
+                        target=c.target, dt=c.date,
+                    )
                     for res_key, q_res in q_results.items():
                         if res_key in results_ml:
                             results_ml[res_key][f"fitted_model_{key_suffix}"] = q_res.get("fitted_model")
@@ -381,6 +419,8 @@ class Pipeline:
         forecast_df = self._generate_forecast_df(results_ml, results_stat, df, ensemble=ensemble)
 
         _progress(92, "Computing inventory recommendations", PipelineStatus.INVENTORY)
+        print(forecast_df.head())
+        print(metrics_df.head())
 
         # 12. Inventory recommendations — use real forecast arrays, not historical mean
         inventory_df = self._inventory(df, c, b, h, forecast_df=forecast_df, metrics_df=metrics_df)
@@ -397,7 +437,10 @@ class Pipeline:
         log.info(f"Pipeline: run logged → {run_id}")
         _progress(100, f"Done — run {run_id}", PipelineStatus.DONE)
 
-        return PipelineResults(
+
+        from forecasting_core.aggregation.rollup import aggregate_by_sku, aggregate_by_store
+
+        results = PipelineResults(
             metrics_df=metrics_df,
             forecast_df=forecast_df,
             inventory_df=inventory_df,
@@ -408,6 +451,12 @@ class Pipeline:
             fitted_models=results_ml,
             stat_forecasts=results_stat,
         )
+
+        if forecast_df is not None and "store" in forecast_df.columns:
+            results.forecast_by_sku_df   = aggregate_by_sku(forecast_df)
+            results.forecast_by_store_df = aggregate_by_store(forecast_df)
+
+        return results
 
     # ------------------------------------------------------------------
     # Validation
@@ -617,49 +666,95 @@ class Pipeline:
         from forecasting_core.business.inventory import InventoryAdvisor
 
         advisor = InventoryAdvisor(
-            b.service_level, b.lead_time_days,
-            b.holding_cost_pct, b.stockout_cost_multiplier,
+            b.service_level,
+            b.lead_time_days,
+            b.holding_cost_pct,
+            b.stockout_cost_multiplier,
         )
 
         fc_arrays: Dict[str, np.ndarray] = {}
 
-        # Use actual model forecasts when available
+        # -----------------------------
+        # 🔧 NORMALIZE SKU FUNCTION
+        # -----------------------------
+        def norm_sku(x):
+            if pd.isna(x):
+                return None
+            return str(x).strip()
+
+        # -----------------------------
+        # USE MODEL FORECASTS
+        # -----------------------------
         if forecast_df is not None and not forecast_df.empty and "forecast" in forecast_df.columns:
-            # Determine best model per SKU (lowest MAE) from metrics
+
             best_model_per_sku: Dict[str, str] = {}
+
             if metrics_df is not None and not metrics_df.empty and "mae" in metrics_df.columns:
                 for sku_val, grp in metrics_df.groupby("sku"):
                     valid = grp.dropna(subset=["mae"])
                     if not valid.empty:
-                        best_model_per_sku[str(sku_val)] = valid.loc[valid["mae"].idxmin(), "model"]
+                        best_model_per_sku[norm_sku(sku_val)] = valid.loc[valid["mae"].idxmin(), "model"]
 
             for sku_val, sku_fc in forecast_df.groupby("sku"):
-                sku_str = str(sku_val)
-                best = best_model_per_sku.get(sku_str)
+                sku = norm_sku(sku_val)
+                if sku is None:
+                    continue
+
+                best = best_model_per_sku.get(sku)
+
                 if best:
                     rows = sku_fc[sku_fc["model"] == best]
+                    # ❗ NO fallback silencioso global
                     if rows.empty:
-                        rows = sku_fc
+                        continue
                 else:
                     rows = sku_fc
-                arr = rows.sort_values("step")["forecast"].values[:horizon].astype(float)
+
+                arr = (
+                    rows.sort_values("step")["forecast"]
+                    .astype(float)
+                    .to_numpy()
+                )
+
                 if len(arr) == 0:
                     continue
-                # Pad to horizon with last value if shorter
+
                 if len(arr) < horizon:
                     arr = np.pad(arr, (0, horizon - len(arr)), constant_values=arr[-1])
-                fc_arrays[sku_str] = np.clip(arr, 0.0, None)
 
-        # Fallback: historical mean demand (used when no forecasts were generated)
+                fc_arrays[sku] = np.clip(arr, 0.0, None)
+
+        # -----------------------------
+        # FALLBACK SAFE (PER SKU ONLY)
+        # -----------------------------
         if not fc_arrays:
             if c.group and c.group in df.columns:
-                for sku_val, g in df.groupby(c.group):
-                    mean_demand = float(g[c.target].astype(float).mean())
-                    fc_arrays[str(sku_val)] = np.full(horizon, max(mean_demand, 0.0))
-            else:
-                mean_demand = float(df[c.target].astype(float).mean())
-                fc_arrays["__all__"] = np.full(horizon, max(mean_demand, 0.0))
 
+                for sku_val, g in df.groupby(c.group):
+                    sku = norm_sku(sku_val)
+
+                    g_clean = pd.to_numeric(g[c.target], errors="coerce")
+                    if g_clean.dropna().empty:
+                        continue
+
+                    mean_demand = float(g_clean.mean())
+
+                    fc_arrays[sku] = np.full(
+                        horizon,
+                        max(mean_demand, 0.0)
+                    )
+
+            else:
+                g_clean = pd.to_numeric(df[c.target], errors="coerce")
+                if g_clean.dropna().empty:
+                    return None
+
+                mean_demand = float(g_clean.mean())
+                fc_arrays["__global__"] = np.full(horizon, max(mean_demand, 0.0))
+
+        # -----------------------------
+        # FINAL VALIDATION
+        # -----------------------------
         if not fc_arrays:
             return None
 
