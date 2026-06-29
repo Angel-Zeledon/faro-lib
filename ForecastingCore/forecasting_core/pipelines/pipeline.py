@@ -23,6 +23,8 @@ import pandas as pd
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from forecasting_core.aggregation.rollup import aggregate_by_sku, aggregate_by_store
+
 log = logging.getLogger(__name__)
 
 
@@ -419,8 +421,6 @@ class Pipeline:
         forecast_df = self._generate_forecast_df(results_ml, results_stat, df, ensemble=ensemble)
 
         _progress(92, "Computing inventory recommendations", PipelineStatus.INVENTORY)
-        print(forecast_df.head())
-        print(metrics_df.head())
 
         # 12. Inventory recommendations — use real forecast arrays, not historical mean
         inventory_df = self._inventory(df, c, b, h, forecast_df=forecast_df, metrics_df=metrics_df)
@@ -436,9 +436,6 @@ class Pipeline:
         )
         log.info(f"Pipeline: run logged → {run_id}")
         _progress(100, f"Done — run {run_id}", PipelineStatus.DONE)
-
-
-        from forecasting_core.aggregation.rollup import aggregate_by_sku, aggregate_by_store
 
         results = PipelineResults(
             metrics_df=metrics_df,
