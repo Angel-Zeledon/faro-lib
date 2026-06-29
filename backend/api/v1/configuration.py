@@ -179,7 +179,10 @@ def configure_columns(
     real_columns = [c["name"] for c in inspection.get("profile", {}).get("columns", [])]
 
     if is_canonical:
-        req = CanonicalColumnsRequest(**body)
+        try:
+            req = CanonicalColumnsRequest(**body)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=str(e))
         try:
             req.validate_required(real_columns)
         except ValueError as e:
@@ -700,7 +703,6 @@ def _get_dataset_analysis_impl(session_id: str, user):
                 "min_series_len":     int(sizes.min()),
                 "max_series_len":     int(sizes.max()),
             }
-            print("SKU stats:", sku_stats)
         except Exception:
             pass
     
@@ -715,7 +717,6 @@ def _get_dataset_analysis_impl(session_id: str, user):
         "sku_stats":   sku_stats,
         "analyzed_at": _now(),
     }
-    print("Dataset analysis result:", result)
 
     try:
         session_store.set_field(user.tenant_id, session_id, "inspection", {**inspection, "analysis": result})
