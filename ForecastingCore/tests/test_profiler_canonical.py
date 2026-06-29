@@ -73,9 +73,17 @@ def test_required_fields_cannot_use_default():
 def test_optional_fields_can_use_default():
     profiler = DataProfiler()
     result = profiler.get_canonical_mapping(_df_with_spanish_headers())
+    # Fields with non-None defaults can use defaults
     assert result["lead_time"]["can_use_default"] is True
-    assert result["cost"]["can_use_default"] is True
+    assert result["store"]["can_use_default"] is True
     assert result["promo_type"]["can_use_default"] is True
+    assert result["discount"]["can_use_default"] is True
+    assert result["promo"]["can_use_default"] is True
+    # Fields with None defaults cannot use defaults
+    assert result["cost"]["can_use_default"] is False
+    assert result["price"]["can_use_default"] is False
+    assert result["regular_price"]["can_use_default"] is False
+    assert result["promo_price"]["can_use_default"] is False
 
 
 def test_undetected_field_has_none_top_and_low_confidence():

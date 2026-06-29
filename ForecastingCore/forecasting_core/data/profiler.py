@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional
+from forecasting_core.data.canonical import FIELD_DEFAULTS
 
 
 class DataProfiler:
@@ -242,7 +243,7 @@ class DataProfiler:
                 "top":             top_col,
                 "candidates":      [c for _, c in candidates],
                 "confidence":      round(top_score, 2),
-                "can_use_default": field_name not in self._REQUIRED_CANONICAL,
+                "can_use_default": FIELD_DEFAULTS.get(field_name) is not None,
             }
 
         return result
