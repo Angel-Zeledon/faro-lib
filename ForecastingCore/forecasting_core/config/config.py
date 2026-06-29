@@ -7,7 +7,7 @@ Configs are hashed for reproducibility and can be serialized to JSON.
 Example:
     cfg = SessionConfig.from_dict({
         "data": {"path": "sales.csv"},
-        "columns": {"target": "sales", "date": "date", "group": "sku"},
+        "columns": {"target": "sales", "date": "date", "group_keys": ["sku", "store"]},
         "features": {"lags": [1, 7, 14], "rolling": [7, 14]},
         "models": {"lightgbm": {"n_estimators": 300}},
         "training": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 3},
@@ -72,8 +72,24 @@ class DataConfig:
 class ColumnsConfig:
     target: str = ""
     date: str = ""
-    group: Optional[str] = None
+    group_keys: List[str] = field(default_factory=lambda: ["sku", "store"])
     exogenous: List[str] = field(default_factory=list)
+
+    @property
+    def group(self) -> Optional[str]:
+        """
+        Backward-compat accessor for pipeline components not yet migrated to group_keys.
+        Returns group_keys[0] or None.  Remove once all callers use group_keys directly.
+        """
+        return self.group_keys[0] if self.group_keys else None
+
+    @group.setter
+    def group(self, value: Optional[str]) -> None:
+        """
+        Backward-compat setter.  Replaces group_keys with [value] or [] when value is None.
+        Remove once all callers write group_keys directly.
+        """
+        self.group_keys = [value] if value is not None else []
 
 
 @dataclass
@@ -137,7 +153,7 @@ class SessionConfig:
     Attributes:
         name:     Unique session identifier.
         data:     Dataset source configuration.
-        columns:  Column mapping (target, date, group).
+        columns:  Column mapping (target, date, group_keys).
         features: Feature engineering parameters.
         models:   Dict of {model_name: hyperparameters}.
         training: Train/validation strategy.
@@ -235,6 +251,8 @@ class SessionConfig:
             raise ConfigError("columns.target is required")
         if not self.columns.date:
             raise ConfigError("columns.date is required")
+        if not isinstance(self.columns.group_keys, list) or len(self.columns.group_keys) == 0:
+            raise ConfigError("columns.group_keys must be a non-empty list")
         if not self.models:
             raise ConfigError("At least one model must be defined in models")
         if not 0 < self.training.train_ratio < 1:
