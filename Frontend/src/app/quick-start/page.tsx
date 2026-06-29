@@ -1,12 +1,14 @@
 'use client'
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
  createSession, uploadDataset, attachDataset, inspectSession,
- chooseColumns, setFeatures, setModels, setValidationConfig,
+ chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
  setForecastConfig, setBusinessConfig, startTraining, getJob,
 } from '@/lib/api'
-import type { InspectionResult } from '@/lib/types'
+import type { InspectionResult, CanonicalMapping } from '@/lib/types'
+import HelpTip from '@/components/ui/HelpTip'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
 function StepBubble({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
@@ -35,10 +37,11 @@ function StepBubble({ n, label, active, done }: { n: number; label: string; acti
 }
 
 function StepBar({ step }: { step: number }) {
+ const { t } = useLanguage()
  const steps = [
- { n: 1, label: 'Sube tus ventas' },
- { n: 2, label: 'Confirma columnas' },
- { n: 3, label: 'El sistema aprende' },
+ { n: 1, label: t('qs.step1') },
+ { n: 2, label: t('qs.step2') },
+ { n: 3, label: t('qs.step3') },
  ]
  return (
  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: 40 }}>
@@ -60,6 +63,7 @@ function StepBar({ step }: { step: number }) {
 
 // ── CSV example ────────────────────────────────────────────────────────────────
 function CsvExample() {
+ const { t } = useLanguage()
  const rows = [
  { fecha: '2024-01-01', producto: 'SKU-001', cantidad: '32' },
  { fecha: '2024-01-02', producto: 'SKU-001', cantidad: '28' },
@@ -68,7 +72,7 @@ function CsvExample() {
  return (
  <div style={{ marginTop: 20, overflowX: 'auto' }}>
  <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>
- Ejemplo de cómo debe verse tu archivo:
+ {t('qs.csv_example')}
  </p>
  <table style={{
  borderCollapse: 'collapse', fontSize: 12, width: '100%',
@@ -103,6 +107,7 @@ function CsvExample() {
 
 // ── Drop zone ──────────────────────────────────────────────────────────────────
 function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }) {
+ const { t } = useLanguage()
  const [dragging, setDragging] = useState(false)
  const inputRef = useRef<HTMLInputElement>(null)
 
@@ -145,26 +150,20 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
  />
  <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{color:'var(--dim)'}}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></div>
  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
- {busy ? 'Subiendo archivo…' : 'Arrastra tu archivo aquí o haz clic para seleccionarlo'}
+ {busy ? t('qs.uploading') : t('qs.dropzone')}
  </div>
  <div style={{ fontSize: 13, color: 'var(--dim)' }}>
- Formatos aceptados: CSV, Excel (.xlsx, .xls)
+ {t('qs.formats')}
  </div>
  </div>
  )
 }
 
-// ── Loading messages animation ─────────────────────────────────────────────────
-const MESSAGES = [
- 'Analizando tus patrones de venta...',
- 'Identificando estacionalidad...',
- 'Entrenando modelos de predicción...',
- 'Calculando recomendaciones de inventario...',
-]
 
-function TrainingLoader({ message }: { message: string }) {
+function TrainingLoader({ message, pct }: { message: string; pct: number | null }) {
+ const { t } = useLanguage()
  return (
- <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28, paddingTop: 20 }}>
+ <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, paddingTop: 20 }}>
  {/* Spinner */}
  <div style={{ position: 'relative', width: 72, height: 72 }}>
  <div style={{
@@ -174,6 +173,15 @@ function TrainingLoader({ message }: { message: string }) {
  borderRadius: '50%',
  animation: 'qs-spin 0.9s linear infinite',
  }} />
+ {pct != null && (
+ <div style={{
+ position: 'absolute', inset: 0, display: 'flex',
+ alignItems: 'center', justifyContent: 'center',
+ fontSize: 16, fontWeight: 700, color: 'var(--text)',
+ }}>
+ {pct}%
+ </div>
+ )}
  </div>
  <div
  key={message}
@@ -183,19 +191,44 @@ function TrainingLoader({ message }: { message: string }) {
  animation: 'qs-fade 0.5s ease-out',
  }}
  >
- {message}
+ {message || t('qs.msg_analyzing')}
  </div>
+ {/* Real progress bar (driven by the worker's emitted percent) */}
+ {pct != null && (
+ <div style={{ width: '100%', maxWidth: 340, height: 6, borderRadius: 6, background: 'var(--border)', overflow: 'hidden' }}>
+ <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.5s ease-out' }} />
+ </div>
+ )}
  <div style={{ fontSize: 13, color: 'var(--dim)', textAlign: 'center', maxWidth: 340 }}>
- Esto puede tomar algunos minutos dependiendo del tamaño de tu archivo.
- <br />No cierres esta pestaña.
+ {t('qs.may_take')}
+ <br />{t('qs.dont_close')}
  </div>
  </div>
  )
 }
 
+// ── Canonical field definitions ────────────────────────────────────────────────
+const CANONICAL_FIELDS = [
+ { name: 'sku',           label: 'SKU / Producto',     required: true  },
+ { name: 'date',          label: 'Fecha',              required: true  },
+ { name: 'demand',        label: 'Demanda',            required: true  },
+ { name: 'store',         label: 'Tienda',             required: false, default: 'Tienda única' },
+ { name: 'region',        label: 'Región',             required: false, default: 'Sin región' },
+ { name: 'inventory',     label: 'Inventario',         required: false, default: '0' },
+ { name: 'lead_time',     label: 'Lead Time (días)',   required: false, default: '7' },
+ { name: 'price',         label: 'Precio',             required: false, default: 'Desconocido' },
+ { name: 'cost',          label: 'Costo',              required: false, default: 'Desconocido' },
+ { name: 'regular_price', label: 'Precio Regular',     required: false, default: 'Desconocido' },
+ { name: 'promo_price',   label: 'Precio Promocional', required: false, default: '= Precio Regular' },
+ { name: 'promo',         label: 'Promoción',          required: false, default: 'false' },
+ { name: 'promo_type',    label: 'Tipo de Promoción',  required: false, default: 'Sin promoción' },
+ { name: 'discount',      label: 'Descuento',          required: false, default: '0%' },
+] as const
+
 // ── Quick-start page ───────────────────────────────────────────────────────────
 export default function QuickStartPage() {
  const router = useRouter()
+ const { t } = useLanguage()
 
  const [step, setStep] = useState(1)
  const [busy, setBusy] = useState(false)
@@ -208,13 +241,14 @@ export default function QuickStartPage() {
  // Inspection result
  const [inspection, setInspection] = useState<InspectionResult | null>(null)
 
- // Column selections
- const [dateCol, setDateCol] = useState('')
- const [targetCol, setTargetCol] = useState('')
- const [skuCol, setSkuCol] = useState<string>('__none__')
+ // Column mapping (14-field canonical schema)
+ const [mapping, setMapping] = useState<Record<string, string | null>>(
+   Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null]))
+ )
 
  // Training progress
- const [trainMsg, setTrainMsg] = useState(MESSAGES[0])
+ const [trainMsg, setTrainMsg] = useState('')
+ const [trainPct, setTrainPct] = useState<number | null>(null)
  const msgIdxRef = useRef(0)
 
  // ── Step 1: Upload ───────────────────────────────────────────────────────────
@@ -239,11 +273,18 @@ export default function QuickStartPage() {
  const insp = await inspectSession(session.session_id)
  setInspection(insp)
 
- // Pre-select first candidates as defaults
- const opts = insp.column_options
- setDateCol(opts.date_candidates[0] ?? '')
- setTargetCol(opts.target_candidates[0] ?? '')
- setSkuCol(opts.group_candidates[0] ?? '__none__')
+ // Pre-select from canonical suggestions
+ const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
+ setMapping(prev => {
+  const next = { ...prev }
+  for (const field of CANONICAL_FIELDS) {
+   const sug = suggestions[field.name]
+   if (sug?.top && sug.confidence >= 0.7) {
+    next[field.name] = sug.top
+   }
+  }
+  return next
+ })
 
  setStep(2)
  } catch (e: unknown) {
@@ -258,26 +299,16 @@ export default function QuickStartPage() {
  // ── Step 2: Confirm columns → trigger training ───────────────────────────────
  const handleConfirm = async () => {
  if (!sessionId || !inspection) return
- if (!dateCol) { setError('Por favor selecciona la columna de fecha.'); return }
- if (!targetCol) { setError('Por favor selecciona la columna de cantidad vendida.'); return }
 
  setError(null)
  setBusy(true)
  setStep(3)
 
  try {
- // POST columns config with defaults
- await chooseColumns(sessionId, {
- date_column: dateCol,
- target_column: targetCol,
- sku_column: skuCol === '__none__' ? null : skuCol,
- gap_fill: 'forward',
- outlier_config: {
- strategy: 'winsorize_sigma', n_sigma: 3,
- percentile: 0.05, iqr_k: 1.5,
- per_sku_overrides: {}, per_sku_n_sigma: {},
- per_sku_percentile: {}, per_sku_iqr_k: {},
- },
+ // POST canonical columns mapping
+ await chooseColumnsCanonical(sessionId, {
+  canonical_mapping: mapping,
+  defaults_override: {},
  })
 
  // POST features config
@@ -290,7 +321,7 @@ export default function QuickStartPage() {
  })
 
  // POST models config
- await setModels(sessionId, ['lightgbm', 'prophet', 'croston'])
+ await setModels(sessionId, ['lightgbm', 'prophet', 'croston', 'xgboost'])
 
  // POST validation config
  await setValidationConfig(sessionId, {
@@ -301,7 +332,9 @@ export default function QuickStartPage() {
  seasonal_period: 7,
  })
 
- // POST forecast config
+ // POST forecast config. Horizon must exceed the lead time (15d) so the
+ // forecast can "see" past the reorder point — otherwise proactive peak
+ // alerts can never give a future order-by date. 30 = lead_time + ~2 weeks.
  await setForecastConfig(sessionId, { horizon: 30 })
 
  // POST business config
@@ -326,24 +359,34 @@ export default function QuickStartPage() {
 
  // ── Polling ──────────────────────────────────────────────────────────────────
  const pollJob = async (jobId: string, sid: string) => {
- let msgIdx = 0
- const advance = () => {
- msgIdx = (msgIdx + 1) % MESSAGES.length
- setTrainMsg(MESSAGES[msgIdx])
- }
- const interval = setInterval(advance, 5000)
+ // Cap polling so a job stuck in RUNNING (dead/orphaned worker) can't spin
+ // this tab forever. 3s/poll × 600 ≈ 30 min, well above normal training.
+ const MAX_POLLS = 600
+ let attempts = 0
 
  const poll = async (): Promise<void> => {
  try {
  const job = await getJob(jobId)
+
+ // Show the worker's REAL progress (percent + step message) instead of
+ // a fake cycling animation — the backend emits this on every stage.
+ if (job.progress) {
+ if (typeof job.progress.percent === 'number') setTrainPct(job.progress.percent)
+ if (job.progress.message) setTrainMsg(job.progress.message)
+ }
+
  if (job.status === 'COMPLETED') {
- clearInterval(interval)
+ setTrainPct(100)
  router.push(`/inventory?session=${sid}`)
  return
  }
  if (job.status === 'FAILED') {
- clearInterval(interval)
  setError(`El entrenamiento falló: ${job.error ?? 'error desconocido'}`)
+ setBusy(false)
+ return
+ }
+ if (++attempts >= MAX_POLLS) {
+ setError('El entrenamiento está tardando más de lo esperado. Revisa el estado más tarde o vuelve a intentarlo.')
  setBusy(false)
  return
  }
@@ -351,7 +394,6 @@ export default function QuickStartPage() {
  await new Promise(res => setTimeout(res, 3000))
  return poll()
  } catch (e: unknown) {
- clearInterval(interval)
  const msg = e instanceof Error ? e.message : 'Error al verificar el estado'
  setError(msg)
  setBusy(false)
@@ -368,24 +410,11 @@ export default function QuickStartPage() {
  setFileName(null)
  setSessionId(null)
  setInspection(null)
- setDateCol('')
- setTargetCol('')
- setSkuCol('__none__')
- setTrainMsg(MESSAGES[0])
+ setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
+ setTrainMsg('')
+ setTrainPct(null)
  msgIdxRef.current = 0
  }
-
- // Keep trainMsg cycling only on step 3
- useEffect(() => {
- if (step !== 3 || !busy) return
- const id = setInterval(() => {
- msgIdxRef.current = (msgIdxRef.current + 1) % MESSAGES.length
- setTrainMsg(MESSAGES[msgIdxRef.current])
- }, 5000)
- return () => clearInterval(id)
- }, [step, busy])
-
- const opts = inspection?.column_options
 
  // ── Preview table (first 3 rows sample) ─────────────────────────────────────
  function PreviewTable() {
@@ -529,112 +558,87 @@ export default function QuickStartPage() {
  )}
 
  {/* ── Step 2 ──────────────────────────────────────────────────────── */}
- {step === 2 && opts && (
+ {step === 2 && inspection && (
  <div>
  <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
  Confirma tus columnas
  </h2>
- <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 24px', lineHeight: 1.6 }}>
- Detectamos las siguientes columnas en tu archivo. Confirma cuál es cuál.
+ <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
+ Detectamos las siguientes columnas. Confirma cuál es cuál para los campos que necesitas.
  </p>
 
- <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
- {/* Date column */}
- <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
- <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
- ¿Cuál columna es la fecha?
- </span>
- <select
- value={dateCol}
- onChange={e => setDateCol(e.target.value)}
- style={{
- padding: '10px 12px', borderRadius: 8,
- border: '1px solid var(--border)',
- background: 'var(--surface)',
- color: 'var(--text)', fontSize: 14,
- cursor: 'pointer',
- }}
- >
- <option value="">— Selecciona una columna —</option>
- {opts.date_candidates.map(c => (
- <option key={c} value={c}>{c}</option>
- ))}
- </select>
- </label>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+ {CANONICAL_FIELDS.map(field => {
+  const allCols = inspection.profile.columns.map(c => c.name)
+  const val     = mapping[field.name]
+  const isNone  = val === null
 
- {/* Target column */}
- <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
- <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
- ¿Cuál columna es la cantidad vendida?
- </span>
- <select
- value={targetCol}
- onChange={e => setTargetCol(e.target.value)}
- style={{
- padding: '10px 12px', borderRadius: 8,
- border: '1px solid var(--border)',
- background: 'var(--surface)',
- color: 'var(--text)', fontSize: 14,
- cursor: 'pointer',
- }}
- >
- <option value="">— Selecciona una columna —</option>
- {opts.target_candidates.map(c => (
- <option key={c} value={c}>{c}</option>
- ))}
- </select>
- </label>
-
- {/* SKU column */}
- <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
- <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
- ¿Tienes una columna de producto / SKU?
- </span>
- <select
- value={skuCol}
- onChange={e => setSkuCol(e.target.value)}
- style={{
- padding: '10px 12px', borderRadius: 8,
- border: '1px solid var(--border)',
- background: 'var(--surface)',
- color: 'var(--text)', fontSize: 14,
- cursor: 'pointer',
- }}
- >
- <option value="__none__">No, es un solo producto</option>
- {opts.group_candidates.map(c => (
- <option key={c} value={c}>{c}</option>
- ))}
- </select>
- </label>
+  return (
+  <div key={field.name} style={{
+   display: 'grid', gridTemplateColumns: '1fr 1fr',
+   alignItems: 'center', gap: 12,
+   padding: '10px 0',
+   borderBottom: '1px solid var(--border)',
+  }}>
+   <div>
+   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+    {field.required && <span style={{ color: '#ef4444', marginRight: 4 }}>★</span>}
+    {field.label}
+   </span>
+   {!field.required && isNone && (
+    <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+    Default: {(field as { default?: string }).default}
+    </div>
+   )}
+   </div>
+   <select
+   value={val ?? '__none__'}
+   onChange={e => {
+    const v = e.target.value
+    setMapping(prev => ({ ...prev, [field.name]: v === '__none__' ? null : v }))
+   }}
+   style={{
+    padding: '8px 10px', borderRadius: 8,
+    border: `1px solid ${field.required && !val ? '#ef4444' : 'var(--border)'}`,
+    background: 'var(--surface)', color: 'var(--text)', fontSize: 13,
+    cursor: 'pointer',
+   }}
+   >
+   {!field.required && (
+    <option value="__none__">No está en mi archivo</option>
+   )}
+   {field.required && !val && (
+    <option value="__none__">— Selecciona una columna —</option>
+   )}
+   {allCols.map(c => (
+    <option key={c} value={c}>{c}</option>
+   ))}
+   </select>
+  </div>
+  )
+ })}
  </div>
 
- {/* Preview */}
  <PreviewTable />
 
  {error && (
- <div style={{
- marginTop: 16, padding: '10px 14px',
- background: '#fee2e2', borderRadius: 8,
- fontSize: 13, color: '#dc2626',
- }}>
- {error}
+ <div style={{ marginTop: 16, padding: '10px 14px', background: '#fee2e2',
+  borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
+  {error}
  </div>
  )}
 
  <button
  onClick={handleConfirm}
- disabled={busy}
+ disabled={busy || CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name])}
  style={{
- marginTop: 28,
- width: '100%', padding: '14px 0',
- background: 'var(--accent)',
- color: '#fff',
- border: 'none', borderRadius: 10,
- fontSize: 15, fontWeight: 700,
- cursor: busy ? 'not-allowed' : 'pointer',
- opacity: busy ? 0.7 : 1,
- transition: 'opacity 0.15s',
+  marginTop: 28, width: '100%', padding: '14px 0',
+  background: 'var(--accent)', color: '#fff',
+  border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700,
+  cursor: (busy || CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name]))
+   ? 'not-allowed' : 'pointer',
+  opacity: busy ? 0.7 : 1,
+  transition: 'opacity 0.15s',
  }}
  >
  {busy ? 'Procesando…' : 'Esto se ve bien, continuar →'}
@@ -654,7 +658,7 @@ export default function QuickStartPage() {
  Al terminar, verás el semáforo de inventario de todos tus productos.
  </p>
 
- {!error && <TrainingLoader message={trainMsg} />}
+ {!error && <TrainingLoader message={trainMsg} pct={trainPct} />}
 
  {error && (
  <div style={{ marginTop: 20 }}>
