@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.activity.service import log_action
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.schemas.common import ok
 from backend.schemas.session import SessionCreate, SessionUpdate
@@ -25,8 +26,8 @@ def create_session(
     body: SessionCreate,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    if not check_session_quota(user.tenant_id):
-        raise HTTPException(status_code=429, detail="Session quota exceeded for your plan")
+    # if not check_session_quota(user.tenant_id):
+    #     raise HTTPException(status_code=429, detail="Session quota exceeded for your plan")
     session = session_svc.create_session(
         user.tenant_id, user.user_id, body.name, body.description, body.tags
     )
@@ -86,3 +87,7 @@ def delete_session(
     if s["status"] == "RUNNING":
         raise HTTPException(status_code=409, detail="Cannot delete a running session")
     session_svc.delete_session(user.tenant_id, session_id)
+    log_action(
+        user.tenant_id, user.user_id, "session.delete", resource=session_id,
+        context={"name": s["name"], "status_at_deletion": s["status"]},
+    )

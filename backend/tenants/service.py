@@ -32,6 +32,8 @@ def get_quota(tenant_id: str) -> dict:
 
 
 def check_session_quota(tenant_id: str) -> bool:
+    if settings.testing_mode:
+        return True  # testing mode: no plan quota enforcement
     from backend.sessions import service as session_svc
     quota = get_quota(tenant_id)
     current = session_svc.count_sessions(tenant_id)

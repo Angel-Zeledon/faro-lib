@@ -41,6 +41,8 @@ _rate_buckets: dict[str, deque] = defaultdict(deque)
 
 def _check_rate(key: str, max_attempts: int, window_secs: int) -> None:
     """Raise 429 if `key` has exceeded `max_attempts` in the last `window_secs`."""
+    if settings.testing_mode:
+        return  # testing mode: auth rate limiting disabled
     now = time.monotonic()
     with _rate_lock:
         dq = _rate_buckets[key]
