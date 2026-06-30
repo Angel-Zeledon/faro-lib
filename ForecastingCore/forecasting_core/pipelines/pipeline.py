@@ -520,6 +520,16 @@ class Pipeline:
         if not fc_dict:
             return None
 
+        # Build sku→store lookup from ML training results.
+        # Trainer already stores "store" in each result dict (set to "Tienda única"
+        # for single-group datasets, or the actual store value for multi-key datasets).
+        sku_to_store: Dict[str, Optional[str]] = {}
+        for res in results_ml.values():
+            sku_key = str(res.get("sku", ""))
+            store_val = res.get("store")
+            if sku_key and store_val is not None:
+                sku_to_store[sku_key] = str(store_val)
+
         # Detect quantile column names from the first available point
         q_keys: List[str] = []
         for model_dict in fc_dict.values():
@@ -535,10 +545,12 @@ class Pipeline:
 
         rows = []
         for sku, model_dict in fc_dict.items():
+            store = sku_to_store.get(sku)
             for model_name, pts in model_dict.items():
                 for i, pt in enumerate(pts):
                     row = {
                         "sku":      sku,
+                        "store":    store,
                         "model":    model_name,
                         "date":     pd.Timestamp(pt["date"]),
                         "forecast": pt["value"],
@@ -558,6 +570,7 @@ class Pipeline:
             for sku, model_dict in fc_dict.items():
                 if len(model_dict) < 2:
                     continue  # ensemble only meaningful with multiple models
+                store = sku_to_store.get(sku)
                 ref_pts = next(iter(model_dict.values()))
                 n_steps = min(len(pts) for pts in model_dict.values())
 
@@ -588,6 +601,7 @@ class Pipeline:
                     val = round(max(0.0, float(ens_values[i])), 4)
                     row = {
                         "sku":      sku,
+                        "store":    store,
                         "model":    "ensemble",
                         "date":     pd.Timestamp(ref_pts[i]["date"]),
                         "forecast": val,
