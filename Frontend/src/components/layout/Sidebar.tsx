@@ -3,63 +3,59 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Database, TrendingUp, Package,
-  BrainCircuit, BarChart2, Settings, Zap, LogOut, User, Users,
-  ChevronLeft, ChevronRight, FileText, Target, SlidersHorizontal,
-  ShoppingCart, Truck, Sun, Cog, Store, Factory, FlaskConical,
-  ChevronDown,
+  BrainCircuit, BarChart2, Settings, LogOut, User, Users,
+  ChevronLeft, ChevronRight, FileText, Target, FlaskConical,
+  ShoppingCart, Truck, Upload, Zap,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
-import { useBusinessProfile, PROFILE_NAV_RULES, PROFILE_TERMS } from '@/contexts/BusinessProfileContext'
-import type { BusinessProfile } from '@/lib/types'
-
-// ── Profile icon map ─────────────────────────────────────────────────────────
-const PROFILE_ICON: Record<BusinessProfile, React.ElementType> = {
-  retail:       Store,
-  distributor:  Truck,
-  manufacturer: Factory,
-}
+import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Nav definition ────────────────────────────────────────────────────────────
 interface NavItem {
   href:       string
-  label:      string
+  labelKey:   string
   Icon:       React.ElementType
   group:      string
   adminOnly?: boolean
-  advanced?:  boolean   // only shown in advanced mode
+  advanced?:  boolean
 }
 
 const NAV: NavItem[] = [
-  { href: '/hoy',              label: 'Hoy',              Icon: Sun,              group: 'Intelligence' },
-  { href: '/quick-start',      label: 'Inicio Rápido',    Icon: Zap,              group: 'Intelligence' },
-  { href: '/dashboard',        label: 'Dashboard',        Icon: LayoutDashboard,  group: 'Intelligence', advanced: true },
-  { href: '/data',             label: 'Datos',            Icon: Database,         group: 'Intelligence' },
-  { href: '/forecast',         label: 'Forecast Studio',  Icon: TrendingUp,       group: 'Studio',       advanced: true },
-  { href: '/inventory',        label: 'Inventario',       Icon: ShoppingCart,     group: 'Studio' },
-  { href: '/inventory/roi',    label: 'Impacto & ROI',    Icon: BarChart2,        group: 'Studio' },
-  { href: '/inventory/suppliers', label: 'Proveedores',   Icon: Truck,            group: 'Studio' },
-  { href: '/produccion',       label: 'Producción',       Icon: Cog,              group: 'Studio' },
-  { href: '/skus',             label: 'SKU Intelligence', Icon: Package,          group: 'Studio',       advanced: true },
-  { href: '/reports',          label: 'Reportes',         Icon: FileText,         group: 'Studio',       advanced: true },
-  { href: '/analyst',          label: 'AI Analyst',       Icon: BrainCircuit,     group: 'Insights' },
-  { href: '/documents',        label: 'Documentos',       Icon: FileText,         group: 'Insights',     advanced: true },
-  { href: '/accuracy',         label: 'Precisión',        Icon: Target,           group: 'Insights',     advanced: true },
-  { href: '/users',            label: 'Usuarios',         Icon: Users,            group: 'Sistema',      adminOnly: true },
-  { href: '/config',           label: 'Configuración',    Icon: Settings,         group: 'Sistema' },
-  { href: '/settings',         label: 'Ajustes',          Icon: SlidersHorizontal, group: 'Sistema' },
+  { href: '/hoy',                 labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
+
+  { href: '/quick-start',         labelKey: 'nav.quick_start', Icon: Upload,          group: 'data' },
+  { href: '/data',                labelKey: 'nav.data',        Icon: Database,        group: 'data' },
+
+  { href: '/inventory',           labelKey: 'nav.inventory',   Icon: Package,         group: 'purchasing' },
+  { href: '/inventory/suppliers', labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
+
+  { href: '/inventory/roi',       labelKey: 'nav.roi',         Icon: TrendingUp,      group: 'analysis' },
+  { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis' },
+
+  { href: '/dashboard',           labelKey: 'nav.dashboard',   Icon: LayoutDashboard, group: 'advanced', advanced: true },
+  { href: '/forecast',            labelKey: 'nav.forecast',    Icon: TrendingUp,      group: 'advanced', advanced: true },
+  { href: '/reports',             labelKey: 'nav.reports',     Icon: BarChart2,       group: 'advanced', advanced: true },
+  { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'advanced', advanced: true },
+  { href: '/documents',           labelKey: 'nav.documents',   Icon: FileText,        group: 'advanced', advanced: true },
+  { href: '/accuracy',            labelKey: 'nav.accuracy',    Icon: Target,          group: 'advanced', advanced: true },
+
+  { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
+  { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
 ]
 
-const GROUPS = ['Intelligence', 'Studio', 'Insights', 'Sistema']
+const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'advanced', 'system']
 
 export default function Sidebar() {
   const path    = usePathname()
   const router  = useRouter()
   const user    = getUser()
   const { collapsed, toggle } = useSidebar()
-  const { profile, advancedMode, setAdvancedMode } = useBusinessProfile()
+  const { advancedMode, setAdvancedMode } = useBusinessProfile()
+  const { t, lang, setLang } = useLanguage()
 
   function handleLogout() {
     authLogout().catch(() => {})
@@ -67,22 +63,11 @@ export default function Sidebar() {
     router.replace('/login')
   }
 
-  // Filter nav items based on profile and advanced mode
   const visibleNav = NAV.filter(item => {
-    // Admin-only filter
     if (item.adminOnly && user?.role !== 'admin') return false
-
-    // Profile-based visibility
-    const allowedProfiles = PROFILE_NAV_RULES[item.href]
-    if (allowedProfiles && profile && !allowedProfiles.includes(profile)) return false
-
-    // Advanced-only items hidden unless advanced mode is on
     if (item.advanced && !advancedMode) return false
-
     return true
   })
-
-  const ProfileIcon = profile ? PROFILE_ICON[profile] : FlaskConical
 
   return (
     <aside style={{
@@ -110,7 +95,7 @@ export default function Sidebar() {
           <div style={{ marginLeft: 10 }}>
             <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em', color: 'var(--text)' }}>Faro</div>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1 }}>
-              {profile ? PROFILE_TERMS[profile].profile_desc.split('·')[0].trim() : 'Inventario Inteligente'}
+              {t('sidebar.tagline')}
             </div>
           </div>
         )}
@@ -129,11 +114,12 @@ export default function Sidebar() {
                   textTransform: 'uppercase', letterSpacing: '0.08em',
                   padding: '0 10px', marginBottom: 4,
                 }}>
-                  {group}
+                  {t(`group.${group}`)}
                 </div>
               )}
-              {items.map(({ href, label, Icon }) => {
+              {items.map(({ href, labelKey, Icon }) => {
                 const active = path === href || path.startsWith(`${href}/`)
+                const label = t(labelKey)
                 return (
                   <Link key={href} href={href} style={{ textDecoration: 'none' }} title={collapsed ? label : undefined}>
                     <div
@@ -177,7 +163,7 @@ export default function Sidebar() {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <FlaskConical size={11} />
-                <span style={{ fontWeight: 600 }}>Modo avanzado</span>
+                <span style={{ fontWeight: 600 }}>{t('sidebar.advanced_mode')}</span>
               </div>
               <div style={{
                 width: 28, height: 14, borderRadius: 7,
@@ -195,7 +181,7 @@ export default function Sidebar() {
             </button>
             {advancedMode && (
               <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 4, padding: '0 2px', lineHeight: 1.4 }}>
-                Wizard completo, métricas técnicas y configuración ML activados.
+                {t('sidebar.advanced_desc')}
               </div>
             )}
           </div>
@@ -204,7 +190,7 @@ export default function Sidebar() {
         {/* Collapse toggle */}
         <button
           onClick={toggle}
-          title={collapsed ? 'Expandir' : 'Colapsar'}
+          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
           style={{
             all: 'unset', cursor: 'pointer', marginTop: 8,
             display: 'flex', alignItems: 'center',
@@ -214,39 +200,35 @@ export default function Sidebar() {
             color: 'var(--dim)', fontSize: 12, transition: 'all 0.15s',
           }}
         >
-          {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>Colapsar</span></>}
+          {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>{t('sidebar.collapse')}</span></>}
         </button>
+
+        {/* Language switcher */}
+        {!collapsed && (
+          <div style={{ marginTop: 8, padding: '0 10px' }}>
+            <div style={{ display: 'flex', gap: 4, border: '1px solid var(--border)', borderRadius: 7, padding: 3 }}>
+              {(['es', 'en'] as const).map(l => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  style={{
+                    all: 'unset', cursor: 'pointer', flex: 1, textAlign: 'center',
+                    padding: '4px 0', borderRadius: 5, fontSize: 11, fontWeight: 600,
+                    background: lang === l ? 'var(--accent-dim)' : 'transparent',
+                    color: lang === l ? 'var(--accent)' : 'var(--dim)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
 
-      {/* Profile + User footer */}
+      {/* User footer — no profile selector */}
       <div style={{ borderTop: '1px solid var(--border)' }}>
-
-        {/* Profile indicator */}
-        {!collapsed && profile && (
-          <Link href="/perfil" style={{ textDecoration: 'none' }}>
-            <div style={{
-              padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8,
-              borderBottom: '1px solid var(--border)', cursor: 'pointer',
-              transition: 'background 0.15s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              <div style={{
-                width: 20, height: 20, borderRadius: 5, flexShrink: 0,
-                background: 'rgba(129,140,248,0.12)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <ProfileIcon size={11} color="var(--accent)" />
-              </div>
-              <span style={{ fontSize: 11, color: 'var(--dim)', flex: 1 }}>
-                {PROFILE_TERMS[profile].profile_label}
-              </span>
-              <ChevronDown size={10} color="var(--dim)" style={{ transform: 'rotate(-90deg)' }} />
-            </div>
-          </Link>
-        )}
-
         {user && (
           <div style={{
             padding: collapsed ? '10px 0' : '10px 14px',
@@ -270,7 +252,7 @@ export default function Sidebar() {
                 </div>
                 <button
                   onClick={handleLogout}
-                  title="Cerrar sesión"
+                  title={t('sidebar.logout')}
                   style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: 'var(--dim)', display: 'flex', alignItems: 'center' }}
                 >
                   <LogOut size={13} />

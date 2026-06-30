@@ -3,7 +3,7 @@ import { usePathname } from 'next/navigation'
 import AppShell from './AppShell'
 
 const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password']
-const LANDING_PATHS = ['/', '/perfil']
+const LANDING_PATHS = ['/']
 
 export default function ConditionalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
