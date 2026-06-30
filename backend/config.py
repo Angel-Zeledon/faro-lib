@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     # Upload
     max_upload_size_mb: int = 200
 
+    # ── Testing mode ────────────────────────────────────────────────────────
+    # When True, ALL commercial/business restrictions are bypassed: plan quotas,
+    # rate limits, concurrent-job caps, upload-size caps and length caps. Intended
+    # ONLY for load/stress/functional testing. Default False so it can never be on
+    # in production by accident — flip it with TESTING_MODE=true in the env.
+    testing_mode: bool = False
+
     # SMTP
     smtp_server: str = "smtp.gmail.com"
     smtp_port: int = 587
@@ -42,11 +49,15 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
 
     # External APIs
-    anthropic_api_key: str = ""
     voyageai_api_key: str = ""
     pinecone_api_key: str = ""
     pinecone_environment: str = ""
     pinecone_index: str = ""
+
+    # Local LLM (replaces the paid Anthropic API for text generation — see
+    # backend/ai/local_llm.py). Requires Ollama running locally with this model pulled.
+    local_llm_base_url: str = "http://localhost:11434"
+    local_llm_model: str = "deepseek-r1"
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

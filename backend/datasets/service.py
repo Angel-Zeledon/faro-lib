@@ -21,7 +21,7 @@ async def upload_dataset(tenant_id: str, user_id: str, file: UploadFile) -> dict
     content = await file.read()
     size_bytes = len(content)
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if size_bytes > max_bytes:
+    if not settings.testing_mode and size_bytes > max_bytes:
         raise ValueError(
             f"File size {size_bytes / 1024 / 1024:.1f} MB exceeds "
             f"limit of {settings.max_upload_size_mb} MB"
