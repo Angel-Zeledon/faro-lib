@@ -1,20 +1,20 @@
-# INSTANCIA-2 TAREA-INVENTARIO: COMPLETADA
 """
 Inventory management API.
-GET/POST/PATCH/DELETE /inventory/stock     — CRUD de stock por SKU
-GET                   /inventory/status    — semáforo + recomendaciones
-POST                  /inventory/bulk      — importación masiva CSV
+GET/POST/PATCH/DELETE /inventory/stock     — per-SKU stock CRUD
+GET                   /inventory/status    — traffic-light signal + recommendations
+POST                  /inventory/bulk      — bulk CSV import
 """
 
 import asyncio
 import csv
 import io
 import logging
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.inventory import service as svc
@@ -34,7 +34,7 @@ class StockUpsert(BaseModel):
     stock_minimo:   float           = Field(default=0, ge=0)
     lead_time_dias: int             = Field(default=15, ge=1, le=365)
     costo_unitario: Optional[float] = Field(default=None, ge=0)
-    moq:            float           = Field(default=1, ge=0)
+    moq:            float           = Field(default=1, ge=1)
     proveedor:      Optional[str]   = None
     notas:          Optional[str]   = None
 
@@ -45,7 +45,7 @@ class StockPatch(BaseModel):
     stock_minimo:   Optional[float] = Field(default=None, ge=0)
     lead_time_dias: Optional[int]   = Field(default=None, ge=1, le=365)
     costo_unitario: Optional[float] = Field(default=None, ge=0)
-    moq:            Optional[float] = Field(default=None, ge=0)
+    moq:            Optional[float] = Field(default=None, ge=1)
     proveedor:      Optional[str]   = None
     notas:          Optional[str]   = None
 
@@ -180,10 +180,10 @@ def inventory_status(
 ):
     """
     Returns per-SKU inventory status:
-    - días de cobertura
-    - semáforo signal (PEDIR_YA / PEDIR_PRONTO / OK / SOBRESTOCK / SIN_DATOS)
-    - cantidad recomendada a pedir
-    - valor del inventario
+    - days of coverage
+    - traffic-light signal (PEDIR_YA / PEDIR_PRONTO / OK / SOBRESTOCK / SIN_DATOS)
+    - recommended order quantity
+    - inventory value
     """
     items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
 
@@ -200,6 +200,7 @@ def inventory_status(
 
     return ok({
         "items": items,
+        "excluded_skus": svc.get_excluded_skus(user.tenant_id, session_id),
         "summary": {
             "total_skus":    len(items),
             "pedir_ya":      critical,
@@ -259,12 +260,27 @@ def dashboard_summary(
 
 # ── Events (temporadas / promociones) ────────────────────────────────────────
 
+def _parse_event_date(value: str, field: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)")
+
+
 class EventCreate(BaseModel):
     name:       str
     start_date: str   # ISO date YYYY-MM-DD
     end_date:   str
     multiplier: float = Field(default=1.0, ge=0.1, le=10.0)
     notes:      Optional[str] = None
+
+    @model_validator(mode="after")
+    def _check_date_order(self):
+        start = _parse_event_date(self.start_date, "start_date")
+        end = _parse_event_date(self.end_date, "end_date")
+        if end < start:
+            raise ValueError("end_date must not be before start_date")
+        return self
 
 
 class EventPatch(BaseModel):
@@ -273,6 +289,17 @@ class EventPatch(BaseModel):
     end_date:   Optional[str]   = None
     multiplier: Optional[float] = Field(default=None, ge=0.1, le=10.0)
     notes:      Optional[str]   = None
+
+    @model_validator(mode="after")
+    def _check_date_order(self):
+        if self.start_date is not None:
+            _parse_event_date(self.start_date, "start_date")
+        if self.end_date is not None:
+            _parse_event_date(self.end_date, "end_date")
+        if self.start_date is not None and self.end_date is not None:
+            if date.fromisoformat(self.end_date) < date.fromisoformat(self.start_date):
+                raise ValueError("end_date must not be before start_date")
+        return self
 
 
 @router.get("/events")
@@ -301,6 +328,15 @@ def patch_event(
     user: CurrentUser = Depends(get_current_user),
 ):
     data = body.model_dump(exclude_none=True)
+    if "start_date" in data or "end_date" in data:
+        existing = svc.get_event(user.tenant_id, event_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Event not found")
+        effective_start = data.get("start_date", str(existing["start_date"]))
+        effective_end = data.get("end_date", str(existing["end_date"]))
+        if date.fromisoformat(effective_end) < date.fromisoformat(effective_start):
+            raise HTTPException(status_code=422, detail="end_date must not be before start_date")
+
     ev = svc.update_event(user.tenant_id, event_id, data)
     if not ev:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -337,21 +373,49 @@ def download_pdf_report(
 
 # ── ROI tracking ─────────────────────────────────────────────────────────────
 
+class POLineItem(BaseModel):
+    sku:                  str
+    display_name:         Optional[str]   = None
+    proveedor:            Optional[str]   = None
+    signal:               Optional[str]   = None
+    cantidad_recomendada: float           = Field(default=0, ge=0)
+    cantidad_final:       float           = Field(default=0, ge=0)
+    costo_unitario:       Optional[float] = Field(default=None, ge=0)
+    status:               str             = "approved"
+
+
+class POLogRequest(BaseModel):
+    items: Optional[list[POLineItem]] = None
+
+
 @router.post("/log-po", status_code=201)
 def log_po(
     session_id: str = Query(...),
+    body: Optional[POLogRequest] = None,
     user: CurrentUser = Depends(get_current_user),
 ):
     """
     Called when a user downloads a PO.
-    Fetches the current PEDIR_YA/PEDIR_PRONTO items and logs them.
+
+    Preferred: the client sends the actual cart (`body.items`) with each line's
+    buyer decision (approved / modified / rejected). This is what lets us track
+    adoption ("you followed 8 of 10 recommendations").
+
+    Fallback (no body): the server re-derives the actionable PEDIR_YA /
+    PEDIR_PRONTO items — used by the legacy server-side CSV export, which has no
+    per-line decisions to send.
     """
     from backend.inventory.roi_service import log_po_generation
-    items = svc.get_inventory_status(user.tenant_id, session_id)
-    po_items = [
-        i for i in items
-        if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("cantidad_recomendada") or 0) > 0
-    ]
+
+    if body and body.items:
+        po_items = [i.model_dump() for i in body.items]
+    else:
+        items = svc.get_inventory_status(user.tenant_id, session_id)
+        po_items = [
+            i for i in items
+            if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("cantidad_recomendada") or 0) > 0
+        ]
+
     record = log_po_generation(user.tenant_id, session_id, po_items)
     return ok(record)
 
@@ -400,7 +464,7 @@ class SupplierPatch(BaseModel):
 class SkuSupplierUpsert(BaseModel):
     is_primary:     bool  = True
     unit_cost:      Optional[float] = None
-    moq:            float = Field(default=1, ge=0)
+    moq:            float = Field(default=1, ge=1)
     lead_time_dias: Optional[int]   = Field(default=None, ge=1, le=365)
     notes:          Optional[str]   = None
 
@@ -569,6 +633,89 @@ def production_requirements(
     """
     result = bom_svc.explode_requirements(user.tenant_id, session_id, horizon_days)
     return ok(result)
+
+
+# ── Dead stock / Inventario inmovilizado ─────────────────────────────────────
+
+@router.get("/dead-stock")
+def dead_stock(
+    session_id: str = Query(...),
+    min_days_static: int = Query(default=30, ge=7, le=365,
+        description="Minimum days without significant stock depletion to flag as dead"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Returns inventory items that have had little or no stock movement
+    for at least min_days_static days — 'dead' or 'slow-moving' inventory.
+    Capital trapped = stock_actual × costo_unitario.
+    """
+    from backend.inventory.service import get_inventory_status, get_stock_history
+
+    items = get_inventory_status(user.tenant_id, session_id)
+    dead_items = []
+
+    for item in items:
+        if not item.get('has_stock') or not item.get('stock_actual'):
+            continue
+
+        # Get stock history to detect if stock has barely moved
+        history = get_stock_history(user.tenant_id, item['sku'], days=min_days_static)
+
+        if len(history) < 2:
+            # No history → can't determine movement, skip
+            continue
+
+        first_stock = history[0]['stock']
+        last_stock  = history[-1]['stock']
+        depletion   = first_stock - last_stock
+
+        # If stock increased (restocking during period), skip — not dead stock
+        if depletion < 0:
+            continue
+
+        # Expected depletion based on forecast
+        avg_daily = item.get('demanda_diaria') or 0
+        expected  = avg_daily * len(history)
+
+        # Classify as dead if actual depletion is < 20% of expected
+        if expected > 0 and depletion < expected * 0.20:
+            days_static = len(history)
+            capital = round(float(item.get('stock_actual', 0)) * float(item.get('costo_unitario') or 0), 2)
+            holding_cost_annual = capital * 0.25  # 25% annual holding cost estimate
+            holding_cost_monthly = round(holding_cost_annual / 12, 2)
+
+            dead_items.append({
+                'sku':              item['sku'],
+                'display_name':     item.get('display_name'),
+                'proveedor':        item.get('proveedor'),
+                'stock_actual':     item.get('stock_actual'),
+                'costo_unitario':   item.get('costo_unitario'),
+                'capital_trapped':  capital,
+                'holding_cost_monthly': holding_cost_monthly,
+                'days_without_movement': days_static,
+                'depletion_pct':    round(depletion / first_stock * 100, 1) if first_stock > 0 else 0,
+                'avg_daily_demand': round(avg_daily, 2),
+                'signal':           item.get('signal'),
+                'abc':              item.get('abc', '?'),
+                'action_suggested': (
+                    'Devolver al proveedor' if item.get('abc') == 'C' else
+                    'Ofrecer descuento' if item.get('abc') == 'B' else
+                    'Revisar con ventas'
+                ),
+            })
+
+    dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
+
+    total_capital = sum(d['capital_trapped'] for d in dead_items)
+    total_holding = sum(d['holding_cost_monthly'] for d in dead_items)
+
+    return ok({
+        'items':                dead_items,
+        'total_capital_trapped': round(total_capital, 2),
+        'total_holding_cost_monthly': round(total_holding, 2),
+        'sku_count':            len(dead_items),
+        'min_days_static':      min_days_static,
+    })
 
 
 # ── Export PO as CSV ───────────────────────────────────────────────────────────

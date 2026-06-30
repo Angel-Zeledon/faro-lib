@@ -14,45 +14,101 @@ from backend.db.connection import execute, query, query_one
 
 log = logging.getLogger(__name__)
 
+# Statuses that mean "the buyer decided to order this line".
+_ORDERED = ("approved", "modified")
+
+
+def _ordered_qty(item: dict) -> float:
+    """
+    Units actually ordered for a line. When the buyer kept/modified the line we
+    use cantidad_final; we fall back to cantidad_recomendada for legacy callers
+    that don't send a final quantity.
+    """
+    if item.get("cantidad_final") is not None:
+        return float(item.get("cantidad_final") or 0)
+    return float(item.get("cantidad_recomendada") or 0)
+
 
 def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dict:
     """
     Called every time a user exports a PO.
-    Records what was in the PO for ROI tracking.
+    Records the buyer's actual decisions per line for ROI / adoption tracking.
 
-    items: list of InventoryStatusItem dicts (those included in the PO,
-           already filtered to PEDIR_YA / PEDIR_PRONTO with cantidad_recomendada > 0).
+    items: list of decision dicts. Each may carry:
+        sku, display_name, proveedor, signal,
+        cantidad_recomendada (what Faro suggested),
+        cantidad_final        (what the buyer kept),
+        costo_unitario,
+        status ∈ approved | modified | rejected.
+
+    Legacy callers (server-side CSV export) pass status-less items already
+    filtered to the order; those are treated as 'approved'.
     """
-    sku_count       = len(items)
-    total_units     = sum(float(i.get("cantidad_recomendada") or 0) for i in items)
-    skus_pedir_ya   = sum(1 for i in items if i.get("signal") == "PEDIR_YA")
-    skus_pedir_pronto = sum(1 for i in items if i.get("signal") == "PEDIR_PRONTO")
-
-    # total_value: sum of (cantidad_recomendada × costo_unitario) where cost is available
-    total_value: float | None = None
-    value_parts: list[float] = []
+    # Normalize: default missing status to 'approved' (legacy behaviour).
+    norm: list[dict] = []
     for i in items:
-        qty  = float(i.get("cantidad_recomendada") or 0)
+        status = (i.get("status") or "approved").lower()
+        if status not in ("approved", "modified", "rejected"):
+            status = "approved"
+        norm.append({**i, "status": status})
+
+    ordered = [i for i in norm if i["status"] in _ORDERED]
+
+    suggested_count = len(norm)
+    approved_count  = len(ordered)
+    modified_count  = sum(1 for i in norm if i["status"] == "modified")
+    rejected_count  = sum(1 for i in norm if i["status"] == "rejected")
+
+    # Header aggregates describe the *order* (approved/modified lines only).
+    sku_count         = approved_count
+    total_units       = sum(_ordered_qty(i) for i in ordered)
+    skus_pedir_ya     = sum(1 for i in ordered if i.get("signal") == "PEDIR_YA")
+    skus_pedir_pronto = sum(1 for i in ordered if i.get("signal") == "PEDIR_PRONTO")
+
+    # total_value: sum of (units ordered × costo_unitario) where cost is available.
+    value_parts: list[float] = []
+    for i in ordered:
         cost = i.get("costo_unitario")
         if cost is not None:
-            value_parts.append(qty * float(cost))
-    if value_parts:
-        total_value = sum(value_parts)
+            value_parts.append(_ordered_qty(i) * float(cost))
+    total_value: float | None = sum(value_parts) if value_parts else None
 
-    execute(
+    inserted = query_one(
         """INSERT INTO inventory_po_log
                (tenant_id, session_id, sku_count, total_units, total_value,
-                skus_pedir_ya, skus_pedir_pronto)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (tenant_id, session_id, sku_count, total_units,
-         total_value, skus_pedir_ya, skus_pedir_pronto),
+                skus_pedir_ya, skus_pedir_pronto,
+                suggested_count, approved_count, modified_count, rejected_count)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING *""",
+        (tenant_id, session_id, sku_count, total_units, total_value,
+         skus_pedir_ya, skus_pedir_pronto,
+         suggested_count, approved_count, modified_count, rejected_count),
     )
 
-    row = query_one(
-        "SELECT * FROM inventory_po_log WHERE tenant_id = %s ORDER BY generated_at DESC LIMIT 1",
-        (tenant_id,),
-    )
-    return dict(row) if row else {
+    # Persist every line (including rejected) so adoption is auditable per SKU.
+    if inserted and norm:
+        po_log_id = inserted["id"]
+        for i in norm:
+            try:
+                execute(
+                    """INSERT INTO inventory_po_items
+                           (po_log_id, tenant_id, sku, display_name, proveedor,
+                            signal, cantidad_recomendada, cantidad_final,
+                            costo_unitario, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (po_log_id, tenant_id, str(i.get("sku") or ""),
+                     i.get("display_name"), i.get("proveedor"), i.get("signal"),
+                     float(i.get("cantidad_recomendada") or 0),
+                     _ordered_qty(i) if i["status"] in _ORDERED else 0.0,
+                     (float(i["costo_unitario"]) if i.get("costo_unitario") is not None else None),
+                     i["status"]),
+                )
+            except Exception as e:
+                log.warning("log_po_generation: skipped line sku=%s err=%s", i.get("sku"), e)
+
+    if inserted:
+        return dict(inserted)
+    return {
         "tenant_id": tenant_id,
         "session_id": session_id,
         "sku_count": sku_count,
@@ -60,6 +116,10 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
         "total_value": total_value,
         "skus_pedir_ya": skus_pedir_ya,
         "skus_pedir_pronto": skus_pedir_pronto,
+        "suggested_count": suggested_count,
+        "approved_count": approved_count,
+        "modified_count": modified_count,
+        "rejected_count": rejected_count,
     }
 
 
@@ -73,6 +133,9 @@ def get_roi_summary(tenant_id: str) -> dict:
                COALESCE(SUM(skus_pedir_ya), 0)::int  AS total_skus_protected,
                COALESCE(SUM(total_units), 0)    AS total_units_ordered,
                COALESCE(SUM(total_value), 0)    AS estimated_value_protected,
+               COALESCE(SUM(suggested_count), 0)::int AS total_suggested,
+               COALESCE(SUM(approved_count), 0)::int  AS total_approved,
+               COALESCE(SUM(rejected_count), 0)::int  AS total_rejected,
                MIN(generated_at)                AS first_po_at,
                MAX(generated_at)                AS last_po_at
            FROM inventory_po_log
@@ -112,11 +175,23 @@ def get_roi_summary(tenant_id: str) -> dict:
             return datetime.fromisoformat(str(v)).replace(tzinfo=timezone.utc)
         active_days = max(0, (_to_dt(last_po_at) - _to_dt(first_po_at)).days)
 
+    total_suggested = int(agg.get("total_suggested") or 0) if agg else 0
+    total_approved  = int(agg.get("total_approved")  or 0) if agg else 0
+    total_rejected  = int(agg.get("total_rejected")  or 0) if agg else 0
+    # Adoption rate: of the recommendations the buyer actually acted on, what
+    # share did they keep/order? Only defined once we have decision data — older
+    # rows (pre-decision-tracking) contribute 0 to both sides and don't distort it.
+    adoption_rate = (total_approved / total_suggested) if total_suggested > 0 else None
+
     return {
         "total_pos_generated":      int(agg.get("total_pos_generated") or 0) if agg else 0,
         "total_skus_protected":     int(agg.get("total_skus_protected") or 0) if agg else 0,
         "total_units_ordered":      float(agg.get("total_units_ordered") or 0) if agg else 0.0,
         "estimated_value_protected": float(agg.get("estimated_value_protected") or 0) if agg else 0.0,
+        "total_suggested":          total_suggested,
+        "total_approved":           total_approved,
+        "total_rejected":           total_rejected,
+        "adoption_rate":            adoption_rate,
         "first_po_at":              first_po_at.isoformat() if isinstance(first_po_at, datetime) else (str(first_po_at) if first_po_at else None),
         "last_po_at":               last_po_at.isoformat()  if isinstance(last_po_at,  datetime) else (str(last_po_at)  if last_po_at  else None),
         "active_days":              active_days,

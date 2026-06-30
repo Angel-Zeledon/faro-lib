@@ -25,7 +25,9 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     allowed = {
         "display_name", "stock_actual", "stock_minimo",
         "lead_time_dias", "costo_unitario", "moq", "proveedor", "notas",
+        "service_level",
     }
+    
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
         raise ValueError("No valid fields to update")
@@ -70,6 +72,62 @@ def delete_stock(tenant_id: str, sku: str) -> None:
         "DELETE FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
         (tenant_id, sku),
     )
+
+
+# Dataset columns we recognize as inventory data when present in an uploaded file.
+_DATASET_STOCK_FLOAT_COLS = {"stock_actual", "stock_minimo", "costo_unitario", "moq", "service_level"}
+_DATASET_STOCK_INT_COLS   = {"lead_time_dias"}
+_DATASET_STOCK_STR_COLS   = {"proveedor", "notas", "display_name"}
+_DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DATASET_STOCK_STR_COLS
+
+
+def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_col: str) -> int:
+    """
+    If the uploaded dataset contains recognized inventory columns (stock_actual,
+    lead_time_dias, costo_unitario, moq, proveedor, notas, display_name,
+    stock_minimo, service_level), seed/update inventory_stock with the most
+    recent value per SKU. This is what lets a Quick Start upload actually
+    control what /inventory shows, instead of /inventory silently falling back
+    to whatever was entered manually in a previous session.
+    """
+    import pandas as pd
+
+    if df is None or df.empty:
+        return 0
+
+    present = [c for c in df.columns if c in _DATASET_STOCK_COLS]
+    if not present:
+        return 0
+
+    work = df.copy()
+    if date_col in work.columns:
+        work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
+        work = work.sort_values(date_col)
+
+    groups = work.groupby(group_col) if group_col and group_col in work.columns else [("__all__", work)]
+
+    count = 0
+    for sku, g in groups:
+        last = g.iloc[-1]
+        data: dict = {}
+        for col in present:
+            val = last[col]
+            if pd.isna(val):
+                continue
+            if col in _DATASET_STOCK_FLOAT_COLS:
+                data[col] = float(val)
+            elif col in _DATASET_STOCK_INT_COLS:
+                data[col] = int(val)
+            else:
+                data[col] = str(val)
+        if not data:
+            continue
+        try:
+            upsert_stock(tenant_id, str(sku), data)
+            count += 1
+        except Exception as e:
+            log.warning("sync_stock_from_dataset: skipped sku=%s err=%s", sku, e)
+    return count
 
 
 def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
@@ -149,14 +207,15 @@ def _classify_abc(items: list[dict]) -> dict[str, str]:
     result: dict[str, str] = {}
     cumulative = 0.0
     for sku, val in scored:
-        cumulative += val
-        pct = cumulative / total
-        if pct <= 0.80:
+        # Assign tier based on cumulative BEFORE adding this item,
+        # so a single dominant SKU (e.g. 99% revenue) gets classified as A not C.
+        if cumulative < 0.80:
             result[sku] = "A"
-        elif pct <= 0.95:
+        elif cumulative < 0.95:
             result[sku] = "B"
         else:
             result[sku] = "C"
+        cumulative += val / total
     return result
 
 
@@ -190,6 +249,32 @@ def _avg_daily_forecast(model_forecasts: dict, lead_time: int) -> tuple[float, f
     return max(0.0, avg_daily), max(0.0, avg_std)
 
 
+def _avg_forecast_curve(model_forecasts: dict, max_steps: int = 90) -> list[dict]:
+    """
+    Averages the per-step forecast value across all models, aligned by step
+    index, returning a chronological [{step, date, value}] curve. Dates come
+    from whichever model provides them (all models share the same horizon).
+    """
+    step_values: dict[int, list[float]] = {}
+    step_dates:  dict[int, str] = {}
+    for model_data in model_forecasts.values():
+        pts = model_data.get("forecast", []) or []
+        for idx, p in enumerate(pts[:max_steps]):
+            v = p.get("value")
+            if v is None:
+                continue
+            step_values.setdefault(idx, []).append(float(v))
+            if idx not in step_dates and p.get("date"):
+                step_dates[idx] = str(p["date"])[:10]
+
+    curve: list[dict] = []
+    for idx in sorted(step_values):
+        vals = step_values[idx]
+        if vals:
+            curve.append({"step": idx, "date": step_dates.get(idx), "value": sum(vals) / len(vals)})
+    return curve
+
+
 def _calc_signal(dias_cobertura: float, lead_time: int) -> str:
     if dias_cobertura < lead_time * 0.5:
         return "PEDIR_YA"
@@ -214,7 +299,7 @@ def _calc_recommended(
     raw = max(0.0, demanda_lead_time + safety_stock - stock_actual)
     if moq and moq > 0:
         raw = math.ceil(raw / moq) * moq
-    return round(raw, 2)
+    return float(round(raw, 2))
 
 
 # ── Main status calculation ───────────────────────────────────────────────────
@@ -242,7 +327,13 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     stock_rows = list_stock(tenant_id)
     stock_map  = {r["sku"]: r for r in stock_rows}
 
-    all_skus = sorted(set(list(forecasts.keys()) + list(stock_map.keys())))
+    # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
+    # tenant-wide table (no session_id column) that accumulates rows from every
+    # session ever run for this tenant, so it must never be the source of which
+    # SKUs to display — only of the stock fields to enrich a SKU already present
+    # in the active session's forecasts. Otherwise, stale/unrelated SKUs from
+    # past sessions leak into sessions that never uploaded them.
+    all_skus = sorted(forecasts.keys())
 
     items: list[dict] = []
 
@@ -258,16 +349,17 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         has_stock    = stock is not None and stock_actual is not None
 
         if has_forecast and has_stock:
-            z = _Z.get(service_level, 1.645)
+            sku_service_level = float(stock.get("service_level") or service_level) if stock else service_level
+            z = _Z.get(sku_service_level, 1.645)
             avg_daily, avg_std = _avg_daily_forecast(model_forecasts, lead_time)
             dias_cobertura = stock_actual / avg_daily if avg_daily > 0 else 9999.0
             signal = _calc_signal(dias_cobertura, lead_time)
             recomendado = _calc_recommended(
-                stock_actual, avg_daily, avg_std, lead_time, moq, service_level
+                stock_actual, avg_daily, avg_std, lead_time, moq, sku_service_level
             )
             valor_inventario = (
                 round(stock_actual * float(stock["costo_unitario"]), 2)
-                if stock.get("costo_unitario") else None
+                if stock.get("costo_unitario") is not None else None
             )
             _demanda_lt  = round(avg_daily * lead_time, 2)
             _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
@@ -298,13 +390,20 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             except Exception:
                 pass
 
+        # "__all__" is the internal sentinel used when the dataset has no SKU/group
+        # column (single-series session) — it must never surface unexplained as a SKU
+        # name in the UI, so give it a friendly label traceable to its real cause.
+        display_name = stock.get("display_name") if stock else None
+        if sku == "__all__" and not display_name:
+            display_name = "Serie única (sin columna SKU)"
+
         items.append({
             "sku":                sku,
-            "display_name":       stock.get("display_name") if stock else None,
+            "display_name":       display_name,
             "stock_actual":       stock_actual,
             "stock_minimo":       float(stock["stock_minimo"]) if stock else 0.0,
             "lead_time_dias":     lead_time,
-            "costo_unitario":     float(stock["costo_unitario"]) if stock and stock.get("costo_unitario") else None,
+            "costo_unitario":     float(stock["costo_unitario"]) if stock and stock.get("costo_unitario") is not None else None,
             "moq":                moq,
             "proveedor":          stock.get("proveedor") if stock else None,
             "notas":              stock.get("notas") if stock else None,
@@ -339,6 +438,13 @@ def list_events(tenant_id: str) -> list[dict]:
     return query(
         "SELECT * FROM inventory_events WHERE tenant_id = %s ORDER BY start_date",
         (tenant_id,),
+    )
+
+
+def get_event(tenant_id: str, event_id: str) -> Optional[dict]:
+    return query_one(
+        "SELECT * FROM inventory_events WHERE tenant_id = %s AND id = %s",
+        (tenant_id, event_id),
     )
 
 
@@ -637,6 +743,106 @@ def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 1
     return round(trend_pct, 1) if abs(trend_pct) >= 15 else None
 
 
+def get_excluded_skus(tenant_id: str, session_id: str) -> list[dict]:
+    """SKUs uploaded but left out of the forecast (recorded at training time)."""
+    from backend.db import session_store
+    result = session_store.get_training_result(tenant_id, session_id) or {}
+    return result.get("excluded_skus") or []
+
+
+def get_demand_spikes(
+    tenant_id: str,
+    session_id: str,
+    service_level: float = 0.95,
+    uplift_threshold: float = 0.25,
+    items: Optional[list[dict]] = None,
+    forecasts: Optional[dict] = None,
+) -> list[dict]:
+    """
+    Proactive demand alerts — the value Excel can't give.
+
+    Detects a demand peak the model projects within the forecast horizon and,
+    given each SKU's lead time, computes the *latest date to order* so the spike
+    is covered. Lets the buyer act on a peak the forecast sees BEFORE the stock
+    semaphore turns red.
+
+    Honest about its limits: only fires for peaks still in the future (relative
+    to today) and within whatever horizon the session was trained for. If the
+    forecast horizon is shorter than the lead time, the alert says "the peak
+    arrives inside your lead time — order now if you haven't".
+    """
+    from datetime import date as _date
+
+    if items is None:
+        items = get_inventory_status(tenant_id, session_id, service_level)
+    if forecasts is None:
+        from backend.db import session_store
+        forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
+
+    items_by_sku = {i["sku"]: i for i in items}
+    today = _date.today()
+    alerts: list[dict] = []
+
+    for sku, model_forecasts in forecasts.items():
+        item = items_by_sku.get(sku)
+        if not item or not item.get("has_forecast"):
+            continue
+
+        curve = _avg_forecast_curve(model_forecasts)
+        if len(curve) < 2:
+            continue
+
+        baseline = item.get("demanda_diaria")
+        if not baseline or baseline <= 0:
+            baseline = sum(c["value"] for c in curve) / len(curve)
+        if not baseline or baseline <= 0:
+            continue
+
+        peak = max(curve, key=lambda c: c["value"])
+        uplift = (peak["value"] - baseline) / baseline
+        # Require both a relative and a small absolute jump (avoids noise on
+        # tiny-volume SKUs where +30% is still < 1 unit).
+        if uplift < uplift_threshold or (peak["value"] - baseline) < 1:
+            continue
+
+        lead = int(item.get("lead_time_dias") or 15)
+
+        peak_date: Optional[object] = None
+        days_until = peak["step"] + 1
+        if peak.get("date"):
+            try:
+                peak_date = _date.fromisoformat(peak["date"])
+                days_until = (peak_date - today).days
+            except Exception:
+                peak_date = None
+
+        # Skip peaks already in the past (stale session run long after training).
+        if days_until <= 0:
+            continue
+
+        order_by = (peak_date - timedelta(days=lead)) if peak_date else None
+        already_late = bool(order_by and order_by <= today)
+
+        alerts.append({
+            "sku":             sku,
+            "display_name":    item.get("display_name") or sku,
+            "proveedor":       item.get("proveedor"),
+            "baseline_diaria": round(baseline, 1),
+            "peak_value":      round(peak["value"], 1),
+            "uplift_pct":      round(uplift * 100),
+            "peak_date":       peak_date.isoformat() if peak_date else None,
+            "days_until_peak": days_until,
+            "lead_time_dias":  lead,
+            "order_by_date":   order_by.isoformat() if order_by else None,
+            "already_late":    already_late,
+            "signal":          item.get("signal"),
+        })
+
+    # Most actionable first: ones you're already late for, then soonest deadline.
+    alerts.sort(key=lambda a: (not a["already_late"], a["days_until_peak"]))
+    return alerts[:8]
+
+
 def generate_recommendations(items: list[dict]) -> list[dict]:
     """
     Generates plain-language, actionable recommendations from inventory status items.
@@ -759,6 +965,18 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     )
     demand_changes = [i for i in items if i.get('demand_trend_pct') is not None]
 
+    # Proactive: future demand peaks the forecast sees, with order-by dates.
+    demand_spikes: list[dict] = []
+    try:
+        from backend.db import session_store
+        spike_forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
+        demand_spikes = get_demand_spikes(
+            tenant_id, session_id, service_level,
+            items=items, forecasts=spike_forecasts,
+        )
+    except Exception as e:
+        log.warning("get_demand_spikes failed for session=%s: %s", session_id, e)
+
     recs = generate_recommendations(items)
 
     # Pull session-level forecast accuracy if available
@@ -795,6 +1013,8 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         'warnings':     warnings[:10],
         'overstocked':  overstocked[:10],
         'demand_changes': demand_changes[:8],
+        'demand_spikes': demand_spikes,
+        'excluded_skus': get_excluded_skus(tenant_id, session_id),
         'recommendations': recs,
         'kpis': {
             'total_skus':           len(items),
@@ -807,6 +1027,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
             'total_inventory_value': round(total_valor, 2),
             'capital_in_overstock':  round(overstock_val, 2),
             'demand_alerts':        len(demand_changes),
+            'demand_spikes':        len(demand_spikes),
         },
     }
 
