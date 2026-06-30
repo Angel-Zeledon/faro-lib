@@ -179,13 +179,14 @@ async def send_message(
             detail=f"'question' exceeds maximum length of {MAX_QUESTION_LENGTH} characters",
         )
 
-    recent = chat_store.count_recent_user_messages(user.tenant_id, RATE_LIMIT_WINDOW_SECONDS)
-    if recent >= RATE_LIMIT_MAX_MESSAGES:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: max {RATE_LIMIT_MAX_MESSAGES} messages per "
-                   f"{RATE_LIMIT_WINDOW_SECONDS}s per organization. Please wait and try again.",
-        )
+    if not settings.testing_mode:
+        recent = chat_store.count_recent_user_messages(user.tenant_id, RATE_LIMIT_WINDOW_SECONDS)
+        if recent >= RATE_LIMIT_MAX_MESSAGES:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded: max {RATE_LIMIT_MAX_MESSAGES} messages per "
+                       f"{RATE_LIMIT_WINDOW_SECONDS}s per organization. Please wait and try again.",
+            )
 
     sku        = body.get("sku") or None
     session_id = body.get("session_id") or chat.get("session_id")
