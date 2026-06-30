@@ -86,7 +86,7 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
             "target":     columns_cfg.get("target_column", ""),
             "date":       columns_cfg.get("date_column", ""),
             "group_keys": [sku_col] if sku_col else ["sku"],
-            "exogenous":  columns_cfg.get("exogenous_columns", []) or [],
+            "exogenous":  columns_cfg.get("exogenous", []) or [],
         }
 
     return {
