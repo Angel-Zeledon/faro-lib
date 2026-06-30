@@ -45,7 +45,7 @@ def mark_running(tenant_id: str, job_id: str, worker_id: str) -> dict:
 def mark_completed(tenant_id: str, job_id: str) -> dict:
     progress = {"percent": 100, "step": "done", "message": "Training complete"}
     execute(
-        """UPDATE jobs SET status = 'COMPLETED', completed_at = NOW(), progress = %s
+        """UPDATE jobs SET status = 'COMPLETED', completed_at = NOW(), progress = %s, error = NULL
            WHERE id = %s AND tenant_id = %s""",
         (_json(progress), job_id, tenant_id),
     )

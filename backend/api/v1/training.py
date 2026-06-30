@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
+from backend.config import settings
 from backend.db import session_store
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
@@ -38,13 +39,14 @@ def start_training(
                    "Complete the wizard steps before training.",
         )
 
-    # Rate limit: max 3 concurrent jobs per tenant
-    active = job_service.count_active_jobs_for_tenant(user.tenant_id)
-    if active >= 3:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many active training jobs ({active}). Wait for a job to finish before queuing another.",
-        )
+    # Rate limit: max 3 concurrent jobs per tenant (bypassed in testing mode)
+    if not settings.testing_mode:
+        active = job_service.count_active_jobs_for_tenant(user.tenant_id)
+        if active >= 3:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many active training jobs ({active}). Wait for a job to finish before queuing another.",
+            )
 
     job = job_service.create_job(user.tenant_id, session_id, user.user_id)
     session_svc.set_last_job(user.tenant_id, session_id, job["id"])
