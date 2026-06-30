@@ -62,6 +62,7 @@ class TestStockCRUD:
         assert isinstance(data, list)
 
     def test_upsert_creates_sku(self, client, auth_headers):
+        from backend.db.connection import query_one
         sku = _sku()
         body = {
             "stock_actual": 100,
@@ -76,6 +77,16 @@ class TestStockCRUD:
         assert data["stock_actual"] == 100
         assert data["lead_time_dias"] == 14
         assert data["proveedor"] == "Proveedor Test S.A."
+
+        row = query_one(
+            "SELECT stock_actual, lead_time_dias, costo_unitario, proveedor FROM inventory_stock WHERE sku = %s",
+            (sku,),
+        )
+        assert row is not None, "Stock row was not persisted to the DB"
+        assert float(row["stock_actual"]) == 100
+        assert row["lead_time_dias"] == 14
+        assert float(row["costo_unitario"]) == 2500.0
+        assert row["proveedor"] == "Proveedor Test S.A."
 
     def test_upsert_updates_existing(self, client, auth_headers):
         sku = _sku()

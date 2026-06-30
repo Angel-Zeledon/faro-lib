@@ -166,6 +166,62 @@ class TestBulkOperations:
         assert resp.status_code == 200
         assert resp.json()["data"]["date_column"] == "date"
 
+    def test_large_bulk_import_does_not_freeze_event_loop(self, client, auth_headers):
+        """
+        Regression test for commit 72a8ec4: bulk_import used to do one synchronous
+        psycopg2 round-trip per CSV row directly inside an async handler, which froze
+        the asyncio event loop — and with it /health — for every tenant, for the whole
+        duration of the import (confirmed: a 10k-row file blocked /health). The fix
+        offloads the blocking work via asyncio.to_thread (api/v1/inventory.py:166).
+
+        This starts a large import on a background thread and, while it's in flight,
+        repeatedly hits /health on the same shared TestClient (which serves all
+        requests off a single background event loop) — if the import were still
+        blocking that loop, /health calls would queue up behind it and spike in
+        latency. With the fix, /health latency should stay low throughout.
+        """
+        import time
+        from uuid import uuid4 as _uuid4
+
+        n_rows = 3000
+        lines = ["sku,stock_actual,lead_time_dias"]
+        for i in range(n_rows):
+            lines.append(f"FREEZE-TEST-{_uuid4().hex[:10]}-{i},10,5")
+        csv_bytes = ("\n".join(lines) + "\n").encode("utf-8")
+
+        import_done = threading.Event()
+        import_result = {}
+
+        def do_import():
+            resp = client.post(
+                "/api/v1/inventory/bulk",
+                files={"file": ("large.csv", csv_bytes, "text/csv")},
+                headers=auth_headers,
+            )
+            import_result["status_code"] = resp.status_code
+            import_done.set()
+
+        import_thread = threading.Thread(target=do_import)
+        import_thread.start()
+
+        health_latencies = []
+        # Poll /health repeatedly while the import is in flight.
+        while not import_done.is_set():
+            start = time.monotonic()
+            client.get("/health")
+            health_latencies.append(time.monotonic() - start)
+            if len(health_latencies) > 200:  # safety cap in case import_done is missed
+                break
+
+        import_thread.join(timeout=120)
+        assert import_result.get("status_code") == 200
+
+        assert health_latencies, "Import finished before any /health probe ran — increase n_rows"
+        assert max(health_latencies) < 2.0, (
+            f"/health latency spiked to {max(health_latencies):.2f}s while bulk import "
+            f"was in flight — the event loop appears to be blocked again (regression of 72a8ec4)"
+        )
+
 
 @pytest.mark.stress
 @pytest.mark.slow

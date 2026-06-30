@@ -5,6 +5,7 @@ Training is NOT executed — results are seeded directly via seed_completed_sess
 """
 
 import pytest
+from unittest import mock
 from uuid import uuid4
 
 
@@ -67,6 +68,50 @@ class TestTrainingEndpoints:
         resp = client.delete(f"/api/v1/jobs/{job_id}", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["data"]["status"] == "CANCELLED"
+
+    def test_training_failure_transitions_job_and_session_to_failed(
+        self, client, auth_headers, configured_session, registered_user,
+    ):
+        """
+        Forces a real failure inside engine.train() (not a hand-set DB status) by
+        running the worker's run_training_job synchronously with ForecastEngine.train
+        mocked to raise. Everything before that — load_data, data quality, routing —
+        runs for real against the configured_session's actual uploaded CSV. Verifies
+        the FAILED path end-to-end: job row, session row, and that /results correctly
+        409s afterward. This was previously completely untested — every other
+        training test only exercises the COMPLETED path via seed_completed_session.
+        """
+        sid = configured_session["id"]
+        tenant_id = registered_user["tenant"]["id"]
+
+        train = client.post(f"/api/v1/sessions/{sid}/train", headers=auth_headers)
+        assert train.status_code == 202
+        job_id = train.json()["data"]["job_id"]
+
+        from backend.workers.runner import run_training_job
+        from backend.training import job_service
+        from backend.sessions import service as session_svc
+        from forecasting_core.engine import ForecastEngine
+
+        with mock.patch.object(
+            ForecastEngine, "train", side_effect=RuntimeError("synthetic training failure")
+        ):
+            run_training_job(tenant_id, sid, job_id)
+
+        job = job_service.get_job(tenant_id, job_id)
+        assert job["status"] == "FAILED"
+        assert "synthetic training failure" in job["error"]
+
+        session = session_svc.get_session(tenant_id, sid)
+        assert session["status"] == "FAILED"
+
+        results = client.get(f"/api/v1/sessions/{sid}/results", headers=auth_headers)
+        assert results.status_code == 409
+
+        status_resp = client.get(f"/api/v1/sessions/{sid}/train/status", headers=auth_headers)
+        assert status_resp.status_code == 200
+        assert status_resp.json()["data"]["status"] == "FAILED"
+        assert status_resp.json()["data"]["job"]["status"] == "FAILED"
 
 
 class TestResultsEndpoints:

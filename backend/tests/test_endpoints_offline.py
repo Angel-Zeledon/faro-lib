@@ -160,7 +160,7 @@ _STARTUP_PATCHES = [
     mock.patch("backend.main._recover_running_jobs"),
     mock.patch("backend.workers.worker.start"),
     mock.patch("backend.auth.blocklist.is_revoked",    return_value=False),
-    mock.patch("backend.auth.blocklist._ensure_table"),
+    mock.patch("backend.auth.blocklist.ensure_table"),
     mock.patch("backend.auth.blocklist.revoke"),
     mock.patch("backend.notifications.email._send"),
     mock.patch("backend.training.queue.peek",          return_value=[]),
@@ -275,6 +275,7 @@ class TestAuth:
         with mock.patch("backend.api.v1.auth.query_one",
                         return_value={"user_id": ADMIN_ID, "tenant_id": TENANT_ID}), \
              mock.patch("backend.users.service.query_one", return_value=user_with_pass), \
+             mock.patch("backend.users.service.execute"), \
              mock.patch("backend.users.service.add_refresh_token"):
             r = oc.post("/api/v1/auth/login", json={
                 "email": "admin@example.com", "password": "Str0ng!Pass123",
@@ -376,7 +377,8 @@ class TestSessions:
 
     def test_delete_session_returns_204(self, oc, tokens):
         with mock.patch("backend.sessions.service.get_session",    return_value=MOCK_DRAFT_SESSION), \
-             mock.patch("backend.sessions.service.delete_session"):
+             mock.patch("backend.sessions.service.delete_session"), \
+             mock.patch("backend.api.v1.sessions.log_action"):
             r = oc.delete(f"/api/v1/sessions/{DRAFT_ID}", headers=tokens["admin"])
         assert r.status_code == 204
 
@@ -906,10 +908,12 @@ class TestUsers:
         assert "email" in data
 
     def test_list_users_admin_only(self, oc, tokens):
-        with mock.patch("backend.users.service.list_users", return_value=[MOCK_USER]):
+        with mock.patch("backend.users.service.list_users_admin",
+                        return_value={"items": [MOCK_USER], "total": 1}):
             r = oc.get("/api/v1/users", headers=tokens["admin"])
         assert r.status_code == 200
-        assert len(r.json()["data"]) == 1
+        assert len(r.json()["data"]["items"]) == 1
+        assert r.json()["data"]["total"] == 1
 
     def test_list_users_analyst_forbidden(self, oc, tokens):
         r = oc.get("/api/v1/users", headers=tokens["analyst"])
@@ -922,8 +926,8 @@ class TestUsers:
     def test_invite_user_creates_account(self, oc, tokens):
         new_user = {**MOCK_USER, "id": "usr_new_off", "email": "invited@example.com",
                     "role": "analyst"}
-        with mock.patch("backend.db.connection.query_one", return_value=None), \
-             mock.patch("backend.users.service.create_user", return_value=new_user):
+        with mock.patch("backend.api.v1.auth.query_one", return_value=None), \
+             mock.patch("backend.users.service.create_user_admin", return_value=new_user):
             r = oc.post("/api/v1/users/invite",
                         json={"email": "invited@example.com", "role": "analyst",
                               "full_name": "Invited User"},
@@ -931,7 +935,7 @@ class TestUsers:
         assert r.status_code == 201
         data = r.json()["data"]
         assert "user" in data
-        assert "dev_invite_token" in data
+        assert data["user"]["email"] == "invited@example.com"
 
     def test_invite_duplicate_email_returns_409(self, oc, tokens):
         # invite_user calls _lookup_email from backend.api.v1.auth, which uses
@@ -1028,19 +1032,49 @@ class TestArtifacts:
 
     def test_download_artifact_missing_file_returns_404(self, oc, tokens):
         from pathlib import Path
-        base = mock.MagicMock(spec=Path)
-        base.__truediv__ = lambda self, other: base
-        base.resolve.return_value = base
-        base.__str__ = lambda self: "/artifacts/ten/sess"
         full = mock.MagicMock(spec=Path)
         full.exists.return_value = False
         full.resolve.return_value = full
         full.__str__ = lambda self: "/artifacts/ten/sess/model.pkl"
+        base = mock.MagicMock(spec=Path)
+        # base / artifact_path must yield `full` (not `base` itself) so the
+        # route's `full.exists()` reflects this test's intent, not base's.
+        base.__truediv__ = lambda self, other: full
+        base.resolve.return_value = base
+        base.__str__ = lambda self: "/artifacts/ten/sess"
         with mock.patch("backend.sessions.service.get_session",    return_value=MOCK_SESSION), \
              mock.patch("backend.storage.paths.artifacts_dir",     return_value=base):
             r = oc.get(f"/api/v1/sessions/{SESSION_ID}/artifacts/download/model.pkl",
                        headers=tokens["admin"])
-        assert r.status_code in (403, 404)
+        assert r.status_code == 404
+
+    def test_download_artifact_path_traversal_rejected_with_real_filesystem(self, oc, tokens, tmp_path):
+        """Real (non-mocked-Path) regression test for the traversal guard in
+        download_artifact: a `../`-style artifact_path must never resolve
+        outside the session's own artifacts directory.
+
+        Uses percent-encoded dot-segments (%2e%2e%2f) because httpx/the HTTP
+        client normalizes literal '../' out of the URL *before* the request
+        is even sent (confirmed: a literal '../' collapses client-side and
+        never reaches the route at all) — the encoded form is what an actual
+        attacker would send, and is what Starlette decodes into '..' only
+        after routing, i.e. exactly where the handler's own guard must catch it.
+        """
+        tenant_dir = tmp_path / "artifacts" / "ten_off" / SESSION_ID
+        tenant_dir.mkdir(parents=True)
+        (tenant_dir / "model.pkl").write_bytes(b"fake-model")
+        secret = tmp_path / "secret.txt"
+        secret.write_bytes(b"top-secret")
+
+        with mock.patch("backend.sessions.service.get_session", return_value=MOCK_SESSION), \
+             mock.patch("backend.storage.paths.artifacts_dir", return_value=tenant_dir):
+            r = oc.get(
+                f"/api/v1/sessions/{SESSION_ID}/artifacts/download/"
+                "%2e%2e%2f%2e%2e%2f%2e%2e%2fsecret.txt",
+                headers=tokens["admin"],
+            )
+        assert r.status_code == 403
+        assert "top-secret" not in r.text
 
     def test_list_artifacts_requires_auth(self, oc):
         r = oc.get(f"/api/v1/sessions/{SESSION_ID}/artifacts")

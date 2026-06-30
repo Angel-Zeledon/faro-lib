@@ -125,6 +125,34 @@ class TestRBAC:
         )
         assert resp.status_code == 201
 
+    def test_analyst_can_upload_dataset(self, client, analyst_headers, csv_bytes):
+        resp = client.post(
+            "/api/v1/datasets",
+            files={"file": ("data.csv", csv_bytes, "text/csv")},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 201
+
+    def test_analyst_can_configure_columns(self, client, analyst_headers, test_session, uploaded_dataset):
+        sid = test_session["id"]
+        attach = client.post(
+            f"/api/v1/sessions/{sid}/dataset",
+            json={"dataset_id": uploaded_dataset["id"]},
+            headers=analyst_headers,
+        )
+        assert attach.status_code == 200
+        resp = client.post(
+            f"/api/v1/sessions/{sid}/configure/columns",
+            json={"date_column": "date", "target_column": "sales"},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 200
+
+    def test_analyst_can_start_training(self, client, analyst_headers, configured_session):
+        sid = configured_session["id"]
+        resp = client.post(f"/api/v1/sessions/{sid}/train", headers=analyst_headers)
+        assert resp.status_code == 202
+
     def test_tenant_isolation_sessions(self, client, registered_user):
         """User from tenant A cannot see sessions of tenant B."""
         from backend.tenants.service import create_tenant
@@ -155,6 +183,104 @@ class TestRBAC:
         execute("DELETE FROM tenants WHERE id = %s", (t2["id"],))
 
 
+# ── Inventory permissions: intentionally ungated ─────────────────────────────
+#
+# Unlike sessions/datasets/training, the inventory endpoints (stock, events,
+# suppliers, BOM, bulk-import) have no role gate in source — every route depends
+# only on `get_current_user`, not `require_analyst_or_above`. This was confirmed
+# with the user to be intentional (any authenticated user, including viewer, may
+# mutate inventory), not an oversight. These tests lock in that decision: if
+# someone later adds a role gate here, these tests will fail and force an
+# explicit, conscious update rather than a silent behavior change.
+
+class TestInventoryPermissionsIntentionallyOpen:
+    def test_viewer_can_upsert_and_delete_stock(self, client, viewer_headers):
+        sku = f"PYTEST-VWR-{uuid4().hex[:8]}"
+        put = client.put(
+            f"/api/v1/inventory/stock/{sku}",
+            json={"stock_actual": 10},
+            headers=viewer_headers,
+        )
+        assert put.status_code == 200
+        assert put.json()["data"]["stock_actual"] == 10
+
+        delete = client.delete(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers)
+        assert delete.status_code == 204
+
+    def test_viewer_can_create_patch_delete_event(self, client, viewer_headers):
+        create = client.post(
+            "/api/v1/inventory/events",
+            json={"name": "viewer-event", "start_date": "2026-11-01", "end_date": "2026-11-30"},
+            headers=viewer_headers,
+        )
+        assert create.status_code == 201
+        event_id = create.json()["data"]["id"]
+
+        patch = client.patch(
+            f"/api/v1/inventory/events/{event_id}",
+            json={"multiplier": 2.0},
+            headers=viewer_headers,
+        )
+        assert patch.status_code == 200
+        assert patch.json()["data"]["multiplier"] == 2.0
+
+        delete = client.delete(f"/api/v1/inventory/events/{event_id}", headers=viewer_headers)
+        assert delete.status_code == 204
+
+    def test_viewer_can_create_patch_delete_supplier(self, client, viewer_headers):
+        create = client.post(
+            "/api/v1/inventory/suppliers",
+            json={"name": "viewer-supplier"},
+            headers=viewer_headers,
+        )
+        assert create.status_code == 201
+        supplier_id = create.json()["data"]["id"]
+
+        patch = client.patch(
+            f"/api/v1/inventory/suppliers/{supplier_id}",
+            json={"name": "viewer-supplier-renamed"},
+            headers=viewer_headers,
+        )
+        assert patch.status_code == 200
+        assert patch.json()["data"]["name"] == "viewer-supplier-renamed"
+
+        delete = client.delete(f"/api/v1/inventory/suppliers/{supplier_id}", headers=viewer_headers)
+        assert delete.status_code == 204
+
+    def test_viewer_can_upsert_and_delete_bom_item(self, client, viewer_headers):
+        parent, child = f"VWR-P-{uuid4().hex[:6]}", f"VWR-C-{uuid4().hex[:6]}"
+        for sku in (parent, child):
+            assert client.put(
+                f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 1}, headers=viewer_headers
+            ).status_code == 200
+
+        put = client.put(
+            f"/api/v1/inventory/bom/{parent}/{child}",
+            json={"quantity": 5.0},
+            headers=viewer_headers,
+        )
+        assert put.status_code == 200
+        assert put.json()["data"]["quantity"] == 5.0
+
+        delete = client.delete(f"/api/v1/inventory/bom/{parent}/{child}", headers=viewer_headers)
+        assert delete.status_code == 204
+
+    def test_viewer_can_bulk_import_stock(self, client, viewer_headers):
+        sku = f"PYTEST-BULK-{uuid4().hex[:8]}"
+        csv_content = f"sku,stock_actual,lead_time_dias\n{sku},25,10\n".encode()
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            files={"file": ("stock.csv", csv_content, "text/csv")},
+            headers=viewer_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["imported"] == 1
+
+        check = client.get(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers)
+        assert check.status_code == 200
+        assert check.json()["data"]["stock_actual"] == 25
+
+
 # ── Input validation edge cases ───────────────────────────────────────────────
 
 class TestInputValidation:
@@ -172,16 +298,25 @@ class TestInputValidation:
         # Either 422 (Pydantic) or 400/409 from app logic
         assert resp.status_code in (400, 409, 422)
 
-    def test_training_config_invalid_train_ratio_returns_422(self, client, auth_headers, test_session):
+    def test_training_config_train_ratio_has_no_range_validation(self, client, auth_headers, test_session):
+        """
+        ValidationConfigRequest.train_ratio (schemas/configuration.py:64) is a bare
+        `float = 0.8` with no Field(ge=.., le=..) constraint, so an out-of-range value
+        like 1.5 (>100% train split) is accepted and persisted as-is — there is no
+        code path that rejects it. This pins down that gap with a real assertion
+        instead of treating either outcome as a pass.
+        """
         sid = test_session["id"]
         resp = client.post(
             f"/api/v1/sessions/{sid}/configure/validation",
-            json={"train_ratio": 1.5},  # > 1 is invalid per Pydantic
+            json={"train_ratio": 1.5},
             headers=auth_headers,
         )
-        # ValidationConfigRequest doesn't constrain train_ratio range, so it may pass
-        # Just verify no crash
-        assert resp.status_code in (200, 422)
+        assert resp.status_code == 200
+
+        check = client.get(f"/api/v1/sessions/{sid}/configure/validation", headers=auth_headers)
+        assert check.status_code == 200
+        assert check.json()["data"]["train_ratio"] == 1.5
 
     def test_signup_missing_required_fields_returns_422(self, client):
         resp = client.post("/api/v1/auth/signup", json={"email": "test@example.com"})
