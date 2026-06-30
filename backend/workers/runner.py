@@ -6,6 +6,9 @@ Everything else in the backend is pure orchestration.
 """
 
 import logging
+import os
+import random
+import time as _time
 from datetime import datetime
 
 from backend.db import session_store
@@ -25,6 +28,11 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
     """
     Assembles a SessionConfig-compatible dict from the session's DB config blobs.
     Maps backend schema → forecasting_core schema.
+
+    Supports two column-mapping schemas stored in columns_cfg:
+      - "legacy"       (default): expects sku_column / date_column / target_column keys.
+      - "canonical_v1": expects a nested canonical_mapping dict
+                        {canonical_field: actual_column_name}.
     """
     s = get_session(tenant_id, session_id)
     columns_cfg = session_store.get_field(tenant_id, session_id, "columns_cfg") or {}
@@ -50,20 +58,49 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
         selected = ModelFactory.available_models()
     models_dict = {m: hyperparams.get(m, {}) for m in selected}
 
+    # ── Column mapping: branch on schema_version ──────────────────────────
+    schema_version = columns_cfg.get("schema_version", "legacy")
+
+    if schema_version == "canonical_v1":
+        # New canonical path: columns_cfg has a nested canonical_mapping dict
+        # {canonical_field ("sku","date","demand","store",...): actual_column_name}
+        cmap = columns_cfg.get("canonical_mapping", {})
+        target_col = cmap.get("demand")    # canonical "demand" → user's actual column
+        date_col   = cmap.get("date")
+        sku_col    = cmap.get("sku")
+        store_col  = cmap.get("store")     # may be None if user didn't map it
+        group_keys = [c for c in [sku_col, store_col] if c]
+        if not group_keys:
+            group_keys = ["sku"]   # safe fallback: canonical column name added by apply_canonical_defaults
+        cols_dict = {
+            "target":     target_col or "demand",
+            "date":       date_col   or "date",
+            "group_keys": group_keys,
+            "exogenous":  [],
+        }
+    else:
+        # Legacy path: columns_cfg has flat sku_column / date_column / target_column
+        cmap = {}
+        sku_col = columns_cfg.get("sku_column")
+        cols_dict = {
+            "target":     columns_cfg.get("target_column", ""),
+            "date":       columns_cfg.get("date_column", ""),
+            "group_keys": [sku_col] if sku_col else ["sku"],
+            "exogenous":  columns_cfg.get("exogenous_columns", []) or [],
+        }
+
     return {
         "name": f"session_{session_id[:8]}",
         "data": {
             "path": dataset_path,
             "date_freq": None,
         },
-        "columns": {
-            "target": columns_cfg.get("target_column", ""),
-            "date": columns_cfg.get("date_column", ""),
-            "group": columns_cfg.get("sku_column"),
-            "exogenous": columns_cfg.get("exogenous", []),
-        },
+        "columns": cols_dict,
         "_gap_fill": columns_cfg.get("gap_fill", "leave"),
         "_outlier_config": columns_cfg.get("outlier_config", {}),
+        # Stash schema_version + canonical_mapping so run_training_job can apply defaults
+        "_schema_version": schema_version,
+        "_canonical_mapping": cmap,
         "features": {
             "lags": features_cfg.get("lags", [1, 7, 14]),
             "rolling": features_cfg.get("rolling", [7, 14, 28]),
@@ -91,6 +128,21 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
             "stockout_cost_multiplier": business_cfg.get("stockout_cost_multiplier", 3.0),
         },
     }
+
+
+# ── Column config helper ──────────────────────────────────────────────────
+
+def _primary_group_col(col_cfg: dict):
+    """
+    Return the primary (first) group column from the columns config dict.
+
+    After the canonical_v1 / legacy fix, the dict always has 'group_keys' (a list).
+    Falls back to the old 'group' key for any lingering legacy callers.
+    """
+    gk = col_cfg.get("group_keys")
+    if gk and isinstance(gk, list):
+        return gk[0] if gk else None
+    return col_cfg.get("group")   # legacy fallback (should no longer be needed)
 
 
 # ── Gap fill helper ───────────────────────────────────────────────────────
@@ -283,7 +335,7 @@ def _generate_forecast_series(engine, config: dict) -> dict:
     col_cfg    = config["columns"]
     dt_col     = col_cfg["date"]
     target_col = col_cfg["target"]
-    group_col  = col_cfg.get("group")
+    group_col  = _primary_group_col(col_cfg)
 
     df = engine._df.copy() if engine._df is not None else pd.DataFrame()
 
@@ -348,6 +400,40 @@ def _generate_forecast_series(engine, config: dict) -> dict:
     return result
 
 
+# ── Excluded-SKU transparency ──────────────────────────────────────────────
+
+def _compute_excluded_skus(df, group_col, forecasts: dict, min_history: int) -> list[dict]:
+    """
+    SKUs that were uploaded but did NOT make it into the forecast — so the UI can
+    tell the user *which* products were left out and *why*, instead of silently
+    dropping them (the #1 source of "I uploaded 5 SKUs and only 3 showed up").
+
+    Reason is derived from row count: the engine drops series shorter than
+    min_history (can't be forecast reliably); anything else that's missing is
+    flagged generically as "no_forecast".
+    """
+    if df is None or not group_col or group_col not in getattr(df, "columns", []):
+        return []
+    forecast_keys = set(forecasts.keys())
+    excluded: list[dict] = []
+    for sku, g in df.groupby(group_col):
+        sku = str(sku)
+        if sku in forecast_keys:
+            continue
+        n = int(len(g))
+        if n < min_history:
+            excluded.append({
+                "sku": sku, "n_rows": n, "reason": "insufficient_history",
+                "detail": f"Solo {n} registros de historia (se necesitan al menos {min_history})",
+            })
+        else:
+            excluded.append({
+                "sku": sku, "n_rows": n, "reason": "no_forecast",
+                "detail": "No se pudo generar un pronóstico confiable para este producto",
+            })
+    return excluded
+
+
 # ── Progress helpers ───────────────────────────────────────────────────────
 
 def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str, message: str):
@@ -364,6 +450,19 @@ def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str,
 
 def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
     log.info(f"Runner starting job={job_id} session={session_id} tenant={tenant_id}")
+    # Stress-test shim: when MOCK_TRAINING=1 (only honored under testing_mode), skip the
+    # heavy ML and simulate a fast job so the queue/worker/concurrency machinery can be
+    # saturated without waiting on real LightGBM/XGBoost/Prophet fits. Default off.
+    from backend.config import settings as _settings
+    if _settings.testing_mode and os.getenv("MOCK_TRAINING") == "1":
+        _time.sleep(random.uniform(0.05, 0.25))
+        mark_completed(tenant_id, job_id)
+        try:
+            force_status(tenant_id, session_id, "COMPLETED", "results")
+        except Exception:
+            pass
+        log.info(f"[MOCK_TRAINING] job {job_id} completed (no ML)")
+        return
     try:
         _emit(tenant_id, session_id, job_id, 5, "init", "Building engine config...")
         config = build_engine_config(tenant_id, session_id)
@@ -375,8 +474,22 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
 
         gap_fill = config.pop("_gap_fill", "leave")
         outlier_cfg = config.pop("_outlier_config", {})
+        schema_version = config.pop("_schema_version", "legacy")
+        canonical_mapping = config.pop("_canonical_mapping", {})
 
         col_cfg = config["columns"]
+
+        # For canonical_v1 sessions: enrich the DataFrame with canonical column
+        # aliases + defaults (adds 'sku', 'date', 'demand', 'store', etc.) so
+        # downstream steps can rely on standardised column names even when the
+        # user's file uses arbitrary column names.
+        if schema_version == "canonical_v1" and canonical_mapping and engine._df is not None:
+            try:
+                from forecasting_core.data.canonical import apply_canonical_defaults
+                engine._df = apply_canonical_defaults(engine._df, canonical_mapping)
+                log.info("Applied canonical defaults to dataset (canonical_v1 session)")
+            except Exception as e:
+                log.warning(f"Canonical defaults application failed (non-fatal): {e}")
 
         if gap_fill and gap_fill != "leave" and engine._df is not None:
             _emit(tenant_id, session_id, job_id, 14, "gap_fill",
@@ -385,7 +498,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 engine._df,
                 date_col=col_cfg["date"],
                 target_col=col_cfg["target"],
-                group_col=col_cfg.get("group"),
+                group_col=_primary_group_col(col_cfg),
                 strategy=gap_fill,
             )
 
@@ -397,9 +510,22 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 engine._df,
                 date_col=col_cfg["date"],
                 target_col=col_cfg["target"],
-                group_col=col_cfg.get("group"),
+                group_col=_primary_group_col(col_cfg),
                 outlier_cfg=outlier_cfg,
             )
+
+        if engine._df is not None:
+            try:
+                from backend.inventory.service import sync_stock_from_dataset
+                n_synced = sync_stock_from_dataset(
+                    tenant_id, engine._df,
+                    group_col=_primary_group_col(col_cfg),
+                    date_col=col_cfg["date"],
+                )
+                if n_synced:
+                    log.info(f"Synced inventory stock for {n_synced} SKU(s) from uploaded dataset")
+            except Exception as e:
+                log.warning(f"Inventory stock sync failed (non-fatal): {e}")
 
         _emit(tenant_id, session_id, job_id, 20, "inspect", "Running data quality check...")
         dq_report = engine.get_data_quality_report()
@@ -439,6 +565,21 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 log.info("No forecast data available to save")
         except Exception as e:
             log.warning(f"Forecast series generation failed (non-fatal): {e}")
+
+        # Transparency: record uploaded SKUs that did NOT make it into the forecast
+        # (e.g. dropped for insufficient history) so the UI can surface them instead
+        # of letting them silently vanish from the inventory view.
+        try:
+            excluded = _compute_excluded_skus(
+                engine._df, _primary_group_col(col_cfg), forecasts,
+                min_history=int(config.get("training", {}).get("min_history", 20)),
+            )
+            if excluded:
+                result_payload["excluded_skus"] = excluded
+                session_store.set_training_result(tenant_id, session_id, result_payload)
+                log.info(f"Recorded {len(excluded)} excluded SKU(s) for session {session_id}")
+        except Exception as e:
+            log.warning(f"Excluded-SKU computation failed (non-fatal): {e}")
 
         _emit(tenant_id, session_id, job_id, 96, "indexing", "Indexing session for AI analyst...")
         try:
