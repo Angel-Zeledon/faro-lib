@@ -54,23 +54,18 @@ PRINCIPIOS ABSOLUTOS:
 
 
 def _get_client():
-    """Returns the Anthropic client or None if not configured."""
+    """Returns the local LLM client, or None if it can't be constructed."""
     try:
-        from backend.config import settings
-        if not settings.anthropic_api_key:
-            log.warning("Narrative service: ANTHROPIC_API_KEY not configured — running in fallback mode")
-            return None
-        import anthropic
-        return anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
+        from backend.ai.local_llm import get_local_llm_client
+        return get_local_llm_client(timeout=60.0)
     except Exception as e:
-        log.warning("Narrative service: Anthropic client unavailable: %s", e)
+        log.warning("Narrative service: local LLM client unavailable: %s", e)
         return None
 
 
-def _call_claude(client, user_message: str, max_tokens: int = 600) -> str:
-    """Single Claude call, returns text or raises."""
+def _call_llm(client, user_message: str, max_tokens: int = 600) -> str:
+    """Single LLM call, returns text or raises."""
     resp = client.messages.create(
-        model="claude-sonnet-4-6",
         max_tokens=max_tokens,
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
@@ -150,7 +145,7 @@ Genera un resumen ejecutivo de máximo 220 palabras con esta estructura exacta:
 Sé específico, usa los números del contexto, no uses jerga técnica."""
 
     try:
-        text = _call_claude(client, prompt, max_tokens=700)
+        text = _call_llm(client, prompt, max_tokens=700)
         urgency = 'critical' if kpis.get('pedir_ya', 0) > 0 else ('warning' if kpis.get('pedir_pronto', 0) > 0 else 'ok')
         return {"narrative": text, "key_points": _extract_key_points(data_summary), "urgency": urgency, "fallback": False}
     except Exception as e:
@@ -215,7 +210,7 @@ En máximo 150 palabras, explica:
 Usa números concretos. Sin jerga técnica."""
 
     try:
-        text = _call_claude(client, prompt, max_tokens=400)
+        text = _call_llm(client, prompt, max_tokens=400)
         urgency = 'critical' if signals.get('PEDIR_YA', 0) > 2 else ('warning' if signals.get('PEDIR_YA', 0) > 0 else 'ok')
         return {"insight": text, "urgency": urgency, "fallback": False}
     except Exception as e:
@@ -268,7 +263,7 @@ Explica en máximo 120 palabras:
 Sin jerga técnica. Como un analista explicándole a su jefe."""
 
     try:
-        text = _call_claude(client, prompt, max_tokens=300)
+        text = _call_llm(client, prompt, max_tokens=300)
         return {"explanation": text, "fallback": False}
     except Exception as e:
         log.error("Forecast explanation failed for %s: %s", sku, e)
