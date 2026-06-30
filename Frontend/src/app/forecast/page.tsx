@@ -18,8 +18,10 @@ import type {
 import OverrideCell from '@/components/forecast/OverrideCell'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
+import HelpTip from '@/components/ui/HelpTip'
 import Spinner from '@/components/ui/Spinner'
 import { useActiveSession } from '@/contexts/ActiveSessionContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import {
   Check, Database, Sliders, Cpu, FileSpreadsheet,
   GitBranch, Play, BarChart2, Network, AlertTriangle, RefreshCw,
@@ -28,15 +30,15 @@ import {
 
 // ── Wizard step definitions ────────────────────────────────────────────────────
 const STEPS = [
-  { id: 1, label: 'Dataset',    Icon: Database,   desc: 'Select or upload a dataset' },
-  { id: 2, label: 'Analysis',   Icon: TrendingUp, desc: 'Dataset quality and temporal overview' },
-  { id: 3, label: 'Columns',    Icon: Sliders,    desc: 'Map target, date, and group columns' },
-  { id: 4, label: 'Features',   Icon: GitBranch,  desc: 'Configure lags, rolling, calendar' },
-  { id: 5, label: 'Models',     Icon: Cpu,        desc: 'Select models and hyperparameters' },
-  { id: 6, label: 'Routing',    Icon: Network,    desc: 'Preview model assignment plan' },
-  { id: 7, label: 'Validation', Icon: GitBranch,  desc: 'Walk-forward validation setup' },
-  { id: 8, label: 'Train',      Icon: Play,       desc: 'Execute training pipeline' },
-  { id: 9, label: 'Results',    Icon: BarChart2,  desc: 'View metrics and forecasts' },
+  { id: 1, labelKey: 'forecast.step1_label',    Icon: Database,   descKey: 'forecast.step1_desc' },
+  { id: 2, labelKey: 'forecast.step2_label',    Icon: TrendingUp, descKey: 'forecast.step2_desc' },
+  { id: 3, labelKey: 'forecast.step3_label',    Icon: Sliders,    descKey: 'forecast.step3_desc' },
+  { id: 4, labelKey: 'forecast.step4_label',    Icon: GitBranch,  descKey: 'forecast.step4_desc' },
+  { id: 5, labelKey: 'forecast.step5_label',    Icon: Cpu,        descKey: 'forecast.step5_desc' },
+  { id: 6, labelKey: 'forecast.step6_label',    Icon: Network,    descKey: 'forecast.step6_desc' },
+  { id: 7, labelKey: 'forecast.step7_label',    Icon: GitBranch,  descKey: 'forecast.step7_desc' },
+  { id: 8, labelKey: 'forecast.step8_label',    Icon: Play,       descKey: 'forecast.step8_desc' },
+  { id: 9, labelKey: 'forecast.step9_label',    Icon: BarChart2,  descKey: 'forecast.step9_desc' },
 ]
 
 const TOTAL = STEPS.length
@@ -108,21 +110,21 @@ interface SavedConfigs {
 
 // ── Default features schema ───────────────────────────────────────────────────
 const DEFAULT_FEATURES_SCHEMA: Record<string, FieldSchema> = {
-  lags:      { type: 'int_list',   default: [1, 7, 14, 28], label: 'Lag features' },
-  rolling:   { type: 'int_list',   default: [7, 14, 28],    label: 'Rolling windows' },
-  diffs:     { type: 'int_list',   default: [1],            label: 'Differencing orders' },
-  calendar:  { type: 'bool',       default: true,           label: 'Calendar features' },
-  ewm_spans: { type: 'int_list',   default: [],             label: 'EWM spans' },
+  lags:      { type: 'int_list',   default: [1, 7, 14, 28], label: 'forecast.feat_lags_label' },
+  rolling:   { type: 'int_list',   default: [7, 14, 28],    label: 'forecast.feat_rolling_label' },
+  diffs:     { type: 'int_list',   default: [1],            label: 'forecast.feat_diffs_label' },
+  calendar:  { type: 'bool',       default: true,           label: 'forecast.feat_calendar_label' },
+  ewm_spans: { type: 'int_list',   default: [],             label: 'forecast.feat_ewm_label' },
 }
 
-const MODEL_DESC: Record<string, string> = {
-  lightgbm: 'Gradient boosting — best for large datasets with many features',
-  xgboost:  'Gradient boosting — strong general-purpose baseline',
-  prophet:  'Facebook Prophet with trend + seasonality decomposition',
-  arima:    'Auto-ARIMA for stationary time series',
-  ets:      'Holt-Winters exponential smoothing',
-  croston:  "Croston's method for intermittent/sparse demand",
-  lstm:     'LSTM neural network — powerful but requires long training',
+const MODEL_DESC_KEYS: Record<string, string> = {
+  lightgbm: 'forecast.model_desc_lightgbm',
+  xgboost:  'forecast.model_desc_xgboost',
+  prophet:  'forecast.model_desc_prophet',
+  arima:    'forecast.model_desc_arima',
+  ets:      'forecast.model_desc_ets',
+  croston:  'forecast.model_desc_croston',
+  lstm:     'forecast.model_desc_lstm',
 }
 
 const MODEL_EXOG_SUPPORT: Record<string, boolean> = {
@@ -132,6 +134,7 @@ const MODEL_EXOG_SUPPORT: Record<string, boolean> = {
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
 function StepIndicator({ current, completed }: { current: number; completed: Set<number> }) {
+  const { t } = useLanguage()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
       {STEPS.map((s, i) => {
@@ -156,7 +159,7 @@ function StepIndicator({ current, completed }: { current: number; completed: Set
                 color: active ? 'var(--accent)' : done ? '#22c55e' : 'var(--dim)',
                 marginTop: 3, whiteSpace: 'nowrap',
               }}>
-                {s.label}
+                {t(s.labelKey)}
               </div>
             </div>
             {i < STEPS.length - 1 && (
@@ -175,6 +178,7 @@ function StepIndicator({ current, completed }: { current: number; completed: Set
 
 // ── Step 1: Select Data Source ────────────────────────────────────────────────
 function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) => void }) {
+  const { t } = useLanguage()
   const [sources,  setSources]  = useState<DataSource[]>([])
   const [loading,  setLoading]  = useState(true)
   const [selected, setSelected] = useState<string | null>(null)
@@ -182,12 +186,17 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
   const [busy,     setBusy]     = useState(false)
   const [status,   setStatus]   = useState<string | null>(null)
   const [err,      setErr]      = useState<string | null>(null)
+  const [loadErr,  setLoadErr]  = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
+    setLoadErr(null)
     listDataSources(0, 100)
       .then(r => setSources(r.items.filter(s => s.connection_status === 'connected')))
-      .catch(() => setSources([]))
+      .catch((e: unknown) => {
+        setSources([])
+        setLoadErr(e instanceof Error ? e.message : t('forecast.step1_load_sources_error'))
+      })
       .finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
@@ -196,11 +205,11 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
     if (!selected) return
     setBusy(true); setErr(null)
     try {
-      setStatus('Creating session…')
+      setStatus(t('forecast.step1_status_creating'))
       const session = await createSession(name.trim() || undefined)
-      setStatus('Attaching data source…')
+      setStatus(t('forecast.step1_status_attaching'))
       await attachDataset(session.session_id, selected)
-      setStatus('Inspecting data…')
+      setStatus(t('forecast.step1_status_inspecting'))
       const inspection = await inspectSession(session.session_id)
       onNext(session.session_id, inspection)
     } catch (e: any) { setErr(e.message) }
@@ -211,16 +220,20 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 18, border: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Select a Data Source</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{t('forecast.step1_title')}</div>
           <button onClick={load} style={{ background: 'transparent', border: 'none', color: 'var(--dim)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-            <RefreshCw size={12} /> Refresh
+            <RefreshCw size={12} /> {t('forecast.step1_refresh')}
           </button>
         </div>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={20} /></div>
+        ) : loadErr ? (
+          <div style={{ textAlign: 'center', padding: '24px 0', color: '#ef4444', fontSize: 13 }}>
+            {loadErr}
+          </div>
         ) : sources.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--dim)', fontSize: 13 }}>
-            No connected data sources. Go to the <b>Data</b> page to upload or connect one.
+            {t('forecast.step1_no_sources_prefix')} <b>{t('forecast.step1_no_sources_data_link')}</b> {t('forecast.step1_no_sources_suffix')}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
@@ -243,7 +256,7 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
                     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1 }}>
                       {src.source_type === 'sql'
                         ? `${src.sql_config?.engine} · ${src.sql_config?.host}/${src.sql_config?.database}`
-                        : `${src.file_type?.toUpperCase()} · ${src.row_count ? src.row_count.toLocaleString() + ' rows' : 'unknown size'}`}
+                        : `${src.file_type?.toUpperCase()} · ${src.row_count ? src.row_count.toLocaleString() + ' ' + t('forecast.step1_rows_suffix') : t('forecast.step1_unknown_size')}`}
                     </div>
                   </div>
                 </div>
@@ -254,8 +267,8 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
         )}
       </div>
       <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 18, border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Session Name</div>
-        <input className="form-input" placeholder="e.g. Q1 2024 Demand Forecast (optional)"
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{t('forecast.step1_session_name')}</div>
+        <input className="form-input" placeholder={t('forecast.step1_session_name_placeholder')}
           value={name} onChange={e => setName(e.target.value)} style={{ marginBottom: 0 }} />
       </div>
       {err && (
@@ -267,7 +280,7 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
         </div>
       )}
       <Button variant="primary" loading={busy} disabled={!selected || busy} onClick={go} style={{ alignSelf: 'flex-start' }}>
-        Continue with this source →
+        {t('forecast.step1_continue_btn')}
       </Button>
     </div>
   )
@@ -275,20 +288,20 @@ function Step1({ onNext }: { onNext: (id: string, inspection: InspectionResult) 
 
 // ── Step 2: Dataset Analysis ──────────────────────────────────────────────────
 const GAP_FILL_OPTIONS = [
-  { value: 'leave',       label: 'Leave as-is',            desc: 'Models will handle gaps internally' },
-  { value: 'zero',        label: 'Fill with zero',          desc: 'Insert 0 for missing periods' },
-  { value: 'mean',        label: 'Fill with mean',          desc: 'Use average of observed values' },
-  { value: 'forward',     label: 'Forward fill',            desc: 'Carry last known value forward' },
-  { value: 'interpolate', label: 'Linear interpolation',    desc: 'Smooth fill between neighbours' },
+  { value: 'leave',       labelKey: 'forecast.gap_fill_leave_label',       descKey: 'forecast.gap_fill_leave_desc' },
+  { value: 'zero',        labelKey: 'forecast.gap_fill_zero_label',        descKey: 'forecast.gap_fill_zero_desc' },
+  { value: 'mean',        labelKey: 'forecast.gap_fill_mean_label',        descKey: 'forecast.gap_fill_mean_desc' },
+  { value: 'forward',     labelKey: 'forecast.gap_fill_forward_label',     descKey: 'forecast.gap_fill_forward_desc' },
+  { value: 'interpolate', labelKey: 'forecast.gap_fill_interpolate_label', descKey: 'forecast.gap_fill_interpolate_desc' },
 ]
 
 const OUTLIER_STRATEGIES = [
-  { value: 'leave',           label: 'Leave as-is',           desc: 'No treatment — models receive raw data' },
-  { value: 'winsorize_sigma', label: 'Winsorize (σ)',          desc: 'Clip to mean ± N×std per SKU' },
-  { value: 'winsorize_pct',   label: 'Winsorize (percentile)', desc: 'Clip bottom/top P% of values per SKU' },
-  { value: 'iqr_fence',       label: 'IQR fence',              desc: 'Clip beyond Q1 − k×IQR and Q3 + k×IQR' },
-  { value: 'remove',          label: 'Remove & interpolate',   desc: 'Replace outliers with NaN then linearly interpolate' },
-  { value: 'log1p',           label: 'Log1p transform',        desc: 'Apply log(1+x) to the whole series — stabilises variance' },
+  { value: 'leave',           labelKey: 'forecast.outlier_leave_label',           descKey: 'forecast.outlier_leave_desc' },
+  { value: 'winsorize_sigma', labelKey: 'forecast.outlier_winsorize_sigma_label', descKey: 'forecast.outlier_winsorize_sigma_desc' },
+  { value: 'winsorize_pct',   labelKey: 'forecast.outlier_winsorize_pct_label',   descKey: 'forecast.outlier_winsorize_pct_desc' },
+  { value: 'iqr_fence',       labelKey: 'forecast.outlier_iqr_fence_label',       descKey: 'forecast.outlier_iqr_fence_desc' },
+  { value: 'remove',          labelKey: 'forecast.outlier_remove_label',          descKey: 'forecast.outlier_remove_desc' },
+  { value: 'log1p',           labelKey: 'forecast.outlier_log1p_label',           descKey: 'forecast.outlier_log1p_desc' },
 ]
 
 function defaultOutlierConfig(): OutlierConfig {
@@ -299,6 +312,7 @@ function defaultOutlierConfig(): OutlierConfig {
 function Step2({
   sessionId, inspection, onNext,
 }: { sessionId: string; inspection: InspectionResult; onNext: (gapFill: string, outlierCfg: OutlierConfig) => void }) {
+  const { t } = useLanguage()
   const [analysis,      setAnalysis]      = useState<DatasetAnalysis | null>(null)
   const [loading,       setLoading]       = useState(true)
   const [err,           setErr]           = useState<string | null>(null)
@@ -317,8 +331,15 @@ function Step2({
   const seasonalColor: Record<string, string> = {
     none: 'var(--dim)', weak: '#f59e0b', moderate: '#0ea5e9', strong: '#22c55e',
   }
-  const seasonalLabel: Record<string, string> = {
-    none: 'No seasonality', weak: 'Weak', moderate: 'Moderate', strong: 'Strong',
+  const seasonalLabelKey: Record<string, string> = {
+    none: 'forecast.seasonal_none', weak: 'forecast.seasonal_weak',
+    moderate: 'forecast.seasonal_moderate', strong: 'forecast.seasonal_strong',
+  }
+
+  const granularityKeys: Record<string, string> = {
+    Hour: 'forecast.granularity_hour', Day: 'forecast.granularity_day',
+    Week: 'forecast.granularity_week', Month: 'forecast.granularity_month',
+    Year: 'forecast.granularity_year', Quarter: 'forecast.granularity_quarter',
   }
 
   // Temporal granularity hierarchy
@@ -339,10 +360,10 @@ function Step2({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {[
-          { label: 'Rows',       value: stats.n_rows?.toLocaleString() ?? '—',    color: 'var(--accent)' },
-          { label: 'Columns',    value: stats.n_cols?.toLocaleString() ?? '—',    color: '#0ea5e9' },
-          { label: 'SKUs',       value: stats.n_skus?.toLocaleString() ?? '—',    color: '#22c55e' },
-          { label: 'Duplicates', value: analysis ? analysis.n_duplicates.toLocaleString() : '…',
+          { label: t('forecast.stat_rows'),       value: stats.n_rows?.toLocaleString() ?? '—',    color: 'var(--accent)' },
+          { label: t('forecast.stat_columns'),    value: stats.n_cols?.toLocaleString() ?? '—',    color: '#0ea5e9' },
+          { label: t('forecast.stat_skus'),       value: stats.n_skus?.toLocaleString() ?? '—',    color: '#22c55e' },
+          { label: t('forecast.stat_duplicates'), value: analysis ? analysis.n_duplicates.toLocaleString() : '…',
             color: analysis?.n_duplicates ? '#ef4444' : '#22c55e' },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ padding: '14px 16px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
@@ -353,28 +374,28 @@ function Step2({
       </div>
 
       {loading && <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={20} /></div>}
-      {err && <div style={{ padding: '10px 14px', borderRadius: 8, background: '#ef444415', border: '1px solid #ef444430', color: '#ef4444', fontSize: 12 }}>Analysis unavailable: {err}</div>}
+      {err && <div style={{ padding: '10px 14px', borderRadius: 8, background: '#ef444415', border: '1px solid #ef444430', color: '#ef4444', fontSize: 12 }}>{t('forecast.analysis_unavailable')} {err}</div>}
 
       {analysis && (
         <>
           {analysis.temporal && Object.keys(analysis.temporal).length > 0 && (
             <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 18, border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <TrendingUp size={13} color="var(--accent)" /> Temporal Overview
+                <TrendingUp size={13} color="var(--accent)" /> {t('forecast.temporal_overview_title')}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
                 {[
-                  { label: 'Date Range',  value: `${analysis.temporal.date_min} → ${analysis.temporal.date_max}` },
-                  { label: 'Periods',     value: analysis.temporal.n_periods?.toLocaleString() ?? '—' },
-                  { label: 'Native Freq', value: analysis.temporal.freq_label ?? '—' },
-                  { label: 'Memory',      value: `${analysis.memory_mb} MB` },
-                  { label: 'Gaps Detected', value: analysis.temporal.gap_count > 0
-                    ? <span style={{ color: '#f59e0b' }}>{analysis.temporal.gap_count} gap{analysis.temporal.gap_count !== 1 ? 's' : ''}</span>
-                    : <span style={{ color: '#22c55e' }}>None</span> },
-                  { label: 'Seasonality', value: analysis.seasonality
+                  { label: t('forecast.stat_date_range'),  value: `${analysis.temporal.date_min} → ${analysis.temporal.date_max}` },
+                  { label: t('forecast.stat_periods'),     value: analysis.temporal.n_periods?.toLocaleString() ?? '—' },
+                  { label: t('forecast.stat_native_freq'), value: analysis.temporal.freq_label ?? '—' },
+                  { label: t('forecast.stat_memory'),      value: `${analysis.memory_mb} MB` },
+                  { label: t('forecast.stat_gaps_detected'), value: analysis.temporal.gap_count > 0
+                    ? <span style={{ color: '#f59e0b' }}>{analysis.temporal.gap_count} {t('forecast.gap_count_unit')}{analysis.temporal.gap_count !== 1 ? 's' : ''}</span>
+                    : <span style={{ color: '#22c55e' }}>{t('forecast.none_label')}</span> },
+                  { label: t('forecast.stat_seasonality'), value: analysis.seasonality
                     ? <span style={{ color: seasonalColor[analysis.seasonality.classification] ?? 'var(--dim)' }}>
-                        {seasonalLabel[analysis.seasonality.classification] ?? analysis.seasonality.classification}
-                        {analysis.seasonality.dominant_period ? ` (period ${analysis.seasonality.dominant_period})` : ''}
+                        {t(seasonalLabelKey[analysis.seasonality.classification]) ?? analysis.seasonality.classification}
+                        {analysis.seasonality.dominant_period ? ` (${t('forecast.seasonal_period_label')} ${analysis.seasonality.dominant_period})` : ''}
                       </span>
                     : '—' },
                 ].map(({ label, value }) => (
@@ -386,14 +407,14 @@ function Step2({
               </div>
               {/* Temporal granularity hierarchy */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 6 }}>AVAILABLE CHART GRANULARITIES</div>
+                <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 6 }}>{t('forecast.available_granularities_title')}</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {granularities.map(g => (
                     <span key={g} style={{
                       fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 6,
                       background: 'var(--accent-dim)', color: 'var(--accent)',
                       border: '1px solid var(--accent)', opacity: 0.8,
-                    }}>{g}</span>
+                    }}>{t(granularityKeys[g]) ?? g}</span>
                   ))}
                 </div>
               </div>
@@ -402,13 +423,13 @@ function Step2({
 
           {analysis.sku_stats && analysis.sku_stats.n_skus > 0 && (
             <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 18, border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 12 }}>SKU Health</div>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{t('forecast.sku_health_title')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                 {[
-                  { label: 'Total SKUs',        value: analysis.sku_stats.n_skus,                warn: false },
-                  { label: 'Intermittent',       value: analysis.sku_stats.intermittent_count,   warn: analysis.sku_stats.intermittent_count > 0 },
-                  { label: 'Short series (<20)', value: analysis.sku_stats.short_series_count,   warn: analysis.sku_stats.short_series_count > 0 },
-                  { label: 'Avg zero demand',    value: `${analysis.sku_stats.avg_zero_pct}%`,   warn: analysis.sku_stats.avg_zero_pct > 20 },
+                  { label: t('forecast.stat_total_skus'),     value: analysis.sku_stats.n_skus,                warn: false },
+                  { label: t('forecast.stat_intermittent'),   value: analysis.sku_stats.intermittent_count,   warn: analysis.sku_stats.intermittent_count > 0 },
+                  { label: t('forecast.stat_short_series'),   value: analysis.sku_stats.short_series_count,   warn: analysis.sku_stats.short_series_count > 0 },
+                  { label: t('forecast.stat_avg_zero_demand'),value: `${analysis.sku_stats.avg_zero_pct}%`,   warn: analysis.sku_stats.avg_zero_pct > 20 },
                 ].map(({ label, value, warn }) => (
                   <div key={label}>
                     <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 2 }}>{label}</div>
@@ -419,14 +440,14 @@ function Step2({
               {analysis.sku_stats.intermittent_count > 0 && (
                 <div style={{ marginTop: 10, fontSize: 11, color: '#f59e0b', display: 'flex', gap: 6 }}>
                   <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />
-                  {analysis.sku_stats.intermittent_count} intermittent SKU{analysis.sku_stats.intermittent_count !== 1 ? 's' : ''} detected — consider adding Croston to your model selection.
+                  {analysis.sku_stats.intermittent_count} {t('forecast.intermittent_sku_unit')}{analysis.sku_stats.intermittent_count !== 1 ? 's' : ''} {t('forecast.intermittent_sku_suggestion')}
                 </div>
               )}
             </div>
           )}
 
           <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 18, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 12 }}>Column Types</div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{t('forecast.column_types_title')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {analysis.columns.map(col => (
                 <div key={col.name} style={{
@@ -440,7 +461,7 @@ function Step2({
                   <span>{col.name}</span>
                   {col.null_pct > 0 && (
                     <span style={{ fontSize: 10, color: col.null_pct > 10 ? '#ef4444' : '#f59e0b' }}>
-                      {col.null_pct}% null
+                      {col.null_pct}% {t('forecast.null_suffix')}
                     </span>
                   )}
                 </div>
@@ -452,7 +473,7 @@ function Step2({
 
       {profile.warnings.length > 0 && (
         <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#f59e0b', marginBottom: 6 }}>Dataset Warnings</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#f59e0b', marginBottom: 6 }}>{t('forecast.dataset_warnings_title')}</div>
           {profile.warnings.map((w, i) => (
             <div key={i} style={{ fontSize: 11, color: '#fbbf24', display: 'flex', gap: 6, marginTop: 3 }}>
               <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} /> {w}
@@ -465,11 +486,12 @@ function Step2({
       {(profile.data_quality?.gap_fill_needed || (analysis?.temporal?.gap_count ?? 0) > 0) && (
         <div style={{ padding: '16px 18px', borderRadius: 10, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.3)' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <AlertTriangle size={13} /> Missing dates detected
+            <AlertTriangle size={13} /> {t('forecast.missing_dates_title')}
+            <HelpTip text={t('forecast.missing_dates_help')} size={13} />
           </div>
           <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 12 }}>
-            {analysis?.temporal?.gap_count ?? 'Some'} gap{(analysis?.temporal?.gap_count ?? 1) !== 1 ? 's' : ''} found in the time series.
-            How would you like to handle missing periods before forecasting?
+            {analysis?.temporal?.gap_count ?? t('forecast.some_label')} {t('forecast.gap_count_unit')}{(analysis?.temporal?.gap_count ?? 1) !== 1 ? 's' : ''} {t('forecast.gaps_found_suffix')}
+            {' '}{t('forecast.gap_fill_question')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {GAP_FILL_OPTIONS.map(opt => (
@@ -488,9 +510,9 @@ function Step2({
                 />
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: gapFillChoice === opt.value ? '#f59e0b' : 'var(--text)' }}>
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--dim)' }}>{opt.desc}</div>
+                  <div style={{ fontSize: 11, color: 'var(--dim)' }}>{t(opt.descKey)}</div>
                 </div>
               </label>
             ))}
@@ -510,22 +532,23 @@ function Step2({
         return (
           <div style={{ padding: '16px 18px', borderRadius: 10, background: hasOutliers ? 'rgba(129,140,248,0.06)' : 'var(--surface-2)', border: `1px solid ${hasOutliers ? 'rgba(129,140,248,0.3)' : 'var(--border)'}` }}>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, color: hasOutliers ? '#818cf8' : 'var(--text)' }}>
-              <Sliders size={13} /> Outlier Treatment
+              <Sliders size={13} /> {t('forecast.outlier_treatment_title')}
+              <HelpTip text={t('forecast.outlier_treatment_help')} size={13} />
               {hasOutliers && (
                 <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 4, color: 'var(--dim)' }}>
-                  — {outlierInfo!.total_count} outlier{outlierInfo!.total_count !== 1 ? 's' : ''} detected ({outlierInfo!.total_pct}% of data)
+                  — {outlierInfo!.total_count} {t('forecast.outlier_unit')}{outlierInfo!.total_count !== 1 ? 's' : ''} {t('forecast.outlier_detected_suffix')} ({outlierInfo!.total_pct}% {t('forecast.of_data_suffix')})
                 </span>
               )}
               {!hasOutliers && (
                 <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 4, color: 'var(--dim)' }}>
-                  — No outliers detected. Still configurable.
+                  — {t('forecast.no_outliers_detected')}
                 </span>
               )}
             </div>
 
             {/* Global strategy */}
             <div style={{ marginTop: 12, marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>Global strategy (applies to all SKUs)</div>
+              <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>{t('forecast.global_strategy_label')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                 {OUTLIER_STRATEGIES.map(opt => (
                   <label key={opt.value} style={{
@@ -540,8 +563,8 @@ function Step2({
                       onChange={() => setOutlierCfg(c => ({ ...c, strategy: opt.value }))}
                       style={{ marginTop: 2 }} />
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: strategy === opt.value ? '#818cf8' : 'var(--text)' }}>{opt.label}</div>
-                      <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{opt.desc}</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: strategy === opt.value ? '#818cf8' : 'var(--text)' }}>{t(opt.labelKey)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{t(opt.descKey)}</div>
                     </div>
                   </label>
                 ))}
@@ -551,29 +574,29 @@ function Step2({
             {/* Strategy parameters */}
             {strategy === 'winsorize_sigma' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 11, color: 'var(--dim)' }}>Std multiplier (N):</span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('forecast.std_multiplier_label')}</span>
                 <input type="number" className="form-input" value={outlierCfg.n_sigma} min={1} max={10} step={0.5}
                   onChange={e => setOutlierCfg(c => ({ ...c, n_sigma: parseFloat(e.target.value) || 3 }))}
                   style={{ width: 80, fontSize: 12 }} />
-                <span style={{ fontSize: 11, color: 'var(--dim)' }}>→ clips beyond mean ± {outlierCfg.n_sigma}σ</span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>→ {t('forecast.clips_beyond_mean_prefix')} {outlierCfg.n_sigma}σ</span>
               </div>
             )}
             {strategy === 'winsorize_pct' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 11, color: 'var(--dim)' }}>Tail percentile (%):</span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('forecast.tail_percentile_label')}</span>
                 <input type="number" className="form-input" value={outlierCfg.percentile} min={0.1} max={10} step={0.5}
                   onChange={e => setOutlierCfg(c => ({ ...c, percentile: parseFloat(e.target.value) || 1 }))}
                   style={{ width: 80, fontSize: 12 }} />
-                <span style={{ fontSize: 11, color: 'var(--dim)' }}>→ clips bottom and top {outlierCfg.percentile}%</span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>→ {t('forecast.clips_bottom_top_prefix')} {outlierCfg.percentile}%</span>
               </div>
             )}
             {strategy === 'iqr_fence' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 11, color: 'var(--dim)' }}>IQR multiplier (k):</span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('forecast.iqr_multiplier_label')}</span>
                 <input type="number" className="form-input" value={outlierCfg.iqr_k} min={0.5} max={5} step={0.5}
                   onChange={e => setOutlierCfg(c => ({ ...c, iqr_k: parseFloat(e.target.value) || 1.5 }))}
                   style={{ width: 80, fontSize: 12 }} />
-                <span style={{ fontSize: 11, color: 'var(--dim)' }}>→ fence = Q1 − {outlierCfg.iqr_k}×IQR … Q3 + {outlierCfg.iqr_k}×IQR</span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>→ {t('forecast.fence_prefix')} Q1 − {outlierCfg.iqr_k}×IQR … Q3 + {outlierCfg.iqr_k}×IQR</span>
               </div>
             )}
 
@@ -582,7 +605,7 @@ function Step2({
               <div style={{ marginTop: 8 }}>
                 <button onClick={() => setPerSkuOpen(o => !o)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: paramColor, display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}>
-                  {perSkuOpen ? '▾' : '▸'} Override per SKU ({skuList.length} SKUs detected)
+                  {perSkuOpen ? '▾' : '▸'} {t('forecast.override_per_sku_label')} ({skuList.length} {t('forecast.skus_detected_suffix')})
                 </button>
                 {perSkuOpen && (
                   <div style={{ marginTop: 8, maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -599,11 +622,11 @@ function Step2({
                             {sku}
                             {hasSkuOutliers && (
                               <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>
-                                {info.count} outlier{info.count !== 1 ? 's' : ''} ({info.pct}%)
+                                {info.count} {t('forecast.outlier_unit')}{info.count !== 1 ? 's' : ''} ({info.pct}%)
                               </span>
                             )}
                             {!hasSkuOutliers && (
-                              <span style={{ marginLeft: 6, fontSize: 10, color: '#22c55e' }}>clean</span>
+                              <span style={{ marginLeft: 6, fontSize: 10, color: '#22c55e' }}>{t('forecast.clean_label')}</span>
                             )}
                           </div>
                           <select
@@ -618,9 +641,9 @@ function Step2({
                               })
                             }}
                             className="form-input form-select" style={{ fontSize: 11 }}>
-                            <option value="inherit">— inherit global —</option>
+                            <option value="inherit">{t('forecast.inherit_global_option')}</option>
                             {OUTLIER_STRATEGIES.map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
+                              <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                             ))}
                           </select>
                           {/* per-SKU param when override is sigma/pct/iqr */}
@@ -657,7 +680,7 @@ function Step2({
       })()}
 
       <Button variant="primary" onClick={() => onNext(gapFillChoice, outlierCfg)} style={{ alignSelf: 'flex-start' }}>
-        Continue to Columns →
+        {t('forecast.continue_to_columns_btn')}
       </Button>
     </div>
   )
@@ -692,6 +715,7 @@ function Step3({
   outlierCfg?: OutlierConfig
   onNext: (exogCount: number) => void
 }) {
+  const { t } = useLanguage()
   const opts = inspection.column_options
   const allCols = inspection.profile.columns.map(c => c.name)
 
@@ -725,11 +749,11 @@ function Step3({
         ? f.exogenous.filter(x => x !== col)
         : [...f.exogenous, col]
       if (!next.includes(col)) {
-        setTransforms(t => { const n = { ...t }; delete n[col]; return n })
+        setTransforms(tr => { const n = { ...tr }; delete n[col]; return n })
       } else if (!transforms[col]) {
         const role = colRole(col)
-        setTransforms(t => ({
-          ...t,
+        setTransforms(tr => ({
+          ...tr,
           [col]: role === 'numeric'
             ? { impute: 'median', encode: 'none', scale: 'standard' }
             : { impute: 'none',   encode: 'label', scale: 'none' },
@@ -761,7 +785,7 @@ function Step3({
       <select value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
               className="form-input form-select"
               style={{ borderColor: form[field] ? color + '60' : undefined }}>
-        <option value="">— none —</option>
+        <option value="">{t('forecast.select_none_option')}</option>
         {options.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
     </div>
@@ -770,15 +794,15 @@ function Step3({
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Column Mapping</div>
-        {sel('target_column', 'Target column (what to forecast) *', opts.target_candidates, '#818cf8')}
-        {sel('date_column',   'Date column *',                       opts.date_candidates,   '#0ea5e9')}
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{t('forecast.column_mapping_title')}</div>
+        {sel('target_column', t('forecast.target_column_label'), opts.target_candidates, '#818cf8')}
+        {sel('date_column',   t('forecast.date_column_label'),   opts.date_candidates,   '#0ea5e9')}
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>
-            Group / SKU column
+            {t('forecast.sku_column_label')}
             {detectedSku && form.sku_column === detectedSku && (
               <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', background: '#22c55e18', borderRadius: 4, padding: '1px 5px' }}>
-                AUTO-DETECTED
+                {t('forecast.auto_detected_badge')}
               </span>
             )}
           </label>
@@ -788,17 +812,17 @@ function Step3({
             className="form-input form-select"
             style={{ borderColor: form.sku_column ? '#22c55e60' : undefined }}
           >
-            <option value="">— none (single series) —</option>
+            <option value="">{t('forecast.sku_column_none_option')}</option>
             {allCols.map(c => (
               <option key={c} value={c}>
-                {c}{c === detectedSku ? ' ✓ recommended' : ''}
+                {c}{c === detectedSku ? ` ✓ ${t('forecast.recommended_suffix')}` : ''}
               </option>
             ))}
           </select>
           {form.sku_column && opts.target_candidates.includes(form.sku_column) && (
             <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, display: 'flex', gap: 4 }}>
               <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />
-              This column is also a target candidate — make sure this is intentional.
+              {t('forecast.sku_also_target_warning')}
             </div>
           )}
         </div>
@@ -812,13 +836,13 @@ function Step3({
           </div>
         )}
         <Button variant="primary" loading={saving} disabled={!form.target_column || !form.date_column} onClick={save}>
-          Confirm Columns →
+          {t('forecast.confirm_columns_btn')}
         </Button>
       </div>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Exogenous Regressors</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t('forecast.exogenous_regressors_title')}</div>
         <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 12 }}>
-          Additional columns used as input features.
+          {t('forecast.exogenous_regressors_desc')}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 380, overflowY: 'auto' }}>
           {allExogCandidates.map(c => {
@@ -844,24 +868,24 @@ function Step3({
                 {isOn && tx && (
                   <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                     <div>
-                      <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 3 }}>IMPUTE</div>
-                      <select value={tx.impute} onChange={e => setTransforms(t => ({ ...t, [c]: { ...t[c], impute: e.target.value } }))}
+                      <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 3 }}>{t('forecast.impute_label')}</div>
+                      <select value={tx.impute} onChange={e => setTransforms(tr => ({ ...tr, [c]: { ...tr[c], impute: e.target.value } }))}
                               className="form-input form-select" style={{ fontSize: 11, padding: '3px 6px' }}>
                         {IMPUTE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
                     {role === 'categorical' ? (
                       <div>
-                        <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 3 }}>ENCODE</div>
-                        <select value={tx.encode} onChange={e => setTransforms(t => ({ ...t, [c]: { ...t[c], encode: e.target.value } }))}
+                        <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 3 }}>{t('forecast.encode_label')}</div>
+                        <select value={tx.encode} onChange={e => setTransforms(tr => ({ ...tr, [c]: { ...tr[c], encode: e.target.value } }))}
                                 className="form-input form-select" style={{ fontSize: 11, padding: '3px 6px' }}>
                           {ENCODE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </div>
                     ) : (
                       <div>
-                        <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 3 }}>SCALE</div>
-                        <select value={tx.scale} onChange={e => setTransforms(t => ({ ...t, [c]: { ...t[c], scale: e.target.value } }))}
+                        <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 3 }}>{t('forecast.scale_label')}</div>
+                        <select value={tx.scale} onChange={e => setTransforms(tr => ({ ...tr, [c]: { ...tr[c], scale: e.target.value } }))}
                                 className="form-input form-select" style={{ fontSize: 11, padding: '3px 6px' }}>
                           {SCALE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
@@ -869,7 +893,7 @@ function Step3({
                     )}
                     <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 1 }}>
                       <div style={{ fontSize: 9, color: 'var(--dim)' }}>
-                        {role === 'numeric' ? 'impute → scale' : 'impute → encode'}
+                        {role === 'numeric' ? t('forecast.impute_scale_chain') : t('forecast.impute_encode_chain')}
                       </div>
                     </div>
                   </div>
@@ -878,17 +902,17 @@ function Step3({
             )
           })}
           {allExogCandidates.length === 0 && (
-            <span style={{ fontSize: 12, color: 'var(--dim)' }}>No additional columns available</span>
+            <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('forecast.no_additional_columns')}</span>
           )}
         </div>
         <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Dataset</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('forecast.dataset_label')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {[
-              ['Rows', inspection.profile.stats.n_rows],
-              ['Cols', inspection.profile.stats.n_cols],
-              ['SKUs', inspection.profile.stats.n_skus ?? '—'],
-              ['Freq', inspection.profile.recommended.freq ?? '—'],
+              [t('forecast.stat_rows'), inspection.profile.stats.n_rows],
+              [t('forecast.stat_cols'), inspection.profile.stats.n_cols],
+              [t('forecast.stat_skus'), inspection.profile.stats.n_skus ?? '—'],
+              [t('forecast.stat_freq'), inspection.profile.recommended.freq ?? '—'],
             ].map(([k, v]) => (
               <div key={String(k)}>
                 <div style={{ fontSize: 10, color: 'var(--dim)' }}>{k}</div>
@@ -911,9 +935,14 @@ function Step4({
   initialValues?: Record<string, unknown>
   onNext: () => void
 }) {
+  const { t } = useLanguage()
   const schema = (inspection.config_schema?.features && Object.keys(inspection.config_schema.features).length > 0)
     ? inspection.config_schema.features
     : DEFAULT_FEATURES_SCHEMA
+  // DEFAULT_FEATURES_SCHEMA stores translation keys in `label`; a backend-provided
+  // config_schema stores literal human-readable text — only resolve via t() when
+  // it looks like one of our namespaced keys.
+  const fieldLabel = (label: string) => label.startsWith('forecast.') ? t(label) : label
 
   const [vals, setVals] = useState<Record<string, string | number | boolean>>(() => {
     const init: Record<string, string | number | boolean> = {}
@@ -966,20 +995,23 @@ function Step4({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Feature Engineering</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {t('forecast.feature_engineering_title')}
+        <HelpTip text={t('forecast.feature_engineering_help')} size={13} />
+      </div>
       <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 16 }}>
-        Applied to ML models only. Statistical models (ARIMA, ETS, Prophet) use raw series.
+        {t('forecast.feature_engineering_desc')}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
         {Object.entries(schema).map(([key, meta]) => (
           <div key={key}>
-            <label style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>{meta.label}</label>
+            <label style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>{fieldLabel(meta.label)}</label>
             {meta.type === 'bool' ? (
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!vals[key]}
                        onChange={e => setVals(v => ({ ...v, [key]: e.target.checked }))}
                        style={{ accentColor: 'var(--accent)', width: 15, height: 15 }} />
-                <span style={{ fontSize: 12 }}>{vals[key] ? 'Enabled' : 'Disabled'}</span>
+                <span style={{ fontSize: 12 }}>{vals[key] ? t('forecast.enabled_label') : t('forecast.disabled_label')}</span>
               </label>
             ) : (
               <input className="form-input" value={String(vals[key] ?? '')}
@@ -987,7 +1019,7 @@ function Step4({
                      placeholder={Array.isArray(meta.default) ? (meta.default as number[]).join(', ') : String(meta.default)} />
             )}
             {(meta.type === 'int_list' || meta.type === 'float_list') && (
-              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 3 }}>Comma-separated</div>
+              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 3 }}>{t('forecast.comma_separated_hint')}</div>
             )}
           </div>
         ))}
@@ -995,23 +1027,22 @@ function Step4({
       {/* Fourier features */}
       <div style={{ marginTop: 4, marginBottom: 20, padding: '14px 16px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
         <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <TrendingUp size={13} color="var(--accent)" /> Fourier Seasonality Features
+          <TrendingUp size={13} color="var(--accent)" /> {t('forecast.fourier_title')}
           <span style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 400, marginLeft: 4 }}>
-            Captures cyclic patterns — recommended for daily/weekly/annual seasonality
+            {t('forecast.fourier_subtitle')}
           </span>
         </div>
         <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 10 }}>
-          Fourier terms (sin/cos pairs) model smooth seasonality better than calendar dummies.
-          Select periods that match your data's natural cycles.
+          {t('forecast.fourier_desc')}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
           {[
-            { p: 7,   label: '7 days',   hint: 'weekly' },
-            { p: 14,  label: '14 days',  hint: 'bi-weekly' },
-            { p: 30,  label: '30 days',  hint: 'monthly' },
-            { p: 90,  label: '90 days',  hint: 'quarterly' },
-            { p: 365, label: '365 days', hint: 'annual' },
-          ].map(({ p, label, hint }) => {
+            { p: 7,   labelKey: 'forecast.fourier_7d_label',   hintKey: 'forecast.fourier_7d_hint' },
+            { p: 14,  labelKey: 'forecast.fourier_14d_label',  hintKey: 'forecast.fourier_14d_hint' },
+            { p: 30,  labelKey: 'forecast.fourier_30d_label',  hintKey: 'forecast.fourier_30d_hint' },
+            { p: 90,  labelKey: 'forecast.fourier_90d_label',  hintKey: 'forecast.fourier_90d_hint' },
+            { p: 365, labelKey: 'forecast.fourier_365d_label', hintKey: 'forecast.fourier_365d_hint' },
+          ].map(({ p, labelKey, hintKey }) => {
             const on = fourierPeriods.includes(p)
             return (
               <label key={p} style={{
@@ -1023,15 +1054,15 @@ function Step4({
               }}>
                 <input type="checkbox" checked={on} onChange={() => togglePeriod(p)}
                        style={{ accentColor: 'var(--accent)' }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: on ? 'var(--accent)' : 'var(--text)' }}>{label}</span>
-                <span style={{ fontSize: 10, color: 'var(--dim)' }}>{hint}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: on ? 'var(--accent)' : 'var(--text)' }}>{t(labelKey)}</span>
+                <span style={{ fontSize: 10, color: 'var(--dim)' }}>{t(hintKey)}</span>
               </label>
             )
           })}
         </div>
         {fourierPeriods.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 11, color: 'var(--dim)' }}>Harmonics per period (K):</span>
+            <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('forecast.harmonics_per_period_label')}</span>
             {[1, 2, 3, 4, 5].map(k => (
               <button key={k} onClick={() => setFourierK(k)} style={{
                 width: 28, height: 28, borderRadius: 6, border: `1px solid ${fourierK === k ? 'var(--accent)' : 'var(--border)'}`,
@@ -1040,18 +1071,18 @@ function Step4({
               }}>{k}</button>
             ))}
             <span style={{ fontSize: 10, color: 'var(--dim)', marginLeft: 4 }}>
-              → {fourierPeriods.length * fourierK * 2} total Fourier features added
+              → {fourierPeriods.length * fourierK * 2} {t('forecast.fourier_features_added_suffix')}
             </span>
           </div>
         )}
         {fourierPeriods.length === 0 && (
           <div style={{ fontSize: 11, color: 'var(--dim)', fontStyle: 'italic' }}>
-            No periods selected — Fourier features disabled
+            {t('forecast.fourier_none_selected')}
           </div>
         )}
       </div>
 
-      <Button variant="primary" loading={saving} onClick={save}>Configure Features →</Button>
+      <Button variant="primary" loading={saving} onClick={save}>{t('forecast.configure_features_btn')}</Button>
     </div>
   )
 }
@@ -1062,6 +1093,7 @@ function HyperparamDrawer({ model, params, initialValues, onChange, onClose }: {
   initialValues?: Record<string, unknown>
   onChange: (values: Record<string, unknown>) => void; onClose: () => void
 }) {
+  const { t } = useLanguage()
   const [vals, setVals] = useState<Record<string, unknown>>(() => {
     const init: Record<string, unknown> = {}
     params.forEach(p => { init[p.name] = initialValues?.[p.name] ?? p.default })
@@ -1076,9 +1108,9 @@ function HyperparamDrawer({ model, params, initialValues, onChange, onClose }: {
     let err = ''
     if (p && (p.type === 'int' || p.type === 'float') && p.min !== undefined && p.max !== undefined) {
       const n = Number(v)
-      if (isNaN(n)) err = 'Invalid number'
-      else if (n < p.min) err = `Must be ≥ ${p.min}`
-      else if (n > p.max) err = `Must be ≤ ${p.max}`
+      if (isNaN(n)) err = t('forecast.hyperparam_invalid_number')
+      else if (n < p.min) err = `${t('forecast.hyperparam_must_be_at_least')} ${p.min}`
+      else if (n > p.max) err = `${t('forecast.hyperparam_must_be_at_most')} ${p.max}`
     }
     setFieldErrors(e => ({ ...e, [name]: err }))
     if (!err) onChange(updated)
@@ -1094,8 +1126,11 @@ function HyperparamDrawer({ model, params, initialValues, onChange, onClose }: {
     }}>
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>{model} Hyperparameters</div>
-          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>Advanced configuration</div>
+          <div style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {model} {t('forecast.hyperparameters_suffix')}
+            <HelpTip text={t('forecast.hyperparameters_help')} size={13} />
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t('forecast.advanced_configuration_label')}</div>
         </div>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--dim)' }}>
           <X size={18} />
@@ -1114,7 +1149,7 @@ function HyperparamDrawer({ model, params, initialValues, onChange, onClose }: {
             {p.type === 'bool' ? (
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!vals[p.name]} onChange={e => set(p.name, e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-                <span style={{ fontSize: 12 }}>{vals[p.name] ? 'Enabled' : 'Disabled'}</span>
+                <span style={{ fontSize: 12 }}>{vals[p.name] ? t('forecast.enabled_label') : t('forecast.disabled_label')}</span>
               </label>
             ) : p.type === 'select' ? (
               <select value={String(vals[p.name])} onChange={e => set(p.name, e.target.value)} className="form-input form-select" style={{ fontSize: 12 }}>
@@ -1137,7 +1172,7 @@ function HyperparamDrawer({ model, params, initialValues, onChange, onClose }: {
             )}
           </div>
         ))}
-        <Button variant="secondary" onClick={onClose} disabled={hasErrors} style={{ width: '100%' }}>Done</Button>
+        <Button variant="secondary" onClick={onClose} disabled={hasErrors} style={{ width: '100%' }}>{t('forecast.done_btn')}</Button>
       </div>
     </div>
   )
@@ -1152,6 +1187,7 @@ function Step5({
   columnTransforms?: Record<string, { impute?: string; encode?: string; scale?: string }>
   onNext: (models: string[]) => void
 }) {
+  const { t } = useLanguage()
   const savedModels = (initialValues?.selected_models as string[] | undefined) ?? []
   const savedHyper  = (initialValues?.hyperparameters as Record<string, Record<string, unknown>> | undefined) ?? {}
 
@@ -1167,7 +1203,7 @@ function Step5({
     Promise.all([
       getAvailableModels(sessionId)
         .then(r => { if (r.models.length) setAll(r.models) })
-        .catch(() => { setAll(Object.keys(MODEL_DESC)); setModelsErr(true) }),
+        .catch(() => { setAll(Object.keys(MODEL_DESC_KEYS)); setModelsErr(true) }),
       getModelHyperparams(sessionId).then(setSchemas).catch(() => {}),
     ])
   }, [sessionId])
@@ -1185,29 +1221,29 @@ function Step5({
   const configWarnings: string[] = []
 
   if (columnTransforms) {
-    const hasOneHot = Object.values(columnTransforms).some(t => t.encode === 'one_hot')
+    const hasOneHot = Object.values(columnTransforms).some(tr => tr.encode === 'one_hot')
     const mlSelected = selected.filter(m => ML_MODELS.includes(m))
     if (hasOneHot && mlSelected.length > 0)
-      configWarnings.push(`One-hot encoding with ${mlSelected.join('/')} may cause issues with high-cardinality columns. Consider label or ordinal encoding.`)
+      configWarnings.push(`${t('forecast.warn_one_hot_prefix')} ${mlSelected.join('/')} ${t('forecast.warn_one_hot_suffix')}`)
   }
 
   const statNoExog = selected.filter(m => ['ets', 'croston'].includes(m))
   if (exogCount > 0 && statNoExog.length > 0)
-    configWarnings.push(`${statNoExog.join(', ')} ${statNoExog.length > 1 ? 'do' : 'does'} not support exogenous features — ${exogCount} configured column${exogCount > 1 ? 's' : ''} will be ignored by ${statNoExog.length > 1 ? 'these models' : 'this model'}.`)
+    configWarnings.push(`${statNoExog.join(', ')} ${statNoExog.length > 1 ? t('forecast.warn_do_plural') : t('forecast.warn_do_singular')} ${t('forecast.warn_no_exog_support')} — ${exogCount} ${t('forecast.warn_configured_column')}${exogCount > 1 ? 's' : ''} ${t('forecast.warn_will_be_ignored_by')} ${statNoExog.length > 1 ? t('forecast.warn_these_models') : t('forecast.warn_this_model')}.`)
 
   if (selected.includes('lstm'))
-    configWarnings.push('LSTM requires significant training time and at least ~100 observations per SKU for reliable results.')
+    configWarnings.push(t('forecast.warn_lstm_training_time'))
 
   const noMLSelected = !selected.some(m => [...ML_MODELS, 'lstm'].includes(m))
   if (noMLSelected && exogCount > 0)
-    configWarnings.push(`${exogCount} exogenous column${exogCount > 1 ? 's are' : ' is'} configured but no ML models are selected — exogenous features will have no effect on statistical models.`)
+    configWarnings.push(`${exogCount} ${t('forecast.warn_exog_column')}${exogCount > 1 ? t('forecast.warn_exog_plural_verb') : t('forecast.warn_exog_singular_verb')} ${t('forecast.warn_no_ml_models_selected')}`)
 
   return (
     <div>
       {modelsLoadErr && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '9px 12px', marginBottom: 14, borderRadius: 8, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', fontSize: 12, color: '#f59e0b' }}>
           <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-          No se pudo cargar la lista de modelos — mostrando opciones por defecto.
+          {t('forecast.models_load_error')}
         </div>
       )}
       {drawerModel && hyperSchemas[drawerModel] && (
@@ -1219,10 +1255,13 @@ function Step5({
           onClose={() => setDrawer(null)}
         />
       )}
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Model Selection</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {t('forecast.model_selection_title')}
+        <HelpTip text={t('forecast.model_selection_help')} size={13} />
+      </div>
       <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 16 }}>
-        {exogCount > 0 ? `${exogCount} exogenous column${exogCount !== 1 ? 's' : ''} selected — models marked ★ support them.`
-          : 'Select which models to train. Best model is auto-selected after evaluation.'}
+        {exogCount > 0 ? `${exogCount} ${t('forecast.exog_column_selected_prefix')}${exogCount !== 1 ? 's' : ''} ${t('forecast.exog_column_selected_suffix')}`
+          : t('forecast.select_models_to_train_hint')}
       </div>
       {configWarnings.length > 0 && (
         <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1256,14 +1295,14 @@ function Step5({
                     {m}
                     {exogCount > 0 && supExog && <span style={{ fontSize: 9, color: '#22c55e', marginLeft: 4 }}>★</span>}
                   </span>
-                  {customHp && <span style={{ fontSize: 9, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 4, padding: '1px 5px' }}>custom</span>}
+                  {customHp && <span style={{ fontSize: 9, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 4, padding: '1px 5px' }}>{t('forecast.custom_badge')}</span>}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--dim)', paddingLeft: 26 }}>{MODEL_DESC[m] ?? ''}</div>
+                <div style={{ fontSize: 11, color: 'var(--dim)', paddingLeft: 26 }}>{MODEL_DESC_KEYS[m] ? t(MODEL_DESC_KEYS[m]) : ''}</div>
               </div>
               {on && hasHyper && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '6px 14px' }}>
                   <button onClick={() => setDrawer(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Settings size={11} /> Configure hyperparameters
+                    <Settings size={11} /> {t('forecast.configure_hyperparams_btn')}
                   </button>
                 </div>
               )}
@@ -1272,9 +1311,9 @@ function Step5({
         })}
       </div>
       <div style={{ marginBottom: 16 }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{selected.length} model{selected.length !== 1 ? 's' : ''} selected</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{selected.length} {selected.length !== 1 ? t('forecast.models_selected_plural') : t('forecast.models_selected_singular')}</span>
       </div>
-      <Button variant="primary" loading={saving} disabled={selected.length === 0} onClick={save}>Confirm Models →</Button>
+      <Button variant="primary" loading={saving} disabled={selected.length === 0} onClick={save}>{t('forecast.confirm_models_btn')}</Button>
     </div>
   )
 }
@@ -1287,19 +1326,23 @@ const MODEL_SERIES_FIT: Record<string, string[]> = {
 }
 
 function Step6({ inspection, selectedModels, onNext }: { inspection: InspectionResult; selectedModels: string[]; onNext: () => void }) {
+  const { t } = useLanguage()
   const profile = inspection.profile; const stats = profile.stats
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Routing Preview</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {t('forecast.routing_preview_title')}
+        <HelpTip text={t('forecast.routing_preview_help')} size={13} />
+      </div>
       <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 20 }}>
-        Based on your dataset and model selection. Exact per-SKU routing is finalized during training.
+        {t('forecast.routing_preview_desc')}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
         {[
-          { label: 'Total Rows', value: stats.n_rows?.toLocaleString() ?? '—' },
-          { label: 'SKUs', value: stats.n_skus?.toLocaleString() ?? '—' },
-          { label: 'Frequency', value: profile.recommended.freq ?? '—' },
-          { label: 'Models', value: selectedModels.length },
+          { label: t('forecast.stat_total_rows'), value: stats.n_rows?.toLocaleString() ?? '—' },
+          { label: t('forecast.stat_skus'), value: stats.n_skus?.toLocaleString() ?? '—' },
+          { label: t('forecast.stat_frequency'), value: profile.recommended.freq ?? '—' },
+          { label: t('forecast.stat_models'), value: selectedModels.length },
         ].map(({ label, value }) => (
           <div key={label} style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent)' }}>{value}</div>
@@ -1307,10 +1350,10 @@ function Step6({ inspection, selectedModels, onNext }: { inspection: InspectionR
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>Model Assignment by Series Type</div>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>{t('forecast.model_assignment_by_series_type')}</div>
       <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden', marginBottom: 20 }}>
         <div style={{ display: 'grid', gridTemplateColumns: `140px repeat(${selectedModels.length}, 1fr)`, padding: '8px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 11, color: 'var(--dim)', fontWeight: 600 }}>
-          <span>Series Type</span>
+          <span>{t('forecast.series_type_col')}</span>
           {selectedModels.map(m => <span key={m} style={{ textAlign: 'center' }}>{m}</span>)}
         </div>
         {['stable', 'seasonal', 'volatile', 'intermittent', 'short'].map(type => (
@@ -1325,7 +1368,7 @@ function Step6({ inspection, selectedModels, onNext }: { inspection: InspectionR
           </div>
         ))}
       </div>
-      <Button variant="primary" onClick={onNext}>Continue to Validation →</Button>
+      <Button variant="primary" onClick={onNext}>{t('forecast.continue_to_validation_btn')}</Button>
     </div>
   )
 }
@@ -1348,9 +1391,11 @@ function Step7({ sessionId, initialValues, onNext }: { sessionId: string; initia
     finally { setSave(false) }
   }
 
-  const num = (label: string, key: keyof typeof cfg, min?: number, max?: number, step = 1) => (
+  const num = (label: string, key: keyof typeof cfg, min?: number, max?: number, step = 1, help?: string) => (
     <div>
-      <label style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>{label}</label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>
+        {label}{help && <HelpTip text={help} size={12} />}
+      </label>
       <input type="number" className="form-input" value={Number(cfg[key])} min={min} max={max} step={step}
              onChange={e => setCfg(c => ({ ...c, [key]: parseFloat(e.target.value) }))} />
     </div>
@@ -1360,13 +1405,21 @@ function Step7({ sessionId, initialValues, onNext }: { sessionId: string; initia
     <div>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Validation & Forecast Config</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
-        {num('Train ratio',      'train_ratio',     0.5, 0.95, 0.05)}
-        {num('WFV splits',       'wfv_splits',      1, 10)}
-        {num('Min history rows', 'min_history',     5)}
-        {num('Seasonal period',  'seasonal_period', 2)}
-        {num('Forecast horizon', 'horizon',         1)}
+        {num('Train ratio',      'train_ratio',     0.5, 0.95, 0.05,
+          'Qué porción de tu historia se usa para entrenar el modelo; el resto se reserva para medir qué tan bien predice. 0.8 = 80% entrenar, 20% probar.')}
+        {num('WFV splits',       'wfv_splits',      1, 10, 1,
+          'Número de ventanas de prueba en la validación walk-forward. Más ventanas = medición de precisión más robusta, pero entrenamiento más lento.')}
+        {num('Min history rows', 'min_history',     5, undefined, 1,
+          'Mínimo de registros que necesita un producto para entrenarse. Los que tengan menos se excluyen del pronóstico (al terminar verás cuáles y por qué).')}
+        {num('Seasonal period',  'seasonal_period', 2, undefined, 1,
+          'Cada cuántos periodos se repite el patrón de demanda. Con datos diarios: 7 = patrón semanal. Con datos mensuales: 12 = patrón anual.')}
+        {num('Forecast horizon', 'horizon',         1, undefined, 1,
+          'Cuántos periodos hacia el futuro se pronostica. Conviene que sea mayor que tu lead time, para poder anticipar el pedido antes de que llegue un pico.')}
         <div>
-          <label style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>Walk-forward validation</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--dim)', marginBottom: 5 }}>
+            Walk-forward validation
+            <HelpTip text="En vez de una sola división entrenar/probar, mueve la ventana de prueba a lo largo del tiempo (como predecir semana tras semana con lo conocido hasta ese momento). Da una medida de precisión mucho más realista para series temporales. Recomendado dejarlo activado." size={12} />
+          </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 12px', background: cfg.walk_forward ? 'var(--accent-dim)' : 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 7 }}>
             <input type="checkbox" checked={cfg.walk_forward} onChange={e => setCfg(c => ({ ...c, walk_forward: e.target.checked }))} style={{ accentColor: 'var(--accent)' }} />
             <span style={{ fontSize: 12 }}>{cfg.walk_forward ? 'Enabled' : 'Disabled'}</span>
@@ -1487,6 +1540,8 @@ function Step9({
   const [selectedSku,   setSelSku]    = useState<string | null>(null)
   const [seriesData,    setSeries]    = useState<ForecastSeries | null>(null)
   const [seriesLoading, setSeriesLd]  = useState(false)
+  const [seriesError,   setSeriesErr] = useState<string | null>(null)
+  const [overrideErr,   setOverrideErr] = useState<string | null>(null)
   const PAGE_SIZE = 50
 
   useEffect(() => {
@@ -1496,9 +1551,13 @@ function Step9({
   useEffect(() => {
     if (!selectedSku) return
     setSeriesLd(true)
+    setSeriesErr(null)
     getForecastSeries(sessionId, selectedSku)
       .then(setSeries)
-      .catch(console.error)
+      .catch((e: unknown) => {
+        setSeries(null)
+        setSeriesErr(e instanceof Error ? e.message : `No se pudo cargar el forecast del SKU ${selectedSku}. Verifica tu conexión e intenta de nuevo.`)
+      })
       .finally(() => setSeriesLd(false))
   }, [selectedSku, sessionId])
 
@@ -1518,12 +1577,13 @@ function Step9({
     const items = Object.values(overrideDraft)
     if (!items.length) return
     setSaving(true)
+    setOverrideErr(null)
     try {
       await saveForecastOverrides(sessionId, items)
       setDone(true)
       setDraft({})
     } catch (e: any) {
-      console.error('Override save failed:', e.message)
+      setOverrideErr(e?.message || 'No se pudieron guardar los ajustes manuales. Verifica tu conexión e intenta de nuevo.')
     } finally { setSaving(false) }
   }
 
@@ -1659,6 +1719,12 @@ function Step9({
 
               {seriesLoading && <div style={{ padding: 20, textAlign: 'center' }}><Spinner /></div>}
 
+              {!seriesLoading && seriesError && (
+                <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  {seriesError}
+                </div>
+              )}
+
               {!seriesLoading && seriesData && (
                 <div style={{ maxHeight: 280, overflowY: 'auto' }}>
                   <table className="data-table">
@@ -1688,7 +1754,7 @@ function Step9({
                 </div>
               )}
 
-              {!seriesLoading && !seriesData && activeSku && (
+              {!seriesLoading && !seriesData && !seriesError && activeSku && (
                 <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 8 }}>
                   Select a SKU to see its forecast values.
                 </div>
@@ -1720,6 +1786,11 @@ function Step9({
       {overrideDone && (
         <div style={{ fontSize: 12, color: '#22c55e', textAlign: 'right', marginTop: 6 }}>
           Overrides saved successfully.
+        </div>
+      )}
+      {overrideErr && (
+        <div style={{ fontSize: 12, color: '#ef4444', textAlign: 'right', marginTop: 6 }}>
+          {overrideErr}
         </div>
       )}
 
@@ -1761,6 +1832,7 @@ function ForecastPageContent() {
   const [savedConfigs,  setSavedCfgs]  = useState<SavedConfigs>({})
   const [completedSteps,setCompleted]  = useState<Set<number>>(new Set())
   const [restoring,     setRestoring]  = useState(false)
+  const [restoreError,  setRestoreErr] = useState<string | null>(null)
   const [gapFill,       setGapFill]    = useState<string>('leave')
   const [outlierCfg,    setOutlierCfg] = useState<OutlierConfig>(defaultOutlierConfig())
 
@@ -1779,6 +1851,7 @@ function ForecastPageContent() {
   useEffect(() => {
     if (!sessionParam) return
     setRestoring(true)
+    setRestoreErr(null)
 
     const restore = async () => {
       try {
@@ -1828,7 +1901,11 @@ function ForecastPageContent() {
         // Clean URL to prevent re-restore on navigation
         router.replace('/forecast', { scroll: false })
       } catch (e) {
-        console.error('Session restore failed:', e)
+        setRestoreErr(
+          e instanceof Error
+            ? `No se pudo restaurar la sesión: ${e.message}`
+            : 'No se pudo restaurar la sesión solicitada. Es posible que haya sido eliminada o que no tengas acceso. Puedes empezar una nueva configuración abajo.'
+        )
       } finally {
         setRestoring(false)
       }
@@ -1899,6 +1976,16 @@ function ForecastPageContent() {
           ¿Primera vez? → <span style={{ color: 'var(--accent)' }}>Usa el flujo simplificado</span>
         </Link>
       </div>
+      {restoreError && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 16,
+          borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+          fontSize: 13, color: '#f87171',
+        }}>
+          {restoreError}
+        </div>
+      )}
+
       <div style={{
         position: 'sticky', top: 0, zIndex: 100,
         background: 'var(--bg)', paddingTop: 4, paddingBottom: 16,

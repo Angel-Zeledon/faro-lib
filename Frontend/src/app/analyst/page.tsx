@@ -11,10 +11,11 @@ import {
 import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
+import { useLanguage } from '@/contexts/LanguageContext'
 import {
   Plus, Search, Star, Trash2, Bot, User, Send,
   Sparkles, MessageSquare, ChevronDown, X, Filter,
-  CheckSquare, Square,
+  CheckSquare, Square, AlertTriangle,
 } from 'lucide-react'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
@@ -32,11 +33,11 @@ function fmtTime(iso: string) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function fmtRelative(iso: string) {
+function fmtRelative(iso: string, t: (k: string) => string) {
   const diff = Date.now() - new Date(iso).getTime()
-  if (diff < 60_000)  return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 60_000)  return t('analyst.time_just_now')
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}${t('analyst.time_minutes_ago_suffix')}`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}${t('analyst.time_hours_ago_suffix')}`
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
@@ -156,6 +157,7 @@ function SourcesFilter({
   allTypes: ChatSourceType[]
   onChange: (v: string[]) => void
 }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -178,7 +180,7 @@ function SourcesFilter({
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(o => !o)}
-        title="Filter data sources"
+        title={t('analyst.filter_data_sources_title')}
         style={{
           all: 'unset', cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 5,
@@ -190,7 +192,7 @@ function SourcesFilter({
         }}
       >
         <Filter size={11} />
-        {active ? `${sources.length} source${sources.length > 1 ? 's' : ''}` : 'All sources'}
+        {active ? `${sources.length} ${sources.length > 1 ? t('analyst.sources_plural') : t('analyst.sources_singular')}` : t('analyst.all_sources')}
         <ChevronDown size={10} />
       </button>
 
@@ -206,15 +208,14 @@ function SourcesFilter({
             color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.07em',
             borderBottom: '1px solid var(--border)',
           }}>
-            Data Sources
+            {t('analyst.data_sources_header')}
           </div>
-          {allTypes.map(t => {
-            const checked = sources.length === 0 || sources.includes(t.id)
-            const selected = sources.includes(t.id)
+          {allTypes.map(st => {
+            const selected = sources.includes(st.id)
             return (
               <div
-                key={t.id}
-                onClick={() => toggle(t.id)}
+                key={st.id}
+                onClick={() => toggle(st.id)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '7px 12px', cursor: 'pointer', fontSize: 12,
@@ -226,7 +227,7 @@ function SourcesFilter({
                 {selected
                   ? <CheckSquare size={13} color="var(--accent)" />
                   : <Square size={13} color="var(--dim)" />}
-                {t.label}
+                {st.label}
               </div>
             )
           })}
@@ -239,7 +240,7 @@ function SourcesFilter({
                 textAlign: 'center',
               }}
             >
-              Clear filter (use all)
+              {t('analyst.clear_filter')}
             </div>
           )}
         </div>
@@ -258,6 +259,7 @@ function ChatItem({
   onFavorite: () => void
   onDelete: () => void
 }) {
+  const { t } = useLanguage()
   const [hover, setHover] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
 
@@ -301,7 +303,7 @@ function ChatItem({
         display: 'flex', alignItems: 'center', gap: 6,
         paddingLeft: 17, marginTop: 3,
       }}>
-        <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtRelative(chat.last_message_at)}</span>
+        <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtRelative(chat.last_message_at, t)}</span>
         {chat.session_id && (
           <span style={{
             fontSize: 9, padding: '1px 5px', borderRadius: 3,
@@ -318,7 +320,7 @@ function ChatItem({
         }}>
           <button
             onClick={e => { e.stopPropagation(); onFavorite() }}
-            title={chat.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+            title={chat.is_favorite ? t('analyst.remove_from_favorites') : t('analyst.add_to_favorites')}
             style={{
               all: 'unset', width: 22, height: 22, borderRadius: 4, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -331,7 +333,7 @@ function ChatItem({
           {confirmDel ? (
             <button
               onClick={e => { e.stopPropagation(); onDelete() }}
-              title="Confirm delete"
+              title={t('analyst.confirm_delete')}
               style={{
                 all: 'unset', width: 22, height: 22, borderRadius: 4, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -343,7 +345,7 @@ function ChatItem({
           ) : (
             <button
               onClick={e => { e.stopPropagation(); setConfirmDel(true) }}
-              title="Delete chat"
+              title={t('analyst.delete_chat_title')}
               style={{
                 all: 'unset', width: 22, height: 22, borderRadius: 4, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -361,6 +363,7 @@ function ChatItem({
 
 // ── Empty state ────────────────────────────────────────────────────────────────
 function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const { t } = useLanguage()
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column',
@@ -376,14 +379,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
         <Sparkles size={28} color="var(--accent)" strokeWidth={1.5} />
       </div>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>AI Analyst</div>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('analyst.title')}</div>
         <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300 }}>
-          Ask questions about your forecast results, model accuracy, inventory, or anything
-          about the platform.
+          {t('analyst.empty_state_description')}
         </div>
       </div>
       <Button variant="primary" icon={<Plus size={14} />} onClick={onCreate}>
-        New Chat
+        {t('analyst.new_chat')}
       </Button>
     </div>
   )
@@ -391,11 +393,14 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AnalystPage() {
+  const { t } = useLanguage()
   const [chats,       setChats]       = useState<Chat[]>([])
   const [activeChatId, setActive]     = useState<string | null>(null)
   const [messages,    setMessages]    = useState<ChatMessage[]>([])
   const [hasMore,     setHasMore]     = useState(false)
   const [loadingMsgs, setLoadingMsgs] = useState(false)
+  const [msgsError,   setMsgsError]   = useState<string | null>(null)
+  const [chatsError,  setChatsError]  = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [sending,     setSending]     = useState(false)
   const [creatingChat, setCreatingChat] = useState(false)
@@ -413,7 +418,9 @@ export default function AnalystPage() {
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    listChats().then(setChats).catch(console.error)
+    listChats().then(setChats).catch((e: unknown) => {
+      setChatsError(e instanceof Error ? e.message : t('analyst.err_load_chats'))
+    })
     getSessions().then(setSessions).catch(console.error)
     getDataSourceTypes().then(setSourceTypes).catch(console.error)
 
@@ -424,18 +431,26 @@ export default function AnalystPage() {
   }, [])
 
   // ── Load messages when chat changes ───────────────────────────────────────
-  useEffect(() => {
-    if (!activeChatId) { setMessages([]); setHasMore(false); return }
+  const loadMessages = useCallback((chatId: string) => {
     setLoadingMsgs(true)
-    getChatMessages(activeChatId, 30)
+    setMsgsError(null)
+    getChatMessages(chatId, 30)
       .then(page => {
         setMessages(page.messages)
         setHasMore(page.has_more)
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' }), 50)
       })
-      .catch(console.error)
+      .catch((e: unknown) => {
+        setMsgsError(e instanceof Error ? e.message : t('analyst.err_load_history'))
+      })
       .finally(() => setLoadingMsgs(false))
-  }, [activeChatId])
+  }, [t])
+
+  useEffect(() => {
+    setMessages([]); setHasMore(false); setMsgsError(null)
+    if (!activeChatId) return
+    loadMessages(activeChatId)
+  }, [activeChatId, loadMessages])
 
   // ── Scroll to bottom on new message ───────────────────────────────────────
   const scrollToBottom = useCallback((instant = false) => {
@@ -539,12 +554,12 @@ export default function AnalystPage() {
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err)
       const friendly = raw.includes('429') || raw.toLowerCase().includes('too many')
-        ? 'Too many requests — please wait a moment before sending another message.'
+        ? t('analyst.err_too_many_requests')
         : raw.includes('500') || raw.toLowerCase().includes('server error')
-        ? 'Server error — please try again in a few seconds.'
+        ? t('analyst.err_server_error')
         : err instanceof TypeError || raw.toLowerCase().includes('network') || raw.toLowerCase().includes('fetch')
-        ? 'Connection error — please check your internet connection.'
-        : 'Failed to get a response. Please try again.'
+        ? t('analyst.err_connection')
+        : t('analyst.err_failed_response')
       const errMsg: ChatMessage = {
         id: `err-${Date.now()}`,
         chat_id: targetId,
@@ -558,7 +573,7 @@ export default function AnalystPage() {
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [activeChatId, chats, sending, scrollToBottom])
+  }, [activeChatId, chats, sending, scrollToBottom, t])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -636,11 +651,11 @@ export default function AnalystPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Sparkles size={14} color="var(--accent)" />
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>AI Analyst</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.title')}</span>
               </div>
               <button
                 onClick={() => handleNewChat()}
-                title="New chat"
+                title={t('analyst.new_chat_title')}
                 style={{
                   all: 'unset', width: 28, height: 28, borderRadius: 7, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -662,7 +677,7 @@ export default function AnalystPage() {
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search chats…"
+                placeholder={t('analyst.search_chats_placeholder')}
                 style={{
                   width: '100%', background: 'var(--surface-2)',
                   border: '1px solid var(--border)', borderRadius: 7,
@@ -683,9 +698,13 @@ export default function AnalystPage() {
 
           {/* Chat list */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
-            {chats.length === 0 ? (
+            {chatsError ? (
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: '#ef4444' }}>
+                {chatsError}
+              </div>
+            ) : chats.length === 0 ? (
               <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--dim)' }}>
-                No chats yet
+                {t('analyst.no_chats_yet')}
               </div>
             ) : (
               <>
@@ -696,7 +715,7 @@ export default function AnalystPage() {
                       textTransform: 'uppercase', letterSpacing: '0.08em',
                       padding: '4px 8px 2px', display: 'flex', alignItems: 'center', gap: 4,
                     }}>
-                      <Star size={9} fill="var(--dim)" /> Favorites
+                      <Star size={9} fill="var(--dim)" /> {t('analyst.favorites_header')}
                     </div>
                     {favorites.map(c => (
                       <ChatItem
@@ -719,7 +738,7 @@ export default function AnalystPage() {
                         textTransform: 'uppercase', letterSpacing: '0.08em',
                         padding: '4px 8px 2px',
                       }}>
-                        Recent
+                        {t('analyst.recent_header')}
                       </div>
                     )}
                     {recent.map(c => (
@@ -755,13 +774,13 @@ export default function AnalystPage() {
               }}>
                 <MessageSquare size={14} color="var(--accent)" />
                 <span style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {activeChat?.title ?? 'Chat'}
+                  {activeChat?.title ?? t('analyst.chat_fallback_title')}
                 </span>
 
                 {/* Session picker */}
                 {completedSessions.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: 'var(--dim)' }}>Session:</span>
+                    <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('analyst.session_label')}</span>
                     <select
                       value={activeChat?.session_id ?? ''}
                       onChange={async e => {
@@ -777,7 +796,7 @@ export default function AnalystPage() {
                         color: 'var(--text)', cursor: 'pointer', maxWidth: 160,
                       }}
                     >
-                      <option value="">— General —</option>
+                      <option value="">{t('analyst.session_general_option')}</option>
                       {completedSessions.map(s => (
                         <option key={s.session_id} value={s.session_id}>{s.name}</option>
                       ))}
@@ -815,13 +834,27 @@ export default function AnalystPage() {
               >
                 {loadingMore && (
                   <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--dim)', fontSize: 11 }}>
-                    <Spinner size={12} /> Loading older messages…
+                    <Spinner size={12} /> {t('analyst.loading_older_messages')}
                   </div>
                 )}
 
                 {loadingMsgs ? (
                   <div data-testid="messages-loading-spinner" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Spinner size={18} />
+                  </div>
+                ) : msgsError ? (
+                  <div style={{
+                    flex: 1, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: 12, textAlign: 'center',
+                  }}>
+                    <AlertTriangle size={28} color="#ef4444" style={{ opacity: 0.8 }} />
+                    <div style={{ fontSize: 13, color: 'var(--text)', maxWidth: 360 }}>{msgsError}</div>
+                    <button
+                      onClick={() => activeChatId && loadMessages(activeChatId)}
+                      style={{ all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 8, background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 600 }}
+                    >
+                      {t('analyst.retry')}
+                    </button>
                   </div>
                 ) : messages.length === 0 ? (
                   <div style={{
@@ -832,18 +865,18 @@ export default function AnalystPage() {
                     <Bot size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
                     <div style={{ fontSize: 13 }}>
                       {activeChat?.session_id
-                        ? 'Ask about your forecast results, accuracy, inventory, or SKU trends.'
-                        : 'Ask me anything about forecasting or the platform.'}
+                        ? t('analyst.empty_messages_with_session')
+                        : t('analyst.empty_messages_general')}
                     </div>
                     {/* Suggestion chips */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 8 }}>
                       {(activeChat?.session_id
-                        ? ['How accurate are my models?', 'Which SKUs need attention?', 'Summarize inventory risks']
-                        : ['What is WAPE?', 'How does the platform work?', 'What models are available?']
-                      ).map(chip => (
+                        ? ['analyst.chip_model_accuracy', 'analyst.chip_skus_attention', 'analyst.chip_inventory_risks']
+                        : ['analyst.chip_what_is_wape', 'analyst.chip_how_platform_works', 'analyst.chip_available_models']
+                      ).map(chipKey => (
                         <button
-                          key={chip}
-                          onClick={() => { setInput(chip); inputRef.current?.focus() }}
+                          key={chipKey}
+                          onClick={() => { setInput(t(chipKey)); inputRef.current?.focus() }}
                           style={{
                             all: 'unset', cursor: 'pointer',
                             padding: '6px 12px', borderRadius: 20,
@@ -853,7 +886,7 @@ export default function AnalystPage() {
                           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)' }}
                           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
                         >
-                          {chip}
+                          {t(chipKey)}
                         </button>
                       ))}
                     </div>
@@ -866,7 +899,7 @@ export default function AnalystPage() {
                           textTransform: 'uppercase' as const, letterSpacing: '0.07em', marginBottom: 10,
                           textAlign: 'center',
                         }}>
-                          Preguntas frecuentes
+                          {t('analyst.suggested_questions_header')}
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, justifyContent: 'center' }}>
                           {suggestedQs.map(q => (
@@ -921,7 +954,7 @@ export default function AnalystPage() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKeyDown}
-                    placeholder={creatingChat ? 'Creating chat…' : 'Ask anything… (Enter to send, Shift+Enter for new line)'}
+                    placeholder={creatingChat ? t('analyst.creating_chat_placeholder') : t('analyst.input_placeholder')}
                     disabled={creatingChat}
                     rows={1}
                     style={{

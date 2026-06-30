@@ -13,6 +13,7 @@ import Badge from '@/components/ui/Badge'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import {
   Search, Package, ChevronDown, RefreshCw,
   AlertTriangle, CheckCircle2, TrendingUp, BarChart2,
@@ -202,10 +203,11 @@ function Sparkline({ values, color = '#818cf8', width = 80, height = 28 }: {
 function SessionSelector({ sessions, selected, onSelect }: {
   sessions: SessionInfo[]; selected: string | null; onSelect: (id: string) => void
 }) {
+  const { t } = useLanguage()
   const trained = sessions.filter(s => s.status === 'COMPLETED')
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>Session:</span>
+      <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('skus.session_label')}</span>
       <div style={{ position: 'relative' }}>
         <select
           className="form-select"
@@ -213,7 +215,7 @@ function SessionSelector({ sessions, selected, onSelect }: {
           onChange={e => onSelect(e.target.value)}
           style={{ paddingRight: 32, minWidth: 220 }}
         >
-          <option value="" disabled>Select a trained session…</option>
+          <option value="" disabled>{t('skus.select_trained_session')}</option>
           {trained.map(s => <option key={s.session_id} value={s.session_id}>{s.name}</option>)}
         </select>
         <ChevronDown size={12} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--dim)' }} />
@@ -232,6 +234,7 @@ function SkuCard({ sku, quality, metrics, inventory, selected, onClick }: {
   selected: boolean
   onClick: () => void
 }) {
+  const { t } = useLanguage()
   const best = metrics.reduce<MetricRow | null>((b, r) =>
     r.mae !== null && (b === null || (b.mae !== null && r.mae < b.mae)) ? r : b
   , null)
@@ -272,7 +275,7 @@ function SkuCard({ sku, quality, metrics, inventory, selected, onClick }: {
         )}
         {quality && (() => {
           const qs = quality.quality_score
-          const reliabilityLabel = qs >= 0.7 ? 'Alta' : qs >= 0.45 ? 'Media' : 'Baja'
+          const reliabilityLabel = qs >= 0.7 ? t('skus.reliability_high') : qs >= 0.45 ? t('skus.reliability_medium') : t('skus.reliability_low')
           const reliabilityColor = qs >= 0.7 ? '#22c55e' : qs >= 0.45 ? '#f59e0b' : '#ef4444'
           return (
             <span style={{
@@ -324,20 +327,21 @@ function ChipGroup<T extends string>({ options, value, onChange, label }: {
 // ── Stats strip ───────────────────────────────────────────────────────────────
 
 function StatsStrip({ data }: { data: SkuIntelligenceData }) {
+  const { t } = useLanguage()
   const { stats, metrics, historical, forecast } = data
   const bestMetric = metrics.reduce<MetricRow | null>((b, r) =>
     r.wape !== null && (b === null || (b.wape !== null && r.wape < b.wape)) ? r : b
   , null)
 
   const items = [
-    { label: 'Promedio de ventas', value: fmtK(stats?.mean) },
-    { label: 'Variabilidad', value: fmtK(stats?.std) },
-    { label: 'Mín', value: fmtK(stats?.min) },
-    { label: 'Máx', value: fmtK(stats?.max) },
-    { label: 'Puntos históricos', value: historical.length.toString() },
-    { label: 'Pasos de forecast', value: forecast.length.toString() },
-    { label: 'Mejor WAPE', value: bestMetric?.wape != null ? pct(bestMetric.wape) : '—' },
-    { label: 'Mejor modelo', value: bestMetric?.model ?? '—' },
+    { label: t('skus.stat_avg_sales'), value: fmtK(stats?.mean) },
+    { label: t('skus.stat_variability'), value: fmtK(stats?.std) },
+    { label: t('skus.stat_min'), value: fmtK(stats?.min) },
+    { label: t('skus.stat_max'), value: fmtK(stats?.max) },
+    { label: t('skus.stat_historical_points'), value: historical.length.toString() },
+    { label: t('skus.stat_forecast_steps'), value: forecast.length.toString() },
+    { label: t('skus.stat_best_wape'), value: bestMetric?.wape != null ? pct(bestMetric.wape) : '—' },
+    { label: t('skus.stat_best_model'), value: bestMetric?.model ?? '—' },
   ]
 
   return (
@@ -366,15 +370,16 @@ function BandToggles({ active, onChange, hasQuantiles }: {
   onChange: (key: string) => void
   hasQuantiles: boolean
 }) {
+  const { t } = useLanguage()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <span style={{ fontSize: 11, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
-        Uncertainty:
+        {t('skus.uncertainty_label')}
       </span>
       {CI_BANDS.map(b => (
         <button
           key={b.key}
-          title={hasQuantiles ? `Toggle ${b.label} uncertainty band` : 'No quantile data available for this model'}
+          title={hasQuantiles ? `${t('skus.toggle_band_prefix')} ${b.label} ${t('skus.toggle_band_suffix')}` : t('skus.no_quantile_data_title')}
           onClick={() => hasQuantiles && onChange(b.key)}
           style={{
             all: 'unset', cursor: hasQuantiles ? 'pointer' : 'default',
@@ -393,7 +398,7 @@ function BandToggles({ active, onChange, hasQuantiles }: {
       ))}
       {!hasQuantiles && (
         <span style={{ fontSize: 10, color: 'var(--dim)', opacity: 0.5 }}>
-          (no quantile data)
+          {t('skus.no_quantile_data')}
         </span>
       )}
     </div>
@@ -412,6 +417,7 @@ function buildChartOption(
   isDark: boolean,
   gaps: { start: string; end: string }[],
   outlierIndices: number[] = [],
+  t: (key: string) => string = (k) => k,
 ) {
   const { historical, forecast } = data
 
@@ -499,7 +505,7 @@ function buildChartOption(
     ...forecast.map(() => null),
   ]
   const histSeries: Record<string, unknown> = {
-    name:      'Historical',
+    name:      t('skus.series_historical'),
     data:      histData,
     lineStyle: { color: histColor, width: 2 },
     itemStyle: { color: histColor },
@@ -524,7 +530,7 @@ function buildChartOption(
       })),
       tooltip: {
         formatter: (p: { data: { coord: [string, number] } }) =>
-          `<div style="font-size:11px"><b style="color:#f59e0b">Outlier</b><br/>${p.data.coord[0]}: ${p.data.coord[1].toFixed(2)}</div>`,
+          `<div style="font-size:11px"><b style="color:#f59e0b">${t('skus.outlier_label')}</b><br/>${p.data.coord[0]}: ${p.data.coord[1].toFixed(2)}</div>`,
       },
     }
   }
@@ -553,7 +559,7 @@ function buildChartOption(
     fcastData[historical.length - 1] = historical[historical.length - 1].value
   }
   const fcastSeries: Record<string, unknown> = {
-    name:       'Forecast P50',
+    name:       t('skus.series_forecast_p50'),
     data:       fcastData,
     lineStyle:  { color: fcastColor, width: 2.5, type: 'dashed' },
     itemStyle:  { color: fcastColor },
@@ -593,10 +599,10 @@ function buildChartOption(
     const lines: string[] = []
 
     if (hp)
-      lines.push(row(dot(histColor), 'Historical', hp.value.toFixed(2)))
+      lines.push(row(dot(histColor), t('skus.series_historical'), hp.value.toFixed(2)))
 
     if (fp) {
-      lines.push(row(dot(fcastColor), 'Forecast P50', fp.value.toFixed(2)))
+      lines.push(row(dot(fcastColor), t('skus.series_forecast_p50'), fp.value.toFixed(2)))
       for (const band of CI_BANDS) {
         if (!activeBands.has(band.key)) continue
         const lo = getQ(fp, band.lower)
@@ -615,7 +621,7 @@ function buildChartOption(
     </div>`
   }
 
-  const legendData = ['Historical', 'Forecast P50', ...renderedBandLabels]
+  const legendData = [t('skus.series_historical'), t('skus.series_forecast_p50'), ...renderedBandLabels]
 
   return {
     backgroundColor: 'transparent',
@@ -646,12 +652,12 @@ function buildChartOption(
       feature: {
         dataZoom: {
           yAxisIndex: 0,
-          title:      { zoom: 'Zoom area', back: 'Undo zoom' },
+          title:      { zoom: t('skus.toolbox_zoom_area'), back: t('skus.toolbox_undo_zoom') },
           iconStyle:  { color: dim, borderColor: 'transparent' },
           emphasis:   { iconStyle: { color: '#818cf8', borderColor: 'transparent' } },
         },
         restore: {
-          title:    'Reset zoom',
+          title:    t('skus.toolbox_reset_zoom'),
           iconStyle: { color: dim, borderColor: 'transparent' },
           emphasis:  { iconStyle: { color: '#22c55e', borderColor: 'transparent' } },
         },
@@ -699,6 +705,7 @@ function buildChartOption(
 function ChartPanel({ sessionId, sku, isDark }: {
   sessionId: string; sku: string; isDark: boolean
 }) {
+  const { t } = useLanguage()
   const [data,        setData]        = useState<SkuIntelligenceData | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [fetching,    setFetching]    = useState(false)
@@ -783,14 +790,14 @@ function ChartPanel({ sessionId, sku, isDark }: {
       doc.setFillColor(17, 19, 31)
       doc.rect(0, 0, pageW, 18, 'F')
       doc.setFontSize(11); doc.setTextColor(129, 140, 248)
-      doc.text('Forecast Report', margin, 12)
+      doc.text(t('skus.pdf_report_title'), margin, 12)
 
       // SKU + metadata
       let y = 28
       doc.setFontSize(16); doc.setTextColor(30, 41, 59)
       doc.text(sku, margin, y); y += 7
       doc.setFontSize(9); doc.setTextColor(100, 116, 139)
-      doc.text(`Session: ${sessionId}  ·  Granularity: ${data.applied_granularity}  ·  Model: ${data.model ?? 'N/A'}`, margin, y)
+      doc.text(`${t('skus.pdf_session_label')}: ${sessionId}  ·  ${t('skus.pdf_granularity_label')}: ${data.applied_granularity}  ·  ${t('skus.pdf_model_label')}: ${data.model ?? 'N/A'}`, margin, y)
       y += 8
 
       // Chart image
@@ -802,10 +809,10 @@ function ChartPanel({ sessionId, sku, isDark }: {
       // Stats row
       if (data.stats) {
         const items = [
-          { label: 'Mean',    value: fmtK(data.stats.mean) },
-          { label: 'Std Dev', value: fmtK(data.stats.std) },
-          { label: 'Min',     value: fmtK(data.stats.min) },
-          { label: 'Max',     value: fmtK(data.stats.max) },
+          { label: t('skus.pdf_stat_mean'),    value: fmtK(data.stats.mean) },
+          { label: t('skus.pdf_stat_std_dev'), value: fmtK(data.stats.std) },
+          { label: t('skus.pdf_stat_min'),     value: fmtK(data.stats.min) },
+          { label: t('skus.pdf_stat_max'),     value: fmtK(data.stats.max) },
         ]
         const boxW = (contentW - 6) / 4
         items.forEach((item, i) => {
@@ -822,8 +829,8 @@ function ChartPanel({ sessionId, sku, isDark }: {
       // Metrics table
       if (data.metrics.length > 0) {
         doc.setFontSize(10); doc.setTextColor(129, 140, 248)
-        doc.text('Model Performance', margin, y); y += 5
-        const cols = ['Model', 'Type', 'MAE', 'RMSE', 'WAPE', 'Bias']
+        doc.text(t('skus.pdf_model_performance'), margin, y); y += 5
+        const cols = [t('skus.pdf_col_model'), t('skus.pdf_col_type'), t('skus.pdf_col_mae'), t('skus.pdf_col_rmse'), t('skus.pdf_col_wape'), t('skus.pdf_col_bias')]
         const colW = contentW / cols.length
         doc.setFillColor(129, 140, 248); doc.rect(margin, y, contentW, 7, 'F')
         doc.setFontSize(8); doc.setTextColor(255, 255, 255)
@@ -844,12 +851,12 @@ function ChartPanel({ sessionId, sku, isDark }: {
       // Footer
       doc.setFillColor(17, 19, 31); doc.rect(0, pageH - 10, pageW, 10, 'F')
       doc.setFontSize(7); doc.setTextColor(100, 116, 139)
-      doc.text(`SKU Intelligence Report  ·  ${new Date().toLocaleDateString()}`, margin, pageH - 3.5)
+      doc.text(`${t('skus.pdf_footer_title')}  ·  ${new Date().toLocaleDateString()}`, margin, pageH - 3.5)
 
       doc.save(`forecast_${sku}.pdf`)
       setShowExportMenu(false)
     })
-  }, [sku, data, sessionId, isDark])
+  }, [sku, data, sessionId, isDark, t])
 
   const exportExcel = useCallback(() => {
     if (!data) return
@@ -930,8 +937,8 @@ function ChartPanel({ sessionId, sku, isDark }: {
 
   const option = useMemo(() => {
     if (!data) return {}
-    return buildChartOption(data, chartType, activeBands, showLegend, isDark, gaps, outliers)
-  }, [data, chartType, activeBands, showLegend, isDark, gaps, outliers])
+    return buildChartOption(data, chartType, activeBands, showLegend, isDark, gaps, outliers, t)
+  }, [data, chartType, activeBands, showLegend, isDark, gaps, outliers, t])
 
   if (loading && !data) return (
     <div style={{ flex: 1, padding: '16px', minHeight: 360 }}>
@@ -963,7 +970,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
       }}>
         {/* Granularity */}
         <ChipGroup
-          label="Granularity"
+          label={t('skus.chip_granularity')}
           value={granularity ?? data.applied_granularity}
           onChange={g => setGranularity(g)}
           options={validGranularities.map(g => ({
@@ -977,13 +984,13 @@ function ChartPanel({ sessionId, sku, isDark }: {
 
         {/* Chart type */}
         <ChipGroup
-          label="Chart"
+          label={t('skus.chip_chart')}
           value={chartType}
           onChange={setChartType}
           options={[
-            { value: 'line', label: 'Line', icon: <LineChartIcon size={10} /> },
-            { value: 'area', label: 'Area', icon: <Activity size={10} /> },
-            { value: 'bar',  label: 'Bar',  icon: <BarChart2 size={10} /> },
+            { value: 'line', label: t('skus.chart_type_line'), icon: <LineChartIcon size={10} /> },
+            { value: 'area', label: t('skus.chart_type_area'), icon: <Activity size={10} /> },
+            { value: 'bar',  label: t('skus.chart_type_bar'),  icon: <BarChart2 size={10} /> },
           ]}
         />
 
@@ -991,12 +998,12 @@ function ChartPanel({ sessionId, sku, isDark }: {
 
         {/* Aggregation */}
         <ChipGroup
-          label="Agg"
+          label={t('skus.chip_agg')}
           value={aggMethod}
           onChange={setAggMethod}
           options={[
-            { value: 'sum',  label: 'Sum' },
-            { value: 'mean', label: 'Avg' },
+            { value: 'sum',  label: t('skus.agg_sum') },
+            { value: 'mean', label: t('skus.agg_avg') },
           ]}
         />
 
@@ -1005,7 +1012,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
         {/* Model selector */}
         {data.available_models.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--dim)' }}>Model</span>
+            <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('skus.model_label')}</span>
             <div style={{ position: 'relative' }}>
               <select
                 className="form-select"
@@ -1029,7 +1036,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
 
           {/* Reset zoom */}
           <button
-            title="Reset zoom to full view"
+            title={t('skus.reset_zoom_title')}
             onClick={() => echartsRef.current?.dispatchAction({ type: 'restore' })}
             style={{
               all: 'unset', cursor: 'pointer',
@@ -1040,7 +1047,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
             }}
           >
             <RotateCcw size={11} />
-            Reset
+            {t('skus.btn_reset')}
           </button>
 
           {/* Export dropdown */}
@@ -1056,7 +1063,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
               }}
             >
               <Download size={11} />
-              Export
+              {t('skus.btn_export')}
               <ChevronDown size={9} />
             </button>
             {showExportMenu && (
@@ -1073,10 +1080,10 @@ function ChartPanel({ sessionId, sku, isDark }: {
                   minWidth: 160, overflow: 'hidden',
                 }}>
                   {[
-                    { label: 'CSV — chart data',  icon: <Download size={11} />, action: () => { exportChartCSV(sku, data); setShowExportMenu(false) } },
-                    { label: 'PNG — chart image', icon: <Download size={11} />, action: exportPNG },
-                    { label: 'PDF — full report', icon: <Download size={11} />, action: exportPDF },
-                    { label: 'Excel (.xlsx)',      icon: <Download size={11} />, action: exportExcel },
+                    { label: t('skus.export_csv_chart_data'),  icon: <Download size={11} />, action: () => { exportChartCSV(sku, data); setShowExportMenu(false) } },
+                    { label: t('skus.export_png_chart_image'), icon: <Download size={11} />, action: exportPNG },
+                    { label: t('skus.export_pdf_full_report'), icon: <Download size={11} />, action: exportPDF },
+                    { label: t('skus.export_excel_xlsx'),      icon: <Download size={11} />, action: exportExcel },
                   ].map(item => (
                     <button
                       key={item.label}
@@ -1101,7 +1108,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
           </div>
 
           <button
-            title="Toggle legend"
+            title={t('skus.toggle_legend_title')}
             onClick={() => setShowLegend(v => !v)}
             style={{
               all: 'unset', cursor: 'pointer',
@@ -1110,7 +1117,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
             }}
           >
             <Layers size={12} />
-            Legend
+            {t('skus.legend_label')}
           </button>
         </div>
       </div>
@@ -1122,7 +1129,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
       <div style={{ flex: 1, minHeight: 0, padding: '8px 0 0' }}>
         {data.historical.length === 0 && data.forecast.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--dim)', fontSize: 13 }}>
-            No series data available for this SKU
+            {t('skus.no_series_data')}
           </div>
         ) : (
           <ReactECharts
@@ -1138,20 +1145,20 @@ function ChartPanel({ sessionId, sku, isDark }: {
 
       {/* Footer info */}
       <div style={{ padding: '4px 16px 8px', display: 'flex', gap: 12, fontSize: 10, color: 'var(--dim)' }}>
-        <span>Freq: <strong>{data.original_freq}</strong></span>
-        <span>View: <strong>{data.applied_granularity}</strong></span>
-        <span>{data.historical.length} historical · {data.forecast.length} forecast</span>
-        {data.model && <span>Model: <strong>{data.model}</strong></span>}
+        <span>{t('skus.footer_freq')}: <strong>{data.original_freq}</strong></span>
+        <span>{t('skus.footer_view')}: <strong>{data.applied_granularity}</strong></span>
+        <span>{data.historical.length} {t('skus.footer_historical')} · {data.forecast.length} {t('skus.footer_forecast')}</span>
+        {data.model && <span>{t('skus.footer_model')}: <strong>{data.model}</strong></span>}
         {gaps.length > 0 && (
           <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, background: 'rgba(251,191,36,0.4)', border: '1px dashed rgba(251,191,36,0.7)', borderRadius: 2 }} />
-            {gaps.length} gap{gaps.length > 1 ? 's' : ''} detected · interpolated
+            {gaps.length} {gaps.length > 1 ? t('skus.footer_gaps_detected_plural') : t('skus.footer_gaps_detected_singular')}
           </span>
         )}
         {outliers.length > 0 && (
           <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
-            {outliers.length} outlier{outliers.length > 1 ? 's' : ''} detected
+            {outliers.length} {outliers.length > 1 ? t('skus.footer_outliers_detected_plural') : t('skus.footer_outliers_detected_singular')}
           </span>
         )}
       </div>
@@ -1174,10 +1181,11 @@ function heatCell(val: number | null, min: number, max: number, lowerIsBetter = 
 }
 
 function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
+  const { t } = useLanguage()
   const [viewMode, setViewMode] = useState<MetricViewMode>('table')
 
   if (!rows.length) return (
-    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>No metrics</div>
+    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>{t('skus.no_metrics')}</div>
   )
 
   const sorted = [...rows].sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))
@@ -1201,7 +1209,7 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
         borderBottom: '1px solid var(--border)',
       }}>
         <span style={{ fontSize: 11, color: 'var(--dim)' }}>
-          {rows.length} model{rows.length !== 1 ? 's' : ''} evaluated
+          {rows.length} {rows.length !== 1 ? t('skus.models_evaluated_plural') : t('skus.models_evaluated_singular')}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {/* View toggle */}
@@ -1209,7 +1217,7 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
             {(['table', 'heatmap'] as MetricViewMode[]).map(m => (
               <button
                 key={m}
-                title={m === 'table' ? 'Table view' : 'Heatmap view'}
+                title={m === 'table' ? t('skus.table_view_title') : t('skus.heatmap_view_title')}
                 onClick={() => setViewMode(m)}
                 style={{
                   all: 'unset', cursor: 'pointer',
@@ -1221,12 +1229,12 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
                 }}
               >
                 {m === 'table' ? <TableProperties size={11} /> : <Grid3x3 size={11} />}
-                {m === 'table' ? 'Table' : 'Heatmap'}
+                {m === 'table' ? t('skus.view_table') : t('skus.view_heatmap')}
               </button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsCSV(sku, sorted)}>CSV</Button>
-          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsExcel(sku, sorted)}>Excel</Button>
+          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsCSV(sku, sorted)}>{t('skus.export_csv_short')}</Button>
+          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsExcel(sku, sorted)}>{t('skus.export_excel_short')}</Button>
         </div>
       </div>
 
@@ -1234,18 +1242,18 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
         {viewMode === 'heatmap' ? (
           <div style={{ padding: 16 }}>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 12 }}>
-              Color scale: <span style={{ color: '#22c55e' }}>green = best</span> → <span style={{ color: '#ef4444' }}>red = worst</span>
+              {t('skus.color_scale_label')}: <span style={{ color: '#22c55e' }}>{t('skus.color_scale_green')}</span> → <span style={{ color: '#ef4444' }}>{t('skus.color_scale_red')}</span>
             </div>
             <table className="data-table" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '20%' }}>Model</th>
-                  <th style={{ width: '10%' }}>Type</th>
-                  <th style={{ width: '15%' }}>MAE</th>
-                  <th style={{ width: '15%' }}>RMSE</th>
-                  <th style={{ width: '15%' }}>WAPE</th>
-                  <th style={{ width: '15%' }}>Bias</th>
-                  <th style={{ width: '10%' }}>Folds</th>
+                  <th style={{ width: '20%' }}>{t('skus.col_model')}</th>
+                  <th style={{ width: '10%' }}>{t('skus.col_type')}</th>
+                  <th style={{ width: '15%' }}>{t('skus.col_mae')}</th>
+                  <th style={{ width: '15%' }}>{t('skus.col_rmse')}</th>
+                  <th style={{ width: '15%' }}>{t('skus.col_wape')}</th>
+                  <th style={{ width: '15%' }}>{t('skus.col_bias')}</th>
+                  <th style={{ width: '10%' }}>{t('skus.col_folds')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1253,7 +1261,7 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
                   <tr key={i}>
                     <td style={{ fontWeight: r === best ? 600 : 400 }}>
                       {r.model}
-                      {r === best && <span style={{ fontSize: 9, color: '#818cf8', marginLeft: 5 }}>BEST</span>}
+                      {r === best && <span style={{ fontSize: 9, color: '#818cf8', marginLeft: 5 }}>{t('skus.badge_best')}</span>}
                     </td>
                     <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
                     <td style={{ fontFamily: 'monospace', background: heatCell(r.mae,  stats.mae.min,  stats.mae.max),  borderRadius: 4 }}>{fmt(r.mae)}</td>
@@ -1269,13 +1277,13 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
         ) : (
           <table className="data-table">
             <thead>
-              <tr><th>Model</th><th>Type</th><th>MAE</th><th>RMSE</th><th>WAPE</th><th>Bias</th><th>Folds</th></tr>
+              <tr><th>{t('skus.col_model')}</th><th>{t('skus.col_type')}</th><th>{t('skus.col_mae')}</th><th>{t('skus.col_rmse')}</th><th>{t('skus.col_wape')}</th><th>{t('skus.col_bias')}</th><th>{t('skus.col_folds')}</th></tr>
             </thead>
             <tbody>
               {sorted.map((r, i) => (
                 <tr key={i} style={{ background: r === best ? 'rgba(129,140,248,0.06)' : undefined }}>
                   <td style={{ fontWeight: r === best ? 600 : 400 }}>
-                    {r.model}{r === best && <span style={{ fontSize: 9, color: '#818cf8', marginLeft: 6 }}>BEST</span>}
+                    {r.model}{r === best && <span style={{ fontSize: 9, color: '#818cf8', marginLeft: 6 }}>{t('skus.badge_best')}</span>}
                   </td>
                   <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
                   <td style={{ fontFamily: 'monospace' }}>{fmt(r.mae)}</td>
@@ -1296,13 +1304,14 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
 // ── Quality panel ─────────────────────────────────────────────────────────────
 
 function QualityPanel({ q }: { q: QualityReport[string] }) {
+  const { t } = useLanguage()
   return (
     <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {[
-          { label: 'Registros',       value: q.n_rows },
-          { label: 'Valores atípicos', value: q.n_outliers },
-          { label: 'Datos faltantes', value: pct(q.missing_pct) },
+          { label: t('skus.quality_records'),       value: q.n_rows },
+          { label: t('skus.quality_outliers'), value: q.n_outliers },
+          { label: t('skus.quality_missing_data'), value: pct(q.missing_pct) },
         ].map(({ label, value }) => (
           <div key={label} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
@@ -1311,8 +1320,8 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
         ))}
       </div>
       {[
-        { label: 'Puntuación de calidad', value: q.quality_score, color: '#22c55e' },
-        { label: 'Datos faltantes',       value: q.missing_pct,   color: '#ef4444' },
+        { label: t('skus.quality_score_label'), value: q.quality_score, color: '#22c55e' },
+        { label: t('skus.quality_missing_data'),       value: q.missing_pct,   color: '#ef4444' },
       ].map(({ label, value, color }) => (
         <div key={label}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -1335,7 +1344,7 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
       )}
       {q.is_valid && !q.warnings?.length && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#22c55e' }}>
-          <CheckCircle2 size={12} /> Series is clean — no warnings
+          <CheckCircle2 size={12} /> {t('skus.series_clean_no_warnings')}
         </div>
       )}
     </div>
@@ -1345,14 +1354,15 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
 // ── Inventory panel ───────────────────────────────────────────────────────────
 
 function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
+  const { t } = useLanguage()
   const fmtNum = (n: number | null | undefined, d = 0) => n != null ? n.toFixed(d) : '—'
   const cards = [
-    { label: 'Reorder Point', value: fmtNum(inv.reorder_point),  color: '#818cf8' },
-    { label: 'Safety Stock',  value: fmtNum(inv.safety_stock),   color: '#06b6d4' },
-    { label: 'Stockout Risk', value: pct(inv.stockout_risk),      color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' },
+    { label: t('skus.inv_reorder_point'), value: fmtNum(inv.reorder_point),  color: '#818cf8' },
+    { label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),   color: '#06b6d4' },
+    { label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),      color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' },
     inv.holding_cost != null
-      ? { label: 'Holding Cost',  value: `$${fmtNum(inv.holding_cost, 2)}`, color: '#f59e0b' }
-      : { label: 'Days Coverage', value: fmtNum(inv.days_coverage),         color: '#f59e0b' },
+      ? { label: t('skus.inv_holding_cost'),  value: `$${fmtNum(inv.holding_cost, 2)}`, color: '#f59e0b' }
+      : { label: t('skus.inv_days_coverage'), value: fmtNum(inv.days_coverage),         color: '#f59e0b' },
   ]
   return (
     <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1378,9 +1388,9 @@ function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
       }}>
         <Badge variant={ACTION_VARIANT[inv.action] ?? 'default'}>{inv.action}</Badge>
         <span style={{ fontSize: 12 }}>
-          {inv.action === 'REORDER'   && 'Stock is running low — place a replenishment order.'}
-          {inv.action === 'OVERSTOCK' && 'Inventory exceeds optimal levels — consider promotional activity.'}
-          {inv.action === 'OK'        && 'Inventory levels are within the optimal range.'}
+          {inv.action === 'REORDER'   && t('skus.action_reorder_msg')}
+          {inv.action === 'OVERSTOCK' && t('skus.action_overstock_msg')}
+          {inv.action === 'OK'        && t('skus.action_ok_msg')}
         </span>
       </div>
     </div>
@@ -1400,22 +1410,22 @@ function EmptyState({ message }: { message: string }) {
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
+function TabBar({ tabs, active, onChange, labelFor }: { tabs: string[]; active: string; onChange: (tab: string) => void; labelFor?: (tab: string) => string }) {
   return (
     <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', padding: '0 16px', background: 'var(--surface)' }}>
-      {tabs.map(t => (
+      {tabs.map(tabKey => (
         <button
-          key={t}
-          onClick={() => onChange(t)}
+          key={tabKey}
+          onClick={() => onChange(tabKey)}
           style={{
             all: 'unset', cursor: 'pointer',
             padding: '9px 12px', fontSize: 12, fontWeight: 500,
-            color: t === active ? 'var(--accent)' : 'var(--dim)',
-            borderBottom: `2px solid ${t === active ? 'var(--accent)' : 'transparent'}`,
+            color: tabKey === active ? 'var(--accent)' : 'var(--dim)',
+            borderBottom: `2px solid ${tabKey === active ? 'var(--accent)' : 'transparent'}`,
             marginBottom: -1, transition: 'all 0.12s',
           }}
         >
-          {t}
+          {labelFor ? labelFor(tabKey) : tabKey}
         </button>
       ))}
     </div>
@@ -1425,6 +1435,7 @@ function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; on
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function SkusPage() {
+  const { t } = useLanguage()
   const { advancedMode } = useBusinessProfile()
   const [sessions,       setSessions]       = useState<SessionInfo[]>([])
   const [sessionId,      setSessionId]      = useState<string | null>(null)
@@ -1436,6 +1447,8 @@ export default function SkusPage() {
   const [selectedSku,    setSelectedSku]    = useState<string | null>(null)
   const [tab,            setTab]            = useState('Forecast')
   const [sessLoading,    setSessLoading]    = useState(true)
+  const [sessError,      setSessError]      = useState<string | null>(null)
+  const [loadError,      setLoadError]      = useState<string | null>(null)
   const [isDark,         setIsDark]         = useState(true)
   const [showSkuStats,   setShowSkuStats]   = useState(false)
   // Compare mode
@@ -1463,25 +1476,33 @@ export default function SkusPage() {
   useEffect(() => {
     getSessions()
       .then(s => { setSessions(s); setSessLoading(false) })
-      .catch(() => setSessLoading(false))
-  }, [])
+      .catch((e: unknown) => {
+        setSessError(e instanceof Error ? e.message : t('skus.err_sessions_load_failed'))
+        setSessLoading(false)
+      })
+  }, [t])
 
   useEffect(() => {
     if (!sessionId) return
     setLoading(true)
+    setLoadError(null)
     setSelectedSku(null)
+    const failedParts: string[] = []
     Promise.all([
-      getMetrics(sessionId).catch(() => ({ rows: [], by_model: {} })),
-      getInventory(sessionId).catch(() => ({ recommendations: [] })),
-      getQuality(sessionId).catch(() => ({})),
+      getMetrics(sessionId).catch(() => { failedParts.push(t('skus.part_metrics')); return { rows: [], by_model: {} } }),
+      getInventory(sessionId).catch(() => { failedParts.push(t('skus.part_inventory')); return { recommendations: [] } }),
+      getQuality(sessionId).catch(() => { failedParts.push(t('skus.part_data_quality')); return {} }),
     ]).then(([m, inv, q]) => {
       setMetrics(m.rows)
       setInventory(inv.recommendations)
       setQuality(q as QualityReport)
       const skus = Array.from(new Set(m.rows.map(r => r.sku).filter(Boolean) as string[]))
       if (skus.length) setSelectedSku(skus[0])
+      if (failedParts.length) {
+        setLoadError(`${t('skus.err_load_failed_prefix')}: ${failedParts.join(', ')}. ${t('skus.err_load_failed_suffix')}`)
+      }
     }).finally(() => setLoading(false))
-  }, [sessionId])
+  }, [sessionId, t])
 
   const skus = useMemo(() =>
     Array.from(new Set(metrics.map(r => r.sku).filter(Boolean) as string[]))
@@ -1510,14 +1531,14 @@ export default function SkusPage() {
         setCmpSku(first ?? null)
       })
       .catch((e: { status?: number } & Error) => {
-        const msg = e?.status === 404 ? 'Session not found'
-          : e?.status === 403 ? 'Access denied'
-          : 'Failed to load session metrics'
+        const msg = e?.status === 404 ? t('skus.err_session_not_found')
+          : e?.status === 403 ? t('skus.err_access_denied')
+          : t('skus.err_load_session_metrics')
         setCmpError(msg)
         setCmpMetrics([])
       })
       .finally(() => setCmpLoading(false))
-  }, [cmpSessionId])
+  }, [cmpSessionId, t])
 
   // Bulk export all SKUs
   const handleBulkExport = useCallback(async () => {
@@ -1565,10 +1586,10 @@ export default function SkusPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between', paddingBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <TrendingUp size={15} color="var(--accent)" />
-          <span style={{ fontSize: 14, fontWeight: 600 }}>SKU Intelligence</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{t('skus.page_title')}</span>
           {skus.length > 0 && (
             <span style={{ fontSize: 11, color: 'var(--dim)', marginLeft: 4 }}>
-              {skus.length} SKU{skus.length !== 1 ? 's' : ''}
+              {skus.length} {skus.length !== 1 ? t('skus.skus_count_plural') : t('skus.skus_count_singular')}
             </span>
           )}
         </div>
@@ -1578,7 +1599,7 @@ export default function SkusPage() {
             <button
               onClick={handleBulkExport}
               disabled={bulkExporting}
-              title="Export all SKUs to Excel (one sheet per SKU)"
+              title={t('skus.export_all_skus_title')}
               style={{
                 all: 'unset', cursor: bulkExporting ? 'default' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: 5,
@@ -1588,14 +1609,14 @@ export default function SkusPage() {
               }}
             >
               {bulkExporting
-                ? <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> {bulkProgress} / {skus.length} SKUs…</>
-                : <><FileSpreadsheet size={11} /> Export All SKUs</>
+                ? <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> {bulkProgress} / {skus.length} {t('skus.skus_count_plural')}…</>
+                : <><FileSpreadsheet size={11} /> {t('skus.btn_export_all_skus')}</>
               }
             </button>
           )}
           {bulkFailed.length > 0 && !bulkExporting && (
             <span style={{ fontSize: 10, color: '#f87171' }} title={bulkFailed.join(', ')}>
-              {bulkFailed.length} SKU{bulkFailed.length !== 1 ? 's' : ''} failed
+              {bulkFailed.length} {bulkFailed.length !== 1 ? t('skus.skus_failed_plural') : t('skus.skus_failed_singular')}
             </span>
           )}
 
@@ -1603,7 +1624,7 @@ export default function SkusPage() {
           {sessionId && (
             <button
               onClick={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionId(null) }}
-              title="Compare two sessions side by side"
+              title={t('skus.compare_sessions_title')}
               style={{
                 all: 'unset', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 5,
@@ -1613,7 +1634,7 @@ export default function SkusPage() {
                 background: compareMode ? 'rgba(129,140,248,0.08)' : 'var(--surface)',
               }}
             >
-              <GitCompare size={11} /> Compare
+              <GitCompare size={11} /> {t('skus.btn_compare')}
             </button>
           )}
 
@@ -1625,7 +1646,7 @@ export default function SkusPage() {
               variant="ghost" size="sm" icon={<RefreshCw size={12} />}
               onClick={() => { const id = sessionId; setSessionId(null); setTimeout(() => setSessionId(id), 10) }}
             >
-              Refresh
+              {t('skus.btn_refresh')}
             </Button>
           )}
         </div>
@@ -1639,7 +1660,7 @@ export default function SkusPage() {
           borderRadius: 8, marginBottom: 12, flexWrap: 'wrap',
         }}>
           <GitCompare size={12} color="var(--accent)" />
-          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>Comparing with:</span>
+          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{t('skus.comparing_with_label')}</span>
           <SessionSelector
             sessions={sessions}
             selected={cmpSessionId}
@@ -1647,7 +1668,7 @@ export default function SkusPage() {
           />
           {cmpSkus.length > 0 && (
             <>
-              <span style={{ fontSize: 11, color: 'var(--dim)' }}>SKU:</span>
+              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('skus.sku_label')}</span>
               <div style={{ position: 'relative' }}>
                 <select
                   className="form-select"
@@ -1655,7 +1676,7 @@ export default function SkusPage() {
                   onChange={e => setCmpSku(e.target.value)}
                   style={{ paddingRight: 28, minWidth: 140, fontSize: 11, height: 28 }}
                 >
-                  <option value="" disabled>Select SKU…</option>
+                  <option value="" disabled>{t('skus.select_sku_placeholder')}</option>
                   {cmpSkus.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--dim)' }} />
@@ -1666,6 +1687,17 @@ export default function SkusPage() {
           {cmpError && (
             <span style={{ fontSize: 11, color: '#f87171' }}>⚠ {cmpError}</span>
           )}
+        </div>
+      )}
+
+      {(sessError || loadError) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 12,
+          borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+          fontSize: 12, color: '#f87171',
+        }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{sessError || loadError}</span>
         </div>
       )}
 
@@ -1682,7 +1714,7 @@ export default function SkusPage() {
               <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />
               <input
                 type="text"
-                placeholder="Search SKUs…"
+                placeholder={t('skus.search_placeholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="form-input"
@@ -1692,11 +1724,11 @@ export default function SkusPage() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {!sessionId ? (
-              <EmptyState message="Select a trained session" />
+              <EmptyState message={t('skus.empty_select_trained_session')} />
             ) : loading ? (
               <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
             ) : skus.length === 0 ? (
-              <EmptyState message="No SKUs found" />
+              <EmptyState message={t('skus.empty_no_skus_found')} />
             ) : (
               skus.map(sku => (
                 <SkuCard
@@ -1719,7 +1751,7 @@ export default function SkusPage() {
           borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column',
         }}>
           {!selectedSku ? (
-            <EmptyState message={sessionId ? 'Select a SKU from the list' : 'No session selected'} />
+            <EmptyState message={sessionId ? t('skus.empty_select_sku_from_list') : t('skus.empty_no_session_selected')} />
           ) : (
             <>
               {/* SKU header */}
@@ -1742,9 +1774,9 @@ export default function SkusPage() {
                         <>
                           <span style={{ color: skuColor }}>{skuQuality.series_type}</span>
                           {' · '}
-                          {skuQuality.n_rows} rows · {pct(skuQuality.quality_score)} quality
+                          {skuQuality.n_rows} {t('skus.rows_label')} · {pct(skuQuality.quality_score)} {t('skus.quality_label_lower')}
                         </>
-                      ) : 'No quality data'}
+                      ) : t('skus.no_quality_data')}
                     </div>
                   </div>
                 </div>
@@ -1758,23 +1790,23 @@ export default function SkusPage() {
               {/* Business summary card */}
               {skuQuality && (() => {
                 const demandTypeMap: Record<string, string> = {
-                  stable:       'Demanda estable',
-                  seasonal:     'Demanda estacional',
-                  volatile:     'Demanda variable',
-                  intermittent: 'Demanda irregular',
-                  short:        'Historial corto',
-                  unknown:      'Demanda variable',
+                  stable:       t('skus.demand_stable'),
+                  seasonal:     t('skus.demand_seasonal'),
+                  volatile:     t('skus.demand_volatile'),
+                  intermittent: t('skus.demand_intermittent'),
+                  short:        t('skus.demand_short_history'),
+                  unknown:      t('skus.demand_volatile'),
                 }
-                const demandType = demandTypeMap[seriesType] ?? 'Demanda variable'
+                const demandType = demandTypeMap[seriesType] ?? t('skus.demand_volatile')
                 const qualityScore = skuQuality.quality_score
-                const predictability = qualityScore >= 0.7 ? 'Alta' : qualityScore >= 0.45 ? 'Media' : 'Baja'
-                const predictabilityDots = predictability === 'Alta' ? 4 : predictability === 'Media' ? 2 : 1
-                const predictabilityColor = predictability === 'Alta' ? '#22c55e' : predictability === 'Media' ? '#f59e0b' : '#ef4444'
+                const predictability = qualityScore >= 0.7 ? t('skus.reliability_high') : qualityScore >= 0.45 ? t('skus.reliability_medium') : t('skus.reliability_low')
+                const predictabilityDots = predictability === t('skus.reliability_high') ? 4 : predictability === t('skus.reliability_medium') ? 2 : 1
+                const predictabilityColor = predictability === t('skus.reliability_high') ? '#22c55e' : predictability === t('skus.reliability_medium') ? '#f59e0b' : '#ef4444'
                 const confidenceMsg = qualityScore >= 0.7
-                  ? 'Puedes tomar decisiones de compra con confianza basadas en este forecast.'
+                  ? t('skus.confidence_msg_high')
                   : qualityScore >= 0.45
-                  ? 'El forecast es útil como referencia, pero considera mantener un margen de seguridad extra.'
-                  : 'Alta variabilidad — usa el forecast como guía general, no como cifra exacta.'
+                  ? t('skus.confidence_msg_medium')
+                  : t('skus.confidence_msg_low')
 
                 const bestWapeMetric = [...skuMetrics]
                   .filter(r => r.wape !== null)
@@ -1797,7 +1829,7 @@ export default function SkusPage() {
                           {demandType}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          Predictibilidad:
+                          {t('skus.predictability_label')}
                           <span style={{ color: predictabilityColor, fontWeight: 600 }}>{predictability}</span>
                           <span>
                             {[1, 2, 3, 4].map(i => (
@@ -1820,7 +1852,7 @@ export default function SkusPage() {
                           <div style={{ fontSize: 16, fontWeight: 700, color: wapeColor }}>
                             {Math.round((1 - bestWapeMetric.wape) * 100)}%
                           </div>
-                          <div style={{ fontSize: 9, color: 'var(--dim)', marginTop: 1 }}>precisión</div>
+                          <div style={{ fontSize: 9, color: 'var(--dim)', marginTop: 1 }}>{t('skus.accuracy_label')}</div>
                         </div>
                       )}
                     </div>
@@ -1837,7 +1869,7 @@ export default function SkusPage() {
                         display: 'flex', alignItems: 'center', gap: 6,
                       }}>
                         <AlertTriangle size={11} />
-                        {skuQuality.n_outliers} valor{skuQuality.n_outliers !== 1 ? 'es' : ''} atípico{skuQuality.n_outliers !== 1 ? 's' : ''} detectado{skuQuality.n_outliers !== 1 ? 's' : ''} en el historial
+                        {skuQuality.n_outliers} {skuQuality.n_outliers !== 1 ? t('skus.outliers_in_history_plural') : t('skus.outliers_in_history_singular')}
                       </div>
                     )}
                   </div>
@@ -1848,6 +1880,12 @@ export default function SkusPage() {
                 tabs={['Forecast', 'Metrics', 'Quality', 'Inventory']}
                 active={tab}
                 onChange={setTab}
+                labelFor={tabKey => ({
+                  Forecast: t('skus.tab_forecast'),
+                  Metrics: t('skus.tab_metrics'),
+                  Quality: t('skus.tab_quality'),
+                  Inventory: t('skus.tab_inventory'),
+                }[tabKey] ?? tabKey)}
               />
 
               <div style={{ flex: 1, overflow: tab === 'Forecast' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -1890,9 +1928,9 @@ export default function SkusPage() {
                       <div style={{ padding: '16px 20px 0' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 12 }}>
                           {[
-                            { label: 'Registros',        value: skuQuality.n_rows },
-                            { label: 'Valores atípicos', value: skuQuality.n_outliers },
-                            { label: 'Datos faltantes',  value: pct(skuQuality.missing_pct) },
+                            { label: t('skus.quality_records'),        value: skuQuality.n_rows },
+                            { label: t('skus.quality_outliers'), value: skuQuality.n_outliers },
+                            { label: t('skus.quality_missing_data'),  value: pct(skuQuality.missing_pct) },
                           ].map(({ label, value }) => (
                             <div key={label} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)' }}>
                               <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
@@ -1902,7 +1940,7 @@ export default function SkusPage() {
                         </div>
                         {skuQuality.is_valid && !skuQuality.warnings?.length && (
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#22c55e', marginBottom: 12 }}>
-                            <CheckCircle2 size={12} /> Serie limpia — sin advertencias
+                            <CheckCircle2 size={12} /> {t('skus.series_clean_no_warnings')}
                           </div>
                         )}
                         {skuQuality.warnings?.length > 0 && (
@@ -1928,7 +1966,7 @@ export default function SkusPage() {
                             }}
                           >
                             <span style={{ fontSize: 10 }}>{showSkuStats ? '▲' : '▼'}</span>
-                            {showSkuStats ? 'Ocultar' : 'Ver'} análisis estadístico detallado
+                            {showSkuStats ? t('skus.btn_hide') : t('skus.btn_view')} {t('skus.detailed_stat_analysis')}
                           </button>
                         )}
                         {(advancedMode || showSkuStats) && (
@@ -1938,13 +1976,13 @@ export default function SkusPage() {
                         )}
                       </div>
                     </div>
-                  ) : <EmptyState message="No quality data for this SKU" />
+                  ) : <EmptyState message={t('skus.empty_no_quality_data')} />
                 )}
                 {tab === 'Inventory' && (
                   skuInventory
                     ? <InventoryPanel inv={skuInventory} />
                     : <div style={{ padding: 20, color: 'var(--dim)', fontSize: 13 }}>
-                        No inventory recommendations. Train with business config enabled.
+                        {t('skus.no_inventory_recommendations')}
                       </div>
                 )}
               </div>

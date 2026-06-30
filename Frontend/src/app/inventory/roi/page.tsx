@@ -5,6 +5,7 @@ import { getInventoryROI, getPOHistory } from '@/lib/api'
 import type { InventoryROISummary, POLogEntry } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -37,6 +38,7 @@ function fmtUnits(n: number): string {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function HeroCard({ roi }: { roi: InventoryROISummary }) {
+  const { t } = useLanguage()
   const hasValue = roi.estimated_value_protected > 0
 
   return (
@@ -46,7 +48,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
       borderTop: `4px solid ${C.indigo}`,
     }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.indigo, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 20 }}>
-        Tu historial con Faro
+        {t('roi.hero_eyebrow')}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 28 }}>
@@ -56,30 +58,30 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
             {roi.total_pos_generated}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
-            {roi.total_pos_generated === 1 ? 'orden de compra generada' : 'órdenes de compra generadas'}
+            {roi.total_pos_generated === 1 ? t('roi.po_generated_singular') : t('roi.po_generated_plural')}
           </div>
           {roi.first_po_at && (
             <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-              desde {fmtDate(roi.first_po_at)}
+              {t('roi.since_prefix')} {fmtDate(roi.first_po_at)}
               {roi.active_days > 0 && (
                 <span style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 20, background: 'rgba(129,140,248,0.1)', color: C.indigo, fontSize: 11 }}>
-                  {roi.active_days} días activo
+                  {roi.active_days} {t('roi.active_days_suffix')}
                 </span>
               )}
             </div>
           )}
         </div>
 
-        {/* SKUs protected */}
+        {/* Urgent stockout risks actually acted on */}
         <div>
           <div style={{ fontSize: 48, fontWeight: 900, color: C.red, lineHeight: 1 }}>
             {fmtUnits(roi.total_skus_protected)}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
-            SKUs protegidos de stockout
+            {t('roi.stockout_risks_handled')}
           </div>
           <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-            en ordenes urgentes (Pedir YA)
+            {t('roi.stockout_risks_handled_detail')}
           </div>
         </div>
 
@@ -91,10 +93,10 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
                 {fmtCurrency(roi.estimated_value_protected)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
-                valor de inventario ordenado
+                {t('roi.purchases_managed')}
               </div>
               <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-                en todas las ordenes de compra
+                {t('roi.purchases_managed_detail')}
               </div>
             </>
           ) : (
@@ -103,10 +105,10 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
                 {fmtUnits(roi.total_units_ordered)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
-                unidades totales ordenadas
+                {t('roi.total_units_ordered')}
               </div>
               <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-                Agrega costo unitario a tus SKUs para ver el valor en dinero
+                {t('roi.add_unit_cost_hint')}
               </div>
             </>
           )}
@@ -116,7 +118,51 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
   )
 }
 
+function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
+  const { t } = useLanguage()
+  // Only meaningful once we have decision data (cart-based POs).
+  if (roi.adoption_rate == null || roi.total_suggested === 0) return null
+
+  const pct = Math.round(roi.adoption_rate * 100)
+  const color = pct >= 70 ? C.green : pct >= 40 ? C.amber : C.red
+
+  return (
+    <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 14, padding: '24px 28px', borderTop: `4px solid ${color}`,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
+        {t('roi.adoption_eyebrow')}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 52, fontWeight: 900, color, lineHeight: 1 }}>{pct}%</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
+            {t('roi.adoption_rate_label')}
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <p style={{ margin: 0, fontSize: 14, color: C.muted, lineHeight: 1.6 }}>
+            {t('roi.adoption_followed_prefix')} <strong style={{ color: C.text }}>{fmtUnits(roi.total_approved)}</strong> {t('roi.adoption_followed_of')}{' '}
+            <strong style={{ color: C.text }}>{fmtUnits(roi.total_suggested)}</strong> {t('roi.adoption_followed_suffix')}
+          </p>
+          {/* Progress bar */}
+          <div style={{ marginTop: 12, height: 8, borderRadius: 6, background: C.card, overflow: 'hidden' }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width 0.4s' }} />
+          </div>
+          {roi.total_rejected > 0 && (
+            <div style={{ fontSize: 12, color: C.dim, marginTop: 8 }}>
+              {fmtUnits(roi.total_rejected)} {t('roi.adoption_rejected_suffix')}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MonthKPIs({ roi }: { roi: InventoryROISummary }) {
+  const { t } = useLanguage()
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
       <div style={{
@@ -126,9 +172,9 @@ function MonthKPIs({ roi }: { roi: InventoryROISummary }) {
       }}>
         <div style={{ fontSize: 32, fontWeight: 800, color: C.indigo }}>{roi.pos_this_month}</div>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 4 }}>
-          {roi.pos_this_month === 1 ? 'orden generada' : 'ordenes generadas'} este mes
+          {roi.pos_this_month === 1 ? t('roi.order_generated_singular') : t('roi.order_generated_plural')} {t('roi.this_month_suffix')}
         </div>
-        <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Mes actual</div>
+        <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{t('roi.current_month')}</div>
       </div>
       <div style={{
         background: C.surface, border: `1px solid ${C.border}`,
@@ -137,33 +183,43 @@ function MonthKPIs({ roi }: { roi: InventoryROISummary }) {
       }}>
         <div style={{ fontSize: 32, fontWeight: 800, color: C.muted }}>{roi.pos_last_month}</div>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 4 }}>
-          {roi.pos_last_month === 1 ? 'orden generada' : 'ordenes generadas'} el mes pasado
+          {roi.pos_last_month === 1 ? t('roi.order_generated_singular') : t('roi.order_generated_plural')} {t('roi.last_month_suffix')}
         </div>
-        <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Mes anterior</div>
+        <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{t('roi.previous_month')}</div>
       </div>
     </div>
   )
 }
 
 function POHistoryTable({ entries }: { entries: POLogEntry[] }) {
+  const { t } = useLanguage()
   if (entries.length === 0) {
     return (
       <div style={{ padding: '40px 24px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
-        Aun no has generado ninguna orden de compra desde Faro.
+        {t('roi.no_po_history')}
         <br />
         <span style={{ fontSize: 12, opacity: 0.7, marginTop: 6, display: 'block' }}>
-          Ve a Inventario y usa "Exportar OC" para registrar tu primera orden.
+          {t('roi.no_po_history_hint')}
         </span>
       </div>
     )
   }
+
+  const columns = [
+    t('roi.col_datetime'),
+    t('roi.col_skus_in_order'),
+    t('roi.col_urgent'),
+    t('roi.col_upcoming'),
+    t('roi.col_total_units'),
+    t('roi.col_total_value'),
+  ]
 
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr style={{ background: C.card }}>
-            {['Fecha y hora', 'SKUs en la orden', 'Urgentes', 'Proximos', 'Unidades totales', 'Valor total'].map(h => (
+            {columns.map(h => (
               <th key={h} style={{
                 padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap',
                 color: C.dim, fontWeight: 600, fontSize: 10,
@@ -216,6 +272,7 @@ function POHistoryTable({ entries }: { entries: POLogEntry[] }) {
 }
 
 function WhyItMattersCard() {
+  const { t } = useLanguage()
   return (
     <div style={{
       background: 'rgba(129,140,248,0.04)',
@@ -223,18 +280,13 @@ function WhyItMattersCard() {
       borderRadius: 12, padding: '22px 26px',
     }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: C.indigo, marginBottom: 12 }}>
-        Por que esto importa
+        {t('roi.why_matters_title')}
       </div>
       <p style={{ margin: 0, fontSize: 13, color: C.muted, lineHeight: 1.75 }}>
-        Cada vez que exportas una orden de compra desde Faro, el sistema registra que
-        productos tenia riesgo de stockout. Con el tiempo, esto construye un historial
-        de decisiones que te permite ver el impacto real del sistema en tu operacion:
-        cuantos quiebres de stock evitaste, que valor de inventario gestionaste de forma
-        proactiva, y por cuanto tiempo has confiado en datos para tomar decisiones.
+        {t('roi.why_matters_body')}
       </p>
       <p style={{ margin: '12px 0 0', fontSize: 12, color: C.dim, lineHeight: 1.65 }}>
-        Este historial tambien es util para justificar la inversion en el sistema ante
-        directivos o clientes — mostrando evidencia concreta de valor generado.
+        {t('roi.why_matters_footnote')}
       </p>
     </div>
   )
@@ -242,6 +294,7 @@ function WhyItMattersCard() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ROIPage() {
+  const { t } = useLanguage()
   const [roi,     setRoi]     = useState<InventoryROISummary | null>(null)
   const [history, setHistory] = useState<POLogEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -258,13 +311,13 @@ export default function ROIPage() {
         setRoi(roiData)
         setHistory(histData)
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : 'Error cargando datos de ROI')
+        setError(e instanceof Error ? e.message : t('roi.error_loading'))
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [])
+  }, [t])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
@@ -281,10 +334,10 @@ export default function ROIPage() {
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              Impacto & ROI
+              {t('roi.page_title')}
             </h1>
             <p style={{ margin: 0, fontSize: 11, color: C.dim }}>
-              Historial acumulado de valor generado por Faro
+              {t('roi.page_subtitle')}
             </p>
           </div>
         </div>
@@ -293,7 +346,7 @@ export default function ROIPage() {
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
         }}>
-          <ArrowLeft size={12} /> Volver a Inventario
+          <ArrowLeft size={12} /> {t('roi.back_to_inventory')}
         </Link>
       </div>
 
@@ -318,10 +371,13 @@ export default function ROIPage() {
           {/* Section 1 — Hero counters */}
           <HeroCard roi={roi} />
 
+          {/* Section 1b — Adoption (only with decision data) */}
+          <AdoptionCard roi={roi} />
+
           {/* Section 2 — Month comparison */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, marginBottom: 10 }}>
-              Actividad mensual
+              {t('roi.monthly_activity')}
             </div>
             <MonthKPIs roi={roi} />
           </div>
@@ -334,10 +390,10 @@ export default function ROIPage() {
             }}>
               <ShoppingCart size={14} color={C.indigo} />
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-                Historial de ordenes de compra
+                {t('roi.po_history_title')}
               </span>
               <span style={{ fontSize: 11, color: C.dim, marginLeft: 'auto' }}>
-                Ultimas {history.length} generadas
+                {t('roi.last_generated_prefix')} {history.length} {t('roi.last_generated_suffix')}
               </span>
             </div>
             <POHistoryTable entries={history} />
@@ -354,11 +410,10 @@ export default function ROIPage() {
             }}>
               <Package size={32} color={C.dim} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
-                Aun no hay ordenes registradas
+                {t('roi.no_orders_registered')}
               </div>
               <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
-                Exporta tu primera orden de compra desde la pagina de Inventario para
-                que Faro empiece a registrar tu impacto operativo.
+                {t('roi.no_orders_registered_hint')}
               </div>
               <Link href="/inventory" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -366,7 +421,7 @@ export default function ROIPage() {
                 background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)',
                 color: C.indigo, textDecoration: 'none',
               }}>
-                <ShoppingCart size={13} /> Ir a Inventario
+                <ShoppingCart size={13} /> {t('roi.go_to_inventory')}
               </Link>
             </div>
           )}
@@ -374,7 +429,7 @@ export default function ROIPage() {
           {/* Last updated note */}
           {roi.last_po_at && (
             <div style={{ fontSize: 11, color: C.dim, textAlign: 'center', paddingBottom: 4 }}>
-              Ultima orden registrada el {fmtDateTime(roi.last_po_at)}
+              {t('roi.last_order_registered_prefix')} {fmtDateTime(roi.last_po_at)}
             </div>
           )}
         </>

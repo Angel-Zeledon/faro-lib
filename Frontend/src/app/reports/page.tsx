@@ -9,6 +9,7 @@ import type { DriftReport } from '@/lib/api'
 import type { SessionInfo, MetricRow, QualityReport } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import {
   FileText, Download, TrendingUp, BarChart2,
   Activity, Package, AlertTriangle,
@@ -142,6 +143,7 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
 
 // ── Model comparison EChart ───────────────────────────────────────────────────
 function ModelBarChart({ rows }: { rows: MetricRow[] }) {
+  const { t } = useLanguage()
   const data = useMemo(() => {
     const byModel: Record<string, number[]> = {}
     rows.filter(r => r.mae !== null).forEach(r => {
@@ -159,7 +161,7 @@ function ModelBarChart({ rows }: { rows: MetricRow[] }) {
 
   if (!data.length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
-      No model metrics available.
+      {t('reports.no_model_metrics')}
     </div>
   )
 
@@ -200,7 +202,7 @@ function ModelBarChart({ rows }: { rows: MetricRow[] }) {
       trigger: 'axis',
       formatter: (p: { name: string; value: number }[]) => {
         const d = data.find(x => x.model === p[0]?.name)
-        return `<b>${p[0]?.name}</b><br/>Avg MAE: <b>${p[0]?.value.toFixed(3)}</b><br/>SKUs: ${d?.n ?? '?'}`
+        return `<b>${p[0]?.name}</b><br/>${t('reports.avg_mae_label')}: <b>${p[0]?.value.toFixed(3)}</b><br/>${t('reports.skus_label')}: ${d?.n ?? '?'}`
       },
       backgroundColor: '#1e293b',
       borderColor: '#334155',
@@ -223,6 +225,7 @@ function ModelBarChart({ rows }: { rows: MetricRow[] }) {
 
 // ── Quality donut EChart ──────────────────────────────────────────────────────
 function QualityDonut({ byType, total }: { byType: Record<string, number>; total: number }) {
+  const { t } = useLanguage()
   const pieData = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => ({
     name: type, value: count,
     itemStyle: { color: TYPE_COLOR[type] ?? C.slate },
@@ -232,7 +235,7 @@ function QualityDonut({ byType, total }: { byType: Record<string, number>; total
     backgroundColor: 'transparent',
     tooltip: {
       formatter: (p: { name: string; value: number; percent: number }) =>
-        `<b>${p.name}</b>: ${p.value} SKUs (${p.percent.toFixed(1)}%)`,
+        `<b>${p.name}</b>: ${p.value} ${t('reports.skus_label')} (${p.percent.toFixed(1)}%)`,
       backgroundColor: '#1e293b', borderColor: '#334155',
       textStyle: { color: '#e2e8f0', fontSize: 12 },
     },
@@ -254,7 +257,7 @@ function QualityDonut({ byType, total }: { byType: Record<string, number>; total
     }],
     graphic: [{
       type: 'text', left: 'center', top: 'center',
-      style: { text: `${total}\nSKUs`, textAlign: 'center', fill: C.muted, fontSize: 12, lineHeight: 18 },
+      style: { text: `${total}\n${t('reports.skus_label')}`, textAlign: 'center', fill: C.muted, fontSize: 12, lineHeight: 18 },
     }],
   }
 
@@ -271,6 +274,7 @@ function QualityDonut({ byType, total }: { byType: Record<string, number>; total
 
 // ── Business summary card ─────────────────────────────────────────────────────
 function ForecastSummaryCard({ rows }: { rows: MetricRow[] }) {
+  const { t } = useLanguage()
   const wapeRows  = rows.filter(r => r.wape !== null)
   const avgWape   = wapeRows.length
     ? wapeRows.reduce((acc, r) => acc + r.wape!, 0) / wapeRows.length
@@ -295,9 +299,9 @@ function ForecastSummaryCard({ rows }: { rows: MetricRow[] }) {
 
   const accentColor = accuracyPct >= 85 ? C.green : accuracyPct >= 70 ? C.amber : C.red
 
-  const summaryText = poorSkus > 0
-    ? `${poorSkus} producto${poorSkus !== 1 ? 's' : ''} muestran alta variabilidad — evita basar pedidos importantes solo en el forecast de ${poorSkus !== 1 ? 'estos SKUs' : 'este SKU'}.`
-    : 'El sistema tiene suficiente precisión para tomar decisiones de compra e inventario con confianza.'
+  const poorSkusText = poorSkus > 0
+    ? `${poorSkus} ${poorSkus !== 1 ? t('reports.products_plural') : t('reports.product_singular')} ${t('reports.high_variability_warning')} ${poorSkus !== 1 ? t('reports.these_skus') : t('reports.this_sku')}.`
+    : t('reports.system_accurate_enough')
 
   if (!rows.length) return null
 
@@ -310,14 +314,14 @@ function ForecastSummaryCard({ rows }: { rows: MetricRow[] }) {
       border: `1px solid ${accentColor}28`,
     }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 14 }}>
-        Precisión general del forecast
+        {t('reports.overall_forecast_accuracy')}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
         {[
-          { value: `${accuracyPct}%`, label: 'Precisión promedio', color: accentColor },
-          { value: goodSkus,          label: 'Pronóstico confiable', color: C.green },
-          { value: fairSkus,          label: 'Con margen de mejora', color: C.amber },
-          { value: poorSkus,          label: 'Revisar manualmente',   color: C.red   },
+          { value: `${accuracyPct}%`, label: t('reports.avg_accuracy'), color: accentColor },
+          { value: goodSkus,          label: t('reports.reliable_forecast'), color: C.green },
+          { value: fairSkus,          label: t('reports.room_for_improvement'), color: C.amber },
+          { value: poorSkus,          label: t('reports.review_manually'),   color: C.red   },
         ].map(({ value, label, color }) => (
           <div key={label} style={{
             background: C.surface, borderRadius: 8,
@@ -331,13 +335,19 @@ function ForecastSummaryCard({ rows }: { rows: MetricRow[] }) {
       </div>
       <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
         {wapeRows.length > 0
-          ? `El forecast tiene ${accuracyPct}% de precisión promedio. ${goodSkus > 0 ? `${goodSkus} producto${goodSkus !== 1 ? 's tienen' : ' tiene'} pronósticos muy confiables.` : ''} ${summaryText}`
-          : 'No hay métricas de precisión disponibles para esta sesión.'
+          ? <>
+              {t('reports.forecast_has_prefix')} {accuracyPct}% {t('reports.avg_accuracy_suffix')}{' '}
+              {goodSkus > 0 && (
+                <>{goodSkus} {goodSkus !== 1 ? t('reports.products_have_reliable') : t('reports.product_has_reliable')}{' '}</>
+              )}
+              {poorSkusText}
+            </>
+          : t('reports.no_accuracy_metrics')
         }
       </div>
       {totalSkus > 0 && (
         <div style={{ fontSize: 10, color: C.dim, marginTop: 6, opacity: 0.7 }}>
-          Basado en {totalSkus} SKU{totalSkus !== 1 ? 's' : ''} · umbral confiable: WAPE &lt; 20%
+          {t('reports.based_on_prefix')} {totalSkus} SKU{totalSkus !== 1 ? 's' : ''} · {t('reports.reliable_threshold')}
         </div>
       )}
     </div>
@@ -346,6 +356,7 @@ function ForecastSummaryCard({ rows }: { rows: MetricRow[] }) {
 
 // ── Model performance tab ─────────────────────────────────────────────────────
 function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
+  const { t } = useLanguage()
   const [sortCol, setSortCol] = useState<keyof MetricRow>('wape')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [modelFilter, setModelFilter] = useState('')
@@ -392,7 +403,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
 
   if (!metrics.length) return (
     <div style={{ padding: '48px 20px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
-      No training metrics available.
+      {t('reports.no_training_metrics')}
     </div>
   )
 
@@ -401,7 +412,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
       {/* Chart */}
       <div style={{ padding: '0 16px 8px', borderBottom: `1px solid ${C.border}` }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.dim, padding: '12px 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Average MAE by Model
+          {t('reports.avg_mae_by_model')}
         </div>
         <ModelBarChart rows={metrics} />
       </div>
@@ -409,10 +420,10 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
       {/* Leaderboard strip */}
       <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}` }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.dim, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Model Leaderboard
+          {t('reports.model_leaderboard')}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 80px 80px 50px', gap: 10, padding: '6px 0', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 600, color: C.dim, textTransform: 'uppercase' }}>
-          <span>Model</span><span>Avg MAE</span><span>Avg WAPE</span><span>Rank</span><span>SKUs</span>
+          <span>{t('reports.col_model')}</span><span>{t('reports.col_avg_mae')}</span><span>{t('reports.col_avg_wape')}</span><span>{t('reports.col_rank')}</span><span>{t('reports.skus_label')}</span>
         </div>
         {byModel.map((s, i) => {
           const maxMAE = byModel[byModel.length - 1]?.avgMAE ?? 1
@@ -426,7 +437,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {i === 0 && (
                   <span style={{ fontSize: 9, color: C.indigo, background: C.indigo + '20', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>
-                    BEST
+                    {t('reports.best_badge')}
                   </span>
                 )}
                 <span style={{ fontSize: 12, fontWeight: 500, fontFamily: 'monospace', color: C.text }}>{s.model}</span>
@@ -445,7 +456,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
 
       {/* Detailed table */}
       <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, color: C.dim }}>Filter:</span>
+        <span style={{ fontSize: 11, color: C.dim }}>{t('reports.filter_label')}</span>
         <select
           value={modelFilter}
           onChange={e => setModelFilter(e.target.value)}
@@ -455,7 +466,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
             padding: '4px 8px', outline: 'none', cursor: 'pointer',
           }}
         >
-          <option value="">All models ({metrics.length} rows)</option>
+          <option value="">{t('reports.all_models_prefix')} ({metrics.length} {t('reports.rows_suffix')})</option>
           {models.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
@@ -463,13 +474,13 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
         <table className="data-table">
           <thead>
             <tr>
-              <Hdr col="model" label="Model" />
-              <Hdr col="sku"   label="SKU" />
+              <Hdr col="model" label={t('reports.col_model')} />
+              <Hdr col="sku"   label={t('reports.col_sku')} />
               <Hdr col="mae"   label="MAE" />
               <Hdr col="rmse"  label="RMSE" />
               <Hdr col="wape"  label="WAPE" />
-              <Hdr col="bias"  label="Bias" />
-              <th>Folds</th>
+              <Hdr col="bias"  label={t('reports.col_bias')} />
+              <th>{t('reports.col_folds')}</th>
             </tr>
           </thead>
           <tbody>
@@ -478,7 +489,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {i === 0 && !modelFilter && (
-                      <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>BEST</span>
+                      <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>{t('reports.best_badge')}</span>
                     )}
                     <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{r.model}</span>
                   </div>
@@ -524,7 +535,7 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
               }}
             >
               <span style={{ fontSize: 10 }}>{showTechnical ? '▲' : '▼'}</span>
-              {showTechnical ? 'Ocultar' : 'Ver'} comparativa técnica de modelos
+              {showTechnical ? t('reports.hide_technical_comparison') : t('reports.view_technical_comparison')}
             </button>
             {showTechnical && technicalSection}
           </>
@@ -536,10 +547,11 @@ function ModelPerformanceTab({ metrics }: { metrics: MetricRow[] }) {
 
 // ── Data quality tab ──────────────────────────────────────────────────────────
 function DataQualityTab({ quality }: { quality: QualityReport }) {
+  const { t } = useLanguage()
   const entries = Object.entries(quality)
   if (!entries.length) return (
     <div style={{ padding: '48px 20px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
-      No quality data available.
+      {t('reports.no_quality_data')}
     </div>
   )
 
@@ -558,10 +570,10 @@ function DataQualityTab({ quality }: { quality: QualityReport }) {
       {/* KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, padding: 16, borderBottom: `1px solid ${C.border}` }}>
         {[
-          { label: 'Total SKUs',    value: entries.length, color: C.indigo },
-          { label: 'Avg Quality',   value: pct(avgScore),  color: avgColor },
-          { label: 'With Warnings', value: warned,         color: warned > 0 ? C.amber : C.green },
-          { label: 'Invalid',       value: invalid,        color: invalid > 0 ? C.red : C.green },
+          { label: t('reports.total_skus'),    value: entries.length, color: C.indigo },
+          { label: t('reports.avg_quality'),   value: pct(avgScore),  color: avgColor },
+          { label: t('reports.with_warnings'), value: warned,         color: warned > 0 ? C.amber : C.green },
+          { label: t('reports.invalid'),       value: invalid,        color: invalid > 0 ? C.red : C.green },
         ].map(({ label, value, color }) => (
           <div key={label} style={{
             background: C.card, borderRadius: 8, padding: '12px 14px',
@@ -577,13 +589,13 @@ function DataQualityTab({ quality }: { quality: QualityReport }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ padding: '16px 20px', borderRight: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.dim, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Series Type Mix
+            {t('reports.series_type_mix')}
           </div>
           <QualityDonut byType={byType} total={entries.length} />
         </div>
         <div style={{ padding: '16px 20px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.dim, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Type Breakdown
+            {t('reports.type_breakdown')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => {
@@ -610,7 +622,7 @@ function DataQualityTab({ quality }: { quality: QualityReport }) {
       {(invalid > 0 || warned > 0) && (
         <div style={{ padding: '16px 20px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.dim, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Flagged SKUs
+            {t('reports.flagged_skus')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
             {entries.filter(([, q]) => !q.is_valid || q.warnings.length).map(([sku, q]) => (
@@ -648,6 +660,7 @@ function ExportTab({ sessionId, metrics, report }: {
   metrics: MetricRow[]
   report: Record<string, unknown>
 }) {
+  const { t } = useLanguage()
   const cancelRef = useRef(false)
   const [exporting, setExporting] = useState<string | null>(null)
   const [exportMsg, setExportMsg] = useState<string | null>(null)
@@ -678,7 +691,7 @@ function ExportTab({ sessionId, metrics, report }: {
 
   async function handleBinaryReport(format: 'excel' | 'pdf') {
     const id = `report_${format}`
-    setExporting(id); setExportMsg('Generating report…'); setExportErr(null)
+    setExporting(id); setExportMsg(t('reports.generating_report')); setExportErr(null)
     try {
       await generateReport(sessionId, 'operational', [format])
       let attempts = 0
@@ -686,17 +699,17 @@ function ExportTab({ sessionId, metrics, report }: {
         await new Promise(r => setTimeout(r, 2000))
         if (cancelRef.current) return
         attempts++
-        setExportMsg(`Generating report… (${attempts * 2}s)`)
+        setExportMsg(`${t('reports.generating_report')} (${attempts * 2}s)`)
         try {
           await downloadReportBlob(sessionId, format)
           setExportMsg(null); return
         } catch { /* not ready */ }
       }
       setExportMsg(null)
-      setExportErr('Report generation timed out — try again')
+      setExportErr(t('reports.report_generation_timeout'))
     } catch (e: unknown) {
       setExportMsg(null)
-      setExportErr(e instanceof Error ? e.message : 'Export failed')
+      setExportErr(e instanceof Error ? e.message : t('reports.export_failed'))
     } finally {
       if (!cancelRef.current) setExporting(null)
     }
@@ -717,11 +730,11 @@ function ExportTab({ sessionId, metrics, report }: {
   }
 
   const exports = [
-    { id: 'metrics_csv',  label: 'Metrics CSV',    desc: 'All model × SKU accuracy metrics',     color: C.indigo,  disabled: !metrics.length },
-    { id: 'report_excel', label: 'Excel Report',   desc: 'Full operational report (.xlsx)',       color: C.green,   disabled: false },
-    { id: 'report_pdf',   label: 'PDF Report',     desc: 'Formatted PDF for stakeholders',        color: C.orange,  disabled: false },
-    { id: 'report_json',  label: 'Report JSON',    desc: 'Raw session results from the engine',   color: C.slate,   disabled: !Object.keys(report).length },
-    { id: 'config_json',  label: 'Session Config', desc: 'Reproducible configuration export',    color: C.cyan,    disabled: false },
+    { id: 'metrics_csv',  label: t('reports.export_metrics_csv_label'),    desc: t('reports.export_metrics_csv_desc'),     color: C.indigo,  disabled: !metrics.length },
+    { id: 'report_excel', label: t('reports.export_excel_label'),   desc: t('reports.export_excel_desc'),       color: C.green,   disabled: false },
+    { id: 'report_pdf',   label: t('reports.export_pdf_label'),     desc: t('reports.export_pdf_desc'),        color: C.orange,  disabled: false },
+    { id: 'report_json',  label: t('reports.export_report_json_label'),    desc: t('reports.export_report_json_desc'),   color: C.slate,   disabled: !Object.keys(report).length },
+    { id: 'config_json',  label: t('reports.export_session_config_label'), desc: t('reports.export_session_config_desc'),    color: C.cyan,    disabled: false },
   ]
 
   return (
@@ -776,7 +789,7 @@ function ExportTab({ sessionId, metrics, report }: {
             }}
           >
             {exporting === id ? <Spinner size={12} /> : <Download size={12} />}
-            Export
+            {t('reports.export_button')}
           </button>
         </div>
       ))}
@@ -786,6 +799,7 @@ function ExportTab({ sessionId, metrics, report }: {
 
 // ── Drift tab ─────────────────────────────────────────────────────────────────
 function DriftTab({ sessionId }: { sessionId: string }) {
+  const { t } = useLanguage()
   const [dragging,  setDragging]  = useState(false)
   const [loading,   setLoading]   = useState(false)
   const [report,    setReport]    = useState<DriftReport | null>(null)
@@ -799,11 +813,11 @@ function DriftTab({ sessionId }: { sessionId: string }) {
     try {
       setReport(await detectDrift(sessionId, fd))
     } catch (e: unknown) {
-      const raw = e instanceof Error ? e.message : 'Drift detection failed'
+      const raw = e instanceof Error ? e.message : t('reports.drift_detection_failed')
       const lower = raw.toLowerCase()
       setError(lower.includes('format') || lower.includes('type')
-        ? 'Unsupported file format — use CSV or Parquet'
-        : lower.includes('size') || lower.includes('large') ? 'File too large' : raw)
+        ? t('reports.unsupported_file_format')
+        : lower.includes('size') || lower.includes('large') ? t('reports.file_too_large') : raw)
     } finally {
       setLoading(false)
     }
@@ -823,12 +837,9 @@ function DriftTab({ sessionId }: { sessionId: string }) {
           background: 'rgba(129,140,248,0.05)', border: '1px solid rgba(129,140,248,0.15)',
           fontSize: 13, color: 'var(--muted)', lineHeight: 1.7,
         }}>
-          <strong style={{ color: 'var(--text)' }}>¿Para qué sirve esto?</strong>
+          <strong style={{ color: 'var(--text)' }}>{t('reports.drift_what_for_title')}</strong>
           <br />
-          Sube un archivo de ventas recientes para compararlo con el historial que usó el sistema para entrenar.
-          Si tus ventas cambiaron significativamente (por ejemplo, ganaste un cliente grande, lanzaste una
-          promoción o cambiaron los patrones de tu mercado), el sistema te avisará qué productos tienen
-          comportamiento diferente al esperado.
+          {t('reports.drift_explanation')}
         </div>
         <div
           onDragOver={e => { e.preventDefault(); setDragging(true) }}
@@ -845,13 +856,13 @@ function DriftTab({ sessionId }: { sessionId: string }) {
           <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
             onChange={e => { if (e.target.files?.[0]) runDrift(e.target.files[0]) }} />
           {loading ? (
-            <><Spinner /><div style={{ fontSize: 13, color: C.dim, marginTop: 10 }}>Running drift analysis…</div></>
+            <><Spinner /><div style={{ fontSize: 13, color: C.dim, marginTop: 10 }}>{t('reports.running_drift_analysis')}</div></>
           ) : (
             <>
               <UploadCloud size={28} color={C.dim} style={{ margin: '0 auto 8px' }} />
-              <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>Upload new dataset to compare</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>{t('reports.upload_dataset_to_compare')}</div>
               <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>
-                CSV or Excel — must share the same columns as the reference dataset
+                {t('reports.csv_excel_same_columns')}
               </div>
             </>
           )}
@@ -873,10 +884,10 @@ function DriftTab({ sessionId }: { sessionId: string }) {
           {/* Summary */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
             {[
-              { label: 'Ref rows',    value: report.ref_rows,                color: C.indigo },
-              { label: 'New rows',    value: report.cur_rows,                color: C.indigo },
-              { label: 'Features',    value: featureRows.length,             color: C.indigo },
-              { label: 'Drift found', value: report.has_drift ? 'Yes' : 'No', color: report.has_drift ? C.red : C.green },
+              { label: t('reports.ref_rows'),    value: report.ref_rows,                color: C.indigo },
+              { label: t('reports.new_rows'),    value: report.cur_rows,                color: C.indigo },
+              { label: t('reports.features_label'),    value: featureRows.length,             color: C.indigo },
+              { label: t('reports.drift_found'), value: report.has_drift ? t('reports.yes') : t('reports.no'), color: report.has_drift ? C.red : C.green },
             ].map(({ label, value, color }) => (
               <div key={label} style={{
                 background: C.card, borderRadius: 8,
@@ -895,7 +906,7 @@ function DriftTab({ sessionId }: { sessionId: string }) {
               background: C.red + '08', border: `1px solid ${C.red}20`,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 12, fontWeight: 600, color: C.red }}>
-                <ShieldAlert size={13} /> Drift Alerts
+                <ShieldAlert size={13} /> {t('reports.drift_alerts')}
               </div>
               {report.alerts.map((a, i) => (
                 <div key={i} style={{ fontSize: 12, color: '#fca5a5', fontFamily: 'monospace' }}>{a}</div>
@@ -912,7 +923,7 @@ function DriftTab({ sessionId }: { sessionId: string }) {
                 fontSize: 10, color: C.dim, fontWeight: 600, textTransform: 'uppercase',
                 borderBottom: `1px solid ${C.border}`, background: C.card,
               }}>
-                <span>Feature</span><span>PSI</span><span>Level</span><span>KS p-val</span><span>Drift</span>
+                <span>{t('reports.feature_label')}</span><span>PSI</span><span>{t('reports.level_label')}</span><span>KS p-val</span><span>{t('reports.drift_label')}</span>
               </div>
               {featureRows.map(([col, v]) => (
                 <div key={col} style={{
@@ -945,7 +956,7 @@ function DriftTab({ sessionId }: { sessionId: string }) {
           )}
           {!featureRows.length && (
             <div style={{ fontSize: 13, color: C.dim, textAlign: 'center', padding: '16px 0' }}>
-              No numeric features to compare (need ≥10 rows each).
+              {t('reports.no_numeric_features')}
             </div>
           )}
         </div>
@@ -956,12 +967,14 @@ function DriftTab({ sessionId }: { sessionId: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
+  const { t } = useLanguage()
   const [sessions,  setSessions]  = useState<SessionInfo[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [metrics,   setMetrics]   = useState<MetricRow[]>([])
   const [quality,   setQuality]   = useState<QualityReport>({})
   const [report,    setReport]    = useState<Record<string, unknown>>({})
   const [loading,   setLoading]   = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [tab,       setTab]       = useState('performance')
 
   useEffect(() => {
@@ -969,20 +982,27 @@ export default function ReportsPage() {
       setSessions(s)
       const completed = s.find(x => x.status === 'COMPLETED')
       if (completed) setSessionId(completed.session_id)
-    }).catch(console.error)
+    }).catch((e: unknown) => {
+      setLoadError(e instanceof Error ? e.message : t('reports.sessions_load_error'))
+    })
   }, [])
 
   useEffect(() => {
     if (!sessionId) return
     setLoading(true)
+    setLoadError(null)
+    const failedParts: string[] = []
     Promise.all([
-      getMetrics(sessionId).catch(() => ({ rows: [], by_model: {} })),
-      getQuality(sessionId).catch(() => ({})),
-      getResults(sessionId).catch(() => ({})),
+      getMetrics(sessionId).catch(() => { failedParts.push(t('reports.performance_metrics_label')); return { rows: [], by_model: {} } }),
+      getQuality(sessionId).catch(() => { failedParts.push(t('reports.data_quality_label')); return {} }),
+      getResults(sessionId).catch(() => { failedParts.push(t('reports.results_label')); return {} }),
     ]).then(([m, q, rep]) => {
       setMetrics(m.rows)
       setQuality(q as QualityReport)
       setReport(rep)
+      if (failedParts.length) {
+        setLoadError(`${t('reports.could_not_load_prefix')}: ${failedParts.join(', ')}. ${t('reports.incomplete_data_warning')}`)
+      }
     }).finally(() => setLoading(false))
   }, [sessionId])
 
@@ -1008,10 +1028,10 @@ export default function ReportsPage() {
   }, [metrics])
 
   const TABS = [
-    { id: 'performance', label: 'Confiabilidad del forecast', icon: BarChart2   },
-    { id: 'quality',     label: 'Calidad de los datos',       icon: Activity    },
-    { id: 'drift',       label: 'Cambios en la demanda',      icon: ShieldAlert },
-    { id: 'export',      label: 'Descargar resultados',        icon: Download    },
+    { id: 'performance', label: t('reports.tab_performance'), icon: BarChart2   },
+    { id: 'quality',     label: t('reports.tab_quality'),       icon: Activity    },
+    { id: 'drift',       label: t('reports.tab_drift'),      icon: ShieldAlert },
+    { id: 'export',      label: t('reports.tab_export'),        icon: Download    },
   ]
 
   return (
@@ -1021,16 +1041,16 @@ export default function ReportsPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-            Reports & Monitoring
+            {t('reports.page_title')}
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: C.muted }}>
-            Analyse model accuracy, data quality, and distribution drift.
+            {t('reports.page_subtitle')}
           </p>
         </div>
 
         {/* Session picker */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: C.dim }}>Session:</span>
+          <span style={{ fontSize: 12, color: C.dim }}>{t('reports.session_label')}</span>
           <div style={{ position: 'relative' }}>
             <select
               value={sessionId ?? ''}
@@ -1041,7 +1061,7 @@ export default function ReportsPage() {
                 padding: '8px 32px 8px 12px', outline: 'none', cursor: 'pointer', minWidth: 220,
               }}
             >
-              <option value="" disabled>Select session…</option>
+              <option value="" disabled>{t('reports.select_session_placeholder')}</option>
               {trained.map(s => (
                 <option key={s.session_id} value={s.session_id}>{s.name}</option>
               ))}
@@ -1051,14 +1071,25 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {loadError && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+          borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: `1px solid ${C.amber}33`,
+          fontSize: 12, color: C.amber, marginBottom: 16,
+        }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{loadError}</span>
+        </div>
+      )}
+
       {/* KPI strip — only when session loaded */}
       {session && !loading && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
-          <KpiCard icon={TrendingUp} label="Session"      value={session.name.length > 18 ? session.name.slice(0, 17) + '…' : session.name}  color={C.indigo} sub={fmtDate(session.created_at)} />
-          <KpiCard icon={Award}      label="Best Model"   value={bestModel?.model ?? '—'}  color={C.indigo} sub={bestModel ? `MAE ${bestModel.avg.toFixed(3)}` : undefined} />
-          <KpiCard icon={Target}     label="Best WAPE"    value={bestWape !== null ? pct(bestWape) : '—'}  color={bestWape !== null && bestWape < 0.2 ? C.green : C.amber} />
-          <KpiCard icon={Layers}     label="SKUs Analysed" value={Object.keys(quality).length || '—'}  color={C.cyan} />
-          <KpiCard icon={Database}   label="Experiments"   value={metrics.length || '—'}    color={C.slate} sub={`across ${trained.length} session${trained.length !== 1 ? 's' : ''}`} />
+          <KpiCard icon={TrendingUp} label={t('reports.kpi_session')}      value={session.name.length > 18 ? session.name.slice(0, 17) + '…' : session.name}  color={C.indigo} sub={fmtDate(session.created_at)} />
+          <KpiCard icon={Award}      label={t('reports.kpi_best_model')}   value={bestModel?.model ?? '—'}  color={C.indigo} sub={bestModel ? `MAE ${bestModel.avg.toFixed(3)}` : undefined} />
+          <KpiCard icon={Target}     label={t('reports.kpi_best_wape')}    value={bestWape !== null ? pct(bestWape) : '—'}  color={bestWape !== null && bestWape < 0.2 ? C.green : C.amber} />
+          <KpiCard icon={Layers}     label={t('reports.kpi_skus_analysed')} value={Object.keys(quality).length || '—'}  color={C.cyan} />
+          <KpiCard icon={Database}   label={t('reports.kpi_experiments')}   value={metrics.length || '—'}    color={C.slate} sub={`${t('reports.across_sessions_prefix')} ${trained.length} ${trained.length !== 1 ? t('reports.sessions_plural') : t('reports.session_singular')}`} />
         </div>
       )}
 
@@ -1069,19 +1100,19 @@ export default function ReportsPage() {
           borderRadius: 12, padding: '60px 20px', textAlign: 'center',
         }}>
           <Package size={44} strokeWidth={1.2} color={C.border2} style={{ margin: '0 auto 16px' }} />
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.muted, marginBottom: 6 }}>No session selected</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.muted, marginBottom: 6 }}>{t('reports.no_session_selected')}</div>
           <div style={{ fontSize: 13, color: C.dim }}>
             {trained.length
-              ? 'Pick a trained session from the dropdown above.'
-              : 'Run the Forecast Studio first to generate a trained session.'}
+              ? t('reports.pick_trained_session')
+              : t('reports.run_forecast_studio_first')}
           </div>
         </div>
       )}
 
       {sessionId && (
         <Card
-          title={session?.name ?? 'Loading…'}
-          sub={`${metrics.length} experiments · ${Object.keys(quality).length} SKUs analysed`}
+          title={session?.name ?? t('reports.loading_ellipsis')}
+          sub={`${metrics.length} ${t('reports.experiments_label')} · ${Object.keys(quality).length} ${t('reports.skus_analysed_suffix')}`}
         >
           <TabBar tabs={TABS} active={tab} onChange={setTab} />
           {loading ? (
@@ -1102,14 +1133,14 @@ export default function ReportsPage() {
       {/* All sessions table (when multiple trained sessions exist) */}
       {trained.length > 1 && (
         <div style={{ marginTop: 20 }}>
-          <Card title="All Trained Sessions" sub={`${trained.length} completed sessions — click to switch`}>
+          <Card title={t('reports.all_trained_sessions')} sub={`${trained.length} ${t('reports.completed_sessions_click_switch')}`}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Session</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Dataset</th>
+                  <th>{t('reports.col_session')}</th>
+                  <th>{t('reports.col_status')}</th>
+                  <th>{t('reports.col_created')}</th>
+                  <th>{t('reports.col_dataset')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1122,7 +1153,7 @@ export default function ReportsPage() {
                     <td style={{ fontWeight: 500 }}>
                       {s.name}
                       {s.session_id === sessionId && (
-                        <span style={{ fontSize: 9, color: C.indigo, marginLeft: 8, fontWeight: 700 }}>SELECTED</span>
+                        <span style={{ fontSize: 9, color: C.indigo, marginLeft: 8, fontWeight: 700 }}>{t('reports.selected_badge')}</span>
                       )}
                     </td>
                     <td>
@@ -1130,7 +1161,7 @@ export default function ReportsPage() {
                         fontSize: 10, fontWeight: 600, borderRadius: 4, padding: '2px 8px',
                         background: C.green + '18', color: C.green,
                       }}>
-                        COMPLETED
+                        {t('reports.completed_badge')}
                       </span>
                     </td>
                     <td style={{ color: C.dim, fontSize: 12 }}>{fmtDate(s.created_at)}</td>
