@@ -75,21 +75,6 @@ class ColumnsConfig:
     group_keys: List[str] = field(default_factory=lambda: ["sku", "store"])
     exogenous: List[str] = field(default_factory=list)
 
-    @property
-    def group(self) -> Optional[str]:
-        """
-        Backward-compat accessor for pipeline components not yet migrated to group_keys.
-        Returns group_keys[0] or None.  Remove once all callers use group_keys directly.
-        """
-        return self.group_keys[0] if self.group_keys else None
-
-    @group.setter
-    def group(self, value: Optional[str]) -> None:
-        """
-        Backward-compat setter.  Replaces group_keys with [value] or [] when value is None.
-        Remove once all callers write group_keys directly.
-        """
-        self.group_keys = [value] if value is not None else []
 
 
 @dataclass

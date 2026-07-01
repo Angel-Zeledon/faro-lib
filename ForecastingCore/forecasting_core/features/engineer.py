@@ -21,11 +21,9 @@ class FeatureEngineer:
 
     def __init__(self, features_config, dt_col: str = "date",
                  target: str = "sales",
-                 group_cols: Optional[List[str]] = None,
-                 group: Optional[str] = None):   # kept for one-step backward compat
-        # Normalize: accept old single-string form during transition
+                 group_cols: Optional[List[str]] = None):
         if group_cols is None:
-            group_cols = [group] if group else []
+            group_cols = []
         self._group_cols = group_cols
         self.cfg    = features_config
         self.dt_col = dt_col

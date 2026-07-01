@@ -28,6 +28,11 @@ from forecasting_core.aggregation.rollup import aggregate_by_sku, aggregate_by_s
 log = logging.getLogger(__name__)
 
 
+def _primary_group(c) -> "Optional[str]":
+    """Return the first group key, or None if group_keys is empty."""
+    return c.group_keys[0] if c.group_keys else None
+
+
 class PipelineStatus(Enum):
     """
     Lifecycle states of a Pipeline.run() execution.
@@ -218,7 +223,7 @@ class Pipeline:
 
         df[c.date] = pd.to_datetime(df[c.date])
         df = df.dropna(subset=[c.target]).sort_values(
-            [c.group, c.date] if c.group else [c.date]
+            [_primary_group(c), c.date] if _primary_group(c) else [c.date]
         ).reset_index(drop=True)
 
         # Resolve group_cols: use configured group_keys filtered to columns
@@ -253,7 +258,7 @@ class Pipeline:
         dq_reports = checker.check(df)
         quality_df = checker.summary(dq_reports)
         df = checker.filter_valid_skus(df, dq_reports)
-        n_valid = df[c.group].nunique() if c.group else 1
+        n_valid = df[_primary_group(c)].nunique() if _primary_group(c) else 1
         log.info(f"  Valid SKUs: {n_valid}")
 
         _progress(30, f"Routing models for {n_valid} SKUs", PipelineStatus.ROUTING)
@@ -303,7 +308,7 @@ class Pipeline:
         ml_skus: set = set()
         for mn in factory.ml_names():
             ml_skus.update(router.skus_for_model(routing, mn))
-        df_ml_f = df_ml[df_ml[c.group].astype(str).isin(ml_skus)] if c.group and ml_skus else df_ml
+        df_ml_f = df_ml[df_ml[_primary_group(c)].astype(str).isin(ml_skus)] if _primary_group(c) and ml_skus else df_ml
 
         # 🔧 FIX CRÍTICO: sanitizar features antes de ML
         df_ml_f = sanitize_ml_dataframe(df_ml_f)
@@ -350,11 +355,11 @@ class Pipeline:
             skus = router.skus_for_model(routing, model_name)
             if not skus:
                 continue
-            sub = df[df[c.group].astype(str).isin(skus)] if c.group else df
+            sub = df[df[_primary_group(c)].astype(str).isin(skus)] if _primary_group(c) else df
             log.info(f"Pipeline: running {model_name} on {len(skus)} SKUs...")
             try:
                 result = run_fn(
-                    sub, c.date, c.target, c.group,
+                    sub, c.date, c.target, _primary_group(c),
                     t.train_ratio, t.min_history, t.seasonal_period,
                     horizon=h,
                 )
@@ -375,14 +380,14 @@ class Pipeline:
         # SARIMAX — only when exogenous columns are configured
         sarimax_skus = router.skus_for_model(routing, "sarimax")
         if sarimax_skus and "sarimax" in cfg.models:
-            sub = df[df[c.group].astype(str).isin(sarimax_skus)] if c.group else df
+            sub = df[df[_primary_group(c)].astype(str).isin(sarimax_skus)] if _primary_group(c) else df
             exog_cols = [col for col in c.exogenous if col in df.columns]
             sarimax_hp = cfg.models.get("sarimax", {})
             log.info(f"Pipeline: running sarimax on {len(sarimax_skus)} SKUs "
                      f"(exog={exog_cols})...")
             try:
                 results_stat["sarimax"] = run_sarimax_core(
-                    sub, c.date, c.target, c.group,
+                    sub, c.date, c.target, _primary_group(c),
                     t.train_ratio, t.min_history, t.seasonal_period,
                     exog_cols=exog_cols,
                     order=sarimax_hp.get("order", (1, 1, 1)),
@@ -432,7 +437,7 @@ class Pipeline:
             config_hash=cfg.hash,
             results={k: {m: v for m, v in r.items() if isinstance(v, (int, float))}
                      for k, r in results_ml.items()},
-            metadata={"n_skus": df[c.group].nunique() if c.group else 1, "n_rows": len(df)},
+            metadata={"n_skus": df[_primary_group(c)].nunique() if _primary_group(c) else 1, "n_rows": len(df)},
         )
         log.info(f"Pipeline: run logged → {run_id}")
         _progress(100, f"Done — run {run_id}", PipelineStatus.DONE)
@@ -444,7 +449,7 @@ class Pipeline:
             quality_df=quality_df,
             run_id=run_id,
             config_hash=cfg.hash,
-            metadata={"n_skus": df[c.group].nunique() if c.group else 1},
+            metadata={"n_skus": df[_primary_group(c)].nunique() if _primary_group(c) else 1},
             fitted_models=results_ml,
             stat_forecasts=results_stat,
         )
@@ -625,7 +630,7 @@ class Pipeline:
     def _compute_baselines(self, df, c, t):
         from forecasting_core.evaluation.baselines import BaselineEvaluator
         results = {}
-        src = df.groupby(c.group) if c.group else [(None, df)]
+        src = df.groupby(_primary_group(c)) if _primary_group(c) else [(None, df)]
         for sku, g in src:
             g = g.sort_values(c.date)
             series = g[c.target].astype(float).values
@@ -739,9 +744,9 @@ class Pipeline:
         # FALLBACK SAFE (PER SKU ONLY)
         # -----------------------------
         if not fc_arrays:
-            if c.group and c.group in df.columns:
+            if _primary_group(c) and _primary_group(c) in df.columns:
 
-                for sku_val, g in df.groupby(c.group):
+                for sku_val, g in df.groupby(_primary_group(c)):
                     sku = norm_sku(sku_val)
 
                     g_clean = pd.to_numeric(g[c.target], errors="coerce")

@@ -165,30 +165,29 @@ class TestGroupColsEmpty:
 
 
 # ---------------------------------------------------------------------------
-# Backward compat: group= keyword still works
+# group_cols API (canonical form — shim removed)
 # ---------------------------------------------------------------------------
 
-class TestBackwardCompatGroup:
+class TestGroupColsCanonical:
 
-    def test_group_string_still_accepted(self):
+    def test_group_cols_list_accepted(self):
         eng = FeatureEngineer(_cfg(lags=[1, 7]), dt_col="date", target="sales",
-                              group="sku")
+                              group_cols=["sku"])
         out = eng.transform(_df_two_groups())
         assert "lag_1" in out.columns
         assert "lag_7" in out.columns
 
-    def test_group_string_normalises_to_group_cols(self):
-        eng = FeatureEngineer(_cfg(), dt_col="date", target="sales", group="sku")
+    def test_group_cols_single_sets_attribute(self):
+        eng = FeatureEngineer(_cfg(), dt_col="date", target="sales", group_cols=["sku"])
         assert eng._group_cols == ["sku"]
 
-    def test_group_none_normalises_to_empty(self):
-        eng = FeatureEngineer(_cfg(), dt_col="date", target="sales", group=None)
+    def test_group_cols_none_defaults_to_empty(self):
+        eng = FeatureEngineer(_cfg(), dt_col="date", target="sales", group_cols=None)
         assert eng._group_cols == []
 
-    def test_group_cols_takes_precedence_over_group(self):
-        """When both supplied, group_cols wins."""
+    def test_group_cols_multi_sets_attribute(self):
         eng = FeatureEngineer(_cfg(), dt_col="date", target="sales",
-                              group_cols=["sku", "store"], group="sku")
+                              group_cols=["sku", "store"])
         assert eng._group_cols == ["sku", "store"]
 
 

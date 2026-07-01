@@ -186,7 +186,7 @@ class TestFeatureEngineerEdgeCases:
             "sales": np.arange(40, dtype=float),
         })
         cfg = FeaturesConfig(lags=[1], rolling=[7], diffs=[1], calendar=False, ewm_spans=[])
-        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group=None)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
         # Should not raise; engineer doesn't sort internally — values may be wrong
         # but it must not crash
         out = eng.transform(df)
@@ -198,7 +198,7 @@ class TestFeatureEngineerEdgeCases:
             "sales": np.random.default_rng(0).normal(10, 2, 40),
         })
         cfg = FeaturesConfig(lags=[1], rolling=[7], diffs=[], calendar=False, ewm_spans=[])
-        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group=None)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
         # Should not crash
         try:
             out = eng.transform(df)
@@ -212,7 +212,7 @@ class TestFeatureEngineerEdgeCases:
             "sales": [float(i) for i in range(10)],
         })
         cfg = FeaturesConfig(lags=[], rolling=[100], diffs=[], calendar=False, ewm_spans=[])
-        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group=None)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
         out = eng.transform(df)
         # After dropna, result might be empty — that's fine
         assert isinstance(out, pd.DataFrame)
@@ -223,7 +223,7 @@ class TestFeatureEngineerEdgeCases:
             "sales": ["high"] * 30,
         })
         cfg = FeaturesConfig(lags=[1], rolling=[], diffs=[], calendar=False, ewm_spans=[])
-        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group=None)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
         with pytest.raises((TypeError, ValueError, Exception)):
             eng.transform(df)
 

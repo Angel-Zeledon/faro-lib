@@ -91,14 +91,8 @@ class Trainer:
         Returns:
             {f"{model}_{series_key(sku, store)}": {mae, rmse, wape, bias, sku, store, model, n, validation}}
         """
-        # Normalise: accept str (legacy positional), deprecated single-col kwarg, or list
-        if isinstance(group_cols, str):
-            # Legacy: positional string call, e.g. train(df, m, "sku", target, dt)
-            group_cols = [group_cols] if group_cols else []
-        elif group_cols is None and group_col:
-            group_cols = [group_col]
-        elif group_cols is None:
-            group_cols = []
+        if group_cols is None:
+            group_cols = [group_col] if group_col else []
 
         has_group = bool(group_cols) and all(c in df.columns for c in group_cols)
         exclude = {dt, target} | set(group_cols)

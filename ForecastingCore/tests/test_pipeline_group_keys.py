@@ -121,17 +121,17 @@ class TestConfigAsValidationDict:
 
 class TestColumnsConfigGroupKeys:
 
-    def test_group_property_returns_group_keys_0(self):
+    def test_group_keys_first_element(self):
         c = ColumnsConfig(target="sales", date="date", group_keys=["sku", "store"])
-        assert c.group == "sku"
+        assert c.group_keys[0] == "sku"
 
     def test_group_keys_list_preserved(self):
         c = ColumnsConfig(target="sales", date="date", group_keys=["sku", "store"])
         assert c.group_keys == ["sku", "store"]
 
-    def test_single_key_group_property(self):
+    def test_single_key_group_keys(self):
         c = ColumnsConfig(target="sales", date="date", group_keys=["product"])
-        assert c.group == "product"
+        assert c.group_keys[0] == "product"
 
 
 # ---------------------------------------------------------------------------

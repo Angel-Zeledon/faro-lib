@@ -42,6 +42,11 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
+def _primary_group(c) -> Optional[str]:
+    """Return the first group key, or None if group_keys is empty."""
+    return c.group_keys[0] if c.group_keys else None
+
+
 def _seasonal_labels(period: int, dates: "pd.Series") -> List[str]:
     """Generate human-readable labels for each position in a seasonal cycle."""
     if period == 7:
@@ -260,7 +265,7 @@ class ForecastEngine:
         c = self._config.columns
         rt = self._config.routing.thresholds
         checker = DataQualityChecker(
-            dt_col=c.date, target_col=c.target, group_col=c.group,
+            dt_col=c.date, target_col=c.target, group_col=_primary_group(c),
             min_history=self._config.training.min_history,
             seasonal_period=self._config.training.seasonal_period,
             intermittency_threshold=rt.intermittency,
@@ -310,7 +315,7 @@ class ForecastEngine:
         c = self._config.columns
         rt = self._config.routing.thresholds
         checker = DataQualityChecker(
-            c.date, c.target, c.group,
+            c.date, c.target, _primary_group(c),
             min_history=self._config.training.min_history,
             seasonal_period=self._config.training.seasonal_period,
             intermittency_threshold=rt.intermittency,
@@ -416,8 +421,8 @@ class ForecastEngine:
         skip_cols: set = set()
         if c.date:
             skip_cols.add(c.date)
-        if c.group:
-            skip_cols.add(c.group)
+        if _primary_group(c):
+            skip_cols.add(_primary_group(c))
 
         suggestions = []
         for col in df.columns:
@@ -537,7 +542,7 @@ class ForecastEngine:
             df=self._df_prepared(),
             date_col=c.date,
             target_col=c.target,
-            group_col=c.group,
+            group_col=_primary_group(c),
             seasonal_period=period,
         )
         return analyzer.analyze(sku)
@@ -575,7 +580,7 @@ class ForecastEngine:
             df=self._df_prepared(),
             date_col=c.date,
             target_col=c.target,
-            group_col=c.group,
+            group_col=_primary_group(c),
             seasonal_period=period,
         )
         return analyzer.summary()
@@ -607,7 +612,7 @@ class ForecastEngine:
         self._ensure_config()
         self._config.columns.target = target
         self._config.columns.date = date
-        self._config.columns.group = sku
+        self._config.columns.group_keys = [sku] if sku else []
         self._config.columns.exogenous = exogenous or []
         self._config.validate()
         return self
@@ -1018,7 +1023,7 @@ class ForecastEngine:
         detector = DriftDetector(
             reference_df=self._df,
             target_col=c.target,
-            group_col=c.group or "",
+            group_col=_primary_group(c) or "",
         )
         feature_report = detector.detect_feature_drift(new_df)
         alerts = detector.alerts(feature_report)
@@ -1071,8 +1076,8 @@ class ForecastEngine:
         period = seasonal_period or self._config.training.seasonal_period
         df = self._df_prepared()
 
-        if sku and c.group:
-            sub = df[df[c.group].astype(str) == str(sku)]
+        if sku and _primary_group(c):
+            sub = df[df[_primary_group(c)].astype(str) == str(sku)]
         else:
             sub = df
         sub = sub.sort_values(c.date)
@@ -1137,8 +1142,8 @@ class ForecastEngine:
         period = seasonal_period or self._config.training.seasonal_period
         df = self._df_prepared()
 
-        if sku and c.group:
-            sub = df[df[c.group].astype(str) == str(sku)]
+        if sku and _primary_group(c):
+            sub = df[df[_primary_group(c)].astype(str) == str(sku)]
         else:
             sub = df
         sub = sub.sort_values(c.date)
@@ -1280,7 +1285,7 @@ class ForecastEngine:
         df = self._df.copy()
         df[c.date] = pd.to_datetime(df[c.date])
         df = df.dropna(subset=[c.target])
-        sort_cols = [c.group, c.date] if c.group else [c.date]
+        sort_cols = [_primary_group(c), c.date] if _primary_group(c) else [c.date]
         return df.sort_values(sort_cols).reset_index(drop=True)
 
     def _df_for_training(self) -> pd.DataFrame:

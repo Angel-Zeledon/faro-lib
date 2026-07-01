@@ -21,6 +21,11 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 
+def _primary_group(c) -> Optional[str]:
+    """Return the first group key, or None if group_keys is empty."""
+    return c.group_keys[0] if c.group_keys else None
+
+
 def _compute_quantile_bounds(value: float, residual_std: float, quantiles: List[float]) -> dict:
     """
     Return per-quantile forecast bounds + backward-compat lower/upper keys.
@@ -282,8 +287,8 @@ def predict_all_skus(
             continue
 
         # SKU-specific historical data
-        if c.group and raw_df is not None:
-            sub = raw_df[raw_df[c.group].astype(str) == sku].sort_values(c.date)
+        if _primary_group(c) and raw_df is not None:
+            sub = raw_df[raw_df[_primary_group(c)].astype(str) == sku].sort_values(c.date)
         elif raw_df is not None:
             sub = raw_df.sort_values(c.date)
         else:
@@ -333,8 +338,8 @@ def predict_all_skus(
                 continue
 
             # Future dates for this SKU
-            if c.group and raw_df is not None:
-                sub = raw_df[raw_df[c.group].astype(str) == str(sku)].sort_values(c.date)
+            if _primary_group(c) and raw_df is not None:
+                sub = raw_df[raw_df[_primary_group(c)].astype(str) == str(sku)].sort_values(c.date)
             elif raw_df is not None:
                 sub = raw_df.sort_values(c.date)
             else:

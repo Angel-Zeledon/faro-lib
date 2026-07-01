@@ -54,28 +54,28 @@ class TestColumnsConfigGroupKeys:
 
 
 # ---------------------------------------------------------------------------
-# group property backward-compat accessor
+# group_keys direct accessor (shim removed — test group_keys directly)
 # ---------------------------------------------------------------------------
 
 class TestColumnsConfigGroupProperty:
 
-    def test_group_property_returns_first_key(self):
+    def test_group_keys_first_element(self):
         c = ColumnsConfig(group_keys=["sku", "store"])
-        assert c.group == "sku"
+        assert c.group_keys[0] == "sku"
 
-    def test_group_property_returns_none_when_empty(self):
+    def test_group_keys_empty_means_no_primary(self):
         c = ColumnsConfig.__new__(ColumnsConfig)
         c.target = ""
         c.date = ""
         c.group_keys = []
         c.exogenous = []
-        assert c.group is None
+        assert (c.group_keys[0] if c.group_keys else None) is None
 
-    def test_group_property_with_single_element(self):
+    def test_group_keys_single_element(self):
         c = ColumnsConfig(group_keys=["product_id"])
-        assert c.group == "product_id"
+        assert c.group_keys == ["product_id"]
 
-    def test_group_property_does_not_appear_in_asdict(self):
+    def test_group_does_not_appear_in_asdict(self):
         """asdict() must serialize group_keys, never a 'group' key."""
         from dataclasses import asdict
         c = ColumnsConfig(group_keys=["sku", "store"])
@@ -121,11 +121,11 @@ class TestSessionConfigFromDictGroupKeys:
         cfg = SessionConfig.from_dict(d)
         assert cfg.columns.group_keys == ["sku", "store"]
 
-    def test_from_dict_group_property_after_load(self):
+    def test_from_dict_group_keys_first_element_after_load(self):
         d = self._base()
         d["columns"]["group_keys"] = ["region", "sku"]
         cfg = SessionConfig.from_dict(d)
-        assert cfg.columns.group == "region"
+        assert cfg.columns.group_keys[0] == "region"
 
 
 # ---------------------------------------------------------------------------
