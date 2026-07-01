@@ -94,7 +94,7 @@ def parquet_path(df_standard, tmp_path):
 def base_config():
     """Minimal valid SessionConfig dict."""
     return {
-        "columns": {"target": "sales", "date": "date", "group": "sku"},
+        "columns": {"target": "sales", "date": "date", "group_keys": ["sku"]},
         "features": {"lags": [1, 7], "rolling": [7], "diffs": [1], "calendar": True, "ewm_spans": []},
         "models": {"lightgbm": {}},
         "training": {"train_ratio": 0.8, "walk_forward": False, "wfv_splits": 3,

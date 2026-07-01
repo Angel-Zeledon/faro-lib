@@ -28,6 +28,7 @@ def _inject_forecasting_core_mocks() -> None:
     import-inside-function calls in runner.py and configuration.py don't ImportError.
     """
     if "forecasting_core" not in sys.modules:
+        import types
         fc = mock.MagicMock()
         for mod in (
             "forecasting_core",
@@ -40,6 +41,22 @@ def _inject_forecasting_core_mocks() -> None:
             "forecasting_core.monitoring.drift",
         ):
             sys.modules[mod] = fc
+
+        # forecasting_core.data.canonical needs real values — a plain MagicMock
+        # breaks CanonicalColumnsRequest.validate_required() which does
+        # `column in REQUIRED_FIELDS` and `FIELD_DEFAULTS.get(field)`.
+        _canon = types.ModuleType("forecasting_core.data.canonical")
+        _canon.REQUIRED_FIELDS = frozenset({"sku", "date", "demand"})
+        _canon.FIELD_DEFAULTS = {
+            "sku": None, "date": None, "demand": None,
+            "store": "Tienda única", "region": "Sin región",
+            "inventory": 0, "lead_time": 7,
+            "price": None, "cost": None,
+            "regular_price": None, "promo_price": None,
+            "promo": None, "promo_type": None, "discount": None,
+        }
+        sys.modules["forecasting_core.data"] = mock.MagicMock()
+        sys.modules["forecasting_core.data.canonical"] = _canon
 
 _inject_forecasting_core_mocks()
 

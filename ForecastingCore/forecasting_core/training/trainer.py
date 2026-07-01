@@ -8,7 +8,7 @@ Walk-forward validation (expanding window):
 
 Example:
     trainer = Trainer(train_ratio=0.8, walk_forward=True, wfv_splits=3)
-    results = trainer.train(df_ml, models, group_col="sku", target="sales", dt="date")
+    results = trainer.train(df_ml, models, group_cols=["sku"], target="sales", dt="date")
 """
 
 import copy
