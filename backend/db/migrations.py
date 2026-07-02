@@ -1,5 +1,12 @@
 """
 Idempotent schema migrations — safe to run on every startup.
+
+The base-schema block below (tenants, users, sessions, datasets, …) MUST come
+first: it lets a brand-new/empty database be bootstrapped from scratch, and the
+incremental ALTER/CREATE migrations that follow reference these tables via FK.
+All statements are CREATE TABLE IF NOT EXISTS, so they are no-ops on databases
+that already have the schema (e.g. the original Supabase instance). Columns
+added later live in the incremental section, not here.
 """
 import logging
 
@@ -7,7 +14,115 @@ from backend.db.connection import execute
 
 log = logging.getLogger(__name__)
 
-_MIGRATIONS = [
+_BASE_SCHEMA = [
+    ("base_tenants",
+     """CREATE TABLE IF NOT EXISTS tenants (
+         id         TEXT PRIMARY KEY,
+         name       TEXT NOT NULL,
+         slug       TEXT UNIQUE NOT NULL,
+         plan       TEXT NOT NULL DEFAULT 'free',
+         status     TEXT NOT NULL DEFAULT 'active',
+         quota      JSONB NOT NULL DEFAULT '{}',
+         settings   JSONB NOT NULL DEFAULT '{}',
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_users",
+     """CREATE TABLE IF NOT EXISTS users (
+         id              TEXT PRIMARY KEY,
+         tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         email           TEXT UNIQUE NOT NULL,
+         full_name       TEXT,
+         role            TEXT NOT NULL DEFAULT 'analyst',
+         hashed_password TEXT NOT NULL,
+         email_verified  BOOLEAN NOT NULL DEFAULT FALSE,
+         status          TEXT NOT NULL DEFAULT 'active',
+         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_refresh_tokens",
+     """CREATE TABLE IF NOT EXISTS refresh_tokens (
+         id         BIGSERIAL PRIMARY KEY,
+         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id  TEXT NOT NULL,
+         hash       TEXT NOT NULL,
+         expires_at TIMESTAMPTZ NOT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_pw_change_codes",
+     """CREATE TABLE IF NOT EXISTS pw_change_codes (
+         id         TEXT PRIMARY KEY,
+         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id  TEXT NOT NULL,
+         code_hash  TEXT NOT NULL,
+         expires_at TIMESTAMPTZ NOT NULL,
+         purpose    TEXT NOT NULL DEFAULT 'change',
+         used       BOOLEAN NOT NULL DEFAULT FALSE,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_sessions",
+     """CREATE TABLE IF NOT EXISTS sessions (
+         id            TEXT PRIMARY KEY,
+         tenant_id     TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         name          TEXT NOT NULL,
+         description   TEXT,
+         status        TEXT NOT NULL DEFAULT 'DRAFT',
+         pipeline_step TEXT NOT NULL DEFAULT 'upload',
+         created_by    TEXT,
+         created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         tags          JSONB NOT NULL DEFAULT '[]',
+         version       INT NOT NULL DEFAULT 1,
+         dataset_id    TEXT,
+         last_job_id   TEXT
+     )"""),
+    ("base_datasets",
+     """CREATE TABLE IF NOT EXISTS datasets (
+         id                TEXT PRIMARY KEY,
+         tenant_id         TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         name              TEXT NOT NULL,
+         original_filename TEXT,
+         file_type         TEXT,
+         file_path         TEXT,
+         size_bytes        BIGINT NOT NULL DEFAULT 0,
+         row_count         INT,
+         column_count      INT,
+         uploaded_by       TEXT,
+         uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_session_configs",
+     """CREATE TABLE IF NOT EXISTS session_configs (
+         session_id     TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+         tenant_id      TEXT NOT NULL,
+         dataset_ref    JSONB,
+         inspection     JSONB,
+         columns_cfg    JSONB,
+         features_cfg   JSONB,
+         models_cfg     JSONB,
+         validation_cfg JSONB,
+         business_cfg   JSONB,
+         forecast_cfg   JSONB,
+         updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_session_results",
+     """CREATE TABLE IF NOT EXISTS session_results (
+         session_id      TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+         tenant_id       TEXT NOT NULL,
+         training_result JSONB,
+         forecasts       JSONB,
+         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("base_training_logs",
+     """CREATE TABLE IF NOT EXISTS training_logs (
+         id         BIGSERIAL PRIMARY KEY,
+         tenant_id  TEXT NOT NULL,
+         session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+         job_id     TEXT,
+         message    TEXT NOT NULL,
+         logged_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+]
+
+_MIGRATIONS = _BASE_SCHEMA + [
     ("add_last_login_at",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ"),
     ("add_pending_email",
