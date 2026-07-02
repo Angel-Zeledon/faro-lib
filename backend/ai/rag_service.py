@@ -97,8 +97,7 @@ class RAGService:
             missing.append("PINECONE_API_KEY")
         if not settings.pinecone_index:
             missing.append("PINECONE_INDEX")
-        if not settings.anthropic_api_key:
-            missing.append("ANTHROPIC_API_KEY")
+        # Generation now runs on the local LLM (Ollama) — no Anthropic key required.
         if missing:
             log.warning("RAG disabled — missing env vars: %s", ", ".join(missing))
             self._ready = False
@@ -126,11 +125,12 @@ class RAGService:
             return False
 
         try:
-            import anthropic
-            from backend.config import settings as s
-            self._anthro = anthropic.Anthropic(api_key=s.anthropic_api_key, timeout=60.0)
-        except ImportError:
-            log.warning("RAG disabled — install anthropic: pip install anthropic")
+            # _anthro is the text-generation client. It is now the local LLM
+            # (Ollama) drop-in, which exposes the same messages.create() surface.
+            from backend.ai.local_llm import get_local_llm_client
+            self._anthro = get_local_llm_client(timeout=60.0)
+        except Exception as exc:
+            log.warning("RAG disabled — local LLM client init error: %s", exc)
             self._ready = False
             return False
 
@@ -694,14 +694,6 @@ class RAGService:
                 "n_rows": profile.get("stats", {}).get("n_rows"),
                 "n_skus": profile.get("stats", {}).get("n_skus"),
                 "freq":   profile.get("recommended", {}).get("freq"),
-            }
-
-        from backend.config import settings
-        if not settings.anthropic_api_key:
-            return {
-                "answer":    f"[RAG not available — set ANTHROPIC_API_KEY]\n\nContext keys: {list(context.keys())}",
-                "retrieved": [],
-                "source":    "no_llm",
             }
 
         sku_note = f" Focus on SKU: {sku}." if sku else ""

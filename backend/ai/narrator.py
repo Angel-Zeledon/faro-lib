@@ -55,14 +55,8 @@ def narrate(
         }
     """
     try:
-        import anthropic
-    except ImportError:
-        return {"narrative": "anthropic SDK not installed.", "source": "error",
-                "tokens_used": None, "error": "missing_sdk"}
-
-    try:
-        from backend.config import settings
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
+        from backend.ai.local_llm import get_local_llm_client
+        client = get_local_llm_client(timeout=60.0)
     except Exception as exc:
         log.error("Narrator: client init failed: %s", exc)
         return {"narrative": "Could not connect to AI service.", "source": "error",

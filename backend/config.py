@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
 
     # External APIs
+    # anthropic_api_key still powers the RAG analyst, AI chat and narrator
+    # (rag_service.py, chats.py, narrator.py). Only narrative_service.py was moved
+    # to the local LLM; the rest still call Anthropic when this key is present and
+    # fall back gracefully when it is empty.
+    anthropic_api_key: str = ""
     voyageai_api_key: str = ""
     pinecone_api_key: str = ""
     pinecone_environment: str = ""

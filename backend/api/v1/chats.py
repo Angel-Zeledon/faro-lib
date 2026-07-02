@@ -265,14 +265,11 @@ def get_data_source_types(_: CurrentUser = Depends(get_current_user)):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _auto_title(question: str) -> str:
-    """Use Claude Haiku to generate a short 4-6 word chat title."""
-    if not settings.anthropic_api_key:
-        return question[:40].strip()
+    """Use the local LLM to generate a short 4-6 word chat title."""
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
+        from backend.ai.local_llm import get_local_llm_client
+        client = get_local_llm_client(timeout=60.0)
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
             max_tokens=30,
             messages=[{
                 "role": "user",
@@ -283,28 +280,22 @@ def _auto_title(question: str) -> str:
                 ),
             }],
         )
-        return msg.content[0].text.strip()
+        return msg.content[0].text.strip() or question[:40].strip()
     except Exception:
         return question[:40].strip()
 
 
 def _general_answer(question: str, history: list[dict]) -> str:
-    """General Claude response for chats without a session context."""
-    if not settings.anthropic_api_key:
-        return (
-            "I need an ANTHROPIC_API_KEY configured to answer. "
-            "Link a completed session to use RAG-powered analysis."
-        )
+    """General LLM response for chats without a session context (local LLM)."""
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
+        from backend.ai.local_llm import get_local_llm_client
+        client = get_local_llm_client(timeout=60.0)
         messages = [
             {"role": m["role"], "content": m["content"]}
             for m in (history or [])[-6:]
         ]
         messages.append({"role": "user", "content": question})
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
             max_tokens=800,
             system=_GENERAL_SYSTEM,
             messages=messages,
@@ -312,10 +303,7 @@ def _general_answer(question: str, history: list[dict]) -> str:
         return response.content[0].text
     except Exception as exc:
         log.warning("General answer failed: %s", exc)
-        err_str = str(exc).lower()
-        if "credit balance" in err_str or "billing" in err_str or "insufficient" in err_str:
-            return (
-                "The AI service is temporarily unavailable due to billing limits. "
-                "Please contact your administrator to restore AI features."
-            )
-        return "I encountered an error processing your request. Please try again."
+        return (
+            "The AI service is temporarily unavailable. "
+            "Please try again in a moment or contact your administrator."
+        )

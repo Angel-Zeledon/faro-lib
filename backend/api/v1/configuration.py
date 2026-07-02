@@ -543,12 +543,11 @@ def get_data_health(
         status = "POOR"
         can_train = False
 
-    diagnosis = None
-    if settings.anthropic_api_key:
-        diagnosis = _llm_health_narrative(
-            global_score, status, sku_reports,
-            inspection.get("profile", {}),
-        )
+    # Diagnosis runs on the local LLM; it returns None gracefully if unavailable.
+    diagnosis = _llm_health_narrative(
+        global_score, status, sku_reports,
+        inspection.get("profile", {}),
+    )
 
     report = {
         "global_score":  global_score,
@@ -801,10 +800,10 @@ def _llm_health_narrative(
     sku_reports: dict,
     profile: dict,
 ) -> Optional[dict]:
-    """Call claude-haiku to produce a 3-field business-language diagnosis."""
+    """Call the local LLM to produce a 3-field business-language diagnosis."""
     try:
-        import anthropic
         import json
+        from backend.ai.local_llm import get_local_llm_client
 
         n_skus    = len(sku_reports)
         stats     = profile.get("stats", {})
@@ -844,9 +843,8 @@ def _llm_health_narrative(
             "Each field under 120 words."
         )
 
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = get_local_llm_client()
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
