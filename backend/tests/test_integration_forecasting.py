@@ -182,7 +182,8 @@ class TestRunnerConfigBuilder:
 
         assert config["columns"]["date"] == "date"
         assert config["columns"]["target"] == "sales"
-        assert config["columns"]["group"] == "sku"
+        # Phase 1 migrated the single `group` key to a `group_keys` list.
+        assert config["columns"]["group_keys"] == ["sku"]
 
     def test_build_engine_config_missing_dataset_returns_empty_path(self, test_session, registered_user):
         from backend.workers.runner import build_engine_config

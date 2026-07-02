@@ -198,7 +198,7 @@ def analyst_headers(client, analyst_user):
 def viewer_user(test_tenant):
     """Viewer-role user in test_tenant."""
     from backend.users import service as user_svc
-    email = f"viewer-{uuid4().hex[:8]}@pytest.local"
+    email = f"viewer-{uuid4().hex[:8]}@pytest.example.com"
     password = "TestPass123!"
     user = user_svc.create_user(
         tenant_id=test_tenant["id"],
@@ -270,6 +270,10 @@ def configured_session(client, auth_headers, test_session, uploaded_dataset):
         json={"dataset_id": uploaded_dataset["id"]},
         headers=auth_headers,
     )
+
+    # Inspect — required to advance DATASET_LOADED → INSPECTED before columns
+    # config can transition the wizard state machine.
+    client.get(f"/api/v1/sessions/{sid}/inspect", headers=auth_headers)
 
     # Columns
     client.post(
