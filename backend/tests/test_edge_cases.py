@@ -38,7 +38,7 @@ class TestAuthEdgeCases:
 
     def test_expired_token_returns_401(self, client, registered_user):
         from backend.auth.jwt_handler import create_access_token
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         import jwt
         from backend.config import settings
 
@@ -48,7 +48,7 @@ class TestAuthEdgeCases:
             "role": "admin",
             "jti": "expired_jti",
             "type": "access",
-            "exp": (datetime.utcnow() - timedelta(minutes=1)).timestamp(),
+            "exp": (datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp(),
         }
         expired_token = jwt.encode(payload, settings.secret_key, algorithm="HS256")
         resp = client.get(
@@ -75,7 +75,7 @@ class TestAuthEdgeCases:
     def test_forgot_password_always_returns_200(self, client):
         # Must not reveal whether email exists (timing-safe)
         resp = client.post("/api/v1/auth/forgot-password", json={
-            "email": f"ghost-{uuid4().hex}@nowhere.test"
+            "email": f"ghost-{uuid4().hex}@example.com"
         })
         assert resp.status_code == 200
 
@@ -161,7 +161,7 @@ class TestRBAC:
 
         # Create second isolated tenant
         t2 = create_tenant(f"isolated-{uuid4().hex[:8]}")
-        e2 = f"iso-{uuid4().hex[:8]}@test.local"
+        e2 = f"iso-{uuid4().hex[:8]}@example.com"
         u2 = user_svc.create_user(t2["id"], e2, "TestPass123!", "admin")
         user_svc.mark_verified(t2["id"], u2["id"])
 

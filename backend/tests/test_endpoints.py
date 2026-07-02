@@ -357,13 +357,15 @@ class TestUsers:
     def test_list_users_returns_own_tenant_users(self, client, auth_headers, registered_user):
         resp = client.get("/api/v1/users", headers=auth_headers)
         assert resp.status_code == 200
-        users = resp.json()["data"]
+        users = resp.json()["data"]["items"]
         emails = [u["email"] for u in users]
         assert registered_user["email"] in emails
 
     def test_hashed_password_not_exposed(self, client, auth_headers):
         resp = client.get("/api/v1/users", headers=auth_headers)
-        for u in resp.json()["data"]:
+        items = resp.json()["data"]["items"]
+        assert len(items) >= 1
+        for u in items:
             assert "hashed_password" not in u
 
     def test_forgot_password_returns_ok_regardless_of_email(self, client):

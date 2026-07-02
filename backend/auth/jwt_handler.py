@@ -7,7 +7,7 @@ Signed tokens: used for email verification and password reset.
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
@@ -26,7 +26,10 @@ def create_access_token(user_id: str, tenant_id: str, role: str) -> str:
         "role": role,
         "jti": secrets.token_hex(8),
         "type": "access",
-        "exp": (datetime.utcnow() + timedelta(minutes=_ACCESS_EXPIRE_MIN)).timestamp(),
+        # timezone-aware UTC: datetime.utcnow().timestamp() misreads the naive
+        # value as local time, so on a non-UTC host the token would live longer
+        # (or shorter) than _ACCESS_EXPIRE_MIN by the host's UTC offset.
+        "exp": (datetime.now(timezone.utc) + timedelta(minutes=_ACCESS_EXPIRE_MIN)).timestamp(),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=_ALG)
 
@@ -44,7 +47,7 @@ def create_refresh_token() -> tuple[str, str]:
 def create_signed_token(payload: dict, expires_minutes: int = 60) -> str:
     data = {
         **payload,
-        "exp": (datetime.utcnow() + timedelta(minutes=expires_minutes)).timestamp(),
+        "exp": (datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)).timestamp(),
         "jti": secrets.token_hex(8),
     }
     return jwt.encode(data, settings.secret_key, algorithm=_ALG)

@@ -95,6 +95,12 @@ def _normalize_quality(raw: dict) -> dict:
     """Normalize legacy quality dict keys to the current frontend contract."""
     out = {}
     for sku, q in raw.items():
+        # data_quality may carry summary fields (n_series:int, issues:list,
+        # rows:list) alongside any per-SKU dicts. Only normalize dict entries;
+        # pass everything else through untouched instead of crashing on dict(q).
+        if not isinstance(q, dict):
+            out[sku] = q
+            continue
         entry = dict(q)
         # outliers → n_outliers
         if "n_outliers" not in entry and "outliers" in entry:
@@ -531,7 +537,10 @@ def get_routing_plan_alias(session_id: str, user: CurrentUser = Depends(get_curr
 
 @router.get("/sessions/{session_id}/report")
 def get_report_alias(session_id: str, user: CurrentUser = Depends(get_current_user)):
-    return get_training_results(session_id, user)
+    # Pass user by keyword — get_training_results has a `level` param between
+    # session_id and user, so a positional call bound user to level and left the
+    # real user param as the unresolved Depends default (AttributeError).
+    return get_training_results(session_id, user=user)
 
 
 @router.get("/sessions/{session_id}/export-config")

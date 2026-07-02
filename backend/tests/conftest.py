@@ -26,7 +26,18 @@ def _inject_forecasting_core_mocks() -> None:
     """
     If forecasting_core is not installed, inject lightweight mock modules so that
     import-inside-function calls in runner.py and configuration.py don't ImportError.
+
+    When the real package IS importable (this repo ships it as a sibling dir), do
+    nothing — a blanket MagicMock would shadow real submodules like
+    forecasting_core.data.profiler, making the inspect endpoint 503 and blocking
+    the wizard state machine (DATASET_LOADED never advances → training 409).
     """
+    try:
+        import forecasting_core  # noqa: F401  — real package available
+        return
+    except Exception:
+        pass
+
     if "forecasting_core" not in sys.modules:
         import types
         fc = mock.MagicMock()
