@@ -29,7 +29,9 @@ class TestUploadValidation:
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
         assert data["file_size"] > 0
-        assert data["status"] == "PENDING"
+        # Background indexing starts immediately, so the status may already have
+        # moved PENDING -> INDEXING by the time the response is read (race).
+        assert data["status"] in ("PENDING", "INDEXING")
 
         # Cleanup: delete the doc (and its file on disk)
         client.delete(f"/api/v1/documents/{data['id']}", headers=auth_headers)
