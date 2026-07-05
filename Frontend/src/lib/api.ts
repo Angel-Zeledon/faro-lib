@@ -645,6 +645,17 @@ export const receivePO = (
 export const getSupplierLeadTimes = () =>
   request<import('./types').SupplierLeadTimeStat[]>('GET', '/inventory/suppliers/lead-times')
 
+// ── Event / promo impact simulator ───────────────────────────────────────────
+export const simulateEvent = (body: {
+  session_id: string
+  event_id?: string
+  start_date?: string
+  end_date?: string
+  multiplier?: number
+  name?: string
+}) =>
+  request<import('./types').EventSimulationResult>('POST', '/inventory/events/simulate', body)
+
 export const logPOGeneration = (sessionId: string, items?: POLineDecision[]) =>
   request<POLogEntry>(
     'POST',

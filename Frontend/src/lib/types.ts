@@ -765,6 +765,44 @@ export interface ReceptionResult {
   items:              POItemLine[]
 }
 
+// ── Event / promo impact simulation (feature 2.3) ────────────────────────────
+export interface EventSimulationRow {
+  sku:             string
+  display_name:    string | null
+  proveedor:       string | null
+  demanda_diaria:  number
+  baseline_units:  number
+  event_units:     number
+  extra_units:     number
+  stock_actual:    number | null
+  stock_al_inicio: number | null
+  deficit:         number | null
+  cantidad_pedir:  number | null
+  valor_pedido:    number | null
+  lead_time_dias:  number
+  order_by:        string
+  llega_tarde:     boolean
+  en_riesgo:       boolean
+}
+
+export interface EventSimulationResult {
+  event_name: string | null
+  start_date: string
+  end_date:   string
+  event_days: number
+  multiplier: number
+  items:      EventSimulationRow[]
+  summary: {
+    skus_simulados:     number
+    skus_en_riesgo:     number
+    unidades_extra:     number
+    total_pedir:        number
+    valor_total_pedido: number
+    pedir_antes_de:     string | null
+    algun_pedido_tarde: boolean
+  }
+}
+
 export interface SupplierLeadTimeStat {
   proveedor:            string
   n_recepciones:        number

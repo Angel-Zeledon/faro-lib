@@ -433,6 +433,116 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     return items
 
 
+# ── Promotion / event impact simulator (feature 2.3) ─────────────────────────
+
+def simulate_event_impact(
+    tenant_id: str,
+    session_id: str,
+    start_date,
+    end_date,
+    multiplier: float,
+    event_name: Optional[str] = None,
+) -> dict:
+    """
+    Project what a demand event (promo, season) does to each SKU:
+    extra units to sell, whether current stock survives it, how much to order
+    and the latest date to place that order (event start − lead time).
+
+    Pure read — nothing is persisted. Uses the same per-SKU daily demand the
+    semáforo uses, so the simulation is consistent with the rest of the app.
+    """
+    from datetime import date as _date, timedelta
+
+    if isinstance(start_date, str):
+        start_date = _date.fromisoformat(start_date)
+    if isinstance(end_date, str):
+        end_date = _date.fromisoformat(end_date)
+    if end_date < start_date:
+        raise ValueError("end_date no puede ser anterior a start_date")
+    if multiplier <= 0:
+        raise ValueError("multiplier debe ser mayor que 0")
+
+    today = _date.today()
+    event_days = (end_date - start_date).days + 1
+    days_until_start = max(0, (start_date - today).days)
+
+    items = get_inventory_status(tenant_id, session_id)
+    rows: list[dict] = []
+
+    for it in items:
+        daily = it.get("demanda_diaria")
+        if not daily or daily <= 0:
+            continue  # sin forecast no hay nada que simular
+
+        lead_time = int(it.get("lead_time_dias") or 15)
+        moq       = float(it.get("moq") or 1)
+        stock     = it.get("stock_actual")
+        cost      = it.get("costo_unitario")
+
+        baseline_units = daily * event_days
+        event_units    = baseline_units * multiplier
+        extra_units    = event_units - baseline_units
+
+        # Stock projected to the event start: today's stock minus normal
+        # consumption until then (floored at 0).
+        stock_at_start = None
+        deficit = None
+        pedir = None
+        if stock is not None:
+            stock_at_start = max(0.0, float(stock) - daily * days_until_start)
+            deficit = max(0.0, event_units - stock_at_start)
+            if deficit > 0:
+                pedir = math.ceil(deficit / moq) * moq
+
+        order_by = start_date - timedelta(days=lead_time)
+        late = order_by < today  # ordering today would still arrive mid/after event
+
+        rows.append({
+            "sku":               it["sku"],
+            "display_name":      it.get("display_name"),
+            "proveedor":         it.get("proveedor"),
+            "demanda_diaria":    round(daily, 2),
+            "baseline_units":    round(baseline_units, 1),
+            "event_units":       round(event_units, 1),
+            "extra_units":       round(extra_units, 1),
+            "stock_actual":      stock,
+            "stock_al_inicio":   round(stock_at_start, 1) if stock_at_start is not None else None,
+            "deficit":           round(deficit, 1) if deficit is not None else None,
+            "cantidad_pedir":    pedir,
+            "valor_pedido":      round(pedir * float(cost), 2) if (pedir and cost is not None) else None,
+            "lead_time_dias":    lead_time,
+            "order_by":          order_by.isoformat(),
+            "llega_tarde":       late,
+            "en_riesgo":         bool(deficit and deficit > 0),
+        })
+
+    # Riskiest first: SKUs that need an order, largest deficit on top
+    rows.sort(key=lambda r: (not r["en_riesgo"], -(r["deficit"] or 0)))
+
+    at_risk = [r for r in rows if r["en_riesgo"]]
+    total_pedir = sum(r["cantidad_pedir"] or 0 for r in at_risk)
+    total_valor = sum(r["valor_pedido"] or 0 for r in at_risk)
+    earliest_order_by = min((r["order_by"] for r in at_risk), default=None)
+
+    return {
+        "event_name":  event_name,
+        "start_date":  start_date.isoformat(),
+        "end_date":    end_date.isoformat(),
+        "event_days":  event_days,
+        "multiplier":  multiplier,
+        "items":       rows,
+        "summary": {
+            "skus_simulados":     len(rows),
+            "skus_en_riesgo":     len(at_risk),
+            "unidades_extra":     round(sum(r["extra_units"] for r in rows), 1),
+            "total_pedir":        round(total_pedir, 1),
+            "valor_total_pedido": round(total_valor, 2),
+            "pedir_antes_de":     earliest_order_by,
+            "algun_pedido_tarde": any(r["llega_tarde"] for r in at_risk),
+        },
+    }
+
+
 # ── Events (temporadas / promociones) ────────────────────────────────────────
 
 def list_events(tenant_id: str) -> list[dict]:

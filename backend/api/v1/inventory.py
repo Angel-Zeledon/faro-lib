@@ -302,6 +302,47 @@ class EventPatch(BaseModel):
         return self
 
 
+class SimulateEventRequest(BaseModel):
+    session_id: str
+    # Either reference a saved event…
+    event_id:   Optional[str] = None
+    # …or simulate ad-hoc dates/multiplier (used when event_id is absent)
+    start_date: Optional[str]   = None
+    end_date:   Optional[str]   = None
+    multiplier: Optional[float] = Field(default=None, gt=0, le=10)
+    name:       Optional[str]   = None
+
+
+@router.post("/events/simulate")
+def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_current_user)):
+    """
+    "¿Qué pasa si…?" — project a promo/season's impact per SKU: extra demand,
+    stock survival, quantity to order and the latest order date. Read-only.
+    """
+    if body.event_id:
+        ev = svc.get_event(user.tenant_id, body.event_id)
+        if not ev:
+            raise HTTPException(status_code=404, detail="Evento no encontrado")
+        start, end = str(ev["start_date"]), str(ev["end_date"])
+        mult = float(body.multiplier or ev.get("multiplier") or 1.0)
+        name = body.name or ev.get("name")
+    else:
+        if not (body.start_date and body.end_date and body.multiplier):
+            raise HTTPException(
+                status_code=422,
+                detail="Sin event_id se requieren start_date, end_date y multiplier",
+            )
+        start, end, mult, name = body.start_date, body.end_date, body.multiplier, body.name
+
+    try:
+        result = svc.simulate_event_impact(
+            user.tenant_id, body.session_id, start, end, mult, event_name=name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ok(result)
+
+
 @router.get("/events")
 def list_events(user: CurrentUser = Depends(get_current_user)):
     return ok(svc.list_events(user.tenant_id))

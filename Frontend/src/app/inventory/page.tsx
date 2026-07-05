@@ -5,11 +5,12 @@ import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
- listSuppliers, getDeadStock,
+ listSuppliers, getDeadStock, simulateEvent,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
+ EventSimulationResult,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
@@ -20,6 +21,7 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
+ Zap,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -196,11 +198,118 @@ function KPICard({ label, value, color, sub, onClick, active }: {
  )
 }
 
+// ── Event impact simulator modal (feature 2.3) ───────────────────────────────
+function EventSimModal({ ev, sessionId, onClose }: {
+ ev: InventoryEvent
+ sessionId: string
+ onClose: () => void
+}) {
+ const [result, setResult] = useState<EventSimulationResult | null>(null)
+ const [error, setError] = useState<string | null>(null)
+
+ useEffect(() => {
+ simulateEvent({ session_id: sessionId, event_id: ev.id })
+ .then(setResult)
+ .catch(e => setError(e instanceof Error ? e.message : 'Error al simular'))
+ }, [ev.id, sessionId])
+
+ const fmtD = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'long' })
+ const pctExtra = Math.round((ev.multiplier - 1) * 100)
+
+ return (
+ <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+ <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 640, maxHeight: '85vh', overflowY: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+ <Zap size={16} color={C.amber} />
+ <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Simulación: {ev.name}</span>
+ <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} /></button>
+ </div>
+ <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim }}>
+ {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demanda estimada +{pctExtra}%
+ </p>
+
+ {!result && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
+ {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
+
+ {result && (
+ <>
+ {/* Headline — the actionable sentence */}
+ <div style={{
+ padding: '14px 18px', borderRadius: 10, marginBottom: 16,
+ background: result.summary.skus_en_riesgo > 0 ? 'rgba(245,158,11,0.07)' : 'rgba(34,197,94,0.07)',
+ border: `1px solid ${result.summary.skus_en_riesgo > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
+ fontSize: 13, color: C.text, lineHeight: 1.6,
+ }}>
+ {result.summary.skus_en_riesgo > 0 ? (
+ <>
+ Con <strong>{ev.name}</strong> (+{pctExtra}% demanda), necesitarías pedir{' '}
+ <strong>{result.summary.total_pedir.toLocaleString()} unidades extra</strong> en{' '}
+ <strong>{result.summary.skus_en_riesgo} producto{result.summary.skus_en_riesgo !== 1 ? 's' : ''}</strong>
+ {result.summary.pedir_antes_de && <> antes del <strong>{fmtD(result.summary.pedir_antes_de)}</strong></>}
+ {result.summary.valor_total_pedido > 0 && <> (≈ ${result.summary.valor_total_pedido.toLocaleString(undefined, { maximumFractionDigits: 0 })})</>}.
+ {result.summary.algun_pedido_tarde && (
+ <div style={{ color: C.red, fontWeight: 600, marginTop: 6 }}>
+ ⚠ Para algunos productos ya es tarde: pidiendo hoy, el pedido llegaría con el evento en curso.
+ </div>
+ )}
+ </>
+ ) : (
+ <>✓ Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% demanda) sin pedidos adicionales.</>
+ )}
+ </div>
+
+ <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+ <thead>
+ <tr>
+ {['Producto', 'Demanda evento', 'Stock al inicio', 'Faltante', 'Pedir', 'Pedir antes de'].map(h => (
+ <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: C.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+ ))}
+ </tr>
+ </thead>
+ <tbody>
+ {result.items.map(r => (
+ <tr key={r.sku} style={{ borderBottom: `1px solid ${C.border}`, background: r.en_riesgo ? 'rgba(245,158,11,0.04)' : undefined }}>
+ <td style={{ padding: '8px' }}>
+ <div style={{ fontWeight: 600, color: C.text }}>{r.display_name || r.sku}</div>
+ <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{r.sku}</div>
+ </td>
+ <td style={{ padding: '8px', fontFamily: 'monospace', color: C.text }}>
+ {r.event_units.toLocaleString()}
+ <span style={{ color: C.dim, fontSize: 10 }}> (+{r.extra_units.toLocaleString()})</span>
+ </td>
+ <td style={{ padding: '8px', fontFamily: 'monospace', color: C.muted }}>
+ {r.stock_al_inicio != null ? r.stock_al_inicio.toLocaleString() : '—'}
+ </td>
+ <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.en_riesgo ? C.red : C.green }}>
+ {r.deficit != null ? (r.deficit > 0 ? r.deficit.toLocaleString() : '✓') : '—'}
+ </td>
+ <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.cantidad_pedir ? C.text : C.dim }}>
+ {r.cantidad_pedir ? r.cantidad_pedir.toLocaleString() : '—'}
+ </td>
+ <td style={{ padding: '8px', fontSize: 11, color: r.llega_tarde && r.en_riesgo ? C.red : C.muted, whiteSpace: 'nowrap' }}>
+ {r.en_riesgo ? (r.llega_tarde ? '¡hoy mismo!' : fmtD(r.order_by)) : '—'}
+ </td>
+ </tr>
+ ))}
+ </tbody>
+ </table>
+ <p style={{ margin: '14px 0 0', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+ Cálculo: demanda diaria del forecast × {result.event_days} día{result.event_days !== 1 ? 's' : ''} × {ev.multiplier.toFixed(1)},
+ contra el stock proyectado al inicio del evento. Las cantidades respetan el MOQ de cada producto. Nada se guarda — es solo una simulación.
+ </p>
+ </>
+ )}
+ </div>
+ </div>
+ )
+}
+
 // ── Events panel ─────────────────────────────────────────────────────────────
-function EventsPanel({ events, onAdd, onDelete }: {
+function EventsPanel({ events, onAdd, onDelete, onSimulate }: {
  events: InventoryEvent[]
  onAdd: (ev: Omit<InventoryEvent, 'id' | 'tenant_id' | 'created_at'>) => void
  onDelete: (id: string) => void
+ onSimulate: (ev: InventoryEvent) => void
 }) {
  const { t } = useLanguage()
  const [adding, setAdding] = useState(false)
@@ -248,6 +357,13 @@ function EventsPanel({ events, onAdd, onDelete }: {
  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(129,140,248,0.1)', color: C.indigo, flexShrink: 0 }}>
  ×{ev.multiplier.toFixed(1)}
  </span>
+ <button
+ onClick={() => onSimulate(ev)}
+ title="Simular impacto en el inventario"
+ style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: C.amber, fontSize: 11, fontWeight: 600, flexShrink: 0 }}
+ >
+ <Zap size={11} /> Simular
+ </button>
  <button onClick={() => onDelete(ev.id)} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = C.red)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}>
  <Trash2 size={12} />
  </button>
@@ -503,6 +619,7 @@ export default function InventoryPage() {
  const [pdfLoading, setPdfLoading] = useState(false)
  const [events, setEvents] = useState<InventoryEvent[]>([])
  const [showEvents, setShowEvents] = useState(false)
+ const [simEvent, setSimEvent] = useState<InventoryEvent | null>(null)
  const [updateDraft, setUpdateDraft] = useState<Record<string, { stock_actual: string; lead_time_dias: string; proveedor: string }>>({})
  const [updateSaving, setUpdateSaving] = useState(false)
  const [updatedSkus, setUpdatedSkus] = useState<Set<string>>(new Set())
@@ -1310,10 +1427,14 @@ export default function InventoryPage() {
  <div style={{ fontSize: 12, color: C.dim, marginBottom: 14, marginTop: 12, lineHeight: 1.6 }}>
  {t('inventory.events_section_desc')}
  </div>
- <EventsPanel events={events} onAdd={handleAddEvent} onDelete={handleDeleteEvent} />
+ <EventsPanel events={events} onAdd={handleAddEvent} onDelete={handleDeleteEvent} onSimulate={setSimEvent} />
  </div>
  )}
  </div>
+
+ {simEvent && sessionId && (
+ <EventSimModal ev={simEvent} sessionId={sessionId} onClose={() => setSimEvent(null)} />
+ )}
 
  {/* Legend */}
  {!loading && sessionId && (
