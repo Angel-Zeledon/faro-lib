@@ -11,7 +11,6 @@ All narratives are grounded in the data provided — never invented.
 
 import json
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 

@@ -194,15 +194,10 @@ class Pipeline:
         from forecasting_core.models.croston import run_croston_core
         from forecasting_core.models.sarimax import run_sarimax_core
         from forecasting_core.models.lstm import run_lstm_core
-        from forecasting_core.evaluation.baselines import BaselineEvaluator
         from forecasting_core.ensemble.ensemble import WeightedEnsemble
         from forecasting_core.registry.registry import ModelRegistry
         from forecasting_core.validation.auto_correct import auto_correct_data
         from forecasting_core.validation.pipeline_resilience import PartialResultCollector
-        from forecasting_core.validation import (
-            validate_semantic, validate_data, detect_leakage,
-            check_model_compatibility, ValidationMode,
-        )
 
         cfg = self.config
         c   = cfg.columns

@@ -5,7 +5,6 @@ All reads return dicts (RealDictCursor).
 All writes auto-commit on success, rollback on exception.
 """
 
-import json
 import math
 from contextlib import contextmanager
 from typing import Any, Optional

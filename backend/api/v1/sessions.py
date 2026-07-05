@@ -5,7 +5,6 @@ from backend.auth.guards import CurrentUser, get_current_user, require_analyst_o
 from backend.schemas.common import ok
 from backend.schemas.session import SessionCreate, SessionUpdate
 from backend.sessions import service as session_svc
-from backend.tenants.service import check_session_quota
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

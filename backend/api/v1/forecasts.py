@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.db import session_store
-from backend.db.connection import execute, query, query_one
+from backend.db.connection import execute, query
 from backend.datasets.service import get_dataset
 from backend.schemas.common import ok
 from backend.schemas.forecast import PredictRequest

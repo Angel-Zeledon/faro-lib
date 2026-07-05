@@ -8,7 +8,6 @@ log = logging.getLogger(__name__)
 def run_ets_core(df, dt, target, group, train_ratio, min_rows, seasonal_period,
                  horizon: int = 0):
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
-    import numpy as np
     results = {}
     src = df.groupby(group) if group else [(None, df)]
     for sku, g in src:

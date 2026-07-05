@@ -1,11 +1,10 @@
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import UploadFile
 
 from backend.config import settings
-from backend.db.connection import query_one, query, execute, _json
+from backend.db.connection import query_one, query, execute
 from backend.utils.ids import generate_id
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".parquet", ".xls", ".json"}

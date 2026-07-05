@@ -4,7 +4,6 @@ import json
 import logging
 import secrets
 import threading
-from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException

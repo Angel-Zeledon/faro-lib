@@ -3,7 +3,6 @@ DB operations for session configuration blobs, results, and training logs.
 Replaces 8+ per-session JSON files with JSONB columns in two tables.
 """
 
-from datetime import datetime
 from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute, _json

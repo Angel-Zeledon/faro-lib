@@ -10,7 +10,7 @@ Checks that config values make sense in the context of the actual data:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 

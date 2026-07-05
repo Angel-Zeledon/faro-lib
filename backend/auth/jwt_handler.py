@@ -8,7 +8,6 @@ Signed tokens: used for email verification and password reset.
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import jwt
 

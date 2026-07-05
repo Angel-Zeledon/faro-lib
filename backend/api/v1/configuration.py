@@ -23,7 +23,6 @@ import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
-from backend.config import settings
 from backend.datasets import service as ds_svc
 from backend.datasets.service import get_dataset, update_stats
 from backend.db import session_store

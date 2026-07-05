@@ -7,10 +7,8 @@ Supports manufacturing planning:
 - Detect shortages before they happen
 """
 
-import math
 import logging
-from typing import Optional
-from backend.db.connection import query, query_one, execute
+from backend.db.connection import query, execute
 
 log = logging.getLogger(__name__)
 

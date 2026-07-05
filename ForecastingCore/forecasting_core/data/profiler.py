@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional
+from typing import List, Optional
 from forecasting_core.data.canonical import FIELD_DEFAULTS
 
 

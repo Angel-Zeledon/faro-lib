@@ -2,9 +2,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from backend.auth.password import hash_password, verify_password
-from backend.db.connection import query_one, query, execute, _json
+from backend.db.connection import query_one, query, execute
 from backend.utils.ids import generate_id
-from backend.config import settings
 
 
 # ── CRUD ───────────────────────────────────────────────────────────────────

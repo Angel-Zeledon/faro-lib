@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 
 from backend.db.connection import query_one, query, execute, _json

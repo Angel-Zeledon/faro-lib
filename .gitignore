@@ -48,6 +48,9 @@ logs/
 storage/
 backend/storage/
 
+# Runtime artifacts written by the forecasting engine
+registry.json
+
 # TypeScript incremental build info
 *.tsbuildinfo
 

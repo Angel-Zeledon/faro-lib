@@ -347,7 +347,7 @@ def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500
         raise ValueError("Data source is not connected. Test connection first.")
     cfg = existing.get("sql_config") or {}
     try:
-        import sqlalchemy, pandas as pd
+        import sqlalchemy
         engine = _make_sql_engine(cfg, statement_timeout_ms=30_000)
         with engine.connect() as conn:
             result = conn.execute(sqlalchemy.text(sql))

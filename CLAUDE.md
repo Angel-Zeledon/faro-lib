@@ -4,58 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A configuration-driven time-series forecasting engine that trains and compares multiple model types (ML, statistical, deep learning) per SKU/group. Built for demand/sales forecasting with Colombia-specific holiday features.
+**Faro** — inventory purchasing decisions platform for LatAm SMB distributors.
+Pipeline: sales history (CSV/Excel) → per-SKU forecasting (LightGBM, XGBoost, Prophet, ARIMA, ETS, Croston, LSTM) → stock semáforo (PEDIR_YA / PEDIR_PRONTO / OK / SOBRESTOCK) → purchase-order generation, reception tracking and supplier lead-time learning.
 
-## Running the Application
+## Repository Structure
 
-```bash
-# Install dependencies
-pip install -r forecasting/requirements.txt
+Three layers with a strict separation:
 
-# Run the forecasting engine
-cd forecasting
-python main.py
+```
+ForecastingCore/forecasting_core/   ML engine — ALL forecasting intelligence lives here
+backend/                            FastAPI multi-tenant SaaS API — pure orchestration, no pandas/ML
+Frontend/                           Next.js 14 (pages under src/app/, API client in src/lib/api.ts)
 ```
 
-Note: `main.py` line 104 hardcodes `"config.txt"` but the actual config file is `config.json`.
+Do not put ML logic in `backend/` or business logic in `Frontend/`.
 
-There are no tests, linters, or build steps configured in this project.
+## Running
 
-## Architecture
+```bash
+# Backend (port 8010 for local dev; needs Postgres — see Database below)
+backend/.venv/Scripts/python.exe -m uvicorn backend.main:app --port 8010
 
-All source code lives under `forecasting/`. The entry point is `main.py` which orchestrates the `ForecastEngine` pipeline.
+# Frontend (port 5000; proxies /api/* to BACKEND_URL, default localhost:8000)
+cd Frontend && set BACKEND_URL=http://localhost:8010&& npm run dev
 
-### Pipeline Flow
+# Tests
+cd backend && python -m pytest tests/ -q          # needs local Postgres on :5544
+cd ForecastingCore && python -m pytest tests/ -q  # pure Python, no DB
+cd Frontend && npx tsc --noEmit                   # typecheck
+```
 
-1. **Config** (`core/config.py`) - Loads `config.json`, validates required keys (`data`, `dt`, `target`, `group_id`, `models`, `features`)
-2. **Data Loading** (`core/loader.py`) - Reads CSV/XLSX/Parquet/SQL based on file extension
-3. **Feature Engineering** (`core/features/`) - Transforms raw data for ML models only (not used by ARIMA/Prophet)
-4. **Model Training** - Three parallel tracks:
-   - **ML models** (`core/models/models.py` + `core/trainer.py`) - LightGBM, XGBoost via factory pattern; trained per group with train/test split
-   - **ARIMA** (`core/models/arima.py`) - Runs directly on raw data per group
-   - **Prophet** (`core/models/prophet_model.py`) - Runs directly on raw data per group
-5. **Results** - All model outputs are flattened into a DataFrame with `model`, `type`, `sku`, `mae` columns
+Local test Postgres: docker container **faro_db** (user/pass `postgres`/`postgres`, port 5544). An empty DB self-bootstraps: `backend/db/migrations.py run_all()` creates all tables at startup.
 
-### Key Design Decisions
+Do NOT run `npm run build` while `next dev` is running — it corrupts the dev server's `.next` cache.
 
-- **Config is a session dict, not the Config object**: `ForecastEngine` passes session config dicts (from `config.json > sessions > session_1`) to components. Some components expect `config.get()` to work like a dict, while `Config` class wraps sessions differently. The `main.py` constructor passes the config path, but individual components like `DataLoader`, `Trainer`, and `ModelFactory` receive the Config object and call `.get()` on it directly - this only works if Config has a `get` method or is dict-like.
-- **Feature engineering applies only to ML models**: ARIMA and Prophet receive the original DataFrame, not the feature-engineered one.
-- **Per-group training**: The `Trainer` groups data by `group_id` (e.g., SKU) and trains separate models for each group.
-- **ModelFactory handles ML models only**: LSTM config is stored but not instantiated as a model; LSTM has a separate module (`core/models/lstm.py`).
+## Key Architecture Facts
 
-### Feature Engineering Modules (`core/features/`)
+- **Config per session**: the training wizard stores 6 JSONB blobs in `session_configs` (`columns_cfg`, `features_cfg`, `models_cfg`, `validation_cfg`, `forecast_cfg`, `business_cfg`). `backend/workers/runner.py` assembles them into the engine config dict.
+- **Canonical column schema**: uploads map user columns to canonical fields (sku/date/demand/…). `apply_canonical_defaults` adds alias columns — the Trainer drops any feature identical to the target (leakage guard) and the FeatureEngineer's dropna only applies to generated features.
+- **Model routing narrows the user's selection** (`forecasting_core/training/router.py`): routing must never train a model the user didn't select.
+- **Session state machine**: `backend/sessions/state_machine.py` (DRAFT → … → MODELS_CONFIGURED → QUEUED → RUNNING → COMPLETED/FAILED). Training jobs run on an in-process worker thread (`backend/workers/`), queued in the `jobs` table.
+- **Auth**: own JWT (15-min access + refresh token), NOT Supabase Auth. Roles: admin / analyst / viewer — every mutating endpoint requires `require_analyst_or_above`; reads need `get_current_user`. Frontend renews expired tokens silently (`Frontend/src/lib/auth.ts tryRefresh`).
+- **Notifications**: `backend/notifications/email.py` (Resend primary via RESEND_API_KEY, SMTP fallback) and `whatsapp.py` (Twilio). Daily inventory alert loop fires at 8:00 UTC from `backend/workers/worker.py`.
+- **Storage**: Postgres for all metadata/results; binary files (datasets, artifacts, documents) on local disk under `storage/` (gitignored, never version it).
 
-- `calendar.py` - Temporal features (year, month, DOW), cyclical sin/cos encodings, Colombia holiday distances (Easter, Christmas)
-- `lags.py` - Lag features, differences, and percentage changes (configurable via `features.lags` in config)
-- `rolling.py` - Rolling statistics (mean, std, min, max), trend via polynomial fit, volatility (configurable via `features.rolling` in config)
-- `features.py` - Orchestrator that chains calendar, lag, and rolling transformations
+## Testing Standards (mandatory)
 
-### Evaluation Metrics (`core/evaluator.py`)
+- Assert **state changes with direct DB queries**, not just status codes or response echoes.
+- Every mutating endpoint needs a **permission pair**: viewer denied (403 + state unchanged) AND analyst success.
+- Never write tests that can't fail (either/or asserts, xfail on real bugs).
+- Tests that depend on quotas/rate limits must `monkeypatch settings.testing_mode = False` themselves — the local `.env` runs with `TESTING_MODE=true`.
+- conftest patches `backend.notifications.email._send` session-wide; email transport tests must target `_transport_send`.
+- Fixtures: use `test_tenant` / `auth_headers` (admin) / `analyst_headers` / `viewer_headers` from `backend/tests/conftest.py`.
 
-Provides `mae`, `rmse`, `wape`, `global_wape`, and `evaluate_all`. Note: `wape` is defined twice in the file (duplicate function).
+## Configuration
 
-## Configuration (`config.json`)
-
-Config is structured as sessions. Required keys per session: `data`, `dt`, `target`, `group_id`, `models`, `features`. Key optional fields: `prediction_horizon`, `train_ratio` (default split ratio for train/test).
-
-Models are configured as `{model_name: {hyperparameters}}`. Supported model names: `lightgbm`, `xgboost`, `lstm`.
+Backend env lives in `backend/.env` (see `backend/.env.example` for every variable). Notable:
+- `TESTING_MODE=true` bypasses all quotas/rate limits — the server **refuses to boot** with it in `ENVIRONMENT=production`.
+- `RESEND_API_KEY`, `TWILIO_*` activate email/WhatsApp; without them, sends are logged no-ops.

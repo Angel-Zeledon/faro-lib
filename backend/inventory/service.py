@@ -614,7 +614,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
     )
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER
 
     items = get_inventory_status(tenant_id, session_id, service_level)
 
