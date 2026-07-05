@@ -9,7 +9,7 @@ import type {
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse,
 } from './types'
-import { getToken, clearAuth } from './auth'
+import { getToken, clearAuth, tryRefresh } from './auth'
 
 const BASE = '/api'
 
@@ -33,27 +33,47 @@ function extractErrorMessage(err: unknown): string | undefined {
   return (err as { error?: { message?: string } })?.error?.message
 }
 
-async function request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+function _doFetch(method: string, path: string, body?: unknown): Promise<Response> {
   const isForm = body instanceof FormData
   const token  = getToken()
 
   const headers: Record<string, string> = isForm ? {} : { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const opts: RequestInit = {
+  return fetch(`${BASE}${path}`, {
     method,
     headers,
     body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
+  })
+}
+
+function _sessionLost(): never {
+  if (!_redirectingToLogin) {
+    _redirectingToLogin = true
+    clearAuth()
+    window.location.href = '/login'
   }
-  const res = await fetch(`${BASE}${path}`, opts)
+  throw new Error('Session expired')
+}
+
+async function request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+  let res = await _doFetch(method, path, body)
 
   if (res.status === 401) {
-    if (!_redirectingToLogin) {
-      _redirectingToLogin = true
-      clearAuth()
-      window.location.href = '/login'
+    // Auth endpoints return 401 for wrong credentials/tokens — surface that
+    // error to the form instead of treating it as an expired session.
+    if (path.startsWith('/auth/')) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(extractErrorMessage(err) || 'Credenciales inválidas')
     }
-    throw new Error('Session expired')
+    // Expired access token: renew silently with the refresh token and retry
+    // once, so a 15-minute token never kicks the user back to /login mid-task.
+    if (await tryRefresh()) {
+      res = await _doFetch(method, path, body)
+      if (res.status === 401) _sessionLost()
+    } else {
+      _sessionLost()
+    }
   }
 
   if (!res.ok) {
@@ -68,13 +88,20 @@ async function request<T = unknown>(method: string, path: string, body?: unknown
 
 // Binary file download — triggers browser save dialog
 async function downloadBlob(path: string, filename: string): Promise<void> {
-  const token = getToken()
-  const res = await fetch(`${BASE}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const fetchBlob = () => {
+    const token = getToken()
+    return fetch(`${BASE}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+  }
+  let res = await fetchBlob()
   if (res.status === 401) {
-    if (!_redirectingToLogin) { _redirectingToLogin = true; clearAuth(); window.location.href = '/login' }
-    throw new Error('Session expired')
+    if (await tryRefresh()) {
+      res = await fetchBlob()
+      if (res.status === 401) _sessionLost()
+    } else {
+      _sessionLost()
+    }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))

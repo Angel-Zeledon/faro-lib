@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { isAuthenticated } from '@/lib/auth'
+import { isAuthenticated, tryRefresh } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 
 const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password']
@@ -18,8 +18,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       return
     }
     if (!isAuthenticated()) {
-      router.replace('/login')
-      return
+      // Expired access token ≠ logged out: renew silently with the refresh
+      // token before falling back to /login.
+      let cancelled = false
+      tryRefresh().then(ok => {
+        if (cancelled) return
+        if (ok) setReady(true)
+        else router.replace('/login')
+      })
+      return () => { cancelled = true }
     }
     setReady(true)
   }, [pathname, router])

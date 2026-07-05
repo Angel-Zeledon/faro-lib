@@ -44,3 +44,36 @@ export function isAuthenticated(): boolean {
     return false
   }
 }
+
+// ── Silent session renewal ────────────────────────────────────────────────────
+// Access tokens live 15 min; the refresh token (sessionStorage, this tab only)
+// lets us renew without kicking the user back to /login mid-task.
+// Single-flight: concurrent 401s share one refresh request.
+let _refreshing: Promise<boolean> | null = null
+
+export function tryRefresh(): Promise<boolean> {
+  if (_refreshing) return _refreshing
+  const refresh = getRefresh()
+  if (!refresh) return Promise.resolve(false)
+
+  _refreshing = (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (!res.ok) return false
+      const json = await res.json().catch(() => null)
+      const token: string | undefined = json?.data?.access_token
+      if (!token) return false
+      localStorage.setItem(TOKEN_KEY, token)
+      return true
+    } catch {
+      return false
+    } finally {
+      _refreshing = null
+    }
+  })()
+  return _refreshing
+}

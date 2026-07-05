@@ -9,6 +9,7 @@ import type {
   SessionInfo, MetricRow, InventoryRecommendation, QualityReport,
   SkuIntelligenceData, ForecastPoint,
 } from '@/lib/types'
+import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
@@ -148,20 +149,13 @@ function exportChartCSV(sku: string, data: SkuIntelligenceData) {
 }
 
 function exportMetricsExcel(sku: string, rows: MetricRow[]) {
-  import('xlsx').then(XLSX => {
-    const wb = XLSX.utils.book_new()
-    const data: (string | number | null)[][] = [
+  downloadWorkbook(`metrics_${sku}.xlsx`, [{
+    name: 'Metrics',
+    rows: [
       ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
       ...rows.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
-    ]
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Metrics')
-    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `metrics_${sku}.xlsx`; a.click()
-    URL.revokeObjectURL(url)
-  })
+    ],
+  }])
 }
 
 // ── Outlier detection ─────────────────────────────────────────────────────────
@@ -860,52 +854,39 @@ function ChartPanel({ sessionId, sku, isDark }: {
 
   const exportExcel = useCallback(() => {
     if (!data) return
-    import('xlsx').then(XLSX => {
-      const wb = XLSX.utils.book_new()
-
-      // Forecast sheet
-      const fHeaders = ['date', 'historical', 'forecast_p50', 'lower', 'upper']
-      const fRows = [
-        ...data.historical.map(p => [p.date, p.value, null, null, null]),
-        ...data.forecast.map(p => {
-          const fp = p as unknown as Record<string, number | null | undefined>
-          return [p.date, null, p.value, fp['lower'] ?? fp['q10'] ?? null, fp['upper'] ?? fp['q90'] ?? null]
-        }),
-      ]
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([fHeaders, ...fRows]), 'Forecast')
-
-      // Metrics sheet
-      const mHeaders = ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds']
-      const mRows = data.metrics.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null])
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([mHeaders, ...mRows]), 'Metrics')
-
-      // Summary sheet
-      const summaryData: (string | number | null)[][] = [
-        ['Metric', 'Value'],
-        ['SKU', sku],
-        ['Model', data.model ?? 'N/A'],
-        ['Granularity', data.applied_granularity],
-        ['Historical Points', data.historical.length],
-        ['Forecast Steps', data.forecast.length],
-        ...(data.stats ? [
-          ['Mean',   data.stats.mean],
-          ['Std Dev', data.stats.std],
-          ['Min',    data.stats.min],
-          ['Max',    data.stats.max],
-          ['Median', data.stats.median],
-          ['N',      data.stats.n],
-        ] : []),
-      ]
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), 'Summary')
-
-      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = `forecast_${sku}_${data.applied_granularity}.xlsx`; a.click()
-      URL.revokeObjectURL(url)
-      setShowExportMenu(false)
-    })
+    const forecastRows: (string | number | null)[][] = [
+      ['date', 'historical', 'forecast_p50', 'lower', 'upper'],
+      ...data.historical.map(p => [p.date, p.value, null, null, null] as (string | number | null)[]),
+      ...data.forecast.map(p => {
+        const fp = p as unknown as Record<string, number | null | undefined>
+        return [p.date, null, p.value, fp['lower'] ?? fp['q10'] ?? null, fp['upper'] ?? fp['q90'] ?? null] as (string | number | null)[]
+      }),
+    ]
+    const metricRows: (string | number | null)[][] = [
+      ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
+      ...data.metrics.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null] as (string | number | null)[]),
+    ]
+    const summaryRows: (string | number | null)[][] = [
+      ['Metric', 'Value'],
+      ['SKU', sku],
+      ['Model', data.model ?? 'N/A'],
+      ['Granularity', data.applied_granularity],
+      ['Historical Points', data.historical.length],
+      ['Forecast Steps', data.forecast.length],
+      ...(data.stats ? [
+        ['Mean',   data.stats.mean],
+        ['Std Dev', data.stats.std],
+        ['Min',    data.stats.min],
+        ['Max',    data.stats.max],
+        ['Median', data.stats.median],
+        ['N',      data.stats.n],
+      ] as (string | number | null)[][] : []),
+    ]
+    downloadWorkbook(`forecast_${sku}_${data.applied_granularity}.xlsx`, [
+      { name: 'Forecast', rows: forecastRows },
+      { name: 'Metrics',  rows: metricRows },
+      { name: 'Summary',  rows: summaryRows },
+    ]).then(() => setShowExportMenu(false))
   }, [sku, data])
 
   const toggleBand = (key: string) => {
@@ -1548,31 +1529,24 @@ export default function SkusPage() {
     setBulkFailed([])
     const failed: string[] = []
     try {
-      const XLSX = await import('xlsx')
-      const wb   = XLSX.utils.book_new()
+      const sheets: { name: string; rows: (string | number | null)[][] }[] = []
       for (let i = 0; i < skus.length; i++) {
         const sku = skus[i]
         try {
           const d = await getSkuIntelligence(sessionId, sku, {})
           const rows: (string | number | null)[][] = [
             ['date', 'historical', 'forecast_p50', 'lower', 'upper'],
-            ...d.historical.map(p => [p.date, p.value, null, null, null]),
+            ...d.historical.map(p => [p.date, p.value, null, null, null] as (string | number | null)[]),
             ...d.forecast.map(p => {
               const fp = p as unknown as Record<string, number | null | undefined>
-              return [p.date, null, p.value, fp['lower'] ?? fp['q10'] ?? null, fp['upper'] ?? fp['q90'] ?? null]
+              return [p.date, null, p.value, fp['lower'] ?? fp['q10'] ?? null, fp['upper'] ?? fp['q90'] ?? null] as (string | number | null)[]
             }),
           ]
-          const sheetName = sku.replace(/[\\/:*?[\]]/g, '_').substring(0, 31)
-          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheetName)
+          sheets.push({ name: sku, rows })
         } catch { failed.push(sku) }
         setBulkProgress(i + 1)
       }
-      const buf  = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href = url; a.download = `forecast_all_skus_${sessionId.slice(0, 8)}.xlsx`; a.click()
-      URL.revokeObjectURL(url)
+      await downloadWorkbook(`forecast_all_skus_${sessionId.slice(0, 8)}.xlsx`, sheets)
       if (failed.length) setBulkFailed(failed)
     } finally {
       setBulkExporting(false)
