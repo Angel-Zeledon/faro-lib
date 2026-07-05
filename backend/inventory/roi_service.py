@@ -204,7 +204,8 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     """Returns recent PO generation events for the history panel."""
     rows = query(
         """SELECT id, session_id, generated_at, sku_count, total_units,
-                  total_value, skus_pedir_ya, skus_pedir_pronto
+                  total_value, skus_pedir_ya, skus_pedir_pronto,
+                  reception_status, received_at
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC
@@ -214,8 +215,9 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     result = []
     for row in rows:
         r = dict(row)
-        # Serialize datetime to ISO string for JSON
-        if isinstance(r.get("generated_at"), datetime):
-            r["generated_at"] = r["generated_at"].isoformat()
+        # Serialize datetimes to ISO strings for JSON
+        for k in ("generated_at", "received_at"):
+            if isinstance(r.get(k), datetime):
+                r[k] = r[k].isoformat()
         result.append(r)
     return result

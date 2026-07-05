@@ -632,6 +632,19 @@ export const getInventoryROI = () =>
 export const getPOHistory = (limit = 20) =>
   request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`)
 
+// ── PO reception (cerrar el loop de compra) ──────────────────────────────────
+export const getPOItems = (poLogId: string) =>
+  request<import('./types').POItemsResponse>('GET', `/inventory/po/${poLogId}/items`)
+
+export const receivePO = (
+  poLogId: string,
+  body?: { lines?: { sku: string; cantidad_recibida: number }[]; received_at?: string },
+) =>
+  request<import('./types').ReceptionResult>('POST', `/inventory/po/${poLogId}/receive`, body ?? {})
+
+export const getSupplierLeadTimes = () =>
+  request<import('./types').SupplierLeadTimeStat[]>('GET', '/inventory/suppliers/lead-times')
+
 export const logPOGeneration = (sessionId: string, items?: POLineDecision[]) =>
   request<POLogEntry>(
     'POST',

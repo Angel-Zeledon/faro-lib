@@ -729,6 +729,51 @@ export interface POLogEntry {
   approved_count?:   number
   modified_count?:   number
   rejected_count?:   number
+  // Reception (feature 1.4): pending | partial | received | not_received
+  reception_status?: 'pending' | 'partial' | 'received' | 'not_received'
+  received_at?:      string | null
+}
+
+// A line of a PO as stored server-side, with reception progress.
+export interface POItemLine {
+  id:                   string
+  sku:                  string
+  display_name:         string | null
+  proveedor:            string | null
+  signal:               string | null
+  status:               string
+  cantidad_recomendada: number
+  cantidad_final:       number
+  cantidad_recibida:    number | null
+  costo_unitario:       number | null
+}
+
+export interface POItemsResponse {
+  po_log_id:        string
+  reception_status: string
+  generated_at:     string | null
+  received_at:      string | null
+  items:            POItemLine[]
+}
+
+export interface ReceptionResult {
+  po_log_id:          string
+  reception_status:   string
+  received_at:        string
+  lead_time_days:     number
+  suppliers_observed: string[]
+  items:              POItemLine[]
+}
+
+export interface SupplierLeadTimeStat {
+  proveedor:            string
+  n_recepciones:        number
+  lead_time_real_avg:   number | null
+  lead_time_real_max:   number | null
+  lead_time_real_min:   number | null
+  ultima_recepcion:     string | null
+  lead_time_declarado:  number | null
+  desviacion_dias:      number | null
 }
 
 // A single buyer decision sent to /inventory/log-po when a PO is downloaded.

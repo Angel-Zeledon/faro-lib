@@ -425,6 +425,29 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS idx_auth_rate_events_key_created ON auth_rate_events (key, created_at)"),
     ("add_users_whatsapp_number",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT"),
+    # ── PO reception (feature 1.4): close the purchase loop ──────────────────
+    # reception_status: pending | received | partial | not_received
+    ("add_po_log_reception_status",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS reception_status TEXT NOT NULL DEFAULT 'pending'"),
+    ("add_po_log_received_at",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ"),
+    ("add_po_log_received_by",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS received_by TEXT"),
+    ("add_po_items_cantidad_recibida",
+     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS cantidad_recibida FLOAT"),
+    # Real lead-time observations per supplier, learned from PO receptions.
+    # Keyed by supplier NAME (po lines carry the free-text proveedor field).
+    ("create_supplier_lead_time_obs",
+     """CREATE TABLE IF NOT EXISTS supplier_lead_time_obs (
+         id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id      TEXT NOT NULL,
+         proveedor      TEXT NOT NULL,
+         po_log_id      TEXT NOT NULL REFERENCES inventory_po_log(id) ON DELETE CASCADE,
+         lead_time_days FLOAT NOT NULL,
+         observed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_supplier_lead_time_obs_idx",
+     "CREATE INDEX IF NOT EXISTS slto_tenant_prov_idx ON supplier_lead_time_obs (tenant_id, proveedor)"),
 ]
 
 

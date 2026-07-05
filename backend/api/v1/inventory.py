@@ -437,6 +437,75 @@ def po_history(
     return ok(get_po_history(user.tenant_id, limit))
 
 
+# ── PO reception (cerrar el loop de compra) ──────────────────────────────────
+
+class ReceptionLine(BaseModel):
+    sku: str
+    cantidad_recibida: float = Field(ge=0)
+
+
+class ReceptionRequest(BaseModel):
+    # Omit `lines` → "llegó todo completo" (cada línea recibe su cantidad_final)
+    lines:       Optional[list[ReceptionLine]] = None
+    received_at: Optional[str] = None  # ISO date/datetime; default: ahora
+
+
+@router.get("/po/{po_log_id}/items")
+def po_items(po_log_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Lines of a PO with ordered vs received quantities (reception form)."""
+    from backend.inventory import reception_service as rec_svc
+    po = rec_svc.get_po(user.tenant_id, po_log_id)
+    if not po:
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+    return ok({
+        "po_log_id": po_log_id,
+        "reception_status": po.get("reception_status", "pending"),
+        "generated_at": po["generated_at"].isoformat() if po.get("generated_at") else None,
+        "received_at": po["received_at"].isoformat() if po.get("received_at") else None,
+        "items": rec_svc.get_po_items(user.tenant_id, po_log_id),
+    })
+
+
+@router.post("/po/{po_log_id}/receive", status_code=200)
+def receive_po(
+    po_log_id: str,
+    body: Optional[ReceptionRequest] = None,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Record that a PO arrived (fully, partially, or not at all).
+    Side effects: stock_actual increases by the received units, and Faro logs
+    the supplier's REAL lead time (order date → reception date).
+    """
+    from datetime import datetime as _dt
+    from backend.inventory import reception_service as rec_svc
+
+    received_at = None
+    if body and body.received_at:
+        try:
+            received_at = _dt.fromisoformat(body.received_at)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="received_at debe ser fecha ISO (YYYY-MM-DD)")
+
+    lines = [l.model_dump() for l in body.lines] if (body and body.lines is not None) else None
+    try:
+        result = rec_svc.receive_po(
+            user.tenant_id, po_log_id, user.user_id,
+            lines=lines, received_at=received_at,
+        )
+    except ValueError as e:
+        status = 404 if "no encontrada" in str(e) else 409 if "ya fue recibida" in str(e) else 422
+        raise HTTPException(status_code=status, detail=str(e))
+    return ok(result)
+
+
+@router.get("/suppliers/lead-times")
+def supplier_lead_times(user: CurrentUser = Depends(get_current_user)):
+    """Real lead time per supplier learned from receptions, vs declared."""
+    from backend.inventory import reception_service as rec_svc
+    return ok(rec_svc.get_supplier_lead_time_stats(user.tenant_id))
+
+
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
 class SupplierCreate(BaseModel):
