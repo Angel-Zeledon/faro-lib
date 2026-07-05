@@ -61,12 +61,26 @@ def _button(text: str, url: str) -> str:
     )
 
 
-def _send(to: str, subject: str, html: str) -> None:
-    """Send via Gmail SMTP TLS. Raises on failure."""
-    if not settings.smtp_user or not settings.smtp_pass:
-        log.warning("SMTP not configured — email not sent to %s", to)
-        return
+def _send_resend(to: str, subject: str, html: str) -> None:
+    """Send via the Resend HTTP API. Raises on failure."""
+    import httpx
 
+    resp = httpx.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+        json={
+            "from": settings.email_from,
+            "to": [to],
+            "subject": f"[{_APP_NAME}] {subject}",
+            "html": html,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+
+
+def _send_smtp(to: str, subject: str, html: str) -> None:
+    """Send via SMTP TLS (fallback transport). Raises on failure."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"[{_APP_NAME}] {subject}"
     msg["From"]    = f"{_APP_NAME} <{settings.smtp_user}>"
@@ -79,7 +93,30 @@ def _send(to: str, subject: str, html: str) -> None:
         smtp.login(settings.smtp_user, settings.smtp_pass)
         smtp.sendmail(settings.smtp_user, to, msg.as_string())
 
-    log.info("Email sent → %s | subject: %s", to, subject)
+
+def _transport_send(to: str, subject: str, html: str) -> None:
+    """
+    Dispatch an email: Resend when RESEND_API_KEY is set, SMTP as fallback,
+    logged no-op with neither. Raises on transport failure so callers can
+    report `email_sent=False`.
+    """
+    if settings.resend_api_key:
+        _send_resend(to, subject, html)
+        log.info("Email sent via Resend → %s | subject: %s", to, subject)
+        return
+
+    if not settings.smtp_user or not settings.smtp_pass:
+        log.warning("No email transport configured (RESEND_API_KEY / SMTP) — email not sent to %s", to)
+        return
+
+    _send_smtp(to, subject, html)
+    log.info("Email sent via SMTP → %s | subject: %s", to, subject)
+
+
+def _send(to: str, subject: str, html: str) -> None:
+    # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
+    # while the dispatch logic in _transport_send stays independently testable.
+    _transport_send(to, subject, html)
 
 
 # ── Public interface ──────────────────────────────────────────────────────────

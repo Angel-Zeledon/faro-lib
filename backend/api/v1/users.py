@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 import random
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -56,6 +57,8 @@ def _issue_code(user_id: str, tenant_id: str, purpose: str = "change") -> str:
 
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
+    # E.164 with country code (e.g. +573001234567); empty string clears it
+    whatsapp_number: Optional[str] = None
 
 
 @router.get("/me")
@@ -68,10 +71,21 @@ def get_me(user: CurrentUser = Depends(get_current_user)):
 
 @router.patch("/me")
 def update_me(body: ProfileUpdate, user: CurrentUser = Depends(get_current_user)):
-    if body.full_name is not None:
-        if not body.full_name.strip():
-            raise HTTPException(status_code=400, detail="full_name cannot be blank")
-        updated = user_svc.update_profile(user.tenant_id, user.user_id, body.full_name)
+    if body.full_name is not None and not body.full_name.strip():
+        raise HTTPException(status_code=400, detail="full_name cannot be blank")
+    if body.whatsapp_number:
+        num = body.whatsapp_number.strip()
+        if not re.fullmatch(r"\+[1-9]\d{7,14}", num):
+            raise HTTPException(
+                status_code=422,
+                detail="whatsapp_number must be E.164 format with country code, e.g. +573001234567",
+            )
+    if body.full_name is not None or body.whatsapp_number is not None:
+        updated = user_svc.update_profile(
+            user.tenant_id, user.user_id,
+            full_name=body.full_name,
+            whatsapp_number=body.whatsapp_number,
+        )
         return ok(updated)
     u = user_svc.get_user(user.tenant_id, user.user_id)
     return ok(user_svc._public(u))

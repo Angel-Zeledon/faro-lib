@@ -46,11 +46,21 @@ class Settings(BaseSettings):
     # in production by accident — flip it with TESTING_MODE=true in the env.
     testing_mode: bool = False
 
-    # SMTP
+    # Email — Resend is the primary transport when its key is set; SMTP is the
+    # fallback. With neither configured, emails are logged but not sent.
+    resend_api_key: str = ""
+    email_from: str = "Faro <onboarding@resend.dev>"  # resend.dev works without domain setup
+
+    # SMTP (fallback transport)
     smtp_server: str = "smtp.gmail.com"
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_pass: str = ""
+
+    # WhatsApp alerts via Twilio (optional channel for the daily inventory alert)
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886" (Twilio sandbox)
 
     # External APIs
     # anthropic_api_key still powers the RAG analyst, AI chat and narrator

@@ -10,7 +10,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import {
-  updateMe,
+  getMe, updateMe,
   getPreferences, updatePreferences,
   getPlatformModels,
   getActivityLogs, getActivityActionTypes,
@@ -109,6 +109,33 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
   const [name,     setName]     = useState(me?.full_name || '')
   const [saving,   setSaving]   = useState(false)
   const [feedback, setFeedback] = useState<'saved' | null>(null)
+
+  // WhatsApp opt-in for daily inventory alerts (stored server-side)
+  const [wa,         setWa]         = useState('')
+  const [waSaving,   setWaSaving]   = useState(false)
+  const [waFeedback, setWaFeedback] = useState<'saved' | 'error' | null>(null)
+  const [waError,    setWaError]    = useState('')
+
+  useEffect(() => {
+    getMe()
+      .then(u => setWa((u as { whatsapp_number?: string | null }).whatsapp_number || ''))
+      .catch(() => {})
+  }, [])
+
+  async function handleSaveWa() {
+    setWaSaving(true)
+    setWaFeedback(null)
+    try {
+      await updateMe({ whatsapp_number: wa.trim() })
+      setWaFeedback('saved')
+      setTimeout(() => setWaFeedback(null), 2500)
+    } catch (e: unknown) {
+      setWaError(e instanceof Error ? e.message : 'Error')
+      setWaFeedback('error')
+    } finally {
+      setWaSaving(false)
+    }
+  }
 
   async function handleSave() {
     if (!name.trim()) return
@@ -212,6 +239,46 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               {t('email')}
             </label>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{me?.email}</div>
+          </div>
+
+          {/* WhatsApp para alertas diarias de inventario */}
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              WhatsApp (alertas de inventario)
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center' }}>
+              <input
+                className="form-input"
+                placeholder="+573001234567"
+                value={wa}
+                onChange={e => setWa(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSaveWa()}
+                style={{ fontSize: 13, maxWidth: 220 }}
+              />
+              <button
+                onClick={handleSaveWa}
+                disabled={waSaving}
+                style={{
+                  all: 'unset', cursor: 'pointer',
+                  padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                  background: 'var(--accent)', color: '#fff',
+                  opacity: waSaving ? 0.6 : 1,
+                }}
+              >
+                {waSaving ? t('saving') : t('save_changes')}
+              </button>
+              {waFeedback === 'saved' && (
+                <span style={{ fontSize: 11, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={11} /> {t('saved')}
+                </span>
+              )}
+              {waFeedback === 'error' && (
+                <span style={{ fontSize: 11, color: '#ef4444' }}>{waError}</span>
+              )}
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 0' }}>
+              Con código de país (ej. +57…). Déjalo vacío para no recibir alertas por WhatsApp.
+            </p>
           </div>
 
           {/* Role + Status */}

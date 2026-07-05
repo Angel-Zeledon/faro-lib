@@ -423,6 +423,8 @@ _MIGRATIONS = _BASE_SCHEMA + [
      )"""),
     ("create_auth_rate_events_idx",
      "CREATE INDEX IF NOT EXISTS idx_auth_rate_events_key_created ON auth_rate_events (key, created_at)"),
+    ("add_users_whatsapp_number",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT"),
 ]
 
 

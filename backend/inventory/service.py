@@ -1066,6 +1066,17 @@ def get_tenant_admin_emails(tenant_id: str) -> list[str]:
     return [r["email"] for r in rows]
 
 
+def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
+    """E.164 numbers of admins/managers who opted into WhatsApp alerts."""
+    rows = query(
+        """SELECT whatsapp_number FROM users
+           WHERE tenant_id = %s AND role IN ('admin', 'manager')
+           AND whatsapp_number IS NOT NULL AND whatsapp_number <> ''""",
+        (tenant_id,),
+    )
+    return [r["whatsapp_number"] for r in rows]
+
+
 def run_daily_inventory_alerts() -> None:
     """
     Called once per day by the scheduler.
@@ -1092,21 +1103,29 @@ def run_daily_inventory_alerts() -> None:
             if not critical and not warning:
                 continue
 
-            emails = get_tenant_admin_emails(tid)
-            if not emails:
-                continue
-
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
+            inventory_url = f"{app_url}/inventory"
+
+            emails = get_tenant_admin_emails(tid)
             for email in emails:
                 try:
                     send_inventory_alert_email(
                         to=email,
                         critical_items=critical[:10],
                         warning_items=warning[:5],
-                        inventory_url=f"{app_url}/inventory",
+                        inventory_url=inventory_url,
                     )
                 except Exception as e:
                     log.warning("alert email failed to=%s: %s", email, e)
+
+            # WhatsApp channel — highest open-rate in LatAm; opt-in per user
+            # via users.whatsapp_number. No-op when Twilio isn't configured.
+            from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+            numbers = get_tenant_admin_whatsapps(tid)
+            if numbers:
+                text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+                for number in numbers:
+                    send_whatsapp(number, text)
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)

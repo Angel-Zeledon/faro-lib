@@ -530,6 +530,54 @@ def remove_sku_supplier(
     sup_svc.remove_sku_supplier(user.tenant_id, sku, supplier_id)
 
 
+# ── Alert test-fire ───────────────────────────────────────────────────────────
+
+@router.post("/alerts/send-now", status_code=202)
+def send_alert_now(
+    session_id: str = Query(...),
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Fire the daily inventory alert immediately for this tenant (email +
+    WhatsApp to opted-in admins). Lets the user verify their channels without
+    waiting for the 8:00 UTC scheduler run.
+    """
+    items = svc.get_inventory_status(user.tenant_id, session_id)
+    critical = [i for i in items if i["signal"] == "PEDIR_YA"]
+    warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
+    if not critical and not warning:
+        return ok({"sent": False, "reason": "No hay SKUs en riesgo — nada que alertar."})
+
+    from backend.config import settings as _settings
+    from backend.notifications.email import send_inventory_alert_email
+    from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+
+    inventory_url = f"{_settings.frontend_url}/inventory"
+    emails = svc.get_tenant_admin_emails(user.tenant_id)
+    for email in emails:
+        try:
+            send_inventory_alert_email(
+                to=email, critical_items=critical[:10], warning_items=warning[:5],
+                inventory_url=inventory_url,
+            )
+        except Exception as e:
+            log.warning("alert test email failed to=%s: %s", email, e)
+
+    numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
+    wa_sent = 0
+    if numbers:
+        text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
+
+    return ok({
+        "sent": True,
+        "critical": len(critical),
+        "warning": len(warning),
+        "emails_attempted": len(emails),
+        "whatsapp_sent": wa_sent,
+    })
+
+
 # ── Morning Briefing ──────────────────────────────────────────────────────────
 
 @router.get("/morning-briefing")

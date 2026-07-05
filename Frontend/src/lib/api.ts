@@ -238,6 +238,12 @@ export const getConfigSummary = (id: string) =>
 export const startTraining = (id: string) =>
   request<{ job_id: string; status: string }>('POST', `/sessions/${id}/train`)
 
+// One-click demo: seeds dataset + configs + stock and queues training
+export const startDemoQuickstart = () =>
+  request<{ session_id: string; job_id: string; dataset_id: string; stock_seeded: string[] }>(
+    'POST', '/demo/quickstart',
+  )
+
 export const getJob = (job_id: string) =>
   request<JobResponse>('GET', `/jobs/${job_id}`)
 
@@ -391,7 +397,10 @@ export const getDataSourceTypes = () =>
   request<ChatSourceType[]>('GET', '/analyst/data-source-types')
 
 // ── User Profile ─────────────────────────────────────────────────────────────
-export const updateMe = (body: { full_name?: string }) =>
+export const getMe = () =>
+  request<Record<string, unknown>>('GET', '/users/me')
+
+export const updateMe = (body: { full_name?: string; whatsapp_number?: string }) =>
   request<Record<string, unknown>>('PATCH', '/users/me', body)
 
 export const requestPasswordChange = (new_password: string) =>

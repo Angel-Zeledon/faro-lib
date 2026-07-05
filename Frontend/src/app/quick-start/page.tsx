@@ -5,7 +5,9 @@ import {
  createSession, uploadDataset, attachDataset, inspectSession,
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
  setForecastConfig, setBusinessConfig, startTraining, getJob,
+ startDemoQuickstart,
 } from '@/lib/api'
+import { validateSalesCsv } from '@/lib/csvCheck'
 import type { InspectionResult, CanonicalMapping } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -251,11 +253,46 @@ export default function QuickStartPage() {
  const [trainPct, setTrainPct] = useState<number | null>(null)
  const msgIdxRef = useRef(0)
 
+ // Non-fatal pre-upload observations (row counts, ignored rows, short history)
+ const [csvWarnings, setCsvWarnings] = useState<string[]>([])
+
+ // ── Demo: seed everything server-side and jump straight to training ─────────
+ const handleDemo = async () => {
+ setError(null)
+ setBusy(true)
+ setStep(3)
+ try {
+ const demo = await startDemoQuickstart()
+ setSessionId(demo.session_id)
+ await pollJob(demo.job_id, demo.session_id)
+ } catch (e: unknown) {
+ setError(e instanceof Error ? e.message : 'Error al iniciar la demo')
+ setBusy(false)
+ }
+ }
+
  // ── Step 1: Upload ───────────────────────────────────────────────────────────
  const handleFile = async (file: File) => {
  setError(null)
+ setCsvWarnings([])
  setBusy(true)
  setFileName(file.name)
+
+ // Pre-upload validation for CSVs: report broken rows with their line number
+ // BEFORE uploading (Excel files are profiled server-side instead).
+ if (file.name.toLowerCase().endsWith('.csv')) {
+ try {
+ const check = validateSalesCsv(await file.text())
+ if (!check.ok) {
+  setError(check.errors.join('\n'))
+  setFileName(null)
+  setBusy(false)
+  return
+ }
+ if (check.warnings.length) setCsvWarnings(check.warnings)
+ } catch { /* unreadable as text — let the backend decide */ }
+ }
+
  try {
  // 1. Create session
  const session = await createSession()
@@ -548,10 +585,57 @@ export default function QuickStartPage() {
  marginTop: 12, padding: '10px 14px',
  background: '#fee2e2', borderRadius: 8,
  fontSize: 13, color: '#dc2626',
+ whiteSpace: 'pre-line',
  }}>
  {error}
  </div>
  )}
+
+ {csvWarnings.length > 0 && (
+ <div style={{
+ marginTop: 12, padding: '10px 14px',
+ background: '#fef3c7', borderRadius: 8,
+ fontSize: 13, color: '#92400e',
+ whiteSpace: 'pre-line',
+ }}>
+ {csvWarnings.join('\n')}
+ </div>
+ )}
+
+ <div style={{ marginTop: 10, fontSize: 12 }}>
+ <a href="/plantilla_faro.csv" download
+ style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+ ⬇ Descargar plantilla CSV de ejemplo
+ </a>
+ </div>
+
+ {/* Demo de un clic: ver el semáforo sin preparar ningún archivo */}
+ <div style={{
+ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)',
+ textAlign: 'center',
+ }}>
+ <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 10px' }}>
+ ¿Aún no tienes tu archivo a la mano?
+ </p>
+ <button
+ onClick={handleDemo}
+ disabled={busy}
+ style={{
+ padding: '11px 24px',
+ background: 'transparent',
+ color: 'var(--accent)',
+ border: '1px solid var(--accent)',
+ borderRadius: 10, fontSize: 14, fontWeight: 700,
+ cursor: busy ? 'not-allowed' : 'pointer',
+ opacity: busy ? 0.6 : 1,
+ }}
+ >
+ ▶ Probar con datos de ejemplo
+ </button>
+ <p style={{ fontSize: 11, color: 'var(--dim)', margin: '8px 0 0', opacity: 0.8 }}>
+ Cargamos ventas ficticias de 5 productos y te llevamos directo al semáforo.
+ </p>
+ </div>
 
  <CsvExample />
  </div>

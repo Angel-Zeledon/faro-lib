@@ -77,11 +77,23 @@ def update_password(tenant_id: str, user_id: str, new_password: str) -> None:
     execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))
 
 
-def update_profile(tenant_id: str, user_id: str, full_name: str) -> Optional[dict]:
-    execute(
-        "UPDATE users SET full_name = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
-        (full_name.strip(), user_id, tenant_id),
-    )
+def update_profile(
+    tenant_id: str,
+    user_id: str,
+    full_name: Optional[str] = None,
+    whatsapp_number: Optional[str] = None,
+) -> Optional[dict]:
+    if full_name is not None:
+        execute(
+            "UPDATE users SET full_name = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+            (full_name.strip(), user_id, tenant_id),
+        )
+    if whatsapp_number is not None:
+        # Empty string clears the number (opt out of WhatsApp alerts)
+        execute(
+            "UPDATE users SET whatsapp_number = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+            (whatsapp_number.strip() or None, user_id, tenant_id),
+        )
     return _public(get_user(tenant_id, user_id))
 
 
