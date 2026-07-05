@@ -45,6 +45,7 @@ class FeatureEngineer:
                 f"Cast it first: df['{self.target}'] = pd.to_numeric(df['{self.target}'], errors='coerce')"
             )
         df = df.copy()
+        input_cols = set(df.columns)
         if self.cfg.calendar:
             df = self._calendar(df)
         fourier_periods = getattr(self.cfg, "fourier_periods", [])
@@ -55,7 +56,23 @@ class FeatureEngineer:
         df = self._rolling(df)
         if self.cfg.ewm_spans:
             df = self._ewm(df)
-        df = df.replace([float("inf"), -float("inf")], None).dropna()
+        df = df.replace([float("inf"), -float("inf")], None)
+
+        # Drop only the warm-up rows where GENERATED features (lags/rollings)
+        # are NaN — never rows that are NaN in pass-through input columns.
+        # A blanket dropna() emptied the whole dataset whenever the input had
+        # an all-NaN column (e.g. unmapped canonical fields like 'price'),
+        # which silently disabled every ML model.
+        generated = [c for c in df.columns if c not in input_cols]
+        all_nan = [c for c in generated if df[c].isna().all()]
+        if all_nan:
+            # e.g. days_to_holiday when the holidays lib is unavailable:
+            # carries no signal — drop the column, not every row.
+            df = df.drop(columns=all_nan)
+        subset = [c for c in generated if c not in all_nan]
+        if self.target in df.columns:
+            subset.append(self.target)
+        df = df.dropna(subset=subset) if subset else df
         return df
 
     @staticmethod

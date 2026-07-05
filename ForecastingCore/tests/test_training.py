@@ -258,26 +258,51 @@ class TestModelRouter:
         routing = router.route(reports)
         assert "lightgbm" in routing["S1"] or "xgboost" in routing["S1"]
 
-    def test_route_short_assigns_naive(self):
+    def test_route_short_falls_back_to_declared(self):
+        # SHORT's table only lists naive models; when none of them is declared
+        # the SKU falls back to the full user selection instead of being
+        # silently dropped (or worse: training undeclared models).
         router = ModelRouter({"lightgbm": {}}, enabled=True)
         reports = {"S1": self._make_report("S1", SERIES_SHORT)}
         routing = router.route(reports)
-        assert "naive" in routing["S1"] or "seasonal_naive" in routing["S1"]
+        assert routing["S1"] == {"lightgbm"}
 
-    def test_route_intermittent_assigns_croston_ets(self):
-        router = ModelRouter({"lightgbm": {}}, enabled=True)
+    def test_route_intermittent_narrows_to_declared_stat_models(self):
+        router = ModelRouter({"lightgbm": {}, "croston": {}}, enabled=True)
         reports = {"S1": self._make_report("S1", SERIES_INTERMITTENT)}
         routing = router.route(reports)
-        assert "croston" in routing["S1"] or "ets" in routing["S1"]
+        # croston is declared AND suited to intermittent → selected;
+        # lightgbm is declared but not in the intermittent table → excluded.
+        assert routing["S1"] == {"croston"}
 
-    def test_disabled_routing_runs_all(self):
+    def test_route_never_assigns_undeclared_models(self):
+        # Regression (2026-07-05): stat models from the routing table (lstm,
+        # sarimax, ets…) used to run even when the user never selected them —
+        # the quick-start flow selected 4 fast models and still trained a
+        # Keras LSTM on CPU, turning a ~1-min training into 10+ minutes.
+        declared = {"lightgbm": {}, "prophet": {}, "croston": {}, "xgboost": {}}
+        router = ModelRouter(declared, enabled=True)
+        reports = {
+            "A": self._make_report("A", SERIES_STABLE),
+            "B": self._make_report("B", SERIES_SEASONAL),
+            "C": self._make_report("C", SERIES_VOLATILE),
+        }
+        routing = router.route(reports)
+        for sku, models in routing.items():
+            assert models <= set(declared), (
+                f"{sku} routed to undeclared models: {models - set(declared)}"
+            )
+            assert models, f"{sku} left without any model"
+
+    def test_disabled_routing_runs_all_declared(self):
         router = ModelRouter({"lightgbm": {}, "xgboost": {}}, enabled=False)
         reports = {"A": self._make_report("A", SERIES_SHORT),
                    "B": self._make_report("B", SERIES_STABLE)}
         routing = router.route(reports)
-        # All models should be assigned when routing is disabled
+        # Disabled routing = every DECLARED model on every SKU — not the
+        # union with all stat models, which trained models nobody selected.
         for sku in ["A", "B"]:
-            assert "lightgbm" in routing[sku]
+            assert routing[sku] == {"lightgbm", "xgboost"}
 
     def test_skus_for_model(self):
         router = ModelRouter({"lightgbm": {}, "xgboost": {}}, enabled=True)

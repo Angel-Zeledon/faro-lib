@@ -22,6 +22,7 @@ idna==3.16
 iniconfig==2.3.0
 jiter==0.15.0
 openpyxl==3.1.5
+reportlab==5.0.0
 pinecone>=3.2.2
 voyageai>=0.3.2
 packaging==26.2

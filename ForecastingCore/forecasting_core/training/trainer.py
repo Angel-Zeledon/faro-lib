@@ -129,6 +129,21 @@ class Trainer:
                 X = X.drop(columns=non_numeric)
             y = g[target].astype(float)
 
+            # Leakage guard: drop any feature that is an exact copy of the
+            # target (e.g. the canonical 'demand' alias added on top of the
+            # user's mapped column) — a model given the answer as a feature
+            # reports near-zero validation error and is useless in production.
+            leak_cols = [
+                col for col in X.columns
+                if pd.api.types.is_numeric_dtype(X[col]) and X[col].astype(float).equals(y)
+            ]
+            if leak_cols:
+                log.warning(
+                    f"SKU {sku_val} | dropping feature column(s) {leak_cols} — "
+                    f"identical to target '{target}' (data leakage)"
+                )
+                X = X.drop(columns=leak_cols)
+
             if self.walk_forward:
                 res = self._wfv(X, y, trainable, sku_val, store_val)
             else:

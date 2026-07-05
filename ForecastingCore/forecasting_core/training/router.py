@@ -56,8 +56,10 @@ class ModelRouter:
             {sku: {model_names_to_run}}
         """
         if not self.enabled:
-            all_models = self._declared | STAT_MODELS
-            return {sku: all_models for sku in reports}
+            # No routing: every DECLARED model runs on every SKU. It must not
+            # union in STAT_MODELS — that trained models (lstm, sarimax, ets…)
+            # the user never selected, multiplying training time.
+            return {sku: set(self._declared) for sku in reports}
 
         routing: Dict[str, Set[str]] = {}
         for sku, report in reports.items():
@@ -66,11 +68,15 @@ class ModelRouter:
             assigned: Set[str] = set()
             for flag in flags:
                 assigned |= ROUTING_TABLE.get(flag, set())
-            if not assigned:
-                assigned = self._declared | STAT_MODELS
-            ml_run   = assigned & self._declared
-            stat_run = assigned & STAT_MODELS
-            routing[sku] = ml_run | stat_run
+            # Routing NARROWS the user's selection to the models suited to this
+            # series type; it never adds undeclared models. If the intersection
+            # is empty (e.g. short series whose table only lists naive models),
+            # fall back to the full selection — a suboptimal forecast beats
+            # silently dropping the SKU.
+            run = assigned & self._declared
+            if not run:
+                run = set(self._declared)
+            routing[sku] = run
         return routing
 
     def skus_for_model(self, routing: Dict[str, Set[str]], model: str) -> List[str]:
