@@ -37,13 +37,14 @@ class SaveScheduleRequest(BaseModel):
 
 
 def _next_run(cron_expr: str) -> datetime:
+    from datetime import timezone
     try:
         from croniter import croniter
-        return croniter(cron_expr, datetime.utcnow()).get_next(datetime)
+        return croniter(cron_expr, datetime.now(timezone.utc)).get_next(datetime)
     except Exception:
         # croniter may not be installed yet — fall back to 24h from now
         from datetime import timedelta
-        return datetime.utcnow() + timedelta(hours=24)
+        return datetime.now(timezone.utc) + timedelta(hours=24)
 
 
 @router.get("/sessions/{session_id}/schedule")

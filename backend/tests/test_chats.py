@@ -48,7 +48,12 @@ class TestMessageValidation:
 
 class TestRateLimit:
 
-    def test_exceeding_rate_limit_returns_429(self, client, auth_headers, chat):
+    def test_exceeding_rate_limit_returns_429(self, client, auth_headers, chat, monkeypatch):
+        # The endpoint skips rate limiting entirely under TESTING_MODE, so the
+        # test must turn it off itself — otherwise a local .env with
+        # TESTING_MODE=true silently turns this into a test that can't fail.
+        from backend.config import settings
+        monkeypatch.setattr(settings, "testing_mode", False)
         # The rate limit uses a sliding window keyed on RATE_LIMIT_WINDOW_SECONDS
         # (60s in production). Sending RATE_LIMIT_MAX_MESSAGES requests against a
         # real remote DB takes long enough in wall-clock time that, at the
@@ -58,7 +63,12 @@ class TestRateLimit:
         # test) makes the test immune to its own network latency.
         with mock.patch("backend.api.v1.chats._general_answer", return_value="ok"), \
              mock.patch("backend.api.v1.chats.RATE_LIMIT_WINDOW_SECONDS", 3600):
-            for i in range(RATE_LIMIT_MAX_MESSAGES):
+            # Earlier tests in the run may have already sent messages for this
+            # tenant inside the widened window — only the remaining budget is
+            # guaranteed to succeed.
+            from backend.db import chat_store
+            already = chat_store.count_recent_user_messages(chat["tenant_id"], 3600)
+            for i in range(RATE_LIMIT_MAX_MESSAGES - already):
                 resp = client.post(
                     f"/api/v1/analyst/chats/{chat['id']}/messages",
                     json={"question": f"message {i}"},
