@@ -160,7 +160,8 @@ def _record_snapshot(tenant_id: str, sku: str, stock_actual: float) -> None:
 
 def get_stock_history(tenant_id: str, sku: str, days: int = 30) -> list[dict]:
     """Returns daily stock snapshots for the last N days, most recent last."""
-    since = datetime.utcnow() - timedelta(days=days)
+    from datetime import timezone
+    since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = query(
         """SELECT stock_actual, recorded_at
            FROM inventory_snapshots

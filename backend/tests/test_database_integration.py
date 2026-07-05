@@ -146,10 +146,13 @@ class TestSessionStore:
     def test_append_and_get_logs(self, test_tenant):
         from backend.db import session_store
         from backend.sessions.service import create_session
+        from backend.training.job_service import create_job
 
         s = create_session(test_tenant["id"], "usr_test", "logs-test")
         tid = test_tenant["id"]
-        job_id = "job_log_test"
+        # training_logs.job_id has a FK to jobs — logs only ever exist for a
+        # real job, so the test must create one instead of inventing an id.
+        job_id = create_job(tid, s["id"], "usr_test")["id"]
         session_store.append_log(tid, s["id"], job_id, "line 1")
         session_store.append_log(tid, s["id"], job_id, "line 2")
         session_store.append_log(tid, s["id"], job_id, "line 3")
@@ -162,9 +165,11 @@ class TestSessionStore:
         from backend.db import session_store
         from backend.sessions.service import create_session
 
+        from backend.training.job_service import create_job
+
         s = create_session(test_tenant["id"], "usr_test", "logs-tail-test")
         tid = test_tenant["id"]
-        job_id = "job_tail"
+        job_id = create_job(tid, s["id"], "usr_test")["id"]
         for i in range(10):
             session_store.append_log(tid, s["id"], job_id, f"line {i}")
         lines = session_store.get_logs(tid, s["id"], job_id, tail=3)

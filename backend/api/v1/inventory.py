@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
@@ -69,7 +69,7 @@ def get_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
 def upsert_stock(
     sku: str,
     body: StockUpsert,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     row = svc.upsert_stock(user.tenant_id, sku, body.model_dump(exclude_none=True))
     return ok(row)
@@ -79,7 +79,7 @@ def upsert_stock(
 def patch_stock(
     sku: str,
     body: StockPatch,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
@@ -92,7 +92,7 @@ def patch_stock(
 
 
 @router.delete("/stock/{sku}", status_code=204)
-def delete_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
+def delete_stock(sku: str, user: CurrentUser = Depends(require_analyst_or_above)):
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
         raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in inventory")
@@ -104,7 +104,7 @@ def delete_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
 @router.post("/bulk")
 async def bulk_import(
     file: UploadFile = File(...),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
     Import stock data from CSV.
@@ -316,7 +316,7 @@ def upcoming_events(
 
 
 @router.post("/events", status_code=201)
-def create_event(body: EventCreate, user: CurrentUser = Depends(get_current_user)):
+def create_event(body: EventCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     ev = svc.create_event(user.tenant_id, body.model_dump())
     return ok(ev)
 
@@ -325,7 +325,7 @@ def create_event(body: EventCreate, user: CurrentUser = Depends(get_current_user
 def patch_event(
     event_id: str,
     body: EventPatch,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     data = body.model_dump(exclude_none=True)
     if "start_date" in data or "end_date" in data:
@@ -344,7 +344,7 @@ def patch_event(
 
 
 @router.delete("/events/{event_id}", status_code=204)
-def delete_event(event_id: str, user: CurrentUser = Depends(get_current_user)):
+def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     svc.delete_event(user.tenant_id, event_id)
 
 
@@ -392,7 +392,7 @@ class POLogRequest(BaseModel):
 def log_po(
     session_id: str = Query(...),
     body: Optional[POLogRequest] = None,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
     Called when a user downloads a PO.
@@ -475,7 +475,7 @@ def list_suppliers(user: CurrentUser = Depends(get_current_user)):
 
 
 @router.post("/suppliers", status_code=201)
-def create_supplier(body: SupplierCreate, user: CurrentUser = Depends(get_current_user)):
+def create_supplier(body: SupplierCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     supplier = sup_svc.create_supplier(user.tenant_id, body.model_dump(exclude_none=True))
     return ok(supplier)
 
@@ -484,7 +484,7 @@ def create_supplier(body: SupplierCreate, user: CurrentUser = Depends(get_curren
 def update_supplier(
     supplier_id: str,
     body: SupplierPatch,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     data = body.model_dump(exclude_none=True)
     supplier = sup_svc.update_supplier(user.tenant_id, supplier_id, data)
@@ -494,7 +494,7 @@ def update_supplier(
 
 
 @router.delete("/suppliers/{supplier_id}", status_code=204)
-def delete_supplier(supplier_id: str, user: CurrentUser = Depends(get_current_user)):
+def delete_supplier(supplier_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     existing = sup_svc.get_supplier(user.tenant_id, supplier_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Supplier not found")
@@ -511,7 +511,7 @@ def assign_sku_supplier(
     sku: str,
     supplier_id: str,
     body: SkuSupplierUpsert,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     # Verify supplier exists for this tenant
     supplier = sup_svc.get_supplier(user.tenant_id, supplier_id)
@@ -525,7 +525,7 @@ def assign_sku_supplier(
 def remove_sku_supplier(
     sku: str,
     supplier_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     sup_svc.remove_sku_supplier(user.tenant_id, sku, supplier_id)
 
@@ -558,7 +558,7 @@ def list_product_types(user: CurrentUser = Depends(get_current_user)):
 def set_product_type(
     sku: str,
     product_type: str = Query(..., description="finished_good | semi_finished | component | raw_material | packaging | service"),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
@@ -592,7 +592,7 @@ def upsert_bom_item(
     parent_sku: str,
     child_sku:  str,
     body:       BomItemUpsert,
-    user:       CurrentUser = Depends(get_current_user),
+    user:       CurrentUser = Depends(require_analyst_or_above),
 ):
     try:
         item = bom_svc.upsert_bom_item(
@@ -607,7 +607,7 @@ def upsert_bom_item(
 def delete_bom_item(
     parent_sku: str,
     child_sku:  str,
-    user:       CurrentUser = Depends(get_current_user),
+    user:       CurrentUser = Depends(require_analyst_or_above),
 ):
     bom_svc.delete_bom_item(user.tenant_id, parent_sku, child_sku)
 

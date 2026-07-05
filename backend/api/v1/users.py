@@ -3,7 +3,7 @@ import hmac
 import logging
 import random
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,8 +32,14 @@ def _hash_code(code: str) -> str:
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
+# Short-lived + attempt-capped: a 6-digit code only resists brute force if the
+# window is minutes and a handful of wrong guesses burns it.
+_CODE_EXPIRE_MINUTES = 15
+_CODE_MAX_ATTEMPTS   = 5
+
+
 def _issue_code(user_id: str, tenant_id: str, purpose: str = "change") -> str:
-    """Generate a 6-digit OTP (change or reset), expires 30 hours."""
+    """Generate a 6-digit OTP (change or reset), expires in 15 minutes."""
     code = f"{random.SystemRandom().randint(0, 999999):06d}"
     execute(
         "DELETE FROM pw_change_codes WHERE user_id = %s AND purpose = %s AND used = FALSE",
@@ -42,7 +48,8 @@ def _issue_code(user_id: str, tenant_id: str, purpose: str = "change") -> str:
     execute(
         """INSERT INTO pw_change_codes (id, user_id, tenant_id, code_hash, expires_at, purpose)
            VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s)""",
-        (user_id, tenant_id, _hash_code(code), datetime.utcnow() + timedelta(hours=30), purpose),
+        (user_id, tenant_id, _hash_code(code),
+         datetime.now(timezone.utc) + timedelta(minutes=_CODE_EXPIRE_MINUTES), purpose),
     )
     return code
 
@@ -291,13 +298,18 @@ def confirm_password_change(
     row = query_one(
         """SELECT id, code_hash FROM pw_change_codes
            WHERE user_id = %s AND purpose = 'change' AND used = FALSE AND expires_at > NOW()
+                 AND attempts < %s
            ORDER BY created_at DESC LIMIT 1""",
-        (user.user_id,),
+        (user.user_id, _CODE_MAX_ATTEMPTS),
     )
     if not row:
         raise HTTPException(status_code=400, detail="No active code found. Request a new one.")
 
     if not hmac.compare_digest(row["code_hash"], _hash_code(body.code.strip())):
+        execute(
+            "UPDATE pw_change_codes SET attempts = attempts + 1 WHERE id = %s",
+            (row["id"],),
+        )
         raise HTTPException(status_code=400, detail="Invalid verification code.")
 
     execute("UPDATE pw_change_codes SET used = TRUE WHERE id = %s", (row["id"],))

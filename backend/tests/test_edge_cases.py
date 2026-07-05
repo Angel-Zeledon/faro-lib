@@ -183,36 +183,46 @@ class TestRBAC:
         execute("DELETE FROM tenants WHERE id = %s", (t2["id"],))
 
 
-# ── Inventory permissions: intentionally ungated ─────────────────────────────
+# ── Inventory permissions: mutations require analyst or above ────────────────
 #
-# Unlike sessions/datasets/training, the inventory endpoints (stock, events,
-# suppliers, BOM, bulk-import) have no role gate in source — every route depends
-# only on `get_current_user`, not `require_analyst_or_above`. This was confirmed
-# with the user to be intentional (any authenticated user, including viewer, may
-# mutate inventory), not an oversight. These tests lock in that decision: if
-# someone later adds a role gate here, these tests will fail and force an
-# explicit, conscious update rather than a silent behavior change.
+# 2026-07-04 audit (docs/auditoria_integral_faro_2026-07-04.md, finding #1):
+# the previous "intentionally ungated" decision was reversed — inventory data
+# drives real purchase orders, so a read-only viewer must not be able to mutate
+# stock, events, suppliers, BOM or run bulk imports. Every mutation now depends
+# on `require_analyst_or_above`; reads stay open to any authenticated user.
+# These are permission PAIRS: each case proves the viewer is denied (and no
+# state changed) AND that an analyst succeeds — so a broken guard or an
+# over-broad guard both fail the suite.
 
-class TestInventoryPermissionsIntentionallyOpen:
-    def test_viewer_can_upsert_and_delete_stock(self, client, viewer_headers):
-        sku = f"PYTEST-VWR-{uuid4().hex[:8]}"
+class TestInventoryMutationPermissions:
+    def test_stock_upsert_viewer_denied_analyst_allowed(self, client, viewer_headers, analyst_headers, auth_headers):
+        sku = f"PYTEST-PERM-{uuid4().hex[:8]}"
         put = client.put(
             f"/api/v1/inventory/stock/{sku}",
             json={"stock_actual": 10},
             headers=viewer_headers,
         )
+        assert put.status_code == 403
+        # Denied means denied: the SKU must not exist afterwards
+        assert client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).status_code == 404
+
+        put = client.put(
+            f"/api/v1/inventory/stock/{sku}",
+            json={"stock_actual": 10},
+            headers=analyst_headers,
+        )
         assert put.status_code == 200
         assert put.json()["data"]["stock_actual"] == 10
 
-        delete = client.delete(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers)
-        assert delete.status_code == 204
+        assert client.delete(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers).status_code == 403
+        assert client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).status_code == 200
+        assert client.delete(f"/api/v1/inventory/stock/{sku}", headers=analyst_headers).status_code == 204
 
-    def test_viewer_can_create_patch_delete_event(self, client, viewer_headers):
-        create = client.post(
-            "/api/v1/inventory/events",
-            json={"name": "viewer-event", "start_date": "2026-11-01", "end_date": "2026-11-30"},
-            headers=viewer_headers,
-        )
+    def test_event_mutations_viewer_denied_analyst_allowed(self, client, viewer_headers, analyst_headers):
+        body = {"name": "perm-event", "start_date": "2026-11-01", "end_date": "2026-11-30"}
+        assert client.post("/api/v1/inventory/events", json=body, headers=viewer_headers).status_code == 403
+
+        create = client.post("/api/v1/inventory/events", json=body, headers=analyst_headers)
         assert create.status_code == 201
         event_id = create.json()["data"]["id"]
 
@@ -221,57 +231,96 @@ class TestInventoryPermissionsIntentionallyOpen:
             json={"multiplier": 2.0},
             headers=viewer_headers,
         )
+        assert patch.status_code == 403
+        # Verify the multiplier was NOT changed by the denied request
+        events = client.get("/api/v1/inventory/events", headers=viewer_headers).json()["data"]
+        target = next(e for e in events if e["id"] == event_id)
+        assert float(target["multiplier"]) != 2.0
+
+        patch = client.patch(
+            f"/api/v1/inventory/events/{event_id}",
+            json={"multiplier": 2.0},
+            headers=analyst_headers,
+        )
         assert patch.status_code == 200
         assert patch.json()["data"]["multiplier"] == 2.0
 
-        delete = client.delete(f"/api/v1/inventory/events/{event_id}", headers=viewer_headers)
-        assert delete.status_code == 204
+        assert client.delete(f"/api/v1/inventory/events/{event_id}", headers=viewer_headers).status_code == 403
+        assert client.delete(f"/api/v1/inventory/events/{event_id}", headers=analyst_headers).status_code == 204
 
-    def test_viewer_can_create_patch_delete_supplier(self, client, viewer_headers):
+    def test_supplier_mutations_viewer_denied_analyst_allowed(self, client, viewer_headers, analyst_headers):
+        assert client.post(
+            "/api/v1/inventory/suppliers", json={"name": "perm-supplier"}, headers=viewer_headers
+        ).status_code == 403
+
         create = client.post(
-            "/api/v1/inventory/suppliers",
-            json={"name": "viewer-supplier"},
-            headers=viewer_headers,
+            "/api/v1/inventory/suppliers", json={"name": "perm-supplier"}, headers=analyst_headers
         )
         assert create.status_code == 201
         supplier_id = create.json()["data"]["id"]
 
+        assert client.patch(
+            f"/api/v1/inventory/suppliers/{supplier_id}",
+            json={"name": "renamed"},
+            headers=viewer_headers,
+        ).status_code == 403
+        suppliers = client.get("/api/v1/inventory/suppliers", headers=viewer_headers).json()["data"]
+        assert next(s for s in suppliers if s["id"] == supplier_id)["name"] == "perm-supplier"
+
         patch = client.patch(
             f"/api/v1/inventory/suppliers/{supplier_id}",
-            json={"name": "viewer-supplier-renamed"},
-            headers=viewer_headers,
+            json={"name": "renamed"},
+            headers=analyst_headers,
         )
         assert patch.status_code == 200
-        assert patch.json()["data"]["name"] == "viewer-supplier-renamed"
+        assert patch.json()["data"]["name"] == "renamed"
 
-        delete = client.delete(f"/api/v1/inventory/suppliers/{supplier_id}", headers=viewer_headers)
-        assert delete.status_code == 204
+        assert client.delete(f"/api/v1/inventory/suppliers/{supplier_id}", headers=viewer_headers).status_code == 403
+        assert client.delete(f"/api/v1/inventory/suppliers/{supplier_id}", headers=analyst_headers).status_code == 204
 
-    def test_viewer_can_upsert_and_delete_bom_item(self, client, viewer_headers):
-        parent, child = f"VWR-P-{uuid4().hex[:6]}", f"VWR-C-{uuid4().hex[:6]}"
+    def test_bom_mutations_viewer_denied_analyst_allowed(self, client, viewer_headers, analyst_headers):
+        parent, child = f"PERM-P-{uuid4().hex[:6]}", f"PERM-C-{uuid4().hex[:6]}"
         for sku in (parent, child):
             assert client.put(
-                f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 1}, headers=viewer_headers
+                f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 1}, headers=analyst_headers
             ).status_code == 200
+
+        assert client.put(
+            f"/api/v1/inventory/bom/{parent}/{child}",
+            json={"quantity": 5.0},
+            headers=viewer_headers,
+        ).status_code == 403
+        assert client.get(f"/api/v1/inventory/bom/{parent}", headers=viewer_headers).json()["data"] == []
 
         put = client.put(
             f"/api/v1/inventory/bom/{parent}/{child}",
             json={"quantity": 5.0},
-            headers=viewer_headers,
+            headers=analyst_headers,
         )
         assert put.status_code == 200
         assert put.json()["data"]["quantity"] == 5.0
 
-        delete = client.delete(f"/api/v1/inventory/bom/{parent}/{child}", headers=viewer_headers)
-        assert delete.status_code == 204
+        assert client.delete(f"/api/v1/inventory/bom/{parent}/{child}", headers=viewer_headers).status_code == 403
+        assert client.delete(f"/api/v1/inventory/bom/{parent}/{child}", headers=analyst_headers).status_code == 204
+        for sku in (parent, child):
+            client.delete(f"/api/v1/inventory/stock/{sku}", headers=analyst_headers)
 
-    def test_viewer_can_bulk_import_stock(self, client, viewer_headers):
+    def test_bulk_import_viewer_denied_analyst_allowed(self, client, viewer_headers, analyst_headers, auth_headers):
         sku = f"PYTEST-BULK-{uuid4().hex[:8]}"
         csv_content = f"sku,stock_actual,lead_time_dias\n{sku},25,10\n".encode()
+
         resp = client.post(
             "/api/v1/inventory/bulk",
             files={"file": ("stock.csv", csv_content, "text/csv")},
             headers=viewer_headers,
+        )
+        assert resp.status_code == 403
+        assert client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).status_code == 404
+
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            files={"file": ("stock.csv", csv_content, "text/csv")},
+            headers=analyst_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["data"]["imported"] == 1
@@ -279,6 +328,12 @@ class TestInventoryPermissionsIntentionallyOpen:
         check = client.get(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers)
         assert check.status_code == 200
         assert check.json()["data"]["stock_actual"] == 25
+        client.delete(f"/api/v1/inventory/stock/{sku}", headers=analyst_headers)
+
+    def test_viewer_can_still_read_inventory(self, client, viewer_headers):
+        assert client.get("/api/v1/inventory/stock", headers=viewer_headers).status_code == 200
+        assert client.get("/api/v1/inventory/events", headers=viewer_headers).status_code == 200
+        assert client.get("/api/v1/inventory/suppliers", headers=viewer_headers).status_code == 200
 
 
 # ── Input validation edge cases ───────────────────────────────────────────────
@@ -322,9 +377,12 @@ class TestInputValidation:
         resp = client.post("/api/v1/auth/signup", json={"email": "test@example.com"})
         assert resp.status_code == 422
 
-    def test_upload_oversized_file_returns_400(self, client, auth_headers):
-        # Create fake oversized content (>200MB limit)
+    def test_upload_oversized_file_returns_400(self, client, auth_headers, monkeypatch):
+        # The size cap is bypassed under TESTING_MODE, so the test must turn it
+        # off itself or it can never fail on a local .env with TESTING_MODE=true.
         from backend.config import settings
+        monkeypatch.setattr(settings, "testing_mode", False)
+        # Create fake oversized content (>200MB limit)
         fake_big = b"a" * (settings.max_upload_size_mb * 1024 * 1024 + 1)
         resp = client.post(
             "/api/v1/datasets",
@@ -409,9 +467,12 @@ class TestSessionStateEdgeCases:
 # ── Quota edge cases ──────────────────────────────────────────────────────────
 
 class TestQuotaLimits:
-    def test_concurrent_job_limit_enforced(self, client, auth_headers, configured_session, test_tenant):
+    def test_concurrent_job_limit_enforced(self, client, auth_headers, configured_session, test_tenant, monkeypatch):
         from backend.training.job_service import create_job, mark_running
         from backend.db.connection import execute
+        # The concurrency cap is bypassed under TESTING_MODE — disable per-test.
+        from backend.config import settings
+        monkeypatch.setattr(settings, "testing_mode", False)
 
         # Fill up to limit (3) with fake RUNNING jobs
         sid = configured_session["id"]

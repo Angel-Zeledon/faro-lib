@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -13,6 +14,9 @@ class Settings(BaseSettings):
     # App metadata
     app_name: str = "ForecastPlatform"
     app_version: str = "1.0.0"
+
+    # Deployment environment: development | staging | production
+    environment: str = "development"
 
     # JWT
     access_token_expire_minutes: int = 15
@@ -69,6 +73,17 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _refuse_testing_mode_in_production(self):
+        # testing_mode disables quotas, rate limits and upload caps. Refusing to
+        # boot beats silently running an unmetered production instance.
+        if self.testing_mode and self.environment.strip().lower() in ("production", "prod"):
+            raise RuntimeError(
+                "TESTING_MODE=true is not allowed when ENVIRONMENT=production. "
+                "Unset TESTING_MODE (or change ENVIRONMENT) and restart."
+            )
+        return self
 
 
 settings = Settings()

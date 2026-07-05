@@ -8,7 +8,7 @@ import logging
 import random
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -35,7 +35,11 @@ from backend.users import service as user_svc
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
 
-# ── In-memory rate limiter ─────────────────────────────────────────────────────
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+# Primary store is Postgres (auth_rate_events) so the window survives restarts
+# and is shared across workers/instances. The in-memory deque is only a fallback
+# for when the DB is unreachable — in that case limiting is per-process again,
+# which is still better than no limiting at all.
 _rate_lock    = Lock()
 _rate_buckets: dict[str, deque] = defaultdict(deque)
 
@@ -43,14 +47,33 @@ def _check_rate(key: str, max_attempts: int, window_secs: int) -> None:
     """Raise 429 if `key` has exceeded `max_attempts` in the last `window_secs`."""
     if settings.testing_mode:
         return  # testing mode: auth rate limiting disabled
-    now = time.monotonic()
-    with _rate_lock:
-        dq = _rate_buckets[key]
-        while dq and dq[0] < now - window_secs:
-            dq.popleft()
-        if len(dq) >= max_attempts:
-            raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
-        dq.append(now)
+
+    allowed: bool | None = None
+    try:
+        execute(
+            "DELETE FROM auth_rate_events WHERE key = %s AND created_at < NOW() - make_interval(secs => %s)",
+            (key, window_secs),
+        )
+        row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s", (key,))
+        n = int(row["n"]) if row else 0
+        allowed = n < max_attempts
+        if allowed:
+            execute("INSERT INTO auth_rate_events (key) VALUES (%s)", (key,))
+    except Exception:
+        allowed = None  # DB unavailable/mocked → fall back to in-memory window
+
+    if allowed is None:
+        now = time.monotonic()
+        with _rate_lock:
+            dq = _rate_buckets[key]
+            while dq and dq[0] < now - window_secs:
+                dq.popleft()
+            allowed = len(dq) < max_attempts
+            if allowed:
+                dq.append(now)
+
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
 
 
 def _lookup_email(email: str) -> dict | None:
@@ -65,8 +88,14 @@ def _hash_code(code: str) -> str:
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
+# A 6-digit OTP has 10^6 combinations; keeping the window short and burning the
+# code after a few wrong guesses is what makes brute force infeasible.
+_OTP_EXPIRE_MINUTES = 15
+_OTP_MAX_ATTEMPTS   = 5
+
+
 def _issue_reset_otp(user_id: str, tenant_id: str) -> str:
-    """Generate a 6-digit OTP for password reset (purpose='reset', expires 30 hours)."""
+    """Generate a 6-digit OTP for password reset (purpose='reset', expires in 15 min)."""
     code = f"{random.SystemRandom().randint(0, 999999):06d}"
     execute(
         "DELETE FROM pw_change_codes WHERE user_id = %s AND purpose = 'reset' AND used = FALSE",
@@ -75,7 +104,8 @@ def _issue_reset_otp(user_id: str, tenant_id: str) -> str:
     execute(
         """INSERT INTO pw_change_codes (id, user_id, tenant_id, code_hash, expires_at, purpose)
            VALUES (gen_random_uuid()::text, %s, %s, %s, %s, 'reset')""",
-        (user_id, tenant_id, _hash_code(code), datetime.utcnow() + timedelta(hours=30)),
+        (user_id, tenant_id, _hash_code(code),
+         datetime.now(timezone.utc) + timedelta(minutes=_OTP_EXPIRE_MINUTES)),
     )
     return code
 
@@ -214,10 +244,19 @@ async def forgot_password_verify(body: ForgotPasswordVerifyRequest):
     row = query_one(
         """SELECT id, code_hash FROM pw_change_codes
            WHERE user_id = %s AND purpose = 'reset' AND used = FALSE AND expires_at > NOW()
+                 AND attempts < %s
            ORDER BY created_at DESC LIMIT 1""",
-        (entry["user_id"],),
+        (entry["user_id"], _OTP_MAX_ATTEMPTS),
     )
-    if not row or not hmac.compare_digest(row["code_hash"], _hash_code(body.code.strip())):
+    if not row:
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+    if not hmac.compare_digest(row["code_hash"], _hash_code(body.code.strip())):
+        # Count the failure; after _OTP_MAX_ATTEMPTS wrong guesses the code is dead
+        # and the user must request a new one.
+        execute(
+            "UPDATE pw_change_codes SET attempts = attempts + 1 WHERE id = %s",
+            (row["id"],),
+        )
         raise HTTPException(status_code=400, detail="Invalid or expired code.")
 
     execute("UPDATE pw_change_codes SET used = TRUE WHERE id = %s", (row["id"],))
@@ -258,7 +297,7 @@ async def logout(credentials: HTTPAuthorizationCredentials = Depends(_security))
             user_id = payload.get("sub")
             if jti and exp:
                 from backend.auth.blocklist import revoke
-                revoke(jti, datetime.utcfromtimestamp(exp))
+                revoke(jti, datetime.fromtimestamp(exp, tz=timezone.utc))
             if user_id:
                 user_svc.revoke_all_tokens(payload.get("tenant_id", ""), user_id)
         except ValueError:

@@ -414,6 +414,15 @@ _MIGRATIONS = _BASE_SCHEMA + [
      )"""),
     ("create_chat_messages_chat_idx",
      "CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_created ON chat_messages (chat_id, created_at)"),
+    ("add_pw_change_codes_attempts",
+     "ALTER TABLE pw_change_codes ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0"),
+    ("create_auth_rate_events",
+     """CREATE TABLE IF NOT EXISTS auth_rate_events (
+         key        TEXT NOT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_auth_rate_events_idx",
+     "CREATE INDEX IF NOT EXISTS idx_auth_rate_events_key_created ON auth_rate_events (key, created_at)"),
 ]
 
 

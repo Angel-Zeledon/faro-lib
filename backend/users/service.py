@@ -231,7 +231,8 @@ def add_refresh_token(tenant_id: str, user_id: str, token_hash: str) -> None:
         (user_id, user_id),
     )
     from backend.auth.jwt_handler import get_refresh_expire_days
-    expires_at = datetime.utcnow() + timedelta(days=get_refresh_expire_days())
+    from datetime import timezone
+    expires_at = datetime.now(timezone.utc) + timedelta(days=get_refresh_expire_days())
     execute(
         """INSERT INTO refresh_tokens (user_id, tenant_id, hash, expires_at, created_at)
            VALUES (%s, %s, %s, %s, NOW())""",
