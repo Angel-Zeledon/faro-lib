@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { getInventoryROI, getPOHistory, getPOItems, receivePO } from '@/lib/api'
-import type { InventoryROISummary, POLogEntry, POItemLine } from '@/lib/types'
+import { getInventoryROI, getPOHistory, getPOItems, receivePO, getROIMonthly } from '@/lib/api'
+import type { InventoryROISummary, POLogEntry, POItemLine, ROIMonthlyRow } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle, Truck, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -161,31 +161,70 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
   )
 }
 
-function MonthKPIs({ roi }: { roi: InventoryROISummary }) {
+function fmtMonthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString('es', { month: 'long', year: 'numeric' })
+}
+
+function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   const { t } = useLanguage()
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
       <div style={{
-        background: C.surface, border: `1px solid ${C.border}`,
-        borderRadius: 12, padding: '20px 22px',
-        borderTop: `3px solid ${C.indigo}`,
+        padding: '14px 18px', borderBottom: `1px solid ${C.border}`,
+        background: C.card, display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <div style={{ fontSize: 32, fontWeight: 800, color: C.indigo }}>{roi.pos_this_month}</div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 4 }}>
-          {roi.pos_this_month === 1 ? t('roi.order_generated_singular') : t('roi.order_generated_plural')} {t('roi.this_month_suffix')}
-        </div>
-        <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{t('roi.current_month')}</div>
+        <TrendingUp size={14} color={C.indigo} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+          {t('roi.monthly_evolution_title')}
+        </span>
       </div>
-      <div style={{
-        background: C.surface, border: `1px solid ${C.border}`,
-        borderRadius: 12, padding: '20px 22px',
-        borderTop: `3px solid rgba(129,140,248,0.3)`,
-      }}>
-        <div style={{ fontSize: 32, fontWeight: 800, color: C.muted }}>{roi.pos_last_month}</div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 4 }}>
-          {roi.pos_last_month === 1 ? t('roi.order_generated_singular') : t('roi.order_generated_plural')} {t('roi.last_month_suffix')}
-        </div>
-        <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{t('roi.previous_month')}</div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: C.card }}>
+              {[
+                t('roi.col_month'), t('roi.col_orders'), t('roi.col_stockouts_handled'),
+                t('roi.col_value_managed'), t('roi.col_adoption'), t('roi.col_capital_freed'),
+              ].map(h => (
+                <th key={h} style={{
+                  padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap',
+                  color: C.dim, fontWeight: 600, fontSize: 10,
+                  borderBottom: `1px solid ${C.border}`,
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={row.month} style={{
+                background: idx % 2 === 0 ? C.surface : C.card,
+                borderBottom: `1px solid ${C.border}`,
+              }}>
+                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 600, textTransform: 'capitalize' }}>
+                  {fmtMonthLabel(row.month)}
+                </td>
+                <td style={{ padding: '11px 14px', color: C.text }}>{row.pos_count}</td>
+                <td style={{ padding: '11px 14px', color: row.skus_pedir_ya > 0 ? C.red : C.dim, fontWeight: row.skus_pedir_ya > 0 ? 700 : 400 }}>
+                  {row.skus_pedir_ya}
+                </td>
+                <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace' }}>
+                  {fmtCurrency(row.total_value)}
+                </td>
+                <td style={{ padding: '11px 14px', color: C.text }}>
+                  {row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—'}
+                </td>
+                <td style={{ padding: '11px 14px', color: row.capital_liberado != null ? C.green : C.dim, fontFamily: 'monospace', fontWeight: row.capital_liberado != null ? 600 : 400 }}>
+                  {row.capital_liberado != null
+                    ? fmtCurrency(row.capital_liberado)
+                    : t('roi.capital_freed_pending')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -500,6 +539,7 @@ export default function ROIPage() {
   const { t } = useLanguage()
   const [roi,     setRoi]     = useState<InventoryROISummary | null>(null)
   const [history, setHistory] = useState<POLogEntry[]>([])
+  const [monthly, setMonthly] = useState<ROIMonthlyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
@@ -508,12 +548,14 @@ export default function ROIPage() {
     if (initial) setLoading(true)
     setError(null)
     try {
-      const [roiData, histData] = await Promise.all([
+      const [roiData, histData, monthlyData] = await Promise.all([
         getInventoryROI(),
         getPOHistory(20),
+        getROIMonthly(),
       ])
       setRoi(roiData)
       setHistory(histData)
+      setMonthly(monthlyData)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t('roi.error_loading'))
     } finally {
@@ -578,13 +620,8 @@ export default function ROIPage() {
           {/* Section 1b — Adoption (only with decision data) */}
           <AdoptionCard roi={roi} />
 
-          {/* Section 2 — Month comparison */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, marginBottom: 10 }}>
-              {t('roi.monthly_activity')}
-            </div>
-            <MonthKPIs roi={roi} />
-          </div>
+          {/* Section 2 — Monthly evolution */}
+          <MonthlyEvolutionTable rows={monthly} />
 
           {/* Section 3 — PO history table */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>

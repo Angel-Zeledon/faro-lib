@@ -302,6 +302,14 @@ export const translations = {
     'roi.no_orders_registered_hint': 'Exporta tu primera orden de compra desde la pagina de Inventario para que Faro empiece a registrar tu impacto operativo.',
     'roi.go_to_inventory': 'Ir a Inventario',
     'roi.last_order_registered_prefix': 'Ultima orden registrada el',
+    'roi.monthly_evolution_title': 'Evolución mensual',
+    'roi.col_month': 'Mes',
+    'roi.col_orders': 'Pedidos',
+    'roi.col_stockouts_handled': 'Riesgos de quiebre atendidos',
+    'roi.col_value_managed': 'Valor gestionado',
+    'roi.col_adoption': '% Adopción',
+    'roi.col_capital_freed': 'Capital liberado de sobrestock',
+    'roi.capital_freed_pending': 'Aún no hay suficiente historial',
 
     // ── Analyst (AI) ──
     'analyst.time_just_now': 'justo ahora',
@@ -1481,6 +1489,14 @@ export const translations = {
     'roi.no_orders_registered_hint': 'Export your first purchase order from the Inventory page so Faro can start tracking your operational impact.',
     'roi.go_to_inventory': 'Go to Inventory',
     'roi.last_order_registered_prefix': 'Last order registered on',
+    'roi.monthly_evolution_title': 'Monthly evolution',
+    'roi.col_month': 'Month',
+    'roi.col_orders': 'Orders',
+    'roi.col_stockouts_handled': 'Stockout risks handled',
+    'roi.col_value_managed': 'Value managed',
+    'roi.col_adoption': '% Adoption',
+    'roi.col_capital_freed': 'Capital freed from overstock',
+    'roi.capital_freed_pending': 'Not enough history yet',
 
     // ── Analyst (AI) ──
     'analyst.time_just_now': 'just now',
