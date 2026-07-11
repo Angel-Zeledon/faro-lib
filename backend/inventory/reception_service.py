@@ -186,19 +186,23 @@ def receive_po(
     }
 
 
-def get_supplier_lead_time_stats(tenant_id: str) -> list[dict]:
+def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     """
-    Learned lead time per supplier vs. what the user declared.
-    Joined by name (case-insensitive) against the suppliers table.
+    Per-supplier performance: real lead time range (min-max observed, not a
+    single misleading average), on-time rate (real <= declared), fill rate
+    and value purchased. Anchored to suppliers with at least one recorded
+    reception — nothing to score before that.
     """
-    rows = query(
+    lead_rows = query(
         """SELECT o.proveedor,
-                  COUNT(*)::int              AS n_recepciones,
-                  AVG(o.lead_time_days)      AS lead_time_real_avg,
-                  MAX(o.lead_time_days)      AS lead_time_real_max,
-                  MIN(o.lead_time_days)      AS lead_time_real_min,
-                  MAX(o.observed_at)         AS ultima_recepcion,
-                  s.lead_time_dias           AS lead_time_declarado
+                  COUNT(*)::int                      AS n_recepciones,
+                  MIN(o.lead_time_days)              AS lead_time_real_min,
+                  MAX(o.lead_time_days)              AS lead_time_real_max,
+                  AVG(o.lead_time_days)              AS lead_time_real_avg,
+                  MAX(o.observed_at)                 AS ultima_recepcion,
+                  s.lead_time_dias                   AS lead_time_declarado,
+                  AVG(CASE WHEN o.lead_time_days <= s.lead_time_dias THEN 1.0 ELSE 0.0 END)
+                      FILTER (WHERE s.lead_time_dias IS NOT NULL) AS on_time_rate
            FROM supplier_lead_time_obs o
            LEFT JOIN suppliers s
              ON s.tenant_id = o.tenant_id AND LOWER(s.name) = LOWER(o.proveedor)
@@ -207,16 +211,42 @@ def get_supplier_lead_time_stats(tenant_id: str) -> list[dict]:
            ORDER BY n_recepciones DESC, o.proveedor""",
         (tenant_id,),
     )
+
+    fill_rows = query(
+        """SELECT poi.proveedor,
+                  COALESCE(SUM(poi.cantidad_recibida), 0) AS total_recibido,
+                  COALESCE(SUM(poi.cantidad_final), 0)    AS total_pedido,
+                  COALESCE(SUM(poi.cantidad_final * poi.costo_unitario), 0) AS valor_comprado
+           FROM inventory_po_items poi
+           JOIN inventory_po_log pol ON pol.id = poi.po_log_id
+           WHERE poi.tenant_id = %s
+             AND poi.status IN ('approved', 'modified')
+             AND poi.proveedor IS NOT NULL AND poi.proveedor <> ''
+             AND pol.reception_status <> 'pending'
+           GROUP BY poi.proveedor""",
+        (tenant_id,),
+    )
+    fill_by_proveedor = {r["proveedor"]: r for r in fill_rows}
+
     out = []
-    for r in rows:
+    for r in lead_rows:
         d = dict(r)
         if isinstance(d.get("ultima_recepcion"), datetime):
             d["ultima_recepcion"] = d["ultima_recepcion"].isoformat()
-        for k in ("lead_time_real_avg", "lead_time_real_max", "lead_time_real_min"):
+        for k in ("lead_time_real_avg", "lead_time_real_min", "lead_time_real_max"):
             if d.get(k) is not None:
                 d[k] = round(float(d[k]), 1)
+        if d.get("on_time_rate") is not None:
+            d["on_time_rate"] = round(float(d["on_time_rate"]), 3)
+
         declared = d.get("lead_time_declarado")
         avg = d.get("lead_time_real_avg")
         d["desviacion_dias"] = round(avg - declared, 1) if (declared is not None and avg is not None) else None
+
+        fill = fill_by_proveedor.get(d["proveedor"])
+        total_pedido = float(fill["total_pedido"]) if fill else 0.0
+        d["fill_rate"] = round(float(fill["total_recibido"]) / total_pedido, 3) if fill and total_pedido > 0 else None
+        d["valor_comprado"] = round(float(fill["valor_comprado"]), 2) if fill else 0.0
+
         out.append(d)
     return out
