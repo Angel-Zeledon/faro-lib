@@ -67,3 +67,6 @@ memory/
 ForecastingCore/faro_prep_build/forecastlib/
 ForecastingCore/faro_prep_build/build/
 ForecastingCore/faro_prep_build/*.egg-info/
+
+# Local git worktrees (superpowers subagent-driven-development)
+.worktrees/
