@@ -221,3 +221,76 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
                 r[k] = r[k].isoformat()
         result.append(r)
     return result
+
+
+def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
+    """
+    Last `months` calendar months (most recent first): pedidos generados,
+    riesgos de quiebre atendidos, valor gestionado, tasa de adopcion, y
+    capital liberado de sobrestock (delta mes a mes de
+    inventory_overstock_snapshots — None hasta tener 2 snapshots seguidos).
+    """
+    now = datetime.now(tz=timezone.utc)
+    month_starts: list[datetime] = []
+    y, m = now.year, now.month
+    for _ in range(months):
+        month_starts.append(datetime(y, m, 1, tzinfo=timezone.utc))
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    month_starts.sort()  # oldest first
+
+    po_rows = query(
+        """SELECT date_trunc('month', generated_at) AS month,
+                  COUNT(*)::int                          AS pos_count,
+                  COALESCE(SUM(skus_pedir_ya), 0)::int    AS skus_pedir_ya,
+                  COALESCE(SUM(total_value), 0)           AS total_value,
+                  COALESCE(SUM(suggested_count), 0)::int  AS total_suggested,
+                  COALESCE(SUM(approved_count), 0)::int   AS total_approved
+           FROM inventory_po_log
+           WHERE tenant_id = %s AND generated_at >= %s
+           GROUP BY month""",
+        (tenant_id, month_starts[0]),
+    )
+    po_by_month = {r["month"].strftime("%Y-%m"): r for r in po_rows}
+
+    snap_rows = query(
+        """SELECT date_trunc('month', recorded_at) AS month,
+                  AVG(overstock_value) AS overstock_value
+           FROM inventory_overstock_snapshots
+           WHERE tenant_id = %s
+           GROUP BY month""",
+        (tenant_id,),
+    )
+    snap_by_month = {r["month"].strftime("%Y-%m"): float(r["overstock_value"]) for r in snap_rows}
+
+    result: list[dict] = []
+    prev_key: str | None = None
+    for start in month_starts:
+        key = start.strftime("%Y-%m")
+        po = po_by_month.get(key)
+        pos_count       = int(po["pos_count"]) if po else 0
+        skus_pedir_ya   = int(po["skus_pedir_ya"]) if po else 0
+        total_value     = float(po["total_value"]) if po else 0.0
+        total_suggested = int(po["total_suggested"]) if po else 0
+        total_approved  = int(po["total_approved"]) if po else 0
+        adoption_rate = (total_approved / total_suggested) if total_suggested > 0 else None
+
+        capital_liberado = None
+        if prev_key is not None and key in snap_by_month and prev_key in snap_by_month:
+            delta = snap_by_month[prev_key] - snap_by_month[key]
+            if delta > 0:
+                capital_liberado = round(delta, 2)
+
+        result.append({
+            "month":            key,
+            "pos_count":        pos_count,
+            "skus_pedir_ya":    skus_pedir_ya,
+            "total_value":      round(total_value, 2),
+            "adoption_rate":    adoption_rate,
+            "capital_liberado": capital_liberado,
+        })
+        prev_key = key
+
+    result.reverse()  # most recent first
+    return result

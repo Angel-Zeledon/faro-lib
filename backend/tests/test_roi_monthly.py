@@ -83,3 +83,83 @@ class TestRunMonthlyOverstockSnapshot:
             (tid,),
         )
         assert row is None
+
+
+class TestGetMonthlySummary:
+    def test_aggregates_by_calendar_month_and_computes_capital_liberado(self, test_tenant):
+        from backend.inventory.roi_service import get_monthly_summary
+
+        tid = test_tenant["id"]
+        now = datetime.now(tz=timezone.utc)
+        this_month = now.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
+        last_month = (this_month - timedelta(days=1)).replace(
+            day=1, hour=12, minute=0, second=0, microsecond=0
+        )
+
+        # Last month: 2 orders. This month: 1 order.
+        execute(
+            """INSERT INTO inventory_po_log
+                   (tenant_id, session_id, generated_at, sku_count, total_units, total_value,
+                    skus_pedir_ya, skus_pedir_pronto, suggested_count, approved_count)
+               VALUES (%s, 's1', %s, 2, 20, 500, 1, 0, 2, 2)""",
+            (tid, last_month),
+        )
+        execute(
+            """INSERT INTO inventory_po_log
+                   (tenant_id, session_id, generated_at, sku_count, total_units, total_value,
+                    skus_pedir_ya, skus_pedir_pronto, suggested_count, approved_count)
+               VALUES (%s, 's1', %s, 1, 10, 300, 2, 0, 4, 3)""",
+            (tid, last_month),
+        )
+        execute(
+            """INSERT INTO inventory_po_log
+                   (tenant_id, session_id, generated_at, sku_count, total_units, total_value,
+                    skus_pedir_ya, skus_pedir_pronto, suggested_count, approved_count)
+               VALUES (%s, 's1', %s, 1, 5, 150, 1, 1, 2, 1)""",
+            (tid, this_month),
+        )
+
+        # Overstock snapshots: last month 10000, this month 6000 -> 4000 freed.
+        execute(
+            """INSERT INTO inventory_overstock_snapshots
+                   (tenant_id, session_id, overstock_value, recorded_at)
+               VALUES (%s, 's1', 10000, %s)""",
+            (tid, last_month),
+        )
+        execute(
+            """INSERT INTO inventory_overstock_snapshots
+                   (tenant_id, session_id, overstock_value, recorded_at)
+               VALUES (%s, 's1', 6000, %s)""",
+            (tid, this_month),
+        )
+
+        rows = get_monthly_summary(tid, months=3)
+
+        assert len(rows) == 3
+        assert rows[0]["month"] == this_month.strftime("%Y-%m")  # most recent first
+
+        this_row = rows[0]
+        assert this_row["pos_count"] == 1
+        assert this_row["skus_pedir_ya"] == 1
+        assert this_row["total_value"] == 150.0
+        assert this_row["adoption_rate"] == 0.5          # 1 approved / 2 suggested
+        assert this_row["capital_liberado"] == 4000.0
+
+        last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
+        assert last_row["pos_count"] == 2
+        assert last_row["skus_pedir_ya"] == 3
+        assert last_row["total_value"] == 800.0
+        assert last_row["adoption_rate"] == pytest.approx(5 / 6)
+        assert last_row["capital_liberado"] is None      # no snapshot before last_month
+
+    def test_month_with_no_activity_returns_zeroed_row(self, test_tenant):
+        from backend.inventory.roi_service import get_monthly_summary
+
+        rows = get_monthly_summary(test_tenant["id"], months=2)
+
+        assert len(rows) == 2
+        for row in rows:
+            assert row["pos_count"] == 0
+            assert row["skus_pedir_ya"] == 0
+            assert row["adoption_rate"] is None
+            assert row["capital_liberado"] is None
