@@ -119,6 +119,37 @@ def _inventory_alert_loop() -> None:
             log.error("Inventory alert error: %s", e, exc_info=True)
 
 
+def _next_month_start(now: datetime) -> datetime:
+    """Returns the next day-1 00:05 UTC boundary strictly after `now`."""
+    candidate = now.replace(day=1, hour=0, minute=5, second=0, microsecond=0)
+    if candidate <= now:
+        if candidate.month == 12:
+            candidate = candidate.replace(year=candidate.year + 1, month=1)
+        else:
+            candidate = candidate.replace(month=candidate.month + 1)
+    return candidate
+
+
+def _monthly_overstock_snapshot_loop() -> None:
+    """Snapshots each tenant's SOBRESTOCK value on the 1st of every month."""
+    log.info("Monthly overstock snapshot scheduler started")
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            next_run = _next_month_start(now)
+            sleep_secs = (next_run - now).total_seconds()
+            log.info("Overstock snapshot: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
+            time.sleep(max(sleep_secs, 1))
+        except Exception:
+            time.sleep(3600)
+            continue
+        try:
+            from backend.inventory.service import run_monthly_overstock_snapshot
+            run_monthly_overstock_snapshot()
+        except Exception as e:
+            log.error("Overstock snapshot error: %s", e, exc_info=True)
+
+
 def start() -> threading.Thread:
     """Start the worker loop, job scheduler, and inventory alert scheduler."""
     def _run():
@@ -137,5 +168,10 @@ def start() -> threading.Thread:
 
     alert_thread = threading.Thread(target=_inventory_alert_loop, daemon=True, name="inventory-alerts")
     alert_thread.start()
+
+    overstock_thread = threading.Thread(
+        target=_monthly_overstock_snapshot_loop, daemon=True, name="overstock-snapshot",
+    )
+    overstock_thread.start()
 
     return worker_thread
