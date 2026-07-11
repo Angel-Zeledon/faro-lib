@@ -645,8 +645,8 @@ export const receivePO = (
 ) =>
   request<import('./types').ReceptionResult>('POST', `/inventory/po/${poLogId}/receive`, body ?? {})
 
-export const getSupplierLeadTimes = () =>
-  request<import('./types').SupplierLeadTimeStat[]>('GET', '/inventory/suppliers/lead-times')
+export const getSupplierScorecard = () =>
+  request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
 
 // ── Event / promo impact simulator ───────────────────────────────────────────
 export const simulateEvent = (body: {

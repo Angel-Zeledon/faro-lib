@@ -812,15 +812,18 @@ export interface EventSimulationResult {
   }
 }
 
-export interface SupplierLeadTimeStat {
+export interface SupplierScorecardRow {
   proveedor:            string
   n_recepciones:        number
-  lead_time_real_avg:   number | null
-  lead_time_real_max:   number | null
   lead_time_real_min:   number | null
-  ultima_recepcion:     string | null
+  lead_time_real_max:   number | null
+  lead_time_real_avg:   number | null
   lead_time_declarado:  number | null
   desviacion_dias:      number | null
+  on_time_rate:         number | null
+  fill_rate:            number | null
+  valor_comprado:       number
+  ultima_recepcion:     string | null
 }
 
 // A single buyer decision sent to /inventory/log-po when a PO is downloaded.
