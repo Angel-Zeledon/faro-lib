@@ -130,3 +130,14 @@ class TestGetSupplierScorecard:
         assert row["ultima_recepcion"] is None
         assert row["fill_rate"] == 0.0
         assert row["valor_comprado"] == 200.0  # 40 * 5.0, based on what was ordered
+
+
+class TestSupplierScorecardEndpoint:
+    def test_viewer_can_read(self, client, viewer_headers):
+        resp = client.get("/api/v1/inventory/suppliers/scorecard", headers=viewer_headers)
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["data"], list)
+
+    def test_unauthenticated_rejected(self, client):
+        resp = client.get("/api/v1/inventory/suppliers/scorecard")
+        assert resp.status_code == 401

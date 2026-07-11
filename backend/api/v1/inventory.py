@@ -550,11 +550,11 @@ def receive_po(
     return ok(result)
 
 
-@router.get("/suppliers/lead-times")
-def supplier_lead_times(user: CurrentUser = Depends(get_current_user)):
-    """Real lead time per supplier learned from receptions, vs declared."""
+@router.get("/suppliers/scorecard")
+def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
+    """Per-supplier performance: real lead time range, on-time rate, fill rate."""
     from backend.inventory import reception_service as rec_svc
-    return ok(rec_svc.get_supplier_lead_time_stats(user.tenant_id))
+    return ok(rec_svc.get_supplier_scorecard(user.tenant_id))
 
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────

@@ -82,7 +82,7 @@ class TestReceivePO:
         assert obs is not None
 
         # Endpoint exposes the learned stats
-        stats = client.get("/api/v1/inventory/suppliers/lead-times", headers=auth_headers)
+        stats = client.get("/api/v1/inventory/suppliers/scorecard", headers=auth_headers)
         assert stats.status_code == 200
         provs = [s["proveedor"] for s in stats.json()["data"]]
         assert "Proveedor Real" in provs
