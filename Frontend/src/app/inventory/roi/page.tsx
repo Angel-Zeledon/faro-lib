@@ -161,13 +161,13 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
   )
 }
 
-function fmtMonthLabel(month: string): string {
+function fmtMonthLabel(month: string, lang: string): string {
   const [y, m] = month.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('es', { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleDateString(lang, { month: 'long', year: 'numeric' })
 }
 
 function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
 
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
@@ -204,7 +204,7 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                 borderBottom: `1px solid ${C.border}`,
               }}>
                 <td style={{ padding: '11px 14px', color: C.text, fontWeight: 600, textTransform: 'capitalize' }}>
-                  {fmtMonthLabel(row.month)}
+                  {fmtMonthLabel(row.month, lang)}
                 </td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{row.pos_count}</td>
                 <td style={{ padding: '11px 14px', color: row.skus_pedir_ya > 0 ? C.red : C.dim, fontWeight: row.skus_pedir_ya > 0 ? 700 : 400 }}>

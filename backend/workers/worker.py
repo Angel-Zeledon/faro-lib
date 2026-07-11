@@ -151,7 +151,7 @@ def _monthly_overstock_snapshot_loop() -> None:
 
 
 def start() -> threading.Thread:
-    """Start the worker loop, job scheduler, and inventory alert scheduler."""
+    """Start the worker loop, job scheduler, inventory alert scheduler, and monthly overstock snapshot scheduler."""
     def _run():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

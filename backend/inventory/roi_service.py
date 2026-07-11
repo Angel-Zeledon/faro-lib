@@ -241,7 +241,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     month_starts.sort()  # oldest first
 
     po_rows = query(
-        """SELECT date_trunc('month', generated_at) AS month,
+        """SELECT date_trunc('month', generated_at AT TIME ZONE 'UTC') AS month,
                   COUNT(*)::int                          AS pos_count,
                   COALESCE(SUM(skus_pedir_ya), 0)::int    AS skus_pedir_ya,
                   COALESCE(SUM(total_value), 0)           AS total_value,
@@ -255,7 +255,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     po_by_month = {r["month"].strftime("%Y-%m"): r for r in po_rows}
 
     snap_rows = query(
-        """SELECT date_trunc('month', recorded_at) AS month,
+        """SELECT date_trunc('month', recorded_at AT TIME ZONE 'UTC') AS month,
                   AVG(overstock_value) AS overstock_value
            FROM inventory_overstock_snapshots
            WHERE tenant_id = %s
