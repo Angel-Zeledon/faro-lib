@@ -1,12 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import {
   listSuppliers, createSupplier, updateSupplier, deleteSupplier,
 } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import {
-  Truck, Plus, Edit2, Trash2, X, Save, Info, ChevronDown,
+  Truck, Plus, Edit2, Trash2, X, Save, Info, ChevronDown, BarChart3,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -361,18 +362,27 @@ export default function SuppliersPage() {
           </div>
         </div>
 
-        {!isFormOpen && (
-          <button
-            onClick={() => { setEditing(null); setShowForm(true) }}
-            style={{
-              all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              background: C.indigo, color: '#fff',
-            }}
-          >
-            <Plus size={14} /> Agregar proveedor
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Link href="/inventory/suppliers/scorecard" style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 12, color: C.dim, textDecoration: 'none',
+            padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
+          }}>
+            <BarChart3 size={13} /> Scorecard
+          </Link>
+          {!isFormOpen && (
+            <button
+              onClick={() => { setEditing(null); setShowForm(true) }}
+              style={{
+                all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: C.indigo, color: '#fff',
+              }}
+            >
+              <Plus size={14} /> Agregar proveedor
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Error */}
