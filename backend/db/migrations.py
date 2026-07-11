@@ -448,6 +448,19 @@ _MIGRATIONS = _BASE_SCHEMA + [
      )"""),
     ("create_supplier_lead_time_obs_idx",
      "CREATE INDEX IF NOT EXISTS slto_tenant_prov_idx ON supplier_lead_time_obs (tenant_id, proveedor)"),
+    # ── ROI monthly evolution (feature 1.5): capital freed from overstock ────
+    # One row per tenant per month, taken by a scheduled job on the 1st.
+    # No historical backfill — the metric only exists from here forward.
+    ("create_inventory_overstock_snapshots",
+     """CREATE TABLE IF NOT EXISTS inventory_overstock_snapshots (
+         id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id       TEXT NOT NULL,
+         session_id      TEXT NOT NULL,
+         overstock_value FLOAT NOT NULL,
+         recorded_at     TIMESTAMPTZ DEFAULT NOW()
+     )"""),
+    ("create_inventory_overstock_snapshots_idx",
+     "CREATE INDEX IF NOT EXISTS overstock_snapshots_tenant_idx ON inventory_overstock_snapshots (tenant_id, recorded_at DESC)"),
 ]
 
 

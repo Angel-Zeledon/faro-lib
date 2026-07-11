@@ -1239,3 +1239,41 @@ def run_daily_inventory_alerts() -> None:
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)
+
+
+def _sum_overstock_value(items: list[dict]) -> float:
+    """Total valor_inventario of SKUs currently flagged SOBRESTOCK."""
+    return sum(
+        (i.get("valor_inventario") or 0)
+        for i in items
+        if i.get("signal") == "SOBRESTOCK"
+    )
+
+
+def run_monthly_overstock_snapshot() -> None:
+    """
+    Called once a month by the scheduler (day 1). For each tenant with a
+    completed session, records the current total SOBRESTOCK value so the
+    ROI monthly view can compute capital freed month over month.
+    """
+    tenants = get_tenants_with_active_sessions()
+    log.info("overstock_snapshot: checking %d tenants", len(tenants))
+
+    for tenant in tenants:
+        tid = tenant["tenant_id"]
+        try:
+            session = get_latest_completed_session(tid)
+            if not session:
+                continue
+
+            items = get_inventory_status(tid, session["session_id"])
+            overstock_value = _sum_overstock_value(items)
+
+            execute(
+                """INSERT INTO inventory_overstock_snapshots
+                       (tenant_id, session_id, overstock_value)
+                   VALUES (%s, %s, %s)""",
+                (tid, session["session_id"], overstock_value),
+            )
+        except Exception as e:
+            log.error("overstock_snapshot: tenant=%s error=%s", tid, e)
