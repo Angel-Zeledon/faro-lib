@@ -715,6 +715,15 @@ export interface InventoryROISummary {
   pos_last_month:            number
 }
 
+export interface ROIMonthlyRow {
+  month:             string          // 'YYYY-MM'
+  pos_count:         number
+  skus_pedir_ya:     number
+  total_value:       number
+  adoption_rate:     number | null
+  capital_liberado:  number | null
+}
+
 export interface POLogEntry {
   id:                string
   session_id:        string

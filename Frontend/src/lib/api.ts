@@ -629,6 +629,9 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
 export const getInventoryROI = () =>
   request<InventoryROISummary>('GET', '/inventory/roi')
 
+export const getROIMonthly = (months = 6) =>
+  request<import('./types').ROIMonthlyRow[]>('GET', `/inventory/roi/monthly?months=${months}`)
+
 export const getPOHistory = (limit = 20) =>
   request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`)
 
