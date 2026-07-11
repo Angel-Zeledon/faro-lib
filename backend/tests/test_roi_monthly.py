@@ -163,3 +163,35 @@ class TestGetMonthlySummary:
             assert row["skus_pedir_ya"] == 0
             assert row["adoption_rate"] is None
             assert row["capital_liberado"] is None
+
+    def test_capital_liberado_is_none_when_overstock_increases(self, test_tenant):
+        from backend.inventory.roi_service import get_monthly_summary
+
+        tid = test_tenant["id"]
+        now = datetime.now(tz=timezone.utc)
+        this_month = now.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
+        last_month = (this_month - timedelta(days=1)).replace(
+            day=1, hour=12, minute=0, second=0, microsecond=0
+        )
+
+        # Last month: overstock value = 5000. This month: overstock value = 8000.
+        # Delta = 5000 - 8000 = -3000 (negative), so capital_liberado should be None.
+        execute(
+            """INSERT INTO inventory_overstock_snapshots
+                   (tenant_id, session_id, overstock_value, recorded_at)
+               VALUES (%s, 's1', 5000, %s)""",
+            (tid, last_month),
+        )
+        execute(
+            """INSERT INTO inventory_overstock_snapshots
+                   (tenant_id, session_id, overstock_value, recorded_at)
+               VALUES (%s, 's1', 8000, %s)""",
+            (tid, this_month),
+        )
+
+        rows = get_monthly_summary(tid, months=2)
+
+        assert len(rows) == 2
+        this_row = rows[0]  # most recent first
+        assert this_row["month"] == this_month.strftime("%Y-%m")
+        assert this_row["capital_liberado"] is None  # overstock went UP, so no capital freed
