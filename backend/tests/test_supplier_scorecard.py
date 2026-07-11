@@ -94,3 +94,39 @@ class TestGetSupplierScorecard:
         rows = get_supplier_scorecard(tid)
 
         assert not any(r["proveedor"] == prov for r in rows)
+
+    def test_supplier_with_fill_data_but_no_lead_time_observation_still_appears(
+        self, client, auth_headers, test_tenant
+    ):
+        from backend.inventory.reception_service import get_supplier_scorecard
+
+        tid = test_tenant["id"]
+        prov = f"ZeroRecv-{uuid.uuid4().hex[:6]}"
+        _make_supplier(tid, prov, lead_time_dias=7)
+
+        sku = f"SC0-{uuid.uuid4().hex[:6]}"
+        po = _make_po(client, auth_headers, sku=sku, qty=40, proveedor=prov, costo_unitario=5.0)
+
+        # Reception with 0 units received for every line: leaves 'pending',
+        # sets reception_status to 'not_received', and writes NO row to
+        # supplier_lead_time_obs (no units received => no supplier observed).
+        resp = client.post(
+            f"/api/v1/inventory/po/{po}/receive",
+            json={"lines": [{"sku": sku, "cantidad_recibida": 0}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["reception_status"] == "not_received"
+
+        rows = get_supplier_scorecard(tid)
+        row = next(r for r in rows if r["proveedor"] == prov)
+
+        assert row["n_recepciones"] == 0
+        assert row["lead_time_real_min"] is None
+        assert row["lead_time_real_max"] is None
+        assert row["lead_time_real_avg"] is None
+        assert row["on_time_rate"] is None
+        assert row["desviacion_dias"] is None
+        assert row["ultima_recepcion"] is None
+        assert row["fill_rate"] == 0.0
+        assert row["valor_comprado"] == 200.0  # 40 * 5.0, based on what was ordered

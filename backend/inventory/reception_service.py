@@ -249,4 +249,29 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
         d["valor_comprado"] = round(float(fill["valor_comprado"]), 2) if fill else 0.0
 
         out.append(d)
+
+    # Suppliers with fill/value data (a reception event happened — the PO left
+    # 'pending') but zero lead-time observations (e.g. everything received was
+    # 0 units, so receive_po never wrote a supplier_lead_time_obs row). They
+    # still belong on the scorecard with a real fill_rate/valor_comprado;
+    # lead-time fields are simply unknown. Appended after the lead-time group,
+    # ordered by proveedor.
+    lead_proveedores = {r["proveedor"] for r in lead_rows}
+    fill_only_proveedores = sorted(p for p in fill_by_proveedor if p not in lead_proveedores)
+    for prov in fill_only_proveedores:
+        fill = fill_by_proveedor[prov]
+        total_pedido = float(fill["total_pedido"])
+        out.append({
+            "proveedor": prov,
+            "n_recepciones": 0,
+            "lead_time_real_min": None,
+            "lead_time_real_max": None,
+            "lead_time_real_avg": None,
+            "ultima_recepcion": None,
+            "lead_time_declarado": None,
+            "on_time_rate": None,
+            "desviacion_dias": None,
+            "fill_rate": round(float(fill["total_recibido"]) / total_pedido, 3) if total_pedido > 0 else None,
+            "valor_comprado": round(float(fill["valor_comprado"]), 2),
+        })
     return out
