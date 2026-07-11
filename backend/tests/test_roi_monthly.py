@@ -195,3 +195,21 @@ class TestGetMonthlySummary:
         this_row = rows[0]  # most recent first
         assert this_row["month"] == this_month.strftime("%Y-%m")
         assert this_row["capital_liberado"] is None  # overstock went UP, so no capital freed
+
+
+class TestRoiMonthlyEndpoint:
+    def test_viewer_can_read(self, client, viewer_headers):
+        resp = client.get("/api/v1/inventory/roi/monthly", headers=viewer_headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert isinstance(data, list)
+        assert len(data) == 6  # default months
+
+    def test_unauthenticated_rejected(self, client):
+        resp = client.get("/api/v1/inventory/roi/monthly")
+        assert resp.status_code == 401
+
+    def test_months_param_respected(self, client, auth_headers):
+        resp = client.get("/api/v1/inventory/roi/monthly?months=3", headers=auth_headers)
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 3

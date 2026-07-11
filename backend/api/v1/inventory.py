@@ -468,6 +468,16 @@ def get_roi(user: CurrentUser = Depends(get_current_user)):
     return ok(get_roi_summary(user.tenant_id))
 
 
+@router.get("/roi/monthly")
+def get_roi_monthly(
+    months: int = Query(default=6, ge=1, le=24),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Últimos N meses: pedidos, riesgos de quiebre atendidos, adopción, capital liberado de sobrestock."""
+    from backend.inventory.roi_service import get_monthly_summary
+    return ok(get_monthly_summary(user.tenant_id, months))
+
+
 @router.get("/po-history")
 def po_history(
     limit: int = Query(default=20, ge=1, le=100),
