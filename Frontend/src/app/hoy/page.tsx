@@ -9,6 +9,7 @@ import { getMorningBriefing, getMorningNarrative, getPOHistory } from '@/lib/api
 import type { MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
+import DataFreshness from '@/components/ui/DataFreshness'
 import { getUser } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 import NarrativeCard from '@/components/ui/NarrativeCard'
@@ -340,7 +341,7 @@ export default function HoyPage() {
  const [pendingPOs, setPendingPOs] = useState<POLogEntry[]>([])
 
  const user    = getUser()
- const { profile } = useBusinessProfile()
+ const { profile, advancedMode } = useBusinessProfile()
 
  // Load briefing when session changes
  const load = useCallback(async (sid: string) => {
@@ -586,15 +587,19 @@ export default function HoyPage() {
      )}
     </div>
 
-    {/* Session selector */}
-    <SessionBar
-     currentSession={currentSession}
-     completedSessions={completedSessions}
-     sessionId={sessionId}
-     onSelect={setSessionId}
-     loading={sessionsLoading}
-     onRefresh={() => load(sessionId)}
-    />
+    {/* Session selector (advanced) or data freshness (normal) */}
+    {advancedMode ? (
+     <SessionBar
+      currentSession={currentSession}
+      completedSessions={completedSessions}
+      sessionId={sessionId}
+      onSelect={setSessionId}
+      loading={sessionsLoading}
+      onRefresh={() => load(sessionId)}
+     />
+    ) : (
+     <DataFreshness currentSession={currentSession} loading={sessionsLoading} />
+    )}
    </div>
 
    {/* ── Loading state ── */}

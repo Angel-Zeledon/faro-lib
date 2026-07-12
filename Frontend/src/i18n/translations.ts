@@ -1251,6 +1251,12 @@ export const translations = {
     'forecast.warn_these_models': 'estos modelos',
     'forecast.warn_this_model': 'este modelo',
     'forecast.warn_will_be_ignored_by': 'serán ignorados por',
+
+    // ── Indicador de frescura de datos ──
+    'freshness.updated_prefix': 'Ventas actualizadas',
+    'freshness.upload_new':     'Subir ventas nuevas',
+    'freshness.stale_warning':  'Tus recomendaciones se basan en ventas de hace más de 2 semanas. Sube tus ventas recientes.',
+    'freshness.no_data':        'Aún no hay datos de ventas',
   },
   en: {
     // ── Legacy flat keys ──
@@ -2493,6 +2499,12 @@ export const translations = {
     'forecast.warn_these_models': 'these models',
     'forecast.warn_this_model': 'this model',
     'forecast.warn_will_be_ignored_by': 'will be ignored by',
+
+    // ── Data freshness indicator ──
+    'freshness.updated_prefix': 'Sales updated',
+    'freshness.upload_new':     'Upload new sales',
+    'freshness.stale_warning':  'Your recommendations are based on sales more than 2 weeks old. Upload your recent sales.',
+    'freshness.no_data':        'No sales data yet',
   },
 } as const
 

@@ -14,10 +14,12 @@ import type {
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
+import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
 import HelpTip from '@/components/ui/HelpTip'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
+import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
@@ -648,6 +650,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
 export default function InventoryPage() {
  const { t } = useLanguage()
  const { addToast } = useToast()
+ const { advancedMode } = useBusinessProfile()
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[] } | null>(null)
@@ -910,6 +913,7 @@ export default function InventoryPage() {
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
  {/* Session */}
+ {advancedMode ? (
  <SessionBar
  currentSession={currentSession}
  completedSessions={completedSessions}
@@ -917,6 +921,9 @@ export default function InventoryPage() {
  onSelect={id => { setSessionId(id); load(id) }}
  onRefresh={() => sessionId ? load(sessionId) : undefined}
  />
+ ) : (
+ <DataFreshness currentSession={currentSession} />
+ )}
 
  {/* View toggle */}
  <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
