@@ -376,23 +376,23 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
                 round(stock_actual * float(stock["costo_unitario"]), 2)
                 if stock.get("costo_unitario") is not None else None
             )
-            if recomendado > 0:
-                _demanda_lt  = round(avg_daily * lead_time, 2)
-                _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
-                _antes_moq   = round(max(0.0, _demanda_lt + _safety - stock_actual), 2)
-                calc_explanation = {
-                    "demanda_diaria":    round(avg_daily, 2),
-                    "lead_time_dias":    lead_time,
-                    "demanda_lead_time": _demanda_lt,
-                    "safety_stock":      _safety,
-                    "stock_actual":      stock_actual,
-                    "antes_moq":         _antes_moq,
-                    "moq":               moq,
-                    "cantidad_final":    recomendado,
-                }
-            else:
-                # Enough stock: no order suggested, so no cálculo to explain.
-                calc_explanation = {"suficiente": True}
+            _demanda_lt  = round(avg_daily * lead_time, 2)
+            _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
+            _antes_moq   = round(max(0.0, _demanda_lt + _safety - stock_actual), 2)
+            calc_explanation = {
+                "demanda_diaria":    round(avg_daily, 2),
+                "lead_time_dias":    lead_time,
+                "demanda_lead_time": _demanda_lt,
+                "safety_stock":      _safety,
+                "stock_actual":      stock_actual,
+                "antes_moq":         _antes_moq,
+                "moq":               moq,
+                "cantidad_final":    recomendado,
+            }
+            if recomendado <= 0:
+                # Enough stock: keep the numbers (the what-if simulator needs
+                # them) but flag it so the tooltip shows "no ordering needed".
+                calc_explanation["suficiente"] = True
         else:
             avg_daily = avg_std = None
             dias_cobertura = None
