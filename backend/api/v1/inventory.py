@@ -3,6 +3,7 @@ Inventory management API.
 GET/POST/PATCH/DELETE /inventory/stock     — per-SKU stock CRUD
 GET                   /inventory/status    — traffic-light signal + recommendations
 POST                  /inventory/bulk      — bulk CSV import
+GET                   /inventory/template.csv — downloadable import template
 """
 
 import asyncio

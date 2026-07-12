@@ -239,6 +239,19 @@ class TestBulkImport:
         assert row["proveedor"] == "Distribuidora Sur"   # regression: was silently dropped
         assert row["notas"] == "fragil"
 
+    def test_bulk_import_viewer_denied(self, client, viewer_headers):
+        """POST /bulk is mutating: a viewer is denied and no row is created."""
+        sku = _sku()
+        csv_bytes = self._make_csv([{"sku": sku, "stock_actual": 99, "lead_time_dias": 7}])
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            headers=viewer_headers,
+            files={"file": ("stock.csv", csv_bytes, "text/csv")},
+        )
+        assert resp.status_code == 403
+        from backend.db.connection import query_one
+        assert query_one("SELECT 1 FROM inventory_stock WHERE sku = %s", (sku,)) is None
+
     def test_bulk_import_handles_bom(self, client, auth_headers):
         """Excel CSVs exported with UTF-8 BOM should be parsed correctly."""
         sku = _sku()
@@ -292,6 +305,7 @@ class TestBulkImport:
         r = client.get("/api/v1/inventory/template.csv", headers=auth_headers)
         assert r.status_code == 200
         assert "text/csv" in r.headers["content-type"]
+        assert "plantilla_inventario.csv" in r.headers["content-disposition"]
         text = r.content.decode("utf-8-sig")
         lines = [ln for ln in text.splitlines() if ln.strip()]
         header = lines[0].split(",")
