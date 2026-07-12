@@ -6,6 +6,7 @@ import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import { useToast } from '@/contexts/ToastContext'
 import { useActiveSession } from '@/contexts/ActiveSessionContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import Badge from '@/components/ui/Badge'
 
 interface Notif {
@@ -17,15 +18,16 @@ interface Notif {
   read:  boolean
 }
 
-const PAGE_TITLES: Record<string, string> = {
-  '/dashboard': 'Executive Dashboard',
-  '/data':      'Data Workspace',
-  '/forecast':  'Forecast Studio',
-  '/skus':      'SKU Intelligence',
-  '/analyst':   'AI Analyst',
-  '/reports':   'Reports & Monitoring',
-  '/config':    'System Configuration',
-  '/users':     'User Management',
+// Titles resolved via i18n so they follow the language toggle.
+const PAGE_TITLE_KEYS: Record<string, string> = {
+  '/dashboard': 'topbar.title_dashboard',
+  '/data':      'topbar.title_data',
+  '/forecast':  'topbar.title_forecast',
+  '/analyst':   'topbar.title_analyst',
+  '/reports':   'topbar.title_reports',
+  '/config':    'topbar.title_config',
+  '/users':     'topbar.title_users',
+  '/skus':      'skus.page_title',
 }
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'muted'> = {
@@ -44,7 +46,8 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'info' | 'danger' |
 
 export default function TopBar() {
   const path    = usePathname()
-  const title   = PAGE_TITLES[path] || 'Faro'
+  const { t }   = useLanguage()
+  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'Faro'
   const { addToast } = useToast()
   const { activeSessionId } = useActiveSession()
 
@@ -76,11 +79,11 @@ export default function TopBar() {
         if (!initDone.current || prev === s.status) return
 
         if (s.status === 'COMPLETED' && prev !== 'COMPLETED') {
-          addToast('Training complete', `"${s.name}" finished successfully`, 'success')
-          fresh.push({ id: `${s.session_id}-done-${Date.now()}`, title: 'Training complete', body: `"${s.name}" finished`, type: 'success', time: new Date(), read: false })
+          addToast(t('topbar.notif_complete_title'), `"${s.name}" ${t('topbar.notif_complete_body')}`, 'success')
+          fresh.push({ id: `${s.session_id}-done-${Date.now()}`, title: t('topbar.notif_complete_title'), body: `"${s.name}" ${t('topbar.notif_complete_body')}`, type: 'success', time: new Date(), read: false })
         } else if (s.status === 'FAILED' && prev !== 'FAILED') {
-          addToast('Training failed', `"${s.name}" encountered an error`, 'error')
-          fresh.push({ id: `${s.session_id}-fail-${Date.now()}`, title: 'Training failed', body: `"${s.name}" failed`, type: 'error', time: new Date(), read: false })
+          addToast(t('topbar.notif_failed_title'), `"${s.name}" ${t('topbar.notif_failed_body')}`, 'error')
+          fresh.push({ id: `${s.session_id}-fail-${Date.now()}`, title: t('topbar.notif_failed_title'), body: `"${s.name}" ${t('topbar.notif_failed_body')}`, type: 'error', time: new Date(), read: false })
         }
       })
 
@@ -91,7 +94,7 @@ export default function TopBar() {
     } catch {
       return false
     }
-  }, [addToast])
+  }, [addToast, t])
 
   useEffect(() => {
     let cancelled = false
@@ -199,7 +202,7 @@ export default function TopBar() {
                 overflow: 'hidden',
               }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Notifications</span>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{t('topbar.notifications')}</span>
                   <button onClick={() => setShowPanel(false)} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex' }}>
                     <X size={13} />
                   </button>
@@ -208,8 +211,8 @@ export default function TopBar() {
                   {notifs.length === 0 ? (
                     <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--dim)', fontSize: 12 }}>
                       <Bell size={24} style={{ margin: '0 auto 10px', opacity: 0.25, display: 'block' }} />
-                      No notifications yet.
-                      <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>Job completions and failures appear here.</div>
+                      {t('topbar.no_notifications')}
+                      <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>{t('topbar.no_notifications_hint')}</div>
                     </div>
                   ) : notifs.map(n => (
                     <div key={n.id} style={{
@@ -231,7 +234,7 @@ export default function TopBar() {
                 {notifs.length > 0 && (
                   <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
                     <button onClick={() => setNotifs([])} style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)' }}>
-                      Clear all
+                      {t('topbar.clear_all')}
                     </button>
                   </div>
                 )}

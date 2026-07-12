@@ -86,6 +86,23 @@ export const translations = {
     'nav.users':          'Usuarios',
     'nav.config':         'Configuración',
 
+    // ── TopBar ──
+    'topbar.title_dashboard':           'Panel Ejecutivo',
+    'topbar.title_data':                'Mis Archivos',
+    'topbar.title_forecast':            'Estudio de Predicción',
+    'topbar.title_analyst':             'Asistente IA',
+    'topbar.title_reports':             'Reportes y Monitoreo',
+    'topbar.title_config':              'Configuración',
+    'topbar.title_users':               'Usuarios',
+    'topbar.notif_complete_title':      'Entrenamiento completado',
+    'topbar.notif_complete_body':       'terminó correctamente',
+    'topbar.notif_failed_title':        'Entrenamiento fallido',
+    'topbar.notif_failed_body':         'encontró un error',
+    'topbar.notifications':             'Notificaciones',
+    'topbar.no_notifications':          'Aún no hay notificaciones.',
+    'topbar.no_notifications_hint':     'Aquí aparecen los entrenamientos completados y fallidos.',
+    'topbar.clear_all':                 'Limpiar todo',
+
     // ── Navigation groups ──
     'group.operation':    'Operación',
     'group.data':         'Datos',
@@ -1276,6 +1293,23 @@ export const translations = {
     'nav.accuracy':       'Accuracy',
     'nav.users':          'Users',
     'nav.config':         'Settings',
+
+    // ── TopBar ──
+    'topbar.title_dashboard':           'Executive Dashboard',
+    'topbar.title_data':                'Data Workspace',
+    'topbar.title_forecast':            'Forecast Studio',
+    'topbar.title_analyst':             'AI Analyst',
+    'topbar.title_reports':             'Reports & Monitoring',
+    'topbar.title_config':              'System Configuration',
+    'topbar.title_users':               'User Management',
+    'topbar.notif_complete_title':      'Training complete',
+    'topbar.notif_complete_body':       'finished successfully',
+    'topbar.notif_failed_title':        'Training failed',
+    'topbar.notif_failed_body':         'encountered an error',
+    'topbar.notifications':             'Notifications',
+    'topbar.no_notifications':          'No notifications yet.',
+    'topbar.no_notifications_hint':     'Job completions and failures appear here.',
+    'topbar.clear_all':                 'Clear all',
 
     // ── Navigation groups ──
     'group.operation':    'Operations',
