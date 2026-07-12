@@ -36,18 +36,28 @@ class TestDetectGranularity:
         assert result["skus_by_frequency"]["W"] == ["WEEKLY_SKU"]
         assert result["suggested_target"] == "W"  # coarsest present
 
-    def test_conflict_three_frequencies_target_is_coarsest(self):
+    def test_conflict_four_frequencies_ordered_finest_to_coarsest(self):
         rows = []
         for d in _dates("2024-01-01", 10, "D"):
             rows.append((d, "D_SKU", 5.0))
         for d in _dates("2024-01-01", 6, "W"):
             rows.append((d, "W_SKU", 20.0))
+        for d in _dates("2024-01-01", 5, "2W"):
+            rows.append((d, "2W_SKU", 35.0))
         for d in _dates("2024-01-01", 4, "MS"):
             rows.append((d, "MS_SKU", 90.0))
         result = DataProfiler().detect_granularity(_df(rows), "date", "sku")
         assert result["status"] == "conflict"
-        assert result["detected"] == ["D", "W", "MS"]
+        assert result["detected"] == ["D", "W", "2W", "MS"]
+        assert result["skus_by_frequency"]["2W"] == ["2W_SKU"]
         assert result["suggested_target"] == "MS"
+
+    def test_classifies_biweekly_bucket(self):
+        rows = [(d, "BIWEEKLY", 12.0) for d in _dates("2024-01-01", 5, "2W")]
+        result = DataProfiler().detect_granularity(_df(rows), "date", "sku")
+        assert result["status"] == "homogeneous"
+        assert result["detected"] == ["2W"]
+        assert result["skus_by_frequency"]["2W"] == ["BIWEEKLY"]
 
     def test_irregular_sku_excluded_from_conflict(self):
         rows = []
