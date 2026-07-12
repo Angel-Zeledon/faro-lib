@@ -27,7 +27,7 @@ export default function LoginPage() {
         role:      res.user.role,
         tenant_id: res.user.tenant_id,
       })
-      router.replace('/dashboard')
+      router.replace('/hoy')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
