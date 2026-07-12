@@ -37,6 +37,11 @@ class StockUpsert(BaseModel):
     moq:            float           = Field(default=1, ge=1)
     proveedor:      Optional[str]   = None
     notas:          Optional[str]   = None
+    precio_venta:   Optional[float] = Field(default=None, ge=0)
+    categoria:      Optional[str]   = None
+    marca:          Optional[str]   = None
+    unidad_medida:  Optional[str]   = None
+    codigo_barras:  Optional[str]   = None
 
 
 class StockPatch(BaseModel):
@@ -48,6 +53,11 @@ class StockPatch(BaseModel):
     moq:            Optional[float] = Field(default=None, ge=1)
     proveedor:      Optional[str]   = None
     notas:          Optional[str]   = None
+    precio_venta:   Optional[float] = Field(default=None, ge=0)
+    categoria:      Optional[str]   = None
+    marca:          Optional[str]   = None
+    unidad_medida:  Optional[str]   = None
+    codigo_barras:  Optional[str]   = None
 
 
 # ── Stock CRUD ─────────────────────────────────────────────────────────────────

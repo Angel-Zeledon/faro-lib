@@ -26,6 +26,7 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
         "display_name", "stock_actual", "stock_minimo",
         "lead_time_dias", "costo_unitario", "moq", "proveedor", "notas",
         "service_level",
+        "precio_venta", "categoria", "marca", "unidad_medida", "codigo_barras",
     }
     
     safe = {k: v for k, v in data.items() if k in allowed}
@@ -426,6 +427,11 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             "moq":                moq,
             "proveedor":          stock.get("proveedor") if stock else None,
             "notas":              stock.get("notas") if stock else None,
+            "precio_venta":       float(stock["precio_venta"]) if stock and stock.get("precio_venta") is not None else None,
+            "categoria":          stock.get("categoria") if stock else None,
+            "marca":              stock.get("marca") if stock else None,
+            "unidad_medida":      stock.get("unidad_medida") if stock else None,
+            "codigo_barras":      stock.get("codigo_barras") if stock else None,
             "has_forecast":       has_forecast,
             "has_stock":          has_stock,
             "demanda_diaria":     round(avg_daily, 4) if avg_daily is not None else None,

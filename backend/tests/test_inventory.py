@@ -113,6 +113,32 @@ class TestStockCRUD:
         assert data["stock_actual"] == 55
         assert data["lead_time_dias"] == 20  # unchanged
 
+    def test_patch_persists_catalog_fields(self, client, auth_headers, viewer_headers):
+        sku = _sku()
+        client.put(f"/api/v1/inventory/stock/{sku}",
+                   json={"stock_actual": 10, "lead_time_dias": 7},
+                   headers=auth_headers)
+        payload = {"precio_venta": 19.99, "categoria": "Bebidas",
+                   "marca": "AguaPura", "unidad_medida": "caja",
+                   "codigo_barras": "7501234567890"}
+        # viewer denied + state unchanged
+        vr = client.patch(f"/api/v1/inventory/stock/{sku}", json=payload, headers=viewer_headers)
+        assert vr.status_code == 403
+        from backend.db.connection import query_one
+        row0 = query_one("SELECT precio_venta FROM inventory_stock WHERE sku = %s", (sku,))
+        assert row0["precio_venta"] is None
+        # analyst succeeds + DB reflects every field
+        r = client.patch(f"/api/v1/inventory/stock/{sku}", json=payload, headers=auth_headers)
+        assert r.status_code == 200
+        row = query_one(
+            "SELECT precio_venta, categoria, marca, unidad_medida, codigo_barras "
+            "FROM inventory_stock WHERE sku = %s", (sku,))
+        assert float(row["precio_venta"]) == 19.99
+        assert row["categoria"] == "Bebidas"
+        assert row["marca"] == "AguaPura"
+        assert row["unidad_medida"] == "caja"
+        assert row["codigo_barras"] == "7501234567890"
+
     def test_delete_sku(self, client, auth_headers):
         sku = _sku()
         client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 10}, headers=auth_headers)
