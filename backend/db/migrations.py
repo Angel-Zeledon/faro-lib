@@ -376,6 +376,28 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS unidad_medida TEXT"),
     ("add_codigo_barras_to_inventory_stock",
      "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS codigo_barras TEXT"),
+    ("create_warehouses",
+     """CREATE TABLE IF NOT EXISTS warehouses (
+         id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id  TEXT NOT NULL,
+         name       TEXT NOT NULL,
+         is_default BOOLEAN NOT NULL DEFAULT FALSE,
+         created_at TIMESTAMPTZ DEFAULT NOW(),
+         UNIQUE (tenant_id, name)
+     )"""),
+    ("add_bodega_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS bodega TEXT NOT NULL DEFAULT 'principal'"),
+    ("drop_inventory_stock_tenant_sku_unique",
+     "ALTER TABLE inventory_stock DROP CONSTRAINT IF EXISTS inventory_stock_tenant_id_sku_key"),
+    ("add_inventory_stock_tenant_sku_bodega_unique",
+     """DO $$ BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint WHERE conname = 'inventory_stock_tenant_sku_bodega_key'
+         ) THEN
+           ALTER TABLE inventory_stock
+             ADD CONSTRAINT inventory_stock_tenant_sku_bodega_key UNIQUE (tenant_id, sku, bodega);
+         END IF;
+       END $$"""),
     ("create_jobs",
      """CREATE TABLE IF NOT EXISTS jobs (
          id           TEXT PRIMARY KEY,

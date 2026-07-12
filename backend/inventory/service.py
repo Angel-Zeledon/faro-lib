@@ -27,8 +27,14 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
         "lead_time_dias", "costo_unitario", "moq", "proveedor", "notas",
         "service_level",
         "precio_venta", "categoria", "marca", "unidad_medida", "codigo_barras",
+        "bodega",
     }
-    
+
+    # bodega is NOT NULL with a DB default of 'principal', but the ON CONFLICT
+    # target now includes it, so the INSERT must always supply a value.
+    if "bodega" not in data:
+        data = {**data, "bodega": "principal"}
+
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
         raise ValueError("No valid fields to update")
@@ -36,15 +42,18 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
     phs    = ", ".join(["%s"] * len(safe))
-    upd    = ", ".join(f"{k} = EXCLUDED.{k}" for k in safe)
+    upd    = ", ".join(f"{k} = EXCLUDED.{k}" for k in safe if k != "bodega")
 
     execute(
         f"""INSERT INTO inventory_stock (tenant_id, sku, {cols}, updated_at)
             VALUES (%s, %s, {phs}, NOW())
-            ON CONFLICT (tenant_id, sku) DO UPDATE
+            ON CONFLICT (tenant_id, sku, bodega) DO UPDATE
             SET {upd}, updated_at = NOW()""",
         (tenant_id, sku, *values),
     )
+    # NOTE: get_stock(tenant, sku) is not yet warehouse-aware — with multiple
+    # bodega rows for the same SKU it returns whichever row Postgres returns
+    # first (no ORDER BY). Warehouse-aware reads land in a later task.
     row = get_stock(tenant_id, sku)
 
     # Auto-snapshot when stock_actual is updated
