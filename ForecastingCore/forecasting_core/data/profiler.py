@@ -718,3 +718,78 @@ class DataProfiler:
         except Exception:
             pass
         return None
+
+    # Canonical frequency bucket order, finest to coarsest. Every consumer of
+    # detect_granularity's "detected" list relies on this exact order to know
+    # which frequency is coarser without re-deriving it.
+    _FREQ_BUCKETS = ["D", "W", "2W", "MS"]
+
+    def _classify_sku_frequency(self, dates: pd.Series) -> Optional[str]:
+        """
+        Classify one SKU's date series into a frequency bucket by the median
+        gap between consecutive (sorted, deduplicated) dates. Returns None for
+        insufficient history or an irregular cadence — such SKUs are excluded
+        from the granularity conflict determination entirely, not treated as
+        a fifth bucket.
+        """
+        d = pd.to_datetime(dates, errors="coerce").dropna().sort_values().drop_duplicates()
+        if len(d) < 3:
+            return None
+        median_gap = d.diff().dropna().median()
+        days = median_gap.days
+        if days == 1:
+            return "D"
+        if 6 <= days <= 8:
+            return "W"
+        if 13 <= days <= 15:
+            return "2W"
+        if 28 <= days <= 35:
+            return "MS"
+        return None
+
+    def detect_granularity(
+        self, df: pd.DataFrame, date_col: Optional[str], group_col: Optional[str],
+    ) -> dict:
+        """
+        Detect per-SKU temporal granularity and flag heterogeneous conflicts.
+
+        Returns:
+            {
+              "status":             "homogeneous" | "conflict" | "unknown",
+              "detected":           [...],  # sorted finest→coarsest, only buckets present
+              "skus_by_frequency":  {bucket: [sku, ...]},  # full SKU list per bucket
+              "suggested_target":   "..." | None,           # coarsest bucket present
+            }
+        """
+        empty = {"status": "unknown", "detected": [], "skus_by_frequency": {}, "suggested_target": None}
+        if not date_col or date_col not in df.columns:
+            return empty
+
+        if not group_col or group_col not in df.columns:
+            # Single series — it can never conflict with itself.
+            bucket = self._classify_sku_frequency(df[date_col])
+            detected = [bucket] if bucket else []
+            return {
+                "status": "homogeneous",
+                "detected": detected,
+                "skus_by_frequency": {bucket: ["__all__"]} if bucket else {},
+                "suggested_target": bucket,
+            }
+
+        skus_by_frequency: dict = {}
+        for sku, g in df.groupby(group_col):
+            bucket = self._classify_sku_frequency(g[date_col])
+            if bucket is None:
+                continue  # irregular/insufficient — excluded from the conflict determination
+            skus_by_frequency.setdefault(bucket, []).append(str(sku))
+
+        detected = [b for b in self._FREQ_BUCKETS if b in skus_by_frequency]
+        status = "homogeneous" if len(detected) <= 1 else "conflict"
+        suggested_target = detected[-1] if detected else None
+
+        return {
+            "status": status,
+            "detected": detected,
+            "skus_by_frequency": skus_by_frequency,
+            "suggested_target": suggested_target,
+        }
