@@ -110,11 +110,17 @@ def inspect_dataset(
         profiler = DataProfiler()
         canonical_suggestions = profiler.get_canonical_mapping(engine._df)
 
+        recommended = (profile or {}).get("recommended", {})
+        granularity = profiler.detect_granularity(
+            engine._df, recommended.get("date"), recommended.get("group"),
+        )
+
         inspection = {
             "profile": profile,
             "column_options": col_options,
             "canonical_suggestions": canonical_suggestions,
             "config_schema": config_schema,
+            "granularity": granularity,
             "inspected_at": _now(),
         }
         session_store.set_field(user.tenant_id, session_id, "inspection", inspection)
