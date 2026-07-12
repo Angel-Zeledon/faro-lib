@@ -5,12 +5,12 @@ import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
- listSuppliers, getDeadStock, simulateEvent,
+ listSuppliers, getDeadStock, simulateEvent, logPOGeneration,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
- EventSimulationResult,
+ EventSimulationResult, POLineDecision,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
@@ -439,7 +439,14 @@ function rowToEdit(item: InventoryStatusItem): EditState {
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
 // ── Provider group ────────────────────────────────────────────────────────────
-function ProviderGroup({ name, items, onEdit }: { name: string; items: InventoryStatusItem[]; onEdit: (item: InventoryStatusItem) => void }) {
+function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEditedQty, setEditingQtySku, effectiveQty }: {
+ name: string; items: InventoryStatusItem[]; onEdit: (item: InventoryStatusItem) => void
+ editedQty: Record<string, number>
+ editingQtySku: string | null
+ setEditedQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
+ setEditingQtySku: React.Dispatch<React.SetStateAction<string | null>>
+ effectiveQty: (item: InventoryStatusItem) => number
+}) {
  const { t } = useLanguage()
  const [open, setOpen] = useState(true)
  const critical = items.filter(i => i.signal === 'PEDIR_YA').length
@@ -458,7 +465,36 @@ function ProviderGroup({ name, items, onEdit }: { name: string; items: Inventory
  <div><div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{item.sku}</div>{item.display_name && <div style={{ color: C.dim, fontSize: 10 }}>{item.display_name}</div>}</div>
  <SignalBadge s={item.signal} />
  <span style={{ color: item.signal === 'PEDIR_YA' ? C.red : item.signal === 'PEDIR_PRONTO' ? C.amber : C.green, fontWeight: 600 }}>{item.dias_cobertura != null ? `${item.dias_cobertura.toFixed(0)}d` : '—'}</span>
- <span style={{ fontWeight: 700, color: item.cantidad_recomendada ? C.green : C.dim }}>{item.cantidad_recomendada ? item.cantidad_recomendada.toFixed(0) : '—'}</span>
+ <span>
+ {item.cantidad_recomendada != null && item.cantidad_recomendada > 0 ? (
+ editingQtySku === item.sku ? (
+ <input
+ type="number" min={1} autoFocus
+ defaultValue={effectiveQty(item)}
+ onClick={e => e.stopPropagation()}
+ onBlur={e => {
+ const n = parseInt(e.target.value, 10)
+ setEditedQty(prev => (!isNaN(n) && n > 0 ? { ...prev, [item.sku]: n } : prev))
+ setEditingQtySku(null)
+ }}
+ onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+ style={{ width: 70, background: C.card, border: `1px solid ${C.indigo}`, borderRadius: 5, color: C.text, fontSize: 13, fontWeight: 700, padding: '3px 6px', outline: 'none' }}
+ />
+ ) : (
+ <button
+ onClick={e => { e.stopPropagation(); setEditingQtySku(item.sku) }}
+ title={t('inventory.edit_qty_title')}
+ style={{ all: 'unset', cursor: 'pointer', fontWeight: 700, fontSize: 12,
+ color: editedQty[item.sku] != null ? C.indigo : C.green,
+ borderBottom: `2px dashed ${(editedQty[item.sku] != null ? C.indigo : C.green)}60`, lineHeight: 1 }}
+ >
+ {fmt(effectiveQty(item), 0)}
+ </button>
+ )
+ ) : item.cantidad_recomendada === 0
+ ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
+ : <span style={{ color: C.dim }}>—</span>}
+ </span>
  <span style={{ color: C.dim }}>{item.stock_actual?.toFixed(0) ?? '—'}</span>
  <AbcXyzBadge value={item.abc_xyz} />
  <button onClick={() => onEdit(item)} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = C.indigo)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}><Edit2 size={12} /></button>
@@ -637,6 +673,12 @@ export default function InventoryPage() {
  const savingRef = useRef(false)
  const [deadStock,   setDeadStock]   = useState<DeadStockResponse | null>(null)
  const [loadingDead, setLoadingDead] = useState(false)
+ const [editedQty, setEditedQty] = useState<Record<string, number>>({})
+ const [editingQtySku, setEditingQtySku] = useState<string | null>(null)
+
+ // Effective order quantity for an item: the buyer's edit if present, else the recommendation.
+ const effectiveQty = useCallback((item: InventoryStatusItem): number =>
+  editedQty[item.sku] ?? item.cantidad_recomendada ?? 0, [editedQty])
 
  useEffect(() => {
  listInventoryEvents().then(setEvents).catch(() => {})
@@ -776,6 +818,39 @@ export default function InventoryPage() {
  finally { setExporting(false) }
  }
 
+ // Exports a PO CSV built from the buyer's edited quantities (instead of the
+ // server re-deriving them) and logs the decisions via logPOGeneration so
+ // edited amounts are reflected in adoption tracking.
+ function exportEditedPO() {
+ if (!sessionId || !data) return
+ const orderItems = data.items
+  .filter(i => (i.signal === 'PEDIR_YA' || i.signal === 'PEDIR_PRONTO') && effectiveQty(i) > 0)
+ if (orderItems.length === 0) return
+ // CSV
+ const rows = ['SKU,Producto,Cantidad,Proveedor,Valor estimado']
+ for (const i of orderItems) {
+  const qty = effectiveQty(i)
+  const val = qty * (i.costo_unitario ?? 0)
+  rows.push(`${i.sku},"${i.display_name ?? ''}",${qty},"${i.proveedor ?? ''}",${val}`)
+ }
+ const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+ const url = URL.createObjectURL(blob)
+ const a = document.createElement('a'); a.href = url; a.download = 'orden_de_compra.csv'; a.click()
+ URL.revokeObjectURL(url)
+ // Log decisions (edited => 'modified', otherwise 'approved')
+ const decisions: POLineDecision[] = orderItems.map(i => ({
+  sku: i.sku,
+  display_name: i.display_name ?? undefined,
+  proveedor: i.proveedor ?? undefined,
+  signal: i.signal,
+  cantidad_recomendada: i.cantidad_recomendada ?? 0,
+  cantidad_final: effectiveQty(i),
+  status: (editedQty[i.sku] != null ? 'modified' : 'approved') as 'approved' | 'modified',
+  costo_unitario: i.costo_unitario ?? undefined,
+ }))
+ logPOGeneration(sessionId, decisions).catch(() => {})
+ }
+
  async function handlePDF() {
  if (!sessionId) return; setPdfLoading(true)
  try { await downloadInventoryPDF(sessionId) }
@@ -844,6 +919,9 @@ export default function InventoryPage() {
  </button>
  <button onClick={handleExport} disabled={exporting || !sessionId} style={{ all: 'unset', cursor: exporting || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, opacity: exporting || !sessionId ? 0.5 : 1 }}>
  {exporting ? <Spinner size={12} /> : <Download size={12} />} {t('inventory.btn_export_po')}
+ </button>
+ <button onClick={exportEditedPO} disabled={!sessionId} style={{ all: 'unset', cursor: !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)', color: C.indigo, opacity: !sessionId ? 0.5 : 1 }}>
+ <Download size={12} /> {t('inventory.btn_export_edited')}
  </button>
  <button onClick={handlePDF} disabled={pdfLoading || !sessionId} title={t('inventory.title_download_pdf')} style={{ all: 'unset', cursor: pdfLoading || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)', color: C.indigo, opacity: pdfLoading || !sessionId ? 0.5 : 1 }}>
  {pdfLoading ? <Spinner size={12} /> : <FileText size={12} />} PDF
@@ -983,7 +1061,7 @@ export default function InventoryPage() {
  ) : items.length === 0 ? (
  <div style={{ padding: 48, textAlign: 'center', color: C.dim, fontSize: 13 }}>{signalFilter || search ? t('inventory.empty_no_filtered_skus') : t('inventory.empty_no_session_data')}</div>
  ) : viewMode === 'provider' ? (
- <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} />)}</div>
+ <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} />)}</div>
 
  ) : viewMode === 'update' ? (
  /* ── Vista actualización rápida ───────────────────────────── */
@@ -1377,9 +1455,31 @@ export default function InventoryPage() {
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted, fontFamily: 'monospace', fontSize: 11 }}>{fmt(item.demanda_lead_time, 0)}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
- {item.cantidad_recomendada != null && item.cantidad_recomendada > 0
- ? <span style={{ fontWeight: 700, color: C.green, fontSize: 13 }}>{fmt(item.cantidad_recomendada, 0)}</span>
- : item.cantidad_recomendada === 0
+ {item.cantidad_recomendada != null && item.cantidad_recomendada > 0 ? (
+ editingQtySku === item.sku ? (
+ <input
+ type="number" min={1} autoFocus
+ defaultValue={effectiveQty(item)}
+ onBlur={e => {
+ const n = parseInt(e.target.value, 10)
+ setEditedQty(prev => (!isNaN(n) && n > 0 ? { ...prev, [item.sku]: n } : prev))
+ setEditingQtySku(null)
+ }}
+ onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+ style={{ width: 70, background: C.card, border: `1px solid ${C.indigo}`, borderRadius: 5, color: C.text, fontSize: 13, fontWeight: 700, padding: '3px 6px', outline: 'none' }}
+ />
+ ) : (
+ <button
+ onClick={() => setEditingQtySku(item.sku)}
+ title={t('inventory.edit_qty_title')}
+ style={{ all: 'unset', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+ color: editedQty[item.sku] != null ? C.indigo : C.green,
+ borderBottom: `2px dashed ${(editedQty[item.sku] != null ? C.indigo : C.green)}60`, lineHeight: 1 }}
+ >
+ {fmt(effectiveQty(item), 0)}
+ </button>
+ )
+ ) : item.cantidad_recomendada === 0
  ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
  : '—'}
  </td>
