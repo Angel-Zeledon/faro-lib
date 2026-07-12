@@ -29,6 +29,26 @@ def _ordered_qty(item: dict) -> float:
     return float(item.get("cantidad_recomendada") or 0)
 
 
+def _normalize_decisions(items: list[dict]) -> list[dict]:
+    """
+    Normalize each buyer decision's status and forbid 0-unit orders.
+
+    A line marked approved/modified but with an ordered quantity <= 0 is not a
+    real order (it would create a purchase-order line for 0 units), so it is
+    downgraded to 'rejected'. This is the single guard every PO path passes
+    through, including the direct API.
+    """
+    norm: list[dict] = []
+    for i in items:
+        status = (i.get("status") or "approved").lower()
+        if status not in ("approved", "modified", "rejected"):
+            status = "approved"
+        if status in _ORDERED and _ordered_qty(i) <= 0:
+            status = "rejected"
+        norm.append({**i, "status": status})
+    return norm
+
+
 def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dict:
     """
     Called every time a user exports a PO.
@@ -44,13 +64,8 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
     Legacy callers (server-side CSV export) pass status-less items already
     filtered to the order; those are treated as 'approved'.
     """
-    # Normalize: default missing status to 'approved' (legacy behaviour).
-    norm: list[dict] = []
-    for i in items:
-        status = (i.get("status") or "approved").lower()
-        if status not in ("approved", "modified", "rejected"):
-            status = "approved"
-        norm.append({**i, "status": status})
+    # Normalize status + forbid 0-unit orders (see _normalize_decisions).
+    norm = _normalize_decisions(items)
 
     ordered = [i for i in norm if i["status"] in _ORDERED]
 

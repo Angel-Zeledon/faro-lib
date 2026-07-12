@@ -383,3 +383,35 @@ class TestPOExport:
         assert header is not None
         assert "SKU" in header
         assert "Cantidad recomendada" in header
+
+
+# ── Log PO: 0-unit lines must never become ordered PO items ───────────────────
+
+class TestLogPOZeroQtyGuard:
+
+    def test_log_po_excludes_zero_qty_ordered_line(self, client, analyst_headers, viewer_headers):
+        session_id = f"sess_test_{uuid4().hex[:6]}"
+        body = {"items": [
+            {"sku": "A", "signal": "PEDIR_YA",     "cantidad_recomendada": 0, "cantidad_final": 0,  "status": "approved"},
+            {"sku": "B", "signal": "PEDIR_PRONTO", "cantidad_recomendada": 20, "cantidad_final": 20, "status": "approved"},
+        ]}
+        # viewer denied
+        vr = client.post(f"/api/v1/inventory/log-po?session_id={session_id}",
+                         json=body, headers=viewer_headers)
+        assert vr.status_code == 403
+
+        # analyst succeeds
+        r = client.post(f"/api/v1/inventory/log-po?session_id={session_id}",
+                        json=body, headers=analyst_headers)
+        assert r.status_code == 201
+        po_log_id = r.json()["data"]["id"]
+
+        # Direct DB assertion: A is NOT an ordered line, B is
+        from backend.db.connection import query
+        rows = {row["sku"]: row for row in query(
+            "SELECT sku, status, cantidad_final FROM inventory_po_items WHERE po_log_id = %s",
+            (po_log_id,))}
+        assert rows["A"]["status"] == "rejected"
+        assert float(rows["A"]["cantidad_final"]) == 0
+        assert rows["B"]["status"] == "approved"
+        assert float(rows["B"]["cantidad_final"]) == 20

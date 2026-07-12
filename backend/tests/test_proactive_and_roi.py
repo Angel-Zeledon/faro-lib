@@ -178,3 +178,21 @@ def test_log_po_generation_legacy_items_default_to_approved(monkeypatch):
     assert p[3] == 5.0   # falls back to cantidad_recomendada when no cantidad_final
     assert p[8] == 1     # approved_count
     assert p[10] == 0    # rejected_count
+
+
+def test_normalize_decisions_downgrades_zero_qty_orders():
+    from backend.inventory.roi_service import _normalize_decisions
+    out = _normalize_decisions([
+        {"sku": "A", "status": "approved", "cantidad_final": 0},
+        {"sku": "B", "status": "modified", "cantidad_final": 12},
+        {"sku": "C", "status": "approved", "cantidad_final": 5},
+        {"sku": "D", "status": "rejected", "cantidad_final": 0},
+    ])
+    by_sku = {i["sku"]: i for i in out}
+    # A ordered 0 units -> not a real order
+    assert by_sku["A"]["status"] == "rejected"
+    # B and C keep their ordering status
+    assert by_sku["B"]["status"] == "modified"
+    assert by_sku["C"]["status"] == "approved"
+    # D was already rejected
+    assert by_sku["D"]["status"] == "rejected"
