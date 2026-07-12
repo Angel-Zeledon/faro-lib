@@ -58,3 +58,52 @@ class TestInspectGranularity:
         assert r.status_code == 200, r.text
         granularity = r.json()["data"]["granularity"]
         assert granularity["status"] == "homogeneous"
+
+    def test_configure_columns_revalidates_with_confirmed_columns(
+        self, client, auth_headers, test_session,
+    ):
+        """
+        The auto-detected group column can differ from what the user confirms.
+        This dataset has an extra numeric column ("region") that the profiler
+        might not pick as the SKU/group column; confirming "sku" explicitly as
+        the group column must make the re-validation see the true per-SKU
+        frequency split, not whatever the profiler guessed at /inspect time.
+        """
+        sid = test_session["id"]
+        csv_bytes = _csv_bytes(_daily_and_weekly_rows())
+        up = client.post(
+            "/api/v1/datasets",
+            files={"file": ("mixed_freq2.csv", csv_bytes, "text/csv")},
+            headers=auth_headers,
+        )
+        dataset_id = up.json()["data"]["id"]
+        client.post(f"/api/v1/sessions/{sid}/dataset", json={"dataset_id": dataset_id}, headers=auth_headers)
+        client.get(f"/api/v1/sessions/{sid}/inspect", headers=auth_headers)
+
+        r = client.post(
+            f"/api/v1/sessions/{sid}/configure/columns",
+            json={"date_column": "date", "target_column": "sales", "sku_column": "sku"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        granularity = r.json()["data"]["granularity"]
+        assert granularity["status"] == "conflict"
+        assert granularity["detected"] == ["D", "W"]
+
+    def test_configure_columns_viewer_denied(
+        self, client, auth_headers, viewer_headers, test_session, uploaded_dataset,
+    ):
+        sid = test_session["id"]
+        client.post(
+            f"/api/v1/sessions/{sid}/dataset",
+            json={"dataset_id": uploaded_dataset["id"]},
+            headers=auth_headers,
+        )
+        client.get(f"/api/v1/sessions/{sid}/inspect", headers=auth_headers)
+
+        vr = client.post(
+            f"/api/v1/sessions/{sid}/configure/columns",
+            json={"date_column": "date", "target_column": "sales", "sku_column": "sku"},
+            headers=viewer_headers,
+        )
+        assert vr.status_code == 403

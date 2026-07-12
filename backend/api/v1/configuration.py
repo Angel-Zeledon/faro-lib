@@ -50,6 +50,33 @@ def _now() -> str:
     return datetime.utcnow().isoformat()
 
 
+def _run_granularity_detection(
+    tenant_id: str, dataset_id: str, date_col: Optional[str], group_col: Optional[str],
+) -> Optional[dict]:
+    """
+    Reload the dataset file and re-classify per-SKU granularity using the
+    user's CONFIRMED columns. Used by configure_columns as a safety net over
+    the profiler's auto-detection at /inspect time — if the user corrects the
+    date/SKU mapping, a conflict that wasn't visible before (or one that was
+    a false positive) must be caught before training. Non-fatal: returns None
+    (and logs) if the file can't be reloaded, since re-validation is a safety
+    net, not a hard requirement to save the column configuration.
+    """
+    import os
+    ds_meta = get_dataset(tenant_id, dataset_id)
+    if not ds_meta or not os.path.exists(ds_meta["file_path"]):
+        return None
+    try:
+        from forecasting_core.engine import ForecastEngine
+        from forecasting_core.data.profiler import DataProfiler
+        engine = ForecastEngine()
+        engine.load_data(ds_meta["file_path"])
+        return DataProfiler().detect_granularity(engine._df, date_col, group_col)
+    except Exception as e:
+        log.warning("granularity re-validation failed dataset=%s: %s", dataset_id, e)
+        return None
+
+
 # ── Dataset attachment ─────────────────────────────────────────────────────
 
 @router.post("/sessions/{session_id}/dataset")
@@ -239,7 +266,16 @@ def configure_columns(
             session_svc.transition(user.tenant_id, session_id, "COLUMNS_CONFIGURED", "features")
         except ValueError:
             pass
-    return ok(config)
+
+    confirmed_date  = config.get("date_column") or (config.get("canonical_mapping") or {}).get("date")
+    confirmed_group = config.get("sku_column") or (config.get("canonical_mapping") or {}).get("sku")
+    granularity = _run_granularity_detection(user.tenant_id, s["dataset_id"], confirmed_date, confirmed_group)
+
+    response = dict(config)
+    if granularity is not None:
+        response["granularity"] = granularity
+
+    return ok(response)
 
 
 @router.get("/sessions/{session_id}/configure/columns")
