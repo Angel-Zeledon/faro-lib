@@ -361,12 +361,15 @@ class TestInventoryStatus:
     def test_status_gates_recommended_qty_by_signal(self, client, auth_headers, test_tenant):
         """
         Integration-level proof that the _gate_recommended_by_signal helper is
-        actually wired into get_inventory_status: a SKU that is critically
-        short of stock must surface cantidad_recomendada > 0 with no
-        "suficiente" flag, while a SKU sitting on a huge pile of stock (vs.
-        its forecast demand) must surface cantidad_recomendada == 0 with
-        calc_explanation["suficiente"] is True — not just the pure helper in
-        isolation.
+        actually wired into get_inventory_status. The 'plenty' SKU is chosen so
+        the RAW math still wants an order (its safety stock, from high demand
+        variability, exceeds the gap between stock and lead-time demand) yet its
+        coverage lands it on an OK signal — so without the gating wiring it would
+        surface cantidad_recomendada > 0. The gate must force it to 0 with
+        calc_explanation["suficiente"] is True. The 'short' SKU (critically low
+        stock) must surface cantidad_recomendada > 0 with no "suficiente" flag.
+        A SOBRESTOCK/huge-pile SKU would NOT prove the wiring, because its raw
+        recommendation is already 0.
         """
         from backend.db import session_store
         from backend.sessions.service import create_session
@@ -377,31 +380,32 @@ class TestInventoryStatus:
 
         sku_short, sku_plenty = _sku(), _sku()
 
-        # Stock: near-empty for sku_short, enormous for sku_plenty.
+        # sku_short: near-empty -> PEDIR_YA.
         client.put(f"/api/v1/inventory/stock/{sku_short}",
-                   json={"stock_actual": 1, "lead_time_dias": 10},
+                   json={"stock_actual": 1, "lead_time_dias": 10, "moq": 1},
                    headers=auth_headers)
+        # sku_plenty: 130 units, demand 10/day, lead 10 -> 13 days coverage -> OK
+        # signal (lead*1.2=12 <= 13 < lead*3=30). With spread=6 the safety stock
+        # (~31) makes the RAW recommendation ~2 (>0); only the gate zeroes it.
         client.put(f"/api/v1/inventory/stock/{sku_plenty}",
-                   json={"stock_actual": 100_000, "lead_time_dias": 10},
+                   json={"stock_actual": 130, "lead_time_dias": 10, "moq": 1},
                    headers=auth_headers)
 
-        def _forecast(daily_demand: float) -> dict:
+        def _forecast(daily_demand: float, spread: float) -> dict:
             pts = [
                 {
                     "date": f"2026-01-{i+1:02d}",
                     "value": daily_demand,
-                    "lower": daily_demand * 0.9,
-                    "upper": daily_demand * 1.1,
+                    "lower": max(0.0, daily_demand - spread),
+                    "upper": daily_demand + spread,
                 }
                 for i in range(14)
             ]
             return {"lightgbm": {"forecast": pts}}
 
-        # High daily demand against near-empty stock -> PEDIR_YA.
-        # Near-zero daily demand against a huge stock pile -> OK/SOBRESTOCK.
         session_store.set_forecasts(tid, session_id, {
-            sku_short:  _forecast(100.0),
-            sku_plenty: _forecast(1.0),
+            sku_short:  _forecast(100.0, 10.0),  # critically short -> PEDIR_YA
+            sku_plenty: _forecast(10.0, 6.0),    # OK coverage, high variance
         })
 
         resp = client.get(f"/api/v1/inventory/status?session_id={session_id}", headers=auth_headers)
@@ -415,7 +419,9 @@ class TestInventoryStatus:
         assert short_item["cantidad_recomendada"] > 0
         assert not (short_item["calc_explanation"] or {}).get("suficiente")
 
-        assert plenty_item["signal"] in ("OK", "SOBRESTOCK")
+        # OK coverage but the raw math (with safety stock) wants an order;
+        # the gate is the ONLY reason this is 0 — deleting the wiring makes it > 0.
+        assert plenty_item["signal"] == "OK"
         assert plenty_item["cantidad_recomendada"] == 0
         assert plenty_item["calc_explanation"]["suficiente"] is True
 
