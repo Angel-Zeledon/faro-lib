@@ -469,7 +469,7 @@ export default function HoyPage() {
  const kpis = briefing?.kpis
 
  // Total pending actions for greeting
- const totalPending = cart.filter(i => i.status === 'pending').length
+ const totalPending = cart.filter(i => i.status === 'pending' && i.qty > 0).length
 
  // ── Session list failed to load ───────────────────────────────────────────
  if (!sessionsLoading && sessionsError) {

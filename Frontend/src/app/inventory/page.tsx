@@ -688,6 +688,8 @@ export default function InventoryPage() {
  const load = useCallback(async (sid: string) => {
  if (!sid) return
  setLoading(true); setError(null)
+ setEditedQty({})
+ setEditingQtySku(null)
  try { setData(await getInventoryStatus(sid)) }
  catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_loading')) }
  finally { setLoading(false) }

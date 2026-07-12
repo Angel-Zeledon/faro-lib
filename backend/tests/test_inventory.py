@@ -358,6 +358,67 @@ class TestInventoryStatus:
         for key in ("total_skus", "pedir_ya", "pedir_pronto", "ok", "sobrestock", "sin_datos"):
             assert key in data["summary"], f"Missing summary key: {key}"
 
+    def test_status_gates_recommended_qty_by_signal(self, client, auth_headers, test_tenant):
+        """
+        Integration-level proof that the _gate_recommended_by_signal helper is
+        actually wired into get_inventory_status: a SKU that is critically
+        short of stock must surface cantidad_recomendada > 0 with no
+        "suficiente" flag, while a SKU sitting on a huge pile of stock (vs.
+        its forecast demand) must surface cantidad_recomendada == 0 with
+        calc_explanation["suficiente"] is True — not just the pure helper in
+        isolation.
+        """
+        from backend.db import session_store
+        from backend.sessions.service import create_session
+
+        tid = test_tenant["id"]
+        session = create_session(tid, "usr_test", "signal-gating-test")
+        session_id = session["id"]
+
+        sku_short, sku_plenty = _sku(), _sku()
+
+        # Stock: near-empty for sku_short, enormous for sku_plenty.
+        client.put(f"/api/v1/inventory/stock/{sku_short}",
+                   json={"stock_actual": 1, "lead_time_dias": 10},
+                   headers=auth_headers)
+        client.put(f"/api/v1/inventory/stock/{sku_plenty}",
+                   json={"stock_actual": 100_000, "lead_time_dias": 10},
+                   headers=auth_headers)
+
+        def _forecast(daily_demand: float) -> dict:
+            pts = [
+                {
+                    "date": f"2026-01-{i+1:02d}",
+                    "value": daily_demand,
+                    "lower": daily_demand * 0.9,
+                    "upper": daily_demand * 1.1,
+                }
+                for i in range(14)
+            ]
+            return {"lightgbm": {"forecast": pts}}
+
+        # High daily demand against near-empty stock -> PEDIR_YA.
+        # Near-zero daily demand against a huge stock pile -> OK/SOBRESTOCK.
+        session_store.set_forecasts(tid, session_id, {
+            sku_short:  _forecast(100.0),
+            sku_plenty: _forecast(1.0),
+        })
+
+        resp = client.get(f"/api/v1/inventory/status?session_id={session_id}", headers=auth_headers)
+        data = _ok(resp)
+        items = {i["sku"]: i for i in data["items"]}
+
+        short_item = items[sku_short]
+        plenty_item = items[sku_plenty]
+
+        assert short_item["signal"] == "PEDIR_YA"
+        assert short_item["cantidad_recomendada"] > 0
+        assert not (short_item["calc_explanation"] or {}).get("suficiente")
+
+        assert plenty_item["signal"] in ("OK", "SOBRESTOCK")
+        assert plenty_item["cantidad_recomendada"] == 0
+        assert plenty_item["calc_explanation"]["suficiente"] is True
+
 
 # ── PO Export ─────────────────────────────────────────────────────────────────
 
