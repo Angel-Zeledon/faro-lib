@@ -109,6 +109,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
  const isRejected = item.status === 'rejected'
 
  const estimatedValue = item.qty * (item.unit_cost ?? 0)
+ const canOrder = item.qty > 0
 
  return (
   <div style={{
@@ -185,20 +186,28 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
 
      {/* Action buttons */}
      {!isApproved ? (
-      <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-       <button onClick={onApprove} style={{
-        all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 8,
-        background: '#22c55e', color: '#fff', fontSize: 13, fontWeight: 700,
-        display: 'flex', alignItems: 'center', gap: 5,
-       }}>
-        {t('hoy.btn_approve')}
-       </button>
-       <button onClick={onReject} style={{
-        all: 'unset', cursor: 'pointer', padding: '7px 12px', borderRadius: 8,
-        border: '1px solid var(--border)', color: 'var(--dim)', fontSize: 13,
-       }}>
-        {t('hoy.btn_reject')}
-       </button>
+      <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
+       {canOrder ? (
+        <>
+         <button onClick={onApprove} style={{
+          all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 8,
+          background: '#22c55e', color: '#fff', fontSize: 13, fontWeight: 700,
+          display: 'flex', alignItems: 'center', gap: 5,
+         }}>
+          {t('hoy.btn_approve')}
+         </button>
+         <button onClick={onReject} style={{
+          all: 'unset', cursor: 'pointer', padding: '7px 12px', borderRadius: 8,
+          border: '1px solid var(--border)', color: 'var(--dim)', fontSize: 13,
+         }}>
+          {t('hoy.btn_reject')}
+         </button>
+        </>
+       ) : (
+        <span style={{ fontSize: 12, color: 'var(--dim)', fontStyle: 'italic' }}>
+         {t('hoy.enough_stock')}
+        </span>
+       )}
       </div>
      ) : (
       <button onClick={onReject} style={{
@@ -409,7 +418,7 @@ export default function HoyPage() {
   setCart(prev => prev.map(i => i.sku === sku ? { ...i, qty, status: 'modified' as ActionStatus } : i))
  }
 
- const approved   = cart.filter(i => i.status === 'approved' || i.status === 'modified')
+ const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
 
  function downloadOC() {
@@ -432,6 +441,7 @@ export default function HoyPage() {
    // items are excluded: the buyer never acted on them.
    const decisions = cart
     .filter(i => i.status !== 'pending')
+    .filter(i => i.status === 'rejected' || i.qty > 0)
     .map(i => ({
      sku:                  i.sku,
      display_name:         i.name,
