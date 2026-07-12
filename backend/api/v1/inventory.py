@@ -43,6 +43,7 @@ class StockUpsert(BaseModel):
     marca:          Optional[str]   = None
     unidad_medida:  Optional[str]   = None
     codigo_barras:  Optional[str]   = None
+    bodega:         Optional[str]   = None
 
 
 class StockPatch(BaseModel):
@@ -59,6 +60,7 @@ class StockPatch(BaseModel):
     marca:          Optional[str]   = None
     unidad_medida:  Optional[str]   = None
     codigo_barras:  Optional[str]   = None
+    bodega:         Optional[str]   = None
 
 
 # ── Stock CRUD ─────────────────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ async def bulk_import(
 ):
     """
     Import stock data from CSV.
-    Expected columns (case-insensitive): sku, display_name, categoria, marca,
+    Expected columns (case-insensitive): sku, bodega, display_name, categoria, marca,
     unidad_medida, codigo_barras, stock_actual, stock_minimo, lead_time_dias,
     costo_unitario, precio_venta, moq, proveedor, notas
     """
@@ -148,7 +150,7 @@ async def bulk_import(
             continue
 
         for fld in ("display_name", "proveedor", "notas",
-                    "categoria", "marca", "unidad_medida", "codigo_barras"):
+                    "categoria", "marca", "unidad_medida", "codigo_barras", "bodega"):
             if fld in row:
                 parsed[fld] = row[fld]
         for fld in ("stock_actual", "stock_minimo", "costo_unitario", "moq", "precio_venta"):
@@ -182,12 +184,12 @@ async def bulk_import(
 
 
 _TEMPLATE_COLUMNS = [
-    "sku", "display_name", "categoria", "marca", "unidad_medida", "codigo_barras",
+    "sku", "bodega", "display_name", "categoria", "marca", "unidad_medida", "codigo_barras",
     "stock_actual", "stock_minimo", "lead_time_dias", "costo_unitario",
     "precio_venta", "moq", "proveedor", "notas",
 ]
 _TEMPLATE_EXAMPLE = [
-    "SKU001", "Agua 600ml", "Bebidas", "AguaPura", "caja", "7501234567890",
+    "SKU001", "principal", "Agua 600ml", "Bebidas", "AguaPura", "caja", "7501234567890",
     "120", "20", "7", "3.50", "5.90", "12", "Distribuidora Sur", "producto de ejemplo",
 ]
 

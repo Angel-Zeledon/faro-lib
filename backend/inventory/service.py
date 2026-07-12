@@ -51,6 +51,8 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
             SET {upd}, updated_at = NOW()""",
         (tenant_id, sku, *values),
     )
+    _ensure_warehouse(tenant_id, safe["bodega"])
+
     # NOTE: get_stock(tenant, sku) is not yet warehouse-aware — with multiple
     # bodega rows for the same SKU it returns whichever row Postgres returns
     # first (no ORDER BY). Warehouse-aware reads land in a later task.
@@ -61,6 +63,20 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
         _record_snapshot(tenant_id, sku, float(safe["stock_actual"]))
 
     return row
+
+
+def _ensure_warehouse(tenant_id: str, name: str) -> None:
+    """Auto-create a `warehouses` row the first time a bodega name is seen for
+    this tenant. Best-effort: a warehouse-insert hiccup must never fail the
+    stock write it's attached to."""
+    try:
+        execute(
+            "INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s) "
+            "ON CONFLICT (tenant_id, name) DO NOTHING",
+            (tenant_id, name),
+        )
+    except Exception as e:
+        log.warning("_ensure_warehouse: failed to upsert bodega=%s tenant=%s err=%s", name, tenant_id, e)
 
 
 def get_stock(tenant_id: str, sku: str) -> Optional[dict]:
