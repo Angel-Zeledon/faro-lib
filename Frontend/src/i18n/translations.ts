@@ -71,6 +71,7 @@ export const translations = {
 
     // ── Navigation labels ──
     'nav.hoy':            'Panel de Compras',
+    'nav.pedidos':               'Pedidos',
     'nav.quick_start':    'Cargar Ventas',
     'nav.data':           'Mis Archivos',
     'nav.inventory':      'Inventario',
@@ -85,6 +86,15 @@ export const translations = {
     'nav.accuracy':       'Precisión',
     'nav.users':          'Usuarios',
     'nav.config':         'Configuración',
+
+    // ── Página Pedidos ──
+    'pedidos.page_title':        'Pedidos',
+    'pedidos.page_subtitle':     'Órdenes generadas y registro de llegadas',
+    'pedidos.pending_suffix':    'por recibir',
+    'pedidos.error_loading':     'Error al cargar los pedidos',
+    'pedidos.empty_title':       'Aún no has generado pedidos',
+    'pedidos.empty_hint':        'Aprueba recomendaciones en el Panel de Compras para generar tu primera orden.',
+    'pedidos.go_to_hoy':         'Ir al Panel de Compras',
 
     // ── TopBar ──
     'topbar.title_dashboard':           'Panel Ejecutivo',
@@ -1299,6 +1309,7 @@ export const translations = {
 
     // ── Navigation labels ──
     'nav.hoy':            'Purchasing Panel',
+    'nav.pedidos':               'Orders',
     'nav.quick_start':    'Upload Sales',
     'nav.data':           'My Files',
     'nav.inventory':      'Inventory',
@@ -1313,6 +1324,15 @@ export const translations = {
     'nav.accuracy':       'Accuracy',
     'nav.users':          'Users',
     'nav.config':         'Settings',
+
+    // ── Orders page ──
+    'pedidos.page_title':        'Orders',
+    'pedidos.page_subtitle':     'Generated orders and reception tracking',
+    'pedidos.pending_suffix':    'awaiting reception',
+    'pedidos.error_loading':     'Error loading orders',
+    'pedidos.empty_title':       'No orders generated yet',
+    'pedidos.empty_hint':        'Approve recommendations in the Purchasing Panel to generate your first order.',
+    'pedidos.go_to_hoy':         'Go to the Purchasing Panel',
 
     // ── TopBar ──
     'topbar.title_dashboard':           'Executive Dashboard',

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Database, TrendingUp, Package,
   BrainCircuit, BarChart2, Settings, LogOut, User, Users,
   ChevronLeft, ChevronRight, FileText, Target, FlaskConical,
-  ShoppingCart, Truck, Upload, Zap,
+  ShoppingCart, Truck, Upload, Zap, ClipboardList,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -26,6 +26,8 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/hoy',                 labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
+  { href: '/pedidos',             labelKey: 'nav.pedidos',     Icon: ClipboardList,   group: 'operation' },
+  { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'operation' },
 
   { href: '/quick-start',         labelKey: 'nav.quick_start', Icon: Upload,          group: 'data' },
   { href: '/data',                labelKey: 'nav.data',        Icon: Database,        group: 'data' },
@@ -39,7 +41,6 @@ const NAV: NavItem[] = [
   { href: '/dashboard',           labelKey: 'nav.dashboard',   Icon: LayoutDashboard, group: 'advanced', advanced: true },
   { href: '/forecast',            labelKey: 'nav.forecast',    Icon: TrendingUp,      group: 'advanced', advanced: true },
   { href: '/reports',             labelKey: 'nav.reports',     Icon: BarChart2,       group: 'advanced', advanced: true },
-  { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'advanced', advanced: true },
   { href: '/documents',           labelKey: 'nav.documents',   Icon: FileText,        group: 'advanced', advanced: true },
   { href: '/accuracy',            labelKey: 'nav.accuracy',    Icon: Target,          group: 'advanced', advanced: true },
 
