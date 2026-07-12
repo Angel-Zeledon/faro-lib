@@ -63,11 +63,9 @@ class TestInspectGranularity:
         self, client, auth_headers, test_session,
     ):
         """
-        The auto-detected group column can differ from what the user confirms.
-        This dataset has an extra numeric column ("region") that the profiler
-        might not pick as the SKU/group column; confirming "sku" explicitly as
-        the group column must make the re-validation see the true per-SKU
-        frequency split, not whatever the profiler guessed at /inspect time.
+        Confirming "sku" explicitly as the group column in configure/columns
+        must make the re-validation see the true per-SKU frequency split,
+        independent of whatever the profiler auto-detected at /inspect time.
         """
         sid = test_session["id"]
         csv_bytes = _csv_bytes(_daily_and_weekly_rows())

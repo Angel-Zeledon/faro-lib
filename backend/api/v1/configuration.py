@@ -62,11 +62,11 @@ def _run_granularity_detection(
     (and logs) if the file can't be reloaded, since re-validation is a safety
     net, not a hard requirement to save the column configuration.
     """
-    import os
-    ds_meta = get_dataset(tenant_id, dataset_id)
-    if not ds_meta or not os.path.exists(ds_meta["file_path"]):
-        return None
     try:
+        import os
+        ds_meta = get_dataset(tenant_id, dataset_id)
+        if not ds_meta or not os.path.exists(ds_meta["file_path"]):
+            return None
         from forecasting_core.engine import ForecastEngine
         from forecasting_core.data.profiler import DataProfiler
         engine = ForecastEngine()
