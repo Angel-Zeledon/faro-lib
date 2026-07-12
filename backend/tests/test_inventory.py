@@ -214,6 +214,31 @@ class TestBulkImport:
             row = client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).json()["data"]
             assert row["stock_actual"] == 100 * (i + 1)
 
+    def test_bulk_import_persists_catalog_and_proveedor(self, client, auth_headers):
+        sku = _sku()
+        csv_text = (
+            "sku,stock_actual,precio_venta,categoria,marca,unidad_medida,codigo_barras,proveedor,notas\n"
+            f"{sku},50,12.5,Lacteos,Alpina,litro,7700000000001,Distribuidora Sur,fragil\n"
+        )
+        r = client.post(
+            "/api/v1/inventory/bulk",
+            files={"file": ("stock.csv", csv_text.encode("utf-8"), "text/csv")},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        from backend.db.connection import query_one
+        row = query_one(
+            "SELECT stock_actual, precio_venta, categoria, marca, unidad_medida, "
+            "codigo_barras, proveedor, notas FROM inventory_stock WHERE sku = %s", (sku,))
+        assert float(row["stock_actual"]) == 50
+        assert float(row["precio_venta"]) == 12.5
+        assert row["categoria"] == "Lacteos"
+        assert row["marca"] == "Alpina"
+        assert row["unidad_medida"] == "litro"
+        assert row["codigo_barras"] == "7700000000001"
+        assert row["proveedor"] == "Distribuidora Sur"   # regression: was silently dropped
+        assert row["notas"] == "fragil"
+
     def test_bulk_import_handles_bom(self, client, auth_headers):
         """Excel CSVs exported with UTF-8 BOM should be parsed correctly."""
         sku = _sku()

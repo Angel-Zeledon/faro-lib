@@ -118,8 +118,9 @@ async def bulk_import(
 ):
     """
     Import stock data from CSV.
-    Expected columns (case-insensitive): sku, stock_actual, lead_time_dias,
-    costo_unitario, moq, proveedor, display_name, stock_minimo, notas
+    Expected columns (case-insensitive): sku, display_name, categoria, marca,
+    unidad_medida, codigo_barras, stock_actual, stock_minimo, lead_time_dias,
+    costo_unitario, precio_venta, moq, proveedor, notas
     """
     content = await file.read()
     try:
@@ -145,10 +146,11 @@ async def bulk_import(
         if not parsed["sku"]:
             continue
 
-        for fld in ("display_name", "proveedor", "notas"):
+        for fld in ("display_name", "proveedor", "notas",
+                    "categoria", "marca", "unidad_medida", "codigo_barras"):
             if fld in row:
                 parsed[fld] = row[fld]
-        for fld in ("stock_actual", "stock_minimo", "costo_unitario", "moq"):
+        for fld in ("stock_actual", "stock_minimo", "costo_unitario", "moq", "precio_venta"):
             v = _float(fld)
             if v is not None:
                 parsed[fld] = v

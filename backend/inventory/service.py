@@ -76,9 +76,9 @@ def delete_stock(tenant_id: str, sku: str) -> None:
 
 
 # Dataset columns we recognize as inventory data when present in an uploaded file.
-_DATASET_STOCK_FLOAT_COLS = {"stock_actual", "stock_minimo", "costo_unitario", "moq", "service_level"}
+_DATASET_STOCK_FLOAT_COLS = {"stock_actual", "stock_minimo", "costo_unitario", "moq", "service_level", "precio_venta"}
 _DATASET_STOCK_INT_COLS   = {"lead_time_dias"}
-_DATASET_STOCK_STR_COLS   = {"proveedor", "notas", "display_name"}
+_DATASET_STOCK_STR_COLS   = {"proveedor", "notas", "display_name", "categoria", "marca", "unidad_medida", "codigo_barras"}
 _DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DATASET_STOCK_STR_COLS
 
 
