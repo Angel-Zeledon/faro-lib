@@ -562,14 +562,15 @@ export interface InventoryStock {
 }
 
 export interface InventoryCalcExplanation {
-  demanda_diaria:    number
-  lead_time_dias:    number
-  demanda_lead_time: number
-  safety_stock:      number
-  stock_actual:      number
-  antes_moq:         number
-  moq:               number
-  cantidad_final:    number
+  suficiente?:        boolean
+  demanda_diaria?:    number
+  lead_time_dias?:    number
+  demanda_lead_time?: number
+  safety_stock?:      number
+  stock_actual?:      number
+  antes_moq?:         number
+  moq?:               number
+  cantidad_final?:    number
 }
 
 export interface InventoryEvent {

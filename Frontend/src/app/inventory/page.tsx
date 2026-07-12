@@ -127,15 +127,24 @@ function Sparkline({ data }: { data: { stock: number }[] }) {
 // ── ¿Por qué me recomienda esto? ─────────────────────────────────────────────
 function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: number }) {
  const { t } = useLanguage()
+
+ if (exp.suficiente) {
+ return (
+ <div style={{ fontSize: 11, color: 'var(--dim)', padding: '4px 0' }}>
+ {t('inventory.calc_enough_stock')}
+ </div>
+ )
+ }
+
  const unitWord = t('inventory.calc_unit_units')
  const steps = [
- { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.demanda_diaria.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
- { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_dias}d)`, value: `= ${exp.demanda_lead_time.toFixed(0)} ${unitWord}`, op: '×' },
- { label: `+ ${t('inventory.calc_step_safety_stock')}`, value: `+ ${exp.safety_stock.toFixed(0)} ${unitWord}`, op: '+' },
- { label: `− ${t('inventory.calc_step_current_stock')}`, value: `− ${exp.stock_actual.toFixed(0)} ${unitWord}`, op: '−' },
- { label: `= ${t('inventory.calc_step_before_rounding')}`, value: `${exp.antes_moq.toFixed(0)} ${unitWord}`, op: '=' },
+ { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.demanda_diaria!.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
+ { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_dias}d)`, value: `= ${exp.demanda_lead_time!.toFixed(0)} ${unitWord}`, op: '×' },
+ { label: `+ ${t('inventory.calc_step_safety_stock')}`, value: `+ ${exp.safety_stock!.toFixed(0)} ${unitWord}`, op: '+' },
+ { label: `− ${t('inventory.calc_step_current_stock')}`, value: `− ${exp.stock_actual!.toFixed(0)} ${unitWord}`, op: '−' },
+ { label: `= ${t('inventory.calc_step_before_rounding')}`, value: `${exp.antes_moq!.toFixed(0)} ${unitWord}`, op: '=' },
  ...(moq > 1
- ? [{ label: `↑ ${t('inventory.calc_step_rounded_moq')} (${moq})`, value: `→ ${exp.cantidad_final.toFixed(0)} ${unitWord}`, op: '↑' }]
+ ? [{ label: `↑ ${t('inventory.calc_step_rounded_moq')} (${moq})`, value: `→ ${exp.cantidad_final!.toFixed(0)} ${unitWord}`, op: '↑' }]
  : []),
  ]
 

@@ -305,6 +305,16 @@ class TestSignalCalculation:
         assert qty > 0
         assert qty % 100 == 0
 
+    def test_recommended_gated_to_ordering_signals(self):
+        from backend.inventory.service import _gate_recommended_by_signal
+        # Ordering signals keep the computed quantity
+        assert _gate_recommended_by_signal("PEDIR_YA", 120.0) == 120.0
+        assert _gate_recommended_by_signal("PEDIR_PRONTO", 45.0) == 45.0
+        # "Enough stock" signals never suggest ordering, even if the raw math > 0
+        assert _gate_recommended_by_signal("OK", 30.0) == 0.0
+        assert _gate_recommended_by_signal("SOBRESTOCK", 5.0) == 0.0
+        assert _gate_recommended_by_signal("SIN_DATOS", 10.0) == 0.0
+
 
 # ── Status endpoint ───────────────────────────────────────────────────────────
 

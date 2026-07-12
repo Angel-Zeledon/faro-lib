@@ -303,6 +303,19 @@ def _calc_recommended(
     return float(round(raw, 2))
 
 
+# Signals for which recommending an order is meaningful. On any other signal
+# (OK / SOBRESTOCK / SIN_DATOS) the semáforo says stock is sufficient, so the
+# suggested quantity MUST be 0 — otherwise a healthy SKU shows "pedir N".
+_ORDERING_SIGNALS = ("PEDIR_YA", "PEDIR_PRONTO")
+
+
+def _gate_recommended_by_signal(signal: str, recomendado: float) -> float:
+    """Zero the recommendation unless the signal actually calls for ordering."""
+    if signal in _ORDERING_SIGNALS:
+        return float(recomendado)
+    return 0.0
+
+
 # ── Main status calculation ───────────────────────────────────────────────────
 
 def get_inventory_status(tenant_id: str, session_id: str, service_level: float = 0.95) -> list[dict]:
@@ -358,23 +371,28 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             recomendado = _calc_recommended(
                 stock_actual, avg_daily, avg_std, lead_time, moq, sku_service_level
             )
+            recomendado = _gate_recommended_by_signal(signal, recomendado)
             valor_inventario = (
                 round(stock_actual * float(stock["costo_unitario"]), 2)
                 if stock.get("costo_unitario") is not None else None
             )
-            _demanda_lt  = round(avg_daily * lead_time, 2)
-            _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
-            _antes_moq   = round(max(0.0, _demanda_lt + _safety - stock_actual), 2)
-            calc_explanation = {
-                "demanda_diaria":    round(avg_daily, 2),
-                "lead_time_dias":    lead_time,
-                "demanda_lead_time": _demanda_lt,
-                "safety_stock":      _safety,
-                "stock_actual":      stock_actual,
-                "antes_moq":         _antes_moq,
-                "moq":               moq,
-                "cantidad_final":    recomendado,
-            }
+            if recomendado > 0:
+                _demanda_lt  = round(avg_daily * lead_time, 2)
+                _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
+                _antes_moq   = round(max(0.0, _demanda_lt + _safety - stock_actual), 2)
+                calc_explanation = {
+                    "demanda_diaria":    round(avg_daily, 2),
+                    "lead_time_dias":    lead_time,
+                    "demanda_lead_time": _demanda_lt,
+                    "safety_stock":      _safety,
+                    "stock_actual":      stock_actual,
+                    "antes_moq":         _antes_moq,
+                    "moq":               moq,
+                    "cantidad_final":    recomendado,
+                }
+            else:
+                # Enough stock: no order suggested, so no cálculo to explain.
+                calc_explanation = {"suficiente": True}
         else:
             avg_daily = avg_std = None
             dias_cobertura = None
