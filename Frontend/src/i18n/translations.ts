@@ -183,6 +183,14 @@ export const translations = {
     'qs.err_status':       'Error al verificar el estado',
     'qs.err_failed':       'El entrenamiento falló:',
     'qs.err_timeout':      'El entrenamiento está tardando más de lo esperado. Revisa el estado más tarde o vuelve a intentarlo.',
+    'qs.download_template':'⬇ Descargar plantilla CSV de ejemplo',
+    'qs.demo_prompt':      '¿Aún no tienes tu archivo a la mano?',
+    'qs.demo_btn':         '▶ Probar con datos de ejemplo',
+    'qs.demo_hint':        'Cargamos ventas ficticias de 5 productos y te llevamos directo al semáforo.',
+    'qs.not_in_file':      'No está en mi archivo',
+    'qs.default_prefix':   'Default:',
+    'qs.err_demo':         'Error al iniciar la demo',
+    'qs.err_unknown':      'error desconocido',
 
     // ── Common (additions) ──
     'common.yes': 'Sí',
@@ -1403,6 +1411,14 @@ export const translations = {
     'qs.err_status':       'Error checking status',
     'qs.err_failed':       'Training failed:',
     'qs.err_timeout':      'Training is taking longer than expected. Check the status later or try again.',
+    'qs.download_template':'⬇ Download sample CSV template',
+    'qs.demo_prompt':      "Don't have your file handy yet?",
+    'qs.demo_btn':         '▶ Try with sample data',
+    'qs.demo_hint':        'We load fictional sales for 5 products and take you straight to the traffic light.',
+    'qs.not_in_file':      'Not in my file',
+    'qs.default_prefix':   'Default:',
+    'qs.err_demo':         'Error starting the demo',
+    'qs.err_unknown':      'unknown error',
 
     // ── Common (additions) ──
     'common.yes': 'Yes',

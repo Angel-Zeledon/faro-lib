@@ -266,7 +266,7 @@ export default function QuickStartPage() {
  setSessionId(demo.session_id)
  await pollJob(demo.job_id, demo.session_id)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : 'Error al iniciar la demo')
+ setError(e instanceof Error ? e.message : t('qs.err_demo'))
  setBusy(false)
  }
  }
@@ -325,7 +325,7 @@ export default function QuickStartPage() {
 
  setStep(2)
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : 'Error al subir el archivo'
+ const msg = e instanceof Error ? e.message : t('qs.err_upload')
  setError(msg)
  setFileName(null)
  } finally {
@@ -388,7 +388,7 @@ export default function QuickStartPage() {
  // Poll job
  await pollJob(job_id, sessionId)
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : 'Error al configurar el entrenamiento'
+ const msg = e instanceof Error ? e.message : t('qs.err_config')
  setError(msg)
  setBusy(false)
  }
@@ -418,12 +418,12 @@ export default function QuickStartPage() {
  return
  }
  if (job.status === 'FAILED') {
- setError(`El entrenamiento falló: ${job.error ?? 'error desconocido'}`)
+ setError(`${t('qs.err_failed')} ${job.error ?? t('qs.err_unknown')}`)
  setBusy(false)
  return
  }
  if (++attempts >= MAX_POLLS) {
- setError('El entrenamiento está tardando más de lo esperado. Revisa el estado más tarde o vuelve a intentarlo.')
+ setError(t('qs.err_timeout'))
  setBusy(false)
  return
  }
@@ -431,7 +431,7 @@ export default function QuickStartPage() {
  await new Promise(res => setTimeout(res, 3000))
  return poll()
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : 'Error al verificar el estado'
+ const msg = e instanceof Error ? e.message : t('qs.err_status')
  setError(msg)
  setBusy(false)
  }
@@ -462,7 +462,7 @@ export default function QuickStartPage() {
  return (
  <div style={{ marginTop: 16, overflowX: 'auto' }}>
  <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>
- Vista previa de tus datos:
+ {t('qs.preview')}
  </p>
  <table style={{
  borderCollapse: 'collapse', fontSize: 12, width: '100%',
@@ -495,7 +495,7 @@ export default function QuickStartPage() {
  </table>
  {profile.columns.length > 5 && (
  <p style={{ fontSize: 11, color: 'var(--dim)', marginTop: 6 }}>
- + {profile.columns.length - 5} columnas más
+ + {profile.columns.length - 5} {t('qs.more_columns')}
  </p>
  )}
  </div>
@@ -532,15 +532,15 @@ export default function QuickStartPage() {
  color: 'var(--text)', margin: 0, marginBottom: 8,
  letterSpacing: '-0.02em',
  }}>
- Inicio Rápido
+ {t('qs.title')}
  </h1>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: 0 }}>
- De cero a semáforo de inventario en menos de 5 minutos
+ {t('qs.subtitle')}
  </p>
  <p style={{ fontSize: 12, color: 'var(--dim)', margin: '10px 0 0', opacity: 0.7 }}>
- ¿Necesitas configuración avanzada de modelos, columnas o validación?{' '}
+ {t('qs.advanced_hint')}{' '}
  <a href="/forecast" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
- Usar Forecast Studio →
+ {t('qs.use_studio')}
  </a>
  </p>
  </div>
@@ -560,11 +560,11 @@ export default function QuickStartPage() {
  {step === 1 && (
  <div>
  <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
- Sube tus ventas
+ {t('qs.upload_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
- Necesitamos tu historial de ventas. El archivo debe tener al menos:
- {' '}<strong style={{ color: 'var(--text)' }}>fecha, producto y cantidad vendida.</strong>
+ {t('qs.upload_desc')}
+ {' '}<strong style={{ color: 'var(--text)' }}>{t('qs.upload_desc_bold')}</strong>
  </p>
 
  <DropZone onFile={handleFile} busy={busy} />
@@ -576,7 +576,7 @@ export default function QuickStartPage() {
  borderRadius: 8, fontSize: 13,
  color: 'var(--accent)',
  }}>
- ✓ Archivo seleccionado: {fileName}
+ ✓ {t('qs.file_selected')} {fileName}
  </div>
  )}
 
@@ -605,7 +605,7 @@ export default function QuickStartPage() {
  <div style={{ marginTop: 10, fontSize: 12 }}>
  <a href="/plantilla_faro.csv" download
  style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
- ⬇ Descargar plantilla CSV de ejemplo
+ {t('qs.download_template')}
  </a>
  </div>
 
@@ -615,7 +615,7 @@ export default function QuickStartPage() {
  textAlign: 'center',
  }}>
  <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 10px' }}>
- ¿Aún no tienes tu archivo a la mano?
+ {t('qs.demo_prompt')}
  </p>
  <button
  onClick={handleDemo}
@@ -630,10 +630,10 @@ export default function QuickStartPage() {
  opacity: busy ? 0.6 : 1,
  }}
  >
- ▶ Probar con datos de ejemplo
+ {t('qs.demo_btn')}
  </button>
  <p style={{ fontSize: 11, color: 'var(--dim)', margin: '8px 0 0', opacity: 0.8 }}>
- Cargamos ventas ficticias de 5 productos y te llevamos directo al semáforo.
+ {t('qs.demo_hint')}
  </p>
  </div>
 
@@ -645,10 +645,10 @@ export default function QuickStartPage() {
  {step === 2 && inspection && (
  <div>
  <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
- Confirma tus columnas
+ {t('qs.confirm_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
- Detectamos las siguientes columnas. Confirma cuál es cuál para los campos que necesitas.
+ {t('qs.confirm_desc')}
  </p>
 
  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -671,7 +671,7 @@ export default function QuickStartPage() {
    </span>
    {!field.required && isNone && (
     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-    Default: {(field as { default?: string }).default}
+    {t('qs.default_prefix')} {(field as { default?: string }).default}
     </div>
    )}
    </div>
@@ -689,10 +689,10 @@ export default function QuickStartPage() {
    }}
    >
    {!field.required && (
-    <option value="__none__">No está en mi archivo</option>
+    <option value="__none__">{t('qs.not_in_file')}</option>
    )}
    {field.required && !val && (
-    <option value="__none__">— Selecciona una columna —</option>
+    <option value="__none__">{t('qs.select_column')}</option>
    )}
    {allCols.map(c => (
     <option key={c} value={c}>{c}</option>
@@ -725,7 +725,7 @@ export default function QuickStartPage() {
   transition: 'opacity 0.15s',
  }}
  >
- {busy ? 'Procesando…' : 'Esto se ve bien, continuar →'}
+ {busy ? t('qs.processing') : t('qs.looks_good')}
  </button>
  </div>
  )}
@@ -734,12 +734,12 @@ export default function QuickStartPage() {
  {step === 3 && (
  <div style={{ textAlign: 'center' }}>
  <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
- El sistema está aprendiendo
+ {t('qs.learning_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 32px', lineHeight: 1.6 }}>
- Configuramos automáticamente los mejores parámetros para tu negocio.
+ {t('qs.learning_desc')}
  <br />
- Al terminar, verás el semáforo de inventario de todos tus productos.
+ {t('qs.learning_desc2')}
  </p>
 
  {!error && <TrainingLoader message={trainMsg} pct={trainPct} />}
@@ -765,7 +765,7 @@ export default function QuickStartPage() {
  cursor: 'pointer',
  }}
  >
- Intentar de nuevo
+ {t('qs.try_again')}
  </button>
  </div>
  )}
