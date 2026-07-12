@@ -81,3 +81,75 @@ class TestWarehouseBulkImport:
         )
         assert wh_row is not None
         assert wh_row["name"] == bodega
+
+
+class TestWarehouseEndpoints:
+    """GET/POST /inventory/warehouses — list/create warehouses directly."""
+
+    def test_viewer_denied_on_create_no_row_created(self, client, viewer_headers, test_tenant):
+        from backend.db.connection import query_one
+        tid = test_tenant["id"]
+        name = _bodega()
+
+        r = client.post(
+            "/api/v1/inventory/warehouses",
+            json={"name": name},
+            headers=viewer_headers,
+        )
+        assert r.status_code == 403
+
+        row = query_one(
+            "SELECT name FROM warehouses WHERE tenant_id=%s AND name=%s",
+            (tid, name),
+        )
+        assert row is None
+
+    def test_analyst_can_create_warehouse(self, client, analyst_headers, test_tenant):
+        from backend.db.connection import query_one
+        tid = test_tenant["id"]
+        name = _bodega()
+
+        r = client.post(
+            "/api/v1/inventory/warehouses",
+            json={"name": name},
+            headers=analyst_headers,
+        )
+        assert r.status_code == 201
+
+        row = query_one(
+            "SELECT name, is_default FROM warehouses WHERE tenant_id=%s AND name=%s",
+            (tid, name),
+        )
+        assert row is not None
+        assert row["name"] == name
+        assert row["is_default"] is False
+
+    def test_list_returns_created_warehouses(self, client, analyst_headers, test_tenant):
+        name = _bodega()
+        create_r = client.post(
+            "/api/v1/inventory/warehouses",
+            json={"name": name},
+            headers=analyst_headers,
+        )
+        assert create_r.status_code == 201
+
+        r = client.get("/api/v1/inventory/warehouses", headers=analyst_headers)
+        assert r.status_code == 200
+        names = [w["name"] for w in r.json()["data"]]
+        assert name in names
+
+    def test_duplicate_name_is_idempotent_not_duplicated(self, client, analyst_headers, test_tenant):
+        from backend.db.connection import query
+        tid = test_tenant["id"]
+        name = _bodega()
+
+        r1 = client.post("/api/v1/inventory/warehouses", json={"name": name}, headers=analyst_headers)
+        r2 = client.post("/api/v1/inventory/warehouses", json={"name": name}, headers=analyst_headers)
+        assert r1.status_code == 201
+        assert r2.status_code == 201
+
+        rows = query(
+            "SELECT id FROM warehouses WHERE tenant_id=%s AND name=%s",
+            (tid, name),
+        )
+        assert len(rows) == 1

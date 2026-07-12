@@ -21,6 +21,7 @@ from backend.auth.guards import CurrentUser, get_current_user, require_analyst_o
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
+from backend.inventory import warehouse_service as wh_svc
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -659,6 +660,24 @@ def delete_supplier(supplier_id: str, user: CurrentUser = Depends(require_analys
     if not existing:
         raise HTTPException(status_code=404, detail="Supplier not found")
     sup_svc.delete_supplier(user.tenant_id, supplier_id)
+
+
+# ── Warehouses ────────────────────────────────────────────────────────────────
+
+class WarehouseCreate(BaseModel):
+    name:       str
+    is_default: bool = False
+
+
+@router.get("/warehouses")
+def list_warehouses(user: CurrentUser = Depends(get_current_user)):
+    return ok(wh_svc.list_warehouses(user.tenant_id))
+
+
+@router.post("/warehouses", status_code=201)
+def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
+    warehouse = wh_svc.create_warehouse(user.tenant_id, body.name, is_default=body.is_default)
+    return ok(warehouse)
 
 
 @router.get("/stock/{sku}/suppliers")

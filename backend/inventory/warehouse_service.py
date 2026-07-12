@@ -1,0 +1,56 @@
+"""
+Warehouse management service.
+
+Thin CRUD over the `warehouses` table. Warehouses are also auto-created
+implicitly by inventory_stock upserts (see `service._ensure_warehouse`) —
+this module exposes the same table for direct listing/creation from the API.
+"""
+
+import logging
+from typing import Optional
+
+from backend.db.connection import execute, query, query_one
+
+log = logging.getLogger(__name__)
+
+
+def list_warehouses(tenant_id: str) -> list[dict]:
+    return query(
+        "SELECT * FROM warehouses WHERE tenant_id = %s ORDER BY name",
+        (tenant_id,),
+    )
+
+
+def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dict:
+    """Idempotent create: if a warehouse with this name already exists for the
+    tenant, returns the existing row unchanged rather than 409ing (matches the
+    ON CONFLICT ... DO NOTHING pattern already used for auto-created
+    warehouses in `service._ensure_warehouse`)."""
+    execute(
+        "INSERT INTO warehouses (tenant_id, name, is_default) VALUES (%s, %s, %s) "
+        "ON CONFLICT (tenant_id, name) DO NOTHING",
+        (tenant_id, name, is_default),
+    )
+    row = query_one(
+        "SELECT * FROM warehouses WHERE tenant_id = %s AND name = %s",
+        (tenant_id, name),
+    )
+    return row  # type: ignore[return-value]
+
+
+def ensure_default_warehouse(tenant_id: str) -> dict:
+    """Creates the 'principal' warehouse with is_default=True for this tenant
+    if no warehouse exists yet. Returns the default warehouse row."""
+    existing = query_one(
+        "SELECT * FROM warehouses WHERE tenant_id = %s AND is_default = TRUE",
+        (tenant_id,),
+    )
+    if existing:
+        return existing
+    any_row = query_one(
+        "SELECT * FROM warehouses WHERE tenant_id = %s LIMIT 1",
+        (tenant_id,),
+    )
+    if any_row:
+        return any_row
+    return create_warehouse(tenant_id, "principal", is_default=True)
