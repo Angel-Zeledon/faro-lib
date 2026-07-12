@@ -12,7 +12,7 @@ import logging
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
@@ -178,6 +178,31 @@ async def bulk_import(
     # endpoint for other tenants).
     count = await asyncio.to_thread(svc.bulk_upsert, user.tenant_id, rows)
     return ok({"imported": count, "total_rows": len(rows)})
+
+
+_TEMPLATE_COLUMNS = [
+    "sku", "display_name", "categoria", "marca", "unidad_medida", "codigo_barras",
+    "stock_actual", "stock_minimo", "lead_time_dias", "costo_unitario",
+    "precio_venta", "moq", "proveedor", "notas",
+]
+_TEMPLATE_EXAMPLE = [
+    "SKU001", "Agua 600ml", "Bebidas", "AguaPura", "caja", "7501234567890",
+    "120", "20", "7", "3.50", "5.90", "12", "Distribuidora Sur", "producto de ejemplo",
+]
+
+
+@router.get("/template.csv")
+def download_template(user: CurrentUser = Depends(get_current_user)):
+    """Canonical inventory import template: header row + one example row."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(_TEMPLATE_COLUMNS)
+    w.writerow(_TEMPLATE_EXAMPLE)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="plantilla_inventario.csv"'},
+    )
 
 
 # ── Status endpoint — the core of the product ─────────────────────────────────

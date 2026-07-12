@@ -625,6 +625,19 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
   logPOGeneration(sessionId).catch(() => {})
 }
 
+export const downloadInventoryTemplate = async () => {
+  const token = getToken()
+  const res = await fetch(`${BASE}/inventory/template.csv`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const blob = await res.blob()
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = 'plantilla_inventario.csv'; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Inventory ROI ─────────────────────────────────────────────────────────────
 export const getInventoryROI = () =>
   request<InventoryROISummary>('GET', '/inventory/roi')

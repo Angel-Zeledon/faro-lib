@@ -288,6 +288,20 @@ class TestBulkImport:
         bad_resp = client.get(f"/api/v1/inventory/stock/{bad_sku}", headers=auth_headers)
         assert bad_resp.status_code == 404
 
+    def test_template_csv_has_canonical_header(self, client, auth_headers):
+        r = client.get("/api/v1/inventory/template.csv", headers=auth_headers)
+        assert r.status_code == 200
+        assert "text/csv" in r.headers["content-type"]
+        text = r.content.decode("utf-8-sig")
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        header = lines[0].split(",")
+        expected = ["sku", "display_name", "categoria", "marca", "unidad_medida",
+                    "codigo_barras", "stock_actual", "stock_minimo", "lead_time_dias",
+                    "costo_unitario", "precio_venta", "moq", "proveedor", "notas"]
+        assert header == expected
+        assert len(lines) >= 2          # header + at least one example row
+        assert len(lines[1].split(",")) == len(expected)   # example row is parseable
+
 
 # ── Signal calculation (unit-level, no DB) ────────────────────────────────────
 
