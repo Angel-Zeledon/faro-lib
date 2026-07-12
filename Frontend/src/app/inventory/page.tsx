@@ -17,6 +17,7 @@ import SessionBar from '@/components/ui/SessionBar'
 import Spinner from '@/components/ui/Spinner'
 import HelpTip from '@/components/ui/HelpTip'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useToast } from '@/contexts/ToastContext'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
@@ -646,6 +647,8 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
  const { t } = useLanguage()
+ const { addToast } = useToast()
+ const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[] } | null>(null)
  const [loading, setLoading] = useState(false)
@@ -741,6 +744,7 @@ export default function InventoryPage() {
  )
  })
  let saved = 0
+ const failed: string[] = []
  for (const [sku, draft] of toSave) {
  try {
  await upsertInventoryStock(sku, {
@@ -751,12 +755,19 @@ export default function InventoryPage() {
  saved++
  } catch (e) {
  console.error(`Error saving ${sku}:`, e)
+ failed.push(sku)
  }
  }
  setUpdateSaving(false)
+ if (failed.length === 0) {
+ addToast(t('inventory.toast_saved_title'), `${saved} SKUs`, 'success')
  setUpdateDraft({})
  setUpdatedSkus(new Set())
  setViewMode('table')
+ } else {
+ addToast(t('inventory.toast_save_partial'), `${failed.join(', ')} ${t('inventory.toast_save_failed_sufx')}`, 'error')
+ setUpdatedSkus(new Set(failed))
+ }
  await load(sessionId)
  }
 
@@ -800,15 +811,23 @@ export default function InventoryPage() {
  finally { savingRef.current = false; setSaving(false) }
  }
 
- async function handleDelete(sku: string) {
- if (!confirm(`${t('inventory.confirm_delete_prefix')} ${sku}?`)) return
+ function handleDelete(sku: string) { setDeleteTarget(sku) }
+
+ async function confirmDelete() {
+ if (!deleteTarget) return
+ const sku = deleteTarget
+ setDeleteTarget(null)
  try { await deleteInventoryStock(sku); await load(sessionId) }
  catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_deleting')) }
  }
 
  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
  const file = e.target.files?.[0]; if (!file) return; e.target.value = ''; setImporting(true)
- try { const res = await importInventoryCSV(file); await load(sessionId); alert(`${t('inventory.alert_imported_prefix')} ${res.imported} ${t('inventory.alert_imported_of')} ${res.total_rows} SKUs`) }
+ try {
+ const res = await importInventoryCSV(file)
+ await load(sessionId)
+ addToast(t('inventory.toast_import_title'), `${t('inventory.alert_imported_prefix')} ${res.imported} ${t('inventory.alert_imported_of')} ${res.total_rows} SKUs`, 'success')
+ }
  catch (err: unknown) { setError(err instanceof Error ? err.message : t('inventory.err_importing')) }
  finally { setImporting(false) }
  }
@@ -1558,6 +1577,21 @@ export default function InventoryPage() {
 
  {simEvent && sessionId && (
  <EventSimModal ev={simEvent} sessionId={sessionId} onClose={() => setSimEvent(null)} />
+ )}
+
+ {deleteTarget && (
+ <div onClick={() => setDeleteTarget(null)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+ <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+ <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+ {t('inventory.confirm_delete_prefix')} {deleteTarget}?
+ </div>
+ <p style={{ fontSize: 12, color: C.dim, margin: '0 0 18px', lineHeight: 1.5 }}>{t('inventory.confirm_delete_hint')}</p>
+ <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+ <button onClick={() => setDeleteTarget(null)} style={{ all: 'unset', cursor: 'pointer', padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.border}`, color: C.dim, fontSize: 13 }}>{t('common.cancel')}</button>
+ <button onClick={confirmDelete} style={{ all: 'unset', cursor: 'pointer', padding: '8px 16px', borderRadius: 8, background: C.red, color: '#fff', fontSize: 13, fontWeight: 700 }}>{t('inventory.btn_delete_confirm')}</button>
+ </div>
+ </div>
+ </div>
  )}
 
  {/* Legend */}
