@@ -5,7 +5,7 @@ import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
- listSuppliers, getDeadStock, simulateEvent, logPOGeneration,
+ listSuppliers, getDeadStock, simulateEvent, logPOGeneration, downloadInventoryTemplate,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
@@ -432,9 +432,9 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate }: {
 }
 
 // ── Inline edit state ─────────────────────────────────────────────────────────
-interface EditState { stock_actual: string; lead_time_dias: string; costo_unitario: string; moq: string; proveedor: string; display_name: string; service_level: string }
+interface EditState { stock_actual: string; lead_time_dias: string; costo_unitario: string; moq: string; proveedor: string; display_name: string; service_level: string; precio_venta: string; categoria: string; marca: string; unidad_medida: string; codigo_barras: string }
 function rowToEdit(item: InventoryStatusItem): EditState {
- return { stock_actual: String(item.stock_actual ?? ''), lead_time_dias: String(item.lead_time_dias ?? 15), costo_unitario: String(item.costo_unitario ?? ''), moq: String(item.moq ?? 1), proveedor: item.proveedor ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95) }
+ return { stock_actual: String(item.stock_actual ?? ''), lead_time_dias: String(item.lead_time_dias ?? 15), costo_unitario: String(item.costo_unitario ?? ''), moq: String(item.moq ?? 1), proveedor: item.proveedor ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95), precio_venta: String(item.precio_venta ?? ''), categoria: item.categoria ?? '', marca: item.marca ?? '', unidad_medida: item.unidad_medida ?? '', codigo_barras: item.codigo_barras ?? '' }
 }
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
@@ -794,7 +794,7 @@ export default function InventoryPage() {
  if (!editState || savingRef.current) return
  savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, stock_actual: parseFloat(editState.stock_actual) || 0, lead_time_dias: parseInt(editState.lead_time_dias) || 15, costo_unitario: editState.costo_unitario ? parseFloat(editState.costo_unitario) : undefined, moq: parseFloat(editState.moq) || 1, proveedor: editState.proveedor || undefined, service_level: parseFloat(editState.service_level) || 0.95 })
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, stock_actual: parseFloat(editState.stock_actual) || 0, lead_time_dias: parseInt(editState.lead_time_dias) || 15, costo_unitario: editState.costo_unitario ? parseFloat(editState.costo_unitario) : undefined, moq: parseFloat(editState.moq) || 1, proveedor: editState.proveedor || undefined, service_level: parseFloat(editState.service_level) || 0.95, precio_venta: editState.precio_venta ? parseFloat(editState.precio_venta) : undefined, categoria: editState.categoria || undefined, marca: editState.marca || undefined, unidad_medida: editState.unidad_medida || undefined, codigo_barras: editState.codigo_barras || undefined })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_saving')) }
  finally { savingRef.current = false; setSaving(false) }
@@ -918,6 +918,9 @@ export default function InventoryPage() {
  <input ref={importRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
  <button onClick={() => importRef.current?.click()} disabled={importing} style={{ all: 'unset', cursor: importing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted, opacity: importing ? 0.6 : 1 }}>
  {importing ? <Spinner size={12} /> : <Upload size={12} />} CSV
+ </button>
+ <button onClick={() => downloadInventoryTemplate().catch(err => setError(err instanceof Error ? err.message : String(err)))} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted }}>
+ <Download size={12} /> {t('inventory.btn_template')}
  </button>
  <button onClick={handleExport} disabled={exporting || !sessionId} style={{ all: 'unset', cursor: exporting || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, opacity: exporting || !sessionId ? 0.5 : 1 }}>
  {exporting ? <Spinner size={12} /> : <Download size={12} />} {t('inventory.btn_export_po')}
@@ -1356,6 +1359,12 @@ export default function InventoryPage() {
  <div style={{ fontWeight: 600, fontFamily: 'monospace', marginBottom: 4, fontSize: 11 }}>{item.sku}</div>
  <input style={inputS} placeholder={t('inventory.edit_display_name_placeholder')} value={editState.display_name} onChange={e => setEditState(s => s ? { ...s, display_name: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_display_name_hint')}</div>
+ <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+ <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_categoria')} value={editState.categoria} onChange={e => setEditState(s => s ? { ...s, categoria: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_marca')} value={editState.marca} onChange={e => setEditState(s => s ? { ...s, marca: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 70 }} placeholder={t('inventory.edit_unidad')} value={editState.unidad_medida} onChange={e => setEditState(s => s ? { ...s, unidad_medida: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 120 }} placeholder={t('inventory.edit_codigo_barras')} value={editState.codigo_barras} onChange={e => setEditState(s => s ? { ...s, codigo_barras: e.target.value } : s)} />
+ </div>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <input style={{ ...inputS, width: 80 }} type="number" min={0} value={editState.stock_actual} onChange={e => setEditState(s => s ? { ...s, stock_actual: e.target.value } : s)} />
@@ -1392,6 +1401,10 @@ export default function InventoryPage() {
  <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder="0" value={editState.costo_unitario} onChange={e => setEditState(s => s ? { ...s, costo_unitario: e.target.value } : s)} />
  </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_provider_price_hint')}</div>
+ <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
+ <span style={{ fontSize: 11, color: C.dim }}>$</span>
+ <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder={t('inventory.edit_precio_venta')} value={editState.precio_venta} onChange={e => setEditState(s => s ? { ...s, precio_venta: e.target.value } : s)} />
+ </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
  {t('inventory.edit_service_level_label')}
  <HelpTip text={t('inventory.help_service_level')} width={260} />

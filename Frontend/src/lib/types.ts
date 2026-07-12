@@ -559,6 +559,11 @@ export interface InventoryStock {
   product_type?:  string
   service_level?: number
   updated_at?:    string
+  precio_venta?:  number | null
+  categoria?:     string | null
+  marca?:         string | null
+  unidad_medida?: string | null
+  codigo_barras?: string | null
 }
 
 export interface InventoryCalcExplanation {
