@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
- RefreshCw, ArrowRight, BarChart2, Package, Zap,
+ RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
 } from 'lucide-react'
-import { getMorningBriefing, getMorningNarrative } from '@/lib/api'
-import type { MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike } from '@/lib/types'
+import { getMorningBriefing, getMorningNarrative, getPOHistory } from '@/lib/api'
+import type { MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import { getUser } from '@/lib/auth'
@@ -336,6 +336,9 @@ export default function HoyPage() {
  // Work-queue cart state
  const [cart, setCart] = useState<ActionItem[]>([])
 
+ // Orders awaiting reception
+ const [pendingPOs, setPendingPOs] = useState<POLogEntry[]>([])
+
  const user    = getUser()
  const { profile } = useBusinessProfile()
 
@@ -400,6 +403,15 @@ export default function HoyPage() {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [briefing?.session_id])
+
+ // Orders awaiting reception — confirming yesterday's arrivals is part of the morning routine
+ useEffect(() => {
+  getPOHistory(20)
+   .then(list => setPendingPOs(list.filter(p =>
+    ['pending', 'partial'].includes(p.reception_status ?? 'pending'),
+   )))
+   .catch(() => {})
+ }, [])
 
  // ── Cart helpers ─────────────────────────────────────────────────────────
  function approveItem(sku: string) {
@@ -642,6 +654,29 @@ export default function HoyPage() {
       </div>
      ) : (
       <>
+       {/* Pending receptions banner */}
+       {pendingPOs.length > 0 && (
+        <Link href="/pedidos" style={{ textDecoration: 'none' }}>
+         <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20,
+          padding: '12px 16px', borderRadius: 10,
+          background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.25)',
+         }}>
+          <Truck size={15} color={C.indigo} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
+           <strong>{pendingPOs.length}</strong>{' '}
+           {pendingPOs.length === 1 ? t('hoy.receptions_pending_singular') : t('hoy.receptions_pending_plural')}
+          </span>
+          <span style={{
+           fontSize: 12, fontWeight: 700, color: C.indigo,
+           display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+           {t('hoy.receptions_cta')} <ArrowRight size={12} />
+          </span>
+         </div>
+        </Link>
+       )}
+
        {/* KPI row */}
        <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
         <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
