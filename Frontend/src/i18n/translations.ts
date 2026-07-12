@@ -346,6 +346,7 @@ export const translations = {
     'roi.col_adoption': '% Adopción',
     'roi.col_capital_freed': 'Capital liberado de sobrestock',
     'roi.capital_freed_pending': 'Aún no hay suficiente historial',
+    'roi.see_orders_link': 'Ver pedidos y registrar llegadas →',
 
     // ── Analyst (AI) ──
     'analyst.time_just_now': 'justo ahora',
@@ -1584,6 +1585,7 @@ export const translations = {
     'roi.col_adoption': '% Adoption',
     'roi.col_capital_freed': 'Capital freed from overstock',
     'roi.capital_freed_pending': 'Not enough history yet',
+    'roi.see_orders_link': 'View orders and record receptions →',
 
     // ── Analyst (AI) ──
     'analyst.time_just_now': 'just now',

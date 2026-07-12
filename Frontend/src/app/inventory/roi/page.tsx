@@ -1,12 +1,11 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { getInventoryROI, getPOHistory, getROIMonthly } from '@/lib/api'
-import type { InventoryROISummary, POLogEntry, ROIMonthlyRow } from '@/lib/types'
+import { getInventoryROI, getROIMonthly } from '@/lib/api'
+import type { InventoryROISummary, ROIMonthlyRow } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -256,23 +255,19 @@ function WhyItMattersCard() {
 export default function ROIPage() {
   const { t } = useLanguage()
   const [roi,     setRoi]     = useState<InventoryROISummary | null>(null)
-  const [history, setHistory] = useState<POLogEntry[]>([])
   const [monthly, setMonthly] = useState<ROIMonthlyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
-  const [receivingPO, setReceivingPO] = useState<string | null>(null)
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true)
     setError(null)
     try {
-      const [roiData, histData, monthlyData] = await Promise.all([
+      const [roiData, monthlyData] = await Promise.all([
         getInventoryROI(),
-        getPOHistory(20),
         getROIMonthly(),
       ])
       setRoi(roiData)
-      setHistory(histData)
       setMonthly(monthlyData)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t('roi.error_loading'))
@@ -341,30 +336,15 @@ export default function ROIPage() {
           {/* Section 2 — Monthly evolution */}
           <MonthlyEvolutionTable rows={monthly} />
 
-          {/* Section 3 — PO history table */}
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{
-              padding: '14px 18px', borderBottom: `1px solid ${C.border}`,
-              background: C.card, display: 'flex', alignItems: 'center', gap: 8,
-            }}>
-              <ShoppingCart size={14} color={C.indigo} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-                {t('roi.po_history_title')}
-              </span>
-              <span style={{ fontSize: 11, color: C.dim, marginLeft: 'auto' }}>
-                {t('roi.last_generated_prefix')} {history.length} {t('roi.last_generated_suffix')}
-              </span>
-            </div>
-            <POHistoryTable entries={history} onReceive={setReceivingPO} />
-          </div>
-
-          {receivingPO && (
-            <ReceptionModal
-              poId={receivingPO}
-              onClose={() => setReceivingPO(null)}
-              onSaved={() => { setReceivingPO(null); load() }}
-            />
-          )}
+          {/* Orders now live in /pedidos */}
+          <Link href="/pedidos" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '14px 18px', borderRadius: 12, textDecoration: 'none',
+            background: C.surface, border: `1px solid ${C.border}`,
+            fontSize: 13, fontWeight: 600, color: C.indigo,
+          }}>
+            <ShoppingCart size={14} /> {t('roi.see_orders_link')}
+          </Link>
 
           {/* Section 4 — Why it matters */}
           <WhyItMattersCard />
