@@ -41,6 +41,7 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
     validation_cfg = session_store.get_field(tenant_id, session_id, "validation_cfg") or {}
     business_cfg = session_store.get_field(tenant_id, session_id, "business_cfg") or {}
     forecast_cfg = session_store.get_field(tenant_id, session_id, "forecast_cfg") or {}
+    granularity_cfg = session_store.get_field(tenant_id, session_id, "granularity_cfg") or {}
 
     # Resolve dataset file path from DB
     dataset_path = ""
@@ -120,6 +121,10 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
         },
         "forecast": {
             "horizon": forecast_cfg.get("horizon", validation_cfg.get("horizon", 14)),
+        },
+        "granularity": {
+            "strategy": granularity_cfg.get("strategy", "native"),
+            "target_freq": granularity_cfg.get("target_freq"),
         },
         "business": {
             "service_level": business_cfg.get("service_level", 0.95),
