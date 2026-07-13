@@ -27,6 +27,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
+import numpy as np
+from scipy.optimize import Bounds
+
 
 @dataclass
 class OptimizationInput:
@@ -115,3 +118,68 @@ class VariableIndex:
     def transfer_pairs(self) -> List[Tuple[str, str]]:
         """All valid (from_warehouse, to_warehouse) pairs, a != b."""
         return list(self._transfer_pairs)
+
+
+@dataclass
+class MilpProblem:
+    c: np.ndarray
+    A_eq: np.ndarray
+    b_eq: np.ndarray
+    bounds: Bounds
+    integrality: np.ndarray
+    index: VariableIndex
+
+
+def build_problem(inp: OptimizationInput) -> MilpProblem:
+    idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
+    n = idx.n_vars
+
+    c = np.zeros(n)
+    lb = np.zeros(n)
+    ub = np.full(n, np.inf)
+    integrality = np.zeros(n, dtype=int)
+
+    for i in inp.skus:
+        for w in inp.warehouses:
+            for t in range(1, inp.horizon + 1):
+                c[idx.order_idx(i, w, t)] = inp.order_cost[i]
+                c[idx.inv_idx(i, w, t)] = inp.holding_cost[i]
+                c[idx.short_idx(i, w, t)] = inp.stockout_cost[i]
+                integrality[idx.order_idx(i, w, t)] = 1
+                # Lead time: orders can't arrive before lead_time_buckets[i]
+                # has elapsed from the start of the planning horizon.
+                if t <= inp.lead_time_buckets.get(i, 0):
+                    ub[idx.order_idx(i, w, t)] = 0
+        for a, b in idx.transfer_pairs():
+            for t in range(1, inp.horizon + 1):
+                c[idx.transfer_idx(i, a, b, t)] = inp.transfer_cost
+                integrality[idx.transfer_idx(i, a, b, t)] = 1
+
+    # Balance equality rows: one per (sku, warehouse, t).
+    n_rows = len(inp.skus) * len(inp.warehouses) * inp.horizon
+    A_eq = np.zeros((n_rows, n))
+    b_eq = np.zeros(n_rows)
+    row = 0
+    for i in inp.skus:
+        for w in inp.warehouses:
+            for t in range(1, inp.horizon + 1):
+                A_eq[row, idx.inv_idx(i, w, t)] = 1.0
+                A_eq[row, idx.order_idx(i, w, t)] = -1.0
+                A_eq[row, idx.short_idx(i, w, t)] = -1.0
+                for a in inp.warehouses:
+                    if a == w:
+                        continue
+                    A_eq[row, idx.transfer_idx(i, a, w, t)] = -1.0  # inbound
+                    A_eq[row, idx.transfer_idx(i, w, a, t)] = 1.0   # outbound
+
+                demand_t = inp.demand[(i, w)][t - 1]
+                if t == 1:
+                    A_eq[row, idx.inv_idx(i, w, t)] = 1.0  # (already set above; explicit for clarity)
+                    b_eq[row] = inp.stock0[(i, w)] - demand_t
+                else:
+                    A_eq[row, idx.inv_idx(i, w, t - 1)] = -1.0
+                    b_eq[row] = -demand_t
+                row += 1
+
+    bounds = Bounds(lb=lb, ub=ub)
+    return MilpProblem(c=c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, integrality=integrality, index=idx)
