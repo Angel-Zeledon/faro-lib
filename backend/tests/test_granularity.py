@@ -156,3 +156,42 @@ class TestInspectGranularity:
             headers=viewer_headers,
         )
         assert vr.status_code == 403
+
+
+class TestForecastHorizonLimits:
+    def test_unified_horizon_within_default_range_accepted(self, client, auth_headers, test_session):
+        sid = test_session["id"]
+        r = client.post(
+            f"/api/v1/sessions/{sid}/config/forecast",
+            json={"horizon": 14, "quantiles": [0.1, 0.9]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["horizon_mode"] == "unified"
+
+    def test_segmented_horizon_by_freq_persists(self, client, auth_headers, test_session):
+        sid = test_session["id"]
+        r = client.post(
+            f"/api/v1/sessions/{sid}/config/forecast",
+            json={"horizon_mode": "segmented", "horizon_by_freq": {"D": 10, "W": 4}},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["horizon_by_freq"] == {"D": 10, "W": 4}
+
+    def test_segmented_horizon_out_of_range_rejected(self, client, auth_headers, registered_user, test_session):
+        sid = test_session["id"]
+        r = client.post(
+            f"/api/v1/sessions/{sid}/config/forecast",
+            json={"horizon_mode": "segmented", "horizon_by_freq": {"D": 60}},  # D max is 30
+            headers=auth_headers,
+        )
+        assert r.status_code == 422
+
+        # A 422 from Pydantic validation means configure_forecast's handler
+        # body never runs — no session_store.set_field call happens. Confirm
+        # no forecast_cfg was ever persisted for this fresh session.
+        from backend.db import session_store
+        tenant_id = registered_user["tenant"]["id"]
+        assert session_store.get_field(tenant_id, sid, "forecast_cfg") is None
