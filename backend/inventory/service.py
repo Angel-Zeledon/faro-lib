@@ -53,22 +53,7 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     )
     _ensure_warehouse(tenant_id, safe["bodega"])
 
-    # NOTE (widened per final-review finding, tracked for MW-2/MW-3): several
-    # call sites are NOT yet warehouse-aware and will misbehave the moment a
-    # tenant has a real second warehouse — this is safe today only because no
-    # tenant does yet:
-    #   - get_stock(tenant, sku) below returns whichever bodega row Postgres
-    #     returns first (no ORDER BY / no bodega filter) — this upsert's own
-    #     return value can therefore echo a DIFFERENT warehouse's row after a
-    #     multi-bodega write.
-    #   - reception_service.py's PO-reception stock UPDATE has no bodega
-    #     filter and will add the received quantity to EVERY bodega row for
-    #     that SKU (stock inflation across warehouses).
-    #   - get_inventory_status()'s stock_map keeps one arbitrary bodega row
-    #     per SKU instead of summing across bodegas (semáforo/valuation
-    #     under-reports for a multi-warehouse SKU).
-    # All three must be fixed before multi-warehouse reaches a real tenant.
-    row = get_stock(tenant_id, sku)
+    row = get_stock(tenant_id, sku, bodega=safe["bodega"])
 
     # Auto-snapshot when stock_actual is updated
     if "stock_actual" in safe and row:
@@ -91,7 +76,12 @@ def _ensure_warehouse(tenant_id: str, name: str) -> None:
         log.warning("_ensure_warehouse: failed to upsert bodega=%s tenant=%s err=%s", name, tenant_id, e)
 
 
-def get_stock(tenant_id: str, sku: str) -> Optional[dict]:
+def get_stock(tenant_id: str, sku: str, bodega: Optional[str] = None) -> Optional[dict]:
+    if bodega is not None:
+        return query_one(
+            "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s AND bodega = %s",
+            (tenant_id, sku, bodega),
+        )
     return query_one(
         "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
         (tenant_id, sku),

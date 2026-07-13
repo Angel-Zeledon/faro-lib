@@ -45,6 +45,15 @@ class TestWarehouseStock:
         rows = query("SELECT stock_actual FROM inventory_stock WHERE tenant_id=%s AND sku=%s AND bodega='Norte'", (tid, sku))
         assert len(rows) == 1 and float(rows[0]["stock_actual"]) == 9.0
 
+    def test_upsert_stock_returns_the_bodega_it_wrote(self, client, auth_headers, test_tenant):
+        from backend.inventory import service as svc
+        tid = test_tenant["id"]
+        sku = _sku()
+        svc.upsert_stock(tid, sku, {"stock_actual": 100, "bodega": "Norte"})
+        result = svc.upsert_stock(tid, sku, {"stock_actual": 40, "bodega": "Sur"})
+        assert result["bodega"] == "Sur"
+        assert float(result["stock_actual"]) == 40.0
+
 
 class TestWarehouseBulkImport:
     def test_bulk_import_persists_bodega_and_autocreates_warehouse(self, client, auth_headers, test_tenant):
