@@ -7,7 +7,6 @@ this module exposes the same table for direct listing/creation from the API.
 """
 
 import logging
-from typing import Optional
 
 from backend.db.connection import execute, query, query_one
 
@@ -25,7 +24,12 @@ def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dic
     """Idempotent create: if a warehouse with this name already exists for the
     tenant, returns the existing row unchanged rather than 409ing (matches the
     ON CONFLICT ... DO NOTHING pattern already used for auto-created
-    warehouses in `service._ensure_warehouse`)."""
+    warehouses in `service._ensure_warehouse`).
+
+    KNOWN LIMITATION: on a name collision, the requested `is_default` value is
+    silently discarded — the existing row's `is_default` wins. No caller flips
+    an existing warehouse's default flag yet; if one is added, this function
+    needs an explicit UPDATE path for that case."""
     execute(
         "INSERT INTO warehouses (tenant_id, name, is_default) VALUES (%s, %s, %s) "
         "ON CONFLICT (tenant_id, name) DO NOTHING",
