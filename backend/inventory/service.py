@@ -53,9 +53,21 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     )
     _ensure_warehouse(tenant_id, safe["bodega"])
 
-    # NOTE: get_stock(tenant, sku) is not yet warehouse-aware — with multiple
-    # bodega rows for the same SKU it returns whichever row Postgres returns
-    # first (no ORDER BY). Warehouse-aware reads land in a later task.
+    # NOTE (widened per final-review finding, tracked for MW-2/MW-3): several
+    # call sites are NOT yet warehouse-aware and will misbehave the moment a
+    # tenant has a real second warehouse — this is safe today only because no
+    # tenant does yet:
+    #   - get_stock(tenant, sku) below returns whichever bodega row Postgres
+    #     returns first (no ORDER BY / no bodega filter) — this upsert's own
+    #     return value can therefore echo a DIFFERENT warehouse's row after a
+    #     multi-bodega write.
+    #   - reception_service.py's PO-reception stock UPDATE has no bodega
+    #     filter and will add the received quantity to EVERY bodega row for
+    #     that SKU (stock inflation across warehouses).
+    #   - get_inventory_status()'s stock_map keeps one arbitrary bodega row
+    #     per SKU instead of summing across bodegas (semáforo/valuation
+    #     under-reports for a multi-warehouse SKU).
+    # All three must be fixed before multi-warehouse reaches a real tenant.
     row = get_stock(tenant_id, sku)
 
     # Auto-snapshot when stock_actual is updated

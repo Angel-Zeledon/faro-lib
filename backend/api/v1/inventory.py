@@ -665,7 +665,7 @@ def delete_supplier(supplier_id: str, user: CurrentUser = Depends(require_analys
 # ── Warehouses ────────────────────────────────────────────────────────────────
 
 class WarehouseCreate(BaseModel):
-    name:       str
+    name:       str = Field(min_length=1)
     is_default: bool = False
 
 

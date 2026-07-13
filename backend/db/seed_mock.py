@@ -25,7 +25,12 @@ Idempotency:
 - `suppliers` rows are `ON CONFLICT (tenant_id, name) DO NOTHING`.
 - The RNG is seeded deterministically from `tenant_id`, so a re-run
   generates the exact same values and overwrites rows with themselves —
-  row counts (and content) never grow on re-run.
+  `warehouses`, `inventory_stock`, and `suppliers` row counts never grow.
+  EXCEPTION: `upsert_stock` auto-records an append-only stock snapshot
+  (`inventory_snapshots`) on every call, so re-running THIS seeder does add
+  `skus * warehouses` new snapshot rows each time (a flat-value history
+  point, not a duplicate of stock/warehouse/supplier data). Do not wire this
+  into a run-on-every-boot hook without addressing that separately.
 
 Run standalone:
     python -m backend.db.seed_mock <tenant_id> [warehouses] [skus]
