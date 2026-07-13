@@ -159,7 +159,7 @@ class TestInspectGranularity:
 
 
 class TestForecastHorizonLimits:
-    def test_unified_horizon_within_default_range_accepted(self, client, auth_headers, test_session):
+    def test_unified_horizon_within_default_range_accepted(self, client, auth_headers, registered_user, test_session):
         sid = test_session["id"]
         r = client.post(
             f"/api/v1/sessions/{sid}/config/forecast",
@@ -169,7 +169,13 @@ class TestForecastHorizonLimits:
         assert r.status_code == 200, r.text
         assert r.json()["data"]["horizon_mode"] == "unified"
 
-    def test_segmented_horizon_by_freq_persists(self, client, auth_headers, test_session):
+        from backend.db import session_store
+        tenant_id = registered_user["tenant"]["id"]
+        persisted = session_store.get_field(tenant_id, sid, "forecast_cfg")
+        assert persisted["horizon_mode"] == "unified"
+        assert persisted["horizon"] == 14
+
+    def test_segmented_horizon_by_freq_persists(self, client, auth_headers, registered_user, test_session):
         sid = test_session["id"]
         r = client.post(
             f"/api/v1/sessions/{sid}/config/forecast",
@@ -179,6 +185,12 @@ class TestForecastHorizonLimits:
         assert r.status_code == 200, r.text
         data = r.json()["data"]
         assert data["horizon_by_freq"] == {"D": 10, "W": 4}
+
+        from backend.db import session_store
+        tenant_id = registered_user["tenant"]["id"]
+        persisted = session_store.get_field(tenant_id, sid, "forecast_cfg")
+        assert persisted["horizon_mode"] == "segmented"
+        assert persisted["horizon_by_freq"] == {"D": 10, "W": 4}
 
     def test_segmented_horizon_out_of_range_rejected(self, client, auth_headers, registered_user, test_session):
         sid = test_session["id"]
