@@ -174,7 +174,8 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
 
                 demand_t = inp.demand[(i, w)][t - 1]
                 if t == 1:
-                    A_eq[row, idx.inv_idx(i, w, t)] = 1.0  # (already set above; explicit for clarity)
+                    # inv[i,w,0] is the constant stock0[i,w], not a variable,
+                    # so it folds into this row's RHS instead of a column.
                     b_eq[row] = inp.stock0[(i, w)] - demand_t
                 else:
                     A_eq[row, idx.inv_idx(i, w, t - 1)] = -1.0
