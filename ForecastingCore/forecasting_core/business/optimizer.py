@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy.optimize import Bounds
+from scipy.optimize import Bounds, LinearConstraint, milp
 
 
 @dataclass
@@ -184,3 +184,85 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
 
     bounds = Bounds(lb=lb, ub=ub)
     return MilpProblem(c=c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, integrality=integrality, index=idx)
+
+
+def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> OptimizationResult:
+    problem = build_problem(inp)
+    if problem.index.n_vars > max_vars_before_fallback:
+        return _fallback_recommend(inp, problem.index)
+
+    try:
+        constraint = LinearConstraint(problem.A_eq, lb=problem.b_eq, ub=problem.b_eq)
+        res = milp(
+            problem.c,
+            integrality=problem.integrality,
+            bounds=problem.bounds,
+            constraints=[constraint],
+        )
+    except Exception:
+        return _fallback_recommend(inp, problem.index)
+
+    if not getattr(res, "success", False):
+        return _fallback_recommend(inp, problem.index)
+
+    return _decode_solution(inp, problem, res.x)
+
+
+def _decode_solution(inp: OptimizationInput, problem: MilpProblem, x) -> OptimizationResult:
+    idx = problem.index
+    orders, transfers, inventory, shortages = {}, {}, {}, {}
+    for i in inp.skus:
+        for w in inp.warehouses:
+            for t in range(1, inp.horizon + 1):
+                orders[(i, w, t)] = round(float(x[idx.order_idx(i, w, t)]), 6)
+                inventory[(i, w, t)] = round(float(x[idx.inv_idx(i, w, t)]), 6)
+                shortages[(i, w, t)] = round(float(x[idx.short_idx(i, w, t)]), 6)
+        for a, b in idx.transfer_pairs():
+            for t in range(1, inp.horizon + 1):
+                transfers[(i, a, b, t)] = round(float(x[idx.transfer_idx(i, a, b, t)]), 6)
+
+    total_cost = float(problem.c @ x)
+    return OptimizationResult(
+        orders=orders, transfers=transfers, inventory=inventory,
+        shortages=shortages, total_cost=total_cost, status="optimal",
+    )
+
+
+def _fallback_recommend(inp: OptimizationInput, idx: VariableIndex) -> OptimizationResult:
+    """
+    Per-(sku, warehouse) ROP-style fallback, ignoring transfers entirely:
+    order enough each bucket to cover that bucket's demand net of running
+    stock, never going negative. Used when the MILP solve fails, raises, or
+    the problem is too large to solve in reasonable time.
+    """
+    orders, transfers, inventory, shortages = {}, {}, {}, {}
+    total_cost = 0.0
+    for i in inp.skus:
+        for w in inp.warehouses:
+            running = inp.stock0[(i, w)]
+            for t in range(1, inp.horizon + 1):
+                demand_t = inp.demand[(i, w)][t - 1]
+                available = running if t > inp.lead_time_buckets.get(i, 0) else 0.0
+                # naive: order exactly the shortfall against this bucket's demand
+                needed = max(0.0, demand_t - available)
+                order_qty = needed
+                orders[(i, w, t)] = order_qty
+                ending = available + order_qty - demand_t
+                shortage = max(0.0, -ending)
+                ending = max(0.0, ending)
+                inventory[(i, w, t)] = ending
+                shortages[(i, w, t)] = shortage
+                running = ending
+                total_cost += (
+                    inp.order_cost[i] * order_qty
+                    + inp.holding_cost[i] * ending
+                    + inp.stockout_cost[i] * shortage
+                )
+        for a, b in idx.transfer_pairs():
+            for t in range(1, inp.horizon + 1):
+                transfers[(i, a, b, t)] = 0.0
+
+    return OptimizationResult(
+        orders=orders, transfers=transfers, inventory=inventory,
+        shortages=shortages, total_cost=total_cost, status="fallback",
+    )
