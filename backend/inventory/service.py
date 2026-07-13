@@ -354,6 +354,29 @@ def _gate_recommended_by_signal(signal: str, recomendado: float) -> float:
     return 0.0
 
 
+def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
+    """
+    Collapse per-bodega inventory_stock rows into one summary row per SKU:
+    stock_actual is SUMMED across bodegas (true total stock the tenant
+    holds); every other field (lead_time_dias, costo_unitario, proveedor,
+    etc.) is taken from a single deterministic representative row (the
+    'principal' bodega if present, else the alphabetically-first bodega) —
+    those are per-SKU catalog attributes, not per-warehouse quantities, so
+    picking one is correct as long as it's deterministic.
+    """
+    by_sku: dict[str, list[dict]] = {}
+    for r in stock_rows:
+        by_sku.setdefault(r["sku"], []).append(r)
+
+    result: dict[str, dict] = {}
+    for sku, rows in by_sku.items():
+        rows_sorted = sorted(rows, key=lambda r: (r.get("bodega") != "principal", r.get("bodega") or ""))
+        representative = dict(rows_sorted[0])
+        representative["stock_actual"] = sum(float(r["stock_actual"] or 0) for r in rows)
+        result[sku] = representative
+    return result
+
+
 # ── Main status calculation ───────────────────────────────────────────────────
 
 def get_inventory_status(tenant_id: str, session_id: str, service_level: float = 0.95) -> list[dict]:
@@ -377,7 +400,7 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         pass
 
     stock_rows = list_stock(tenant_id)
-    stock_map  = {r["sku"]: r for r in stock_rows}
+    stock_map  = _aggregate_stock_rows_by_sku(stock_rows)
 
     # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
     # tenant-wide table (no session_id column) that accumulates rows from every
