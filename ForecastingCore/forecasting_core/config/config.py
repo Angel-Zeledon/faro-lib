@@ -151,6 +151,7 @@ class SessionConfig:
         forecast: Prediction horizon and quantiles.
         business: Business rules for inventory recommendations.
         routing:  Model routing strategy.
+        granularity: Data Alignment Wizard strategy (native vs. aggregate-resample).
     """
 
     name: str = "session_1"
