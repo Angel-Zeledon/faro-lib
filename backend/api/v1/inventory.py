@@ -464,6 +464,7 @@ class POLineItem(BaseModel):
     cantidad_final:       float           = Field(default=0, ge=0)
     costo_unitario:       Optional[float] = Field(default=None, ge=0)
     status:               str             = "approved"
+    bodega:               Optional[str]   = None
 
 
 class POLogRequest(BaseModel):

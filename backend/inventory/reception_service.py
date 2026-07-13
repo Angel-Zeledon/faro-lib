@@ -35,7 +35,8 @@ def get_po(tenant_id: str, po_log_id: str) -> Optional[dict]:
 def get_po_items(tenant_id: str, po_log_id: str) -> list[dict]:
     return query(
         """SELECT id, sku, display_name, proveedor, signal, status,
-                  cantidad_recomendada, cantidad_final, cantidad_recibida, costo_unitario
+                  cantidad_recomendada, cantidad_final, cantidad_recibida, costo_unitario,
+                  bodega
            FROM inventory_po_items
            WHERE po_log_id = %s AND tenant_id = %s
            ORDER BY proveedor NULLS LAST, sku""",
@@ -121,14 +122,15 @@ def receive_po(
             execute(
                 """UPDATE inventory_stock
                    SET stock_actual = stock_actual + %s, updated_at = NOW()
-                   WHERE tenant_id = %s AND sku = %s""",
-                (qty, tenant_id, i["sku"]),
+                   WHERE tenant_id = %s AND sku = %s AND bodega = %s""",
+                (qty, tenant_id, i["sku"], i["bodega"]),
             )
         else:
             inv_svc.upsert_stock(tenant_id, i["sku"], {
                 "stock_actual": qty,
                 "display_name": i.get("display_name"),
                 "proveedor": i.get("proveedor"),
+                "bodega": i.get("bodega") or "principal",
             })
         # Point-in-time snapshot so /stock/{sku}/history reflects the arrival
         try:

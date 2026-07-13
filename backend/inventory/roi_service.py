@@ -109,14 +109,14 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
                     """INSERT INTO inventory_po_items
                            (po_log_id, tenant_id, sku, display_name, proveedor,
                             signal, cantidad_recomendada, cantidad_final,
-                            costo_unitario, status)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            costo_unitario, status, bodega)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (po_log_id, tenant_id, str(i.get("sku") or ""),
                      i.get("display_name"), i.get("proveedor"), i.get("signal"),
                      float(i.get("cantidad_recomendada") or 0),
                      _ordered_qty(i) if i["status"] in _ORDERED else 0.0,
                      (float(i["costo_unitario"]) if i.get("costo_unitario") is not None else None),
-                     i["status"]),
+                     i["status"], i.get("bodega") or "principal"),
                 )
             except Exception as e:
                 log.warning("log_po_generation: skipped line sku=%s err=%s", i.get("sku"), e)

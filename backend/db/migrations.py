@@ -312,6 +312,8 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS po_items_log_idx ON inventory_po_items (po_log_id)"),
     ("create_inventory_po_items_sku_idx",
      "CREATE INDEX IF NOT EXISTS po_items_sku_idx ON inventory_po_items (tenant_id, sku)"),
+    ("add_bodega_to_inventory_po_items",
+     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS bodega TEXT NOT NULL DEFAULT 'principal'"),
     ("create_suppliers",
      """CREATE TABLE IF NOT EXISTS suppliers (
          id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
