@@ -168,6 +168,12 @@ class Pipeline:
             return df
         from forecasting_core.data.resampler import resample_to_frequency
         c = self.config.columns
+        # NOTE: only the PRIMARY group key is used here. For a multi-key config
+        # (e.g. group_keys=["sku", "store"] or, once multi-warehouse lands,
+        # ["sku", "bodega"]), this sums demand ACROSS the secondary keys —
+        # correct only while every group_keys config in this codebase is
+        # single-key. Extend resample_to_frequency to group by all of
+        # group_keys before wiring multi-warehouse data through Estrategia B.
         group_col = _primary_group(c)
         return resample_to_frequency(df, c.date, group_col, c.target, g.target_freq)
 
