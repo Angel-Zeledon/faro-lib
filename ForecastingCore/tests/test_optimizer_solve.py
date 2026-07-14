@@ -111,3 +111,58 @@ def test_fallback_used_when_solver_fails(monkeypatch):
     result = optimize(inp)
     assert result.status == "fallback"
     assert result.orders[("A", "W1", 1)] > 0  # still a usable recommendation
+
+
+def test_fallback_degrades_gracefully_on_malformed_input():
+    """
+    A missing demand entry makes build_problem's `inp.demand[(i, w)][t - 1]`
+    raise KeyError. optimize() must still return a usable fallback result
+    instead of propagating the exception.
+    """
+    inp = OptimizationInput(
+        skus=["A"],
+        warehouses=["W1", "W2"],
+        horizon=1,
+        demand={("A", "W1"): [10.0]},  # ("A", "W2") missing on purpose
+        stock0={("A", "W1"): 0.0, ("A", "W2"): 0.0},
+        lead_time_buckets={"A": 0},
+        holding_cost={"A": 1.0},
+        stockout_cost={"A": 50.0},
+        order_cost={"A": 2.0},
+        transfer_cost=0.5,
+    )
+    result = optimize(inp)
+    assert result.status == "fallback"
+    assert result.orders[("A", "W1", 1)] == 10.0
+    assert result.orders[("A", "W2", 1)] == 0.0  # missing demand defaults to 0
+
+
+def test_fallback_keeps_on_hand_stock_available_during_lead_time():
+    """
+    stock0=100 comfortably covers demand=[10, 10] even though lead_time=1
+    means no NEW order can arrive at t=1. The fallback must serve demand
+    from on-hand stock during the lead-time window rather than discarding
+    it, so no order should be placed at all.
+    """
+    inp = OptimizationInput(
+        skus=["A"],
+        warehouses=["W1"],
+        horizon=2,
+        demand={("A", "W1"): [10.0, 10.0]},
+        stock0={("A", "W1"): 100.0},
+        lead_time_buckets={"A": 1},
+        holding_cost={"A": 1.0},
+        stockout_cost={"A": 50.0},
+        order_cost={"A": 2.0},
+        transfer_cost=0.5,
+    )
+    import forecasting_core.business.optimizer as opt_mod
+    idx = opt_mod.VariableIndex(inp.skus, inp.warehouses, inp.horizon)
+    result = opt_mod._fallback_recommend(inp, idx)
+
+    assert result.orders[("A", "W1", 1)] == 0.0
+    assert result.orders[("A", "W1", 2)] == 0.0
+    assert result.shortages[("A", "W1", 1)] == 0.0
+    assert result.shortages[("A", "W1", 2)] == 0.0
+    assert result.inventory[("A", "W1", 1)] == 90.0
+    assert result.inventory[("A", "W1", 2)] == 80.0

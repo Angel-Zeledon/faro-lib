@@ -191,12 +191,22 @@ def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> Op
     Never raises to the caller: any failure (oversized problem, a malformed
     OptimizationInput that build_problem can't handle, an infeasible/failed
     solve) degrades to _fallback_recommend rather than propagating.
+    _fallback_recommend itself uses defensive dict lookups (see its
+    docstring), so it cannot re-raise on the same malformed input that made
+    build_problem fail.
     """
     try:
-        problem = build_problem(inp)
-        if problem.index.n_vars > max_vars_before_fallback:
-            return _fallback_recommend(inp, problem.index)
+        idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
+    except Exception:
+        # Even the index can't be built from a sufficiently malformed input
+        # (e.g. non-list skus/warehouses) — fall back with an empty index.
+        idx = VariableIndex([], [], 0)
 
+    if idx.n_vars > max_vars_before_fallback:
+        return _fallback_recommend(inp, idx)
+
+    try:
+        problem = build_problem(inp)
         constraint = LinearConstraint(problem.A_eq, lb=problem.b_eq, ub=problem.b_eq)
         res = milp(
             problem.c,
@@ -205,10 +215,6 @@ def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> Op
             constraints=[constraint],
         )
     except Exception:
-        # build_problem itself may not have an index yet if it raised before
-        # constructing one — build a bare VariableIndex so the fallback can
-        # still enumerate transfer pairs to zero-fill.
-        idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
         return _fallback_recommend(inp, idx)
 
     if not getattr(res, "success", False):
@@ -243,29 +249,49 @@ def _fallback_recommend(inp: OptimizationInput, idx: VariableIndex) -> Optimizat
     order enough each bucket to cover that bucket's demand net of running
     stock, never going negative. Used when the MILP solve fails, raises, or
     the problem is too large to solve in reasonable time.
+
+    Every lookup into inp's dicts uses .get() with a zero default rather than
+    bare `[]` access: this function is optimize()'s last line of defense, so
+    it must degrade gracefully on the same malformed/missing key that made
+    build_problem raise, instead of raising again itself.
+
+    On-hand stock (`running`) is always available regardless of lead time —
+    only NEW orders are gated by lead_time_buckets, mirroring build_problem's
+    ub=0 bound on order[i,w,t] for t <= lead: an order can't be placed to
+    arrive before its lead time elapses, but stock already on hand is not
+    discarded while waiting for it.
     """
     orders, transfers, inventory, shortages = {}, {}, {}, {}
     total_cost = 0.0
     for i in inp.skus:
+        lead = inp.lead_time_buckets.get(i, 0)
+        order_cost_i = inp.order_cost.get(i, 0.0)
+        holding_cost_i = inp.holding_cost.get(i, 0.0)
+        stockout_cost_i = inp.stockout_cost.get(i, 0.0)
         for w in inp.warehouses:
-            running = inp.stock0[(i, w)]
+            running = inp.stock0.get((i, w), 0.0)
+            demand_list = inp.demand.get((i, w), [])
             for t in range(1, inp.horizon + 1):
-                demand_t = inp.demand[(i, w)][t - 1]
-                available = running if t > inp.lead_time_buckets.get(i, 0) else 0.0
-                # naive: order exactly the shortfall against this bucket's demand
-                needed = max(0.0, demand_t - available)
-                order_qty = needed
+                demand_t = demand_list[t - 1] if t - 1 < len(demand_list) else 0.0
+                if t > lead:
+                    # naive: order exactly the shortfall against this bucket's
+                    # demand, net of on-hand stock carried from prior buckets.
+                    order_qty = max(0.0, demand_t - running)
+                else:
+                    # Lead time not yet elapsed: no new order can arrive this
+                    # bucket, but on-hand stock still covers demand.
+                    order_qty = 0.0
                 orders[(i, w, t)] = order_qty
-                ending = available + order_qty - demand_t
+                ending = running + order_qty - demand_t
                 shortage = max(0.0, -ending)
                 ending = max(0.0, ending)
                 inventory[(i, w, t)] = ending
                 shortages[(i, w, t)] = shortage
                 running = ending
                 total_cost += (
-                    inp.order_cost[i] * order_qty
-                    + inp.holding_cost[i] * ending
-                    + inp.stockout_cost[i] * shortage
+                    order_cost_i * order_qty
+                    + holding_cost_i * ending
+                    + stockout_cost_i * shortage
                 )
         for a, b in idx.transfer_pairs():
             for t in range(1, inp.horizon + 1):
