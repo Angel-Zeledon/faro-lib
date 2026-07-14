@@ -188,12 +188,13 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
 
 def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> OptimizationResult:
     """
-    Never raises to the caller: any failure (oversized problem, a malformed
-    OptimizationInput that build_problem can't handle, an infeasible/failed
-    solve) degrades to _fallback_recommend rather than propagating.
-    _fallback_recommend itself uses defensive dict lookups (see its
-    docstring), so it cannot re-raise on the same malformed input that made
-    build_problem fail.
+    Does not raise on structurally-valid-but-incomplete input: an oversized
+    problem, missing dict keys, or short/mismatched demand lists all degrade
+    to _fallback_recommend (whose own lookups use .get() defaults, see its
+    docstring) rather than propagating. This does not cover type-contract
+    violations (e.g. a None where OptimizationInput's dataclass declares a
+    List/Dict) — those aren't a real path since callers build this from DB
+    rows, and are left to raise rather than silently masked.
     """
     try:
         idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
