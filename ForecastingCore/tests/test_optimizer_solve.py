@@ -1,4 +1,3 @@
-import pytest
 from forecasting_core.business.optimizer import OptimizationInput, optimize
 
 

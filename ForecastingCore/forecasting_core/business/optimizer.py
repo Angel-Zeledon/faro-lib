@@ -187,11 +187,16 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
 
 
 def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> OptimizationResult:
-    problem = build_problem(inp)
-    if problem.index.n_vars > max_vars_before_fallback:
-        return _fallback_recommend(inp, problem.index)
-
+    """
+    Never raises to the caller: any failure (oversized problem, a malformed
+    OptimizationInput that build_problem can't handle, an infeasible/failed
+    solve) degrades to _fallback_recommend rather than propagating.
+    """
     try:
+        problem = build_problem(inp)
+        if problem.index.n_vars > max_vars_before_fallback:
+            return _fallback_recommend(inp, problem.index)
+
         constraint = LinearConstraint(problem.A_eq, lb=problem.b_eq, ub=problem.b_eq)
         res = milp(
             problem.c,
@@ -200,7 +205,11 @@ def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> Op
             constraints=[constraint],
         )
     except Exception:
-        return _fallback_recommend(inp, problem.index)
+        # build_problem itself may not have an index yet if it raised before
+        # constructing one — build a bare VariableIndex so the fallback can
+        # still enumerate transfer pairs to zero-fill.
+        idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
+        return _fallback_recommend(inp, idx)
 
     if not getattr(res, "success", False):
         return _fallback_recommend(inp, problem.index)
