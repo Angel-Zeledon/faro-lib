@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional, Dict, Any, List
 
 
@@ -99,9 +99,26 @@ class ValidationConfigRequest(BaseModel):
     horizon: int = 14
 
 
+_HORIZON_LIMITS = {"D": (1, 30), "W": (1, 12), "2W": (1, 6), "MS": (1, 12)}
+
+
 class ForecastConfigRequest(BaseModel):
     horizon: int = 14
     quantiles: List[float] = [0.1, 0.9]
+    horizon_mode: str = "unified"                            # "unified" | "segmented"
+    horizon_by_freq: Optional[Dict[str, int]] = None         # {"D": 10, "W": 4, ...}
+
+    @model_validator(mode="after")
+    def _validate_horizon_by_freq(self):
+        if self.horizon_by_freq:
+            for freq, value in self.horizon_by_freq.items():
+                bounds = _HORIZON_LIMITS.get(freq)
+                if bounds is None:
+                    raise ValueError(f"Unknown frequency bucket '{freq}'")
+                lo, hi = bounds
+                if not (lo <= value <= hi):
+                    raise ValueError(f"horizon_by_freq['{freq}']={value} must be between {lo} and {hi}")
+        return self
 
 
 class BusinessConfigRequest(BaseModel):

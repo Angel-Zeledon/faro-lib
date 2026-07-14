@@ -106,6 +106,12 @@ class ForecastConfig:
 
 
 @dataclass
+class GranularityConfig:
+    strategy: str = "native"            # "native" | "aggregate"
+    target_freq: Optional[str] = None   # only meaningful when strategy == "aggregate"
+
+
+@dataclass
 class BusinessConfig:
     service_level: float = 0.95   # for safety stock z-score
     lead_time_days: int = 7
@@ -145,6 +151,7 @@ class SessionConfig:
         forecast: Prediction horizon and quantiles.
         business: Business rules for inventory recommendations.
         routing:  Model routing strategy.
+        granularity: Data Alignment Wizard strategy (native vs. aggregate-resample).
     """
 
     name: str = "session_1"
@@ -159,6 +166,7 @@ class SessionConfig:
     forecast: ForecastConfig = field(default_factory=ForecastConfig)
     business: BusinessConfig = field(default_factory=BusinessConfig)
     routing: ModelRoutingConfig = field(default_factory=ModelRoutingConfig)
+    granularity: GranularityConfig = field(default_factory=GranularityConfig)
 
     # ------------------------------------------------------------------
     # Constructors
@@ -202,6 +210,12 @@ class SessionConfig:
             cfg.routing = ModelRoutingConfig(
                 enabled=rd.get("enabled", True),
                 thresholds=thresholds,
+            )
+        if "granularity" in d:
+            gd = d["granularity"]
+            cfg.granularity = GranularityConfig(
+                strategy=gd.get("strategy", "native"),
+                target_freq=gd.get("target_freq"),
             )
         cfg.validate()
         return cfg

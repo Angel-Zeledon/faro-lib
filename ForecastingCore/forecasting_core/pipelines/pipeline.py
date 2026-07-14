@@ -158,6 +158,25 @@ class Pipeline:
         self.config = config if isinstance(config, object) else SessionConfig.from_dict(config)
         self._df = df  # Optional pre-loaded DataFrame; if None, loads from cfg.data.path
 
+    def _maybe_resample(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Aggregate to a common frequency when the session chose Estrategia B.
+        No-op (returns df unchanged) for the default "native" strategy.
+        """
+        g = self.config.granularity
+        if g.strategy != "aggregate" or not g.target_freq:
+            return df
+        from forecasting_core.data.resampler import resample_to_frequency
+        c = self.config.columns
+        # NOTE: only the PRIMARY group key is used here. For a multi-key config
+        # (e.g. group_keys=["sku", "store"] or, once multi-warehouse lands,
+        # ["sku", "bodega"]), this sums demand ACROSS the secondary keys —
+        # correct only while every group_keys config in this codebase is
+        # single-key. Extend resample_to_frequency to group by all of
+        # group_keys before wiring multi-warehouse data through Estrategia B.
+        group_col = _primary_group(c)
+        return resample_to_frequency(df, c.date, group_col, c.target, g.target_freq)
+
     def run(self, on_progress: Optional[Callable[[dict], None]] = None) -> PipelineResults:
         """
         Execute the full pipeline end-to-end.
@@ -220,6 +239,8 @@ class Pipeline:
         df = df.dropna(subset=[c.target]).sort_values(
             [_primary_group(c), c.date] if _primary_group(c) else [c.date]
         ).reset_index(drop=True)
+
+        df = self._maybe_resample(df)
 
         # Resolve group_cols: use configured group_keys filtered to columns
         # actually present in the DataFrame so that multi-key configs (e.g.
