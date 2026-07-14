@@ -84,26 +84,38 @@ def receive_po(
     if received_at.date() < generated_at.date():
         raise ValueError("La fecha de recepción no puede ser anterior a la fecha de la orden")
 
-    # Resolve received qty per ordered SKU
+    # Resolve received qty per ordered PO LINE (keyed by item id, not sku —
+    # a PO can carry the same SKU on separate lines for different bodegas,
+    # and each line has its own cantidad_final/bodega).
     if lines is None:
-        received_by_sku = {i["sku"]: float(i["cantidad_final"] or 0) for i in ordered}
+        received_by_item = {i["id"]: float(i["cantidad_final"] or 0) for i in ordered}
     else:
-        received_by_sku = {}
-        ordered_skus = {i["sku"] for i in ordered}
+        received_by_item = {}
+        sku_to_items: dict[str, list[dict]] = {}
+        for i in ordered:
+            sku_to_items.setdefault(i["sku"], []).append(i)
         for ln in lines:
             sku = str(ln.get("sku") or "")
-            if sku not in ordered_skus:
+            matches = sku_to_items.get(sku)
+            if not matches:
                 raise ValueError(f"El SKU '{sku}' no está en esta orden")
+            if len(matches) > 1:
+                # The {sku, cantidad_recibida} line shape can't disambiguate
+                # which bodega's line the quantity belongs to.
+                raise ValueError(
+                    f"El SKU '{sku}' aparece en más de una bodega en esta orden; "
+                    "no se puede recibir por SKU, indique la recepción completa"
+                )
             qty = float(ln.get("cantidad_recibida") or 0)
             if qty < 0:
                 raise ValueError(f"Cantidad recibida negativa para '{sku}'")
-            received_by_sku[sku] = qty
+            received_by_item[matches[0]["id"]] = qty
         for i in ordered:
-            received_by_sku.setdefault(i["sku"], 0.0)
+            received_by_item.setdefault(i["id"], 0.0)
 
     # 1. Per-line: accumulate cantidad_recibida (partial receptions add up)
     for i in ordered:
-        qty = received_by_sku[i["sku"]]
+        qty = received_by_item[i["id"]]
         execute(
             """UPDATE inventory_po_items
                SET cantidad_recibida = COALESCE(cantidad_recibida, 0) + %s
@@ -111,30 +123,34 @@ def receive_po(
             (qty, i["id"], tenant_id),
         )
 
-    # 2. Stock: add received units. Creates the stock row if the SKU is new.
+    # 2. Stock: add received units. Creates the stock row if the SKU/bodega
+    # combination is new. The existence check and the update/insert below
+    # all target the SAME bodega — checking one bodega's presence but
+    # writing to another would silently drop the received units.
     from backend.inventory import service as inv_svc
     for i in ordered:
-        qty = received_by_sku[i["sku"]]
+        qty = received_by_item[i["id"]]
         if qty <= 0:
             continue
-        existing = inv_svc.get_stock(tenant_id, i["sku"])
+        bodega = i.get("bodega") or "principal"
+        existing = inv_svc.get_stock(tenant_id, i["sku"], bodega=bodega)
         if existing:
             execute(
                 """UPDATE inventory_stock
                    SET stock_actual = stock_actual + %s, updated_at = NOW()
                    WHERE tenant_id = %s AND sku = %s AND bodega = %s""",
-                (qty, tenant_id, i["sku"], i["bodega"]),
+                (qty, tenant_id, i["sku"], bodega),
             )
         else:
             inv_svc.upsert_stock(tenant_id, i["sku"], {
                 "stock_actual": qty,
                 "display_name": i.get("display_name"),
                 "proveedor": i.get("proveedor"),
-                "bodega": i.get("bodega") or "principal",
+                "bodega": bodega,
             })
         # Point-in-time snapshot so /stock/{sku}/history reflects the arrival
         try:
-            new_row = inv_svc.get_stock(tenant_id, i["sku"])
+            new_row = inv_svc.get_stock(tenant_id, i["sku"], bodega=bodega)
             execute(
                 """INSERT INTO inventory_snapshots (tenant_id, sku, stock_actual)
                    VALUES (%s, %s, %s)""",
@@ -164,7 +180,7 @@ def receive_po(
     observed_suppliers = sorted({
         (i.get("proveedor") or "").strip()
         for i in ordered
-        if (i.get("proveedor") or "").strip() and received_by_sku[i["sku"]] > 0
+        if (i.get("proveedor") or "").strip() and received_by_item[i["id"]] > 0
     })
     if po.get("reception_status") == "pending":  # was pending before this event
         for prov in observed_suppliers:

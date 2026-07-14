@@ -42,13 +42,18 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
     phs    = ", ".join(["%s"] * len(safe))
-    upd    = ", ".join(f"{k} = EXCLUDED.{k}" for k in safe if k != "bodega")
+    # bodega is the conflict target, never itself assignable in the update
+    # clause; when it's the ONLY field supplied, upd_parts is empty and the
+    # SET clause must fall back to just touching updated_at (an empty
+    # "SET , updated_at = NOW()" is a SQL syntax error).
+    upd_parts = [f"{k} = EXCLUDED.{k}" for k in safe if k != "bodega"]
+    upd = (", ".join(upd_parts) + ", ") if upd_parts else ""
 
     execute(
         f"""INSERT INTO inventory_stock (tenant_id, sku, {cols}, updated_at)
             VALUES (%s, %s, {phs}, NOW())
             ON CONFLICT (tenant_id, sku, bodega) DO UPDATE
-            SET {upd}, updated_at = NOW()""",
+            SET {upd}updated_at = NOW()""",
         (tenant_id, sku, *values),
     )
     _ensure_warehouse(tenant_id, safe["bodega"])

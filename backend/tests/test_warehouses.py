@@ -54,6 +54,22 @@ class TestWarehouseStock:
         assert result["bodega"] == "Sur"
         assert float(result["stock_actual"]) == 40.0
 
+    def test_upsert_with_only_bodega_field_on_existing_row_does_not_raise(
+        self, client, auth_headers, test_tenant,
+    ):
+        """
+        On an existing (tenant, sku, bodega) row, an update payload containing
+        ONLY "bodega" (already the conflict target, never in the SET list)
+        must not produce an empty SET clause / SQL syntax error.
+        """
+        from backend.inventory import service as svc
+        tid = test_tenant["id"]
+        sku = _sku()
+        svc.upsert_stock(tid, sku, {"stock_actual": 100, "bodega": "Norte"})
+        result = svc.upsert_stock(tid, sku, {"bodega": "Norte"})
+        assert result["bodega"] == "Norte"
+        assert float(result["stock_actual"]) == 100.0  # untouched, no error raised
+
 
 class TestWarehouseBulkImport:
     def test_bulk_import_persists_bodega_and_autocreates_warehouse(self, client, auth_headers, test_tenant):
