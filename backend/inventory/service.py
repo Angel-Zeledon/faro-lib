@@ -27,8 +27,14 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
         "lead_time_dias", "costo_unitario", "moq", "proveedor", "notas",
         "service_level",
         "precio_venta", "categoria", "marca", "unidad_medida", "codigo_barras",
+        "bodega",
     }
-    
+
+    # bodega is NOT NULL with a DB default of 'principal', but the ON CONFLICT
+    # target now includes it, so the INSERT must always supply a value.
+    if "bodega" not in data:
+        data = {**data, "bodega": "principal"}
+
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
         raise ValueError("No valid fields to update")
@@ -36,16 +42,23 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
     phs    = ", ".join(["%s"] * len(safe))
-    upd    = ", ".join(f"{k} = EXCLUDED.{k}" for k in safe)
+    # bodega is the conflict target, never itself assignable in the update
+    # clause; when it's the ONLY field supplied, upd_parts is empty and the
+    # SET clause must fall back to just touching updated_at (an empty
+    # "SET , updated_at = NOW()" is a SQL syntax error).
+    upd_parts = [f"{k} = EXCLUDED.{k}" for k in safe if k != "bodega"]
+    upd = (", ".join(upd_parts) + ", ") if upd_parts else ""
 
     execute(
         f"""INSERT INTO inventory_stock (tenant_id, sku, {cols}, updated_at)
             VALUES (%s, %s, {phs}, NOW())
-            ON CONFLICT (tenant_id, sku) DO UPDATE
-            SET {upd}, updated_at = NOW()""",
+            ON CONFLICT (tenant_id, sku, bodega) DO UPDATE
+            SET {upd}updated_at = NOW()""",
         (tenant_id, sku, *values),
     )
-    row = get_stock(tenant_id, sku)
+    _ensure_warehouse(tenant_id, safe["bodega"])
+
+    row = get_stock(tenant_id, sku, bodega=safe["bodega"])
 
     # Auto-snapshot when stock_actual is updated
     if "stock_actual" in safe and row:
@@ -54,7 +67,26 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     return row
 
 
-def get_stock(tenant_id: str, sku: str) -> Optional[dict]:
+def _ensure_warehouse(tenant_id: str, name: str) -> None:
+    """Auto-create a `warehouses` row the first time a bodega name is seen for
+    this tenant. Best-effort: a warehouse-insert hiccup must never fail the
+    stock write it's attached to."""
+    try:
+        execute(
+            "INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s) "
+            "ON CONFLICT (tenant_id, name) DO NOTHING",
+            (tenant_id, name),
+        )
+    except Exception as e:
+        log.warning("_ensure_warehouse: failed to upsert bodega=%s tenant=%s err=%s", name, tenant_id, e)
+
+
+def get_stock(tenant_id: str, sku: str, bodega: Optional[str] = None) -> Optional[dict]:
+    if bodega is not None:
+        return query_one(
+            "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s AND bodega = %s",
+            (tenant_id, sku, bodega),
+        )
     return query_one(
         "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
         (tenant_id, sku),
@@ -317,6 +349,29 @@ def _gate_recommended_by_signal(signal: str, recomendado: float) -> float:
     return 0.0
 
 
+def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
+    """
+    Collapse per-bodega inventory_stock rows into one summary row per SKU:
+    stock_actual is SUMMED across bodegas (true total stock the tenant
+    holds); every other field (lead_time_dias, costo_unitario, proveedor,
+    etc.) is taken from a single deterministic representative row (the
+    'principal' bodega if present, else the alphabetically-first bodega) —
+    those are per-SKU catalog attributes, not per-warehouse quantities, so
+    picking one is correct as long as it's deterministic.
+    """
+    by_sku: dict[str, list[dict]] = {}
+    for r in stock_rows:
+        by_sku.setdefault(r["sku"], []).append(r)
+
+    result: dict[str, dict] = {}
+    for sku, rows in by_sku.items():
+        rows_sorted = sorted(rows, key=lambda r: (r.get("bodega") != "principal", r.get("bodega") or ""))
+        representative = dict(rows_sorted[0])
+        representative["stock_actual"] = sum(float(r["stock_actual"] or 0) for r in rows)
+        result[sku] = representative
+    return result
+
+
 # ── Main status calculation ───────────────────────────────────────────────────
 
 def get_inventory_status(tenant_id: str, session_id: str, service_level: float = 0.95) -> list[dict]:
@@ -340,7 +395,7 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         pass
 
     stock_rows = list_stock(tenant_id)
-    stock_map  = {r["sku"]: r for r in stock_rows}
+    stock_map  = _aggregate_stock_rows_by_sku(stock_rows)
 
     # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
     # tenant-wide table (no session_id column) that accumulates rows from every

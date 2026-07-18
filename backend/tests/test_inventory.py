@@ -309,7 +309,7 @@ class TestBulkImport:
         text = r.content.decode("utf-8-sig")
         lines = [ln for ln in text.splitlines() if ln.strip()]
         header = lines[0].split(",")
-        expected = ["sku", "display_name", "categoria", "marca", "unidad_medida",
+        expected = ["sku", "bodega", "display_name", "categoria", "marca", "unidad_medida",
                     "codigo_barras", "stock_actual", "stock_minimo", "lead_time_dias",
                     "costo_unitario", "precio_venta", "moq", "proveedor", "notas"]
         assert header == expected
