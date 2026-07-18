@@ -28,6 +28,18 @@ def get_supplier(tenant_id: str, supplier_id: str) -> Optional[dict]:
     )
 
 
+def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
+    """Case-insensitive lookup by name — PO line items store a free-text
+    proveedor name, not a supplier_id, so sending a PO to its supplier
+    needs to resolve that name back to a supplier record."""
+    if not name:
+        return None
+    return query_one(
+        "SELECT * FROM suppliers WHERE tenant_id = %s AND LOWER(name) = LOWER(%s)",
+        (tenant_id, name),
+    )
+
+
 def create_supplier(tenant_id: str, data: dict) -> dict:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std", "payment_terms", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}

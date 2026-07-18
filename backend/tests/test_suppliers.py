@@ -207,6 +207,33 @@ class TestSupplierCRUD:
             execute("DELETE FROM tenants WHERE id=%s", (t2["id"],))
 
 
+# ── Get supplier by name ───────────────────────────────────────────────────────
+
+class TestGetSupplierByName:
+
+    def test_matches_case_insensitively(self, client, test_tenant):
+        from backend.inventory import supplier_service as sup_svc
+
+        tid = test_tenant["id"]
+        name = f"Distribuidora {uuid4().hex[:8]}"
+        created = sup_svc.create_supplier(tid, {"name": name, "email": "ventas@example.com"})
+
+        found = sup_svc.get_supplier_by_name(tid, name.upper())
+        assert found is not None
+        assert found["id"] == created["id"]
+
+    def test_returns_none_for_no_match(self, client, test_tenant):
+        from backend.inventory import supplier_service as sup_svc
+
+        assert sup_svc.get_supplier_by_name(test_tenant["id"], "Nonexistent Supplier XYZ") is None
+
+    def test_returns_none_for_empty_name(self, client, test_tenant):
+        from backend.inventory import supplier_service as sup_svc
+
+        assert sup_svc.get_supplier_by_name(test_tenant["id"], "") is None
+        assert sup_svc.get_supplier_by_name(test_tenant["id"], None) is None
+
+
 # ── SKU-Supplier linking ───────────────────────────────────────────────────────
 
 class TestSkuSupplierLink:
