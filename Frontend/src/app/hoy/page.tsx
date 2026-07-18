@@ -5,8 +5,11 @@ import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
 } from 'lucide-react'
-import { getMorningBriefing, getMorningNarrative, getPOHistory } from '@/lib/api'
-import type { MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry } from '@/lib/types'
+import { getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration } from '@/lib/api'
+import type {
+ MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
+ OptimizationResponse, OptimizationOrder, POLineDecision,
+} from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
@@ -16,6 +19,7 @@ import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useToast } from '@/contexts/ToastContext'
 
 // ── Colour palette ────────────────────────────────────────────────────────────
 const C = {
@@ -340,8 +344,13 @@ export default function HoyPage() {
  // Orders awaiting reception
  const [pendingPOs, setPendingPOs] = useState<POLogEntry[]>([])
 
+ // Purchasing/transfers optimizer plan (MW-3)
+ const [optimization, setOptimization] = useState<OptimizationResponse | null>(null)
+ const [optimizationLoading, setOptimizationLoading] = useState(false)
+
  const user    = getUser()
  const { advancedMode } = useBusinessProfile()
+ const { addToast } = useToast()
 
  // Load briefing when session changes
  const load = useCallback(async (sid: string) => {
@@ -362,6 +371,16 @@ export default function HoyPage() {
  useEffect(() => {
   if (sessionId) load(sessionId)
  }, [sessionId, load])
+
+ // Purchasing/transfers optimization plan — loads alongside the briefing
+ useEffect(() => {
+  if (!sessionId) return
+  setOptimizationLoading(true)
+  optimizeInventory(sessionId, 14)
+   .then(setOptimization)
+   .catch(() => setOptimization(null))
+   .finally(() => setOptimizationLoading(false))
+ }, [sessionId])
 
  // Generates a fallback narrative from briefing data — no API required
  function buildFallbackNarrative(b: MorningBriefing): MorningNarrative {
@@ -469,6 +488,26 @@ export default function HoyPage() {
     logPOGeneration(sessionId, decisions).catch(() => {})
    })
   }
+ }
+
+ // Converts a single optimizer-suggested order line straight into a logged PO,
+ // without going through the manual approve/reject work-queue cart.
+ async function convertOrderToPO(order: OptimizationOrder) {
+  if (!sessionId) return
+  const decision: POLineDecision = {
+   sku:                  order.sku,
+   cantidad_recomendada: order.qty,
+   cantidad_final:       order.qty,
+   status:               'approved',
+   costo_unitario:       order.costo_unitario,
+   proveedor:            order.proveedor,
+   bodega:               order.bodega,
+  }
+  await logPOGeneration(sessionId, [decision])
+  addToast(t('hoy.optimizer_po_created'), `${order.sku} — ${order.bodega}`, 'success')
+  setOptimization(prev => prev
+   ? { ...prev, orders: prev.orders.filter(o => !(o.sku === order.sku && o.bodega === order.bodega)) }
+   : prev)
  }
 
  // ── Accuracy colour ───────────────────────────────────────────────────────
@@ -814,6 +853,67 @@ export default function HoyPage() {
          </div>
         )}
        </div>
+
+       {/* Compras y transferencias sugeridas — optimizer plan (MW-3) */}
+       {optimizationLoading && !optimization && (
+        <p style={{ fontSize: 12, color: C.dim, marginTop: 24 }}>
+         {t('hoy.optimizer_loading')}
+        </p>
+       )}
+       {optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0) && (
+        <section style={{ marginTop: 32, marginBottom: 28 }}>
+         <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+          {t('hoy.optimizer_title')}
+         </h2>
+         <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 14 }}>
+          {t('hoy.optimizer_subtitle').replace('{horizon}', String(optimization.horizon_days))}
+         </p>
+
+         {optimization.orders.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+           <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+            {t('hoy.optimizer_orders_title')}
+           </h3>
+           {optimization.orders.map(order => (
+            <div key={`${order.sku}-${order.bodega}`} style={{
+             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+             padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6,
+            }}>
+             <span style={{ fontSize: 13 }}>
+              {order.sku} — {order.bodega}: <strong>{order.qty}</strong>
+             </span>
+             <button onClick={() => convertOrderToPO(order)} style={{
+              all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              color: 'var(--accent)', padding: '4px 10px', borderRadius: 6,
+             }}>
+              {t('hoy.optimizer_convert_to_po')}
+             </button>
+            </div>
+           ))}
+          </div>
+         )}
+
+         {optimization.transfers.length > 0 && (
+          <div>
+           <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+            {t('hoy.optimizer_transfers_title')}
+           </h3>
+           {optimization.transfers.map(tr => (
+            <div key={`${tr.sku}-${tr.from_bodega}-${tr.to_bodega}`} style={{
+             fontSize: 13, padding: '10px 12px', border: '1px solid var(--border)',
+             borderRadius: 8, marginBottom: 6,
+            }}>
+             {t('hoy.optimizer_transfer_line')
+              .replace('{qty}', String(tr.qty))
+              .replace('{sku}', tr.sku)
+              .replace('{from}', tr.from_bodega)
+              .replace('{to}', tr.to_bodega)}
+            </div>
+           ))}
+          </div>
+         )}
+        </section>
+       )}
 
        {/* Anticípate — proactive future demand peaks */}
        {(briefing.demand_spikes?.length ?? 0) > 0 && (
