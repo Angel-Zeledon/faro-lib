@@ -87,3 +87,42 @@ class TestBuildOptimizationInput:
 
         assert inp.order_cost[sku] == 1.0
         assert inp.holding_cost[sku] == 1.0 * 0.20 / 365
+
+
+class TestSerializeOptimizationResult:
+    def test_collapses_orders_and_transfers_across_horizon_and_drops_zeros(self):
+        from forecasting_core.business.optimizer import OptimizationInput, OptimizationResult
+        from backend.inventory.optimizer_service import serialize_optimization_result
+
+        inp = OptimizationInput(
+            skus=["SKU1"], warehouses=["Norte", "Sur"], horizon=2,
+            demand={("SKU1", "Norte"): [5.0, 5.0], ("SKU1", "Sur"): [0.0, 0.0]},
+            stock0={("SKU1", "Norte"): 0.0, ("SKU1", "Sur"): 20.0},
+            lead_time_buckets={"SKU1": 0},
+            holding_cost={"SKU1": 1.0}, stockout_cost={"SKU1": 10.0}, order_cost={"SKU1": 2.0},
+            transfer_cost=0.5,
+        )
+        result = OptimizationResult(
+            orders={("SKU1", "Norte", 1): 3.0, ("SKU1", "Norte", 2): 0.0,
+                    ("SKU1", "Sur", 1): 0.0, ("SKU1", "Sur", 2): 0.0},
+            transfers={("SKU1", "Sur", "Norte", 1): 4.0, ("SKU1", "Sur", "Norte", 2): 0.0,
+                       ("SKU1", "Norte", "Sur", 1): 0.0, ("SKU1", "Norte", "Sur", 2): 0.0},
+            inventory={}, shortages={},
+            total_cost=12.3456, status="optimal",
+        )
+        stock_rows = [
+            {"sku": "SKU1", "bodega": "Norte", "costo_unitario": 2.0, "proveedor": "ACME"},
+            {"sku": "SKU1", "bodega": "Sur", "costo_unitario": 2.0, "proveedor": "ACME"},
+        ]
+
+        out = serialize_optimization_result(inp, result, stock_rows)
+
+        assert out["status"] == "optimal"
+        assert out["total_cost"] == 12.35
+        assert out["horizon_days"] == 2
+        assert out["orders"] == [
+            {"sku": "SKU1", "bodega": "Norte", "qty": 3.0, "costo_unitario": 2.0, "proveedor": "ACME"},
+        ]
+        assert out["transfers"] == [
+            {"sku": "SKU1", "from_bodega": "Sur", "to_bodega": "Norte", "qty": 4.0},
+        ]

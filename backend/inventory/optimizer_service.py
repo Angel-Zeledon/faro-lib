@@ -93,3 +93,53 @@ def build_optimization_input(
         order_cost=order_cost,
         transfer_cost=_DEFAULT_TRANSFER_COST_PER_UNIT,
     )
+
+
+def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
+    """
+    Collapses an OptimizationResult into one actionable total per (sku, bodega) order
+    and per (sku, from_bodega, to_bodega) transfer, dropping any with qty == 0.
+
+    Args:
+        inp: OptimizationInput (used for horizon_days)
+        result: OptimizationResult from MILP solver
+        stock_rows: list of dicts with {sku, bodega, costo_unitario, proveedor}
+
+    Returns:
+        dict with keys: status, total_cost, horizon_days, orders[], transfers[]
+    """
+    row_by_sku_bodega = {(r["sku"], r["bodega"]): r for r in stock_rows}
+
+    order_totals: dict[tuple[str, str], float] = {}
+    for (sku, w, t), qty in result.orders.items():
+        if qty > 0:
+            order_totals[(sku, w)] = order_totals.get((sku, w), 0.0) + qty
+
+    transfer_totals: dict[tuple[str, str, str], float] = {}
+    for (sku, a, b, t), qty in result.transfers.items():
+        if qty > 0:
+            transfer_totals[(sku, a, b)] = transfer_totals.get((sku, a, b), 0.0) + qty
+
+    orders = []
+    for (sku, w) in sorted(order_totals):
+        row = row_by_sku_bodega.get((sku, w), {})
+        orders.append({
+            "sku": sku, "bodega": w, "qty": round(order_totals[(sku, w)], 2),
+            "costo_unitario": row.get("costo_unitario"),
+            "proveedor": row.get("proveedor"),
+        })
+
+    transfers = []
+    for (sku, a, b) in sorted(transfer_totals):
+        transfers.append({
+            "sku": sku, "from_bodega": a, "to_bodega": b,
+            "qty": round(transfer_totals[(sku, a, b)], 2),
+        })
+
+    return {
+        "status": result.status,
+        "total_cost": round(result.total_cost, 2),
+        "horizon_days": inp.horizon,
+        "orders": orders,
+        "transfers": transfers,
+    }
