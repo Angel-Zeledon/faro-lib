@@ -21,7 +21,7 @@ export default function NotFound() {
           La página que buscas no existe o fue movida.
         </div>
       </div>
-      <Link href="/dashboard" style={{ textDecoration: 'none' }}>
+      <Link href="/hoy" style={{ textDecoration: 'none' }}>
         <Button variant="primary" icon={<ArrowLeft size={13} />}>
           Volver al panel
         </Button>

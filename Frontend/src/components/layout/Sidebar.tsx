@@ -2,9 +2,9 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard, Database, TrendingUp, Package,
-  BrainCircuit, BarChart2, Settings, LogOut, User, Users,
-  ChevronLeft, ChevronRight, FileText, Target, FlaskConical,
+  Database, TrendingUp, Package,
+  BrainCircuit, Settings, LogOut, User, Users,
+  ChevronLeft, ChevronRight, FlaskConical,
   ShoppingCart, Truck, Upload, Zap, ClipboardList,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -21,7 +21,6 @@ interface NavItem {
   Icon:       React.ElementType
   group:      string
   adminOnly?: boolean
-  advanced?:  boolean
 }
 
 const NAV: NavItem[] = [
@@ -38,17 +37,11 @@ const NAV: NavItem[] = [
   { href: '/inventory/roi',       labelKey: 'nav.roi',         Icon: TrendingUp,      group: 'analysis' },
   { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis' },
 
-  { href: '/dashboard',           labelKey: 'nav.dashboard',   Icon: LayoutDashboard, group: 'advanced', advanced: true },
-  { href: '/forecast',            labelKey: 'nav.forecast',    Icon: TrendingUp,      group: 'advanced', advanced: true },
-  { href: '/reports',             labelKey: 'nav.reports',     Icon: BarChart2,       group: 'advanced', advanced: true },
-  { href: '/documents',           labelKey: 'nav.documents',   Icon: FileText,        group: 'advanced', advanced: true },
-  { href: '/accuracy',            labelKey: 'nav.accuracy',    Icon: Target,          group: 'advanced', advanced: true },
-
   { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
   { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
 ]
 
-const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'advanced', 'system']
+const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']
 
 export default function Sidebar() {
   const path    = usePathname()
@@ -66,7 +59,6 @@ export default function Sidebar() {
 
   const visibleNav = NAV.filter(item => {
     if (item.adminOnly && user?.role !== 'admin') return false
-    if (item.advanced && !advancedMode) return false
     return true
   })
 

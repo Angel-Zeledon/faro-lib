@@ -537,12 +537,6 @@ export default function QuickStartPage() {
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: 0 }}>
  {t('qs.subtitle')}
  </p>
- <p style={{ fontSize: 12, color: 'var(--dim)', margin: '10px 0 0', opacity: 0.7 }}>
- {t('qs.advanced_hint')}{' '}
- <a href="/forecast" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
- {t('qs.use_studio')}
- </a>
- </p>
  </div>
 
  {/* Step bar */}

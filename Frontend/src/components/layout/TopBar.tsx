@@ -20,11 +20,8 @@ interface Notif {
 
 // Titles resolved via i18n so they follow the language toggle.
 const PAGE_TITLE_KEYS: Record<string, string> = {
-  '/dashboard': 'topbar.title_dashboard',
   '/data':      'topbar.title_data',
-  '/forecast':  'topbar.title_forecast',
   '/analyst':   'topbar.title_analyst',
-  '/reports':   'topbar.title_reports',
   '/config':    'topbar.title_config',
   '/users':     'topbar.title_users',
   '/skus':      'skus.page_title',
