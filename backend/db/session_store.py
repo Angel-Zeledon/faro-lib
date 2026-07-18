@@ -16,6 +16,7 @@ _CONFIG_FIELDS = frozenset({
     "validation_cfg",
     "business_cfg",
     "forecast_cfg",
+    "granularity_cfg",
 })
 
 

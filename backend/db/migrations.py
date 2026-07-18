@@ -471,6 +471,13 @@ _MIGRATIONS = _BASE_SCHEMA + [
      )"""),
     ("create_inventory_overstock_snapshots_idx",
      "CREATE INDEX IF NOT EXISTS overstock_snapshots_tenant_idx ON inventory_overstock_snapshots (tenant_id, recorded_at DESC)"),
+    # Data Alignment Wizard (granularity/resampling): the user's chosen
+    # strategy ("native" vs "resample") and target frequency. The
+    # reconciliation UI that writes this is not built yet — runner.py reads
+    # it defensively (falls back to "native") — but the column and the
+    # session_store field whitelist must exist now so that read never 500s.
+    ("add_session_configs_granularity_cfg",
+     "ALTER TABLE session_configs ADD COLUMN IF NOT EXISTS granularity_cfg JSONB"),
 ]
 
 
