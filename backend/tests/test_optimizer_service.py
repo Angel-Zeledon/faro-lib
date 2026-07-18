@@ -46,7 +46,7 @@ class TestBuildOptimizationInput:
         assert inp.demand[(sku, "Sur")][0] == 10.0     # 40 * (100/400)
         assert inp.lead_time_buckets[sku] == 10        # max(10, 5)
         assert inp.holding_cost[sku] == 20.0 * 0.20 / 365
-        assert inp.stockout_cost[sku] == inp.holding_cost[sku] * 3.0
+        assert inp.stockout_cost[sku] == 20.0 * 3.0 / 10  # order_cost * multiplier / lead_time
         assert inp.order_cost[sku] == 20.0
 
     def test_splits_evenly_when_sku_has_zero_stock_everywhere(self, test_tenant, test_session):

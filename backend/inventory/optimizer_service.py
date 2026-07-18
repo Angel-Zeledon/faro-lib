@@ -79,7 +79,17 @@ def build_optimization_input(
 
         order_cost[sku] = unit_cost
         holding_cost[sku] = unit_cost * holding_cost_pct / 365
-        stockout_cost[sku] = holding_cost[sku] * stockout_cost_multiplier
+        # Stockout is a per-day-of-shortage flow cost, but order_cost is a
+        # one-time per-unit purchase price — scaling stockout off holding_cost
+        # (also a tiny daily fraction of unit_cost) made a real shortage need
+        # ~600 days to ever outweigh placing an order, so the solver would
+        # never recommend buying within any realistic horizon. Scaling off
+        # order_cost directly, divided by lead time, means "running out for
+        # this SKU's full lead time costs about `multiplier`x its purchase
+        # price" — a shortage that persists that long reliably triggers a
+        # real order, while a day or two of shortage still doesn't dominate
+        # holding/transfer costs. max(..., 1) guards lead_time_dias == 0.
+        stockout_cost[sku] = order_cost[sku] * stockout_cost_multiplier / max(lead_time_buckets[sku], 1)
 
     return OptimizationInput(
         skus=skus,

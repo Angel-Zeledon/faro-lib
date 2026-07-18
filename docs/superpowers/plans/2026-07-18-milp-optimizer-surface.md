@@ -17,7 +17,7 @@
 - Cost sourcing (no schema migration — derived from existing fields, per the spec's explicit "a decidir en el plan MW-3" for anything not already modeled):
   - `order_cost[sku]` = the SKU's `costo_unitario` (a representative row's value if it varies by bodega) — this literally matches the optimizer's own docstring definition, "cost per unit purchased" (`optimizer.py:44`).
   - `holding_cost[sku]` = `costo_unitario[sku] * business_cfg.holding_cost_pct / 365` (annualized percentage → per-day $, since a bucket is a day).
-  - `stockout_cost[sku]` = `holding_cost[sku] * business_cfg.stockout_cost_multiplier`.
+  - `stockout_cost[sku]` = `order_cost[sku] * business_cfg.stockout_cost_multiplier / max(lead_time_buckets[sku], 1)` — **not** scaled off `holding_cost` (an earlier draft of this plan did that, but `holding_cost` and `order_cost` differ by ~3 orders of magnitude — a per-day flow cost vs. a one-time per-unit price — so a real shortage would need ~600 days to ever outweigh placing an order, meaning the solver would never recommend buying within any realistic horizon; caught by Task 3's integration test). Scaling off `order_cost` divided by lead time means "running out for this SKU's full lead time costs about `multiplier`x its purchase price."
   - When a SKU has no `costo_unitario` anywhere (missing cost data), default it to `1.0` rather than `0.0` — a `0.0` unit cost would zero out both holding and stockout cost, making the solver indifferent to ever ordering that SKU. `1.0` is a documented placeholder assumption, not a real price.
   - `transfer_cost` = a flat constant `0.5` (module-level, not sourced from config) — the design spec explicitly leaves this as "a flat cost per unit transferred," not part of `business_cfg`.
   - `business_cfg` defaults when unconfigured: `holding_cost_pct=0.20`, `stockout_cost_multiplier=3.0` (same defaults as `BusinessConfigRequest`, `backend/schemas/configuration.py`).
@@ -91,7 +91,7 @@ class TestBuildOptimizationInput:
         assert inp.demand[(sku, "Sur")][0] == 10.0     # 40 * (100/400)
         assert inp.lead_time_buckets[sku] == 10        # max(10, 5)
         assert inp.holding_cost[sku] == 20.0 * 0.20 / 365
-        assert inp.stockout_cost[sku] == inp.holding_cost[sku] * 3.0
+        assert inp.stockout_cost[sku] == 20.0 * 3.0 / 10  # order_cost * multiplier / lead_time
         assert inp.order_cost[sku] == 20.0
 
     def test_splits_evenly_when_sku_has_zero_stock_everywhere(self, test_tenant, test_session):
@@ -224,7 +224,17 @@ def build_optimization_input(
 
         order_cost[sku] = unit_cost
         holding_cost[sku] = unit_cost * holding_cost_pct / 365
-        stockout_cost[sku] = holding_cost[sku] * stockout_cost_multiplier
+        # Stockout is a per-day-of-shortage flow cost, but order_cost is a
+        # one-time per-unit purchase price — scaling stockout off holding_cost
+        # (also a tiny daily fraction of unit_cost) made a real shortage need
+        # ~600 days to ever outweigh placing an order, so the solver would
+        # never recommend buying within any realistic horizon. Scaling off
+        # order_cost directly, divided by lead time, means "running out for
+        # this SKU's full lead time costs about `multiplier`x its purchase
+        # price" — a shortage that persists that long reliably triggers a
+        # real order, while a day or two of shortage still doesn't dominate
+        # holding/transfer costs. max(..., 1) guards lead_time_dias == 0.
+        stockout_cost[sku] = order_cost[sku] * stockout_cost_multiplier / max(lead_time_buckets[sku], 1)
 
     return OptimizationInput(
         skus=skus,

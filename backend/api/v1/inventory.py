@@ -22,6 +22,7 @@ from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
 from backend.inventory import warehouse_service as wh_svc
+from backend.inventory import optimizer_service as opt_svc
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -991,3 +992,31 @@ def export_po(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=orden_de_compra.csv"},
     )
+
+
+# ── MILP purchasing/transfers optimizer (MW-3) ───────────────────────────────
+
+@router.get("/optimize")
+def optimize_inventory(
+    session_id:   str = Query(...),
+    horizon_days: int = Query(default=14, ge=1, le=30),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Runs the MILP purchasing/transfers optimizer for this session and
+    returns suggested purchase quantities per SKU x bodega, plus
+    recommended inter-warehouse transfers, collapsed to one total per
+    line over the full horizon.
+    """
+    from forecasting_core.business.optimizer import optimize
+
+    inp = opt_svc.build_optimization_input(user.tenant_id, session_id, horizon_days)
+    if inp is None:
+        return ok({
+            "status": "optimal", "total_cost": 0.0, "horizon_days": horizon_days,
+            "orders": [], "transfers": [],
+        })
+
+    result = optimize(inp)
+    stock_rows = svc.list_stock(user.tenant_id)
+    return ok(opt_svc.serialize_optimization_result(inp, result, stock_rows))
