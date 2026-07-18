@@ -31,11 +31,14 @@ def get_supplier(tenant_id: str, supplier_id: str) -> Optional[dict]:
 def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
     """Case-insensitive lookup by name — PO line items store a free-text
     proveedor name, not a supplier_id, so sending a PO to its supplier
-    needs to resolve that name back to a supplier record."""
+    needs to resolve that name back to a supplier record. Excludes
+    soft-deleted suppliers (active = TRUE), matching get_supplier/
+    list_suppliers — a PO shouldn't get auto-sent to a supplier the
+    business explicitly deactivated."""
     if not name:
         return None
     return query_one(
-        "SELECT * FROM suppliers WHERE tenant_id = %s AND LOWER(name) = LOWER(%s)",
+        "SELECT * FROM suppliers WHERE tenant_id = %s AND LOWER(name) = LOWER(%s) AND active = TRUE",
         (tenant_id, name),
     )
 

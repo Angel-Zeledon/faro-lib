@@ -233,6 +233,18 @@ class TestGetSupplierByName:
         assert sup_svc.get_supplier_by_name(test_tenant["id"], "") is None
         assert sup_svc.get_supplier_by_name(test_tenant["id"], None) is None
 
+    def test_excludes_deactivated_supplier(self, client, test_tenant):
+        """A soft-deleted (active=FALSE) supplier must not match — a PO
+        shouldn't get auto-sent to a supplier the business deactivated."""
+        from backend.inventory import supplier_service as sup_svc
+
+        tid = test_tenant["id"]
+        name = f"Distribuidora {uuid4().hex[:8]}"
+        created = sup_svc.create_supplier(tid, {"name": name, "email": "ventas@example.com"})
+        sup_svc.delete_supplier(tid, created["id"])
+
+        assert sup_svc.get_supplier_by_name(tid, name) is None
+
 
 # ── SKU-Supplier linking ───────────────────────────────────────────────────────
 
