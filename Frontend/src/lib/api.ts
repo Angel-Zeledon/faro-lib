@@ -7,7 +7,7 @@ import type {
   DataSource, DataPreview, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
-  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse,
+  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -828,6 +828,11 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
 // ── Dead Stock / Inventario Inmovilizado ──────────────────────────────────────
 export const getDeadStock = (sessionId: string, minDays = 30) =>
   request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
+
+export const optimizeInventory = (sessionId: string, horizonDays = 14) =>
+  request<OptimizationResponse>(
+    'GET', `/inventory/optimize?session_id=${sessionId}&horizon_days=${horizonDays}`,
+  )
 
 // ── AI Narrative Intelligence ─────────────────────────────────────────────────
 export const getMorningNarrative = (sessionId: string, profile = 'distributor') =>

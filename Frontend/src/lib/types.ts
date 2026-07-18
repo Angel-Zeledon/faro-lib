@@ -674,6 +674,31 @@ export interface ExcludedSku {
   detail:  string
 }
 
+// ── Purchasing/transfers optimizer (MW-3) ─────────────────────────────────────
+
+export interface OptimizationOrder {
+  sku:             string
+  bodega:          string
+  qty:             number
+  costo_unitario:  number | null
+  proveedor:       string | null
+}
+
+export interface OptimizationTransfer {
+  sku:          string
+  from_bodega:  string
+  to_bodega:    string
+  qty:          number
+}
+
+export interface OptimizationResponse {
+  status:        'optimal' | 'fallback'
+  total_cost:    number
+  horizon_days:  number
+  orders:        OptimizationOrder[]
+  transfers:     OptimizationTransfer[]
+}
+
 export interface InventoryStatusResponse {
   items: InventoryStatusItem[]
   excluded_skus?: ExcludedSku[]
@@ -839,6 +864,7 @@ export interface POLineDecision {
   cantidad_final:        number
   status:                'approved' | 'modified' | 'rejected'
   costo_unitario?:       number | null
+  bodega?:               string | null
 }
 
 // ── Suppliers ─────────────────────────────────────────────────────────────────
