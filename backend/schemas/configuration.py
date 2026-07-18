@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any, List
 
 
@@ -125,4 +125,9 @@ class BusinessConfigRequest(BaseModel):
     service_level: float = 0.95
     lead_time_days: int = 7
     holding_cost_pct: float = 0.20
-    stockout_cost_multiplier: float = 3.0
+    # The MILP optimizer (backend/inventory/optimizer_service.py) derives
+    # stockout_cost = order_cost * stockout_cost_multiplier. A value < 1
+    # would make stockout_cost < order_cost, at which point the solver finds
+    # it mathematically cheaper to leave demand permanently unmet than to
+    # ever place an order — silently zeroing out every recommendation.
+    stockout_cost_multiplier: float = Field(default=3.0, ge=1.0)

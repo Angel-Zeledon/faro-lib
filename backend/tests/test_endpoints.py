@@ -340,6 +340,23 @@ class TestConfigurationWizard:
         assert resp.status_code == 200
         assert resp.json()["data"]["service_level"] == 0.98
 
+    def test_business_config_rejects_stockout_multiplier_below_one(self, client, auth_headers, test_session):
+        """
+        The MILP optimizer derives stockout_cost = order_cost * multiplier
+        (backend/inventory/optimizer_service.py). A multiplier < 1 makes
+        stockout_cost < order_cost, at which point the solver finds it
+        cheaper to leave demand permanently unmet than to ever order —
+        silently zeroing out every recommendation. Reject it at the API
+        boundary instead of letting it through to configure a broken plan.
+        """
+        sid = test_session["id"]
+        resp = client.post(
+            f"/api/v1/sessions/{sid}/config/business",
+            json={"stockout_cost_multiplier": 0.5},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+
     def test_forecast_config(self, client, auth_headers, test_session):
         sid = test_session["id"]
         resp = client.post(
