@@ -341,7 +341,7 @@ export default function HoyPage() {
  const [pendingPOs, setPendingPOs] = useState<POLogEntry[]>([])
 
  const user    = getUser()
- const { profile, advancedMode } = useBusinessProfile()
+ const { advancedMode } = useBusinessProfile()
 
  // Load briefing when session changes
  const load = useCallback(async (sid: string) => {
@@ -390,12 +390,12 @@ export default function HoyPage() {
    setNarrative(buildFallbackNarrative(briefing))
    setLoadingNarrative(false)
   }, 8000)
-  getMorningNarrative(sessionId, profile || 'distributor')
+  getMorningNarrative(sessionId)
    .then(data => { clearTimeout(timeout); setNarrative(data) })
    .catch(() => { clearTimeout(timeout); setNarrative(buildFallbackNarrative(briefing)) })
    .finally(() => setLoadingNarrative(false))
   return () => clearTimeout(timeout)
- }, [briefing?.session_id, profile])
+ }, [briefing?.session_id])
 
  // Build cart when briefing arrives
  useEffect(() => {
@@ -707,9 +707,9 @@ export default function HoyPage() {
            fallback={narrative?.fallback ?? false}
            analytistLink="/analyst"
            onRefresh={() => {
-            if (!sessionId || !profile) return
+            if (!sessionId) return
             setLoadingNarrative(true)
-            getMorningNarrative(sessionId, profile || 'distributor')
+            getMorningNarrative(sessionId)
              .then(setNarrative).catch(() => {}).finally(() => setLoadingNarrative(false))
            }}
           />

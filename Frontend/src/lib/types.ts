@@ -400,12 +400,9 @@ export interface ForecastSeries {
 }
 
 // ── User Preferences ──────────────────────────────────────────────────────────
-export type BusinessProfile = 'retail' | 'distributor' | 'manufacturer'
-
 export interface UserPreferences {
   language:         'es' | 'en'
   theme:            'dark' | 'light'
-  business_profile?: BusinessProfile
   advanced_mode?:   boolean
 }
 
