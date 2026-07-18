@@ -46,6 +46,7 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 - **Session state machine**: `backend/sessions/state_machine.py` (DRAFT → … → MODELS_CONFIGURED → QUEUED → RUNNING → COMPLETED/FAILED). Training jobs run on an in-process worker thread (`backend/workers/`), queued in the `jobs` table.
 - **Auth**: own JWT (15-min access + refresh token), NOT Supabase Auth. Roles: admin / analyst / viewer — every mutating endpoint requires `require_analyst_or_above`; reads need `get_current_user`. Frontend renews expired tokens silently (`Frontend/src/lib/auth.ts tryRefresh`).
 - **Notifications**: `backend/notifications/email.py` (Resend primary via RESEND_API_KEY, SMTP fallback) and `whatsapp.py` (Twilio). Daily inventory alert loop fires at 8:00 UTC from `backend/workers/worker.py`.
+- **AI features** (narrative, RAG analyst, chat, data-quality diagnosis): all go through the single factory `get_local_llm_client()` in `backend/ai/local_llm.py`. When `ANTHROPIC_API_KEY` is set, it returns a real Anthropic-backed client (model pinned to `settings.anthropic_model`, default the cheapest tier — Haiku); otherwise it falls back to a local Ollama server (`settings.local_llm_model`, default `deepseek-r1`). Every consumer (`rag_service.py`, `chats.py`, `narrator.py`, `narrative_service.py`, `configuration.py`'s data-quality blurb) calls this one factory and is agnostic to which backend actually serves the request — flipping the key alone switches all of them.
 - **Storage**: Postgres for all metadata/results; binary files (datasets, artifacts, documents) on local disk under `storage/` (gitignored, never version it).
 
 ## Testing Standards (mandatory)
@@ -62,3 +63,4 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 Backend env lives in `backend/.env` (see `backend/.env.example` for every variable). Notable:
 - `TESTING_MODE=true` bypasses all quotas/rate limits — the server **refuses to boot** with it in `ENVIRONMENT=production`.
 - `RESEND_API_KEY`, `TWILIO_*` activate email/WhatsApp; without them, sends are logged no-ops.
+- `ANTHROPIC_API_KEY` switches AI features (chat/RAG/narrative) from the local Ollama fallback to the real Anthropic API — see AI features above.

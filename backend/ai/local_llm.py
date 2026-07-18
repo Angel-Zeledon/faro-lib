@@ -1,18 +1,23 @@
 """
-Local LLM client — replaces the paid Anthropic API for text generation.
+AI completion client factory — one factory, two possible backends.
 
-Talks to a local Ollama server (default http://localhost:11434) running DeepSeek.
-Exposes the same minimal surface the codebase used from the Anthropic SDK:
+get_local_llm_client() returns a real Anthropic-backed client when
+settings.anthropic_api_key is configured, else a local Ollama shim. Both
+expose the identical minimal surface every AI consumer already uses:
 
     client.messages.create(model=..., max_tokens=..., system=..., messages=[...])
         -> resp.content[0].text
         -> resp.usage.input_tokens / resp.usage.output_tokens
 
-This lets every call site stay structurally the same — only the client
-construction changed (anthropic.Anthropic(api_key=...) -> get_local_llm_client()).
-The `model` argument passed by callers is accepted for signature compatibility
-but ignored; the actual model served is controlled by settings.local_llm_model,
-since the local server only has one model loaded.
+so every call site (rag_service.py, chats.py, narrator.py,
+narrative_service.py, configuration.py's data-quality diagnosis) stays
+structurally the same regardless of which backend is active — setting or
+clearing ANTHROPIC_API_KEY alone switches all of them. Both backends also
+ignore whatever `model` string a caller passes (some pass a stale/informal
+placeholder, some pass none at all) and use their own configured model
+instead — settings.anthropic_model for the Anthropic path, since a caller
+targeting one backend's model naming shouldn't need to know or care which
+backend actually served the request.
 """
 
 from __future__ import annotations
@@ -108,8 +113,49 @@ class LocalLLMClient:
         self.messages = _Messages(self._base_url, self._model, timeout)
 
 
-def get_local_llm_client(timeout: float = 60.0) -> LocalLLMClient:
-    """Always returns a usable client — no API key required. Connectivity/model
-    errors surface as exceptions from messages.create(), same as the Anthropic SDK
-    did when the API was unreachable, so existing try/except fallback paths still work."""
+class _AnthropicMessages:
+    """Wraps the real Anthropic SDK's .messages, forcing our configured model
+    regardless of whatever (possibly stale or backend-specific) model string
+    a caller passes — mirrors _Messages.create's same "accept but ignore the
+    caller's model" contract above."""
+
+    def __init__(self, real_client, model: str):
+        self._real = real_client
+        self._model = model
+
+    def create(
+        self,
+        model: str | None = None,   # accepted for interface compatibility, ignored
+        max_tokens: int = 1024,
+        system: str | None = None,
+        messages: list | None = None,
+        **kwargs,
+    ):
+        call_kwargs = {"model": self._model, "max_tokens": max_tokens, "messages": messages or []}
+        if system:
+            call_kwargs["system"] = system
+        call_kwargs.update(kwargs)
+        return self._real.messages.create(**call_kwargs)
+
+
+class _AnthropicBackedClient:
+    """Drop-in replacement for LocalLLMClient, backed by the real Anthropic API."""
+
+    def __init__(self, timeout: float = 60.0):
+        import anthropic
+
+        real = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=timeout)
+        self.messages = _AnthropicMessages(real, settings.anthropic_model)
+
+
+def get_local_llm_client(timeout: float = 60.0):
+    """
+    Returns the active AI client for this deployment: a real Anthropic-backed
+    client when settings.anthropic_api_key is set, else the local Ollama shim
+    (no API key required for the local path). Connectivity/model errors
+    surface as exceptions from messages.create() either way, so existing
+    try/except fallback paths in callers work unchanged.
+    """
+    if settings.anthropic_api_key:
+        return _AnthropicBackedClient(timeout=timeout)
     return LocalLLMClient(timeout=timeout)

@@ -63,11 +63,17 @@ class Settings(BaseSettings):
     twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886" (Twilio sandbox)
 
     # External APIs
-    # anthropic_api_key still powers the RAG analyst, AI chat and narrator
-    # (rag_service.py, chats.py, narrator.py). Only narrative_service.py was moved
-    # to the local LLM; the rest still call Anthropic when this key is present and
-    # fall back gracefully when it is empty.
+    # When set, backend/ai/local_llm.py::get_local_llm_client() returns a real
+    # Anthropic-backed client instead of the local Ollama shim — every AI
+    # consumer (rag_service.py, chats.py, narrator.py, narrative_service.py,
+    # configuration.py's data-quality diagnosis) goes through this one
+    # factory, so setting/unsetting this key alone switches all of them.
     anthropic_api_key: str = ""
+    # Model used when anthropic_api_key is set — deliberately the cheapest
+    # tier, since these are high-volume, low-complexity completions (chat
+    # replies, narrative summaries, data-quality blurbs), not the kind of
+    # task that needs a frontier model.
+    anthropic_model: str = "claude-haiku-4-5-20251001"
     voyageai_api_key: str = ""
     pinecone_api_key: str = ""
     pinecone_environment: str = ""
