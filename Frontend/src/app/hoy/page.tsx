@@ -376,7 +376,7 @@ export default function HoyPage() {
  useEffect(() => {
   if (!sessionId) return
   setOptimizationLoading(true)
-  optimizeInventory(sessionId, 14)
+  optimizeInventory(sessionId, 30)
    .then(setOptimization)
    .catch(() => setOptimization(null))
    .finally(() => setOptimizationLoading(false))

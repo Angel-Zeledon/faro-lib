@@ -829,7 +829,9 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
 export const getDeadStock = (sessionId: string, minDays = 30) =>
   request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
 
-export const optimizeInventory = (sessionId: string, horizonDays = 14) =>
+// Default 30 matches the backend's default — see the endpoint's comment on
+// why a shorter horizon locks out any SKU whose lead time isn't configured.
+export const optimizeInventory = (sessionId: string, horizonDays = 30) =>
   request<OptimizationResponse>(
     'GET', `/inventory/optimize?session_id=${sessionId}&horizon_days=${horizonDays}`,
   )

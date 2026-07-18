@@ -999,7 +999,14 @@ def export_po(
 @router.get("/optimize")
 def optimize_inventory(
     session_id:   str = Query(...),
-    horizon_days: int = Query(default=14, ge=1, le=30),
+    # 30 (the max allowed) rather than a shorter default: the optimizer's own
+    # lead-time gating (ForecastingCore business/optimizer.py build_problem)
+    # blocks EVERY order bucket for a SKU whenever its lead_time_buckets >=
+    # horizon_days, and optimizer_service's fallback lead time when a SKU has
+    # no lead_time_dias data is 15 days — a shorter default horizon would put
+    # any under-configured SKU in a total lockout (real shortage, zero
+    # possible recommendation) rather than just a smaller ordering window.
+    horizon_days: int = Query(default=30, ge=1, le=30),
     user: CurrentUser = Depends(get_current_user),
 ):
     """

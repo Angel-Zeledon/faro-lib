@@ -79,17 +79,25 @@ def build_optimization_input(
 
         order_cost[sku] = unit_cost
         holding_cost[sku] = unit_cost * holding_cost_pct / 365
-        # Stockout is a per-day-of-shortage flow cost, but order_cost is a
-        # one-time per-unit purchase price — scaling stockout off holding_cost
-        # (also a tiny daily fraction of unit_cost) made a real shortage need
-        # ~600 days to ever outweigh placing an order, so the solver would
-        # never recommend buying within any realistic horizon. Scaling off
-        # order_cost directly, divided by lead time, means "running out for
-        # this SKU's full lead time costs about `multiplier`x its purchase
-        # price" — a shortage that persists that long reliably triggers a
-        # real order, while a day or two of shortage still doesn't dominate
-        # holding/transfer costs. max(..., 1) guards lead_time_dias == 0.
-        stockout_cost[sku] = order_cost[sku] * stockout_cost_multiplier / max(lead_time_buckets[sku], 1)
+        # short[i,w,t] in the optimizer is a PER-BUCKET unmet-demand penalty,
+        # not an accumulating backorder — each day's shortfall is evaluated
+        # independently, it doesn't compound across days. So the right
+        # comparison is "cost of leaving one day's demand unmet" against
+        # "cost of having bought that same day's worth of units," not against
+        # some multi-day accumulation. An earlier version of this divided by
+        # lead_time_buckets (modeling "a shortage lasting a full lead time
+        # costs `multiplier`x"), but that made the per-day stockout penalty
+        # smaller than order_cost by a factor of lead_time/multiplier —
+        # meaning ongoing daily demand ALWAYS looked cheaper to leave unmet
+        # than to fulfill, so the solver never recommended buying at all.
+        # Confirmed by direct testing: with real demo data (stock=40,
+        # lead_time=10, cost=8.5/unit, ~40 units/day demand), the /lead_time
+        # formula produced zero orders even though the SKU had 1 day of
+        # stock left; dropping the division produces the expected 800-unit
+        # order. Sanity-checked against a well-stocked SKU (correctly orders
+        # nothing) and a transfer-preferred scenario (still prefers the
+        # cheaper transfer over a new order) before locking this in.
+        stockout_cost[sku] = order_cost[sku] * stockout_cost_multiplier
 
     return OptimizationInput(
         skus=skus,
