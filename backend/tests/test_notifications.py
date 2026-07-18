@@ -1,6 +1,3 @@
-from unittest import mock
-
-
 class TestSendPOToSupplierEmail:
     def test_calls_send_with_attachment_and_supplier_name_in_body(self, monkeypatch):
         from backend.notifications import email as email_mod
