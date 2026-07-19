@@ -667,6 +667,40 @@ def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
     return ok(rec_svc.get_supplier_scorecard(user.tenant_id))
 
 
+@router.get("/suppliers/contact-health")
+def supplier_contact_health(user: CurrentUser = Depends(get_current_user)):
+    """
+    Suppliers that POST /po/{id}/send would silently skip — no email and no
+    WhatsApp on file, or a proveedor name on PO lines with no ficha at all
+    (feature 2.5).
+
+    Returns BOTH relevant and dormant cases, each carrying
+    `en_ordenes_pendientes` / `ordenes_pendientes`, rather than pre-filtering
+    to "only those in open orders". Reason: the /hoy warning must also cover
+    suppliers in the buyer's CURRENT CART, and the cart lives only in the
+    browser until the PO is generated — the server cannot know it. Filtering
+    server-side would make the cart case impossible to answer. The rule for
+    what counts as incomplete stays here; each surface only chooses which of
+    the flagged rows are on screen right now.
+    """
+    from backend.inventory import supplier_health_service as health_svc
+    return ok(health_svc.get_contact_health(user.tenant_id))
+
+
+@router.get("/suppliers/lead-time-alerts")
+def supplier_lead_time_alerts(user: CurrentUser = Depends(get_current_user)):
+    """
+    Suppliers whose recent lead time is significantly slower than their own
+    history — "Acme está tardando 12 días, no 7" (feature 3.3).
+
+    Significance is a robust one-sided 3-sigma SPC rule (median/MAD, with a
+    practical-significance floor); see the threshold rationale in
+    backend/inventory/supplier_health_service.py.
+    """
+    from backend.inventory import supplier_health_service as health_svc
+    return ok(health_svc.get_lead_time_deviations(user.tenant_id))
+
+
 @router.get("/po/overdue")
 def po_overdue(user: CurrentUser = Depends(get_current_user)):
     """

@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { getSupplierScorecard } from '@/lib/api'
-import type { SupplierScorecardRow } from '@/lib/types'
+import { getSupplierScorecard, getSupplierLeadTimeAlerts } from '@/lib/api'
+import type { SupplierScorecardRow, SupplierLeadTimeAlert } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
-import { BarChart3, ArrowLeft, AlertTriangle, Truck } from 'lucide-react'
+import { BarChart3, ArrowLeft, AlertTriangle, Truck, TrendingUp } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -33,10 +33,13 @@ function fmtRange(min: number | null, max: number | null): string {
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
-function ScorecardTable({ rows }: { rows: SupplierScorecardRow[] }) {
+function ScorecardTable({ rows, alerts }: {
+  rows: SupplierScorecardRow[]
+  alerts: Map<string, SupplierLeadTimeAlert>
+}) {
   const columns = [
     'Proveedor', 'Recepciones', 'Lead time real', 'Declarado',
-    '% A tiempo', '% Fill rate', 'Valor comprado', 'Última recepción',
+    'Tendencia', '% A tiempo', '% Fill rate', 'Valor comprado', 'Última recepción',
   ]
 
   return (
@@ -59,6 +62,9 @@ function ScorecardTable({ rows }: { rows: SupplierScorecardRow[] }) {
             const onTimeColor = row.on_time_rate == null
               ? C.dim
               : row.on_time_rate >= 0.7 ? C.green : row.on_time_rate >= 0.4 ? C.amber : C.red
+            // Feature 3.3 — flagged only when the backend's robust 3-sigma
+            // rule fired; absence means "within its normal range", not "no data".
+            const alert = alerts.get(row.proveedor.toLowerCase())
             return (
               <tr key={row.proveedor} style={{
                 background: idx % 2 === 0 ? C.surface : C.card,
@@ -71,6 +77,24 @@ function ScorecardTable({ rows }: { rows: SupplierScorecardRow[] }) {
                 </td>
                 <td style={{ padding: '11px 14px', color: C.muted, fontFamily: 'monospace' }}>
                   {row.lead_time_declarado != null ? `${row.lead_time_declarado}d` : '—'}
+                </td>
+                <td style={{ padding: '11px 14px' }}>
+                  {alert ? (
+                    <span
+                      title={`${alert.mensaje} (z=${alert.z_score}, ${alert.n_reciente} recepciones recientes vs. ${alert.n_baseline} históricas)`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap',
+                        fontSize: 11, fontWeight: 700,
+                        color: alert.severidad === 'alta' ? C.red : C.amber,
+                        background: `${alert.severidad === 'alta' ? C.red : C.amber}1a`,
+                      }}
+                    >
+                      <TrendingUp size={11} /> +{alert.desviacion_dias}d
+                    </span>
+                  ) : (
+                    <span style={{ color: C.dim }}>Estable</span>
+                  )}
                 </td>
                 <td style={{ padding: '11px 14px', color: onTimeColor, fontWeight: 700 }}>
                   {fmtPct(row.on_time_rate)}
@@ -92,17 +116,29 @@ function ScorecardTable({ rows }: { rows: SupplierScorecardRow[] }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function SupplierScorecardPage() {
   const [rows,    setRows]    = useState<SupplierScorecardRow[]>([])
+  const [alerts,  setAlerts]  = useState<SupplierLeadTimeAlert[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
-    try { setRows(await getSupplierScorecard()) }
+    try {
+      const [scorecard, deviations] = await Promise.all([
+        getSupplierScorecard(),
+        // A failed deviation fetch must not blank the scorecard — the table
+        // is still useful without the trend column.
+        getSupplierLeadTimeAlerts().catch(() => [] as SupplierLeadTimeAlert[]),
+      ])
+      setRows(scorecard)
+      setAlerts(deviations)
+    }
     catch (e: unknown) { setError(e instanceof Error ? e.message : 'Error cargando el scorecard') }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const alertsByProveedor = new Map(alerts.map(a => [a.proveedor.toLowerCase(), a]))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
@@ -152,9 +188,40 @@ export default function SupplierScorecardPage() {
           <Spinner />
         </div>
       ) : rows.length > 0 ? (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-          <ScorecardTable rows={rows} />
-        </div>
+        <>
+          {/* Feature 3.3 — the deviation is the headline, the table is the detail. */}
+          {alerts.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              padding: '12px 16px', borderRadius: 10,
+              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
+            }}>
+              <TrendingUp size={15} color={C.amber} style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 12, color: C.text, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <strong>
+                  {alerts.length === 1
+                    ? '1 proveedor se ha desviado de su lead time histórico'
+                    : `${alerts.length} proveedores se han desviado de su lead time histórico`}
+                </strong>
+                {alerts.map(a => (
+                  <span key={a.proveedor}>
+                    {a.mensaje} días{' '}
+                    <span style={{ color: C.dim }}>
+                      (últimas {a.n_reciente} recepciones vs. {a.n_baseline} previas)
+                    </span>
+                  </span>
+                ))}
+                <span style={{ color: C.dim, fontSize: 11, marginTop: 2 }}>
+                  Detectado con una regla de control estadístico de 3 sigma sobre la
+                  mediana y la desviación absoluta mediana del propio historial de cada proveedor.
+                </span>
+              </div>
+            </div>
+          )}
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+            <ScorecardTable rows={rows} alerts={alertsByProveedor} />
+          </div>
+        </>
       ) : (
         <div style={{
           padding: '40px 24px', textAlign: 'center', borderRadius: 12,

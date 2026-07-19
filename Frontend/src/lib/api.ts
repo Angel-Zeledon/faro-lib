@@ -680,6 +680,12 @@ export const getSupplierScorecard = () =>
 export const getOverduePOs = () =>
   request<import('./types').OverdueReception[]>('GET', '/inventory/po/overdue')
 
+export const getSupplierContactHealth = () =>
+  request<import('./types').SupplierContactHealthRow[]>('GET', '/inventory/suppliers/contact-health')
+
+export const getSupplierLeadTimeAlerts = () =>
+  request<import('./types').SupplierLeadTimeAlert[]>('GET', '/inventory/suppliers/lead-time-alerts')
+
 // ── Event / promo impact simulator ───────────────────────────────────────────
 export const simulateEvent = (body: {
   session_id: string
