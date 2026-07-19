@@ -345,6 +345,76 @@ def send_inventory_alert_email(
         log.error("Failed to send inventory alert to %s: %s", to, exc)
 
 
+def send_supplier_lead_time_alert_email(
+    to: str,
+    deviations: list[dict],
+    scorecard_url: str,
+) -> None:
+    """
+    Daily digest: suppliers whose recent lead time drifted significantly off
+    their own history (feature 3.3). Rows come from
+    supplier_health_service.get_lead_time_deviations().
+    """
+    _RED = "#ef4444"
+    _AMB = "#f59e0b"
+
+    def _row(d: dict) -> str:
+        color = _RED if d.get("severidad") == "alta" else _AMB
+        return (
+            f'<tr style="border-bottom:1px solid #1e2030;">'
+            f'<td style="padding:10px 12px;font-size:13px;font-weight:600;">{d.get("proveedor", "")}</td>'
+            f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:700;">'
+            f'  {d.get("lead_time_reciente")} días</td>'
+            f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
+            f'  {d.get("lead_time_historico")} días</td>'
+            f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">'
+            f'  +{d.get("desviacion_dias")} días</td>'
+            f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
+            f'  {d.get("n_reciente")} de {d.get("n_baseline")}</td>'
+            f'</tr>'
+        )
+
+    n = len(deviations)
+    subject = (
+        f"⏱️ {n} proveedor{'es' if n > 1 else ''} tardando más de lo habitual"
+    )
+
+    table_html = (
+        '<table width="100%" style="border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#13141e;">'
+        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Proveedor</th>'
+        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Ahora</th>'
+        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Histórico</th>'
+        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Desviación</th>'
+        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Recepciones</th>'
+        '</tr></thead><tbody>'
+        + "".join(_row(d) for d in deviations)
+        + '</tbody></table>'
+    )
+
+    html = _base_html(
+        "Desviación de lead time",
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 4px;">Tus proveedores están tardando más</p>
+        <p style="color:{_DIM};margin:0 0 24px;font-size:13px;">
+          {n} proveedor{'es se han desviado' if n > 1 else ' se ha desviado'} de su lead time
+          histórico. Si sigues pidiendo con el plazo anterior, el stock puede
+          agotarse antes de que llegue la reposición.
+        </p>
+        {table_html}
+        {_button("Ver scorecard de proveedores", scorecard_url)}
+        <p style="color:{_DIM};font-size:11px;margin:0;">
+          Detectado comparando las últimas recepciones contra el historial propio
+          de cada proveedor (regla de control estadístico de 3 sigma).
+        </p>
+        """,
+    )
+    try:
+        _send(to, subject, html)
+    except Exception as exc:
+        log.error("Failed to send supplier lead-time alert to %s: %s", to, exc)
+
+
 def send_training_complete_email(to: str, session_name: str, dashboard_url: str) -> None:
     """Notify user when a training job finishes."""
     html = _base_html(

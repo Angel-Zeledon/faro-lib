@@ -1,10 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { getPOHistory } from '@/lib/api'
-import type { POLogEntry } from '@/lib/types'
+import { getPOHistory, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
+import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
+import {
+  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
+} from '@/components/suppliers/SupplierHealthBanners'
 import { ClipboardList, AlertTriangle, ShoppingCart } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -20,6 +23,8 @@ export default function PedidosPage() {
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState<string | null>(null)
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
+  const [contactHealth,  setContactHealth]  = useState<SupplierContactHealthRow[]>([])
+  const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true)
@@ -31,9 +36,20 @@ export default function PedidosPage() {
 
   useEffect(() => { load(true) }, [load])
 
+  // Supplier health signals (features 2.5 / 3.3) — server-computed.
+  useEffect(() => {
+    getSupplierContactHealth().then(setContactHealth).catch(() => {})
+    getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
+  }, [])
+
   const pendingCount = history.filter(p =>
     ['pending', 'partial'].includes(p.reception_status ?? 'pending'),
   ).length
+
+  // On this screen there is no cart, so relevance is exactly "named on an
+  // order that is still open" — those are the orders that still need to
+  // reach the supplier.
+  const relevantContactHealth = contactHealth.filter(r => r.en_ordenes_pendientes)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
@@ -64,6 +80,10 @@ export default function PedidosPage() {
           </span>
         )}
       </div>
+
+      {/* Supplier health (2.5) and lead-time deviation (3.3) */}
+      <SupplierContactHealthBanner rows={relevantContactHealth} />
+      <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
 
       {/* Error */}
       {error && (

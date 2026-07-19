@@ -4,16 +4,20 @@ import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
- ChevronDown, ChevronUp, Send, UserX, X,
+ ChevronDown, ChevronUp, Send, X,
 } from 'lucide-react'
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
- listSuppliers, getOverduePOs, sendPOToSuppliers,
+ getOverduePOs, sendPOToSuppliers, getSupplierContactHealth, getSupplierLeadTimeAlerts,
 } from '@/lib/api'
 import type {
  MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
- OptimizationResponse, OptimizationOrder, POLineDecision, Supplier, OverdueReception, SendPOResult,
+ OptimizationResponse, OptimizationOrder, POLineDecision, OverdueReception, SendPOResult,
+ SupplierContactHealthRow, SupplierLeadTimeAlert,
 } from '@/lib/types'
+import {
+ SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
+} from '@/components/suppliers/SupplierHealthBanners'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
@@ -424,8 +428,10 @@ export default function HoyPage() {
  const [optimization, setOptimization] = useState<OptimizationResponse | null>(null)
  const [optimizationLoading, setOptimizationLoading] = useState(false)
 
- // Suppliers directory — used to flag missing contact info in the cart
- const [suppliers, setSuppliers] = useState<Supplier[]>([])
+ // Suppliers the PO-send path would skip (feature 2.5) and suppliers drifting
+ // off their historical lead time (feature 3.3) — both computed server-side.
+ const [contactHealth, setContactHealth] = useState<SupplierContactHealthRow[]>([])
+ const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
 
  // POs whose expected arrival (learned supplier lead time) has already passed
  const [overduePOs, setOverduePOs] = useState<OverdueReception[]>([])
@@ -524,9 +530,11 @@ export default function HoyPage() {
    .catch(() => {})
  }, [])
 
- // Supplier directory — powers the "missing contact info" cart banner
+ // Supplier health signals — the "we'd skip these on send" set and the
+ // "this supplier drifted late" set.
  useEffect(() => {
-  listSuppliers().then(setSuppliers).catch(() => {})
+  getSupplierContactHealth().then(setContactHealth).catch(() => {})
+  getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
  }, [])
 
  const loadOverdue = useCallback(() => {
@@ -565,16 +573,18 @@ export default function HoyPage() {
   (s, i) => s + i.qty * Math.max(0, (i.precio_venta ?? 0) - (i.unit_cost ?? 0)), 0,
  )
 
- // Feature: supplier contact-health banner — suppliers in the current cart
- // (the approved lines) with no email/whatsapp on file will be skipped when
- // the order is sent.
- const cartSupplierNames = Array.from(new Set(
-  approved.map(i => i.proveedor).filter((p): p is string => !!p),
- ))
- const missingContactSuppliers = cartSupplierNames.filter(name => {
-  const s = suppliers.find(sp => sp.name.toLowerCase() === name.toLowerCase())
-  return !s || (!s.email && !s.whatsapp)
- })
+ // Feature 2.5 — of the suppliers the backend flagged as un-sendable, show
+ // only those actually in play right now: named on an approved cart line, or
+ // already carrying an open order. A supplier with an incomplete ficha that
+ // this buyer never orders from is housekeeping, not a warning worth
+ // interrupting the morning routine.
+ const cartSupplierNames = new Set(
+  approved.map(i => i.proveedor).filter((p): p is string => !!p)
+         .map(p => p.toLowerCase()),
+ )
+ const relevantContactHealth = contactHealth.filter(
+  r => cartSupplierNames.has(r.proveedor.toLowerCase()) || r.en_ordenes_pendientes,
+ )
 
  async function downloadOC() {
   const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
@@ -854,6 +864,15 @@ export default function HoyPage() {
       </div>
      ) : (
       <>
+       {/* Feature 3.3 — a supplier's recent lead time drifted significantly
+           off its own history. Sits above the overdue nudge because it is the
+           earlier signal: it explains WHY orders are starting to run late. */}
+       {leadTimeAlerts.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+         <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
+        </div>
+       )}
+
        {/* Overdue-reception alerts: expected arrival (learned supplier lead
            time) has passed with no reception recorded. */}
        {overduePOs.length > 0 && (
@@ -1005,29 +1024,10 @@ export default function HoyPage() {
          </div>
         )}
 
-        {/* Supplier contact-health banner: suppliers in the cart with no
-            email/whatsapp on file will be skipped when the order is sent. */}
-        {approved.length > 0 && missingContactSuppliers.length > 0 && (
-         <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
-          padding: '10px 14px', borderRadius: 10,
-          background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)',
-         }}>
-          <UserX size={14} color={C.amber} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: C.text, flex: 1 }}>
-           <strong>{missingContactSuppliers.length}</strong>{' '}
-           {missingContactSuppliers.length === 1 ? t('hoy.contact_health_singular') : t('hoy.contact_health_plural')}
-           {': '}{missingContactSuppliers.join(', ')}
-          </span>
-          <Link
-           href={`/inventory/suppliers?focus=${encodeURIComponent(missingContactSuppliers[0])}`}
-           style={{
-            fontSize: 12, fontWeight: 700, color: C.amber, textDecoration: 'none',
-            whiteSpace: 'nowrap', flexShrink: 0,
-           }}
-          >
-           {t('hoy.contact_health_cta')}
-          </Link>
+        {/* Feature 2.5 — suppliers the send path would silently skip. */}
+        {relevantContactHealth.length > 0 && (
+         <div style={{ marginBottom: 10 }}>
+          <SupplierContactHealthBanner rows={relevantContactHealth} />
          </div>
         )}
 

@@ -98,7 +98,10 @@ def _scheduler_loop() -> None:
 
 
 def _inventory_alert_loop() -> None:
-    """Fires inventory stockout alerts daily at 8:00 AM UTC."""
+    """Fires inventory stockout alerts, then supplier lead-time deviation
+    alerts (feature 3.3), daily at 8:00 AM UTC. The two run independently:
+    a supplier drifting late matters most while stock still looks healthy,
+    which is exactly when the stockout digest sends nothing."""
     log.info("Inventory alert scheduler started")
     while True:
         try:
@@ -117,6 +120,13 @@ def _inventory_alert_loop() -> None:
             run_daily_inventory_alerts()
         except Exception as e:
             log.error("Inventory alert error: %s", e, exc_info=True)
+        try:
+            from backend.inventory.supplier_health_service import (
+                run_daily_supplier_lead_time_alerts,
+            )
+            run_daily_supplier_lead_time_alerts()
+        except Exception as e:
+            log.error("Supplier lead-time alert error: %s", e, exc_info=True)
 
 
 def _next_month_start(now: datetime) -> datetime:

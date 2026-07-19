@@ -887,6 +887,32 @@ export interface SupplierScorecardRow {
   ultima_recepcion:     string | null
 }
 
+// Feature 2.5 — a supplier the PO-send path would silently skip.
+export interface SupplierContactHealthRow {
+  proveedor:             string
+  supplier_id:           string | null
+  motivo:                'sin_ficha' | 'sin_contacto'
+  motivo_texto:          string
+  tiene_email:           boolean
+  tiene_whatsapp:        boolean
+  ordenes_pendientes:    number
+  en_ordenes_pendientes: boolean
+}
+
+// Feature 3.3 — a supplier whose recent lead time drifted off its own history.
+export interface SupplierLeadTimeAlert {
+  proveedor:           string
+  lead_time_historico: number
+  lead_time_reciente:  number
+  desviacion_dias:     number
+  z_score:             number
+  sigma:               number
+  n_baseline:          number
+  n_reciente:          number
+  severidad:           'media' | 'alta'
+  mensaje:             string
+}
+
 // A single buyer decision sent to /inventory/log-po when a PO is downloaded.
 export interface POLineDecision {
   sku:                   string
