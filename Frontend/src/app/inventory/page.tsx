@@ -8,11 +8,13 @@ import {
  listSuppliers, getDeadStock, simulateEvent, logPOGeneration, downloadInventoryTemplate,
  createMerma,
  getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
+ listEventMultipliers, setEventMultiplier, deleteEventMultiplier,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
  EventSimulationResult, POLineDecision, MermaReason, CalendarCatalogEntry,
+ EventMultiplier,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
@@ -202,11 +204,184 @@ function KPICard({ label, value, color, sub, onClick, active }: {
  )
 }
 
+// ── Multiplicador: explicación y edición por producto (feature 3.4) ──────────
+// El multiplicador de un evento no puede ser un número sin origen: si Faro
+// dice "pide 3x de esto en Black Friday", el comprador tiene que poder ver de
+// dónde sale ese 3x y cambiarlo. Además no es uno solo — la electrónica y la
+// leche no se comportan igual — así que se resuelve por SKU > categoría > evento.
+
+function MultiplierChip({ value, origin }: { value: number; origin: string }) {
+ const { t } = useLanguage()
+ const label = origin === 'sku' ? t('inventory.mult_origin_sku')
+  : origin === 'categoria' ? t('inventory.mult_origin_category')
+  : t('inventory.mult_origin_event')
+ const custom = origin !== 'evento'
+ return (
+  <span
+   title={label}
+   style={{
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    fontFamily: 'monospace', fontWeight: 700, fontSize: 11,
+    padding: '2px 7px', borderRadius: 5,
+    background: custom ? 'rgba(129,140,248,0.12)' : 'transparent',
+    color: custom ? C.indigo : C.muted,
+   }}
+  >
+   x{value.toFixed(1)}
+   <span style={{ fontWeight: 500, fontSize: 9, opacity: 0.85 }}>{label}</span>
+  </span>
+ )
+}
+
+function MultiplierExplainer({ result, eventId, onEdited }: {
+ result: EventSimulationResult
+ eventId: string
+ onEdited: () => void
+}) {
+ const { t } = useLanguage()
+ const [open, setOpen] = useState(false)
+ const [rows, setRows] = useState<EventMultiplier[] | null>(null)
+ const [form, setForm] = useState({ scope: 'categoria' as 'sku' | 'categoria', value: '', mult: '2.0' })
+ const [busy, setBusy] = useState(false)
+ const [err, setErr] = useState('')
+ const exp = result.explicacion
+
+ const load = useCallback(() => {
+  listEventMultipliers(eventId).then(setRows).catch(() => setRows([]))
+ }, [eventId])
+
+ useEffect(() => { if (open && rows === null) load() }, [open, rows, load])
+
+ async function save() {
+  if (!form.value.trim()) return
+  setBusy(true); setErr('')
+  try {
+   await setEventMultiplier(eventId, form.scope, form.value.trim(), parseFloat(form.mult) || 1)
+   setForm(f => ({ ...f, value: '' }))
+   load(); onEdited()
+  } catch (e) { setErr(e instanceof Error ? e.message : t('inventory.mult_err_save')) }
+  finally { setBusy(false) }
+ }
+
+ async function remove(id: string) {
+  setBusy(true); setErr('')
+  try { await deleteEventMultiplier(eventId, id); load(); onEdited() }
+  catch (e) { setErr(e instanceof Error ? e.message : t('inventory.mult_err_delete')) }
+  finally { setBusy(false) }
+ }
+
+ const inputS3: React.CSSProperties = {
+  background: C.card, border: `1px solid ${C.border}`, borderRadius: 6,
+  color: C.text, fontSize: 11, outline: 'none', padding: '5px 8px',
+ }
+
+ return (
+  <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 9, background: C.card, border: `1px solid ${C.border}` }}>
+   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+    <Info size={13} color={C.indigo} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+    <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
+     <strong style={{ color: C.text }}>
+      {t('inventory.mult_base_label')} x{exp.multiplicador_base.toFixed(1)}
+     </strong>
+     {' — '}
+     {exp.es_estimacion ? t('inventory.mult_from_catalog') : t('inventory.mult_from_user')}
+     {exp.motivo && <div style={{ marginTop: 3 }}>{exp.motivo}</div>}
+     {exp.es_estimacion && (
+      <div style={{ marginTop: 3, color: C.dim }}>{t('inventory.mult_estimate_hint')}</div>
+     )}
+     {result.multiplicadores_aplicados.length > 0 && (
+      <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+       {result.multiplicadores_aplicados.map(m => (
+        <span key={`${m.multiplicador}-${m.origen}`} style={{ fontSize: 10, color: C.dim }}>
+         <MultiplierChip value={m.multiplicador} origin={m.origen} /> {m.skus} SKU
+        </span>
+       ))}
+      </div>
+     )}
+    </div>
+    <button
+     onClick={() => setOpen(v => !v)}
+     aria-expanded={open}
+     style={{ all: 'unset', cursor: 'pointer', flexShrink: 0, fontSize: 11, fontWeight: 600, color: C.indigo, padding: '2px 4px' }}
+    >
+     {open ? t('inventory.mult_btn_hide') : t('inventory.mult_btn_adjust')}
+    </button>
+   </div>
+
+   {open && (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+     <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>
+      {t('inventory.mult_edit_hint')}
+     </div>
+
+     {rows && rows.length > 0 && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+       {rows.map(o => (
+        <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+         <span style={{ color: C.dim, width: 68 }}>
+          {o.scope === 'sku' ? t('inventory.mult_origin_sku') : t('inventory.mult_origin_category')}
+         </span>
+         <span style={{ flex: 1, color: C.text, fontFamily: 'monospace' }}>{o.scope_value}</span>
+         <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.indigo }}>x{o.multiplier.toFixed(1)}</span>
+         <button
+          onClick={() => remove(o.id)}
+          disabled={busy}
+          aria-label={`${t('inventory.mult_btn_remove')}: ${o.scope_value}`}
+          title={t('inventory.mult_btn_remove')}
+          style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 3 }}
+         >
+          <Trash2 size={11} aria-hidden="true" />
+         </button>
+        </div>
+       ))}
+      </div>
+     )}
+
+     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      <select
+       value={form.scope}
+       onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'sku' | 'categoria' }))}
+       aria-label={t('inventory.mult_scope_label')}
+       style={{ ...inputS3, width: 110 }}
+      >
+       <option value="categoria">{t('inventory.mult_origin_category')}</option>
+       <option value="sku">{t('inventory.mult_origin_sku')}</option>
+      </select>
+      <input
+       value={form.value}
+       onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+       placeholder={form.scope === 'sku' ? t('inventory.mult_ph_sku') : t('inventory.mult_ph_category')}
+       aria-label={t('inventory.mult_value_label')}
+       style={{ ...inputS3, flex: 1, minWidth: 130 }}
+      />
+      <input
+       type="number" step="0.1" min="0.1" max="10"
+       value={form.mult}
+       onChange={e => setForm(f => ({ ...f, mult: e.target.value }))}
+       aria-label={t('inventory.mult_value_multiplier')}
+       style={{ ...inputS3, width: 70 }}
+      />
+      <button
+       onClick={save}
+       disabled={busy || !form.value.trim()}
+       style={{ all: 'unset', cursor: busy || !form.value.trim() ? 'not-allowed' : 'pointer', padding: '5px 12px', borderRadius: 6, background: C.indigo, color: '#fff', fontSize: 11, fontWeight: 600, opacity: busy || !form.value.trim() ? 0.5 : 1 }}
+      >
+       {t('inventory.mult_btn_apply')}
+      </button>
+     </div>
+     {err && <div style={{ marginTop: 6, fontSize: 11, color: C.red }}>{err}</div>}
+    </div>
+   )}
+  </div>
+ )
+}
+
 // ── Event impact simulator modal (feature 2.3) ───────────────────────────────
-function EventSimModal({ ev, sessionId, onClose }: {
+function EventSimModal({ ev, sessionId, onClose, onReload }: {
  ev: InventoryEvent
  sessionId: string
  onClose: () => void
+ onReload: () => void
 }) {
  const { t } = useLanguage()
  const [result, setResult] = useState<EventSimulationResult | null>(null)
@@ -263,10 +438,13 @@ function EventSimModal({ ev, sessionId, onClose }: {
  )}
  </div>
 
+ {/* Por qué este multiplicador — nunca mostrar un x2.2 sin justificarlo */}
+ <MultiplierExplainer result={result} eventId={ev.id} onEdited={onReload} />
+
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
  <thead>
  <tr>
- {['Producto', 'Demanda evento', 'Stock al inicio', 'Faltante', 'Pedir', 'Pedir antes de'].map(h => (
+ {[t('inventory.sim_col_product'), t('inventory.sim_col_multiplier'), t('inventory.sim_col_event_demand'), t('inventory.sim_col_stock_at_start'), t('inventory.sim_col_shortfall'), t('inventory.sim_col_order'), t('inventory.sim_col_order_before')].map(h => (
  <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: C.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
  ))}
  </tr>
@@ -277,6 +455,9 @@ function EventSimModal({ ev, sessionId, onClose }: {
  <td style={{ padding: '8px' }}>
  <div style={{ fontWeight: 600, color: C.text }}>{r.display_name || r.sku}</div>
  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{r.sku}</div>
+ </td>
+ <td style={{ padding: '8px' }}>
+ <MultiplierChip value={r.multiplicador} origin={r.multiplicador_origen} />
  </td>
  <td style={{ padding: '8px', fontFamily: 'monospace', color: C.text }}>
  {r.event_units.toLocaleString()}
@@ -1298,10 +1479,19 @@ export default function InventoryPage() {
  <span style={{ fontWeight: 600, color: C.amber }}>{t('inventory.upcoming_events_prefix')}</span>
  {upcomingAlerts.map(ev => {
  const d = Math.round((new Date(ev.start_date).getTime() - Date.now()) / 86400000)
+ // Clicable: el multiplicador no debe quedarse en un número suelto — al
+ // abrir el simulador se ve de dónde sale y se puede ajustar por producto.
  return (
- <span key={ev.id} style={{ marginLeft: 8, color: C.text }}>
+ <button
+ key={ev.id}
+ onClick={() => sessionId && setSimEvent(ev)}
+ disabled={!sessionId}
+ title={ev.notes || t('inventory.events_simulate_tooltip')}
+ aria-label={`${t('inventory.events_btn_simulate')}: ${ev.name}`}
+ style={{ all: 'unset', cursor: sessionId ? 'pointer' : 'default', marginLeft: 8, color: C.text, borderBottom: sessionId ? `1px dotted ${C.dim}` : 'none' }}
+ >
  {ev.name} <span style={{ color: C.dim }}>({d === 0 ? t('inventory.day_today') : `${t('inventory.day_in_prefix')} ${d}d`}, ×{ev.multiplier.toFixed(1)})</span>
- </span>
+ </button>
  )
  })}
  <span style={{ marginLeft: 8, color: C.dim, fontSize: 11 }}>{t('inventory.events_multiplier_hint')}</span>
@@ -1866,7 +2056,7 @@ export default function InventoryPage() {
  </div>
 
  {simEvent && sessionId && (
- <EventSimModal ev={simEvent} sessionId={sessionId} onClose={() => setSimEvent(null)} />
+ <EventSimModal ev={simEvent} sessionId={sessionId} onClose={() => setSimEvent(null)} onReload={reloadEvents} />
  )}
 
  {showMermaModal && (

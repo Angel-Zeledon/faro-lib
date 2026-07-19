@@ -863,10 +863,37 @@ export interface SendPOResult {
 }
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
+
+/** El "por qué" del multiplicador, para no mostrar un ×2.2 sin justificar. */
+export interface MultiplierExplanation {
+  multiplicador_base:      number
+  origen:                  'catalogo' | 'usuario'
+  motivo:                  string | null
+  editable:                boolean
+  es_estimacion:           boolean
+  overrides_activos:       number
+  overrides_por_sku:       number
+  overrides_por_categoria: number
+}
+
+/** Override de multiplicador por SKU o categoría dentro de un evento. */
+export interface EventMultiplier {
+  id:          string
+  tenant_id:   string
+  event_id:    string
+  scope:       'sku' | 'categoria'
+  scope_value: string
+  multiplier:  number
+  created_at:  string
+}
 export interface EventSimulationRow {
   sku:             string
   display_name:    string | null
   proveedor:       string | null
+  categoria:       string | null
+  /** Multiplicador aplicado a ESTE producto y de dónde salió. */
+  multiplicador:        number
+  multiplicador_origen: 'sku' | 'categoria' | 'evento'
   demanda_diaria:  number
   baseline_units:  number
   event_units:     number
@@ -888,6 +915,10 @@ export interface EventSimulationResult {
   end_date:   string
   event_days: number
   multiplier: number
+  event_id:   string | null
+  explicacion: MultiplierExplanation
+  /** Cuántos SKU corrieron con cada multiplicador. */
+  multiplicadores_aplicados: { multiplicador: number; origen: string; skus: number }[]
   items:      EventSimulationRow[]
   summary: {
     skus_simulados:     number
