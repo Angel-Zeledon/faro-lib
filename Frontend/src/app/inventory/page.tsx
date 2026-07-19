@@ -6,11 +6,12 @@ import {
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
  listSuppliers, getDeadStock, simulateEvent, logPOGeneration, downloadInventoryTemplate,
+ createMerma,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
- EventSimulationResult, POLineDecision,
+ EventSimulationResult, POLineDecision, MermaReason,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
@@ -24,7 +25,7 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
- Zap,
+ Zap, PackageMinus,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -313,6 +314,121 @@ function EventSimModal({ ev, sessionId, onClose }: {
  )}
  </div>
  </div>
+ )
+}
+
+// ── Merma modal (record a non-sale stock-out: breakage/expiry/self-consumption/gift) ──
+const MERMA_REASONS: MermaReason[] = ['breakage', 'expiry', 'self_consumption', 'gift']
+
+function MermaModal({ items, onClose, onSaved }: {
+ items: InventoryStatusItem[]
+ onClose: () => void
+ onSaved: () => void
+}) {
+ const { t } = useLanguage()
+ const { addToast } = useToast()
+ const [sku, setSku] = useState('')
+ const [quantity, setQuantity] = useState('')
+ const [reason, setReason] = useState<MermaReason>('breakage')
+ const [notes, setNotes] = useState('')
+ const [saving, setSaving] = useState(false)
+ const [error, setError] = useState<string | null>(null)
+
+ const selected = items.find(i => i.sku === sku) || null
+ const qtyNum = parseFloat(quantity)
+ const estCost = selected?.costo_unitario != null && !isNaN(qtyNum) && qtyNum > 0
+  ? qtyNum * selected.costo_unitario
+  : null
+
+ const inputM: React.CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 12, outline: 'none', padding: '7px 9px', width: '100%', boxSizing: 'border-box' }
+
+ async function handleSubmit() {
+  setError(null)
+  if (!selected) { setError(t('inventory.merma_err_select_sku')); return }
+  if (!qtyNum || qtyNum <= 0) { setError(t('inventory.merma_err_quantity')); return }
+  setSaving(true)
+  try {
+   await createMerma({ sku: selected.sku, quantity: qtyNum, reason, notes: notes || undefined })
+   addToast(t('inventory.merma_toast_title'), `${qtyNum} ${t('inventory.calc_unit_units')} ${t('inventory.merma_toast_body')} ${selected.sku}`, 'success')
+   onSaved()
+   onClose()
+  } catch (e) {
+   setError(e instanceof Error ? e.message : String(e))
+  } finally {
+   setSaving(false)
+  }
+ }
+
+ return (
+  <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+   <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+     <PackageMinus size={16} color={C.red} />
+     <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('inventory.merma_title_register')}</span>
+     <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} /></button>
+    </div>
+    <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>{t('inventory.merma_subtitle')}</p>
+
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+     <div>
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_sku')}</div>
+      <input
+       list="merma-sku-options"
+       style={inputM}
+       placeholder={t('inventory.merma_sku_placeholder')}
+       value={sku}
+       onChange={e => setSku(e.target.value)}
+       autoFocus
+      />
+      <datalist id="merma-sku-options">
+       {items.map(i => (
+        <option key={i.sku} value={i.sku}>{i.display_name || i.sku}</option>
+       ))}
+      </datalist>
+      {selected && (
+       <div style={{ marginTop: 4, fontSize: 11, color: C.dim }}>
+        {t('inventory.merma_current_stock_prefix')} <strong style={{ color: C.text }}>{fmt(selected.stock_actual, 0)}</strong>
+       </div>
+      )}
+     </div>
+
+     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div>
+       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_quantity')}</div>
+       <input type="number" min={0} step="any" style={inputM} value={quantity} onChange={e => setQuantity(e.target.value)} />
+      </div>
+      <div>
+       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_reason')}</div>
+       <select style={inputM} value={reason} onChange={e => setReason(e.target.value as MermaReason)}>
+        {MERMA_REASONS.map(r => <option key={r} value={r}>{t(`inventory.merma_reason_${r}`)}</option>)}
+       </select>
+      </div>
+     </div>
+
+     <div>
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_notes')}</div>
+      <input style={inputM} placeholder={t('inventory.merma_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
+     </div>
+
+     {estCost != null && (
+      <div style={{ fontSize: 11, color: C.dim }}>
+       {t('inventory.merma_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
+      </div>
+     )}
+
+     {error && (
+      <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>{error}</div>
+     )}
+
+     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+      <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.border}`, color: C.dim, fontSize: 12 }}>{t('common.cancel')}</button>
+      <button onClick={handleSubmit} disabled={saving} style={{ all: 'unset', cursor: saving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, background: C.red, color: '#fff', fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
+       {saving && <Spinner size={12} />} {saving ? t('inventory.merma_btn_submitting') : t('inventory.merma_btn_submit')}
+      </button>
+     </div>
+    </div>
+   </div>
+  </div>
  )
 }
 
@@ -681,6 +797,7 @@ export default function InventoryPage() {
  const [loadingDead, setLoadingDead] = useState(false)
  const [editedQty, setEditedQty] = useState<Record<string, number>>({})
  const [editingQtySku, setEditingQtySku] = useState<string | null>(null)
+ const [showMermaModal, setShowMermaModal] = useState(false)
 
  // Effective order quantity for an item: the buyer's edit if present, else the recommendation.
  const effectiveQty = useCallback((item: InventoryStatusItem): number =>
@@ -973,6 +1090,9 @@ export default function InventoryPage() {
  }} title={t('inventory.title_manage_suppliers')}>
  <Truck size={12} /> {t('inventory.btn_suppliers')}
  </Link>
+ <button onClick={() => setShowMermaModal(true)} title={t('inventory.merma_title_register')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: C.red }}>
+ <PackageMinus size={12} /> {t('inventory.merma_btn_register')}
+ </button>
  </div>
  </div>
 
@@ -1584,6 +1704,14 @@ export default function InventoryPage() {
 
  {simEvent && sessionId && (
  <EventSimModal ev={simEvent} sessionId={sessionId} onClose={() => setSimEvent(null)} />
+ )}
+
+ {showMermaModal && (
+ <MermaModal
+  items={data?.items ?? []}
+  onClose={() => setShowMermaModal(false)}
+  onSaved={() => { if (sessionId) load(sessionId) }}
+ />
  )}
 
  {deleteTarget && (

@@ -603,6 +603,22 @@ export interface InventoryStatusItem extends InventoryStock {
   calc_explanation:     InventoryCalcExplanation | null
 }
 
+export type MermaReason = 'breakage' | 'expiry' | 'self_consumption' | 'gift'
+
+export interface MermaRecord {
+  id:             string
+  tenant_id:      string
+  sku:            string
+  bodega:         string
+  quantity:       number
+  reason:         MermaReason
+  costo_unitario: number | null
+  costo_total:    number | null
+  notes:          string | null
+  created_by:     string | null
+  created_at:     string
+}
+
 export type ProductType =
   | 'finished_good' | 'semi_finished' | 'component'
   | 'raw_material'  | 'packaging'     | 'service'
@@ -843,6 +859,18 @@ export interface EventSimulationResult {
     pedir_antes_de:     string | null
     algun_pedido_tarde: boolean
   }
+}
+
+// A PO/supplier pair whose expected arrival (order date + the supplier's
+// already-learned lead time) has passed with no reception recorded yet.
+export interface OverdueReception {
+  po_log_id:         string
+  proveedor:         string
+  generated_at:      string
+  expected_arrival:  string
+  days_overdue:      number
+  lead_time_used:    number
+  lead_time_source:  'observed' | 'declared' | 'default'
 }
 
 export interface SupplierScorecardRow {

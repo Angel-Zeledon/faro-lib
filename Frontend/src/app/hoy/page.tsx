@@ -4,11 +4,15 @@ import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
+ ChevronDown, ChevronUp, Send, UserX, X,
 } from 'lucide-react'
-import { getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration } from '@/lib/api'
+import {
+ getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
+ listSuppliers, getOverduePOs, sendPOToSuppliers,
+} from '@/lib/api'
 import type {
  MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
- OptimizationResponse, OptimizationOrder, POLineDecision,
+ OptimizationResponse, OptimizationOrder, POLineDecision, Supplier, OverdueReception, SendPOResult,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
@@ -17,6 +21,7 @@ import { getUser } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
+import { ReceptionModal } from '@/components/po/POHistory'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -79,17 +84,20 @@ function RecIcon({ rec_type }: { rec_type: BriefingRecommendation['rec_type'] })
 type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected'
 
 interface ActionItem {
- sku:         string
- name:        string
- proveedor:   string | null
- qty:         number
- recommended: number   // original quantity Faro suggested (immutable)
- unit_cost:   number | null
- signal:      string
- dias:        number | null
- lead_time:   number
- reason:      string
- status:      ActionStatus
+ sku:            string
+ name:           string
+ proveedor:      string | null
+ qty:            number
+ recommended:    number   // original quantity Faro suggested (immutable)
+ unit_cost:      number | null
+ precio_venta:   number | null   // sale price — for the margin-protected summary
+ signal:         string
+ dias:           number | null
+ lead_time:      number
+ demanda_diaria: number | null   // forecasted daily demand — for the "why" panel
+ stock_actual:   number | null   // current stock — for the "why" panel
+ reason:         string
+ status:         ActionStatus
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
@@ -102,6 +110,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
  const { t } = useLanguage()
  const [editing, setEditing] = useState(false)
  const [qtyInput, setQtyInput] = useState(String(item.qty))
+ const [showWhy, setShowWhy] = useState(false)
 
  // Keep qtyInput in sync when item.qty changes externally (e.g. after reset)
  useEffect(() => {
@@ -115,6 +124,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
 
  const estimatedValue = item.qty * (item.unit_cost ?? 0)
  const canOrder = item.qty > 0
+ const hasWhyData = item.demanda_diaria != null || item.stock_actual != null || item.dias != null
 
  return (
   <div style={{
@@ -149,7 +159,67 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{item.proveedor}</div>
      )}
     </div>
+    {hasWhyData && (
+     <button
+      onClick={() => setShowWhy(v => !v)}
+      style={{
+       all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
+       fontSize: 11, color: 'var(--dim)', flexShrink: 0, padding: '3px 6px',
+      }}
+     >
+      {showWhy ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      {showWhy ? t('hoy.why_toggle_hide') : t('hoy.why_toggle_show')}
+     </button>
+    )}
    </div>
+
+   {/* "Why" panel — plain-language breakdown behind the recommendation */}
+   {showWhy && (
+    <div style={{
+     display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10,
+     background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
+     padding: '10px 12px', marginBottom: 12, fontSize: 12,
+    }}>
+     {item.dias != null && (
+      <div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {t('hoy.why_coverage_label')}
+       </div>
+       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+        {Math.round(item.dias)} {t('hoy.why_days')}
+       </div>
+      </div>
+     )}
+     {item.demanda_diaria != null && (
+      <div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {t('hoy.why_demand_label')}
+       </div>
+       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+        {item.demanda_diaria.toLocaleString('es', { maximumFractionDigits: 1 })} {t('hoy.why_units_day')}
+       </div>
+      </div>
+     )}
+     <div>
+      <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+       {t('hoy.why_lead_time_label')}
+      </div>
+      <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+       {item.lead_time} {t('hoy.why_days')}
+      </div>
+     </div>
+     {item.stock_actual != null && (
+      <div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {t('hoy.why_stock_label')}
+       </div>
+       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+        {Math.round(item.stock_actual).toLocaleString('es')} {t('hoy.why_units')}
+       </div>
+      </div>
+     )}
+    </div>
+   )}
 
    {/* Quantity + Value + Actions */}
    {!isRejected && (
@@ -293,15 +363,18 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    ? `${t('hoy.reason_stock_left_prefix')} ${d} ${t('hoy.reason_days_unit')} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_dias} ${t('hoy.reason_days_unit')}`
    : `${t('hoy.reason_immediate_risk')} — ${t('hoy.reason_lead_time_label')} ${risk.lead_time_dias} ${t('hoy.reason_days_unit')}`
   items.push({
-   sku:         risk.sku,
-   name:        risk.display_name || risk.sku,
-   proveedor:   risk.proveedor || null,
-   qty:         risk.cantidad_recomendada ?? 0,
-   recommended: risk.cantidad_recomendada ?? 0,
-   unit_cost:   risk.costo_unitario ?? null,
-   signal:      'PEDIR_YA',
-   dias:        risk.dias_cobertura ?? null,
-   lead_time:   risk.lead_time_dias,
+   sku:            risk.sku,
+   name:           risk.display_name || risk.sku,
+   proveedor:      risk.proveedor || null,
+   qty:            risk.cantidad_recomendada ?? 0,
+   recommended:    risk.cantidad_recomendada ?? 0,
+   unit_cost:      risk.costo_unitario ?? null,
+   precio_venta:   risk.precio_venta ?? null,
+   signal:         'PEDIR_YA',
+   dias:           risk.dias_cobertura ?? null,
+   lead_time:      risk.lead_time_dias,
+   demanda_diaria: risk.demanda_diaria ?? null,
+   stock_actual:   risk.stock_actual ?? null,
    reason,
    status:      'pending',
   })
@@ -310,15 +383,18 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
  for (const w of (b.warnings ?? [])) {
   const d = w.dias_cobertura != null ? Math.round(w.dias_cobertura) : null
   items.push({
-   sku:         w.sku,
-   name:        w.display_name || w.sku,
-   proveedor:   w.proveedor || null,
-   qty:         w.cantidad_recomendada ?? 0,
-   recommended: w.cantidad_recomendada ?? 0,
-   unit_cost:   w.costo_unitario ?? null,
-   signal:      'PEDIR_PRONTO',
-   dias:        w.dias_cobertura ?? null,
-   lead_time:   w.lead_time_dias,
+   sku:            w.sku,
+   name:           w.display_name || w.sku,
+   proveedor:      w.proveedor || null,
+   qty:            w.cantidad_recomendada ?? 0,
+   recommended:    w.cantidad_recomendada ?? 0,
+   unit_cost:      w.costo_unitario ?? null,
+   precio_venta:   w.precio_venta ?? null,
+   signal:         'PEDIR_PRONTO',
+   dias:           w.dias_cobertura ?? null,
+   lead_time:      w.lead_time_dias,
+   demanda_diaria: w.demanda_diaria ?? null,
+   stock_actual:   w.stock_actual ?? null,
    reason:      `${d != null ? d + ' ' + t('hoy.reason_days_coverage') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
   })
@@ -347,6 +423,21 @@ export default function HoyPage() {
  // Purchasing/transfers optimizer plan (MW-3)
  const [optimization, setOptimization] = useState<OptimizationResponse | null>(null)
  const [optimizationLoading, setOptimizationLoading] = useState(false)
+
+ // Suppliers directory — used to flag missing contact info in the cart
+ const [suppliers, setSuppliers] = useState<Supplier[]>([])
+
+ // POs whose expected arrival (learned supplier lead time) has already passed
+ const [overduePOs, setOverduePOs] = useState<OverdueReception[]>([])
+
+ // PO currently being received via the reused ReceptionModal (feature: overdue nudge)
+ const [receivingPO, setReceivingPO] = useState<string | null>(null)
+
+ // Generate→send in one flow: the PO just logged, awaiting the "send now" decision
+ const [generatedPO, setGeneratedPO]   = useState<POLogEntry | null>(null)
+ const [generatedLines, setGeneratedLines] = useState<ActionItem[]>([])
+ const [sendState, setSendState]       = useState<'idle' | 'sending' | 'done'>('idle')
+ const [sendResult, setSendResult]     = useState<SendPOResult | null>(null)
 
  const user    = getUser()
  const { advancedMode } = useBusinessProfile()
@@ -433,6 +524,20 @@ export default function HoyPage() {
    .catch(() => {})
  }, [])
 
+ // Supplier directory — powers the "missing contact info" cart banner
+ useEffect(() => {
+  listSuppliers().then(setSuppliers).catch(() => {})
+ }, [])
+
+ const loadOverdue = useCallback(() => {
+  getOverduePOs().then(setOverduePOs).catch(() => {})
+ }, [])
+
+ // POs whose expected arrival (learned supplier lead time) already passed
+ useEffect(() => {
+  loadOverdue()
+ }, [loadOverdue])
+
  // ── Cart helpers ─────────────────────────────────────────────────────────
  function approveItem(sku: string) {
   setCart(prev => prev.map(i =>
@@ -453,7 +558,25 @@ export default function HoyPage() {
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
 
- function downloadOC() {
+ // Feature: margin visible in cart — value of sales this order protects, and
+ // the margin within it, from each SKU's own precio_venta / costo_unitario.
+ const salesProtected  = approved.reduce((s, i) => s + i.qty * (i.precio_venta ?? 0), 0)
+ const marginProtected = approved.reduce(
+  (s, i) => s + i.qty * Math.max(0, (i.precio_venta ?? 0) - (i.unit_cost ?? 0)), 0,
+ )
+
+ // Feature: supplier contact-health banner — suppliers in the current cart
+ // (the approved lines) with no email/whatsapp on file will be skipped when
+ // the order is sent.
+ const cartSupplierNames = Array.from(new Set(
+  approved.map(i => i.proveedor).filter((p): p is string => !!p),
+ ))
+ const missingContactSuppliers = cartSupplierNames.filter(name => {
+  const s = suppliers.find(sp => sp.name.toLowerCase() === name.toLowerCase())
+  return !s || (!s.email && !s.whatsapp)
+ })
+
+ async function downloadOC() {
   const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
   for (const item of approved) {
    const val = item.qty * (item.unit_cost ?? 0)
@@ -467,27 +590,60 @@ export default function HoyPage() {
   a.click()
   URL.revokeObjectURL(url)
 
-  if (sessionId) {
-   // Log the buyer's actual decisions (approved / modified / rejected) so we can
-   // track adoption — "you followed N of M recommendations". Untouched 'pending'
-   // items are excluded: the buyer never acted on them.
-   const decisions = cart
-    .filter(i => i.status !== 'pending')
-    .filter(i => i.status === 'rejected' || i.qty > 0)
-    .map(i => ({
-     sku:                  i.sku,
-     display_name:         i.name,
-     proveedor:            i.proveedor,
-     signal:               i.signal,
-     cantidad_recomendada: i.recommended,
-     cantidad_final:       i.status === 'rejected' ? 0 : i.qty,
-     status:               i.status as 'approved' | 'modified' | 'rejected',
-     costo_unitario:       i.unit_cost,
-    }))
-   import('@/lib/api').then(({ logPOGeneration }) => {
-    logPOGeneration(sessionId, decisions).catch(() => {})
-   })
+  if (!sessionId) return
+
+  // Log the buyer's actual decisions (approved / modified / rejected) so we can
+  // track adoption — "you followed N of M recommendations". Untouched 'pending'
+  // items are excluded: the buyer never acted on them.
+  const decisions = cart
+   .filter(i => i.status !== 'pending')
+   .filter(i => i.status === 'rejected' || i.qty > 0)
+   .map(i => ({
+    sku:                  i.sku,
+    display_name:         i.name,
+    proveedor:            i.proveedor,
+    signal:               i.signal,
+    cantidad_recomendada: i.recommended,
+    cantidad_final:       i.status === 'rejected' ? 0 : i.qty,
+    status:               i.status as 'approved' | 'modified' | 'rejected',
+    costo_unitario:       i.unit_cost,
+   }))
+
+  // Feature: generate→send in one flow. Capture the logged PO so we can offer
+  // "send to suppliers now" right here, instead of sending the buyer to /pedidos.
+  try {
+   const entry = await logPOGeneration(sessionId, decisions)
+   setGeneratedPO(entry)
+   setGeneratedLines(approved)
+   setSendState('idle')
+   setSendResult(null)
+  } catch {
+   // The CSV already downloaded successfully; the inline send panel is a bonus,
+   // so a logging failure here shouldn't block or alarm the buyer.
   }
+ }
+
+ async function sendGeneratedPONow() {
+  if (!generatedPO) return
+  setSendState('sending')
+  try {
+   const res = await sendPOToSuppliers(generatedPO.id)
+   setSendResult(res)
+  } catch (e: unknown) {
+   setSendResult({
+    sent: [],
+    skipped: [{ supplier: null, reason: e instanceof Error ? e.message : t('roi.send_po_error') }],
+   })
+  } finally {
+   setSendState('done')
+  }
+ }
+
+ function dismissGeneratedPO() {
+  setGeneratedPO(null)
+  setGeneratedLines([])
+  setSendState('idle')
+  setSendResult(null)
  }
 
  // Converts a single optimizer-suggested order line straight into a logged PO,
@@ -698,6 +854,42 @@ export default function HoyPage() {
       </div>
      ) : (
       <>
+       {/* Overdue-reception alerts: expected arrival (learned supplier lead
+           time) has passed with no reception recorded. */}
+       {overduePOs.length > 0 && (
+        <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+         <div style={{
+          fontSize: 11, fontWeight: 700, color: C.red,
+          textTransform: 'uppercase', letterSpacing: '0.08em',
+         }}>
+          {t('hoy.overdue_section_title')}
+         </div>
+         {overduePOs.map(o => (
+          <div key={`${o.po_log_id}-${o.proveedor}`} style={{
+           display: 'flex', alignItems: 'center', gap: 10,
+           padding: '12px 16px', borderRadius: 10,
+           background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)',
+          }}>
+           <AlertTriangle size={15} color={C.red} style={{ flexShrink: 0 }} />
+           <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
+            {t('hoy.overdue_line_prefix')} <strong>{o.proveedor}</strong>{' '}
+            {t('hoy.overdue_line_suffix')} <strong>{o.days_overdue}</strong> {t('hoy.overdue_days_ago_suffix')}
+           </span>
+           <button
+            onClick={() => setReceivingPO(o.po_log_id)}
+            style={{
+             all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+             fontSize: 12, fontWeight: 700, color: C.red, padding: '6px 12px', borderRadius: 7,
+             border: `1px solid ${C.red}55`, flexShrink: 0,
+            }}
+           >
+            <Truck size={12} /> {t('hoy.overdue_cta')}
+           </button>
+          </div>
+         ))}
+        </div>
+       )}
+
        {/* Pending receptions banner */}
        {pendingPOs.length > 0 && (
         <Link href="/pedidos" style={{ textDecoration: 'none' }}>
@@ -813,6 +1005,32 @@ export default function HoyPage() {
          </div>
         )}
 
+        {/* Supplier contact-health banner: suppliers in the cart with no
+            email/whatsapp on file will be skipped when the order is sent. */}
+        {approved.length > 0 && missingContactSuppliers.length > 0 && (
+         <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+          padding: '10px 14px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)',
+         }}>
+          <UserX size={14} color={C.amber} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: C.text, flex: 1 }}>
+           <strong>{missingContactSuppliers.length}</strong>{' '}
+           {missingContactSuppliers.length === 1 ? t('hoy.contact_health_singular') : t('hoy.contact_health_plural')}
+           {': '}{missingContactSuppliers.join(', ')}
+          </span>
+          <Link
+           href={`/inventory/suppliers?focus=${encodeURIComponent(missingContactSuppliers[0])}`}
+           style={{
+            fontSize: 12, fontWeight: 700, color: C.amber, textDecoration: 'none',
+            whiteSpace: 'nowrap', flexShrink: 0,
+           }}
+          >
+           {t('hoy.contact_health_cta')}
+          </Link>
+         </div>
+        )}
+
         {/* Sticky cart */}
         {approved.length > 0 && (
          <div style={{
@@ -831,6 +1049,13 @@ export default function HoyPage() {
             {approved.map(i => `${i.name}: ${i.qty.toLocaleString('es')} ${t('hoy.cart_unit_abbrev')}`).join(' · ')}
             {totalValue > 0 && ` · ${t('hoy.cart_total_label')}: $${(totalValue / 1_000_000).toFixed(1)}M`}
            </div>
+           {/* Margin visible in cart: value of sales this order protects and its margin */}
+           {salesProtected > 0 && (
+            <div style={{ fontSize: 12, color: C.green, marginTop: 4, fontWeight: 600 }}>
+             {t('hoy.cart_protects_prefix')} {fmtM(salesProtected)} {t('hoy.cart_protects_sales_suffix')}{' '}
+             {fmtM(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
+            </div>
+           )}
           </div>
           <button
            onClick={() => setCart(prev => prev.map(i =>
@@ -850,6 +1075,88 @@ export default function HoyPage() {
           }}>
            {t('hoy.btn_download_po')}
           </button>
+         </div>
+        )}
+
+        {/* Generate→send in one flow: right after a PO is logged, offer to
+            send it to its suppliers without navigating away to /pedidos. */}
+        {generatedPO && (
+         <div style={{
+          marginTop: 12, background: 'var(--surface)', border: '1px solid rgba(129,140,248,0.4)',
+          borderRadius: 12, padding: '16px 20px',
+         }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+           <Send size={14} color={C.indigo} />
+           <span style={{ fontSize: 14, fontWeight: 700, color: C.text, flex: 1 }}>
+            {t('hoy.generate_send_title')}
+           </span>
+           <button onClick={dismissGeneratedPO} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex' }}>
+            <X size={15} />
+           </button>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 12px' }}>
+           {t('hoy.generate_send_subtitle')}
+          </p>
+
+          {/* Summary of which supplier gets which lines, before confirming */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+           {Object.entries(
+            generatedLines.reduce<Record<string, ActionItem[]>>((acc, i) => {
+             const key = i.proveedor || ''
+             ;(acc[key] = acc[key] || []).push(i)
+             return acc
+            }, {}),
+           ).map(([proveedor, lines]) => (
+            <div key={proveedor || '__none__'} style={{
+             display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+             padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)',
+            }}>
+             <span style={{ fontWeight: 700, color: proveedor ? C.text : C.amber, flexShrink: 0 }}>
+              {proveedor || t('hoy.generate_send_no_supplier')}
+             </span>
+             <span style={{ color: 'var(--dim)' }}>
+              {lines.map(l => `${l.name} (${l.qty.toLocaleString('es')} ${t('hoy.generate_send_units_abbrev')})`).join(' · ')}
+             </span>
+            </div>
+           ))}
+          </div>
+
+          {sendState === 'done' && sendResult ? (
+           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {sendResult.sent.map(s => (
+             <div key={s.supplier} style={{ fontSize: 12, color: C.green }}>
+              ✓ {s.supplier}{s.email ? ' · email' : ''}{s.whatsapp ? ' · WhatsApp' : ''}
+             </div>
+            ))}
+            {sendResult.skipped.map((s, idx) => (
+             <div key={`${s.supplier}-${idx}`} style={{ fontSize: 12, color: C.amber }}>
+              ⚠ {s.supplier || '—'}: {s.reason}
+             </div>
+            ))}
+           </div>
+          ) : (
+           <div style={{ display: 'flex', gap: 10 }}>
+            <button
+             onClick={sendGeneratedPONow}
+             disabled={sendState === 'sending'}
+             style={{
+              all: 'unset', cursor: sendState === 'sending' ? 'not-allowed' : 'pointer',
+              padding: '9px 18px', borderRadius: 8, background: C.indigo, color: '#fff',
+              fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+              opacity: sendState === 'sending' ? 0.7 : 1,
+             }}
+            >
+             <Send size={13} />
+             {sendState === 'sending' ? t('roi.send_po_sending') : t('hoy.generate_send_btn')}
+            </button>
+            <Link href="/pedidos" style={{
+             fontSize: 13, color: 'var(--dim)', textDecoration: 'none',
+             display: 'flex', alignItems: 'center', padding: '9px 4px',
+            }}>
+             {t('hoy.generate_send_go_pedidos')}
+            </Link>
+           </div>
+          )}
          </div>
         )}
        </div>
@@ -1094,6 +1401,23 @@ export default function HoyPage() {
       </>
      )}
     </>
+   )}
+
+   {/* Reception modal — reused from /pedidos, opened from the overdue-reception nudge */}
+   {receivingPO && (
+    <ReceptionModal
+     poId={receivingPO}
+     onClose={() => setReceivingPO(null)}
+     onSaved={() => {
+      setReceivingPO(null)
+      loadOverdue()
+      getPOHistory(20)
+       .then(list => setPendingPOs(list.filter(p =>
+        ['pending', 'partial'].includes(p.reception_status ?? 'pending'),
+       )))
+       .catch(() => {})
+     }}
+    />
    )}
   </div>
  )

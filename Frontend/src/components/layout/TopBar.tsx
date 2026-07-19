@@ -1,12 +1,13 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
-import { Bell, CheckCircle2, AlertTriangle, Clock, X, ChevronRight } from 'lucide-react'
+import { Bell, CheckCircle2, AlertTriangle, Clock, X, ChevronRight, Search } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import { useToast } from '@/contexts/ToastContext'
 import { useActiveSession } from '@/contexts/ActiveSessionContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import Badge from '@/components/ui/Badge'
 
 interface Notif {
@@ -48,6 +49,7 @@ export default function TopBar() {
   const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'Faro'
   const { addToast } = useToast()
   const { activeSessionId } = useActiveSession()
+  const { open: openSkuSearch } = useSkuSearch()
 
   const [time,        setTime]        = useState('')
   const [notifs,      setNotifs]      = useState<Notif[]>([])
@@ -154,6 +156,33 @@ export default function TopBar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Global SKU search (Ctrl/Cmd-K) */}
+        <button
+          onClick={openSkuSearch}
+          title={t('topbar.sku_search_title')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 10px', borderRadius: 7,
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            cursor: 'pointer',
+            color: 'var(--muted)',
+            fontSize: 12,
+            transition: 'all 0.15s',
+          }}
+        >
+          <Search size={13} />
+          <span>
+            {t('topbar.sku_search_placeholder')}
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 600, color: 'var(--dim)',
+            border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px',
+          }}>
+            Ctrl K
+          </span>
+        </button>
+
         <span style={{ fontSize: 12, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
           {time}
         </span>

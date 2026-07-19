@@ -502,6 +502,30 @@ _MIGRATIONS = _BASE_SCHEMA + [
     # session_store field whitelist must exist now so that read never 500s.
     ("add_session_configs_granularity_cfg",
      "ALTER TABLE session_configs ADD COLUMN IF NOT EXISTS granularity_cfg JSONB"),
+    # ── Mermas (shrinkage / non-sale stock-outs) ─────────────────────────────
+    # Records inventory that left stock for a reason OTHER than a sale
+    # (breakage, expiry, self-consumption, gift/sample). costo_unitario is
+    # captured at record time (the SKU's unit cost can change later — this
+    # keeps the historical cost accurate); costo_total = quantity * costo_unitario,
+    # precomputed here so a future monthly shrinkage summary is a simple SUM.
+    ("create_inventory_mermas",
+     """CREATE TABLE IF NOT EXISTS inventory_mermas (
+         id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id      TEXT NOT NULL,
+         sku            TEXT NOT NULL,
+         bodega         TEXT NOT NULL DEFAULT 'principal',
+         quantity       FLOAT NOT NULL,
+         reason         TEXT NOT NULL,
+         costo_unitario FLOAT,
+         costo_total    FLOAT,
+         notes          TEXT,
+         created_by     TEXT,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_inventory_mermas_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_mermas_tenant_idx ON inventory_mermas (tenant_id, created_at DESC)"),
+    ("create_inventory_mermas_sku_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_mermas_sku_idx ON inventory_mermas (tenant_id, sku, created_at DESC)"),
 ]
 
 

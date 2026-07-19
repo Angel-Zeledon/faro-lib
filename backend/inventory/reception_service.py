@@ -12,12 +12,17 @@ what came in. Two effects that compound Faro's value over time:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from backend.db.connection import execute, query, query_one
 
 log = logging.getLogger(__name__)
+
+# Same fallback used in service.py's stock signal calc when a SKU has no
+# lead_time_dias on file — keeps the "expected arrival" guess consistent
+# with the rest of the app when a supplier has no data at all.
+_DEFAULT_LEAD_TIME_DAYS = 15.0
 
 # Line statuses that were actually ordered (mirrors roi_service._ORDERED)
 _ORDERED = ("approved", "modified")
@@ -292,4 +297,82 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "fill_rate": round(float(fill["total_recibido"]) / total_pedido, 3) if total_pedido > 0 else None,
             "valor_comprado": round(float(fill["valor_comprado"]), 2),
         })
+    return out
+
+
+def _effective_lead_time(tenant_id: str, proveedor: str) -> tuple[float, str]:
+    """
+    The "already-learned" lead time for a supplier, preferring real observed
+    receptions over the declared value on the supplier's card, and falling
+    back to a sane default when neither exists yet.
+    Returns (lead_time_days, source) where source ∈ observed | declared | default.
+    """
+    obs = query_one(
+        """SELECT AVG(lead_time_days) AS avg_days, COUNT(*)::int AS n
+           FROM supplier_lead_time_obs
+           WHERE tenant_id = %s AND LOWER(proveedor) = LOWER(%s)""",
+        (tenant_id, proveedor),
+    )
+    if obs and obs.get("n") and obs["n"] > 0 and obs.get("avg_days") is not None:
+        return float(obs["avg_days"]), "observed"
+
+    from backend.inventory import supplier_service as sup_svc
+    supplier = sup_svc.get_supplier_by_name(tenant_id, proveedor)
+    if supplier and supplier.get("lead_time_dias") is not None:
+        return float(supplier["lead_time_dias"]), "declared"
+
+    return _DEFAULT_LEAD_TIME_DAYS, "default"
+
+
+def get_overdue_receptions(tenant_id: str) -> list[dict]:
+    """
+    POs still pending/partial whose expected arrival — generation date plus
+    the supplier's already-learned lead time (see _effective_lead_time) — has
+    passed without any recorded reception. One row per (po_log_id, proveedor)
+    pair, since a single PO can span several suppliers with different lead
+    times and only some of them may actually be late.
+    """
+    pos = query(
+        """SELECT id, generated_at FROM inventory_po_log
+           WHERE tenant_id = %s AND reception_status IN %s
+           ORDER BY generated_at""",
+        (tenant_id, RECEIVABLE_STATES),
+    )
+    if not pos:
+        return []
+
+    now = datetime.now(timezone.utc)
+    out: list[dict] = []
+    for po in pos:
+        po_log_id = po["id"]
+        generated_at = po["generated_at"]
+        if generated_at.tzinfo is None:
+            generated_at = generated_at.replace(tzinfo=timezone.utc)
+
+        items = get_po_items(tenant_id, po_log_id)
+        ordered = [i for i in items if i["status"] in _ORDERED]
+        proveedores = sorted({
+            (i.get("proveedor") or "").strip()
+            for i in ordered
+            if (i.get("proveedor") or "").strip()
+        })
+        if not proveedores:
+            continue
+
+        for prov in proveedores:
+            lead_time, source = _effective_lead_time(tenant_id, prov)
+            expected_arrival = generated_at + timedelta(days=lead_time)
+            if now <= expected_arrival:
+                continue
+            out.append({
+                "po_log_id":        po_log_id,
+                "proveedor":        prov,
+                "generated_at":     generated_at.isoformat(),
+                "expected_arrival": expected_arrival.date().isoformat(),
+                "days_overdue":     (now - expected_arrival).days,
+                "lead_time_used":   round(lead_time, 1),
+                "lead_time_source": source,
+            })
+
+    out.sort(key=lambda r: -r["days_overdue"])
     return out
