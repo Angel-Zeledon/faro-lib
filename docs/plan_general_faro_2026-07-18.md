@@ -129,6 +129,39 @@ Ordenada por riesgo real (los ítems de diseño/UX que estaban aquí se movieron
 
 ---
 
+---
+
+## Estado de ejecución — actualizado 2026-07-19
+
+Cerrado y mergeado a `main` (suite backend **818 passed, 19 skipped**; `tsc --noEmit` exit 0):
+
+| Ítem | Estado | Nota |
+|---|---|---|
+| Fase 0 (0.1, 0.2) | ✅ | 0.3 (recorrido manual end-to-end) **sigue pendiente** |
+| 1.1, 1.4 | ✅ | camino único signup→semáforo + demo protagonista |
+| 1.2 | ✅ | `/hoy` con estado vacío real + login rebota a `/hoy` |
+| 1.3 | ✅ | validador CSV por fila + plantilla canónica descargable |
+| 2.1, 2.2, 2.3, 2.9 | ✅ | generar→enviar, recepción vencida, buscador global, mermas |
+| 2.4 | ✅ | + cambio de fondo: el lead time **aprendido** ahora alimenta el cálculo, no solo el texto |
+| 2.5 | ✅ | endpoint real; eliminó lógica de negocio que vivía en el frontend |
+| 2.10 | ✅ | margen `None` ≠ `0`; margen negativo ya no se aplasta a 0 |
+| 3.3 | ✅ | regla SPC 3-sigma con mediana + IQR/1.349 |
+| 3.4 | ✅ | catálogo LatAm, fechas móviles calculadas — **solo Colombia poblado** |
+| 2.8 | ✅ | contraste del semáforo estaba roto (2.1:1 y 3.4:1, reprobaban AA) — corregido |
+
+**Riesgos abiertos de lo recién mergeado:**
+
+1. **Nada verificado en navegador.** Cuatro clusters de UI integrados con typecheck y tests de backend, cero verificación visual. Es el pendiente #1 y coincide con el ítem 0.3.
+2. **Inconsistencia de confianza en `supplier_lead_time_obs`:** 3.3 exige ≥6 recepciones para alertar, pero 2.4 confía en el promedio aprendido con **1 sola observación** (`AVG` sin `HAVING COUNT(*) >= N`). Una recepción atípica sobrescribe el lead time configurado de ese proveedor en todos sus SKUs. Propuesta: mínimo 3 observaciones.
+3. **Validación de fechas más estricta** (1.3): un CSV con formato de fecha exótico en todas las filas puede ahora cruzar el umbral fatal del 20% y bloquear una subida que antes pasaba.
+4. **3.3 no se ve en tenants nuevos:** ≥6 recepciones registradas antes de la primera alerta posible.
+5. Multiplicadores del calendario (×1.4 quincena, ×2.5 Black Friday) son estimaciones, no ajustadas con datos.
+6. `/inventory` y el export CSV muestran el lead time aprendido sin etiquetar su origen.
+
+**Siguiente:** 0.3 (recorrido manual) → 2.6 (estados vacíos/carga/error + interceptor en `api.ts`) → 2.7 (sistema de diseño). 2.6 y 2.7 se dejaron fuera del lote paralelo a propósito: tocan las mismas 5 pantallas diarias que este lote acaba de mover.
+
+---
+
 ## Orden de ejecución recomendado
 
 ```
