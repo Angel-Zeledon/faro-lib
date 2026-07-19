@@ -311,6 +311,28 @@ class TestTrainerParallelism:
         skus = {v["sku"] for v in results.values()}
         assert skus == {"A", "C"}
 
+    def test_group_failure_does_not_abort_other_groups_sequential(self, monkeypatch):
+        # max_workers=1 takes the sequential branch, not the ThreadPoolExecutor
+        # one — this is the path every low-core-count machine actually uses
+        # (_resolve_max_workers caps at n_groups and at the backend's per-
+        # session core budget), so it needs the same failure isolation.
+        df = _make_feature_df(n=60, skus=["A", "B", "C"])
+        trainer = Trainer(train_ratio=0.8, walk_forward=False, max_workers=1)
+        models = self._get_models()
+
+        original = trainer._train_one_group
+
+        def flaky(group_val, g, dt, target, exclude, trainable):
+            if group_val == "B":
+                raise RuntimeError("synthetic failure for SKU B")
+            return original(group_val, g, dt, target, exclude, trainable)
+
+        monkeypatch.setattr(trainer, "_train_one_group", flaky)
+
+        results = trainer.train(df, models, group_col="sku", target="sales", dt="date")
+        skus = {v["sku"] for v in results.values()}
+        assert skus == {"A", "C"}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ModelRouter

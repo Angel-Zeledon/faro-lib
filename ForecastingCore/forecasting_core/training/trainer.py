@@ -122,19 +122,25 @@ class Trainer:
         n_workers = self._resolve_max_workers(len(group_list))
 
         if n_workers <= 1:
+            # Same isolation as the parallel branch below: one group's
+            # unexpected failure must not abort every other group's
+            # training, regardless of how many workers this machine has.
             for group_val, g in group_list:
-                results.update(self._train_one_group(group_val, g, dt, target, exclude, trainable))
+                try:
+                    results.update(self._train_one_group(group_val, g, dt, target, exclude, trainable))
+                except Exception as e:
+                    log.exception(f"Group {group_val!r} training task failed: {e}")
         else:
             with ThreadPoolExecutor(max_workers=n_workers) as executor:
-                futures = [
-                    executor.submit(self._train_one_group, group_val, g, dt, target, exclude, trainable)
+                future_to_group = {
+                    executor.submit(self._train_one_group, group_val, g, dt, target, exclude, trainable): group_val
                     for group_val, g in group_list
-                ]
-                for future in as_completed(futures):
+                }
+                for future in as_completed(future_to_group):
                     try:
                         results.update(future.result())
                     except Exception as e:
-                        log.warning(f"Group training task failed: {e}")
+                        log.exception(f"Group {future_to_group[future]!r} training task failed: {e}")
 
         return results
 
