@@ -208,8 +208,8 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                   {fmtMonthLabel(row.month, lang)}
                 </td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{row.pos_count}</td>
-                <td style={{ padding: '11px 14px', color: row.skus_pedir_ya > 0 ? C.red : C.dim, fontWeight: row.skus_pedir_ya > 0 ? 700 : 400 }}>
-                  {row.skus_pedir_ya}
+                <td style={{ padding: '11px 14px', color: row.skus_order_now > 0 ? C.red : C.dim, fontWeight: row.skus_order_now > 0 ? 700 : 400 }}>
+                  {row.skus_order_now}
                 </td>
                 <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace' }}>
                   {fmtCurrency(row.total_value)}
@@ -477,7 +477,7 @@ export default function ROIPage() {
           {/* Section 2 — Monthly evolution */}
           <MonthlyEvolutionTable rows={monthly} />
 
-          {/* Orders now live in /pedidos */}
+          {/* Orders now live in /orders */}
           <Link href="/pedidos" style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '14px 18px', borderRadius: 12, textDecoration: 'none',

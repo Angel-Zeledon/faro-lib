@@ -30,7 +30,7 @@ def get_supplier(tenant_id: str, supplier_id: str) -> Optional[dict]:
 
 def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
     """Case-insensitive lookup by name — PO line items store a free-text
-    proveedor name, not a supplier_id, so sending a PO to its supplier
+    supplier name, not a supplier_id, so sending a PO to its supplier
     needs to resolve that name back to a supplier record. Excludes
     soft-deleted suppliers (active = TRUE), matching get_supplier/
     list_suppliers — a PO shouldn't get auto-sent to a supplier the
@@ -44,7 +44,7 @@ def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
 
 
 def create_supplier(tenant_id: str, data: dict) -> dict:
-    allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std",
+    allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
                "payment_terms", "payment_terms_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
 
@@ -62,7 +62,7 @@ def create_supplier(tenant_id: str, data: dict) -> dict:
 
 
 def update_supplier(tenant_id: str, supplier_id: str, data: dict) -> Optional[dict]:
-    allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std",
+    allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
                "payment_terms", "payment_terms_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
@@ -95,13 +95,13 @@ def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
                ss.is_primary,
                ss.unit_cost,
                ss.moq,
-               ss.lead_time_dias,
+               ss.lead_time_days,
                ss.notes,
                ss.created_at,
                s.name        AS supplier_name,
                s.email       AS supplier_email,
                s.phone       AS supplier_phone,
-               COALESCE(ss.lead_time_dias, s.lead_time_dias) AS effective_lead_time
+               COALESCE(ss.lead_time_days, s.lead_time_days) AS effective_lead_time
            FROM sku_suppliers ss
            JOIN suppliers s ON s.id = ss.supplier_id
            WHERE ss.tenant_id = %s AND ss.sku = %s AND s.active = TRUE
@@ -111,7 +111,7 @@ def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
 
 
 def upsert_sku_supplier(tenant_id: str, sku: str, supplier_id: str, data: dict) -> dict:
-    allowed = {"is_primary", "unit_cost", "moq", "lead_time_dias", "notes"}
+    allowed = {"is_primary", "unit_cost", "moq", "lead_time_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
 
     # Build SET clause for the ON CONFLICT branch
@@ -145,7 +145,7 @@ def remove_sku_supplier(tenant_id: str, sku: str, supplier_id: str) -> None:
 
 
 def get_primary_supplier(tenant_id: str, sku: str) -> Optional[dict]:
-    """Returns the primary supplier for a SKU with effective lead_time_dias."""
+    """Returns the primary supplier for a SKU with effective lead_time_days."""
     return query_one(
         """SELECT
                ss.id,
@@ -154,12 +154,12 @@ def get_primary_supplier(tenant_id: str, sku: str) -> Optional[dict]:
                ss.is_primary,
                ss.unit_cost,
                ss.moq,
-               ss.lead_time_dias,
+               ss.lead_time_days,
                ss.notes,
                s.name        AS supplier_name,
                s.email       AS supplier_email,
                s.phone       AS supplier_phone,
-               COALESCE(ss.lead_time_dias, s.lead_time_dias) AS effective_lead_time
+               COALESCE(ss.lead_time_days, s.lead_time_days) AS effective_lead_time
            FROM sku_suppliers ss
            JOIN suppliers s ON s.id = ss.supplier_id
            WHERE ss.tenant_id = %s AND ss.sku = %s AND ss.is_primary = TRUE AND s.active = TRUE

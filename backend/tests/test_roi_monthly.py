@@ -11,14 +11,14 @@ from backend.db.connection import execute, query_one
 
 
 class TestSumOverstockValue:
-    def test_only_counts_sobrestock_items(self):
+    def test_only_counts_overstock_items(self):
         from backend.inventory.service import _sum_overstock_value
 
         items = [
-            {"signal": "SOBRESTOCK", "valor_inventario": 1000.0},
-            {"signal": "OK", "valor_inventario": 500.0},
-            {"signal": "SOBRESTOCK", "valor_inventario": 250.0},
-            {"signal": "PEDIR_YA", "valor_inventario": None},
+            {"signal": "SOBRESTOCK", "inventory_value": 1000.0},
+            {"signal": "OK", "inventory_value": 500.0},
+            {"signal": "SOBRESTOCK", "inventory_value": 250.0},
+            {"signal": "PEDIR_YA", "inventory_value": None},
         ]
         assert _sum_overstock_value(items) == 1250.0
 
@@ -26,7 +26,7 @@ class TestSumOverstockValue:
         from backend.inventory.service import _sum_overstock_value
         assert _sum_overstock_value([]) == 0.0
 
-    def test_missing_valor_inventario_treated_as_zero(self):
+    def test_missing_inventory_value_treated_as_zero(self):
         from backend.inventory.service import _sum_overstock_value
         assert _sum_overstock_value([{"signal": "SOBRESTOCK"}]) == 0.0
 
@@ -49,9 +49,9 @@ class TestRunMonthlyOverstockSnapshot:
         monkeypatch.setattr(
             service, "get_inventory_status",
             lambda t, s: [
-                {"sku": "OS-1", "signal": "SOBRESTOCK", "valor_inventario": 3000.0},
-                {"sku": "OS-2", "signal": "SOBRESTOCK", "valor_inventario": 1500.0},
-                {"sku": "OK-1", "signal": "OK", "valor_inventario": 999.0},
+                {"sku": "OS-1", "signal": "SOBRESTOCK", "inventory_value": 3000.0},
+                {"sku": "OS-2", "signal": "SOBRESTOCK", "inventory_value": 1500.0},
+                {"sku": "OK-1", "signal": "OK", "inventory_value": 999.0},
             ],
         )
 
@@ -100,21 +100,21 @@ class TestGetMonthlySummary:
         execute(
             """INSERT INTO inventory_po_log
                    (tenant_id, session_id, generated_at, sku_count, total_units, total_value,
-                    skus_pedir_ya, skus_pedir_pronto, suggested_count, approved_count)
+                    skus_order_now, skus_order_soon, suggested_count, approved_count)
                VALUES (%s, 's1', %s, 2, 20, 500, 1, 0, 2, 2)""",
             (tid, last_month),
         )
         execute(
             """INSERT INTO inventory_po_log
                    (tenant_id, session_id, generated_at, sku_count, total_units, total_value,
-                    skus_pedir_ya, skus_pedir_pronto, suggested_count, approved_count)
+                    skus_order_now, skus_order_soon, suggested_count, approved_count)
                VALUES (%s, 's1', %s, 1, 10, 300, 2, 0, 4, 3)""",
             (tid, last_month),
         )
         execute(
             """INSERT INTO inventory_po_log
                    (tenant_id, session_id, generated_at, sku_count, total_units, total_value,
-                    skus_pedir_ya, skus_pedir_pronto, suggested_count, approved_count)
+                    skus_order_now, skus_order_soon, suggested_count, approved_count)
                VALUES (%s, 's1', %s, 1, 5, 150, 1, 1, 2, 1)""",
             (tid, this_month),
         )
@@ -142,7 +142,7 @@ class TestGetMonthlySummary:
 
         this_row = rows[0]
         assert this_row["pos_count"] == 1
-        assert this_row["skus_pedir_ya"] == 1
+        assert this_row["skus_order_now"] == 1
         assert this_row["total_value"] == 150.0
         assert this_row["adoption_rate"] == 0.5          # 1 approved / 2 suggested
         # No snapshot opening next month yet, so this month is still unmeasured.
@@ -150,7 +150,7 @@ class TestGetMonthlySummary:
 
         last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
         assert last_row["pos_count"] == 2
-        assert last_row["skus_pedir_ya"] == 3
+        assert last_row["skus_order_now"] == 3
         assert last_row["total_value"] == 800.0
         assert last_row["adoption_rate"] == pytest.approx(5 / 6)
         assert last_row["capital_liberado"] == 4000.0    # 10000 -> 6000 during last month
@@ -163,7 +163,7 @@ class TestGetMonthlySummary:
         assert len(rows) == 2
         for row in rows:
             assert row["pos_count"] == 0
-            assert row["skus_pedir_ya"] == 0
+            assert row["skus_order_now"] == 0
             assert row["adoption_rate"] is None
             assert row["capital_liberado"] is None
 

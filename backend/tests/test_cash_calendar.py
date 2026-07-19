@@ -272,8 +272,8 @@ def _make_po(tenant_id, supplier_name, amount_units, unit_cost, sent_days_ago=No
     )
     execute(
         """INSERT INTO inventory_po_items
-               (po_log_id, tenant_id, sku, proveedor, cantidad_recomendada,
-                cantidad_final, costo_unitario, status)
+               (po_log_id, tenant_id, sku, supplier, recommended_qty,
+                final_qty, unit_cost, status)
            VALUES (%s, %s, %s, %s, %s, %s, %s, 'approved')""",
         (po["id"], tenant_id, f"SKU-{uuid4().hex[:6]}", supplier_name,
          amount_units, amount_units, unit_cost),

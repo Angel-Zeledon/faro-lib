@@ -14,7 +14,7 @@ random.seed(11)
 def csv_bytes_for(n_skus: int, n_days: int = 365, start=date(2023, 1, 1)) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["date", "sku", "cantidad_vendida", "stock_actual", "lead_time_dias"])
+    w.writerow(["date", "sku", "qty_sold", "current_stock", "lead_time_days"])
     for i in range(n_skus):
         sku = f"SKU-{i:05d}"
         base = random.randint(5, 60)

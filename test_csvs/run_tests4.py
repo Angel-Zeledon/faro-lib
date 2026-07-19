@@ -17,7 +17,7 @@ H = {'Authorization': f'Bearer {token}'}
 
 def build_csv_with_outliers(n=90):
     """90 days of data for 3 SKUs; each SKU has 1–2 extreme outlier spikes."""
-    rows = ['date,sku,sales']
+    rows = ['fecha,sku,ventas']
     d0 = date(2023, 1, 1)
     for i in range(n):
         d = (d0 + timedelta(i)).isoformat()
@@ -32,7 +32,7 @@ def build_csv_with_outliers(n=90):
 
 
 CSV_GOOD    = build_csv_with_outliers()
-CSV_MINIMAL = 'date,sku,sales\n' + '\n'.join([f'2023-01-{i+1:02d},A,{50+i}' for i in range(35)])
+CSV_MINIMAL = 'fecha,sku,ventas\n' + '\n'.join([f'2023-01-{i+1:02d},A,{50+i}' for i in range(35)])
 
 
 def test_outlier_strategy(strategy: str, extra: dict = None) -> dict:

@@ -26,10 +26,10 @@ class TestBuildOptimizationInput:
 
         # Norte holds 3x the stock of Sur -> demand should split 75/25.
         inv_svc.upsert_stock(tid, sku, {
-            "stock_actual": 300, "lead_time_dias": 10, "costo_unitario": 20.0, "bodega": "Norte",
+            "current_stock": 300, "lead_time_days": 10, "unit_cost": 20.0, "warehouse": "Norte",
         })
         inv_svc.upsert_stock(tid, sku, {
-            "stock_actual": 100, "lead_time_dias": 5, "costo_unitario": 20.0, "bodega": "Sur",
+            "current_stock": 100, "lead_time_days": 5, "unit_cost": 20.0, "warehouse": "Sur",
         })
         session_store.set_forecasts(tid, sid, {
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 40.0}] * 7}},
@@ -58,8 +58,8 @@ class TestBuildOptimizationInput:
         sid = test_session["id"]
         sku = _sku()
 
-        inv_svc.upsert_stock(tid, sku, {"stock_actual": 0, "bodega": "Norte"})
-        inv_svc.upsert_stock(tid, sku, {"stock_actual": 0, "bodega": "Sur"})
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 0, "warehouse": "Norte"})
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 0, "warehouse": "Sur"})
         session_store.set_forecasts(tid, sid, {
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
         })
@@ -78,7 +78,7 @@ class TestBuildOptimizationInput:
         sid = test_session["id"]
         sku = _sku()
 
-        inv_svc.upsert_stock(tid, sku, {"stock_actual": 10, "bodega": "principal"})
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 10, "warehouse": "principal"})
         session_store.set_forecasts(tid, sid, {
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 5.0}] * 7}},
         })
@@ -111,8 +111,8 @@ class TestSerializeOptimizationResult:
             total_cost=12.3456, status="optimal",
         )
         stock_rows = [
-            {"sku": "SKU1", "bodega": "Norte", "costo_unitario": 2.0, "proveedor": "ACME"},
-            {"sku": "SKU1", "bodega": "Sur", "costo_unitario": 2.0, "proveedor": "ACME"},
+            {"sku": "SKU1", "warehouse": "Norte", "unit_cost": 2.0, "supplier": "ACME"},
+            {"sku": "SKU1", "warehouse": "Sur", "unit_cost": 2.0, "supplier": "ACME"},
         ]
 
         out = serialize_optimization_result(inp, result, stock_rows)
@@ -121,8 +121,8 @@ class TestSerializeOptimizationResult:
         assert out["total_cost"] == 12.35
         assert out["horizon_days"] == 2
         assert out["orders"] == [
-            {"sku": "SKU1", "bodega": "Norte", "qty": 3.0, "costo_unitario": 2.0, "proveedor": "ACME"},
+            {"sku": "SKU1", "warehouse": "Norte", "qty": 3.0, "unit_cost": 2.0, "supplier": "ACME"},
         ]
         assert out["transfers"] == [
-            {"sku": "SKU1", "from_bodega": "Sur", "to_bodega": "Norte", "qty": 4.0},
+            {"sku": "SKU1", "from_warehouse": "Sur", "to_warehouse": "Norte", "qty": 4.0},
         ]

@@ -12,21 +12,21 @@ from datetime import datetime, timedelta, timezone
 from backend.db.connection import execute
 
 
-def _make_supplier(tenant_id: str, name: str, lead_time_dias: int = 10) -> None:
+def _make_supplier(tenant_id: str, name: str, lead_time_days: int = 10) -> None:
     execute(
-        "INSERT INTO suppliers (tenant_id, name, lead_time_dias) VALUES (%s, %s, %s)",
-        (tenant_id, name, lead_time_dias),
+        "INSERT INTO suppliers (tenant_id, name, lead_time_days) VALUES (%s, %s, %s)",
+        (tenant_id, name, lead_time_days),
     )
 
 
-def _make_po(client, auth_headers, *, sku: str, qty: float, proveedor: str, costo_unitario: float = 2.0) -> str:
+def _make_po(client, auth_headers, *, sku: str, qty: float, supplier: str, unit_cost: float = 2.0) -> str:
     resp = client.post(
         "/api/v1/inventory/log-po",
         params={"session_id": f"sess_test_{uuid.uuid4().hex[:6]}"},
         json={"items": [{
-            "sku": sku, "display_name": f"Prod {sku}", "proveedor": proveedor,
-            "signal": "PEDIR_YA", "cantidad_recomendada": qty,
-            "cantidad_final": qty, "costo_unitario": costo_unitario, "status": "approved",
+            "sku": sku, "display_name": f"Prod {sku}", "supplier": supplier,
+            "signal": "PEDIR_YA", "recommended_qty": qty,
+            "final_qty": qty, "unit_cost": unit_cost, "status": "approved",
         }]},
         headers=auth_headers,
     )
@@ -47,17 +47,17 @@ class TestGetOverdueReceptions:
 
         tid = test_tenant["id"]
         prov = f"Overdue-{uuid.uuid4().hex[:6]}"
-        _make_supplier(tid, prov, lead_time_dias=5)
+        _make_supplier(tid, prov, lead_time_days=5)
 
         sku = f"OD1-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, qty=10, proveedor=prov)
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier=prov)
         # Generated 10 days ago; declared lead time is 5 days -> 5 days overdue.
         _set_generated_at(po, datetime.now(timezone.utc) - timedelta(days=10))
 
         rows = get_overdue_receptions(tid)
         row = next(r for r in rows if r["po_log_id"] == po)
 
-        assert row["proveedor"] == prov
+        assert row["supplier"] == prov
         assert row["lead_time_source"] == "declared"
         assert row["lead_time_used"] == 5.0
         assert row["days_overdue"] >= 4  # ~5 days, allow for clock-boundary rounding
@@ -67,10 +67,10 @@ class TestGetOverdueReceptions:
 
         tid = test_tenant["id"]
         prov = f"OnTime-{uuid.uuid4().hex[:6]}"
-        _make_supplier(tid, prov, lead_time_dias=15)
+        _make_supplier(tid, prov, lead_time_days=15)
 
         sku = f"OD2-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, qty=10, proveedor=prov)
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier=prov)
         # Generated just now; lead time is 15 days -> nowhere near overdue.
 
         rows = get_overdue_receptions(tid)
@@ -81,10 +81,10 @@ class TestGetOverdueReceptions:
 
         tid = test_tenant["id"]
         prov = f"Received-{uuid.uuid4().hex[:6]}"
-        _make_supplier(tid, prov, lead_time_dias=3)
+        _make_supplier(tid, prov, lead_time_days=3)
 
         sku = f"OD3-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, qty=10, proveedor=prov)
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier=prov)
         _set_generated_at(po, datetime.now(timezone.utc) - timedelta(days=30))
 
         resp = client.post(f"/api/v1/inventory/po/{po}/receive", json={}, headers=auth_headers)
@@ -100,19 +100,19 @@ class TestGetOverdueReceptions:
         prov = f"Learned-{uuid.uuid4().hex[:6]}"
         # Declared lead time says 20 days (would NOT be overdue at day 8),
         # but this supplier has real observations averaging 3 days.
-        _make_supplier(tid, prov, lead_time_dias=20)
+        _make_supplier(tid, prov, lead_time_days=20)
         # supplier_lead_time_obs.po_log_id FKs into inventory_po_log, so the
         # seed observations need real (already-received) POs behind them.
-        seed_po_a = _make_po(client, auth_headers, sku=f"SEED-A-{uuid.uuid4().hex[:6]}", qty=1, proveedor=prov)
-        seed_po_b = _make_po(client, auth_headers, sku=f"SEED-B-{uuid.uuid4().hex[:6]}", qty=1, proveedor=prov)
+        seed_po_a = _make_po(client, auth_headers, sku=f"SEED-A-{uuid.uuid4().hex[:6]}", qty=1, supplier=prov)
+        seed_po_b = _make_po(client, auth_headers, sku=f"SEED-B-{uuid.uuid4().hex[:6]}", qty=1, supplier=prov)
         execute(
-            """INSERT INTO supplier_lead_time_obs (tenant_id, proveedor, po_log_id, lead_time_days)
+            """INSERT INTO supplier_lead_time_obs (tenant_id, supplier, po_log_id, lead_time_days)
                VALUES (%s, %s, %s, %s), (%s, %s, %s, %s)""",
             (tid, prov, seed_po_a, 2.0, tid, prov, seed_po_b, 4.0),
         )
 
         sku = f"OD4-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, qty=10, proveedor=prov)
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier=prov)
         _set_generated_at(po, datetime.now(timezone.utc) - timedelta(days=8))
 
         rows = get_overdue_receptions(tid)
@@ -127,7 +127,7 @@ class TestGetOverdueReceptions:
 
         tid = test_tenant["id"]
         sku = f"OD5-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, qty=10, proveedor="")
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier="")
         _set_generated_at(po, datetime.now(timezone.utc) - timedelta(days=60))
 
         rows = get_overdue_receptions(tid)
@@ -147,13 +147,13 @@ class TestOverdueEndpoint:
     def test_analyst_sees_overdue_po_via_endpoint(self, client, auth_headers, test_tenant):
         tid = test_tenant["id"]
         prov = f"EndOverdue-{uuid.uuid4().hex[:6]}"
-        _make_supplier(tid, prov, lead_time_dias=4)
+        _make_supplier(tid, prov, lead_time_days=4)
 
         sku = f"OD6-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, qty=10, proveedor=prov)
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier=prov)
         _set_generated_at(po, datetime.now(timezone.utc) - timedelta(days=20))
 
         resp = client.get("/api/v1/inventory/po/overdue", headers=auth_headers)
         assert resp.status_code == 200
         rows = resp.json()["data"]
-        assert any(r["po_log_id"] == po and r["proveedor"] == prov for r in rows)
+        assert any(r["po_log_id"] == po and r["supplier"] == prov for r in rows)

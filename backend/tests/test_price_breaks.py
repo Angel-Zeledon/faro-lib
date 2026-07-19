@@ -24,7 +24,7 @@ def _ok(resp, code=200):
 def _make_supplier(client, headers, name=None):
     r = client.post("/api/v1/inventory/suppliers", headers=headers, json={
         "name": name or f"PriceBreak Supplier {uuid4().hex[:6]}",
-        "lead_time_dias": 10,
+        "lead_time_days": 10,
     })
     return _ok(r, 201)
 
@@ -46,7 +46,7 @@ class TestStepUpWorthIt:
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((150, 9.0)),
             daily_demand=20.0,      # 50 extra units = 2.5 extra days of cover
-            stock_actual=0, lead_time_days=15,
+            current_stock=0, lead_time_days=15,
         )
         assert opp is not None
         assert opp["worth_it"] is True, opp["reason_code"]
@@ -69,7 +69,7 @@ class TestStepUpWorthIt:
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((120, 9.5), (2000, 9.0)),
             daily_demand=30.0,       # 2000 units = 66.7 days vs a 60-day limit
-            stock_actual=0, lead_time_days=20,
+            current_stock=0, lead_time_days=20,
         )
         assert opp["worth_it"] is True
         assert opp["step_quantity"] == 120, "Cheaper-but-overstocking rung must not win"
@@ -81,7 +81,7 @@ class TestStepUpWorthIt:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((120, 9.9), (400, 9.0)),
-            daily_demand=30.0, stock_actual=0, lead_time_days=20,
+            daily_demand=30.0, current_stock=0, lead_time_days=20,
         )
         assert opp["worth_it"] is True
         assert opp["step_quantity"] == 400
@@ -91,7 +91,7 @@ class TestStepUpWorthIt:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((150, 9.0)),
-            daily_demand=20.0, stock_actual=0, lead_time_days=15,
+            daily_demand=20.0, current_stock=0, lead_time_days=15,
         )
         assert opp["unit_price_drop_pct"] == pytest.approx(0.10)
         # Cash out the door grows even though the unit price falls.
@@ -112,7 +112,7 @@ class TestStepUpRejected:
             current_quantity=50, base_cost=10.0,
             breaks=_breaks((2000, 8.0)),
             daily_demand=5.0,       # 2000 units = 400 days of coverage
-            stock_actual=0, lead_time_days=10,
+            current_stock=0, lead_time_days=10,
         )
         assert opp is not None
         assert opp["worth_it"] is False
@@ -129,7 +129,7 @@ class TestStepUpRejected:
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((160, 9.999)),   # a 0.01% discount
             daily_demand=2.0,               # 60 extra units = 30 extra days
-            stock_actual=0, lead_time_days=30,
+            current_stock=0, lead_time_days=30,
         )
         assert opp["worth_it"] is False
         assert opp["reason_code"] == "holding_exceeds_saving"
@@ -143,7 +143,7 @@ class TestStepUpRejected:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((200, 5.0)),   # a 50% discount
-            daily_demand=0.0, stock_actual=0, lead_time_days=10,
+            daily_demand=0.0, current_stock=0, lead_time_days=10,
         )
         assert opp["worth_it"] is False
         assert opp["reason_code"] == "no_demand"
@@ -154,7 +154,7 @@ class TestStepUpRejected:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=10.00,
             breaks=_breaks((105, 9.998)),
-            daily_demand=50.0, stock_actual=0, lead_time_days=15,
+            daily_demand=50.0, current_stock=0, lead_time_days=15,
         )
         assert opp["worth_it"] is False
         assert opp["reason_code"] == "saving_immaterial"
@@ -164,7 +164,7 @@ class TestStepUpRejected:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((200, 10.0)),
-            daily_demand=50.0, stock_actual=0, lead_time_days=15,
+            daily_demand=50.0, current_stock=0, lead_time_days=15,
         )
         assert opp["worth_it"] is False
         assert opp["reason_code"] == "no_discount"
@@ -178,8 +178,8 @@ class TestStepUpRejected:
             breaks=_breaks((200, 9.0)),
             daily_demand=10.0, lead_time_days=20,
         )
-        empty = pb.evaluate_step_up(stock_actual=0, **kwargs)
-        full  = pb.evaluate_step_up(stock_actual=500, **kwargs)
+        empty = pb.evaluate_step_up(current_stock=0, **kwargs)
+        full  = pb.evaluate_step_up(current_stock=500, **kwargs)
         assert empty["worth_it"] is True
         assert full["worth_it"] is False
         assert full["reason_code"] == "would_overstock"
@@ -190,17 +190,17 @@ class TestStepUpRejected:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=500, base_cost=10.0,
             breaks=_breaks((100, 9.0), (200, 8.5)),
-            daily_demand=10.0, stock_actual=0, lead_time_days=15,
+            daily_demand=10.0, current_stock=0, lead_time_days=15,
         ) is None
 
     def test_missing_cost_returns_none(self):
-        """No costo_unitario means no way to price the trade — stay silent
+        """No unit_cost means no way to price the trade — stay silent
         rather than guess."""
         assert pb.evaluate_step_up(
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=None,
             breaks=_breaks((200, 9.0)),
-            daily_demand=10.0, stock_actual=0, lead_time_days=15,
+            daily_demand=10.0, current_stock=0, lead_time_days=15,
         ) is None
 
 
@@ -228,7 +228,7 @@ class TestHoldingCostSensitivity:
             sku="SKU-1", supplier_name="Acme",
             current_quantity=100, base_cost=10.0,
             breaks=_breaks((880, 9.15)),
-            daily_demand=12.0, stock_actual=0, lead_time_days=30,
+            daily_demand=12.0, current_stock=0, lead_time_days=30,
         )
         cheap = pb.evaluate_step_up(holding_cost_pct=0.05, **kwargs)
         dear  = pb.evaluate_step_up(holding_cost_pct=1.20, **kwargs)

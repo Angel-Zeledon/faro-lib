@@ -12,7 +12,7 @@ class TestSendPOEndpoint:
         tid = test_tenant["id"]
         sku = _sku()
         po = roi_service.log_po_generation(tid, "sess-test", [{
-            "sku": sku, "cantidad_final": 10, "status": "approved", "proveedor": "Acme",
+            "sku": sku, "final_qty": 10, "status": "approved", "supplier": "Acme",
         }])
         resp = client.post(f"/api/v1/inventory/po/{po['id']}/send", headers=viewer_headers)
         assert resp.status_code == 403
@@ -30,8 +30,8 @@ class TestSendPOEndpoint:
             "name": supplier_name, "email": "ventas@proveedor.com", "whatsapp": "+15551234567",
         })
         po = roi_service.log_po_generation(tid, "sess-test", [{
-            "sku": sku, "cantidad_final": 20, "costo_unitario": 3.0,
-            "status": "approved", "proveedor": supplier_name,
+            "sku": sku, "final_qty": 20, "unit_cost": 3.0,
+            "status": "approved", "supplier": supplier_name,
         }])
 
         email_calls = []
@@ -61,7 +61,7 @@ class TestSendPOEndpoint:
         sku = _sku()
         unknown_supplier = f"Proveedor Desconocido {uuid4().hex[:6]}"
         po = roi_service.log_po_generation(tid, "sess-test", [{
-            "sku": sku, "cantidad_final": 5, "status": "approved", "proveedor": unknown_supplier,
+            "sku": sku, "final_qty": 5, "status": "approved", "supplier": unknown_supplier,
         }])
 
         resp = client.post(f"/api/v1/inventory/po/{po['id']}/send", headers=auth_headers)
@@ -80,8 +80,8 @@ class TestSendPOEndpoint:
         supplier_name = f"Proveedor {uuid4().hex[:6]}"
         sup_svc.create_supplier(tid, {"name": supplier_name, "email": "ventas@proveedor.com"})
         po = roi_service.log_po_generation(tid, "sess-test", [{
-            "sku": sku, "cantidad_final": 8, "costo_unitario": 2.0,
-            "status": "approved", "proveedor": supplier_name,
+            "sku": sku, "final_qty": 8, "unit_cost": 2.0,
+            "status": "approved", "supplier": supplier_name,
         }])
         monkeypatch.setattr(email_mod, "send_po_to_supplier_email", lambda **kw: True)
         monkeypatch.setattr(wa_mod, "send_whatsapp", lambda *a, **kw: True)

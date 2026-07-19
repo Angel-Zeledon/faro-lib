@@ -9,7 +9,7 @@ import type {
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
-  MermaReason, MermaRecord,
+  ShrinkageReason, ShrinkageRecord,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -685,17 +685,17 @@ export const getStockHistory = (sku: string, days = 30) =>
     'GET', `/inventory/stock/${encodeURIComponent(sku)}/history?days=${days}`,
   )
 
-// ── Mermas (shrinkage / non-sale stock-outs) ──────────────────────────────────
-export const createMerma = (body: {
-  sku: string; quantity: number; reason: MermaReason
-  bodega?: string; notes?: string; occurred_at?: string
-}) => request<MermaRecord>('POST', '/inventory/mermas', body)
+// ── Shrinkage (non-sale stock-outs) ───────────────────────────────────────────
+export const createShrinkage = (body: {
+  sku: string; quantity: number; reason: ShrinkageReason
+  warehouse?: string; notes?: string; occurred_at?: string
+}) => request<ShrinkageRecord>('POST', '/inventory/shrinkage', body)
 
-export const listMermas = (sku?: string, limit = 50) =>
-  request<MermaRecord[]>('GET', `/inventory/mermas?limit=${limit}${sku ? `&sku=${encodeURIComponent(sku)}` : ''}`)
+export const listShrinkage = (sku?: string, limit = 50) =>
+  request<ShrinkageRecord[]>('GET', `/inventory/shrinkage?limit=${limit}${sku ? `&sku=${encodeURIComponent(sku)}` : ''}`)
 
-export const listMermaReasons = () =>
-  request<MermaReason[]>('GET', '/inventory/mermas/reasons')
+export const listShrinkageReasons = () =>
+  request<ShrinkageReason[]>('GET', '/inventory/shrinkage/reasons')
 
 // ── Inventory events ──────────────────────────────────────────────────────────
 export const listInventoryEvents   = () =>
@@ -707,11 +707,11 @@ export const createInventoryEvent  = (body: Omit<InventoryEvent, 'id' | 'tenant_
 export const updateInventoryEvent  = (id: string, body: Partial<InventoryEvent>) =>
   request<InventoryEvent>('PATCH', `/inventory/events/${id}`, body)
 
-// ── Multiplicadores por producto dentro de un evento ────────────────────────
+// ── Multiplicadores por product dentro de un event ────────────────────────
 export const listEventMultipliers = (eventId: string) =>
   request<EventMultiplier[]>('GET', `/inventory/events/${eventId}/multipliers`)
 export const setEventMultiplier = (
-  eventId: string, scope: 'sku' | 'categoria', scopeValue: string, multiplier: number,
+  eventId: string, scope: 'sku' | 'category', scopeValue: string, multiplier: number,
 ) =>
   request<EventMultiplier>('PUT', `/inventory/events/${eventId}/multipliers`,
     { scope, scope_value: scopeValue, multiplier })
@@ -748,7 +748,7 @@ export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.9
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
   a.href = url
-  a.download = `inventario_${new Date().toISOString().slice(0, 10)}.pdf`
+  a.download = `inventory_${new Date().toISOString().slice(0, 10)}.pdf`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -763,7 +763,7 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
   const blob = await res.blob()
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
-  a.href = url; a.download = 'orden_de_compra.csv'; a.click()
+  a.href = url; a.download = 'purchase_order.csv'; a.click()
   URL.revokeObjectURL(url)
   // After successful download, log the PO generation (fire and forget)
   logPOGeneration(sessionId).catch(() => {})
@@ -778,7 +778,7 @@ export const downloadInventoryTemplate = async () => {
   const blob = await res.blob()
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
-  a.href = url; a.download = 'plantilla_inventario.csv'; a.click()
+  a.href = url; a.download = 'inventory_template.csv'; a.click()
   URL.revokeObjectURL(url)
 }
 
@@ -802,13 +802,13 @@ export const getROIMonthReport = (year?: number, month?: number) =>
 export const getPOHistory = (limit = 20, opts?: RequestOpts) =>
   request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`, undefined, opts)
 
-// ── PO reception (cerrar el loop de compra) ──────────────────────────────────
+// ── PO reception (cerrar el loop de purchase) ──────────────────────────────────
 export const getPOItems = (poLogId: string) =>
   request<import('./types').POItemsResponse>('GET', `/inventory/po/${poLogId}/items`)
 
 export const receivePO = (
   poLogId: string,
-  body?: { lines?: { sku: string; cantidad_recibida: number }[]; received_at?: string },
+  body?: { lines?: { sku: string; received_qty: number }[]; received_at?: string },
 ) =>
   request<import('./types').ReceptionResult>('POST', `/inventory/po/${poLogId}/receive`, body ?? {})
 
@@ -1031,7 +1031,7 @@ export const getSkuSuppliers  = (sku: string) =>
   request<SkuSupplier[]>('GET', `/inventory/stock/${encodeURIComponent(sku)}/suppliers`)
 
 export const assignSkuSupplier = (sku: string, supplierId: string, body: {
-  is_primary?: boolean; unit_cost?: number; moq?: number; lead_time_dias?: number
+  is_primary?: boolean; unit_cost?: number; moq?: number; lead_time_days?: number
 }) =>
   request<SkuSupplier>('PUT', `/inventory/stock/${encodeURIComponent(sku)}/suppliers/${supplierId}`, body)
 
@@ -1041,7 +1041,7 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
 
-// ── Dead Stock / Inventario Inmovilizado ──────────────────────────────────────
+// ── Dead stock / immobilised inventory ────────────────────────────────────────
 export const getDeadStock = (sessionId: string, minDays = 30) =>
   request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
 

@@ -72,11 +72,11 @@ def build_inventory_alert_text(
     if n_crit:
         lines.append(f"🔴 *Faro*: {n_crit} producto{'s' if n_crit != 1 else ''} se agota{'n' if n_crit != 1 else ''} antes de tu próximo pedido")
         for i in critical_items[:5]:
-            dias = i.get("dias_cobertura")
-            dias_str = f"{dias:.0f}d" if dias is not None else "—"
-            qty = i.get("cantidad_recomendada")
+            days = i.get("coverage_days")
+            days_str = f"{days:.0f}d" if days is not None else "—"
+            qty = i.get("recommended_qty")
             qty_str = f" · pedir {qty:,.0f}" if qty else ""
-            lines.append(f"  • {i.get('display_name') or i.get('sku')} ({dias_str}{qty_str})")
+            lines.append(f"  • {i.get('display_name') or i.get('sku')} ({days_str}{qty_str})")
         if n_crit > 5:
             lines.append(f"  … y {n_crit - 5} más")
     n_warn = len(warning_items)
@@ -94,7 +94,7 @@ def build_po_supplier_text(supplier_name: str, po_log_id: str, items: list[dict]
         f"{n} producto{'s' if n != 1 else ''}:",
     ]
     for i in items[:10]:
-        qty = i.get("cantidad_final") or 0
+        qty = i.get("final_qty") or 0
         lines.append(f"  • {i.get('display_name') or i.get('sku')} — {qty:,.0f}")
     if n > 10:
         lines.append(f"  … y {n - 10} más")

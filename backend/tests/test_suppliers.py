@@ -57,22 +57,22 @@ class TestSupplierCRUD:
         name = f"Proveedor Test {uuid4().hex[:4]}"
         r = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
             "name": name,
-            "lead_time_dias": 12,
+            "lead_time_days": 12,
             "lead_time_std": 2,
             "payment_terms": "30 dias",
         })
         assert r.status_code == 201
         d = r.json()["data"]
-        assert d["lead_time_dias"] == 12
+        assert d["lead_time_days"] == 12
         assert "id" in d
 
         row = query_one(
-            "SELECT name, lead_time_dias, payment_terms, active FROM suppliers WHERE id = %s",
+            "SELECT name, lead_time_days, payment_terms, active FROM suppliers WHERE id = %s",
             (d["id"],),
         )
         assert row is not None, "Supplier row was not persisted to the DB"
         assert row["name"] == name
-        assert row["lead_time_dias"] == 12
+        assert row["lead_time_days"] == 12
         assert row["payment_terms"] == "30 dias"
         assert row["active"] is True
 
@@ -88,14 +88,14 @@ class TestSupplierCRUD:
     def test_create_requires_name(self, client, auth_headers):
         """POST /inventory/suppliers without 'name' returns 422."""
         r = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "lead_time_dias": 10,
+            "lead_time_days": 10,
         })
         assert r.status_code == 422
 
     def test_created_supplier_appears_in_list(self, client, auth_headers):
         """A newly created supplier shows up in GET /inventory/suppliers."""
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"Listed-{uuid4().hex[:6]}", "lead_time_dias": 8,
+            "name": f"Listed-{uuid4().hex[:6]}", "lead_time_days": 8,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -106,9 +106,9 @@ class TestSupplierCRUD:
         assert sup_id in ids
 
     def test_patch_supplier_lead_time(self, client, auth_headers):
-        """PATCH /inventory/suppliers/{id} updates lead_time_dias."""
+        """PATCH /inventory/suppliers/{id} updates lead_time_days."""
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"Prov-{uuid4().hex[:6]}", "lead_time_dias": 10,
+            "name": f"Prov-{uuid4().hex[:6]}", "lead_time_days": 10,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -116,15 +116,15 @@ class TestSupplierCRUD:
         pr = client.patch(
             f"/api/v1/inventory/suppliers/{sup_id}",
             headers=auth_headers,
-            json={"lead_time_dias": 20},
+            json={"lead_time_days": 20},
         )
         assert pr.status_code == 200
-        assert pr.json()["data"]["lead_time_dias"] == 20
+        assert pr.json()["data"]["lead_time_days"] == 20
 
     def test_patch_supplier_name(self, client, auth_headers):
         """PATCH /inventory/suppliers/{id} updates name."""
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"OldName-{uuid4().hex[:6]}", "lead_time_dias": 5,
+            "name": f"OldName-{uuid4().hex[:6]}", "lead_time_days": 5,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -143,14 +143,14 @@ class TestSupplierCRUD:
         r = client.patch(
             f"/api/v1/inventory/suppliers/{uuid4().hex}",
             headers=auth_headers,
-            json={"lead_time_dias": 10},
+            json={"lead_time_days": 10},
         )
         assert r.status_code == 404
 
     def test_soft_delete(self, client, auth_headers):
         """DELETE /inventory/suppliers/{id} returns 204 and supplier no longer lists."""
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"Del-{uuid4().hex[:6]}", "lead_time_dias": 5,
+            "name": f"Del-{uuid4().hex[:6]}", "lead_time_days": 5,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -180,7 +180,7 @@ class TestSupplierCRUD:
         """A supplier created by tenant A is not visible to tenant B."""
         # Create supplier for tenant A
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"Isolated-{uuid4().hex[:6]}", "lead_time_dias": 5,
+            "name": f"Isolated-{uuid4().hex[:6]}", "lead_time_days": 5,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -257,11 +257,11 @@ class TestSkuSupplierLink:
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             headers=auth_headers,
-            json={"stock_actual": 100, "lead_time_dias": 10},
+            json={"current_stock": 100, "lead_time_days": 10},
         )
         # Create supplier
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"Sup-{uuid4().hex[:4]}", "lead_time_dias": 10,
+            "name": f"Sup-{uuid4().hex[:4]}", "lead_time_days": 10,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -289,7 +289,7 @@ class TestSkuSupplierLink:
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             headers=auth_headers,
-            json={"stock_actual": 10, "lead_time_dias": 5},
+            json={"current_stock": 10, "lead_time_days": 5},
         )
         r = client.put(
             f"/api/v1/inventory/stock/{sku}/suppliers/{uuid4().hex}",
@@ -304,10 +304,10 @@ class TestSkuSupplierLink:
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             headers=auth_headers,
-            json={"stock_actual": 50, "lead_time_dias": 7},
+            json={"current_stock": 50, "lead_time_days": 7},
         )
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"RemSup-{uuid4().hex[:4]}", "lead_time_dias": 7,
+            "name": f"RemSup-{uuid4().hex[:4]}", "lead_time_days": 7,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -338,7 +338,7 @@ class TestSkuSupplierLink:
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             headers=auth_headers,
-            json={"stock_actual": 20, "lead_time_dias": 5},
+            json={"current_stock": 20, "lead_time_days": 5},
         )
         gr = client.get(f"/api/v1/inventory/stock/{sku}/suppliers", headers=auth_headers)
         assert gr.status_code == 200
@@ -355,7 +355,7 @@ class TestSkuSupplierLink:
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             headers=auth_headers,
-            json={"stock_actual": 50},
+            json={"current_stock": 50},
         )
         wr = client.get(f"/api/v1/inventory/bom/{sku}/used-in", headers=auth_headers)
         assert wr.status_code == 200
@@ -365,7 +365,7 @@ class TestSkuSupplierLink:
         """Once a BOM link exists, used-in must list the parent SKU."""
         parent, child = _sku(), _sku()
         for sku in (parent, child):
-            client.put(f"/api/v1/inventory/stock/{sku}", headers=auth_headers, json={"stock_actual": 1})
+            client.put(f"/api/v1/inventory/stock/{sku}", headers=auth_headers, json={"current_stock": 1})
         put = client.put(
             f"/api/v1/inventory/bom/{parent}/{child}",
             headers=auth_headers,
@@ -379,15 +379,15 @@ class TestSkuSupplierLink:
         assert parents == [parent]
 
     def test_assign_with_moq_and_lead_time(self, client, auth_headers):
-        """PUT /inventory/stock/{sku}/suppliers/{id} accepts optional moq and lead_time_dias."""
+        """PUT /inventory/stock/{sku}/suppliers/{id} accepts optional moq and lead_time_days."""
         sku = _sku()
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             headers=auth_headers,
-            json={"stock_actual": 200, "lead_time_dias": 14},
+            json={"current_stock": 200, "lead_time_days": 14},
         )
         cr = client.post("/api/v1/inventory/suppliers", headers=auth_headers, json={
-            "name": f"MoqSup-{uuid4().hex[:4]}", "lead_time_dias": 14,
+            "name": f"MoqSup-{uuid4().hex[:4]}", "lead_time_days": 14,
         })
         assert cr.status_code == 201
         sup_id = cr.json()["data"]["id"]
@@ -395,6 +395,6 @@ class TestSkuSupplierLink:
         ar = client.put(
             f"/api/v1/inventory/stock/{sku}/suppliers/{sup_id}",
             headers=auth_headers,
-            json={"is_primary": False, "moq": 50, "lead_time_dias": 10, "unit_cost": 1200},
+            json={"is_primary": False, "moq": 50, "lead_time_days": 10, "unit_cost": 1200},
         )
         assert ar.status_code == 200

@@ -21,7 +21,7 @@ Idempotency:
   is itself `ON CONFLICT (tenant_id, name) DO NOTHING`.
 - `inventory_stock` rows use deterministic SKU ids (`MOCK_001`, `MOCK_002`,
   ...) written through `inventory.service.upsert_stock`, whose
-  `ON CONFLICT (tenant_id, sku, bodega) DO UPDATE` overwrites in place.
+  `ON CONFLICT (tenant_id, sku, warehouse) DO UPDATE` overwrites in place.
 - `suppliers` rows are `ON CONFLICT (tenant_id, name) DO NOTHING`.
 - The RNG is seeded deterministically from `tenant_id`, so a re-run
   generates the exact same values and overwrites rows with themselves —
@@ -54,9 +54,9 @@ DEFAULT_WAREHOUSES = ["principal", "Norte", "Sur"]
 _WAREHOUSE_SIZE_FACTOR = {"principal": 1.0, "Norte": 0.55, "Sur": 0.3}
 
 _SUPPLIERS = [
-    {"name": "Distribuidora Andina S.A.", "lead_time_dias": 7, "lead_time_std": 2},
-    {"name": "ImportMax LatAm", "lead_time_dias": 15, "lead_time_std": 4},
-    {"name": "Suministros del Pacifico", "lead_time_dias": 21, "lead_time_std": 5},
+    {"name": "Distribuidora Andina S.A.", "lead_time_days": 7, "lead_time_std": 2},
+    {"name": "ImportMax LatAm", "lead_time_days": 15, "lead_time_std": 4},
+    {"name": "Suministros del Pacifico", "lead_time_days": 21, "lead_time_std": 5},
 ]
 
 
@@ -68,9 +68,9 @@ def _ensure_suppliers(tenant_id: str) -> list[str]:
     for s in _SUPPLIERS:
         try:
             execute(
-                "INSERT INTO suppliers (tenant_id, name, lead_time_dias, lead_time_std) "
+                "INSERT INTO suppliers (tenant_id, name, lead_time_days, lead_time_std) "
                 "VALUES (%s, %s, %s, %s) ON CONFLICT (tenant_id, name) DO NOTHING",
-                (tenant_id, s["name"], s["lead_time_dias"], s["lead_time_std"]),
+                (tenant_id, s["name"], s["lead_time_days"], s["lead_time_std"]),
             )
             names.append(s["name"])
         except Exception as e:
@@ -123,11 +123,11 @@ def seed_mock_tenant(
     stock_rows_written = 0
     for i in range(1, skus + 1):
         sku = f"MOCK_{i:03d}"
-        costo = round(rng.uniform(5.0, 500.0), 2)
-        precio = round(costo * rng.uniform(1.2, 2.0), 2)  # always > costo
+        cost = round(rng.uniform(5.0, 500.0), 2)
+        price = round(cost * rng.uniform(1.2, 2.0), 2)  # always > cost
         lead_time = rng.randint(3, 30)
         moq = rng.choice([1, 5, 10, 20, 50])
-        proveedor = supplier_names[i % len(supplier_names)] if supplier_names else None
+        supplier = supplier_names[i % len(supplier_names)] if supplier_names else None
 
         # One base stock level per SKU, scaled per warehouse by its size
         # factor plus a little jitter — realistic variance instead of
@@ -137,19 +137,19 @@ def seed_mock_tenant(
 
         for wh in wh_names:
             jitter = rng.randint(-10, 10)
-            stock_actual = max(0, round(sku_base_stock * wh_factors[wh]) + jitter)
+            current_stock = max(0, round(sku_base_stock * wh_factors[wh]) + jitter)
             data = {
                 "display_name": f"Producto Demo {i:03d}",
-                "stock_actual": stock_actual,
-                "stock_minimo": rng.randint(5, 60),
-                "lead_time_dias": lead_time,
-                "costo_unitario": costo,
-                "precio_venta": precio,
+                "current_stock": current_stock,
+                "min_stock": rng.randint(5, 60),
+                "lead_time_days": lead_time,
+                "unit_cost": cost,
+                "sale_price": price,
                 "moq": moq,
-                "bodega": wh,
+                "warehouse": wh,
             }
-            if proveedor:
-                data["proveedor"] = proveedor
+            if supplier:
+                data["supplier"] = supplier
             inventory_service.upsert_stock(tenant_id, sku, data)
             stock_rows_written += 1
 

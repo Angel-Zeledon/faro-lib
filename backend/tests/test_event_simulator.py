@@ -14,9 +14,9 @@ from backend.inventory import service as inv_svc
 
 def _item(sku, daily, stock, lead_time=10, moq=5, cost=2.0):
     return {
-        "sku": sku, "display_name": f"Prod {sku}", "proveedor": "Prov A",
-        "demanda_diaria": daily, "stock_actual": stock,
-        "lead_time_dias": lead_time, "moq": moq, "costo_unitario": cost,
+        "sku": sku, "display_name": f"Prod {sku}", "supplier": "Prov A",
+        "daily_demand": daily, "current_stock": stock,
+        "lead_time_days": lead_time, "moq": moq, "unit_cost": cost,
     }
 
 
@@ -38,16 +38,16 @@ class TestSimulationMath:
         assert row["extra_units"] == 100.0
         assert row["stock_al_inicio"] == 50.0
         assert row["deficit"] == 150.0
-        assert row["cantidad_pedir"] == 160.0          # ceil(150/40)*40
-        assert row["valor_pedido"] == 320.0            # 160 × $2
-        assert row["en_riesgo"] is True
+        assert row["qty_to_order"] == 160.0          # ceil(150/40)*40
+        assert row["order_value"] == 320.0            # 160 × $2
+        assert row["en_risk"] is True
         assert row["llega_tarde"] is False             # order_by = start−7d, 13d away
         assert row["order_by"] == (start - timedelta(days=7)).isoformat()
 
         s = res["summary"]
-        assert s["skus_en_riesgo"] == 1
-        assert s["total_pedir"] == 160.0
-        assert s["pedir_antes_de"] == row["order_by"]
+        assert s["skus_at_risk"] == 1
+        assert s["total_to_order"] == 160.0
+        assert s["order_before"] == row["order_by"]
 
     @pytest.mark.offline
     def test_healthy_stock_no_order(self):
@@ -57,10 +57,10 @@ class TestSimulationMath:
             res = inv_svc.simulate_event_impact("t", "s", start, start + timedelta(days=6), 1.5)
         row = res["items"][0]
         assert row["deficit"] == 0.0
-        assert row["cantidad_pedir"] is None
-        assert row["en_riesgo"] is False
-        assert res["summary"]["skus_en_riesgo"] == 0
-        assert res["summary"]["pedir_antes_de"] is None
+        assert row["qty_to_order"] is None
+        assert row["en_risk"] is False
+        assert res["summary"]["skus_at_risk"] == 0
+        assert res["summary"]["order_before"] is None
 
     @pytest.mark.offline
     def test_late_order_flagged_when_lead_time_exceeds_days_until_event(self):
@@ -70,14 +70,14 @@ class TestSimulationMath:
                                return_value=[_item("C", 10, 0, lead_time=15)]):
             res = inv_svc.simulate_event_impact("t", "s", start, start, 2.0)
         row = res["items"][0]
-        assert row["en_riesgo"] is True
+        assert row["en_risk"] is True
         assert row["llega_tarde"] is True
-        assert res["summary"]["algun_pedido_tarde"] is True
+        assert res["summary"]["any_order_late"] is True
 
     @pytest.mark.offline
     def test_skus_without_forecast_are_skipped(self):
         start = date.today() + timedelta(days=5)
-        items = [_item("D", 10, 100), {**_item("E", 0, 100), "demanda_diaria": None}]
+        items = [_item("D", 10, 100), {**_item("E", 0, 100), "daily_demand": None}]
         with mock.patch.object(inv_svc, "get_inventory_status", return_value=items):
             res = inv_svc.simulate_event_impact("t", "s", start, start, 1.5)
         assert [r["sku"] for r in res["items"]] == ["D"]

@@ -36,7 +36,7 @@ class TestOptimizeEndpoint:
         sku = _sku()
 
         inv_svc.upsert_stock(tid, sku, {
-            "stock_actual": 0, "lead_time_dias": 0, "costo_unitario": 5.0, "bodega": "principal",
+            "current_stock": 0, "lead_time_days": 0, "unit_cost": 5.0, "warehouse": "principal",
         })
         session_store.set_forecasts(tid, sid, {
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
@@ -50,7 +50,7 @@ class TestOptimizeEndpoint:
         assert resp.status_code == 200
         data = resp.json()["data"]
         order = next(o for o in data["orders"] if o["sku"] == sku)
-        assert order["bodega"] == "principal"
+        assert order["warehouse"] == "principal"
         assert order["qty"] > 0
 
     def test_returns_real_transfer_recommendation_when_surplus_exists_elsewhere(
@@ -90,7 +90,7 @@ class TestOptimizeEndpoint:
         assert resp.status_code == 200
         data = resp.json()["data"]
         transfer = next(t for t in data["transfers"] if t["sku"] == "XFER-SKU")
-        assert transfer["from_bodega"] == "Norte"
-        assert transfer["to_bodega"] == "Sur"
+        assert transfer["from_warehouse"] == "Norte"
+        assert transfer["to_warehouse"] == "Sur"
         assert transfer["qty"] > 0
         assert not any(o["sku"] == "XFER-SKU" for o in data["orders"])

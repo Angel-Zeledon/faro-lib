@@ -26,7 +26,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/config':    'topbar.title_config',
   '/users':     'topbar.title_users',
   '/skus':      'skus.page_title',
-  '/pedidos':   'pedidos.page_title',
+  '/pedidos':   'orders.page_title',
 }
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'muted'> = {

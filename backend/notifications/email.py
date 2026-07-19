@@ -282,10 +282,10 @@ def send_inventory_alert_email(
     def _row(item: dict, color: str, badge: str) -> str:
         sku   = item.get("sku", "")
         name  = item.get("display_name") or ""
-        dias  = item.get("dias_cobertura")
-        recom = item.get("cantidad_recomendada")
-        prov  = item.get("proveedor") or "—"
-        dias_str  = f"{dias:.0f} días" if dias is not None else "—"
+        days  = item.get("coverage_days")
+        recom = item.get("recommended_qty")
+        prov  = item.get("supplier") or "—"
+        days_str  = f"{days:.0f} días" if days is not None else "—"
         recom_str = f"{recom:,.0f}" if recom else "—"
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
@@ -295,7 +295,7 @@ def send_inventory_alert_email(
             f'  <span style="background:{color}20;color:{color};padding:2px 8px;'
             f'  border-radius:20px;font-size:11px;font-weight:700;">{badge}</span>'
             f'</td>'
-            f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">{dias_str}</td>'
+            f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">{days_str}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_GRN};font-weight:700;">{recom_str}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">{prov}</td>'
             f'</tr>'
@@ -362,13 +362,13 @@ def send_supplier_lead_time_alert_email(
         color = _RED if d.get("severidad") == "alta" else _AMB
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
-            f'<td style="padding:10px 12px;font-size:13px;font-weight:600;">{d.get("proveedor", "")}</td>'
+            f'<td style="padding:10px 12px;font-size:13px;font-weight:600;">{d.get("supplier", "")}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:700;">'
             f'  {d.get("lead_time_reciente")} días</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
             f'  {d.get("lead_time_historico")} días</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">'
-            f'  +{d.get("desviacion_dias")} días</td>'
+            f'  +{d.get("deviation_days")} días</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
             f'  {d.get("n_reciente")} de {d.get("n_baseline")}</td>'
             f'</tr>'
@@ -447,7 +447,7 @@ def send_po_to_supplier_email(
     def _row(item: dict) -> str:
         sku = item.get("sku", "")
         name = item.get("display_name") or sku
-        qty = item.get("cantidad_final") or 0
+        qty = item.get("final_qty") or 0
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
             f'<td style="padding:8px 10px;font-family:monospace;font-size:12px;">{sku}</td>'

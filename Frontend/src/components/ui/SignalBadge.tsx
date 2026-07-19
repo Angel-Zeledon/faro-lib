@@ -1,15 +1,15 @@
 'use client'
 /**
- * Semáforo de inventario — presentación única y accesible (feature 2.8).
+ * Inventory signal — one accessible presentation for the whole app (feature 2.8).
  *
- * El semáforo es EL artefacto central del producto, así que no puede depender
- * del color como único canal de significado (WCAG 1.4.1 "Use of Color"): cada
- * estado lleva SIEMPRE icono + etiqueta de texto además del color.
+ * The signal is THE central artefact of the product, so it must not rely on
+ * colour as its only channel of meaning (WCAG 1.4.1 "Use of Color"): every
+ * state ALWAYS carries an icon + a text label in addition to the colour.
  *
- * Antes esta configuración vivía duplicada en `/inventory` y en
- * `SkuSearchOverlay`, con colores hardcodeados que fallaban contraste en tema
- * claro. Ahora vive aquí y los colores salen de variables CSS por tema
- * (ver `--signal-*` en globals.css), verificadas a >=4.5:1.
+ * This config used to be duplicated in `/inventory` and in
+ * `SkuSearchOverlay`, with hardcoded colours that failed contrast in light
+ * theme. It now lives here and the colours come from per-theme CSS variables
+ * (see `--signal-*` in globals.css), verified at >=4.5:1.
  */
 import { AlertTriangle, Clock, CheckCircle2, TrendingDown, HelpCircle } from 'lucide-react'
 import type { InventorySignal } from '@/lib/types'
@@ -24,15 +24,15 @@ interface SignalStyle {
 
 export const SIGNAL_STYLES: Record<InventorySignal, SignalStyle> = {
   PEDIR_YA: {
-    labelKey: 'inventory.signal_pedir_ya',
-    fg: 'var(--signal-pedir-ya-fg)', bg: 'var(--signal-pedir-ya-bg)',
+    labelKey: 'inventory.signal_order_now',
+    fg: 'var(--signal-order-now-fg)', bg: 'var(--signal-order-now-bg)',
     icon: AlertTriangle,
   },
   PEDIR_PRONTO: {
-    labelKey: 'inventory.signal_pedir_pronto',
-    fg: 'var(--signal-pedir-pronto-fg)', bg: 'var(--signal-pedir-pronto-bg)',
-    // Reloj, no triángulo: "pronto" es urgencia temporal, y repetir el mismo
-    // icono que PEDIR_YA volvería a dejar el color como único diferenciador.
+    labelKey: 'inventory.signal_order_soon',
+    fg: 'var(--signal-order-soon-fg)', bg: 'var(--signal-order-soon-bg)',
+    // Clock, not triangle: "soon" is temporal urgency, and reusing the same
+    // icon as PEDIR_YA would leave colour as the only differentiator again.
     icon: Clock,
   },
   OK: {
@@ -41,8 +41,8 @@ export const SIGNAL_STYLES: Record<InventorySignal, SignalStyle> = {
     icon: CheckCircle2,
   },
   SOBRESTOCK: {
-    labelKey: 'inventory.signal_sobrestock',
-    fg: 'var(--signal-sobrestock-fg)', bg: 'var(--signal-sobrestock-bg)',
+    labelKey: 'inventory.signal_overstock',
+    fg: 'var(--signal-overstock-fg)', bg: 'var(--signal-overstock-bg)',
     icon: TrendingDown,
   },
   SIN_DATOS: {

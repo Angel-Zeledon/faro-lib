@@ -6,14 +6,14 @@ import {
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
  listSuppliers, getDeadStock, simulateEvent, logPOGeneration, downloadInventoryTemplate,
- createMerma,
+ createShrinkage,
  getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
  listEventMultipliers, setEventMultiplier, deleteEventMultiplier,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
- EventSimulationResult, POLineDecision, MermaReason, CalendarCatalogEntry,
+ EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry,
  EventMultiplier,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
@@ -42,7 +42,7 @@ const C = {
 }
 
 // ── Signal config ─────────────────────────────────────────────────────────────
-// La presentación del semáforo (icono + etiqueta + color accesible) vive en
+// The signal presentation (icon + label + accessible colour) lives in
 // components/ui/SignalBadge — antes estaba duplicada aquí y en
 // SkuSearchOverlay, con colores que fallaban contraste en tema claro.
 function SignalBadge({ s }: { s: InventorySignal }) {
@@ -123,7 +123,7 @@ function Sparkline({ data }: { data: { stock: number }[] }) {
  )
 }
 
-// ── ¿Por qué me recomienda esto? ─────────────────────────────────────────────
+// ── Why is this being recommended? ──────────────────────────────────────────
 function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: number }) {
  const { t } = useLanguage()
 
@@ -137,13 +137,13 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
 
  const unitWord = t('inventory.calc_unit_units')
  const steps = [
- { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.demanda_diaria!.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
- { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_dias}d)`, value: `= ${exp.demanda_lead_time!.toFixed(0)} ${unitWord}`, op: '×' },
+ { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.daily_demand!.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
+ { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_days}d)`, value: `= ${exp.lead_time_demand!.toFixed(0)} ${unitWord}`, op: '×' },
  { label: `+ ${t('inventory.calc_step_safety_stock')}`, value: `+ ${exp.safety_stock!.toFixed(0)} ${unitWord}`, op: '+' },
- { label: `− ${t('inventory.calc_step_current_stock')}`, value: `− ${exp.stock_actual!.toFixed(0)} ${unitWord}`, op: '−' },
+ { label: `− ${t('inventory.calc_step_current_stock')}`, value: `− ${exp.current_stock!.toFixed(0)} ${unitWord}`, op: '−' },
  { label: `= ${t('inventory.calc_step_before_rounding')}`, value: `${exp.antes_moq!.toFixed(0)} ${unitWord}`, op: '=' },
  ...(moq > 1
- ? [{ label: `↑ ${t('inventory.calc_step_rounded_moq')} (${moq})`, value: `→ ${exp.cantidad_final!.toFixed(0)} ${unitWord}`, op: '↑' }]
+ ? [{ label: `↑ ${t('inventory.calc_step_rounded_moq')} (${moq})`, value: `→ ${exp.final_qty!.toFixed(0)} ${unitWord}`, op: '↑' }]
  : []),
  ]
 
@@ -173,16 +173,16 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  )
 }
 
-// ── Situación en lenguaje natural ─────────────────────────────────────────────
+// ── Plain-language situation ────────────────────────────────────────────────
 function ContextMessage({ summary }: { summary: Record<string, number> }) {
  const { t } = useLanguage()
  const lines: { text: string; color: string }[] = []
- if (summary.pedir_ya > 0)
- lines.push({ text: `${summary.pedir_ya} ${t('inventory.ctx_pedir_ya_suffix')}`, color: '#ef4444' })
- if (summary.pedir_pronto > 0)
- lines.push({ text: `${summary.pedir_pronto} ${t('inventory.ctx_pedir_pronto_suffix')}`, color: '#f59e0b' })
- if (summary.sobrestock > 0)
- lines.push({ text: `${summary.sobrestock} ${t('inventory.ctx_sobrestock_suffix')}`, color: '#3b82f6' })
+ if (summary.order_now > 0)
+ lines.push({ text: `${summary.order_now} ${t('inventory.ctx_order_now_suffix')}`, color: '#ef4444' })
+ if (summary.order_soon > 0)
+ lines.push({ text: `${summary.order_soon} ${t('inventory.ctx_order_soon_suffix')}`, color: '#f59e0b' })
+ if (summary.overstock > 0)
+ lines.push({ text: `${summary.overstock} ${t('inventory.ctx_overstock_suffix')}`, color: '#3b82f6' })
  if (!lines.length && summary.ok > 0)
  lines.push({ text: t('inventory.ctx_all_covered'), color: '#22c55e' })
  if (!lines.length) return null
@@ -206,18 +206,18 @@ function KPICard({ label, value, color, sub, onClick, active }: {
  )
 }
 
-// ── Multiplicador: explicación y edición por producto (feature 3.4) ──────────
-// El multiplicador de un evento no puede ser un número sin origen: si Faro
-// dice "pide 3x de esto en Black Friday", el comprador tiene que poder ver de
-// dónde sale ese 3x y cambiarlo. Además no es uno solo — la electrónica y la
-// leche no se comportan igual — así que se resuelve por SKU > categoría > evento.
+// ── Multiplier: explanation and per-product editing (feature 3.4) ───────────
+// An event multiplier cannot be a number with no provenance: if Faro
+// says "order 3x of this on Black Friday", the buyer has to be able to see
+// where that 3x comes from and change it. And it is not a single number —
+// electronics and milk behave differently — so it resolves SKU > category > event.
 
 function MultiplierChip({ value, origin }: { value: number; origin: string }) {
  const { t } = useLanguage()
  const label = origin === 'sku' ? t('inventory.mult_origin_sku')
-  : origin === 'categoria' ? t('inventory.mult_origin_category')
+  : origin === 'category' ? t('inventory.mult_origin_category')
   : t('inventory.mult_origin_event')
- const custom = origin !== 'evento'
+ const custom = origin !== 'event'
  return (
   <span
    title={label}
@@ -243,10 +243,10 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
  const { t } = useLanguage()
  const [open, setOpen] = useState(false)
  const [rows, setRows] = useState<EventMultiplier[] | null>(null)
- const [form, setForm] = useState({ scope: 'categoria' as 'sku' | 'categoria', value: '', mult: '2.0' })
+ const [form, setForm] = useState({ scope: 'category' as 'sku' | 'category', value: '', mult: '2.0' })
  const [busy, setBusy] = useState(false)
  const [err, setErr] = useState('')
- const exp = result.explicacion
+ const exp = result.explanation
 
  const load = useCallback(() => {
   listEventMultipliers(eventId).then(setRows).catch(() => setRows([]))
@@ -283,19 +283,19 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
     <Info size={13} color={C.indigo} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
     <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
      <strong style={{ color: C.text }}>
-      {t('inventory.mult_base_label')} x{exp.multiplicador_base.toFixed(1)}
+      {t('inventory.mult_base_label')} x{exp.base_multiplier.toFixed(1)}
      </strong>
      {' — '}
      {exp.es_estimacion ? t('inventory.mult_from_catalog') : t('inventory.mult_from_user')}
-     {exp.motivo && <div style={{ marginTop: 3 }}>{exp.motivo}</div>}
+     {exp.reason && <div style={{ marginTop: 3 }}>{exp.reason}</div>}
      {exp.es_estimacion && (
       <div style={{ marginTop: 3, color: C.dim }}>{t('inventory.mult_estimate_hint')}</div>
      )}
-     {result.multiplicadores_aplicados.length > 0 && (
+     {result.multipliers_applied.length > 0 && (
       <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-       {result.multiplicadores_aplicados.map(m => (
-        <span key={`${m.multiplicador}-${m.origen}`} style={{ fontSize: 10, color: C.dim }}>
-         <MultiplierChip value={m.multiplicador} origin={m.origen} /> {m.skus} SKU
+       {result.multipliers_applied.map(m => (
+        <span key={`${m.multiplier}-${m.source}`} style={{ fontSize: 10, color: C.dim }}>
+         <MultiplierChip value={m.multiplier} origin={m.source} /> {m.skus} SKU
         </span>
        ))}
       </div>
@@ -342,11 +342,11 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <select
        value={form.scope}
-       onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'sku' | 'categoria' }))}
+       onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'sku' | 'category' }))}
        aria-label={t('inventory.mult_scope_label')}
        style={{ ...inputS3, width: 110 }}
       >
-       <option value="categoria">{t('inventory.mult_origin_category')}</option>
+       <option value="category">{t('inventory.mult_origin_category')}</option>
        <option value="sku">{t('inventory.mult_origin_sku')}</option>
       </select>
       <input
@@ -407,7 +407,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
  </div>
  <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim }}>
- {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demanda estimada +{pctExtra}%
+ {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demand estimada +{pctExtra}%
  </p>
 
  {!result && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
@@ -418,29 +418,29 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  {/* Headline — the actionable sentence */}
  <div style={{
  padding: '14px 18px', borderRadius: 10, marginBottom: 16,
- background: result.summary.skus_en_riesgo > 0 ? 'rgba(245,158,11,0.07)' : 'rgba(34,197,94,0.07)',
- border: `1px solid ${result.summary.skus_en_riesgo > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
+ background: result.summary.skus_at_risk > 0 ? 'rgba(245,158,11,0.07)' : 'rgba(34,197,94,0.07)',
+ border: `1px solid ${result.summary.skus_at_risk > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
  fontSize: 13, color: C.text, lineHeight: 1.6,
  }}>
- {result.summary.skus_en_riesgo > 0 ? (
+ {result.summary.skus_at_risk > 0 ? (
  <>
- Con <strong>{ev.name}</strong> (+{pctExtra}% demanda), necesitarías pedir{' '}
- <strong>{result.summary.total_pedir.toLocaleString()} unidades extra</strong> en{' '}
- <strong>{result.summary.skus_en_riesgo} producto{result.summary.skus_en_riesgo !== 1 ? 's' : ''}</strong>
- {result.summary.pedir_antes_de && <> antes del <strong>{fmtD(result.summary.pedir_antes_de)}</strong></>}
- {result.summary.valor_total_pedido > 0 && <> (≈ ${result.summary.valor_total_pedido.toLocaleString(undefined, { maximumFractionDigits: 0 })})</>}.
- {result.summary.algun_pedido_tarde && (
+ Con <strong>{ev.name}</strong> (+{pctExtra}% demand), necesitarías order{' '}
+ <strong>{result.summary.total_to_order.toLocaleString()} units extra</strong> en{' '}
+ <strong>{result.summary.skus_at_risk} product{result.summary.skus_at_risk !== 1 ? 's' : ''}</strong>
+ {result.summary.order_before && <> antes del <strong>{fmtD(result.summary.order_before)}</strong></>}
+ {result.summary.total_order_value > 0 && <> (≈ ${result.summary.total_order_value.toLocaleString(undefined, { maximumFractionDigits: 0 })})</>}.
+ {result.summary.any_order_late && (
  <div style={{ color: C.red, fontWeight: 600, marginTop: 6 }}>
- ⚠ Para algunos productos ya es tarde: pidiendo hoy, el pedido llegaría con el evento en curso.
+ ⚠ Para algunos products ya es tarde: pidiendo hoy, el order llegaría con el event en curso.
  </div>
  )}
  </>
  ) : (
- <>✓ Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% demanda) sin pedidos adicionales.</>
+ <>✓ Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% demand) sin orders adicionales.</>
  )}
  </div>
 
- {/* Por qué este multiplicador — nunca mostrar un x2.2 sin justificarlo */}
+ {/* Por qué este multiplier — nunca mostrar un x2.2 sin justificarlo */}
  <MultiplierExplainer result={result} eventId={ev.id} onEdited={onReload} />
 
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -453,13 +453,13 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  </thead>
  <tbody>
  {result.items.map(r => (
- <tr key={r.sku} style={{ borderBottom: `1px solid ${C.border}`, background: r.en_riesgo ? 'rgba(245,158,11,0.04)' : undefined }}>
+ <tr key={r.sku} style={{ borderBottom: `1px solid ${C.border}`, background: r.en_risk ? 'rgba(245,158,11,0.04)' : undefined }}>
  <td style={{ padding: '8px' }}>
  <div style={{ fontWeight: 600, color: C.text }}>{r.display_name || r.sku}</div>
  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{r.sku}</div>
  </td>
  <td style={{ padding: '8px' }}>
- <MultiplierChip value={r.multiplicador} origin={r.multiplicador_origen} />
+ <MultiplierChip value={r.multiplier} origin={r.multiplier_source} />
  </td>
  <td style={{ padding: '8px', fontFamily: 'monospace', color: C.text }}>
  {r.event_units.toLocaleString()}
@@ -468,22 +468,22 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <td style={{ padding: '8px', fontFamily: 'monospace', color: C.muted }}>
  {r.stock_al_inicio != null ? r.stock_al_inicio.toLocaleString() : '—'}
  </td>
- <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.en_riesgo ? C.red : C.green }}>
+ <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.en_risk ? C.red : C.green }}>
  {r.deficit != null ? (r.deficit > 0 ? r.deficit.toLocaleString() : '✓') : '—'}
  </td>
- <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.cantidad_pedir ? C.text : C.dim }}>
- {r.cantidad_pedir ? r.cantidad_pedir.toLocaleString() : '—'}
+ <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.qty_to_order ? C.text : C.dim }}>
+ {r.qty_to_order ? r.qty_to_order.toLocaleString() : '—'}
  </td>
- <td style={{ padding: '8px', fontSize: 11, color: r.llega_tarde && r.en_riesgo ? C.red : C.muted, whiteSpace: 'nowrap' }}>
- {r.en_riesgo ? (r.llega_tarde ? '¡hoy mismo!' : fmtD(r.order_by)) : '—'}
+ <td style={{ padding: '8px', fontSize: 11, color: r.llega_tarde && r.en_risk ? C.red : C.muted, whiteSpace: 'nowrap' }}>
+ {r.en_risk ? (r.llega_tarde ? '¡hoy mismo!' : fmtD(r.order_by)) : '—'}
  </td>
  </tr>
  ))}
  </tbody>
  </table>
  <p style={{ margin: '14px 0 0', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
- Cálculo: demanda diaria del forecast × {result.event_days} día{result.event_days !== 1 ? 's' : ''} × {ev.multiplier.toFixed(1)},
- contra el stock proyectado al inicio del evento. Las cantidades respetan el MOQ de cada producto. Nada se guarda — es solo una simulación.
+ Cálculo: demand diaria del forecast × {result.event_days} día{result.event_days !== 1 ? 's' : ''} × {ev.multiplier.toFixed(1)},
+ contra el stock proyectado al inicio del event. Las qtys respetan el MOQ de cada product. Nada se guarda — es solo una simulación.
  </p>
  </>
  )}
@@ -492,10 +492,10 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  )
 }
 
-// ── Merma modal (record a non-sale stock-out: breakage/expiry/self-consumption/gift) ──
-const MERMA_REASONS: MermaReason[] = ['breakage', 'expiry', 'self_consumption', 'gift']
+// ── Shrinkage modal (record a non-sale stock-out: breakage/expiry/self-consumption/gift) ──
+const SHRINKAGE_REASONS: ShrinkageReason[] = ['breakage', 'expiry', 'self_consumption', 'gift']
 
-function MermaModal({ items, onClose, onSaved }: {
+function ShrinkageModal({ items, onClose, onSaved }: {
  items: InventoryStatusItem[]
  onClose: () => void
  onSaved: () => void
@@ -504,27 +504,27 @@ function MermaModal({ items, onClose, onSaved }: {
  const { addToast } = useToast()
  const [sku, setSku] = useState('')
  const [quantity, setQuantity] = useState('')
- const [reason, setReason] = useState<MermaReason>('breakage')
+ const [reason, setReason] = useState<ShrinkageReason>('breakage')
  const [notes, setNotes] = useState('')
  const [saving, setSaving] = useState(false)
  const [error, setError] = useState<string | null>(null)
 
  const selected = items.find(i => i.sku === sku) || null
  const qtyNum = parseFloat(quantity)
- const estCost = selected?.costo_unitario != null && !isNaN(qtyNum) && qtyNum > 0
-  ? qtyNum * selected.costo_unitario
+ const estCost = selected?.unit_cost != null && !isNaN(qtyNum) && qtyNum > 0
+  ? qtyNum * selected.unit_cost
   : null
 
  const inputM: React.CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 12, outline: 'none', padding: '7px 9px', width: '100%', boxSizing: 'border-box' }
 
  async function handleSubmit() {
   setError(null)
-  if (!selected) { setError(t('inventory.merma_err_select_sku')); return }
-  if (!qtyNum || qtyNum <= 0) { setError(t('inventory.merma_err_quantity')); return }
+  if (!selected) { setError(t('inventory.shrinkage_err_select_sku')); return }
+  if (!qtyNum || qtyNum <= 0) { setError(t('inventory.shrinkage_err_quantity')); return }
   setSaving(true)
   try {
-   await createMerma({ sku: selected.sku, quantity: qtyNum, reason, notes: notes || undefined })
-   addToast(t('inventory.merma_toast_title'), `${qtyNum} ${t('inventory.calc_unit_units')} ${t('inventory.merma_toast_body')} ${selected.sku}`, 'success')
+   await createShrinkage({ sku: selected.sku, quantity: qtyNum, reason, notes: notes || undefined })
+   addToast(t('inventory.shrinkage_toast_title'), `${qtyNum} ${t('inventory.calc_unit_units')} ${t('inventory.shrinkage_toast_body')} ${selected.sku}`, 'success')
    onSaved()
    onClose()
   } catch (e) {
@@ -539,55 +539,55 @@ function MermaModal({ items, onClose, onSaved }: {
    <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
      <PackageMinus size={16} color={C.red} />
-     <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('inventory.merma_title_register')}</span>
+     <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('inventory.shrinkage_title_register')}</span>
      <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
     </div>
-    <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>{t('inventory.merma_subtitle')}</p>
+    <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>{t('inventory.shrinkage_subtitle')}</p>
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
      <div>
-      <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_sku')}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_sku')}</div>
       <input
-       list="merma-sku-options"
+       list="shrinkage-sku-options"
        style={inputM}
-       placeholder={t('inventory.merma_sku_placeholder')}
+       placeholder={t('inventory.shrinkage_sku_placeholder')}
        value={sku}
        onChange={e => setSku(e.target.value)}
        autoFocus
       />
-      <datalist id="merma-sku-options">
+      <datalist id="shrinkage-sku-options">
        {items.map(i => (
         <option key={i.sku} value={i.sku}>{i.display_name || i.sku}</option>
        ))}
       </datalist>
       {selected && (
        <div style={{ marginTop: 4, fontSize: 11, color: C.dim }}>
-        {t('inventory.merma_current_stock_prefix')} <strong style={{ color: C.text }}>{fmt(selected.stock_actual, 0)}</strong>
+        {t('inventory.shrinkage_current_stock_prefix')} <strong style={{ color: C.text }}>{fmt(selected.current_stock, 0)}</strong>
        </div>
       )}
      </div>
 
      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       <div>
-       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_quantity')}</div>
+       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_quantity')}</div>
        <input type="number" min={0} step="any" style={inputM} value={quantity} onChange={e => setQuantity(e.target.value)} />
       </div>
       <div>
-       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_reason')}</div>
-       <select style={inputM} value={reason} onChange={e => setReason(e.target.value as MermaReason)}>
-        {MERMA_REASONS.map(r => <option key={r} value={r}>{t(`inventory.merma_reason_${r}`)}</option>)}
+       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_reason')}</div>
+       <select style={inputM} value={reason} onChange={e => setReason(e.target.value as ShrinkageReason)}>
+        {SHRINKAGE_REASONS.map(r => <option key={r} value={r}>{t(`inventory.shrinkage_reason_${r}`)}</option>)}
        </select>
       </div>
      </div>
 
      <div>
-      <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.merma_field_notes')}</div>
-      <input style={inputM} placeholder={t('inventory.merma_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_notes')}</div>
+      <input style={inputM} placeholder={t('inventory.shrinkage_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
      </div>
 
      {estCost != null && (
       <div style={{ fontSize: 11, color: C.dim }}>
-       {t('inventory.merma_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
+       {t('inventory.shrinkage_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
       </div>
      )}
 
@@ -598,7 +598,7 @@ function MermaModal({ items, onClose, onSaved }: {
      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
       <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.border}`, color: C.dim, fontSize: 12 }}>{t('common.cancel')}</button>
       <button onClick={handleSubmit} disabled={saving} style={{ all: 'unset', cursor: saving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, background: C.red, color: '#fff', fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
-       {saving && <Spinner size={12} />} {saving ? t('inventory.merma_btn_submitting') : t('inventory.merma_btn_submit')}
+       {saving && <Spinner size={12} />} {saving ? t('inventory.shrinkage_btn_submitting') : t('inventory.shrinkage_btn_submit')}
       </button>
      </div>
     </div>
@@ -609,8 +609,8 @@ function MermaModal({ items, onClose, onSaved }: {
 
 // ── LatAm calendar catalog (feature 3.4) ─────────────────────────────────────
 const COUNTRY_NAMES: Record<string, string> = { CR: 'Costa Rica', CO: 'Colombia' }
-// El catálogo se siembra en la DB (no es un array en el frontend): aquí sólo
-// se muestra su estado y se prende/apaga cada evento.
+// The catalog is seeded into the DB (not a frontend array): this only
+// shows its state and switches each event on/off.
 function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
  const { t } = useLanguage()
  const [entries, setEntries] = useState<CalendarCatalogEntry[] | null>(null)
@@ -788,7 +788,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
- {/* Mis eventos vs. calendario LatAm precargado */}
+ {/* Mis events vs. calendar LatAm precargado */}
  <div role="tablist" aria-label={t('inventory.events_tablist_aria')} style={{ display: 'flex', gap: 4, marginBottom: 2 }}>
   <button role="tab" aria-selected={tab === 'mine'} onClick={() => setTab('mine')} style={tabS(tab === 'mine')}>
    {t('inventory.events_tab_mine')}
@@ -821,7 +821,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  onClick={() => onSimulate(ev)}
  title={t('inventory.events_simulate_tooltip')}
  aria-label={`${t('inventory.events_btn_simulate')}: ${ev.name}`}
- style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-pedir-pronto-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0 }}
+ style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-order-soon-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0 }}
  >
  <Zap size={11} aria-hidden="true" /> {t('inventory.events_btn_simulate')}
  </button>
@@ -892,9 +892,9 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
 }
 
 // ── Inline edit state ─────────────────────────────────────────────────────────
-interface EditState { stock_actual: string; lead_time_dias: string; costo_unitario: string; moq: string; proveedor: string; display_name: string; service_level: string; precio_venta: string; categoria: string; marca: string; unidad_medida: string; codigo_barras: string }
+interface EditState { current_stock: string; lead_time_days: string; unit_cost: string; moq: string; supplier: string; display_name: string; service_level: string; sale_price: string; category: string; brand: string; unit_of_measure: string; barcode: string }
 function rowToEdit(item: InventoryStatusItem): EditState {
- return { stock_actual: String(item.stock_actual ?? ''), lead_time_dias: String(item.lead_time_dias ?? 15), costo_unitario: String(item.costo_unitario ?? ''), moq: String(item.moq ?? 1), proveedor: item.proveedor ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95), precio_venta: String(item.precio_venta ?? ''), categoria: item.categoria ?? '', marca: item.marca ?? '', unidad_medida: item.unidad_medida ?? '', codigo_barras: item.codigo_barras ?? '' }
+ return { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? 15), unit_cost: String(item.unit_cost ?? ''), moq: String(item.moq ?? 1), supplier: item.supplier ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95), sale_price: String(item.sale_price ?? ''), category: item.category ?? '', brand: item.brand ?? '', unit_of_measure: item.unit_of_measure ?? '', barcode: item.barcode ?? '' }
 }
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
@@ -924,9 +924,9 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '160px 100px 90px 90px 80px 60px auto', gap: 12, padding: '10px 16px', alignItems: 'center', fontSize: 12, background: idx % 2 === 0 ? C.surface : C.card, borderBottom: idx < items.length - 1 ? `1px solid ${C.border}` : 'none' }}>
  <div><div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{item.sku}</div>{item.display_name && <div style={{ color: C.dim, fontSize: 10 }}>{item.display_name}</div>}</div>
  <SignalBadge s={item.signal} />
- <span style={{ color: signalColor(item.signal), fontWeight: 600 }}>{item.dias_cobertura != null ? `${item.dias_cobertura.toFixed(0)}d` : '—'}</span>
+ <span style={{ color: signalColor(item.signal), fontWeight: 600 }}>{item.coverage_days != null ? `${item.coverage_days.toFixed(0)}d` : '—'}</span>
  <span>
- {item.cantidad_recomendada != null && item.cantidad_recomendada > 0 ? (
+ {item.recommended_qty != null && item.recommended_qty > 0 ? (
  editingQtySku === item.sku ? (
  <input
  type="number" min={1} autoFocus
@@ -951,11 +951,11 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  {fmt(effectiveQty(item), 0)}
  </button>
  )
- ) : item.cantidad_recomendada === 0
+ ) : item.recommended_qty === 0
  ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
  : <span style={{ color: C.dim }}>—</span>}
  </span>
- <span style={{ color: C.dim }}>{item.stock_actual?.toFixed(0) ?? '—'}</span>
+ <span style={{ color: C.dim }}>{item.current_stock?.toFixed(0) ?? '—'}</span>
  <AbcXyzBadge value={item.abc_xyz} />
  <button onClick={() => onEdit(item)} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = C.indigo)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}><Edit2 size={12} /></button>
  </div>
@@ -969,8 +969,8 @@ function fmtCurrency(n: number | null | undefined) { if (n == null) return '—'
 
 // ── Simulator helpers ─────────────────────────────────────────────────────────
 function simulateRecommendation(
- stockActual: number,
- demandaDiaria: number,
+ currentStock: number,
+ dailyDemand: number,
  avgStd: number,
  leadTime: number,
  moq: number,
@@ -978,9 +978,9 @@ function simulateRecommendation(
 ): number {
  const Z_MAP: Record<number, number> = { 0.90: 1.282, 0.95: 1.645, 0.97: 1.881, 0.99: 2.326 }
  const z = Z_MAP[serviceLevel] ?? 1.645
- const demandaLT = demandaDiaria * leadTime
+ const demandLT = dailyDemand * leadTime
  const safetyStock = z * avgStd * Math.sqrt(leadTime)
- const raw = Math.max(0, demandaLT + safetyStock - stockActual)
+ const raw = Math.max(0, demandLT + safetyStock - currentStock)
  if (moq > 0) return Math.ceil(raw / moq) * moq
  return Math.round(raw)
 }
@@ -988,25 +988,25 @@ function simulateRecommendation(
 function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const { t } = useLanguage()
  const exp = item.calc_explanation
- if (!exp || !item.demanda_diaria || item.demanda_diaria <= 0) return null
+ if (!exp || !item.daily_demand || item.daily_demand <= 0) return null
 
  const [ltDelta,    setLtDelta]    = useState(0)
  const [demandMult, setDemandMult] = useState(100)
  const [stockDelta, setStockDelta] = useState(0)
 
- const simLeadTime = Math.max(1, (item.lead_time_dias ?? 15) + ltDelta)
- const simDemand   = (item.demanda_diaria ?? 0) * demandMult / 100
- const simStock    = Math.max(0, (item.stock_actual ?? 0) + stockDelta)
+ const simLeadTime = Math.max(1, (item.lead_time_days ?? 15) + ltDelta)
+ const simDemand   = (item.daily_demand ?? 0) * demandMult / 100
+ const simStock    = Math.max(0, (item.current_stock ?? 0) + stockDelta)
 
  // Approximate avgStd from safety stock and original lead_time
  // safety_stock = z * avgStd * sqrt(lead_time) → avgStd ≈ safety_stock / (z * sqrt(lead_time))
- const origLT = item.lead_time_dias ?? 15
+ const origLT = item.lead_time_days ?? 15
  const origSS = exp.safety_stock ?? 0
  const z      = 1.645
  const avgStd = origLT > 0 ? origSS / (z * Math.sqrt(origLT)) : 0
 
  const simRecommended = simulateRecommendation(simStock, simDemand, avgStd, simLeadTime, item.moq ?? 1)
- const originalRec    = item.cantidad_recomendada ?? 0
+ const originalRec    = item.recommended_qty ?? 0
  const delta          = simRecommended - originalRec
  const deltaColor     = delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.muted
 
@@ -1061,12 +1061,12 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
        {stockDelta > 0 ? `+${stockDelta}` : stockDelta} {t('inventory.unit_und')}
       </span>
      </div>
-     <input type="range" min={-(item.stock_actual ?? 0)} max={(item.stock_actual ?? 0) * 2}
-      step={Math.max(1, Math.floor((item.stock_actual ?? 50) / 10))}
+     <input type="range" min={-(item.current_stock ?? 0)} max={(item.current_stock ?? 0) * 2}
+      step={Math.max(1, Math.floor((item.current_stock ?? 50) / 10))}
       value={stockDelta}
       onChange={e => setStockDelta(Number(e.target.value))} style={sliderS} />
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
-      <span>-{item.stock_actual ?? 0}</span><span>+{(item.stock_actual ?? 0) * 2}</span>
+      <span>-{item.current_stock ?? 0}</span><span>+{(item.current_stock ?? 0) * 2}</span>
      </div>
     </div>
    </div>
@@ -1130,7 +1130,7 @@ export default function InventoryPage() {
  const [events, setEvents] = useState<InventoryEvent[]>([])
  const [showEvents, setShowEvents] = useState(false)
  const [simEvent, setSimEvent] = useState<InventoryEvent | null>(null)
- const [updateDraft, setUpdateDraft] = useState<Record<string, { stock_actual: string; lead_time_dias: string; proveedor: string }>>({})
+ const [updateDraft, setUpdateDraft] = useState<Record<string, { current_stock: string; lead_time_days: string; supplier: string }>>({})
  const [updateSaving, setUpdateSaving] = useState(false)
  const [updatedSkus, setUpdatedSkus] = useState<Set<string>>(new Set())
  const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -1140,11 +1140,11 @@ export default function InventoryPage() {
  const [loadingDead, setLoadingDead] = useState(false)
  const [editedQty, setEditedQty] = useState<Record<string, number>>({})
  const [editingQtySku, setEditingQtySku] = useState<string | null>(null)
- const [showMermaModal, setShowMermaModal] = useState(false)
+ const [showShrinkageModal, setShowShrinkageModal] = useState(false)
 
  // Effective order quantity for an item: the buyer's edit if present, else the recommendation.
  const effectiveQty = useCallback((item: InventoryStatusItem): number =>
-  editedQty[item.sku] ?? item.cantidad_recomendada ?? 0, [editedQty])
+  editedQty[item.sku] ?? item.recommended_qty ?? 0, [editedQty])
 
  const reloadEvents = useCallback(() => {
  listInventoryEvents().then(setEvents).catch(() => {})
@@ -1182,12 +1182,12 @@ export default function InventoryPage() {
  // ── Update-draft initialization ────────────────────────────────────────────
  useEffect(() => {
  if (viewMode === 'update' && data) {
- const draft: Record<string, { stock_actual: string; lead_time_dias: string; proveedor: string }> = {}
+ const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
  data.items.forEach(item => {
  draft[item.sku] = {
- stock_actual: String(item.stock_actual ?? ''),
- lead_time_dias: String(item.lead_time_dias ?? 15),
- proveedor: item.proveedor ?? '',
+ current_stock: String(item.current_stock ?? ''),
+ lead_time_days: String(item.lead_time_days ?? 15),
+ supplier: item.supplier ?? '',
  }
  })
  setUpdateDraft(draft)
@@ -1207,9 +1207,9 @@ export default function InventoryPage() {
  const original = data?.items.find(i => i.sku === sku)
  if (!original) return true
  return (
- parseFloat(draft.stock_actual) !== (original.stock_actual ?? 0) ||
- parseInt(draft.lead_time_dias) !== original.lead_time_dias ||
- draft.proveedor !== (original.proveedor ?? '')
+ parseFloat(draft.current_stock) !== (original.current_stock ?? 0) ||
+ parseInt(draft.lead_time_days) !== original.lead_time_days ||
+ draft.supplier !== (original.supplier ?? '')
  )
  })
  let saved = 0
@@ -1217,9 +1217,9 @@ export default function InventoryPage() {
  for (const [sku, draft] of toSave) {
  try {
  await upsertInventoryStock(sku, {
- stock_actual: parseFloat(draft.stock_actual) || 0,
- lead_time_dias: parseInt(draft.lead_time_dias) || 15,
- proveedor: draft.proveedor || undefined,
+ current_stock: parseFloat(draft.current_stock) || 0,
+ lead_time_days: parseInt(draft.lead_time_days) || 15,
+ supplier: draft.supplier || undefined,
  })
  saved++
  } catch (e) {
@@ -1242,13 +1242,13 @@ export default function InventoryPage() {
 
  const items = useMemo(() => (data?.items ?? []).filter(item => {
  if (signalFilter && item.signal !== signalFilter) return false
- if (search) { const q = search.toLowerCase(); return item.sku.toLowerCase().includes(q) || (item.display_name ?? '').toLowerCase().includes(q) || (item.proveedor ?? '').toLowerCase().includes(q) }
+ if (search) { const q = search.toLowerCase(); return item.sku.toLowerCase().includes(q) || (item.display_name ?? '').toLowerCase().includes(q) || (item.supplier ?? '').toLowerCase().includes(q) }
  return true
  }), [data, signalFilter, search])
 
  const byProvider = useMemo(() => {
  const groups: Record<string, InventoryStatusItem[]> = {}
- for (const item of items) { const k = item.proveedor || ''; if (!groups[k]) groups[k] = []; groups[k].push(item) }
+ for (const item of items) { const k = item.supplier || ''; if (!groups[k]) groups[k] = []; groups[k].push(item) }
  const PRIO = ['PEDIR_YA', 'PEDIR_PRONTO', 'OK', 'SOBRESTOCK', 'SIN_DATOS']
  return Object.entries(groups).sort((a, b) => {
  const sa = Math.min(...a[1].map(i => PRIO.indexOf(i.signal)))
@@ -1259,7 +1259,7 @@ export default function InventoryPage() {
 
  // Upcoming events within 30 days
  const upcomingAlerts = useMemo(() => events.filter(e => {
- if (e.active === false) return false   // un evento apagado no debe alertar
+ if (e.active === false) return false   // un event apagado no debe alertar
  const d = Math.round((new Date(e.start_date).getTime() - Date.now()) / 86400000)
  return d >= 0 && d <= 30 && new Date(e.end_date) >= new Date()
  }), [events])
@@ -1275,7 +1275,7 @@ export default function InventoryPage() {
  if (!editState || savingRef.current) return
  savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, stock_actual: parseFloat(editState.stock_actual) || 0, lead_time_dias: parseInt(editState.lead_time_dias) || 15, costo_unitario: editState.costo_unitario ? parseFloat(editState.costo_unitario) : undefined, moq: parseFloat(editState.moq) || 1, proveedor: editState.proveedor || undefined, service_level: parseFloat(editState.service_level) || 0.95, precio_venta: editState.precio_venta ? parseFloat(editState.precio_venta) : undefined, categoria: editState.categoria || undefined, marca: editState.marca || undefined, unidad_medida: editState.unidad_medida || undefined, codigo_barras: editState.codigo_barras || undefined })
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: parseInt(editState.lead_time_days) || 15, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || 1, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || 0.95, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_saving')) }
  finally { savingRef.current = false; setSaving(false) }
@@ -1321,23 +1321,23 @@ export default function InventoryPage() {
  const rows = ['SKU,Producto,Cantidad,Proveedor,Valor estimado']
  for (const i of orderItems) {
   const qty = effectiveQty(i)
-  const val = qty * (i.costo_unitario ?? 0)
-  rows.push(`${i.sku},"${i.display_name ?? ''}",${qty},"${i.proveedor ?? ''}",${val}`)
+  const val = qty * (i.unit_cost ?? 0)
+  rows.push(`${i.sku},"${i.display_name ?? ''}",${qty},"${i.supplier ?? ''}",${val}`)
  }
  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
  const url = URL.createObjectURL(blob)
- const a = document.createElement('a'); a.href = url; a.download = 'orden_de_compra.csv'; a.click()
+ const a = document.createElement('a'); a.href = url; a.download = 'purchase_order.csv'; a.click()
  URL.revokeObjectURL(url)
  // Log decisions (edited => 'modified', otherwise 'approved')
  const decisions: POLineDecision[] = orderItems.map(i => ({
   sku: i.sku,
   display_name: i.display_name ?? undefined,
-  proveedor: i.proveedor ?? undefined,
+  supplier: i.supplier ?? undefined,
   signal: i.signal,
-  cantidad_recomendada: i.cantidad_recomendada ?? 0,
-  cantidad_final: effectiveQty(i),
+  recommended_qty: i.recommended_qty ?? 0,
+  final_qty: effectiveQty(i),
   status: (editedQty[i.sku] != null ? 'modified' : 'approved') as 'approved' | 'modified',
-  costo_unitario: i.costo_unitario ?? undefined,
+  unit_cost: i.unit_cost ?? undefined,
  }))
  logPOGeneration(sessionId, decisions).catch(() => {})
  }
@@ -1440,8 +1440,8 @@ export default function InventoryPage() {
  }} title={t('inventory.title_manage_suppliers')}>
  <Truck size={12} /> {t('inventory.btn_suppliers')}
  </Link>
- <button onClick={() => setShowMermaModal(true)} title={t('inventory.merma_title_register')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: C.red }}>
- <PackageMinus size={12} /> {t('inventory.merma_btn_register')}
+ <button onClick={() => setShowShrinkageModal(true)} title={t('inventory.shrinkage_title_register')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: C.red }}>
+ <PackageMinus size={12} /> {t('inventory.shrinkage_btn_register')}
  </button>
  </div>
  </div>
@@ -1482,8 +1482,8 @@ export default function InventoryPage() {
  <span style={{ fontWeight: 600, color: C.amber }}>{t('inventory.upcoming_events_prefix')}</span>
  {upcomingAlerts.map(ev => {
  const d = Math.round((new Date(ev.start_date).getTime() - Date.now()) / 86400000)
- // Clicable: el multiplicador no debe quedarse en un número suelto — al
- // abrir el simulador se ve de dónde sale y se puede ajustar por producto.
+ // Clickable: the multiplier must not stay a bare number — opening the
+ // simulator shows where it comes from and lets you tune it per product.
  return (
  <button
  key={ev.id}
@@ -1509,7 +1509,7 @@ export default function InventoryPage() {
  {!loading && sessionId && skusSinStock > 0 && (
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 8, background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.2)', color: C.indigo, fontSize: 13 }}>
  <Info size={14} style={{ flexShrink: 0 }} />
- <span><strong>{skusSinStock} {t('inventory.skus_of_label')} {skusConForecast} SKUs</strong> {t('inventory.skus_no_stock_hint')} <code style={{ fontSize: 11, background: 'rgba(129,140,248,0.1)', padding: '1px 5px', borderRadius: 4 }}>sku, stock_actual, lead_time_dias</code></span>
+ <span><strong>{skusSinStock} {t('inventory.skus_of_label')} {skusConForecast} SKUs</strong> {t('inventory.skus_no_stock_hint')} <code style={{ fontSize: 11, background: 'rgba(129,140,248,0.1)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code></span>
  </div>
  )}
 
@@ -1518,11 +1518,11 @@ export default function InventoryPage() {
  {summary && (
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
  <KPICard label={t('inventory.kpi_total_skus')} value={summary.total_skus} color={C.indigo} onClick={() => setSignalFilter('')} active={!signalFilter} />
- <KPICard label={t('inventory.signal_pedir_ya')} value={summary.pedir_ya} color={C.red} onClick={() => setSignalFilter(signalFilter === 'PEDIR_YA' ? '' : 'PEDIR_YA')} active={signalFilter === 'PEDIR_YA'} sub={summary.pedir_ya > 0 ? t('inventory.kpi_immediate_risk') : undefined} />
- <KPICard label={t('inventory.signal_pedir_pronto')} value={summary.pedir_pronto} color={C.amber} onClick={() => setSignalFilter(signalFilter === 'PEDIR_PRONTO' ? '' : 'PEDIR_PRONTO')} active={signalFilter === 'PEDIR_PRONTO'} />
+ <KPICard label={t('inventory.signal_order_now')} value={summary.order_now} color={C.red} onClick={() => setSignalFilter(signalFilter === 'PEDIR_YA' ? '' : 'PEDIR_YA')} active={signalFilter === 'PEDIR_YA'} sub={summary.order_now > 0 ? t('inventory.kpi_immediate_risk') : undefined} />
+ <KPICard label={t('inventory.signal_order_soon')} value={summary.order_soon} color={C.amber} onClick={() => setSignalFilter(signalFilter === 'PEDIR_PRONTO' ? '' : 'PEDIR_PRONTO')} active={signalFilter === 'PEDIR_PRONTO'} />
  <KPICard label={t('inventory.signal_ok')} value={summary.ok} color={C.green} onClick={() => setSignalFilter(signalFilter === 'OK' ? '' : 'OK')} active={signalFilter === 'OK'} />
- <KPICard label={t('inventory.signal_sobrestock')} value={summary.sobrestock} color={C.blue} onClick={() => setSignalFilter(signalFilter === 'SOBRESTOCK' ? '' : 'SOBRESTOCK')} active={signalFilter === 'SOBRESTOCK'} />
- <KPICard label={t('inventory.kpi_inventory_value')} value={summary.valor_total_inventario > 0 ? fmtCurrency(summary.valor_total_inventario) : '—'} color={C.indigo} sub={t('inventory.kpi_skus_with_cost')} />
+ <KPICard label={t('inventory.signal_overstock')} value={summary.overstock} color={C.blue} onClick={() => setSignalFilter(signalFilter === 'SOBRESTOCK' ? '' : 'SOBRESTOCK')} active={signalFilter === 'SOBRESTOCK'} />
+ <KPICard label={t('inventory.kpi_inventory_value')} value={summary.total_inventory_value > 0 ? fmtCurrency(summary.total_inventory_value) : '—'} color={C.indigo} sub={t('inventory.kpi_skus_with_cost')} />
  </div>
  )}
 
@@ -1611,7 +1611,7 @@ export default function InventoryPage() {
  {/* CSV import hint */}
  <div style={{ padding: '10px 16px', background: 'rgba(129,140,248,0.04)', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
  <span style={{ fontSize: 12, color: C.dim, flex: 1 }}>
- {t('inventory.csv_hint_prefix')} <code style={{ fontSize: 11, background: 'rgba(129,140,248,0.1)', padding: '1px 5px', borderRadius: 4 }}>sku, stock_actual, lead_time_dias</code>
+ {t('inventory.csv_hint_prefix')} <code style={{ fontSize: 11, background: 'rgba(129,140,248,0.1)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code>
  </span>
  <button onClick={() => importRef.current?.click()} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted }}>
  <Upload size={11} /> {t('inventory.btn_import_csv_arrow')}
@@ -1625,9 +1625,9 @@ export default function InventoryPage() {
  <button
  onClick={() => {
  if (data) {
- const draft: Record<string, { stock_actual: string; lead_time_dias: string; proveedor: string }> = {}
+ const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
  data.items.forEach(item => {
- draft[item.sku] = { stock_actual: String(item.stock_actual ?? ''), lead_time_dias: String(item.lead_time_dias ?? 15), proveedor: item.proveedor ?? '' }
+ draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? 15), supplier: item.supplier ?? '' }
  })
  setUpdateDraft(draft)
  setUpdatedSkus(new Set())
@@ -1687,8 +1687,8 @@ export default function InventoryPage() {
  <input
  style={inputUpd}
  type="number" min={0}
- value={draft?.stock_actual ?? ''}
- onChange={e => handleDraftChange(item.sku, 'stock_actual', e.target.value)}
+ value={draft?.current_stock ?? ''}
+ onChange={e => handleDraftChange(item.sku, 'current_stock', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
  onBlur={e => { e.target.style.borderColor = C.border }}
  onKeyDown={e => {
@@ -1706,8 +1706,8 @@ export default function InventoryPage() {
  <input
  style={inputUpd}
  type="number" min={1} max={365}
- value={draft?.lead_time_dias ?? ''}
- onChange={e => handleDraftChange(item.sku, 'lead_time_dias', e.target.value)}
+ value={draft?.lead_time_days ?? ''}
+ onChange={e => handleDraftChange(item.sku, 'lead_time_days', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
  onBlur={e => { e.target.style.borderColor = C.border }}
  />
@@ -1716,8 +1716,8 @@ export default function InventoryPage() {
  <input
  style={inputUpd}
  type="text"
- value={draft?.proveedor ?? ''}
- onChange={e => handleDraftChange(item.sku, 'proveedor', e.target.value)}
+ value={draft?.supplier ?? ''}
+ onChange={e => handleDraftChange(item.sku, 'supplier', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
  onBlur={e => { e.target.style.borderColor = C.border }}
  />
@@ -1744,11 +1744,11 @@ export default function InventoryPage() {
  </div>
  <SignalBadge s={item.signal} />
  <div style={{ textAlign: 'right' }}>
- {item.cantidad_recomendada != null && item.cantidad_recomendada > 0
- ? <span style={{ fontSize: 18, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.cantidad_recomendada, 0)}</span>
+ {item.recommended_qty != null && item.recommended_qty > 0
+ ? <span style={{ fontSize: 18, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.recommended_qty, 0)}</span>
  : <span style={{ fontSize: 13, color: C.dim }}>—</span>}
  </div>
- <span style={{ fontSize: 12, color: C.muted }}>{item.proveedor || '—'}</span>
+ <span style={{ fontSize: 12, color: C.muted }}>{item.supplier || '—'}</span>
  </div>
  ))}
  </div>
@@ -1818,13 +1818,13 @@ export default function InventoryPage() {
          <td style={{ padding: '10px 12px' }}>
           <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
           <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
-          {item.proveedor && <div style={{ fontSize: 10, color: C.muted }}>{item.proveedor}</div>}
+          {item.supplier && <div style={{ fontSize: 10, color: C.muted }}>{item.supplier}</div>}
          </td>
          <td style={{ padding: '10px 12px', color: C.red, fontWeight: 700 }}>
           {item.days_without_movement}d
          </td>
          <td style={{ padding: '10px 12px', color: C.text }}>
-          {item.stock_actual?.toLocaleString()}
+          {item.current_stock?.toLocaleString()}
          </td>
          <td style={{ padding: '10px 12px', fontWeight: 700, color: C.red }}>
           {formatMoneyCompact(item.capital_trapped)}
@@ -1893,22 +1893,22 @@ export default function InventoryPage() {
  <input style={inputS} placeholder={t('inventory.edit_display_name_placeholder')} value={editState.display_name} onChange={e => setEditState(s => s ? { ...s, display_name: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_display_name_hint')}</div>
  <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
- <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_categoria')} value={editState.categoria} onChange={e => setEditState(s => s ? { ...s, categoria: e.target.value } : s)} />
- <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_marca')} value={editState.marca} onChange={e => setEditState(s => s ? { ...s, marca: e.target.value } : s)} />
- <input style={{ ...inputS, width: 70 }} placeholder={t('inventory.edit_unidad')} value={editState.unidad_medida} onChange={e => setEditState(s => s ? { ...s, unidad_medida: e.target.value } : s)} />
- <input style={{ ...inputS, width: 120 }} placeholder={t('inventory.edit_codigo_barras')} value={editState.codigo_barras} onChange={e => setEditState(s => s ? { ...s, codigo_barras: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_category')} value={editState.category} onChange={e => setEditState(s => s ? { ...s, category: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_brand')} value={editState.brand} onChange={e => setEditState(s => s ? { ...s, brand: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 70 }} placeholder={t('inventory.edit_unit')} value={editState.unit_of_measure} onChange={e => setEditState(s => s ? { ...s, unit_of_measure: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 120 }} placeholder={t('inventory.edit_barcode')} value={editState.barcode} onChange={e => setEditState(s => s ? { ...s, barcode: e.target.value } : s)} />
  </div>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
- <input style={{ ...inputS, width: 80 }} type="number" min={0} value={editState.stock_actual} onChange={e => setEditState(s => s ? { ...s, stock_actual: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 80 }} type="number" min={0} value={editState.current_stock} onChange={e => setEditState(s => s ? { ...s, current_stock: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_stock_hint')}</div>
  </td>
  <td colSpan={2} style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}`, color: C.dim, fontSize: 11 }}>{t('inventory.edit_recalculated_on_save')}</td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <select
  style={{ ...inputS, width: 160 }}
- value={editState.proveedor}
- onChange={e => setEditState(s => s ? { ...s, proveedor: e.target.value } : s)}
+ value={editState.supplier}
+ onChange={e => setEditState(s => s ? { ...s, supplier: e.target.value } : s)}
  >
  <option value="">{t('inventory.edit_no_provider_option')}</option>
  {suppliers.map(s => (
@@ -1917,7 +1917,7 @@ export default function InventoryPage() {
  </select>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
- <input style={{ ...inputS, width: 60 }} type="number" min={1} max={365} value={editState.lead_time_dias} onChange={e => setEditState(s => s ? { ...s, lead_time_dias: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 60 }} type="number" min={1} max={365} value={editState.lead_time_days} onChange={e => setEditState(s => s ? { ...s, lead_time_days: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_provider_days_hint')}</div>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
@@ -1931,12 +1931,12 @@ export default function InventoryPage() {
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
  <span style={{ fontSize: 11, color: C.dim }}>$</span>
- <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder="0" value={editState.costo_unitario} onChange={e => setEditState(s => s ? { ...s, costo_unitario: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder="0" value={editState.unit_cost} onChange={e => setEditState(s => s ? { ...s, unit_cost: e.target.value } : s)} />
  </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_provider_price_hint')}</div>
  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
  <span style={{ fontSize: 11, color: C.dim }}>$</span>
- <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder={t('inventory.edit_precio_venta')} value={editState.precio_venta} onChange={e => setEditState(s => s ? { ...s, precio_venta: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder={t('inventory.edit_sale_price')} value={editState.sale_price} onChange={e => setEditState(s => s ? { ...s, sale_price: e.target.value } : s)} />
  </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
  {t('inventory.edit_service_level_label')}
@@ -1986,24 +1986,24 @@ export default function InventoryPage() {
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{item.display_name}</div>}
- {item.proveedor && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.proveedor}</div>}
+ {item.supplier && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.supplier}</div>}
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
- {item.has_stock ? <span style={{ fontWeight: 600 }}>{fmt(item.stock_actual, 0)}</span> : <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.no_record')}</span>}
+ {item.has_stock ? <span style={{ fontWeight: 600 }}>{fmt(item.current_stock, 0)}</span> : <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.no_record')}</span>}
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  <Sparkline data={item.stock_history} />
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
- {item.dias_cobertura != null ? (
+ {item.coverage_days != null ? (
  <span style={{ fontWeight: 600, color: signalColor(item.signal) }}>
- {fmt(item.dias_cobertura, 0)}d
+ {fmt(item.coverage_days, 0)}d
  </span>
  ) : '—'}
  </td>
- <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted, fontFamily: 'monospace', fontSize: 11 }}>{fmt(item.demanda_lead_time, 0)}</td>
+ <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted, fontFamily: 'monospace', fontSize: 11 }}>{fmt(item.lead_time_demand, 0)}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
- {item.cantidad_recomendada != null && item.cantidad_recomendada > 0 ? (
+ {item.recommended_qty != null && item.recommended_qty > 0 ? (
  editingQtySku === item.sku ? (
  <input
  type="number" min={1} autoFocus
@@ -2027,17 +2027,17 @@ export default function InventoryPage() {
  {fmt(effectiveQty(item), 0)}
  </button>
  )
- ) : item.cantidad_recomendada === 0
+ ) : item.recommended_qty === 0
  ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
  : '—'}
  </td>
- <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{item.lead_time_dias}d</td>
+ <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{item.lead_time_days}d</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{fmt(item.moq, 0)}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}><AbcXyzBadge value={item.abc_xyz} /></td>
- <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11, color: C.muted }}>{item.valor_inventario != null ? fmtCurrency(item.valor_inventario) : '—'}</td>
+ <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11, color: C.muted }}>{item.inventory_value != null ? fmtCurrency(item.inventory_value) : '—'}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', gap: 4 }}>
- {item.calc_explanation && item.demanda_diaria && (
+ {item.calc_explanation && item.daily_demand && (
   <button onClick={() => setExpandedSku(isExpanded ? null : item.sku)} title={t('inventory.title_simulate_scenarios')}
    style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: isExpanded ? C.indigo : C.dim, display: 'flex' }}
    onMouseEnter={e => (e.currentTarget.style.color = C.indigo)}
@@ -2093,10 +2093,10 @@ export default function InventoryPage() {
  <EventSimModal ev={simEvent} sessionId={sessionId} onClose={() => setSimEvent(null)} onReload={reloadEvents} />
  )}
 
- {showMermaModal && (
- <MermaModal
+ {showShrinkageModal && (
+ <ShrinkageModal
   items={data?.items ?? []}
-  onClose={() => setShowMermaModal(false)}
+  onClose={() => setShowShrinkageModal(false)}
   onSaved={() => { if (sessionId) load(sessionId) }}
  />
  )}
@@ -2120,10 +2120,10 @@ export default function InventoryPage() {
  {!loading && sessionId && (
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, fontSize: 11, color: C.dim, paddingBottom: 8, flexWrap: 'wrap' }}>
  {[
- { signal: t('inventory.signal_pedir_ya'), desc: t('inventory.legend_pedir_ya') },
- { signal: t('inventory.signal_pedir_pronto'), desc: t('inventory.legend_pedir_pronto') },
+ { signal: t('inventory.signal_order_now'), desc: t('inventory.legend_order_now') },
+ { signal: t('inventory.signal_order_soon'), desc: t('inventory.legend_order_soon') },
  { signal: t('inventory.signal_ok'), desc: t('inventory.legend_ok') },
- { signal: t('inventory.signal_sobrestock'), desc: t('inventory.legend_sobrestock') },
+ { signal: t('inventory.signal_overstock'), desc: t('inventory.legend_overstock') },
  { signal: t('inventory.signal_sin_datos'), desc: t('inventory.legend_sin_datos') },
  ].map(({ signal, desc }) => <span key={signal}><strong>{signal}</strong> — {desc}</span>)}
  </div>

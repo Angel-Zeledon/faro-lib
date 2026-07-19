@@ -134,11 +134,11 @@ class TestCalcRecommended:
 class TestCalcSignal:
     """Verify signal classification boundaries."""
 
-    def test_pedir_ya_when_coverage_less_than_half_lead_time(self):
+    def test_order_now_when_coverage_less_than_half_lead_time(self):
         assert _calc_signal(3, 15) == "PEDIR_YA"    # 3 < 15*0.5=7.5
         assert _calc_signal(7, 15) == "PEDIR_YA"    # 7 < 7.5
 
-    def test_pedir_pronto_between_half_and_1_2_lead_time(self):
+    def test_order_soon_between_half_and_1_2_lead_time(self):
         assert _calc_signal(8, 15) == "PEDIR_PRONTO"   # 7.5 <= 8 < 18
         assert _calc_signal(17, 15) == "PEDIR_PRONTO"  # 17 < 18
 
@@ -146,49 +146,49 @@ class TestCalcSignal:
         assert _calc_signal(20, 15) == "OK"    # 18 <= 20 < 45
         assert _calc_signal(44, 15) == "OK"    # 44 < 45
 
-    def test_sobrestock_at_3x_lead_time(self):
+    def test_overstock_at_3x_lead_time(self):
         assert _calc_signal(45, 15) == "SOBRESTOCK"
         assert _calc_signal(100, 15) == "SOBRESTOCK"
 
     def test_boundary_exact_half_lead_time(self):
-        """dias == LT*0.5 exactly → PEDIR_PRONTO (not strict less-than)."""
+        """days == LT*0.5 exactly → PEDIR_PRONTO (not strict less-than)."""
         lt = 10
-        # dias < 5.0 → PEDIR_YA; dias >= 5.0 → PEDIR_PRONTO
+        # days < 5.0 → PEDIR_YA; days >= 5.0 → PEDIR_PRONTO
         assert _calc_signal(4.99, lt) == "PEDIR_YA"
         assert _calc_signal(5.0, lt) == "PEDIR_PRONTO"
 
     def test_boundary_1_2x_lead_time(self):
-        """dias == LT*1.2 exactly → OK (not strict less-than)."""
+        """days == LT*1.2 exactly → OK (not strict less-than)."""
         lt = 10
         assert _calc_signal(11.99, lt) == "PEDIR_PRONTO"
         assert _calc_signal(12.0, lt) == "OK"
 
     def test_boundary_3x_lead_time(self):
-        """dias == LT*3 exactly → SOBRESTOCK."""
+        """days == LT*3 exactly → SOBRESTOCK."""
         lt = 10
         assert _calc_signal(29.99, lt) == "OK"
         assert _calc_signal(30.0, lt) == "SOBRESTOCK"
 
-    def test_zero_lead_time_always_sobrestock(self):
+    def test_zero_lead_time_always_overstock(self):
         """
         BEHAVIOR DOCUMENTED (not a bug in itself, but semantically misleading):
         With lead_time=0, all thresholds become 0.0.
-        dias_cobertura < 0 is NEVER true for any non-negative dias value,
+        coverage_days < 0 is NEVER true for any non-negative days value,
         so the function falls through to return "SOBRESTOCK" for ANY positive stock.
 
-        The API endpoint enforces lead_time_dias ge=1, so this case only
+        The API endpoint enforces lead_time_days ge=1, so this case only
         occurs if service functions are called directly with LT=0.
         """
         result = _calc_signal(5, 0)
         assert result == "SOBRESTOCK"  # Documented: LT=0 → always SOBRESTOCK
 
     def test_zero_coverage_with_zero_lead_time(self):
-        """dias=0, LT=0: 0 < 0 is False → SOBRESTOCK, not PEDIR_YA."""
+        """days=0, LT=0: 0 < 0 is False → SOBRESTOCK, not PEDIR_YA."""
         result = _calc_signal(0, 0)
         assert result == "SOBRESTOCK"
 
-    def test_high_coverage_no_demand_sobrestock(self):
-        """9999 dias cobertura (avgDaily~0) → SOBRESTOCK. Correct behavior."""
+    def test_high_coverage_no_demand_overstock(self):
+        """9999 days coverage (avgDaily~0) → SOBRESTOCK. Correct behavior."""
         result = _calc_signal(9999, 15)
         assert result == "SOBRESTOCK"
 
@@ -331,7 +331,7 @@ class TestClassifyABC:
     def test_single_item_is_always_A(self):
         """One item is 100% of revenue → cumulative pct = 1.0 <= 0.80? No, 1.0 > 0.80.
         Wait: 100% > 80%, so it goes to B? Let's verify the exact boundary logic."""
-        items = [{"sku": "A", "demanda_diaria": 10.0, "costo_unitario": 10.0}]
+        items = [{"sku": "A", "daily_demand": 10.0, "unit_cost": 10.0}]
         abc = _classify_abc(items)
         # Only item: cumulative = 100%. pct = 1.0. 1.0 <= 0.80 is False, 1.0 <= 0.95 is False → C?
         # Actually: pct = cumulative/total. After adding 100/100 = 1.0. 1.0 <= 0.80 False.
@@ -362,8 +362,8 @@ class TestClassifyABC:
         tier it crossed into, not the one above).
         """
         items = [
-            {"sku": "HERO",  "demanda_diaria": 1000.0, "costo_unitario": 100.0},  # 100k
-            {"sku": "SMALL", "demanda_diaria": 1.0,    "costo_unitario": 1.0},    # 1
+            {"sku": "HERO",  "daily_demand": 1000.0, "unit_cost": 100.0},  # 100k
+            {"sku": "SMALL", "daily_demand": 1.0,    "unit_cost": 1.0},    # 1
         ]
         abc = _classify_abc(items)
         # FIXED: the algorithm now assigns the tier based on cumulative share
@@ -377,8 +377,8 @@ class TestClassifyABC:
         the item that pushes cumulative to/past 80% belongs in A.
         """
         items = [
-            {"sku": "SKU1", "demanda_diaria": 85.0, "costo_unitario": 1.0},
-            {"sku": "SKU2", "demanda_diaria": 15.0, "costo_unitario": 1.0},
+            {"sku": "SKU1", "daily_demand": 85.0, "unit_cost": 1.0},
+            {"sku": "SKU2", "daily_demand": 15.0, "unit_cost": 1.0},
         ]
         abc = _classify_abc(items)
         # SKU1 is evaluated at cumulative 0.0 (< 0.80) → A; SKU2 at 0.85 (< 0.95) → B.
@@ -388,9 +388,9 @@ class TestClassifyABC:
     def test_abc_three_tiers_correct_order(self):
         """Items at 80%, 15%, 5% splits."""
         items = [
-            {"sku": "SKU1", "demanda_diaria": 80.0, "costo_unitario": 1.0},
-            {"sku": "SKU2", "demanda_diaria": 15.0, "costo_unitario": 1.0},
-            {"sku": "SKU3", "demanda_diaria": 5.0,  "costo_unitario": 1.0},
+            {"sku": "SKU1", "daily_demand": 80.0, "unit_cost": 1.0},
+            {"sku": "SKU2", "daily_demand": 15.0, "unit_cost": 1.0},
+            {"sku": "SKU3", "daily_demand": 5.0,  "unit_cost": 1.0},
         ]
         abc = _classify_abc(items)
         # cumulative after SKU1: 80/100=0.80 → pct=0.80 ≤ 0.80 → A
@@ -403,8 +403,8 @@ class TestClassifyABC:
     def test_all_zero_revenue_all_C(self):
         """If total revenue = 0, all items fall back to C."""
         items = [
-            {"sku": "X", "demanda_diaria": 0.0, "costo_unitario": 0.0},
-            {"sku": "Y", "demanda_diaria": 0.0, "costo_unitario": 0.0},
+            {"sku": "X", "daily_demand": 0.0, "unit_cost": 0.0},
+            {"sku": "Y", "daily_demand": 0.0, "unit_cost": 0.0},
         ]
         abc = _classify_abc(items)
         assert abc["X"] == "C"
@@ -412,12 +412,12 @@ class TestClassifyABC:
 
     def test_no_cost_uses_1_as_proxy(self):
         """
-        BEHAVIOR DOCUMENTED: costo_unitario=None → `cost = item.get(...) or 1.0`
-        Revenue proxy = demanda_diaria * 1.0. Not using 0, so demand still ranks items.
+        BEHAVIOR DOCUMENTED: unit_cost=None → `cost = item.get(...) or 1.0`
+        Revenue proxy = daily_demand * 1.0. Not using 0, so demand still ranks items.
         """
         items = [
-            {"sku": "BIG",   "demanda_diaria": 100.0, "costo_unitario": None},
-            {"sku": "SMALL", "demanda_diaria": 1.0,   "costo_unitario": None},
+            {"sku": "BIG",   "daily_demand": 100.0, "unit_cost": None},
+            {"sku": "SMALL", "daily_demand": 1.0,   "unit_cost": None},
         ]
         abc = _classify_abc(items)
         # BIG: 100/(100+1) = 0.990 > 0.95 → C? Or A if 0.990 > 0.80...
@@ -545,7 +545,7 @@ class TestBomExplosionMath:
         assert required_qty == 0.0
 
     def test_estimated_cost_formula(self):
-        """estimated_cost = shortage * costo_unitario."""
+        """estimated_cost = shortage * unit_cost."""
         shortage = 10.0
         cost = 25.50
         estimated = round(shortage * cost, 2)
@@ -554,13 +554,13 @@ class TestBomExplosionMath:
     def test_missing_child_stock_defaults_to_zero(self):
         """
         In explode_requirements: child = stock_map.get(child_sku, {})
-        child_stock = child.get('stock_actual') or 0
+        child_stock = child.get('current_stock') or 0
         If child_sku is not in stock_map → child={} → child_stock=0.
         All demand becomes shortage. This is conservative (safe) behavior.
         """
         stock_map = {}
         child = stock_map.get("UNKNOWN_SKU", {})
-        child_stock = child.get("stock_actual") or 0
+        child_stock = child.get("current_stock") or 0
         assert child_stock == 0
 
     def test_no_cycle_detection_in_flat_bom(self):

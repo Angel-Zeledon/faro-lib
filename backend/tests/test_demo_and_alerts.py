@@ -62,7 +62,7 @@ class TestDemoQuickstart:
         # Pre-set a stock value the demo would otherwise change
         put = client.put(
             "/api/v1/inventory/stock/SKU-001",
-            json={"stock_actual": 777, "lead_time_dias": 3},
+            json={"current_stock": 777, "lead_time_days": 3},
             headers=auth_headers,
         )
         assert put.status_code == 200
@@ -72,10 +72,10 @@ class TestDemoQuickstart:
         assert "SKU-001" not in resp.json()["data"]["stock_seeded"]
 
         row = query_one(
-            "SELECT stock_actual FROM inventory_stock WHERE tenant_id = %s AND sku = 'SKU-001'",
+            "SELECT current_stock FROM inventory_stock WHERE tenant_id = %s AND sku = 'SKU-001'",
             (test_tenant["id"],),
         )
-        assert float(row["stock_actual"]) == 777.0
+        assert float(row["current_stock"]) == 777.0
 
 
 class TestWhatsappNumber:
@@ -162,8 +162,8 @@ class TestWhatsappTransport:
         from backend.notifications.whatsapp import build_inventory_alert_text
 
         text = build_inventory_alert_text(
-            [{"sku": "SKU-001", "display_name": "Aceite 1L", "dias_cobertura": 2.0,
-              "cantidad_recomendada": 120}],
+            [{"sku": "SKU-001", "display_name": "Aceite 1L", "coverage_days": 2.0,
+              "recommended_qty": 120}],
             [{"sku": "SKU-002"}],
             "http://localhost:5000/inventory",
         )

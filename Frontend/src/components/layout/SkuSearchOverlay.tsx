@@ -203,10 +203,10 @@ export default function SkuSearchOverlay() {
       .filter(i =>
         i.sku.toLowerCase().includes(q) ||
         (i.display_name ?? '').toLowerCase().includes(q) ||
-        (i.categoria ?? '').toLowerCase().includes(q) ||
-        (i.marca ?? '').toLowerCase().includes(q) ||
-        (i.codigo_barras ?? '').toLowerCase().includes(q) ||
-        (i.proveedor ?? '').toLowerCase().includes(q),
+        (i.category ?? '').toLowerCase().includes(q) ||
+        (i.brand ?? '').toLowerCase().includes(q) ||
+        (i.barcode ?? '').toLowerCase().includes(q) ||
+        (i.supplier ?? '').toLowerCase().includes(q),
       )
       .slice(0, 30)
   }, [items, query])
@@ -399,18 +399,18 @@ function SkuDetail({ item, intel, loading, error, onBack }: {
         border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 14,
       }}>
         <div style={{ padding: '9px 10px', textAlign: 'center', borderRight: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtNum(item.stock_actual)}</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtNum(item.current_stock)}</div>
           <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{t('search.stat_current_stock')}</div>
         </div>
         <div style={{ padding: '9px 10px', textAlign: 'center', borderRight: '1px solid var(--border)' }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>
-            {item.dias_cobertura != null ? `${fmtNum(item.dias_cobertura)}d` : '—'}
+            {item.coverage_days != null ? `${fmtNum(item.coverage_days)}d` : '—'}
           </div>
           <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{t('search.stat_coverage_days')}</div>
         </div>
         <div style={{ padding: '9px 10px', textAlign: 'center' }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>
-            {item.cantidad_recomendada != null && item.cantidad_recomendada > 0 ? fmtNum(item.cantidad_recomendada) : '—'}
+            {item.recommended_qty != null && item.recommended_qty > 0 ? fmtNum(item.recommended_qty) : '—'}
           </div>
           <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{t('search.stat_recommended_qty')}</div>
         </div>

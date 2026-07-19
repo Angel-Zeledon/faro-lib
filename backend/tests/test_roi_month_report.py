@@ -14,14 +14,14 @@ import pytest
 from backend.db.connection import execute, query_one
 
 
-def _insert_po(tid, when, *, suggested, approved, pedir_ya, total_value):
+def _insert_po(tid, when, *, suggested, approved, order_now, total_value):
     execute(
         """INSERT INTO inventory_po_log
                (tenant_id, session_id, generated_at, sku_count, total_units,
-                total_value, skus_pedir_ya, skus_pedir_pronto,
+                total_value, skus_order_now, skus_order_soon,
                 suggested_count, approved_count)
            VALUES (%s, 's1', %s, %s, 0, %s, %s, 0, %s, %s)""",
-        (tid, when, approved, total_value, pedir_ya, suggested, approved),
+        (tid, when, approved, total_value, order_now, suggested, approved),
     )
 
 
@@ -60,7 +60,7 @@ class TestCapitalFreedAttribution:
         from backend.inventory.roi_service import get_month_report
 
         tid = test_tenant["id"]
-        _insert_po(tid, _IN_MONTH, suggested=4, approved=3, pedir_ya=2, total_value=1000)
+        _insert_po(tid, _IN_MONTH, suggested=4, approved=3, order_now=2, total_value=1000)
         _insert_snapshot(tid, _MONTH_OPEN, 10_000)
         _insert_snapshot(tid, _NEXT_MONTH_OPEN, 6_000)
 
@@ -73,7 +73,7 @@ class TestCapitalFreedAttribution:
         from backend.inventory.roi_service import get_month_report
 
         tid = test_tenant["id"]
-        _insert_po(tid, _IN_MONTH, suggested=4, approved=3, pedir_ya=2, total_value=1000)
+        _insert_po(tid, _IN_MONTH, suggested=4, approved=3, order_now=2, total_value=1000)
         _insert_snapshot(tid, _MONTH_OPEN, 10_000)  # opening only
 
         report = get_month_report(tid, _YEAR, _MONTH)
@@ -83,7 +83,7 @@ class TestCapitalFreedAttribution:
         from backend.inventory.roi_service import get_month_report
 
         tid = test_tenant["id"]
-        _insert_po(tid, _IN_MONTH, suggested=4, approved=3, pedir_ya=2, total_value=1000)
+        _insert_po(tid, _IN_MONTH, suggested=4, approved=3, order_now=2, total_value=1000)
         _insert_snapshot(tid, _MONTH_OPEN, 5_000)
         _insert_snapshot(tid, _NEXT_MONTH_OPEN, 8_000)
 
@@ -98,14 +98,14 @@ class TestMonthReportMath:
         from backend.inventory.roi_service import get_month_report
 
         tid = test_tenant["id"]
-        _insert_po(tid, _IN_MONTH, suggested=10, approved=6, pedir_ya=3, total_value=1200)
+        _insert_po(tid, _IN_MONTH, suggested=10, approved=6, order_now=3, total_value=1200)
         _insert_po(tid, datetime(2026, 3, 20, tzinfo=timezone.utc),
-                   suggested=10, approved=9, pedir_ya=2, total_value=800)
+                   suggested=10, approved=9, order_now=2, total_value=800)
         # Neighbouring months must not leak in.
         _insert_po(tid, datetime(2026, 2, 27, tzinfo=timezone.utc),
-                   suggested=99, approved=99, pedir_ya=99, total_value=99_999)
+                   suggested=99, approved=99, order_now=99, total_value=99_999)
         _insert_po(tid, datetime(2026, 4, 2, tzinfo=timezone.utc),
-                   suggested=77, approved=77, pedir_ya=77, total_value=77_777)
+                   suggested=77, approved=77, order_now=77, total_value=77_777)
 
         r = get_month_report(tid, _YEAR, _MONTH)
 
@@ -122,7 +122,7 @@ class TestMonthReportMath:
         from backend.inventory.roi_service import get_month_report
 
         tid = test_tenant["id"]
-        _insert_po(tid, _IN_MONTH, suggested=5, approved=5, pedir_ya=1, total_value=None)
+        _insert_po(tid, _IN_MONTH, suggested=5, approved=5, order_now=1, total_value=None)
 
         r = get_month_report(tid, _YEAR, _MONTH)
         # A tenant that never entered unit costs must be told the figure is
@@ -134,7 +134,7 @@ class TestMonthReportMath:
         from backend.inventory.roi_service import get_month_report
 
         tid = test_tenant["id"]
-        _insert_po(tid, _IN_MONTH, suggested=0, approved=0, pedir_ya=0, total_value=500)
+        _insert_po(tid, _IN_MONTH, suggested=0, approved=0, order_now=0, total_value=500)
 
         r = get_month_report(tid, _YEAR, _MONTH)
         assert r["adoption_rate"] is None
@@ -157,7 +157,7 @@ class TestInsufficientHistory:
 class TestMonthReportEndpoint:
     def test_viewer_can_read(self, client, viewer_headers, test_tenant):
         _insert_po(test_tenant["id"], _IN_MONTH,
-                   suggested=4, approved=2, pedir_ya=1, total_value=600)
+                   suggested=4, approved=2, order_now=1, total_value=600)
 
         resp = client.get(
             "/api/v1/inventory/roi/month-report?year=2026&month=3", headers=viewer_headers
@@ -205,7 +205,7 @@ class TestRunMonthlyRoiEmails:
 
         tid = test_tenant["id"]
         self._arrange_tenant(monkeypatch, tid)
-        _insert_po(tid, _IN_MONTH, suggested=8, approved=6, pedir_ya=2, total_value=4000)
+        _insert_po(tid, _IN_MONTH, suggested=8, approved=6, order_now=2, total_value=4000)
         _insert_snapshot(tid, _MONTH_OPEN, 9_000)
         _insert_snapshot(tid, _NEXT_MONTH_OPEN, 7_500)
 
@@ -237,7 +237,7 @@ class TestRunMonthlyRoiEmails:
 
         tid = test_tenant["id"]
         self._arrange_tenant(monkeypatch, tid)
-        _insert_po(tid, _IN_MONTH, suggested=8, approved=6, pedir_ya=2, total_value=4000)
+        _insert_po(tid, _IN_MONTH, suggested=8, approved=6, order_now=2, total_value=4000)
 
         calls = []
         monkeypatch.setattr(
@@ -286,7 +286,7 @@ class TestRunMonthlyRoiEmails:
 
         tid = test_tenant["id"]
         self._arrange_tenant(monkeypatch, tid)
-        _insert_po(tid, _IN_MONTH, suggested=8, approved=6, pedir_ya=2, total_value=4000)
+        _insert_po(tid, _IN_MONTH, suggested=8, approved=6, order_now=2, total_value=4000)
 
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",

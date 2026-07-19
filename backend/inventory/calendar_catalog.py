@@ -1,28 +1,29 @@
 """
-Catálogo de eventos comerciales LatAm (feature 3.4).
+LatAm commercial event catalog (feature 3.4).
 
-Esto es **datos, no lógica nueva**: cada entrada describe un evento comercial
-recurrente (quincenas, primas, Día de la Madre, Semana Santa, temporada
-escolar, Navidad, Black Friday) y sabe materializarse en fechas concretas para
-un año dado. Esas fechas se siembran en `inventory_events`, la misma tabla que
-ya alimenta el simulador existente (`simulate_event_impact`), así que el
-simulador no cambia — sólo deja de empezar vacío.
+This is **data, not new logic**: every entry describes a recurring commercial
+event (payday fortnights, statutory bonuses, Mother's Day, Holy Week, back to
+school, Christmas, Black Friday) and knows how to materialise itself into
+concrete dates for a given year. Those dates are seeded into
+`inventory_events`, the same table that already feeds the existing simulator
+(`simulate_event_impact`), so the simulator does not change — it just stops
+starting empty.
 
-Mercado objetivo: **Costa Rica** (`CR`, ver `DEFAULT_COUNTRY`). También se
-incluye Colombia (`CO`). Añadir un país es añadir entradas al `CATALOG` con
-otro `country` — nada del motor está acoplado a un país concreto.
+Target market: **Costa Rica** (`CR`, see `DEFAULT_COUNTRY`). Colombia (`CO`)
+is included too. Adding a country means adding `CATALOG` entries with another
+`country` — nothing in the engine is coupled to a specific one.
 
-CR no es CO traducido: el aguinaldo costarricense es uno solo (diciembre,
-Ley 2412 — no existe la prima de mitad de año colombiana), el Día de la Madre
-cae el 15 de agosto y no el segundo domingo de mayo, y el curso lectivo
-empieza en febrero en vez de finales de enero. Reutilizar las reglas
-colombianas habría desplazado ~3 meses la mayor fecha de venta del año.
+CR is not a translated CO: the Costa Rican statutory bonus is a single one
+(December, Law 2412 — there is no Colombian mid-year bonus), Mother's Day
+falls on 15 August rather than the second Sunday of May, and the school year
+starts in February instead of late January. Reusing the Colombian rules would
+have shifted the biggest sales date of the year by ~3 months.
 
-Las fechas móviles (Semana Santa, Día del Padre, Black Friday) se calculan,
-no se hardcodean — ver `easter_sunday`, `nth_weekday_of_month`.
+Moveable dates (Holy Week, Father's Day, Black Friday) are computed, not
+hardcoded — see `easter_sunday`, `nth_weekday_of_month`.
 
-Los multiplicadores son estimaciones de partida razonables, no valores
-ajustados con datos: son el punto de arranque que el usuario edita.
+The multipliers are reasonable starting estimates, not data-fitted values:
+they are the starting point the user then edits.
 """
 from __future__ import annotations
 
@@ -31,13 +32,13 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable, Iterable
 
-# ── Cálculo de fechas móviles ────────────────────────────────────────────────
+# ── Moveable-date computation ───────────────────────────────────────────────
 
 
 def easter_sunday(year: int) -> date:
     """
-    Domingo de Pascua (calendario gregoriano) — algoritmo "Anonymous Gregorian
-    computus" (Meeus/Jones/Butcher). Semana Santa se ancla a esta fecha.
+    Easter Sunday (Gregorian calendar) — the "Anonymous Gregorian
+    computus" (Meeus/Jones/Butcher). Semana Santa se ancla a esta date.
 
     Verificable: 2023-04-09, 2024-03-31, 2025-04-20, 2026-04-05, 2027-03-28.
     """
@@ -56,10 +57,10 @@ def easter_sunday(year: int) -> date:
 
 def nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
     """
-    N-ésimo `weekday` (0=lunes … 6=domingo) del mes. n=1 → el primero.
+    Nth `weekday` (0=Monday … 6=Sunday) of the month. n=1 is the first one.
 
-    Usado para el Día de la Madre en Colombia (segundo domingo de mayo) y para
-    Black Friday (viernes siguiente al cuarto jueves de noviembre).
+    Used for Mother's Day in Colombia (second Sunday of May) and for Black
+    Friday (the Friday after the fourth Thursday of November).
     """
     first = date(year, month, 1)
     offset = (weekday - first.weekday()) % 7
@@ -77,38 +78,38 @@ def black_friday(year: int) -> date:
 
 
 def mothers_day_co(year: int) -> date:
-    """Día de la Madre en Colombia: segundo domingo de mayo."""
+    """Mother's Day in Colombia: the second Sunday of May."""
     return nth_weekday_of_month(year, 5, weekday=6, n=2)
 
 
 def mothers_day_cr(year: int) -> date:
     """
-    Día de la Madre en Costa Rica: **15 de agosto**, fecha fija que coincide
-    con la Asunción de la Virgen y es feriado nacional.
+    Mother's Day in Costa Rica: **15 August**, a fixed date that coincides
+    with the Assumption and is a national holiday.
 
-    Ojo: NO es el segundo domingo de mayo. Copiar la regla colombiana aquí
-    sería un error de ~3 meses justo en una de las fechas de mayor venta
-    del año.
+    Note: it is NOT the second Sunday of May. Copying the Colombian rule here
+    would be a ~3 month error on one of the highest-selling dates of the
+    year.
     """
     return date(year, 8, 15)
 
 
 def fathers_day_cr(year: int) -> date:
-    """Día del Padre en Costa Rica: tercer domingo de junio."""
+    """Father's Day in Costa Rica: the third Sunday of June."""
     return nth_weekday_of_month(year, 6, weekday=6, n=3)
 
 
 def _clamp_day(year: int, month: int, day: int) -> date:
-    """Día del mes acotado al último día real (evita 30 de febrero)."""
+    """Day of month clamped to the last real day (avoids 30 February)."""
     return date(year, month, min(day, calendar.monthrange(year, month)[1]))
 
 
-# ── Definición del catálogo ──────────────────────────────────────────────────
+# ── Catalog definition ──────────────────────────────────────────────────────
 
 
 @dataclass(frozen=True)
 class Occurrence:
-    """Una materialización concreta de un evento del catálogo en un año."""
+    """One concrete materialisation of a catalog event in a given year."""
     catalog_key: str       # único por tenant — hace la siembra idempotente
     name: str
     start_date: date
@@ -124,7 +125,7 @@ class CatalogEvent:
     country: str
     multiplier: float
     notes: str
-    # year -> lista de (sufijo_clave, nombre_completo, inicio, fin)
+    # year -> lista de (sufijo_clave, name_completo, inicio, fin)
     builder: Callable[[int], Iterable[tuple[str, str, date, date]]] = field(repr=False)
 
     def occurrences(self, year: int) -> list[Occurrence]:
@@ -150,16 +151,16 @@ _MONTH_ABBR_ES = [
 
 # ── Builders ─────────────────────────────────────────────────────────────────
 
-def _quincena_15(year: int):
-    """Pago del 15: repunte de 3 días en cada uno de los 12 meses."""
+def _payday_15(year: int):
+    """15th payday: a 3-day uplift in each of the 12 months."""
     for m in range(1, 13):
         start = date(year, m, 15)
         yield (f"m{m:02d}", f"Quincena (pago 15 de {_MONTH_ABBR_ES[m]})",
                start, start + timedelta(days=2))
 
 
-def _quincena_30(year: int):
-    """Pago de fin de mes: del 30 (o último día) hasta el 2 del mes siguiente."""
+def _payday_month_end(year: int):
+    """Month-end payday: from the 30th (or last day) through the 2nd of the next month."""
     for m in range(1, 13):
         start = _clamp_day(year, m, 30)
         yield (f"m{m:02d}", f"Quincena (pago fin de {_MONTH_ABBR_ES[m]})",
@@ -167,18 +168,18 @@ def _quincena_30(year: int):
 
 
 def _prima_junio(year: int):
-    # Por ley la prima de mitad de año se paga a más tardar el 30 de junio.
+    # By law the mid-year bonus is paid no later than 30 June.
     yield ("", "Prima de mitad de año", date(year, 6, 15), date(year, 6, 30))
 
 
 def _prima_diciembre(year: int):
-    # La prima de fin de año se paga en los primeros 20 días de diciembre.
+    # The year-end bonus is paid within the first 20 days of December.
     yield ("", "Prima de fin de año", date(year, 12, 1), date(year, 12, 20))
 
 
 def _dia_madre(year: int):
     d = mothers_day_co(year)
-    # La compra se concentra en la semana previa, no sólo el domingo.
+    # Buying concentrates in the preceding week, not only on the Sunday.
     yield ("", "Día de la Madre", d - timedelta(days=6), d)
 
 
@@ -189,7 +190,7 @@ def _semana_santa(year: int):
 
 
 def _temporada_escolar(year: int):
-    # Calendario A (mayoritario en Colombia): clases arrancan a finales de enero.
+    # Calendar A (the majority one in Colombia): classes start in late January.
     yield ("", "Temporada escolar", date(year, 1, 5), date(year, 2, 5))
 
 
@@ -203,14 +204,14 @@ def _black_friday(year: int):
     yield ("", "Black Friday", bf, bf + timedelta(days=3))
 
 
-# ── Builders específicos de Costa Rica ───────────────────────────────────────
-# CR no es Colombia con otro nombre: el aguinaldo es uno solo (diciembre, no
-# hay prima de junio), el Día de la Madre es fijo el 15 de agosto, y el curso
+# ── Costa Rica specific builders ────────────────────────────────────────────
+# CR no es Colombia con otro name: el aguinaldo es uno solo (diciembre, no
+# there is no June bonus), Mother's Day is fixed on 15 August, and the school
 # lectivo arranca en febrero — no a finales de enero.
 
 def _cr_aguinaldo(year: int):
-    # Ley 2412: se paga dentro de los primeros 20 días de diciembre. Es el
-    # mayor inyector de liquidez del año.
+    # Law 2412: paid within the first 20 days of December. It is the
+    # single biggest liquidity injection of the year.
     yield ("", "Aguinaldo", date(year, 12, 1), date(year, 12, 20))
 
 
@@ -225,14 +226,14 @@ def _cr_dia_padre(year: int):
 
 
 def _cr_temporada_escolar(year: int):
-    # El curso lectivo costarricense empieza en febrero: la compra de útiles y
+    # The Costa Rican school year starts in February: buying of supplies and
     # uniformes se concentra en enero y la primera semana de febrero.
     yield ("", "Temporada escolar (entrada a clases)",
            date(year, 1, 8), date(year, 2, 10))
 
 
 def _cr_romeria(year: int):
-    # Romería a la Virgen de los Ángeles (Cartago), 2 de agosto.
+    # Pilgrimage to the Virgen de los Angeles (Cartago), 2 August.
     yield ("", "Romería a Cartago", date(year, 7, 30), date(year, 8, 2))
 
 
@@ -273,10 +274,10 @@ CATALOG: list[CatalogEvent] = [
                  _navidad),
     CatalogEvent("co_quincena_15", "Quincenas (pago 15)", "CO", 1.4,
                  "Repunte quincenal de consumo tras el pago de nómina del 15.",
-                 _quincena_15),
+                 _payday_15),
     CatalogEvent("co_quincena_30", "Quincenas (pago fin de mes)", "CO", 1.4,
                  "Repunte quincenal de consumo tras el pago de nómina de fin de mes.",
-                 _quincena_30),
+                 _payday_month_end),
 
     # ── Costa Rica ───────────────────────────────────────────────────────────
     CatalogEvent("cr_temporada_escolar", "Temporada escolar", "CR", 1.7,
@@ -316,16 +317,16 @@ CATALOG: list[CatalogEvent] = [
                  "y consumo de bebidas y carnes.", _cr_fin_de_ano),
     CatalogEvent("cr_quincena_15", "Quincenas (pago 15)", "CR", 1.4,
                  "Repunte quincenal de consumo tras el pago de nómina del 15.",
-                 _quincena_15),
+                 _payday_15),
     CatalogEvent("cr_quincena_30", "Quincenas (pago fin de mes)", "CR", 1.4,
                  "Repunte quincenal de consumo tras el pago de nómina de fin de mes.",
-                 _quincena_30),
+                 _payday_month_end),
 ]
 
 SUPPORTED_COUNTRIES = sorted({e.country for e in CATALOG})
 
-# Mercado objetivo actual. Cambiarlo sólo mueve el default de la UI/API;
-# cualquier país del catálogo sigue disponible vía ?country=.
+# Current target market. Changing it only moves the UI/API default;
+# every country in the catalog stays reachable via ?country=.
 DEFAULT_COUNTRY = "CR"
 
 
@@ -335,9 +336,9 @@ def catalog_for(country: str = DEFAULT_COUNTRY) -> list[CatalogEvent]:
 
 def build_occurrences(country: str = DEFAULT_COUNTRY, years: Iterable[int] | None = None) -> list[Occurrence]:
     """
-    Materializa el catálogo de `country` en ocurrencias concretas.
-    Por defecto: año en curso y el siguiente (para que diciembre no quede ciego
-    al arrancar en noviembre).
+    Materialise `country`'s catalog into concrete occurrences.
+    Defaults to the current year and the next one (so December is not blind
+    when starting up in November).
     """
     if years is None:
         this_year = date.today().year
@@ -351,7 +352,7 @@ def build_occurrences(country: str = DEFAULT_COUNTRY, years: Iterable[int] | Non
 
 
 def describe_catalog(country: str = DEFAULT_COUNTRY) -> list[dict]:
-    """Resumen del catálogo para la UI (qué eventos existen, sin fechas)."""
+    """Catalog summary for the UI (which events exist, without dates)."""
     return [
         {
             "key": e.key,

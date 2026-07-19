@@ -25,7 +25,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/hoy',                 labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
-  { href: '/pedidos',             labelKey: 'nav.pedidos',     Icon: ClipboardList,   group: 'operation' },
+  { href: '/pedidos',             labelKey: 'nav.orders',     Icon: ClipboardList,   group: 'operation' },
   { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'operation' },
 
   { href: '/quick-start',         labelKey: 'nav.quick_start', Icon: Upload,          group: 'data' },

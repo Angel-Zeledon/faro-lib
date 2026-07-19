@@ -71,9 +71,9 @@ function CsvExample() {
  // Header names mirror the downloadable template (lib/csvCheck.ts) — the
  // canonical aliases the backend profiler auto-detects.
  const rows = [
- { sku: 'SKU-001', fecha: '2026-01-01', demanda: '32' },
- { sku: 'SKU-001', fecha: '2026-01-02', demanda: '28' },
- { sku: 'SKU-002', fecha: '2026-01-01', demanda: '15' },
+ { sku: 'SKU-001', date: '2026-01-01', demand: '32' },
+ { sku: 'SKU-001', date: '2026-01-02', demand: '28' },
+ { sku: 'SKU-002', date: '2026-01-01', demand: '15' },
  ]
  return (
  <div style={{ marginTop: 20, overflowX: 'auto' }}>
@@ -86,7 +86,7 @@ function CsvExample() {
  }}>
  <thead>
  <tr style={{ background: 'var(--surface-2, #f8fafc)' }}>
- {['sku', 'fecha', 'demanda'].map(h => (
+ {['sku', 'date', 'demand'].map(h => (
  <th key={h} style={{
  padding: '6px 12px', textAlign: 'left',
  borderBottom: '1px solid var(--border)',
@@ -101,8 +101,8 @@ function CsvExample() {
  {rows.map((r, i) => (
  <tr key={i} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
  <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.sku}</td>
- <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.fecha}</td>
- <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.demanda}</td>
+ <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.date}</td>
+ <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.demand}</td>
  </tr>
  ))}
  </tbody>

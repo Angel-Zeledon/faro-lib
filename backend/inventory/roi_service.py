@@ -21,12 +21,12 @@ _ORDERED = ("approved", "modified")
 def _ordered_qty(item: dict) -> float:
     """
     Units actually ordered for a line. When the buyer kept/modified the line we
-    use cantidad_final; we fall back to cantidad_recomendada for legacy callers
+    use final_qty; we fall back to recommended_qty for legacy callers
     that don't send a final quantity.
     """
-    if item.get("cantidad_final") is not None:
-        return float(item.get("cantidad_final") or 0)
-    return float(item.get("cantidad_recomendada") or 0)
+    if item.get("final_qty") is not None:
+        return float(item.get("final_qty") or 0)
+    return float(item.get("recommended_qty") or 0)
 
 
 def _normalize_decisions(items: list[dict]) -> list[dict]:
@@ -55,10 +55,10 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
     Records the buyer's actual decisions per line for ROI / adoption tracking.
 
     items: list of decision dicts. Each may carry:
-        sku, display_name, proveedor, signal,
-        cantidad_recomendada (what Faro suggested),
-        cantidad_final        (what the buyer kept),
-        costo_unitario,
+        sku, display_name, supplier, signal,
+        recommended_qty (what Faro suggested),
+        final_qty        (what the buyer kept),
+        unit_cost,
         status ∈ approved | modified | rejected.
 
     Legacy callers (server-side CSV export) pass status-less items already
@@ -77,13 +77,13 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
     # Header aggregates describe the *order* (approved/modified lines only).
     sku_count         = approved_count
     total_units       = sum(_ordered_qty(i) for i in ordered)
-    skus_pedir_ya     = sum(1 for i in ordered if i.get("signal") == "PEDIR_YA")
-    skus_pedir_pronto = sum(1 for i in ordered if i.get("signal") == "PEDIR_PRONTO")
+    skus_order_now     = sum(1 for i in ordered if i.get("signal") == "PEDIR_YA")
+    skus_order_soon = sum(1 for i in ordered if i.get("signal") == "PEDIR_PRONTO")
 
-    # total_value: sum of (units ordered × costo_unitario) where cost is available.
+    # total_value: sum of (units ordered × unit_cost) where cost is available.
     value_parts: list[float] = []
     for i in ordered:
-        cost = i.get("costo_unitario")
+        cost = i.get("unit_cost")
         if cost is not None:
             value_parts.append(_ordered_qty(i) * float(cost))
     total_value: float | None = sum(value_parts) if value_parts else None
@@ -91,12 +91,12 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
     inserted = query_one(
         """INSERT INTO inventory_po_log
                (tenant_id, session_id, sku_count, total_units, total_value,
-                skus_pedir_ya, skus_pedir_pronto,
+                skus_order_now, skus_order_soon,
                 suggested_count, approved_count, modified_count, rejected_count)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING *""",
         (tenant_id, session_id, sku_count, total_units, total_value,
-         skus_pedir_ya, skus_pedir_pronto,
+         skus_order_now, skus_order_soon,
          suggested_count, approved_count, modified_count, rejected_count),
     )
 
@@ -107,16 +107,16 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
             try:
                 execute(
                     """INSERT INTO inventory_po_items
-                           (po_log_id, tenant_id, sku, display_name, proveedor,
-                            signal, cantidad_recomendada, cantidad_final,
-                            costo_unitario, status, bodega)
+                           (po_log_id, tenant_id, sku, display_name, supplier,
+                            signal, recommended_qty, final_qty,
+                            unit_cost, status, warehouse)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (po_log_id, tenant_id, str(i.get("sku") or ""),
-                     i.get("display_name"), i.get("proveedor"), i.get("signal"),
-                     float(i.get("cantidad_recomendada") or 0),
+                     i.get("display_name"), i.get("supplier"), i.get("signal"),
+                     float(i.get("recommended_qty") or 0),
                      _ordered_qty(i) if i["status"] in _ORDERED else 0.0,
-                     (float(i["costo_unitario"]) if i.get("costo_unitario") is not None else None),
-                     i["status"], i.get("bodega") or "principal"),
+                     (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
+                     i["status"], i.get("warehouse") or "principal"),
                 )
             except Exception as e:
                 log.warning("log_po_generation: skipped line sku=%s err=%s", i.get("sku"), e)
@@ -129,8 +129,8 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
         "sku_count": sku_count,
         "total_units": total_units,
         "total_value": total_value,
-        "skus_pedir_ya": skus_pedir_ya,
-        "skus_pedir_pronto": skus_pedir_pronto,
+        "skus_order_now": skus_order_now,
+        "skus_order_soon": skus_order_soon,
         "suggested_count": suggested_count,
         "approved_count": approved_count,
         "modified_count": modified_count,
@@ -145,7 +145,7 @@ def get_roi_summary(tenant_id: str) -> dict:
     agg = query_one(
         """SELECT
                COUNT(*)::int                    AS total_pos_generated,
-               COALESCE(SUM(skus_pedir_ya), 0)::int  AS total_skus_protected,
+               COALESCE(SUM(skus_order_now), 0)::int  AS total_skus_protected,
                COALESCE(SUM(total_units), 0)    AS total_units_ordered,
                COALESCE(SUM(total_value), 0)    AS estimated_value_protected,
                COALESCE(SUM(suggested_count), 0)::int AS total_suggested,
@@ -219,7 +219,7 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     """Returns recent PO generation events for the history panel."""
     rows = query(
         """SELECT id, session_id, generated_at, sku_count, total_units,
-                  total_value, skus_pedir_ya, skus_pedir_pronto,
+                  total_value, skus_order_now, skus_order_soon,
                   reception_status, received_at
            FROM inventory_po_log
            WHERE tenant_id = %s
@@ -290,7 +290,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     po_rows = query(
         """SELECT date_trunc('month', generated_at AT TIME ZONE 'UTC') AS month,
                   COUNT(*)::int                          AS pos_count,
-                  COALESCE(SUM(skus_pedir_ya), 0)::int    AS skus_pedir_ya,
+                  COALESCE(SUM(skus_order_now), 0)::int    AS skus_order_now,
                   COALESCE(SUM(total_value), 0)           AS total_value,
                   COALESCE(SUM(suggested_count), 0)::int  AS total_suggested,
                   COALESCE(SUM(approved_count), 0)::int   AS total_approved
@@ -316,7 +316,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
         key = start.strftime("%Y-%m")
         po = po_by_month.get(key)
         pos_count       = int(po["pos_count"]) if po else 0
-        skus_pedir_ya   = int(po["skus_pedir_ya"]) if po else 0
+        skus_order_now   = int(po["skus_order_now"]) if po else 0
         total_value     = float(po["total_value"]) if po else 0.0
         total_suggested = int(po["total_suggested"]) if po else 0
         total_approved  = int(po["total_approved"]) if po else 0
@@ -327,7 +327,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
         result.append({
             "month":            key,
             "pos_count":        pos_count,
-            "skus_pedir_ya":    skus_pedir_ya,
+            "skus_order_now":    skus_order_now,
             "total_value":      round(total_value, 2),
             "adoption_rate":    adoption_rate,
             "capital_liberado": capital_liberado,
@@ -346,7 +346,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
 #   recommendations_shown   SUM(suggested_count)  — lines Faro put in the cart.
 #   recommendations_followed SUM(approved_count)  — lines kept or modified.
 #   adoption_rate           followed / shown, None when nothing was shown.
-#   stockout_risks_handled  SUM(skus_pedir_ya) over ordered lines: PEDIR_YA SKUs
+#   stockout_risks_handled  SUM(skus_order_now) over ordered lines: PEDIR_YA SKUs
 #                           the buyer actually ordered. This is NOT "stockouts
 #                           avoided" — we never observe the counterfactual, so
 #                           we count the action taken, not an averted outcome.
@@ -384,7 +384,7 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
         """SELECT COUNT(*)::int                          AS orders_generated,
                   COALESCE(SUM(suggested_count), 0)::int  AS recommendations_shown,
                   COALESCE(SUM(approved_count), 0)::int   AS recommendations_followed,
-                  COALESCE(SUM(skus_pedir_ya), 0)::int    AS stockout_risks_handled,
+                  COALESCE(SUM(skus_order_now), 0)::int    AS stockout_risks_handled,
                   SUM(total_value)                        AS managed_purchase_value
            FROM inventory_po_log
            WHERE tenant_id = %s AND generated_at >= %s AND generated_at < %s""",

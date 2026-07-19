@@ -149,7 +149,7 @@ def effective_unit_price(
     """
     The unit price actually paid for `quantity` units under ALL-UNITS semantics:
     the highest rung whose min_qty the quantity reaches. Below the first rung
-    (or with no scale at all) the SKU's own costo_unitario applies, which may be
+    (or with no scale at all) the SKU's own unit_cost applies, which may be
     None when the SKU has no cost captured.
     """
     price = base_cost
@@ -173,7 +173,7 @@ def evaluate_step_up(
     base_cost: Optional[float],
     breaks: list[dict],
     daily_demand: Optional[float],
-    stock_actual: float,
+    current_stock: float,
     lead_time_days: int,
     holding_cost_pct: float = DEFAULT_HOLDING_COST_PCT,
 ) -> Optional[dict]:
@@ -212,7 +212,7 @@ def evaluate_step_up(
 
         if demand > 0:
             extra_coverage_days = extra_units / demand
-            total_coverage_days = (stock_actual + step_quantity) / demand
+            total_coverage_days = (current_stock + step_quantity) / demand
             # Units drain gradually, so the average unit is held half the time
             # the batch adds.
             holding_cost = (
@@ -309,13 +309,13 @@ def evaluate_cart(
             continue
         opportunity = evaluate_step_up(
             sku=sku,
-            supplier_name=breaks[0].get("supplier_name") or status.get("proveedor"),
+            supplier_name=breaks[0].get("supplier_name") or status.get("supplier"),
             current_quantity=quantity,
-            base_cost=status.get("costo_unitario"),
+            base_cost=status.get("unit_cost"),
             breaks=breaks,
-            daily_demand=status.get("demanda_diaria"),
-            stock_actual=float(status.get("stock_actual") or 0),
-            lead_time_days=int(status.get("lead_time_dias") or 15),
+            daily_demand=status.get("daily_demand"),
+            current_stock=float(status.get("current_stock") or 0),
+            lead_time_days=int(status.get("lead_time_days") or 15),
             holding_cost_pct=holding_cost_pct,
         )
         if opportunity:

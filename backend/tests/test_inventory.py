@@ -65,42 +65,42 @@ class TestStockCRUD:
         from backend.db.connection import query_one
         sku = _sku()
         body = {
-            "stock_actual": 100,
-            "lead_time_dias": 14,
-            "costo_unitario": 2500.0,
+            "current_stock": 100,
+            "lead_time_days": 14,
+            "unit_cost": 2500.0,
             "moq": 10,
-            "proveedor": "Proveedor Test S.A.",
+            "supplier": "Proveedor Test S.A.",
             "display_name": "Producto de prueba",
         }
         data = _ok(client.put(f"/api/v1/inventory/stock/{sku}", json=body, headers=auth_headers))
         assert data["sku"] == sku
-        assert data["stock_actual"] == 100
-        assert data["lead_time_dias"] == 14
-        assert data["proveedor"] == "Proveedor Test S.A."
+        assert data["current_stock"] == 100
+        assert data["lead_time_days"] == 14
+        assert data["supplier"] == "Proveedor Test S.A."
 
         row = query_one(
-            "SELECT stock_actual, lead_time_dias, costo_unitario, proveedor FROM inventory_stock WHERE sku = %s",
+            "SELECT current_stock, lead_time_days, unit_cost, supplier FROM inventory_stock WHERE sku = %s",
             (sku,),
         )
         assert row is not None, "Stock row was not persisted to the DB"
-        assert float(row["stock_actual"]) == 100
-        assert row["lead_time_dias"] == 14
-        assert float(row["costo_unitario"]) == 2500.0
-        assert row["proveedor"] == "Proveedor Test S.A."
+        assert float(row["current_stock"]) == 100
+        assert row["lead_time_days"] == 14
+        assert float(row["unit_cost"]) == 2500.0
+        assert row["supplier"] == "Proveedor Test S.A."
 
     def test_upsert_updates_existing(self, client, auth_headers):
         sku = _sku()
-        client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 50}, headers=auth_headers)
-        data = _ok(client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 200, "lead_time_dias": 7}, headers=auth_headers))
-        assert data["stock_actual"] == 200
-        assert data["lead_time_dias"] == 7
+        client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 50}, headers=auth_headers)
+        data = _ok(client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 200, "lead_time_days": 7}, headers=auth_headers))
+        assert data["current_stock"] == 200
+        assert data["lead_time_days"] == 7
 
     def test_get_existing_sku(self, client, auth_headers):
         sku = _sku()
-        client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 75}, headers=auth_headers)
+        client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 75}, headers=auth_headers)
         data = _ok(client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers))
         assert data["sku"] == sku
-        assert data["stock_actual"] == 75
+        assert data["current_stock"] == 75
 
     def test_get_missing_sku_returns_404(self, client, auth_headers):
         resp = client.get(f"/api/v1/inventory/stock/NOSUCHSKU-{uuid4().hex}", headers=auth_headers)
@@ -108,58 +108,58 @@ class TestStockCRUD:
 
     def test_patch_partial_update(self, client, auth_headers):
         sku = _sku()
-        client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 100, "lead_time_dias": 20}, headers=auth_headers)
-        data = _ok(client.patch(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 55}, headers=auth_headers))
-        assert data["stock_actual"] == 55
-        assert data["lead_time_dias"] == 20  # unchanged
+        client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 100, "lead_time_days": 20}, headers=auth_headers)
+        data = _ok(client.patch(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 55}, headers=auth_headers))
+        assert data["current_stock"] == 55
+        assert data["lead_time_days"] == 20  # unchanged
 
     def test_patch_persists_catalog_fields(self, client, auth_headers, viewer_headers):
         sku = _sku()
         client.put(f"/api/v1/inventory/stock/{sku}",
-                   json={"stock_actual": 10, "lead_time_dias": 7},
+                   json={"current_stock": 10, "lead_time_days": 7},
                    headers=auth_headers)
-        payload = {"precio_venta": 19.99, "categoria": "Bebidas",
-                   "marca": "AguaPura", "unidad_medida": "caja",
-                   "codigo_barras": "7501234567890"}
+        payload = {"sale_price": 19.99, "category": "Bebidas",
+                   "brand": "AguaPura", "unit_of_measure": "caja",
+                   "barcode": "7501234567890"}
         # viewer denied + state unchanged
         vr = client.patch(f"/api/v1/inventory/stock/{sku}", json=payload, headers=viewer_headers)
         assert vr.status_code == 403
         from backend.db.connection import query_one
-        row0 = query_one("SELECT precio_venta FROM inventory_stock WHERE sku = %s", (sku,))
-        assert row0["precio_venta"] is None
+        row0 = query_one("SELECT sale_price FROM inventory_stock WHERE sku = %s", (sku,))
+        assert row0["sale_price"] is None
         # analyst succeeds + DB reflects every field
         r = client.patch(f"/api/v1/inventory/stock/{sku}", json=payload, headers=auth_headers)
         assert r.status_code == 200
         row = query_one(
-            "SELECT precio_venta, categoria, marca, unidad_medida, codigo_barras "
+            "SELECT sale_price, category, brand, unit_of_measure, barcode "
             "FROM inventory_stock WHERE sku = %s", (sku,))
-        assert float(row["precio_venta"]) == 19.99
-        assert row["categoria"] == "Bebidas"
-        assert row["marca"] == "AguaPura"
-        assert row["unidad_medida"] == "caja"
-        assert row["codigo_barras"] == "7501234567890"
+        assert float(row["sale_price"]) == 19.99
+        assert row["category"] == "Bebidas"
+        assert row["brand"] == "AguaPura"
+        assert row["unit_of_measure"] == "caja"
+        assert row["barcode"] == "7501234567890"
 
     def test_delete_sku(self, client, auth_headers):
         sku = _sku()
-        client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 10}, headers=auth_headers)
+        client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 10}, headers=auth_headers)
         resp = client.delete(f"/api/v1/inventory/stock/{sku}", headers=auth_headers)
         assert resp.status_code == 204
         assert client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).status_code == 404
 
     def test_upsert_negative_stock_rejected(self, client, auth_headers):
         sku = _sku()
-        resp = client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": -10}, headers=auth_headers)
+        resp = client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": -10}, headers=auth_headers)
         assert resp.status_code == 422
 
     def test_upsert_lead_time_out_of_range_rejected(self, client, auth_headers):
         sku = _sku()
-        resp = client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 10, "lead_time_dias": 400}, headers=auth_headers)
+        resp = client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 10, "lead_time_days": 400}, headers=auth_headers)
         assert resp.status_code == 422
 
     def test_tenant_isolation(self, client, auth_headers, registered_user):
         """SKU created by tenant A must not be visible to tenant B."""
         sku = _sku()
-        client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 99}, headers=auth_headers)
+        client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 99}, headers=auth_headers)
 
         from backend.db.connection import execute
         from backend.tenants.service import create_tenant
@@ -198,7 +198,7 @@ class TestBulkImport:
     def test_bulk_import_creates_skus(self, client, auth_headers):
         skus = [_sku() for _ in range(3)]
         csv_bytes = self._make_csv([
-            {"sku": s, "stock_actual": 100 * (i + 1), "lead_time_dias": 10, "proveedor": "Prov A"}
+            {"sku": s, "current_stock": 100 * (i + 1), "lead_time_days": 10, "supplier": "Prov A"}
             for i, s in enumerate(skus)
         ])
         resp = client.post(
@@ -212,12 +212,12 @@ class TestBulkImport:
         # Verify each was created
         for i, sku in enumerate(skus):
             row = client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).json()["data"]
-            assert row["stock_actual"] == 100 * (i + 1)
+            assert row["current_stock"] == 100 * (i + 1)
 
-    def test_bulk_import_persists_catalog_and_proveedor(self, client, auth_headers):
+    def test_bulk_import_persists_catalog_and_supplier(self, client, auth_headers):
         sku = _sku()
         csv_text = (
-            "sku,stock_actual,precio_venta,categoria,marca,unidad_medida,codigo_barras,proveedor,notas\n"
+            "sku,current_stock,sale_price,category,brand,unit_of_measure,barcode,supplier,notes\n"
             f"{sku},50,12.5,Lacteos,Alpina,litro,7700000000001,Distribuidora Sur,fragil\n"
         )
         r = client.post(
@@ -228,21 +228,21 @@ class TestBulkImport:
         assert r.status_code == 200
         from backend.db.connection import query_one
         row = query_one(
-            "SELECT stock_actual, precio_venta, categoria, marca, unidad_medida, "
-            "codigo_barras, proveedor, notas FROM inventory_stock WHERE sku = %s", (sku,))
-        assert float(row["stock_actual"]) == 50
-        assert float(row["precio_venta"]) == 12.5
-        assert row["categoria"] == "Lacteos"
-        assert row["marca"] == "Alpina"
-        assert row["unidad_medida"] == "litro"
-        assert row["codigo_barras"] == "7700000000001"
-        assert row["proveedor"] == "Distribuidora Sur"   # regression: was silently dropped
-        assert row["notas"] == "fragil"
+            "SELECT current_stock, sale_price, category, brand, unit_of_measure, "
+            "barcode, supplier, notes FROM inventory_stock WHERE sku = %s", (sku,))
+        assert float(row["current_stock"]) == 50
+        assert float(row["sale_price"]) == 12.5
+        assert row["category"] == "Lacteos"
+        assert row["brand"] == "Alpina"
+        assert row["unit_of_measure"] == "litro"
+        assert row["barcode"] == "7700000000001"
+        assert row["supplier"] == "Distribuidora Sur"   # regression: was silently dropped
+        assert row["notes"] == "fragil"
 
     def test_bulk_import_viewer_denied(self, client, viewer_headers):
         """POST /bulk is mutating: a viewer is denied and no row is created."""
         sku = _sku()
-        csv_bytes = self._make_csv([{"sku": sku, "stock_actual": 99, "lead_time_dias": 7}])
+        csv_bytes = self._make_csv([{"sku": sku, "current_stock": 99, "lead_time_days": 7}])
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=viewer_headers,
@@ -256,7 +256,7 @@ class TestBulkImport:
         """Excel CSVs exported with UTF-8 BOM should be parsed correctly."""
         sku = _sku()
         # UTF-8 BOM prefix
-        csv_bytes = b"\xef\xbb\xbf" + f"sku,stock_actual\n{sku},42\n".encode("utf-8")
+        csv_bytes = b"\xef\xbb\xbf" + f"sku,current_stock\n{sku},42\n".encode("utf-8")
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -264,10 +264,10 @@ class TestBulkImport:
         )
         assert resp.status_code == 200
         row = client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).json()["data"]
-        assert row["stock_actual"] == 42
+        assert row["current_stock"] == 42
 
     def test_bulk_import_empty_csv_returns_422(self, client, auth_headers):
-        csv_bytes = b"stock_actual,lead_time\n100,15\n"  # no sku column
+        csv_bytes = b"current_stock,lead_time\n100,15\n"  # no sku column
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -279,13 +279,13 @@ class TestBulkImport:
         """CSV import must enforce the same ge=0 constraints as the direct
         PUT/PATCH endpoints — a regression guard for the bug where bulk_import
         parsed rows manually and never validated them, letting negative
-        stock_actual/costo_unitario/moq into the DB."""
+        current_stock/unit_cost/moq into the DB."""
         good_sku, bad_sku = _sku(), _sku()
         csv_bytes = self._make_csv([
-            {"sku": good_sku, "stock_actual": 50, "stock_minimo": 0,
-             "costo_unitario": 1.0, "moq": 1},
-            {"sku": bad_sku, "stock_actual": -50, "stock_minimo": -5,
-             "costo_unitario": -2.5, "moq": -1},
+            {"sku": good_sku, "current_stock": 50, "min_stock": 0,
+             "unit_cost": 1.0, "moq": 1},
+            {"sku": bad_sku, "current_stock": -50, "min_stock": -5,
+             "unit_cost": -2.5, "moq": -1},
         ])
         resp = client.post(
             "/api/v1/inventory/bulk",
@@ -296,7 +296,7 @@ class TestBulkImport:
         assert data["imported"] == 1
 
         good_row = client.get(f"/api/v1/inventory/stock/{good_sku}", headers=auth_headers).json()["data"]
-        assert good_row["stock_actual"] == 50
+        assert good_row["current_stock"] == 50
 
         bad_resp = client.get(f"/api/v1/inventory/stock/{bad_sku}", headers=auth_headers)
         assert bad_resp.status_code == 404
@@ -305,13 +305,13 @@ class TestBulkImport:
         r = client.get("/api/v1/inventory/template.csv", headers=auth_headers)
         assert r.status_code == 200
         assert "text/csv" in r.headers["content-type"]
-        assert "plantilla_inventario.csv" in r.headers["content-disposition"]
+        assert "inventory_template.csv" in r.headers["content-disposition"]
         text = r.content.decode("utf-8-sig")
         lines = [ln for ln in text.splitlines() if ln.strip()]
         header = lines[0].split(",")
-        expected = ["sku", "bodega", "display_name", "categoria", "marca", "unidad_medida",
-                    "codigo_barras", "stock_actual", "stock_minimo", "lead_time_dias",
-                    "costo_unitario", "precio_venta", "moq", "proveedor", "notas"]
+        expected = ["sku", "warehouse", "display_name", "category", "brand", "unit_of_measure",
+                    "barcode", "current_stock", "min_stock", "lead_time_days",
+                    "unit_cost", "sale_price", "moq", "supplier", "notes"]
         assert header == expected
         assert len(lines) >= 2          # header + at least one example row
         assert len(lines[1].split(",")) == len(expected)   # example row is parseable
@@ -348,39 +348,39 @@ class TestSignalCalculation:
         assert avg == 0.0
         assert std == 0.0
 
-    def test_signal_pedir_ya(self):
+    def test_signal_order_now(self):
         from backend.inventory.service import _calc_signal
-        # dias_cobertura < lead_time * 0.5 → PEDIR_YA
-        assert _calc_signal(dias_cobertura=3, lead_time=15) == "PEDIR_YA"
+        # coverage_days < lead_time * 0.5 → PEDIR_YA
+        assert _calc_signal(coverage_days=3, lead_time=15) == "PEDIR_YA"
 
-    def test_signal_pedir_pronto(self):
+    def test_signal_order_soon(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(dias_cobertura=14, lead_time=15) == "PEDIR_PRONTO"
+        assert _calc_signal(coverage_days=14, lead_time=15) == "PEDIR_PRONTO"
 
     def test_signal_ok(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(dias_cobertura=25, lead_time=15) == "OK"
+        assert _calc_signal(coverage_days=25, lead_time=15) == "OK"
 
-    def test_signal_sobrestock(self):
+    def test_signal_overstock(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(dias_cobertura=60, lead_time=15) == "SOBRESTOCK"
+        assert _calc_signal(coverage_days=60, lead_time=15) == "SOBRESTOCK"
 
     def test_recommended_order_respects_moq(self):
         from backend.inventory.service import _calc_recommended
         # With avg_daily=10, lead=14, stock=50 → demand_lt=140, safety~=23 → raw~=113
-        qty = _calc_recommended(stock_actual=50, avg_daily=10, avg_std=1.0, lead_time=14, moq=50)
+        qty = _calc_recommended(current_stock=50, avg_daily=10, avg_std=1.0, lead_time=14, moq=50)
         assert qty % 50 == 0  # must be a multiple of MOQ
         assert qty >= 0
 
     def test_recommended_order_zero_when_overstock(self):
         from backend.inventory.service import _calc_recommended
-        qty = _calc_recommended(stock_actual=10_000, avg_daily=1, avg_std=0.1, lead_time=14, moq=1)
+        qty = _calc_recommended(current_stock=10_000, avg_daily=1, avg_std=0.1, lead_time=14, moq=1)
         assert qty == 0
 
     def test_recommended_order_rounds_up_moq(self):
         from backend.inventory.service import _calc_recommended
         # With high demand and moq=100, result must be ceiling multiple of 100
-        qty = _calc_recommended(stock_actual=0, avg_daily=50, avg_std=5, lead_time=14, moq=100)
+        qty = _calc_recommended(current_stock=0, avg_daily=50, avg_std=5, lead_time=14, moq=100)
         assert qty > 0
         assert qty % 100 == 0
 
@@ -407,7 +407,7 @@ class TestInventoryStatus:
         """If session has no forecast data, all SKUs with stock return SIN_DATOS."""
         sku = _sku()
         client.put(f"/api/v1/inventory/stock/{sku}",
-                   json={"stock_actual": 50, "lead_time_dias": 10},
+                   json={"current_stock": 50, "lead_time_days": 10},
                    headers=auth_headers)
 
         resp = client.get(
@@ -434,7 +434,7 @@ class TestInventoryStatus:
             headers=auth_headers,
         )
         data = _ok(resp)
-        for key in ("total_skus", "pedir_ya", "pedir_pronto", "ok", "sobrestock", "sin_datos"):
+        for key in ("total_skus", "order_now", "order_soon", "ok", "overstock", "sin_datos"):
             assert key in data["summary"], f"Missing summary key: {key}"
 
     def test_status_gates_recommended_qty_by_signal(self, client, auth_headers, test_tenant):
@@ -444,9 +444,9 @@ class TestInventoryStatus:
         the RAW math still wants an order (its safety stock, from high demand
         variability, exceeds the gap between stock and lead-time demand) yet its
         coverage lands it on an OK signal — so without the gating wiring it would
-        surface cantidad_recomendada > 0. The gate must force it to 0 with
+        surface recommended_qty > 0. The gate must force it to 0 with
         calc_explanation["suficiente"] is True. The 'short' SKU (critically low
-        stock) must surface cantidad_recomendada > 0 with no "suficiente" flag.
+        stock) must surface recommended_qty > 0 with no "suficiente" flag.
         A SOBRESTOCK/huge-pile SKU would NOT prove the wiring, because its raw
         recommendation is already 0.
         """
@@ -461,13 +461,13 @@ class TestInventoryStatus:
 
         # sku_short: near-empty -> PEDIR_YA.
         client.put(f"/api/v1/inventory/stock/{sku_short}",
-                   json={"stock_actual": 1, "lead_time_dias": 10, "moq": 1},
+                   json={"current_stock": 1, "lead_time_days": 10, "moq": 1},
                    headers=auth_headers)
         # sku_plenty: 130 units, demand 10/day, lead 10 -> 13 days coverage -> OK
         # signal (lead*1.2=12 <= 13 < lead*3=30). With spread=6 the safety stock
         # (~31) makes the RAW recommendation ~2 (>0); only the gate zeroes it.
         client.put(f"/api/v1/inventory/stock/{sku_plenty}",
-                   json={"stock_actual": 130, "lead_time_dias": 10, "moq": 1},
+                   json={"current_stock": 130, "lead_time_days": 10, "moq": 1},
                    headers=auth_headers)
 
         def _forecast(daily_demand: float, spread: float) -> dict:
@@ -495,13 +495,13 @@ class TestInventoryStatus:
         plenty_item = items[sku_plenty]
 
         assert short_item["signal"] == "PEDIR_YA"
-        assert short_item["cantidad_recomendada"] > 0
+        assert short_item["recommended_qty"] > 0
         assert not (short_item["calc_explanation"] or {}).get("suficiente")
 
         # OK coverage but the raw math (with safety stock) wants an order;
         # the gate is the ONLY reason this is 0 — deleting the wiring makes it > 0.
         assert plenty_item["signal"] == "OK"
-        assert plenty_item["cantidad_recomendada"] == 0
+        assert plenty_item["recommended_qty"] == 0
         assert plenty_item["calc_explanation"]["suficiente"] is True
 
 
@@ -516,7 +516,7 @@ class TestPOExport:
         )
         assert resp.status_code == 200
         assert "text/csv" in resp.headers.get("content-type", "")
-        assert "orden_de_compra" in resp.headers.get("content-disposition", "")
+        assert "purchase_order" in resp.headers.get("content-disposition", "")
 
     def test_export_csv_has_header_row(self, client, auth_headers):
         resp = client.get(
@@ -538,8 +538,8 @@ class TestLogPOZeroQtyGuard:
     def test_log_po_excludes_zero_qty_ordered_line(self, client, analyst_headers, viewer_headers):
         session_id = f"sess_test_{uuid4().hex[:6]}"
         body = {"items": [
-            {"sku": "A", "signal": "PEDIR_YA",     "cantidad_recomendada": 0, "cantidad_final": 0,  "status": "approved"},
-            {"sku": "B", "signal": "PEDIR_PRONTO", "cantidad_recomendada": 20, "cantidad_final": 20, "status": "approved"},
+            {"sku": "A", "signal": "PEDIR_YA",     "recommended_qty": 0, "final_qty": 0,  "status": "approved"},
+            {"sku": "B", "signal": "PEDIR_PRONTO", "recommended_qty": 20, "final_qty": 20, "status": "approved"},
         ]}
         # viewer denied
         vr = client.post(f"/api/v1/inventory/log-po?session_id={session_id}",
@@ -555,9 +555,9 @@ class TestLogPOZeroQtyGuard:
         # Direct DB assertion: A is NOT an ordered line, B is
         from backend.db.connection import query
         rows = {row["sku"]: row for row in query(
-            "SELECT sku, status, cantidad_final FROM inventory_po_items WHERE po_log_id = %s",
+            "SELECT sku, status, final_qty FROM inventory_po_items WHERE po_log_id = %s",
             (po_log_id,))}
         assert rows["A"]["status"] == "rejected"
-        assert float(rows["A"]["cantidad_final"]) == 0
+        assert float(rows["A"]["final_qty"]) == 0
         assert rows["B"]["status"] == "approved"
-        assert float(rows["B"]["cantidad_final"]) == 20
+        assert float(rows["B"]["final_qty"]) == 20

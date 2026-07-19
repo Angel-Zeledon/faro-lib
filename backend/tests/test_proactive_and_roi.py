@@ -35,7 +35,7 @@ def test_demand_spike_detected_with_future_order_by():
     forecasts = {"SKU-1": {"prophet": {"forecast": _curve(today, vals)}}}
     items = [{
         "sku": "SKU-1", "display_name": "Producto 1", "has_forecast": True,
-        "demanda_diaria": 10.0, "lead_time_dias": 15, "proveedor": "Prov", "signal": "OK",
+        "daily_demand": 10.0, "lead_time_days": 15, "supplier": "Prov", "signal": "OK",
     }]
 
     alerts = service.get_demand_spikes("t", "s", items=items, forecasts=forecasts)
@@ -59,7 +59,7 @@ def test_demand_spike_marks_already_late_when_lead_time_exceeds_horizon():
     forecasts = {"SKU-2": {"prophet": {"forecast": _curve(today, vals)}}}
     items = [{
         "sku": "SKU-2", "display_name": "Producto 2", "has_forecast": True,
-        "demanda_diaria": 10.0, "lead_time_dias": 15, "signal": "OK",
+        "daily_demand": 10.0, "lead_time_days": 15, "signal": "OK",
     }]
 
     alerts = service.get_demand_spikes("t", "s", items=items, forecasts=forecasts)
@@ -75,8 +75,8 @@ def test_flat_forecast_yields_no_spikes():
     today = date.today()
     forecasts = {"SKU-3": {"prophet": {"forecast": _curve(today, [10.0] * 20)}}}
     items = [{
-        "sku": "SKU-3", "has_forecast": True, "demanda_diaria": 10.0,
-        "lead_time_dias": 15, "signal": "OK",
+        "sku": "SKU-3", "has_forecast": True, "daily_demand": 10.0,
+        "lead_time_days": 15, "signal": "OK",
     }]
     assert service.get_demand_spikes("t", "s", items=items, forecasts=forecasts) == []
 
@@ -90,8 +90,8 @@ def test_tiny_volume_spike_ignored_below_absolute_floor():
     vals[10] = 1.4
     forecasts = {"SKU-4": {"prophet": {"forecast": _curve(today, vals)}}}
     items = [{
-        "sku": "SKU-4", "has_forecast": True, "demanda_diaria": 1.0,
-        "lead_time_dias": 15, "signal": "OK",
+        "sku": "SKU-4", "has_forecast": True, "daily_demand": 1.0,
+        "lead_time_days": 15, "signal": "OK",
     }]
     assert service.get_demand_spikes("t", "s", items=items, forecasts=forecasts) == []
 
@@ -131,24 +131,24 @@ def test_log_po_generation_persists_decisions_and_aggregates(monkeypatch):
     monkeypatch.setattr(roi_service, "execute", fake_execute)
 
     items = [
-        {"sku": "A", "signal": "PEDIR_YA",     "cantidad_recomendada": 10, "cantidad_final": 10, "costo_unitario": 2, "status": "approved"},
-        {"sku": "B", "signal": "PEDIR_PRONTO", "cantidad_recomendada": 5,  "cantidad_final": 8,  "costo_unitario": 3, "status": "modified"},
-        {"sku": "C", "signal": "PEDIR_YA",     "cantidad_recomendada": 4,  "cantidad_final": 4,  "costo_unitario": None, "status": "approved"},
-        {"sku": "D", "signal": "PEDIR_YA",     "cantidad_recomendada": 6,  "cantidad_final": 0,  "costo_unitario": 1, "status": "rejected"},
+        {"sku": "A", "signal": "PEDIR_YA",     "recommended_qty": 10, "final_qty": 10, "unit_cost": 2, "status": "approved"},
+        {"sku": "B", "signal": "PEDIR_PRONTO", "recommended_qty": 5,  "final_qty": 8,  "unit_cost": 3, "status": "modified"},
+        {"sku": "C", "signal": "PEDIR_YA",     "recommended_qty": 4,  "final_qty": 4,  "unit_cost": None, "status": "approved"},
+        {"sku": "D", "signal": "PEDIR_YA",     "recommended_qty": 6,  "final_qty": 0,  "unit_cost": 1, "status": "rejected"},
     ]
 
     result = roi_service.log_po_generation("t", "s", items)
 
     # Header params order:
     # (tenant, session, sku_count, total_units, total_value,
-    #  skus_pedir_ya, skus_pedir_pronto,
+    #  skus_order_now, skus_order_soon,
     #  suggested_count, approved_count, modified_count, rejected_count)
     p = captured_header["params"]
     assert p[2] == 3            # sku_count = approved + modified
     assert p[3] == 22           # total_units = 10 + 8 + 4
     assert p[4] == 44           # total_value = 20 + 24 (C has no cost)
-    assert p[5] == 2            # skus_pedir_ya among ordered = A, C
-    assert p[6] == 1            # skus_pedir_pronto among ordered = B
+    assert p[5] == 2            # skus_order_now among ordered = A, C
+    assert p[6] == 1            # skus_order_soon among ordered = B
     assert p[7] == 4            # suggested_count = all lines
     assert p[8] == 3            # approved_count (approved + modified)
     assert p[9] == 1            # modified_count
@@ -169,13 +169,13 @@ def test_log_po_generation_legacy_items_default_to_approved(monkeypatch):
     monkeypatch.setattr(roi_service, "execute", lambda sql, params: None)
 
     items = [
-        {"sku": "A", "signal": "PEDIR_YA", "cantidad_recomendada": 5, "costo_unitario": 2},
+        {"sku": "A", "signal": "PEDIR_YA", "recommended_qty": 5, "unit_cost": 2},
     ]
     roi_service.log_po_generation("t", "s", items)
 
     p = header["params"]
     assert p[2] == 1     # counted as ordered
-    assert p[3] == 5.0   # falls back to cantidad_recomendada when no cantidad_final
+    assert p[3] == 5.0   # falls back to recommended_qty when no final_qty
     assert p[8] == 1     # approved_count
     assert p[10] == 0    # rejected_count
 
@@ -183,10 +183,10 @@ def test_log_po_generation_legacy_items_default_to_approved(monkeypatch):
 def test_normalize_decisions_downgrades_zero_qty_orders():
     from backend.inventory.roi_service import _normalize_decisions
     out = _normalize_decisions([
-        {"sku": "A", "status": "approved", "cantidad_final": 0},
-        {"sku": "B", "status": "modified", "cantidad_final": 12},
-        {"sku": "C", "status": "approved", "cantidad_final": 5},
-        {"sku": "D", "status": "rejected", "cantidad_final": 0},
+        {"sku": "A", "status": "approved", "final_qty": 0},
+        {"sku": "B", "status": "modified", "final_qty": 12},
+        {"sku": "C", "status": "approved", "final_qty": 5},
+        {"sku": "D", "status": "rejected", "final_qty": 0},
     ])
     by_sku = {i["sku"]: i for i in out}
     # A ordered 0 units -> not a real order

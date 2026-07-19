@@ -29,10 +29,10 @@ function fmtUnits(n: number): string {
 }
 
 const RECEPTION_LABEL: Record<string, { labelKey: string; color: string; bg: string }> = {
-  pending:      { labelKey: 'po.reception_pending',      color: 'var(--signal-pedir-pronto-fg)', bg: 'var(--signal-pedir-pronto-bg)' },
+  pending:      { labelKey: 'po.reception_pending',      color: 'var(--signal-order-soon-fg)', bg: 'var(--signal-order-soon-bg)' },
   partial:      { labelKey: 'po.reception_partial',      color: C.indigo, bg: 'rgba(129,140,248,0.12)' },
   received:     { labelKey: 'po.reception_received',     color: 'var(--signal-ok-fg)',           bg: 'var(--signal-ok-bg)' },
-  not_received: { labelKey: 'po.reception_not_received', color: 'var(--signal-pedir-ya-fg)',     bg: 'var(--signal-pedir-ya-bg)' },
+  not_received: { labelKey: 'po.reception_not_received', color: 'var(--signal-order-now-fg)',     bg: 'var(--signal-order-now-bg)' },
 }
 
 export function ReceptionModal({ poId, onClose, onSaved }: {
@@ -54,7 +54,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
         // Pre-fill with what's still pending per line
         setQty(Object.fromEntries(ordered.map(i => [
           i.sku,
-          String(Math.max(0, (i.cantidad_final || 0) - (i.cantidad_recibida || 0))),
+          String(Math.max(0, (i.final_qty || 0) - (i.received_qty || 0))),
         ])))
       })
       .catch(e => setError(e instanceof Error ? e.message : t('common.error')))
@@ -71,7 +71,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
         await receivePO(poId, {
           lines: items.map(i => ({
             sku: i.sku,
-            cantidad_recibida: Math.max(0, Number(qty[i.sku] ?? 0) || 0),
+            received_qty: Math.max(0, Number(qty[i.sku] ?? 0) || 0),
           })),
         })
       }
@@ -137,12 +137,12 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
                       <div style={{ fontWeight: 600, color: C.text }}>{i.display_name || i.sku}</div>
                       <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{i.sku}</div>
                     </td>
-                    <td style={{ padding: '8px', color: C.muted }}>{i.proveedor || '—'}</td>
+                    <td style={{ padding: '8px', color: C.muted }}>{i.supplier || '—'}</td>
                     <td style={{ padding: '8px', color: C.text, fontFamily: 'monospace' }}>
-                      {i.cantidad_final.toLocaleString()}
+                      {i.final_qty.toLocaleString()}
                     </td>
                     <td style={{ padding: '8px', color: C.dim, fontFamily: 'monospace' }}>
-                      {(i.cantidad_recibida || 0).toLocaleString()}
+                      {(i.received_qty || 0).toLocaleString()}
                     </td>
                     <td style={{ padding: '8px' }}>
                       <input
@@ -309,17 +309,17 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
                 {entry.sku_count}
               </td>
               <td style={{ padding: '11px 14px' }}>
-                {entry.skus_pedir_ya > 0
+                {entry.skus_order_now > 0
                   ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(239,68,68,0.1)', color: C.red, fontWeight: 700, fontSize: 11 }}>
-                      {entry.skus_pedir_ya}
+                      {entry.skus_order_now}
                     </span>
                   : <span style={{ color: C.dim }}>—</span>
                 }
               </td>
               <td style={{ padding: '11px 14px' }}>
-                {entry.skus_pedir_pronto > 0
+                {entry.skus_order_soon > 0
                   ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(245,158,11,0.1)', color: C.amber, fontWeight: 700, fontSize: 11 }}>
-                      {entry.skus_pedir_pronto}
+                      {entry.skus_order_soon}
                     </span>
                   : <span style={{ color: C.dim }}>—</span>
                 }

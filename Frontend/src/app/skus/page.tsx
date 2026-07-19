@@ -46,9 +46,9 @@ const ACTION_VARIANT: Record<string, 'danger' | 'warning' | 'success'> = {
   OK:        'success',
 }
 
-// La acción de inventario se mostraba con su valor crudo en inglés
-// ("REORDER") y el color como único indicador. Se mapea al semáforo
-// compartido, que ya trae icono + etiqueta en español (feature 2.8).
+// The inventory action used to render its raw value
+// ("REORDER") with colour as the only cue. It now maps to the shared
+// signal component, which carries icon + label (feature 2.8).
 const ACTION_SIGNAL: Record<string, InventorySignal> = {
   REORDER:   'PEDIR_YA',
   OVERSTOCK: 'SOBRESTOCK',

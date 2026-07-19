@@ -73,7 +73,7 @@ class TestMovableDates:
         assert got.weekday() == 4  # viernes
 
     @pytest.mark.offline
-    def test_quincena_fin_de_mes_clamps_february(self):
+    def test_month_end_payday_clamps_february(self):
         entry = next(e for e in cat.CATALOG if e.key == "co_quincena_30")
         feb = [o for o in entry.occurrences(2026) if o.start_date.month == 2][0]
         # 2026 no es bisiesto → el "30" cae al 28.
@@ -81,7 +81,7 @@ class TestMovableDates:
         assert cat.easter_sunday(2026).year == 2026  # sanity: same-year build
 
     @pytest.mark.offline
-    def test_leap_year_february_quincena(self):
+    def test_leap_year_february_payday(self):
         entry = next(e for e in cat.CATALOG if e.key == "co_quincena_30")
         feb = [o for o in entry.occurrences(2028) if o.start_date.month == 2][0]
         assert feb.start_date == date(2028, 2, 29)
@@ -89,8 +89,8 @@ class TestMovableDates:
 
 class TestCostaRica:
     """
-    CR es el mercado objetivo y NO es Colombia con otro nombre. Estas pruebas
-    fijan las diferencias que, copiadas de CO, darían fechas erróneas.
+    CR is the target market and is NOT Colombia under another name. These
+    tests pin the differences that, copied from CO, would give wrong dates.
     """
 
     @pytest.mark.offline
@@ -103,7 +103,7 @@ class TestCostaRica:
     def test_mothers_day_is_fixed_august_15_not_may(self, year):
         got = cat.mothers_day_cr(year)
         assert got == date(year, 8, 15)
-        # La regla colombiana caería en mayo: confirmamos que no se reutilizó.
+        # The Colombian rule would land in May: confirm it was not reused.
         assert got.month != cat.mothers_day_co(year).month
 
     @pytest.mark.offline
@@ -127,8 +127,8 @@ class TestCostaRica:
     @pytest.mark.offline
     def test_costa_rica_has_no_mid_year_bonus(self):
         """
-        En CR el aguinaldo es único (diciembre). Una "prima de junio" aquí
-        sería una invención que inflaría la demanda de mitad de año.
+        In CR the statutory bonus is a single one (December). A "June bonus"
+        here would be an invention that inflates mid-year demand.
         """
         keys = {e.key for e in cat.catalog_for("CR")}
         assert "cr_prima_junio" not in keys
@@ -299,7 +299,7 @@ class TestSeedEndpoint:
         assert ss["active"] is True
         assert ss["multiplier"] == 1.5
 
-        # Día de la Madre 2026: semana previa al segundo domingo de mayo.
+        # Mother's Day 2026: the week before the second Sunday of May.
         madre = by_key["co_dia_madre:2026"]
         assert madre["end_date"] == date(2026, 5, 10)
         assert madre["start_date"] == date(2026, 5, 4)

@@ -23,17 +23,17 @@ _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, 
 
 def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     allowed = {
-        "display_name", "stock_actual", "stock_minimo",
-        "lead_time_dias", "costo_unitario", "moq", "proveedor", "notas",
+        "display_name", "current_stock", "min_stock",
+        "lead_time_days", "unit_cost", "moq", "supplier", "notes",
         "service_level",
-        "precio_venta", "categoria", "marca", "unidad_medida", "codigo_barras",
-        "bodega",
+        "sale_price", "category", "brand", "unit_of_measure", "barcode",
+        "warehouse",
     }
 
-    # bodega is NOT NULL with a DB default of 'principal', but the ON CONFLICT
+    # warehouse is NOT NULL with a DB default of 'principal', but the ON CONFLICT
     # target now includes it, so the INSERT must always supply a value.
-    if "bodega" not in data:
-        data = {**data, "bodega": "principal"}
+    if "warehouse" not in data:
+        data = {**data, "warehouse": "principal"}
 
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
@@ -42,33 +42,33 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
     phs    = ", ".join(["%s"] * len(safe))
-    # bodega is the conflict target, never itself assignable in the update
+    # warehouse is the conflict target, never itself assignable in the update
     # clause; when it's the ONLY field supplied, upd_parts is empty and the
     # SET clause must fall back to just touching updated_at (an empty
     # "SET , updated_at = NOW()" is a SQL syntax error).
-    upd_parts = [f"{k} = EXCLUDED.{k}" for k in safe if k != "bodega"]
+    upd_parts = [f"{k} = EXCLUDED.{k}" for k in safe if k != "warehouse"]
     upd = (", ".join(upd_parts) + ", ") if upd_parts else ""
 
     execute(
         f"""INSERT INTO inventory_stock (tenant_id, sku, {cols}, updated_at)
             VALUES (%s, %s, {phs}, NOW())
-            ON CONFLICT (tenant_id, sku, bodega) DO UPDATE
+            ON CONFLICT (tenant_id, sku, warehouse) DO UPDATE
             SET {upd}updated_at = NOW()""",
         (tenant_id, sku, *values),
     )
-    _ensure_warehouse(tenant_id, safe["bodega"])
+    _ensure_warehouse(tenant_id, safe["warehouse"])
 
-    row = get_stock(tenant_id, sku, bodega=safe["bodega"])
+    row = get_stock(tenant_id, sku, warehouse=safe["warehouse"])
 
-    # Auto-snapshot when stock_actual is updated
-    if "stock_actual" in safe and row:
-        _record_snapshot(tenant_id, sku, float(safe["stock_actual"]))
+    # Auto-snapshot when current_stock is updated
+    if "current_stock" in safe and row:
+        _record_snapshot(tenant_id, sku, float(safe["current_stock"]))
 
     return row
 
 
 def _ensure_warehouse(tenant_id: str, name: str) -> None:
-    """Auto-create a `warehouses` row the first time a bodega name is seen for
+    """Auto-create a `warehouses` row the first time a warehouse name is seen for
     this tenant. Best-effort: a warehouse-insert hiccup must never fail the
     stock write it's attached to."""
     try:
@@ -78,14 +78,14 @@ def _ensure_warehouse(tenant_id: str, name: str) -> None:
             (tenant_id, name),
         )
     except Exception as e:
-        log.warning("_ensure_warehouse: failed to upsert bodega=%s tenant=%s err=%s", name, tenant_id, e)
+        log.warning("_ensure_warehouse: failed to upsert warehouse=%s tenant=%s err=%s", name, tenant_id, e)
 
 
-def get_stock(tenant_id: str, sku: str, bodega: Optional[str] = None) -> Optional[dict]:
-    if bodega is not None:
+def get_stock(tenant_id: str, sku: str, warehouse: Optional[str] = None) -> Optional[dict]:
+    if warehouse is not None:
         return query_one(
-            "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s AND bodega = %s",
-            (tenant_id, sku, bodega),
+            "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s AND warehouse = %s",
+            (tenant_id, sku, warehouse),
         )
     return query_one(
         "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
@@ -108,17 +108,17 @@ def delete_stock(tenant_id: str, sku: str) -> None:
 
 
 # Dataset columns we recognize as inventory data when present in an uploaded file.
-_DATASET_STOCK_FLOAT_COLS = {"stock_actual", "stock_minimo", "costo_unitario", "moq", "service_level", "precio_venta"}
-_DATASET_STOCK_INT_COLS   = {"lead_time_dias"}
-_DATASET_STOCK_STR_COLS   = {"proveedor", "notas", "display_name", "categoria", "marca", "unidad_medida", "codigo_barras"}
+_DATASET_STOCK_FLOAT_COLS = {"current_stock", "min_stock", "unit_cost", "moq", "service_level", "sale_price"}
+_DATASET_STOCK_INT_COLS   = {"lead_time_days"}
+_DATASET_STOCK_STR_COLS   = {"supplier", "notes", "display_name", "category", "brand", "unit_of_measure", "barcode"}
 _DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DATASET_STOCK_STR_COLS
 
 
 def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_col: str) -> int:
     """
-    If the uploaded dataset contains recognized inventory columns (stock_actual,
-    lead_time_dias, costo_unitario, moq, proveedor, notas, display_name,
-    stock_minimo, service_level), seed/update inventory_stock with the most
+    If the uploaded dataset contains recognized inventory columns (current_stock,
+    lead_time_days, unit_cost, moq, supplier, notes, display_name,
+    min_stock, service_level), seed/update inventory_stock with the most
     recent value per SKU. This is what lets a Quick Start upload actually
     control what /inventory shows, instead of /inventory silently falling back
     to whatever was entered manually in a previous session.
@@ -180,12 +180,12 @@ def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
 
 # ── Stock snapshots ───────────────────────────────────────────────────────────
 
-def _record_snapshot(tenant_id: str, sku: str, stock_actual: float) -> None:
+def _record_snapshot(tenant_id: str, sku: str, current_stock: float) -> None:
     """Record a point-in-time stock level. Called automatically on upsert."""
     try:
         execute(
-            "INSERT INTO inventory_snapshots (tenant_id, sku, stock_actual) VALUES (%s, %s, %s)",
-            (tenant_id, sku, stock_actual),
+            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
+            (tenant_id, sku, current_stock),
         )
     except Exception as e:
         log.warning("snapshot record failed sku=%s: %s", sku, e)
@@ -196,13 +196,13 @@ def get_stock_history(tenant_id: str, sku: str, days: int = 30) -> list[dict]:
     from datetime import timezone
     since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = query(
-        """SELECT stock_actual, recorded_at
+        """SELECT current_stock, recorded_at
            FROM inventory_snapshots
            WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
            ORDER BY recorded_at ASC""",
         (tenant_id, sku, since),
     )
-    return [{"stock": r["stock_actual"], "date": r["recorded_at"].isoformat()} for r in rows]
+    return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()} for r in rows]
 
 
 # ── ABC-XYZ classification ────────────────────────────────────────────────────
@@ -224,12 +224,12 @@ def _classify_xyz(cv: Optional[float]) -> str:
 def _classify_abc(items: list[dict]) -> dict[str, str]:
     """
     A = top 80% cumulative revenue proxy, B = next 15%, C = rest.
-    Revenue proxy = demanda_diaria * costo_unitario (or just demanda_diaria if no cost).
+    Revenue proxy = daily_demand * unit_cost (or just daily_demand if no cost).
     """
     scored = []
     for item in items:
-        demand = item.get("demanda_diaria") or 0.0
-        cost   = item.get("costo_unitario") or 1.0
+        demand = item.get("daily_demand") or 0.0
+        cost   = item.get("unit_cost") or 1.0
         scored.append((item["sku"], demand * cost))
 
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -309,18 +309,18 @@ def _avg_forecast_curve(model_forecasts: dict, max_steps: int = 90) -> list[dict
     return curve
 
 
-def _calc_signal(dias_cobertura: float, lead_time: int) -> str:
-    if dias_cobertura < lead_time * 0.5:
+def _calc_signal(coverage_days: float, lead_time: int) -> str:
+    if coverage_days < lead_time * 0.5:
         return "PEDIR_YA"
-    if dias_cobertura < lead_time * 1.2:
+    if coverage_days < lead_time * 1.2:
         return "PEDIR_PRONTO"
-    if dias_cobertura < lead_time * 3:
+    if coverage_days < lead_time * 3:
         return "OK"
     return "SOBRESTOCK"
 
 
 def _calc_recommended(
-    stock_actual: float,
+    current_stock: float,
     avg_daily: float,
     avg_std: float,
     lead_time: int,
@@ -328,9 +328,9 @@ def _calc_recommended(
     service_level: float = 0.95,
 ) -> float:
     z = _Z.get(service_level, 1.645)
-    demanda_lead_time = avg_daily * lead_time
+    lead_time_demand = avg_daily * lead_time
     safety_stock = z * avg_std * math.sqrt(lead_time)
-    raw = max(0.0, demanda_lead_time + safety_stock - stock_actual)
+    raw = max(0.0, lead_time_demand + safety_stock - current_stock)
     if moq and moq > 0:
         raw = math.ceil(raw / moq) * moq
     return float(round(raw, 2))
@@ -338,14 +338,14 @@ def _calc_recommended(
 
 # Signals for which recommending an order is meaningful. On any other signal
 # (OK / SOBRESTOCK / SIN_DATOS) the semáforo says stock is sufficient, so the
-# suggested quantity MUST be 0 — otherwise a healthy SKU shows "pedir N".
+# suggested quantity MUST be 0 — otherwise a healthy SKU shows "order N".
 _ORDERING_SIGNALS = ("PEDIR_YA", "PEDIR_PRONTO")
 
 
-def _gate_recommended_by_signal(signal: str, recomendado: float) -> float:
+def _gate_recommended_by_signal(signal: str, recommended: float) -> float:
     """Zero the recommendation unless the signal actually calls for ordering."""
     if signal in _ORDERING_SIGNALS:
-        return float(recomendado)
+        return float(recommended)
     return 0.0
 
 
@@ -372,23 +372,23 @@ def get_learned_lead_times(tenant_id: str) -> dict[str, float]:
     SKU, which is the honest answer while the evidence is still thin.
     """
     rows = query(
-        """SELECT LOWER(proveedor) AS proveedor, AVG(lead_time_days) AS avg_days
+        """SELECT LOWER(supplier) AS supplier, AVG(lead_time_days) AS avg_days
            FROM supplier_lead_time_obs
            WHERE tenant_id = %s
-           GROUP BY LOWER(proveedor)
+           GROUP BY LOWER(supplier)
            HAVING COUNT(*) >= %s""",
         (tenant_id, MIN_LEAD_TIME_OBSERVATIONS),
     )
     return {
-        r["proveedor"]: float(r["avg_days"])
+        r["supplier"]: float(r["avg_days"])
         for r in rows
-        if r.get("proveedor") and r.get("avg_days") is not None
+        if r.get("supplier") and r.get("avg_days") is not None
     }
 
 
 def resolve_lead_time(
     configured: int,
-    proveedor: Optional[str],
+    supplier: Optional[str],
     learned_by_supplier: dict[str, float],
 ) -> tuple[int, str, Optional[float]]:
     """
@@ -398,19 +398,19 @@ def resolve_lead_time(
     one typed into the SKU card — a supplier who says 7 days but consistently
     delivers in 12 must not keep producing recommendations that assume 7.
 
-    Returns (lead_time_dias, origen, learned_raw) where origen is
-    'aprendido' | 'configurado' (business-language, surfaced straight to the UI).
+    Returns (lead_time_days, source, learned_raw) where source is
+    'learned' | 'configured' (business-language, surfaced straight to the UI).
     """
-    if proveedor:
-        learned = learned_by_supplier.get(proveedor.strip().lower())
+    if supplier:
+        learned = learned_by_supplier.get(supplier.strip().lower())
         if learned is not None and learned > 0:
-            return max(1, int(round(learned))), "aprendido", round(learned, 1)
-    return configured, "configurado", None
+            return max(1, int(round(learned))), "learned", round(learned, 1)
+    return configured, "configured", None
 
 
-def calc_margen_unitario(
-    precio_venta: Optional[float],
-    costo_unitario: Optional[float],
+def calc_unit_margin(
+    sale_price: Optional[float],
+    unit_cost: Optional[float],
 ) -> Optional[float]:
     """
     Gross margin per unit. None (not 0) when either side is missing — the cart
@@ -419,9 +419,9 @@ def calc_margen_unitario(
     A negative margin (selling below cost) is reported as-is, never clamped:
     hiding it would make a loss-making order look profitable.
     """
-    if precio_venta is None or costo_unitario is None:
+    if sale_price is None or unit_cost is None:
         return None
-    return round(float(precio_venta) - float(costo_unitario), 2)
+    return round(float(sale_price) - float(unit_cost), 2)
 
 
 def _format_days(n: float) -> str:
@@ -434,13 +434,13 @@ def _format_days(n: float) -> str:
     return "1 día" if rounded == 1 else f"{rounded:,.0f} días"
 
 
-def build_explicacion(
-    stock_actual: float,
-    demanda_diaria: float,
-    dias_cobertura: Optional[float],
+def build_explanation(
+    current_stock: float,
+    daily_demand: float,
+    coverage_days: Optional[float],
     lead_time: int,
-    lead_time_origen: str,
-    punto_reorden: float,
+    lead_time_source: str,
+    reorder_point: float,
     signal: str,
 ) -> str:
     """
@@ -450,25 +450,25 @@ def build_explicacion(
     """
     lead_time_phrase = (
         f"tu proveedor tarda {_format_days(lead_time)} en entregar (aprendido de sus entregas reales)"
-        if lead_time_origen == "aprendido"
+        if lead_time_source == "learned"
         else f"tu proveedor tarda {_format_days(lead_time)} en entregar (lead time configurado)"
     )
-    if demanda_diaria <= 0:
+    if daily_demand <= 0:
         # No projected sales at all: coverage is effectively unlimited, saying
         # "te alcanza para N días" would be nonsense.
         return (
-            f"Tienes {stock_actual:,.0f} unidades y el pronóstico no proyecta ventas "
+            f"Tienes {current_stock:,.0f} unidades y el pronóstico no proyecta ventas "
             f"para este producto, así que no hay nada que reponer por ahora."
         )
     coverage_phrase = (
-        f"te alcanza para {_format_days(dias_cobertura)}"
-        if dias_cobertura is not None
+        f"te alcanza para {_format_days(coverage_days)}"
+        if coverage_days is not None
         else "la cobertura supera el horizonte del pronóstico"
     )
     base = (
-        f"Tienes {stock_actual:,.0f} unidades y vendes {demanda_diaria:,.1f} por día, "
+        f"Tienes {current_stock:,.0f} unidades y vendes {daily_demand:,.1f} por día, "
         f"así que {coverage_phrase}. Como {lead_time_phrase}, deberías volver a pedir cuando "
-        f"el stock baje a {punto_reorden:,.0f} unidades"
+        f"el stock baje a {reorder_point:,.0f} unidades"
     )
     if signal == "PEDIR_YA":
         return base + " — ya estás por debajo de ese punto, por eso aparece como urgente."
@@ -479,11 +479,11 @@ def build_explicacion(
 
 def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
     """
-    Collapse per-bodega inventory_stock rows into one summary row per SKU:
-    stock_actual is SUMMED across bodegas (true total stock the tenant
-    holds); every other field (lead_time_dias, costo_unitario, proveedor,
+    Collapse per-warehouse inventory_stock rows into one summary row per SKU:
+    current_stock is SUMMED across warehouses (true total stock the tenant
+    holds); every other field (lead_time_days, unit_cost, supplier,
     etc.) is taken from a single deterministic representative row (the
-    'principal' bodega if present, else the alphabetically-first bodega) —
+    'principal' warehouse if present, else the alphabetically-first warehouse) —
     those are per-SKU catalog attributes, not per-warehouse quantities, so
     picking one is correct as long as it's deterministic.
     """
@@ -493,9 +493,9 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
 
     result: dict[str, dict] = {}
     for sku, rows in by_sku.items():
-        rows_sorted = sorted(rows, key=lambda r: (r.get("bodega") != "principal", r.get("bodega") or ""))
+        rows_sorted = sorted(rows, key=lambda r: (r.get("warehouse") != "principal", r.get("warehouse") or ""))
         representative = dict(rows_sorted[0])
-        representative["stock_actual"] = sum(float(r["stock_actual"] or 0) for r in rows)
+        representative["current_stock"] = sum(float(r["current_stock"] or 0) for r in rows)
         result[sku] = representative
     return result
 
@@ -543,45 +543,45 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         stock = stock_map.get(sku)
         model_forecasts = forecasts.get(sku, {})
 
-        proveedor          = stock.get("proveedor") if stock else None
-        lead_time_config   = int(stock["lead_time_dias"]) if stock else 15
-        lead_time, lead_time_origen, lead_time_aprendido = resolve_lead_time(
-            lead_time_config, proveedor, learned_lead_times,
+        supplier          = stock.get("supplier") if stock else None
+        lead_time_config   = int(stock["lead_time_days"]) if stock else 15
+        lead_time, lead_time_source, lead_time_learned = resolve_lead_time(
+            lead_time_config, supplier, learned_lead_times,
         )
-        stock_actual = float(stock["stock_actual"]) if stock else None
+        current_stock = float(stock["current_stock"]) if stock else None
         moq          = float(stock["moq"]) if stock else 1.0
 
         has_forecast = bool(model_forecasts)
-        has_stock    = stock is not None and stock_actual is not None
+        has_stock    = stock is not None and current_stock is not None
 
         if has_forecast and has_stock:
             sku_service_level = float(stock.get("service_level") or service_level) if stock else service_level
             z = _Z.get(sku_service_level, 1.645)
             avg_daily, avg_std = _avg_daily_forecast(model_forecasts, lead_time)
-            dias_cobertura = stock_actual / avg_daily if avg_daily > 0 else 9999.0
-            signal = _calc_signal(dias_cobertura, lead_time)
-            recomendado = _calc_recommended(
-                stock_actual, avg_daily, avg_std, lead_time, moq, sku_service_level
+            coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
+            signal = _calc_signal(coverage_days, lead_time)
+            recommended = _calc_recommended(
+                current_stock, avg_daily, avg_std, lead_time, moq, sku_service_level
             )
-            recomendado = _gate_recommended_by_signal(signal, recomendado)
-            valor_inventario = (
-                round(stock_actual * float(stock["costo_unitario"]), 2)
-                if stock.get("costo_unitario") is not None else None
+            recommended = _gate_recommended_by_signal(signal, recommended)
+            inventory_value = (
+                round(current_stock * float(stock["unit_cost"]), 2)
+                if stock.get("unit_cost") is not None else None
             )
-            _demanda_lt  = round(avg_daily * lead_time, 2)
+            _demand_lt  = round(avg_daily * lead_time, 2)
             _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
-            _antes_moq   = round(max(0.0, _demanda_lt + _safety - stock_actual), 2)
+            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
             calc_explanation = {
-                "demanda_diaria":    round(avg_daily, 2),
-                "lead_time_dias":    lead_time,
-                "demanda_lead_time": _demanda_lt,
+                "daily_demand":    round(avg_daily, 2),
+                "lead_time_days":    lead_time,
+                "lead_time_demand": _demand_lt,
                 "safety_stock":      _safety,
-                "stock_actual":      stock_actual,
+                "current_stock":      current_stock,
                 "antes_moq":         _antes_moq,
                 "moq":               moq,
-                "cantidad_final":    recomendado,
+                "final_qty":    recommended,
             }
-            if recomendado <= 0:
+            if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
                 # them) but flag it so the tooltip shows "no ordering needed".
                 calc_explanation["suficiente"] = True
@@ -589,25 +589,25 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             # Reorder point: the stock level at which an order must be placed so
             # the shipment arrives before the shelf empties (lead-time demand
             # plus the safety cushion).
-            punto_reorden = round(_demanda_lt + _safety, 2)
-            explicacion = build_explicacion(
-                stock_actual=stock_actual,
-                demanda_diaria=avg_daily,
-                dias_cobertura=round(dias_cobertura, 1) if dias_cobertura < 9990 else None,
+            reorder_point = round(_demand_lt + _safety, 2)
+            explanation = build_explanation(
+                current_stock=current_stock,
+                daily_demand=avg_daily,
+                coverage_days=round(coverage_days, 1) if coverage_days < 9990 else None,
                 lead_time=lead_time,
-                lead_time_origen=lead_time_origen,
-                punto_reorden=punto_reorden,
+                lead_time_source=lead_time_source,
+                reorder_point=reorder_point,
                 signal=signal,
             )
         else:
             avg_daily = avg_std = None
-            dias_cobertura = None
+            coverage_days = None
             signal = "SIN_DATOS"
-            recomendado = None
-            valor_inventario = None
+            recommended = None
+            inventory_value = None
             calc_explanation = None
-            punto_reorden = None
-            explicacion = None
+            reorder_point = None
+            explanation = None
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
         history: list[dict] = []
@@ -627,40 +627,40 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         items.append({
             "sku":                sku,
             "display_name":       display_name,
-            "stock_actual":       stock_actual,
-            "stock_minimo":       float(stock["stock_minimo"]) if stock else 0.0,
-            "lead_time_dias":     lead_time,
+            "current_stock":       current_stock,
+            "min_stock":       float(stock["min_stock"]) if stock else 0.0,
+            "lead_time_days":     lead_time,
             # Which lead time the recommendation actually used, so the UI can
             # say "aprendido de sus entregas" vs "configurado por ti".
-            "lead_time_origen":     lead_time_origen,
-            "lead_time_configurado": lead_time_config,
-            "lead_time_aprendido":  lead_time_aprendido,
-            "punto_reorden":        punto_reorden,
-            "explicacion":          explicacion,
-            "costo_unitario":     float(stock["costo_unitario"]) if stock and stock.get("costo_unitario") is not None else None,
+            "lead_time_source":     lead_time_source,
+            "lead_time_configured": lead_time_config,
+            "lead_time_learned":  lead_time_learned,
+            "reorder_point":        reorder_point,
+            "explanation":          explanation,
+            "unit_cost":     float(stock["unit_cost"]) if stock and stock.get("unit_cost") is not None else None,
             "moq":                moq,
-            "proveedor":          proveedor,
-            "notas":              stock.get("notas") if stock else None,
-            "precio_venta":       float(stock["precio_venta"]) if stock and stock.get("precio_venta") is not None else None,
+            "supplier":          supplier,
+            "notes":              stock.get("notes") if stock else None,
+            "sale_price":       float(stock["sale_price"]) if stock and stock.get("sale_price") is not None else None,
             # Per-unit gross margin — None when price or cost is missing, which
             # is what lets the cart report "N SKUs sin precio/costo" instead of
             # silently counting them as zero-margin.
-            "margen_unitario":    calc_margen_unitario(
-                float(stock["precio_venta"]) if stock and stock.get("precio_venta") is not None else None,
-                float(stock["costo_unitario"]) if stock and stock.get("costo_unitario") is not None else None,
+            "unit_margin":    calc_unit_margin(
+                float(stock["sale_price"]) if stock and stock.get("sale_price") is not None else None,
+                float(stock["unit_cost"]) if stock and stock.get("unit_cost") is not None else None,
             ),
-            "categoria":          stock.get("categoria") if stock else None,
-            "marca":              stock.get("marca") if stock else None,
-            "unidad_medida":      stock.get("unidad_medida") if stock else None,
-            "codigo_barras":      stock.get("codigo_barras") if stock else None,
+            "category":          stock.get("category") if stock else None,
+            "brand":              stock.get("brand") if stock else None,
+            "unit_of_measure":      stock.get("unit_of_measure") if stock else None,
+            "barcode":      stock.get("barcode") if stock else None,
             "has_forecast":       has_forecast,
             "has_stock":          has_stock,
-            "demanda_diaria":     round(avg_daily, 4) if avg_daily is not None else None,
-            "demanda_lead_time":  round(avg_daily * lead_time, 2) if avg_daily is not None else None,
-            "dias_cobertura":     round(dias_cobertura, 1) if dias_cobertura is not None and dias_cobertura < 9990 else None,
+            "daily_demand":     round(avg_daily, 4) if avg_daily is not None else None,
+            "lead_time_demand":  round(avg_daily * lead_time, 2) if avg_daily is not None else None,
+            "coverage_days":     round(coverage_days, 1) if coverage_days is not None and coverage_days < 9990 else None,
             "signal":             signal,
-            "cantidad_recomendada": recomendado,
-            "valor_inventario":   valor_inventario,
+            "recommended_qty": recommended,
+            "inventory_value":   inventory_value,
             "n_models":           len(model_forecasts),
             "xyz":               _classify_xyz(cv_by_sku.get(sku)),
             "stock_history":     history,
@@ -674,15 +674,15 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         item["abc"] = abc_map.get(item["sku"], "?")
         item["abc_xyz"] = f"{item['abc']}{item['xyz']}" if item["xyz"] != "?" else item["abc"]
 
-    items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5), x["dias_cobertura"] or 9999))
+    items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5), x["coverage_days"] or 9999))
     return items
 
 
 # ── Per-product event multipliers ────────────────────────────────────────────
-# Un multiplicador único por evento es una simplificación falsa: en Black
-# Friday la electrónica se dispara y la leche no se mueve. Estos overrides
-# permiten afinar por SKU o por categoría; la resolución es
-# sku > categoria > multiplicador del evento.
+# A single multiplier per event is a false simplification: on Black
+# Friday electronics spike and milk does not move. These overrides
+# allow tuning per SKU or per category; resolution order is
+# sku > category > the event's multiplier.
 
 def get_event_multipliers(tenant_id: str, event_id: str) -> list[dict]:
     return query(
@@ -696,9 +696,9 @@ def get_event_multipliers(tenant_id: str, event_id: str) -> list[dict]:
 def set_event_multiplier(
     tenant_id: str, event_id: str, scope: str, scope_value: str, multiplier: float,
 ) -> dict:
-    """Upsert de un override. `scope` ∈ {'sku', 'categoria'}."""
-    if scope not in ("sku", "categoria"):
-        raise ValueError("scope debe ser 'sku' o 'categoria'")
+    """Upsert one override. `scope` is either 'sku' or 'category'."""
+    if scope not in ("sku", "category"):
+        raise ValueError("scope debe ser 'sku' o 'category'")
     if multiplier <= 0:
         raise ValueError("multiplier debe ser mayor que 0")
     value = (scope_value or "").strip()
@@ -707,7 +707,7 @@ def set_event_multiplier(
     # "Lacteos" and "lacteos" create TWO rows that collide on read and one is
     # silently lost (which one depends on the Postgres collation). Normalising on
     # write is what makes the ON CONFLICT genuinely idempotent.
-    if scope == "categoria":
+    if scope == "category":
         value = value.lower()
     if not value:
         raise ValueError("scope_value no puede estar vacío")
@@ -743,46 +743,46 @@ def delete_event_multiplier(tenant_id: str, override_id: str) -> bool:
 
 
 def _index_overrides(rows: list[dict]) -> dict:
-    """Overrides indexados para resolución O(1). Categoría es case-insensitive."""
-    idx = {"sku": {}, "categoria": {}}
+    """Overrides indexed for O(1) resolution. Category is case-insensitive."""
+    idx = {"sku": {}, "category": {}}
     for r in rows:
         key = r["scope_value"]
-        if r["scope"] == "categoria":
+        if r["scope"] == "category":
             key = key.strip().lower()
         idx[r["scope"]][key] = float(r["multiplier"])
     return idx
 
 
 def _resolve_multiplier(item: dict, base: float, idx: dict) -> tuple[float, str]:
-    """Devuelve (multiplicador, origen) — origen ∈ {'sku','categoria','evento'}."""
+    """Returns (multiplier, source) — source is one of 'sku', 'category', 'event'."""
     sku = item.get("sku")
     if sku is not None and sku in idx["sku"]:
         return idx["sku"][sku], "sku"
-    cat = (item.get("categoria") or "").strip().lower()
-    if cat and cat in idx["categoria"]:
-        return idx["categoria"][cat], "categoria"
-    return base, "evento"
+    cat = (item.get("category") or "").strip().lower()
+    if cat and cat in idx["category"]:
+        return idx["category"][cat], "category"
+    return base, "event"
 
 
 def build_multiplier_explanation(event: Optional[dict], base: float,
                                  overrides: list[dict]) -> dict:
     """
-    El "por qué" del multiplicador, para que la UI no muestre un ×2.2 sin
-    justificar. Se devuelve estructurado (no una frase armada en el backend)
-    para que el frontend lo traduzca y lo maquete como quiera.
+    The "why" behind the multiplier, so the UI never shows a x2.2 with no
+    justification. Returned structured (not as a backend-assembled sentence)
+    so the frontend can translate and lay it out however it wants.
     """
     from_catalog = bool(event and event.get("catalog_key"))
     return {
-        "multiplicador_base": base,
-        # 'catalogo' = estimación precargada por Faro; 'usuario' = lo puso el
-        # administrador (o lo editó sobre la estimación).
-        "origen": "catalogo" if from_catalog else "usuario",
-        "motivo": (event or {}).get("notes"),
+        "base_multiplier": base,
+        # 'catalog' = estimate preloaded by Faro; 'user' = set by the
+        # administrator (or edited on top of the estimate).
+        "source": "catalog" if from_catalog else "user",
+        "reason": (event or {}).get("notes"),
         "editable": True,
         "es_estimacion": from_catalog,
         "overrides_activos": len(overrides),
         "overrides_por_sku": sum(1 for o in overrides if o["scope"] == "sku"),
-        "overrides_por_categoria": sum(1 for o in overrides if o["scope"] == "categoria"),
+        "overrides_by_category": sum(1 for o in overrides if o["scope"] == "category"),
     }
 
 
@@ -802,9 +802,9 @@ def simulate_event_impact(
     extra units to sell, whether current stock survives it, how much to order
     and the latest date to place that order (event start − lead time).
 
-    Cuando el evento tiene overrides por SKU o categoría, cada producto usa su
-    propio multiplicador y la fila reporta cuál se aplicó y de dónde salió, de
-    modo que la recomendación siempre se pueda explicar.
+    When the event has per-SKU or per-category overrides, each product uses its
+    own multiplier and the row reports which one applied and where it came
+    from, so that the recomendación siempre se pueda explicar.
 
     Pure read — nothing is persisted. Uses the same per-SKU daily demand the
     semáforo uses, so the simulation is consistent with the rest of the app.
@@ -824,7 +824,7 @@ def simulate_event_impact(
     event_days = (end_date - start_date).days + 1
     days_until_start = max(0, (start_date - today).days)
 
-    # Overrides por SKU / categoría, si la simulación viene de un evento guardado.
+    # Per-SKU / per-category overrides, when the simulation runs off a saved event.
     override_rows = get_event_multipliers(tenant_id, event_id) if event_id else []
     idx = _index_overrides(override_rows)
 
@@ -832,17 +832,17 @@ def simulate_event_impact(
     rows: list[dict] = []
 
     for it in items:
-        daily = it.get("demanda_diaria")
+        daily = it.get("daily_demand")
         if not daily or daily <= 0:
             continue  # sin forecast no hay nada que simular
 
-        lead_time = int(it.get("lead_time_dias") or 15)
+        lead_time = int(it.get("lead_time_days") or 15)
         moq       = float(it.get("moq") or 1)
-        stock     = it.get("stock_actual")
-        cost      = it.get("costo_unitario")
+        stock     = it.get("current_stock")
+        cost      = it.get("unit_cost")
 
-        # Cada producto puede tener su propio multiplicador.
-        sku_mult, mult_origen = _resolve_multiplier(it, multiplier, idx)
+        # Cada product puede tener su propio multiplier.
+        sku_mult, mult_source = _resolve_multiplier(it, multiplier, idx)
 
         baseline_units = daily * event_days
         event_units    = baseline_units * sku_mult
@@ -852,12 +852,12 @@ def simulate_event_impact(
         # consumption until then (floored at 0).
         stock_at_start = None
         deficit = None
-        pedir = None
+        order = None
         if stock is not None:
             stock_at_start = max(0.0, float(stock) - daily * days_until_start)
             deficit = max(0.0, event_units - stock_at_start)
             if deficit > 0:
-                pedir = math.ceil(deficit / moq) * moq
+                order = math.ceil(deficit / moq) * moq
 
         order_by = start_date - timedelta(days=lead_time)
         late = order_by < today  # ordering today would still arrive mid/after event
@@ -865,44 +865,44 @@ def simulate_event_impact(
         rows.append({
             "sku":               it["sku"],
             "display_name":      it.get("display_name"),
-            "proveedor":         it.get("proveedor"),
-            "categoria":         it.get("categoria"),
-            # Qué multiplicador se aplicó a ESTE producto y por qué: sin esto
+            "supplier":         it.get("supplier"),
+            "category":         it.get("category"),
+            # Which multiplier applied to THIS product and why: without this
             # la fila no se puede explicar cuando hay overrides.
-            "multiplicador":     round(sku_mult, 2),
-            "multiplicador_origen": mult_origen,
-            "demanda_diaria":    round(daily, 2),
+            "multiplier":     round(sku_mult, 2),
+            "multiplier_source": mult_source,
+            "daily_demand":    round(daily, 2),
             "baseline_units":    round(baseline_units, 1),
             "event_units":       round(event_units, 1),
             "extra_units":       round(extra_units, 1),
-            "stock_actual":      stock,
+            "current_stock":      stock,
             "stock_al_inicio":   round(stock_at_start, 1) if stock_at_start is not None else None,
             "deficit":           round(deficit, 1) if deficit is not None else None,
-            "cantidad_pedir":    pedir,
-            "valor_pedido":      round(pedir * float(cost), 2) if (pedir and cost is not None) else None,
-            "lead_time_dias":    lead_time,
+            "qty_to_order":    order,
+            "order_value":      round(order * float(cost), 2) if (order and cost is not None) else None,
+            "lead_time_days":    lead_time,
             "order_by":          order_by.isoformat(),
             "llega_tarde":       late,
-            "en_riesgo":         bool(deficit and deficit > 0),
+            "en_risk":         bool(deficit and deficit > 0),
         })
 
     # Riskiest first: SKUs that need an order, largest deficit on top
-    rows.sort(key=lambda r: (not r["en_riesgo"], -(r["deficit"] or 0)))
+    rows.sort(key=lambda r: (not r["en_risk"], -(r["deficit"] or 0)))
 
-    at_risk = [r for r in rows if r["en_riesgo"]]
-    total_pedir = sum(r["cantidad_pedir"] or 0 for r in at_risk)
-    total_valor = sum(r["valor_pedido"] or 0 for r in at_risk)
+    at_risk = [r for r in rows if r["en_risk"]]
+    total_to_order = sum(r["qty_to_order"] or 0 for r in at_risk)
+    total_value = sum(r["order_value"] or 0 for r in at_risk)
     earliest_order_by = min((r["order_by"] for r in at_risk), default=None)
 
     event_row = get_event(tenant_id, event_id) if event_id else None
-    # Cuántos SKU corrieron con cada multiplicador: deja ver de un vistazo si
-    # el ×2.2 del catálogo se aplicó a todo o sólo a lo que corresponde.
+    # How many SKUs ran with each multiplier: shows at a glance whether
+    # the catalog's x2.2 hit everything or only what it should.
     desglose: dict[str, dict] = {}
     for r in rows:
-        k = f"{r['multiplicador']}|{r['multiplicador_origen']}"
+        k = f"{r['multiplier']}|{r['multiplier_source']}"
         d = desglose.setdefault(k, {
-            "multiplicador": r["multiplicador"],
-            "origen":        r["multiplicador_origen"],
+            "multiplier": r["multiplier"],
+            "source":        r["multiplier_source"],
             "skus":          0,
         })
         d["skus"] += 1
@@ -914,19 +914,19 @@ def simulate_event_impact(
         "end_date":    end_date.isoformat(),
         "event_days":  event_days,
         "multiplier":  multiplier,
-        "explicacion": build_multiplier_explanation(event_row, multiplier, override_rows),
-        "multiplicadores_aplicados": sorted(
+        "explanation": build_multiplier_explanation(event_row, multiplier, override_rows),
+        "multipliers_applied": sorted(
             desglose.values(), key=lambda d: -d["skus"]
         ),
         "items":       rows,
         "summary": {
             "skus_simulados":     len(rows),
-            "skus_en_riesgo":     len(at_risk),
-            "unidades_extra":     round(sum(r["extra_units"] for r in rows), 1),
-            "total_pedir":        round(total_pedir, 1),
-            "valor_total_pedido": round(total_valor, 2),
-            "pedir_antes_de":     earliest_order_by,
-            "algun_pedido_tarde": any(r["llega_tarde"] for r in at_risk),
+            "skus_at_risk":     len(at_risk),
+            "extra_units":     round(sum(r["extra_units"] for r in rows), 1),
+            "total_to_order":        round(total_to_order, 1),
+            "total_order_value": round(total_value, 2),
+            "order_before":     earliest_order_by,
+            "any_order_late": any(r["llega_tarde"] for r in at_risk),
         },
     }
 
@@ -1188,7 +1188,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     warning = sum(1 for i in items if i["signal"] == "PEDIR_PRONTO")
     ok      = sum(1 for i in items if i["signal"] == "OK")
     over    = sum(1 for i in items if i["signal"] == "SOBRESTOCK")
-    valor   = sum(i["valor_inventario"] for i in items if i.get("valor_inventario") or 0)
+    value   = sum(i["inventory_value"] for i in items if i.get("inventory_value") or 0)
 
     def _kpi_cell(number, label, color):
         return [
@@ -1206,7 +1206,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         _kpi_cell(ok,      "OK 🟢",          "22c55e"),
         _kpi_cell(over,    "Sobrestock 🔵",  "3b82f6"),
         _kpi_cell(
-            f"${valor:,.0f}" if valor else "—",
+            f"${value:,.0f}" if value else "—",
             "Valor inventario", "6366f1",
         ),
     ]]
@@ -1223,7 +1223,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
             (warning, "Pedir pronto",    "f59e0b"),
             (ok,      "OK",              "22c55e"),
             (over,    "Sobrestock",      "3b82f6"),
-            (f"${valor:,.0f}" if valor else "—", "Valor bodega", "6366f1"),
+            (f"${value:,.0f}" if value else "—", "Valor bodega", "6366f1"),
         ]
     ]]
     kpi_row = [[Table([[v] for v in cell], colWidths=["100%"]) for cell in kpi_table_data[0]]]
@@ -1260,11 +1260,11 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(item.get("display_name") or "—", CELL),
                 Paragraph(sig_label, ParagraphStyle("sig", fontSize=8,
                           fontName="Helvetica-Bold", textColor=sig_color)),
-                Paragraph(f"{item['stock_actual']:,.0f}" if item.get("stock_actual") is not None else "—", CELL),
-                Paragraph(f"{item['dias_cobertura']:.0f} días" if item.get("dias_cobertura") is not None else "—", CELL),
-                Paragraph(f"<b>{item['cantidad_recomendada']:,.0f}</b>" if item.get("cantidad_recomendada") else "—",
+                Paragraph(f"{item['current_stock']:,.0f}" if item.get("current_stock") is not None else "—", CELL),
+                Paragraph(f"{item['coverage_days']:.0f} días" if item.get("coverage_days") is not None else "—", CELL),
+                Paragraph(f"<b>{item['recommended_qty']:,.0f}</b>" if item.get("recommended_qty") else "—",
                           ParagraphStyle("qty", fontSize=8, fontName="Helvetica-Bold", textColor=GREEN)),
-                Paragraph(item.get("proveedor") or "—", CELL),
+                Paragraph(item.get("supplier") or "—", CELL),
             ])
             if idx % 2 == 0:
                 row_styles.append(("BACKGROUND", (0, idx+1), (-1, idx+1), colors.HexColor("#f8fafc")))
@@ -1302,7 +1302,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(item.get("display_name") or "—", CELL),
                 Paragraph(SIGNAL_LABELS.get(item["signal"], "—"),
                           ParagraphStyle("s2", fontSize=8, textColor=SIGNAL_COLORS.get(item["signal"], colors.grey))),
-                Paragraph(f"{item['dias_cobertura']:.0f}d" if item.get("dias_cobertura") is not None else "—", CELL),
+                Paragraph(f"{item['coverage_days']:.0f}d" if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(item.get("abc_xyz") or "—", CELL),
             ])
         st = Table(small_data, colWidths=[3*cm, 5*cm, 3.2*cm, 3*cm, 2*cm])
@@ -1412,7 +1412,7 @@ def get_demand_spikes(
         if len(curve) < 2:
             continue
 
-        baseline = item.get("demanda_diaria")
+        baseline = item.get("daily_demand")
         if not baseline or baseline <= 0:
             baseline = sum(c["value"] for c in curve) / len(curve)
         if not baseline or baseline <= 0:
@@ -1425,7 +1425,7 @@ def get_demand_spikes(
         if uplift < uplift_threshold or (peak["value"] - baseline) < 1:
             continue
 
-        lead = int(item.get("lead_time_dias") or 15)
+        lead = int(item.get("lead_time_days") or 15)
 
         peak_date: Optional[object] = None
         days_until = peak["step"] + 1
@@ -1446,13 +1446,13 @@ def get_demand_spikes(
         alerts.append({
             "sku":             sku,
             "display_name":    item.get("display_name") or sku,
-            "proveedor":       item.get("proveedor"),
+            "supplier":       item.get("supplier"),
             "baseline_diaria": round(baseline, 1),
             "peak_value":      round(peak["value"], 1),
             "uplift_pct":      round(uplift * 100),
             "peak_date":       peak_date.isoformat() if peak_date else None,
             "days_until_peak": days_until,
-            "lead_time_dias":  lead,
+            "lead_time_days":  lead,
             "order_by_date":   order_by.isoformat() if order_by else None,
             "already_late":    already_late,
             "signal":          item.get("signal"),
@@ -1474,20 +1474,20 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
         sku      = item['sku']
         name     = item.get('display_name') or sku
         signal   = item['signal']
-        dias     = item.get('dias_cobertura')
-        lead     = item.get('lead_time_dias', 15)
-        qty      = item.get('cantidad_recomendada') or 0
-        prov     = item.get('proveedor') or 'el proveedor'
+        days     = item.get('coverage_days')
+        lead     = item.get('lead_time_days', 15)
+        qty      = item.get('recommended_qty') or 0
+        prov     = item.get('supplier') or 'el proveedor'
         abc      = item.get('abc', '?')
         trend    = item.get('demand_trend_pct')
-        valor    = item.get('valor_inventario')
+        value    = item.get('inventory_value')
 
-        if signal == 'PEDIR_YA' and dias is not None:
+        if signal == 'PEDIR_YA' and days is not None:
             recs.append({
                 'priority': 1, 'sku': sku, 'name': name,
                 'rec_type': 'STOCKOUT_RISK',
                 'text': (
-                    f"Emite la orden de {name} HOY — tienes {_format_days(dias)} de stock "
+                    f"Emite la orden de {name} HOY — tienes {_format_days(days)} de stock "
                     f"y {prov} tarda {_format_days(lead)} en entregar. "
                     f"Si no actúas hoy, habrá quiebre antes de recibir el pedido."
                 ),
@@ -1495,12 +1495,12 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 'signal': signal,
             })
 
-        elif signal == 'PEDIR_PRONTO' and dias is not None:
+        elif signal == 'PEDIR_PRONTO' and days is not None:
             recs.append({
                 'priority': 2, 'sku': sku, 'name': name,
                 'rec_type': 'REORDER_SOON',
                 'text': (
-                    f"{name} tiene {dias:.0f} días de cobertura frente a un lead time de {lead} días. "
+                    f"{name} tiene {days:.0f} días de cobertura frente a un lead time de {lead} días. "
                     f"Emite el pedido esta semana para mantener el colchón de seguridad."
                 ),
                 'action': f"Pedir {qty:.0f} unidades antes del viernes" if qty > 0 else "Planificar pedido",
@@ -1531,14 +1531,14 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                     'signal': signal,
                 })
 
-        if signal == 'SOBRESTOCK' and abc in ('A', 'B') and dias is not None and valor:
-            excess_days = dias - lead * 3
+        if signal == 'SOBRESTOCK' and abc in ('A', 'B') and days is not None and value:
+            excess_days = days - lead * 3
             recs.append({
                 'priority': 5, 'sku': sku, 'name': name,
                 'rec_type': 'OVERSTOCK',
                 'text': (
-                    f"{name} tiene {dias:.0f} días de cobertura ({excess_days:.0f} días más de lo óptimo). "
-                    f"Pausar el próximo pedido liberaría ${valor:,.0f} en capital de trabajo."
+                    f"{name} tiene {days:.0f} días de cobertura ({excess_days:.0f} días más de lo óptimo). "
+                    f"Pausar el próximo pedido liberaría ${value:,.0f} en capital de trabajo."
                 ),
                 'action': "Pausar próximo pedido",
                 'signal': signal,
@@ -1568,7 +1568,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
 
     # Compute demand trend for each item that has forecast + stock data
     for item in items:
-        avg = item.get('demanda_diaria')
+        avg = item.get('daily_demand')
         if avg and avg > 0 and item.get('has_stock') and item.get('has_forecast'):
             item['demand_trend_pct'] = _calc_demand_trend(
                 tenant_id, item['sku'], avg, days=14
@@ -1579,8 +1579,8 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     risks      = [i for i in items if i['signal'] == 'PEDIR_YA']
     warnings   = [i for i in items if i['signal'] == 'PEDIR_PRONTO']
     overstocked = sorted(
-        [i for i in items if i['signal'] == 'SOBRESTOCK' and i.get('valor_inventario')],
-        key=lambda x: x.get('valor_inventario') or 0,
+        [i for i in items if i['signal'] == 'SOBRESTOCK' and i.get('inventory_value')],
+        key=lambda x: x.get('inventory_value') or 0,
         reverse=True,
     )
     demand_changes = [i for i in items if i.get('demand_trend_pct') is not None]
@@ -1613,8 +1613,8 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     except Exception:
         pass
 
-    total_valor    = sum(i['valor_inventario'] for i in items if i.get('valor_inventario') or 0)
-    overstock_val  = sum(i['valor_inventario'] for i in overstocked if i.get('valor_inventario') or 0)
+    total_value    = sum(i['inventory_value'] for i in items if i.get('inventory_value') or 0)
+    overstock_val  = sum(i['inventory_value'] for i in overstocked if i.get('inventory_value') or 0)
 
     # Session name
     try:
@@ -1638,13 +1638,13 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         'recommendations': recs,
         'kpis': {
             'total_skus':           len(items),
-            'pedir_ya':             len(risks),
-            'pedir_pronto':         len(warnings),
+            'order_now':             len(risks),
+            'order_soon':         len(warnings),
             'ok':                   sum(1 for i in items if i['signal'] == 'OK'),
-            'sobrestock':           len(overstocked),
+            'overstock':           len(overstocked),
             'sin_datos':            sum(1 for i in items if i['signal'] == 'SIN_DATOS'),
             'avg_accuracy':         avg_accuracy,
-            'total_inventory_value': round(total_valor, 2),
+            'total_inventory_value': round(total_value, 2),
             'capital_in_overstock':  round(overstock_val, 2),
             'demand_alerts':        len(demand_changes),
             'demand_spikes':        len(demand_spikes),
@@ -1751,9 +1751,9 @@ def run_daily_inventory_alerts() -> None:
 
 
 def _sum_overstock_value(items: list[dict]) -> float:
-    """Total valor_inventario of SKUs currently flagged SOBRESTOCK."""
+    """Total inventory_value of SKUs currently flagged SOBRESTOCK."""
     return sum(
-        (i.get("valor_inventario") or 0)
+        (i.get("inventory_value") or 0)
         for i in items
         if i.get("signal") == "SOBRESTOCK"
     )

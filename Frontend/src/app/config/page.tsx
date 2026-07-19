@@ -241,7 +241,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{me?.email}</div>
           </div>
 
-          {/* WhatsApp para alertas diarias de inventario */}
+          {/* WhatsApp para alertas diarias de inventory */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {t('config.whatsapp_label')}
@@ -277,7 +277,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               )}
             </div>
             <p style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 0' }}>
-              Con código de país (ej. +57…). Déjalo vacío para no recibir alertas por WhatsApp.
+              Con código de país (ej. +57…). Déjalo vacío para no receive alertas por WhatsApp.
             </p>
           </div>
 

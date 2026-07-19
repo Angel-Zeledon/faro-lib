@@ -2,7 +2,7 @@
 /**
  * Shared empty / loading / error states (feature 2.6).
  *
- * The five daily screens (/hoy, /pedidos, /skus, /inventory,
+ * The five daily screens (/hoy, /orders, /skus, /inventory,
  * /inventory/suppliers) each used to hand-roll these three moments, so the
  * same situation looked different depending on where you hit it. These
  * primitives are the single source of truth for that layer:

@@ -33,16 +33,16 @@ _DEMO_CSV = Path(__file__).resolve().parents[2] / "resources" / "demo_ventas.csv
 # SKU-001/002 low vs their daily demand → PEDIR_YA / PEDIR_PRONTO,
 # SKU-003/005 healthy → OK, SKU-004 absurdly high → SOBRESTOCK.
 _DEMO_STOCK = {
-    "SKU-001": {"display_name": "Aceite de Oliva 1L", "stock_actual": 40,   "lead_time_dias": 10,
-                "costo_unitario": 8.5, "moq": 12,  "proveedor": "Distribuidora Andina"},
-    "SKU-002": {"display_name": "Arroz 5kg",          "stock_actual": 350,  "lead_time_dias": 7,
-                "costo_unitario": 5.2, "moq": 25,  "proveedor": "Granos del Valle"},
-    "SKU-003": {"display_name": "Leche Entera 1L",    "stock_actual": 2500, "lead_time_dias": 5,
-                "costo_unitario": 1.1, "moq": 50,  "proveedor": "Lácteos La Sabana"},
-    "SKU-004": {"display_name": "Azucar 2kg",         "stock_actual": 9000, "lead_time_dias": 15,
-                "costo_unitario": 2.4, "moq": 100, "proveedor": "Granos del Valle"},
-    "SKU-005": {"display_name": "Sal 1kg",            "stock_actual": 1200, "lead_time_dias": 10,
-                "costo_unitario": 0.9, "moq": 24,  "proveedor": "Distribuidora Andina"},
+    "SKU-001": {"display_name": "Aceite de Oliva 1L", "current_stock": 40,   "lead_time_days": 10,
+                "unit_cost": 8.5, "moq": 12,  "supplier": "Distribuidora Andina"},
+    "SKU-002": {"display_name": "Arroz 5kg",          "current_stock": 350,  "lead_time_days": 7,
+                "unit_cost": 5.2, "moq": 25,  "supplier": "Granos del Valle"},
+    "SKU-003": {"display_name": "Leche Entera 1L",    "current_stock": 2500, "lead_time_days": 5,
+                "unit_cost": 1.1, "moq": 50,  "supplier": "Lácteos La Sabana"},
+    "SKU-004": {"display_name": "Azucar 2kg",         "current_stock": 9000, "lead_time_days": 15,
+                "unit_cost": 2.4, "moq": 100, "supplier": "Granos del Valle"},
+    "SKU-005": {"display_name": "Sal 1kg",            "current_stock": 1200, "lead_time_days": 10,
+                "unit_cost": 0.9, "moq": 24,  "supplier": "Distribuidora Andina"},
 }
 
 # Same defaults the quick-start wizard posts (Frontend quick-start page).

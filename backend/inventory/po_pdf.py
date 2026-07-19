@@ -21,7 +21,7 @@ def slugify_supplier_name(name: str) -> str:
     """Filesystem/URL-safe slug for a supplier name, used in the PDF's
     filename and in the public serving URL's path."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug or "proveedor"
+    return slug or "supplier"
 
 
 def generate_po_pdf(
@@ -35,7 +35,7 @@ def generate_po_pdf(
     path = paths.po_pdf_file(tenant_id, po_log_id, slug)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    total_value = sum((i.get("cantidad_final") or 0) * (i.get("costo_unitario") or 0) for i in items)
+    total_value = sum((i.get("final_qty") or 0) * (i.get("unit_cost") or 0) for i in items)
 
     try:
         from reportlab.lib.pagesizes import letter
@@ -79,8 +79,8 @@ def generate_po_pdf(
         header = ["SKU", "Producto", "Cantidad", "Costo unitario", "Subtotal"]
         rows = [header]
         for i in items:
-            qty = i.get("cantidad_final") or 0
-            cost = i.get("costo_unitario") or 0
+            qty = i.get("final_qty") or 0
+            cost = i.get("unit_cost") or 0
             rows.append([
                 str(i.get("sku", "")),
                 str(i.get("display_name") or i.get("sku", "")),
@@ -114,8 +114,8 @@ def generate_po_pdf(
             "",
         ]
         for i in items:
-            qty = i.get("cantidad_final") or 0
-            cost = i.get("costo_unitario") or 0
+            qty = i.get("final_qty") or 0
+            cost = i.get("unit_cost") or 0
             lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x ${cost:,.2f}")
         lines.append(f"\nTotal: ${total_value:,.2f}")
         path.with_suffix(".txt").write_text("\n".join(lines), encoding="utf-8")
