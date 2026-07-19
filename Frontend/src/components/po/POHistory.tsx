@@ -28,11 +28,11 @@ function fmtUnits(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
 }
 
-const RECEPTION_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  pending:      { label: 'En camino',   color: C.amber,  bg: 'rgba(245,158,11,0.1)' },
-  partial:      { label: 'Parcial',     color: C.indigo, bg: 'rgba(129,140,248,0.1)' },
-  received:     { label: 'Recibida',    color: C.green,  bg: 'rgba(34,197,94,0.1)' },
-  not_received: { label: 'No llegó',    color: C.red,    bg: 'rgba(239,68,68,0.1)' },
+const RECEPTION_LABEL: Record<string, { labelKey: string; color: string; bg: string }> = {
+  pending:      { labelKey: 'po.reception_pending',      color: 'var(--signal-pedir-pronto-fg)', bg: 'var(--signal-pedir-pronto-bg)' },
+  partial:      { labelKey: 'po.reception_partial',      color: C.indigo, bg: 'rgba(129,140,248,0.12)' },
+  received:     { labelKey: 'po.reception_received',     color: 'var(--signal-ok-fg)',           bg: 'var(--signal-ok-bg)' },
+  not_received: { labelKey: 'po.reception_not_received', color: 'var(--signal-pedir-ya-fg)',     bg: 'var(--signal-pedir-ya-bg)' },
 }
 
 export function ReceptionModal({ poId, onClose, onSaved }: {
@@ -40,6 +40,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
+  const { t } = useLanguage()
   const [items,   setItems]   = useState<POItemLine[] | null>(null)
   const [qty,     setQty]     = useState<Record<string, string>>({})
   const [saving,  setSaving]  = useState(false)
@@ -56,7 +57,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
           String(Math.max(0, (i.cantidad_final || 0) - (i.cantidad_recibida || 0))),
         ])))
       })
-      .catch(e => setError(e instanceof Error ? e.message : 'Error'))
+      .catch(e => setError(e instanceof Error ? e.message : t('common.error')))
   }, [poId])
 
   const save = useCallback(async (complete: boolean) => {
@@ -76,7 +77,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       }
       onSaved()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Error al registrar la recepción')
+      setError(e instanceof Error ? e.message : t('po.reception_err_save'))
       setSaving(false)
     }
   }, [items, poId, qty, onSaved])
@@ -100,13 +101,17 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Truck size={16} color={C.indigo} />
-          <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Registrar llegada del pedido</span>
-          <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}>
-            <X size={16} />
+          <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('po.reception_title')}</span>
+          <button
+            onClick={onClose}
+            aria-label={t('common.close')}
+            style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}
+          >
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
         <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>
-          El stock se actualiza solo con lo recibido, y Faro aprende el tiempo real de entrega de cada proveedor.
+          {t('po.reception_subtitle')}
         </p>
 
         {!items && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
@@ -116,7 +121,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Producto', 'Proveedor', 'Pedido', 'Recibido antes', 'Llega ahora'].map(h => (
+                  {[t('po.reception_col_product'), t('po.reception_col_supplier'), t('po.reception_col_ordered'), t('po.reception_col_received_before'), t('po.reception_col_arriving')].map(h => (
                     <th key={h} style={{
                       textAlign: 'left', padding: '6px 8px', color: C.dim,
                       fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em',
@@ -172,7 +177,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
                   border: `1px solid ${C.border}`, cursor: saving ? 'not-allowed' : 'pointer',
                 }}
               >
-                Guardar cantidades
+                {t('po.reception_btn_save_quantities')}
               </button>
               <button
                 onClick={() => save(true)}
@@ -183,7 +188,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
                   cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
                 }}
               >
-                {saving ? 'Guardando…' : '✓ Llegó todo completo'}
+                {saving ? t('common.saving') : `✓ ${t('po.reception_btn_all_arrived')}`}
               </button>
             </div>
           </>
@@ -336,7 +341,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
                         padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
                         background: badge.bg, color: badge.color,
                       }}>
-                        {badge.label}
+                        {t(badge.labelKey)}
                       </span>
                       {receivable && (
                         <button
@@ -348,7 +353,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
                             border: `1px solid ${C.border}`, color: C.text,
                           }}
                         >
-                          <Truck size={11} /> Registrar llegada
+                          <Truck size={11} aria-hidden="true" /> {t('po.reception_btn_register')}
                         </button>
                       )}
                       <SendPOButton poLogId={entry.id} />

@@ -7,10 +7,11 @@ import {
 } from '@/lib/api'
 import type {
   SessionInfo, MetricRow, InventoryRecommendation, QualityReport,
-  SkuIntelligenceData, ForecastPoint,
+  SkuIntelligenceData, ForecastPoint, InventorySignal,
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
+import SignalBadge from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
@@ -39,6 +40,19 @@ const ACTION_VARIANT: Record<string, 'danger' | 'warning' | 'success'> = {
   REORDER:   'danger',
   OVERSTOCK: 'warning',
   OK:        'success',
+}
+
+// La acción de inventario se mostraba con su valor crudo en inglés
+// ("REORDER") y el color como único indicador. Se mapea al semáforo
+// compartido, que ya trae icono + etiqueta en español (feature 2.8).
+const ACTION_SIGNAL: Record<string, InventorySignal> = {
+  REORDER:   'PEDIR_YA',
+  OVERSTOCK: 'SOBRESTOCK',
+  OK:        'OK',
+}
+
+function ActionBadge({ action, size }: { action: string; size?: 'sm' | 'md' }) {
+  return <SignalBadge signal={ACTION_SIGNAL[action] ?? 'SIN_DATOS'} size={size} />
 }
 
 const GRANULARITY_LABELS: Record<string, string> = {
@@ -257,7 +271,7 @@ function SkuCard({ sku, quality, metrics, inventory, selected, onClick }: {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {sparkVals.length > 0 && <Sparkline values={sparkVals} color={color} width={50} height={22} />}
-          {inventory && <Badge variant={ACTION_VARIANT[inventory.action] ?? 'default'} style={{ fontSize: 9 }}>{inventory.action}</Badge>}
+          {inventory && <ActionBadge action={inventory.action} />}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
@@ -1367,7 +1381,7 @@ function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
         }`,
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <Badge variant={ACTION_VARIANT[inv.action] ?? 'default'}>{inv.action}</Badge>
+        <ActionBadge action={inv.action} size="md" />
         <span style={{ fontSize: 12 }}>
           {inv.action === 'REORDER'   && t('skus.action_reorder_msg')}
           {inv.action === 'OVERSTOCK' && t('skus.action_overstock_msg')}
@@ -1756,7 +1770,7 @@ export default function SkusPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {skuInventory && (
-                    <Badge variant={ACTION_VARIANT[skuInventory.action] ?? 'default'}>{skuInventory.action}</Badge>
+                    <ActionBadge action={skuInventory.action} size="md" />
                   )}
                 </div>
               </div>

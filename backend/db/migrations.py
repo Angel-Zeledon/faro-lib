@@ -526,6 +526,24 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS inventory_mermas_tenant_idx ON inventory_mermas (tenant_id, created_at DESC)"),
     ("create_inventory_mermas_sku_idx",
      "CREATE INDEX IF NOT EXISTS inventory_mermas_sku_idx ON inventory_mermas (tenant_id, sku, created_at DESC)"),
+    # ── LatAm commercial calendar (feature 3.4) ───────────────────────────────
+    # Seeded events live in the same table as user-created ones so the existing
+    # simulator needs no changes. `catalog_key` identifies a seeded occurrence
+    # (e.g. "co_semana_santa:2026") and makes re-seeding idempotent; `active`
+    # lets the user switch an event off without deleting it, so a later re-seed
+    # does not silently resurrect it.
+    ("add_inventory_events_catalog_key",
+     "ALTER TABLE inventory_events ADD COLUMN IF NOT EXISTS catalog_key TEXT"),
+    ("add_inventory_events_country",
+     "ALTER TABLE inventory_events ADD COLUMN IF NOT EXISTS country TEXT"),
+    ("add_inventory_events_source",
+     "ALTER TABLE inventory_events ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user'"),
+    ("add_inventory_events_active",
+     "ALTER TABLE inventory_events ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE"),
+    ("create_inventory_events_catalog_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS inventory_events_catalog_uniq
+        ON inventory_events (tenant_id, catalog_key)
+        WHERE catalog_key IS NOT NULL"""),
 ]
 
 

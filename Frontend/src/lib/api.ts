@@ -7,6 +7,7 @@ import type {
   DataSource, DataPreview, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
+  CalendarCatalogResponse, CalendarSeedResult,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
   MermaReason, MermaRecord,
 } from './types'
@@ -599,6 +600,16 @@ export const createInventoryEvent  = (body: Omit<InventoryEvent, 'id' | 'tenant_
   request<InventoryEvent>('POST', '/inventory/events', body)
 export const updateInventoryEvent  = (id: string, body: Partial<InventoryEvent>) =>
   request<InventoryEvent>('PATCH', `/inventory/events/${id}`, body)
+
+// ── LatAm commercial calendar (feature 3.4) ─────────────────────────────────
+export const getCalendarCatalog = (country = 'CO') =>
+  request<CalendarCatalogResponse>('GET', `/inventory/events/catalog?country=${country}`)
+export const seedCalendarCatalog = (country = 'CO', years?: number[]) =>
+  request<CalendarSeedResult>('POST', '/inventory/events/catalog/seed', { country, years })
+export const toggleCalendarEntry = (catalogKey: string, active: boolean) =>
+  request<{ catalog_key: string; active: boolean; updated: number }>(
+    'PATCH', `/inventory/events/catalog/${catalogKey}`, { active },
+  )
 export const deleteInventoryEvent  = (id: string) =>
   fetch(`${BASE}/inventory/events/${id}`, {
     method: 'DELETE',

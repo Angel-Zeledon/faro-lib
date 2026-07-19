@@ -780,11 +780,15 @@ def get_event(tenant_id: str, event_id: str) -> Optional[dict]:
 
 
 def get_upcoming_events(tenant_id: str, days_ahead: int = 60) -> list[dict]:
-    """Events starting within the next N days (for dashboard banner)."""
+    """
+    Events starting within the next N days (for dashboard banner).
+    Only *active* events — a switched-off calendar event must not raise alerts.
+    """
     return query(
         """SELECT * FROM inventory_events
            WHERE tenant_id = %s AND start_date <= CURRENT_DATE + %s
              AND end_date >= CURRENT_DATE
+             AND active IS TRUE
            ORDER BY start_date""",
         (tenant_id, days_ahead),
     )
@@ -802,7 +806,7 @@ def create_event(tenant_id: str, data: dict) -> dict:
 
 
 def update_event(tenant_id: str, event_id: str, data: dict) -> Optional[dict]:
-    allowed = {"name", "start_date", "end_date", "multiplier", "notes"}
+    allowed = {"name", "start_date", "end_date", "multiplier", "notes", "active"}
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
         return query_one("SELECT * FROM inventory_events WHERE id = %s AND tenant_id = %s", (event_id, tenant_id))
@@ -816,6 +820,123 @@ def update_event(tenant_id: str, event_id: str, data: dict) -> Optional[dict]:
 
 def delete_event(tenant_id: str, event_id: str) -> None:
     execute("DELETE FROM inventory_events WHERE id = %s AND tenant_id = %s", (event_id, tenant_id))
+
+
+# ── LatAm commercial calendar seeding (feature 3.4) ──────────────────────────
+
+def seed_calendar_events(
+    tenant_id: str,
+    country: str = "CO",
+    years: Optional[list[int]] = None,
+) -> dict:
+    """
+    Materialise the LatAm commercial-events catalog into `inventory_events`
+    for this tenant. Idempotent: re-running inserts only the occurrences that
+    are missing (unique index on tenant_id + catalog_key), and never touches
+    the `active` flag of rows the user already switched off.
+
+    Returns a summary so the caller can tell "seeded 40" from "already there".
+    """
+    from backend.inventory import calendar_catalog as cat
+
+    country = (country or "CO").upper()
+    if country not in cat.SUPPORTED_COUNTRIES:
+        raise ValueError(
+            f"País '{country}' sin catálogo. Disponibles: {', '.join(cat.SUPPORTED_COUNTRIES)}"
+        )
+
+    occurrences = cat.build_occurrences(country, years)
+    existing = {
+        r["catalog_key"] for r in query(
+            "SELECT catalog_key FROM inventory_events "
+            "WHERE tenant_id = %s AND catalog_key IS NOT NULL",
+            (tenant_id,),
+        )
+    }
+
+    inserted = 0
+    for occ in occurrences:
+        if occ.catalog_key in existing:
+            continue
+        eid = f"ev_{__import__('uuid').uuid4().hex[:12]}"
+        execute(
+            """INSERT INTO inventory_events
+                 (id, tenant_id, name, start_date, end_date, multiplier, notes,
+                  catalog_key, country, source, active)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'catalog', TRUE)
+               ON CONFLICT (tenant_id, catalog_key)
+                 WHERE catalog_key IS NOT NULL
+                 DO NOTHING""",
+            (eid, tenant_id, occ.name, occ.start_date, occ.end_date,
+             occ.multiplier, occ.notes, occ.catalog_key, country),
+        )
+        inserted += 1
+
+    return {
+        "country":       country,
+        "inserted":      inserted,
+        "already_present": len(occurrences) - inserted,
+        "total_catalog": len(occurrences),
+    }
+
+
+def get_catalog_state(tenant_id: str, country: str = "CO") -> dict[str, dict]:
+    """
+    Per catalog entry: how many occurrences are seeded, how many are active and
+    when the next one starts. Keyed by the catalog entry key (the part of
+    `catalog_key` before the first colon) so the UI can render one row per
+    event rather than one per occurrence.
+    """
+    rows = query(
+        """SELECT split_part(catalog_key, ':', 1) AS entry_key,
+                  COUNT(*)                                         AS total,
+                  COUNT(*) FILTER (WHERE active IS TRUE)           AS active,
+                  MIN(start_date) FILTER (WHERE end_date >= CURRENT_DATE
+                                            AND active IS TRUE)    AS next_start
+             FROM inventory_events
+            WHERE tenant_id = %s AND catalog_key IS NOT NULL
+              AND (country = %s OR country IS NULL)
+            GROUP BY 1""",
+        (tenant_id, (country or "CO").upper()),
+    )
+    return {
+        r["entry_key"]: {
+            "total":      int(r["total"]),
+            "active":     int(r["active"]),
+            "next_start": r["next_start"].isoformat() if r["next_start"] else None,
+        }
+        for r in rows
+    }
+
+
+def set_event_active(tenant_id: str, event_id: str, active: bool) -> Optional[dict]:
+    """Switch a calendar event on/off without deleting it."""
+    execute(
+        "UPDATE inventory_events SET active = %s WHERE id = %s AND tenant_id = %s",
+        (bool(active), event_id, tenant_id),
+    )
+    return get_event(tenant_id, event_id)
+
+
+def set_catalog_group_active(tenant_id: str, catalog_prefix: str, active: bool) -> int:
+    """
+    Switch every occurrence of one catalog entry (e.g. all 24 `co_quincena_15`
+    rows across both seeded years) at once — toggling 24 rows one by one would
+    be a miserable UI. Returns how many rows matched.
+    """
+    rows = query(
+        "SELECT id FROM inventory_events "
+        "WHERE tenant_id = %s AND catalog_key LIKE %s",
+        (tenant_id, f"{catalog_prefix}:%"),
+    )
+    if not rows:
+        return 0
+    execute(
+        "UPDATE inventory_events SET active = %s "
+        "WHERE tenant_id = %s AND catalog_key LIKE %s",
+        (bool(active), tenant_id, f"{catalog_prefix}:%"),
+    )
+    return len(rows)
 
 
 # ── PDF report ────────────────────────────────────────────────────────────────

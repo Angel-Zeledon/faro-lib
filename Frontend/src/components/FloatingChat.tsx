@@ -5,6 +5,7 @@ import type { SessionInfo, ChatMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { MessageCircle, X, Send, Bot, User, Sparkles, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 const SOURCE_TAG: Record<string, { label: string; color: string }> = {
   rag:       { label: 'RAG',      color: '#818cf8' },
@@ -16,6 +17,7 @@ const SOURCE_TAG: Record<string, { label: string; color: string }> = {
 }
 
 export default function FloatingChat() {
+  const { t } = useLanguage()
   const [open,      setOpen]      = useState(false)
   const [sessions,  setSessions]  = useState<SessionInfo[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -286,6 +288,7 @@ export default function FloatingChat() {
             <button
               onClick={send}
               disabled={!canSend}
+              aria-label={t('chat.send')}
               style={{
                 all: 'unset', width: 36, height: 36, borderRadius: 8, flexShrink: 0,
                 background: canSend ? '#6366f1' : 'var(--surface-2)',
@@ -295,7 +298,7 @@ export default function FloatingChat() {
                 transition: 'background 0.15s',
               }}
             >
-              <Send size={13} color={canSend ? '#fff' : 'var(--dim)'} />
+              <Send size={13} color={canSend ? '#fff' : 'var(--dim)'} aria-hidden="true" />
             </button>
           </div>
         </div>

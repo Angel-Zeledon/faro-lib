@@ -21,6 +21,7 @@ import {
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
+import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 import NarrativeCard from '@/components/ui/NarrativeCard'
@@ -133,7 +134,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
  }, [item.qty])
 
  const isUrgent  = item.signal === 'PEDIR_YA'
- const accent    = isUrgent ? '#ef4444' : '#f59e0b'
+ const accent    = isUrgent ? 'var(--signal-pedir-ya-fg)' : 'var(--signal-pedir-pronto-fg)'
  const isApproved = item.status === 'approved' || item.status === 'modified'
  const isRejected = item.status === 'rejected'
 
@@ -159,6 +160,9 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
     <div>
      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
+      {/* El borde de color solo no dice en qué estado está el SKU: el badge
+          añade icono + etiqueta (WCAG 1.4.1). */}
+      <SignalBadge signal={item.signal} />
       <span style={{
        fontSize: 10, fontFamily: 'monospace', color: 'var(--dim)',
        background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 4,
@@ -1066,9 +1070,11 @@ export default function HoyPage() {
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
          <div style={{ marginBottom: 24 }}>
           <div style={{
-           fontSize: 11, fontWeight: 700, color: '#ef4444',
+           fontSize: 11, fontWeight: 700, color: 'var(--signal-pedir-ya-fg)',
            textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+           display: 'flex', alignItems: 'center', gap: 6,
           }}>
+           <AlertTriangle size={12} aria-hidden="true" />
            {t('hoy.section_urgent')}
           </div>
           {cart.filter(i => i.signal === 'PEDIR_YA').map(item => (
@@ -1087,9 +1093,11 @@ export default function HoyPage() {
         {cart.filter(i => i.signal === 'PEDIR_PRONTO').length > 0 && (
          <div style={{ marginBottom: 24 }}>
           <div style={{
-           fontSize: 11, fontWeight: 700, color: '#f59e0b',
+           fontSize: 11, fontWeight: 700, color: 'var(--signal-pedir-pronto-fg)',
            textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+           display: 'flex', alignItems: 'center', gap: 6,
           }}>
+           <Clock size={12} aria-hidden="true" />
            {t('hoy.section_this_week')}
           </div>
           {cart.filter(i => i.signal === 'PEDIR_PRONTO').map(item => (
@@ -1194,8 +1202,8 @@ export default function HoyPage() {
            <span style={{ fontSize: 14, fontWeight: 700, color: C.text, flex: 1 }}>
             {t('hoy.generate_send_title')}
            </span>
-           <button onClick={dismissGeneratedPO} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex' }}>
-            <X size={15} />
+           <button onClick={dismissGeneratedPO} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex' }}>
+            <X size={15} aria-hidden="true" />
            </button>
           </div>
           <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 12px' }}>

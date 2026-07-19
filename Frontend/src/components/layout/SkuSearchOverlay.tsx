@@ -4,29 +4,12 @@ import { Search, X, Package, AlertTriangle, CornerDownLeft, ArrowUp, ArrowDown }
 import { getSessions, getInventoryStatus, getSkuIntelligence } from '@/lib/api'
 import type { InventoryStatusItem, InventorySignal, SkuIntelligenceData } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
-import Badge from '@/components/ui/Badge'
+import SignalBadge, { SIGNAL_ORDER } from '@/components/ui/SignalBadge'
 import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 
-// ── Signal presentation (mirrors /inventory page's SIGNAL_CFG) ────────────────
-
-const SIGNAL_VARIANT: Record<InventorySignal, 'danger' | 'warning' | 'success' | 'info' | 'muted'> = {
-  PEDIR_YA:     'danger',
-  PEDIR_PRONTO: 'warning',
-  OK:           'success',
-  SOBRESTOCK:   'info',
-  SIN_DATOS:    'muted',
-}
-
-const SIGNAL_LABEL_KEY: Record<InventorySignal, string> = {
-  PEDIR_YA:     'inventory.signal_pedir_ya',
-  PEDIR_PRONTO: 'inventory.signal_pedir_pronto',
-  OK:           'inventory.signal_ok',
-  SOBRESTOCK:   'inventory.signal_sobrestock',
-  SIN_DATOS:    'inventory.signal_sin_datos',
-}
-
-const SIGNAL_ORDER: InventorySignal[] = ['PEDIR_YA', 'PEDIR_PRONTO', 'SOBRESTOCK', 'OK', 'SIN_DATOS']
+// ── Signal presentation ──────────────────────────────────────────────────────
+// Fuente única: components/ui/SignalBadge (icono + etiqueta + color accesible).
 
 function fmtNum(n: number | null | undefined, d = 0) {
   if (n == null || isNaN(n)) return '—'
@@ -108,9 +91,7 @@ function ResultRow({ item, active, onClick, onMouseEnter }: {
             </div>
           </div>
         </div>
-        <Badge variant={SIGNAL_VARIANT[item.signal]} style={{ fontSize: 9, flexShrink: 0 }}>
-          {t(SIGNAL_LABEL_KEY[item.signal])}
-        </Badge>
+        <SignalBadge signal={item.signal} style={{ fontSize: 9, flexShrink: 0 }} />
       </div>
     </button>
   )
@@ -409,9 +390,7 @@ function SkuDetail({ item, intel, loading, error, onBack }: {
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--dim)' }}>{item.sku}</div>
         </div>
-        <Badge variant={SIGNAL_VARIANT[item.signal]} style={{ fontSize: 10.5, flexShrink: 0 }}>
-          {t(SIGNAL_LABEL_KEY[item.signal])}
-        </Badge>
+        <SignalBadge signal={item.signal} size="md" style={{ flexShrink: 0 }} />
       </div>
 
       {/* Stats row */}
