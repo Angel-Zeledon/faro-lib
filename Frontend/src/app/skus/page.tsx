@@ -13,6 +13,9 @@ import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
 import SignalBadge from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
+import {
+  EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable,
+} from '@/components/ui/States'
 import Button from '@/components/ui/Button'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -717,7 +720,8 @@ function ChartPanel({ sessionId, sku, isDark }: {
   const [data,        setData]        = useState<SkuIntelligenceData | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [fetching,    setFetching]    = useState(false)
-  const [error,       setError]       = useState<string | null>(null)
+  // Raw error so ErrorState can classify it by kind.
+  const [error,       setError]       = useState<unknown>(null)
   const [chartType,   setChartType]   = useState<ChartType>('line')
   const [granularity, setGranularity] = useState<string | null>(null)
   const [selModel,    setSelModel]    = useState<string | undefined>(undefined)
@@ -744,11 +748,12 @@ function ChartPanel({ sessionId, sku, isDark }: {
     }
     if (isInitial) setLoading(true); else setFetching(true)
     setError(null)
+    // `silent: true` — this panel renders the failure itself as an ErrorState.
     getSkuIntelligence(sessionId, sku, {
       model:       model,
       granularity: gran ?? undefined,
       agg:         aggMethod,
-    })
+    }, { silent: true })
       .then(d => {
         cache.current.set(key, d)
         // Pre-cache under applied granularity so the follow-up effect is a cache hit
@@ -756,7 +761,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
         setData(d)
         if (!gran) setGranularity(d.applied_granularity)
       })
-      .catch(e => setError(e.message))
+      .catch((e: unknown) => setError(e))
       .finally(() => { setLoading(false); setFetching(false) })
   }, [sessionId, sku, aggMethod])
 
@@ -936,7 +941,8 @@ function ChartPanel({ sessionId, sku, isDark }: {
   }, [data, chartType, activeBands, showLegend, isDark, gaps, outliers, t])
 
   if (loading && !data) return (
-    <div style={{ flex: 1, padding: '16px', minHeight: 360 }}>
+    <div style={{ flex: 1, padding: '16px', minHeight: 360 }} role="status" aria-busy="true">
+      <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 10 }}>{t('skus.loading_label')}</div>
       <div className="skeleton" style={{ height: 36, width: '60%', marginBottom: 14, borderRadius: 8 }} />
       <div className="skeleton" style={{ height: 280, borderRadius: 10, marginBottom: 14 }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
@@ -947,9 +953,9 @@ function ChartPanel({ sessionId, sku, isDark }: {
       <div className="skeleton" style={{ height: 110, borderRadius: 8 }} />
     </div>
   )
-  if (error && !data) return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
-      <span style={{ fontSize: 13, color: '#ef4444' }}>{error}</span>
+  if (error != null && !data) return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 240, padding: 24 }}>
+      <ErrorState error={error} onRetry={() => fetchData(granularity ?? undefined, selModel, true)} />
     </div>
   )
   if (!data) return null
@@ -1394,7 +1400,7 @@ function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState({ message }: { message: string }) {
+function PanelPlaceholder({ message }: { message: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--dim)', minHeight: 200 }}>
       <Package size={36} strokeWidth={1} style={{ opacity: 0.3 }} />
@@ -1442,7 +1448,7 @@ export default function SkusPage() {
   const [selectedSku,    setSelectedSku]    = useState<string | null>(null)
   const [tab,            setTab]            = useState('Forecast')
   const [sessLoading,    setSessLoading]    = useState(true)
-  const [sessError,      setSessError]      = useState<string | null>(null)
+  const [sessError,      setSessError]      = useState<unknown>(null)
   const [loadError,      setLoadError]      = useState<string | null>(null)
   const [isDark,         setIsDark]         = useState(true)
   const [showSkuStats,   setShowSkuStats]   = useState(false)
@@ -1468,14 +1474,19 @@ export default function SkusPage() {
     return () => observer.disconnect()
   }, [])
 
-  useEffect(() => {
+  // Extracted so the error banner's retry can re-run exactly this load.
+  const reloadSessions = useCallback(() => {
+    setSessLoading(true)
+    setSessError(null)
     getSessions()
       .then(s => { setSessions(s); setSessLoading(false) })
       .catch((e: unknown) => {
-        setSessError(e instanceof Error ? e.message : t('skus.err_sessions_load_failed'))
+        setSessError(e)
         setSessLoading(false)
       })
-  }, [t])
+  }, [])
+
+  useEffect(() => { reloadSessions() }, [reloadSessions])
 
   useEffect(() => {
     if (!sessionId) return
@@ -1678,14 +1689,16 @@ export default function SkusPage() {
         </div>
       )}
 
-      {(sessError || loadError) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 12,
-          borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-          fontSize: 12, color: '#f87171',
-        }}>
-          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-          <span style={{ flex: 1 }}>{sessError || loadError}</span>
+      {/* Session list failed: retry reloads it. Partial-result failures carry
+          their own composed sentence naming which parts are missing. */}
+      {sessError != null && (
+        <div style={{ marginBottom: 12 }}>
+          <InlineError error={sessError} onRetry={reloadSessions} onDismiss={() => setSessError(null)} />
+        </div>
+      )}
+      {loadError && (
+        <div style={{ marginBottom: 12 }}>
+          <InlineError error={new Error(loadError)} onDismiss={() => setLoadError(null)} />
         </div>
       )}
 
@@ -1712,11 +1725,24 @@ export default function SkusPage() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {!sessionId ? (
-              <EmptyState message={t('skus.empty_select_trained_session')} />
+              /* Nothing trained yet: point at the action that creates the data. */
+              <div style={{ padding: 14 }}>
+                <EmptyState
+                  compact
+                  icon={<Package size={20} />}
+                  title={t('skus.empty_title')}
+                  body={t('skus.empty_body')}
+                  actions={[{ label: t('skus.empty_cta'), href: '/quick-start' }]}
+                />
+              </div>
             ) : loading ? (
-              <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+              <div style={{ padding: 12 }}>
+                <LoadingState label={t('skus.loading_label')}>
+                  <SkeletonTable rows={7} columns={1} />
+                </LoadingState>
+              </div>
             ) : skus.length === 0 ? (
-              <EmptyState message={t('skus.empty_no_skus_found')} />
+              <PanelPlaceholder message={t('skus.empty_no_skus_found')} />
             ) : (
               skus.map(sku => (
                 <SkuCard
@@ -1739,7 +1765,7 @@ export default function SkusPage() {
           borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column',
         }}>
           {!selectedSku ? (
-            <EmptyState message={sessionId ? t('skus.empty_select_sku_from_list') : t('skus.empty_no_session_selected')} />
+            <PanelPlaceholder message={sessionId ? t('skus.empty_select_sku_from_list') : t('skus.empty_no_session_selected')} />
           ) : (
             <>
               {/* SKU header */}
@@ -1964,7 +1990,7 @@ export default function SkusPage() {
                         )}
                       </div>
                     </div>
-                  ) : <EmptyState message={t('skus.empty_no_quality_data')} />
+                  ) : <PanelPlaceholder message={t('skus.empty_no_quality_data')} />
                 )}
                 {tab === 'Inventory' && (
                   skuInventory

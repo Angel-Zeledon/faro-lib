@@ -9,6 +9,7 @@ import { ToastProvider } from '@/contexts/ToastContext'
 import { BusinessProfileProvider } from '@/contexts/BusinessProfileContext'
 import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
 import ToastContainer from '@/components/ui/Toast'
+import ApiErrorBridge from './ApiErrorBridge'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -28,6 +29,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
                 <ToastContainer />
+                <ApiErrorBridge />
                 <SkuSearchOverlay />
               </SkuSearchProvider>
             </ActiveSessionProvider>

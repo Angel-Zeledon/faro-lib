@@ -7,8 +7,10 @@ import {
 } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
+import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
+import { useLanguage } from '@/contexts/LanguageContext'
 import {
-  Truck, Plus, Edit2, Trash2, X, Save, Info, ChevronDown, BarChart3,
+  Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, BarChart3,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -294,17 +296,24 @@ function SuppliersPageInner() {
   const [prefillName, setPrefillName] = useState<string | undefined>(undefined)
   const focusHandled = useRef(false)
 
+  const { t } = useLanguage()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
+  // The raw error is kept (not a flattened string) so ErrorState/InlineError
+  // can classify it by kind. `loadError` is the one that blanks the screen;
+  // `actionError` is a save/delete failure over an already-rendered list.
+  const [loadError,   setLoadError]   = useState<unknown>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [saving,    setSaving]    = useState(false)
   const [showForm,  setShowForm]  = useState(false)
   const [editing,   setEditing]   = useState<Supplier | null>(null)
 
+  // `silent: true` — the failure is rendered inline as a full ErrorState, so the
+  // interceptor's toast would duplicate it.
   const load = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { setSuppliers(await listSuppliers()) }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : 'Error cargando proveedores') }
+    setLoading(true); setLoadError(null)
+    try { setSuppliers(await listSuppliers({ silent: true })) }
+    catch (e: unknown) { setLoadError(e) }
     finally { setLoading(false) }
   }, [])
 
@@ -325,7 +334,7 @@ function SuppliersPageInner() {
   }, [loading, focusName, suppliers])
 
   async function handleSave(form: SupplierForm) {
-    setSaving(true); setError(null)
+    setSaving(true); setActionError(null)
     const payload = {
       name:           form.name.trim(),
       email:          form.email.trim() || null,
@@ -345,7 +354,7 @@ function SuppliersPageInner() {
       setShowForm(false); setEditing(null)
       await load()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Error guardando proveedor')
+      setActionError(e instanceof Error ? e.message : t('suppliers.err_saving'))
     } finally {
       setSaving(false)
     }
@@ -354,9 +363,9 @@ function SuppliersPageInner() {
   async function handleDelete(id: string) {
     const s = suppliers.find(x => x.id === id)
     if (!confirm(`¿Eliminar proveedor "${s?.name}"? Esta acción es irreversible.`)) return
-    setError(null)
+    setActionError(null)
     try { await deleteSupplier(id); await load() }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : 'Error eliminando proveedor') }
+    catch (e: unknown) { setActionError(e instanceof Error ? e.message : t('suppliers.err_deleting')) }
   }
 
   function handleEdit(s: Supplier) { setEditing(s); setShowForm(true) }
@@ -410,18 +419,9 @@ function SuppliersPageInner() {
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-          borderRadius: 8, background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
-          fontSize: 13, color: C.red,
-        }}>
-          {error}
-          <button onClick={() => setError(null)} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim, display: 'flex' }}>
-            <X size={13} />
-          </button>
-        </div>
+      {/* Save / delete failure over an already-loaded list. */}
+      {actionError && (
+        <InlineError error={new Error(actionError)} onDismiss={() => setActionError(null)} />
       )}
 
       {/* Form panel (add / edit) */}
@@ -437,38 +437,30 @@ function SuppliersPageInner() {
 
       {/* Content */}
       {loading ? (
-        <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}>
-          <Spinner />
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 8 }}>
+          <LoadingState label={t('suppliers.loading_label')}>
+            <SkeletonTable rows={5} columns={4} />
+          </LoadingState>
         </div>
+      ) : loadError ? (
+        <ErrorState error={loadError} onRetry={load} />
       ) : suppliers.length === 0 && !isFormOpen ? (
-        /* ── Empty state ─────────────────────────────────────────── */
-        <div style={{
-          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
-          padding: '48px 40px', textAlign: 'center', maxWidth: 520, margin: '0 auto', width: '100%',
-        }}>
-          <Truck size={40} strokeWidth={1} color={C.indigo} style={{ margin: '0 auto 16px', opacity: 0.35 }} />
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 10 }}>
-            Aún no tienes proveedores registrados.
-          </div>
-          <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.8, marginBottom: 24, textAlign: 'left' }}>
-            Los proveedores te permiten:
-            <ul style={{ margin: '8px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <li>Calcular automáticamente cuándo hacer pedidos</li>
-              <li>Enviar órdenes de compra directamente por email</li>
-              <li>Trackear si tus proveedores cumplen sus plazos</li>
-            </ul>
-          </div>
-          <button
-            onClick={() => { setEditing(null); setShowForm(true) }}
-            style={{
-              all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              background: C.indigo, color: '#fff',
-            }}
-          >
-            <Plus size={14} /> Agregar primer proveedor →
-          </button>
-        </div>
+        /* ── Empty state: names the payoff, then opens the form ──── */
+        <EmptyState
+          icon={<Truck size={22} />}
+          title={t('suppliers.empty_title')}
+          body={t('suppliers.empty_body')}
+          bullets={[
+            t('suppliers.empty_bullet_1'),
+            t('suppliers.empty_bullet_2'),
+            t('suppliers.empty_bullet_3'),
+          ]}
+          actions={[{
+            label: t('suppliers.empty_cta'),
+            icon: <Plus size={14} />,
+            onClick: () => { setEditing(null); setShowForm(true) },
+          }]}
+        />
       ) : suppliers.length > 0 ? (
         /* ── Tabla ───────────────────────────────────────────────── */
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
