@@ -424,6 +424,16 @@ def calc_margen_unitario(
     return round(float(precio_venta) - float(costo_unitario), 2)
 
 
+def _format_days(n: float) -> str:
+    """
+    Pluralises a day count for the end-user sentence: "1 día" / "N días".
+    The product read "te alcanza para 1 días" on every SKU with a single day of
+    cover — the exact screen the user stares at when something is about to run out.
+    """
+    rounded = round(n)
+    return "1 día" if rounded == 1 else f"{rounded:,.0f} días"
+
+
 def build_explicacion(
     stock_actual: float,
     demanda_diaria: float,
@@ -438,10 +448,10 @@ def build_explicacion(
     language, never ML vocabulary. This lives in the backend on purpose: it is
     business reasoning, not presentation.
     """
-    lt_frase = (
-        f"tu proveedor tarda {lead_time} días en entregar (aprendido de sus entregas reales)"
+    lead_time_phrase = (
+        f"tu proveedor tarda {_format_days(lead_time)} en entregar (aprendido de sus entregas reales)"
         if lead_time_origen == "aprendido"
-        else f"tu proveedor tarda {lead_time} días en entregar (lead time configurado)"
+        else f"tu proveedor tarda {_format_days(lead_time)} en entregar (lead time configurado)"
     )
     if demanda_diaria <= 0:
         # No projected sales at all: coverage is effectively unlimited, saying
@@ -450,14 +460,14 @@ def build_explicacion(
             f"Tienes {stock_actual:,.0f} unidades y el pronóstico no proyecta ventas "
             f"para este producto, así que no hay nada que reponer por ahora."
         )
-    cobertura = (
-        f"te alcanza para {dias_cobertura:.0f} días"
+    coverage_phrase = (
+        f"te alcanza para {_format_days(dias_cobertura)}"
         if dias_cobertura is not None
         else "la cobertura supera el horizonte del pronóstico"
     )
     base = (
         f"Tienes {stock_actual:,.0f} unidades y vendes {demanda_diaria:,.1f} por día, "
-        f"así que {cobertura}. Como {lt_frase}, deberías volver a pedir cuando "
+        f"así que {coverage_phrase}. Como {lead_time_phrase}, deberías volver a pedir cuando "
         f"el stock baje a {punto_reorden:,.0f} unidades"
     )
     if signal == "PEDIR_YA":
@@ -1477,8 +1487,8 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 'priority': 1, 'sku': sku, 'name': name,
                 'rec_type': 'STOCKOUT_RISK',
                 'text': (
-                    f"Emite la orden de {name} HOY — tienes {dias:.0f} días de stock "
-                    f"y {prov} tarda {lead} días en entregar. "
+                    f"Emite la orden de {name} HOY — tienes {_format_days(dias)} de stock "
+                    f"y {prov} tarda {_format_days(lead)} en entregar. "
                     f"Si no actúas hoy, habrá quiebre antes de recibir el pedido."
                 ),
                 'action': f"Pedir {qty:.0f} unidades a {prov}" if qty > 0 else "Emitir orden urgente",

@@ -601,7 +601,10 @@ export default function HoyPage() {
   if (k.pedir_pronto > 0)
    parts.push(`${k.pedir_pronto} ${t('hoy.narrative_products_need_order_week')}`)
   if (k.sobrestock > 0 && k.capital_in_overstock > 0)
-   parts.push(`$${(k.capital_in_overstock / 1_000_000).toFixed(1)}M ${t('hoy.narrative_capital_tied_overstock')}`)
+   // Full amount, never scaled to millions: an SMB's tied-up capital is usually
+   // five figures, and `/1_000_000` rendered $25,430 as "$0.0M" — the product
+   // reporting zero for money the user actually has stuck on a shelf.
+   parts.push(`${fmtMoney(k.capital_in_overstock)} ${t('hoy.narrative_capital_tied_overstock')}`)
   if (k.pedir_ya === 0 && k.pedir_pronto === 0)
    parts.push(t('hoy.narrative_inventory_under_control'))
   if (k.avg_accuracy)
