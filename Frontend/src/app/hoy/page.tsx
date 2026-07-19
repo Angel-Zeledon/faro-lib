@@ -9,15 +9,19 @@ import {
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
  getOverduePOs, sendPOToSuppliers, getSupplierContactHealth, getSupplierLeadTimeAlerts,
+ evaluatePriceBreaks, getCashCalendar, checkCashFit,
 } from '@/lib/api'
 import type {
  MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
  OptimizationResponse, OptimizationOrder, POLineDecision, OverdueReception, SendPOResult,
  SupplierContactHealthRow, SupplierLeadTimeAlert,
+ PriceBreakEvaluation, CashCalendar, CashFitResult,
 } from '@/lib/types'
 import {
  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
+import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
+import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
@@ -582,6 +586,14 @@ export default function HoyPage() {
  const [contactHealth, setContactHealth] = useState<SupplierContactHealthRow[]>([])
  const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
 
+ // Price-break opportunities for the current cart (feature 3.5) and the cash
+ // picture the cart has to fit into (feature 3.6).
+ const [priceBreaks, setPriceBreaks] = useState<PriceBreakEvaluation | null>(null)
+ const [cashCalendar, setCashCalendar] = useState<CashCalendar | null>(null)
+ const [cashBudget, setCashBudget] = useState<number | null>(null)
+ const [cashFit, setCashFit] = useState<CashFitResult | null>(null)
+ const [cashFitBusy, setCashFitBusy] = useState(false)
+
  // POs whose expected arrival (learned supplier lead time) has already passed
  const [overduePOs, setOverduePOs] = useState<OverdueReception[]>([])
 
@@ -737,6 +749,52 @@ export default function HoyPage() {
  const relevantContactHealth = contactHealth.filter(
   r => cartSupplierNames.has(r.proveedor.toLowerCase()) || r.en_ordenes_pendientes,
  )
+
+ // ── Price breaks (3.5) ───────────────────────────────────────────────────
+ // Evaluated server-side against the quantities the buyer currently has, so
+ // editing a line re-judges its scale. The "conviene o no" verdict, including
+ // the holding-cost and overstock guardrails, belongs to the backend.
+ const approvedKey = approved.map(i => `${i.sku}:${i.qty}`).join('|')
+ useEffect(() => {
+  if (!sessionId || approved.length === 0) { setPriceBreaks(null); return }
+  let cancelled = false
+  evaluatePriceBreaks(sessionId, approved.map(i => ({ sku: i.sku, quantity: i.qty })))
+   .then(r => { if (!cancelled) setPriceBreaks(r) })
+   .catch(() => { if (!cancelled) setPriceBreaks(null) })
+  return () => { cancelled = true }
+  // approvedKey collapses the cart to a primitive so this re-runs on a real
+  // quantity change, not on every re-render that rebuilds the array.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [sessionId, approvedKey])
+
+ function applyStepUp(sku: string, quantity: number) {
+  changeQty(sku, quantity)
+ }
+
+ // ── Cash calendar (3.6) ──────────────────────────────────────────────────
+ useEffect(() => {
+  getCashCalendar(30).then(setCashCalendar).catch(() => setCashCalendar(null))
+ }, [])
+
+ // Re-check the fit whenever the cart or the typed budget changes. Skipped
+ // entirely until a budget exists — without one the backend returns fits:null
+ // and there is nothing to show.
+ useEffect(() => {
+  if (cashBudget == null || approved.length === 0) { setCashFit(null); return }
+  let cancelled = false
+  setCashFitBusy(true)
+  checkCashFit({
+   budget: cashBudget,
+   items: approved.map(i => ({
+    sku: i.sku, supplier_name: i.proveedor, quantity: i.qty, unit_cost: i.unit_cost,
+   })),
+  }, 30)
+   .then(r => { if (!cancelled) setCashFit(r) })
+   .catch(() => { if (!cancelled) setCashFit(null) })
+   .finally(() => { if (!cancelled) setCashFitBusy(false) })
+  return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [cashBudget, approvedKey])
 
  async function downloadOC() {
   const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
@@ -1133,6 +1191,27 @@ export default function HoyPage() {
          <div style={{ marginBottom: 10 }}>
           <SupplierContactHealthBanner rows={relevantContactHealth} />
          </div>
+        )}
+
+        {/* Price breaks (3.5) and cash calendar (3.6) — both judged against
+            the cart as it stands, so they sit right above it. */}
+        {approved.length > 0 && priceBreaks && (
+         <PriceBreakPanel
+          opportunities={priceBreaks.opportunities}
+          totalNetSaving={priceBreaks.total_net_saving}
+          currency={fmtMoney}
+          onApplyStepUp={applyStepUp}
+         />
+        )}
+
+        {approved.length > 0 && (
+         <CashFitPanel
+          calendar={cashCalendar}
+          fit={cashFit}
+          currency={fmtMoney}
+          onBudgetChange={setCashBudget}
+          busy={cashFitBusy}
+         />
         )}
 
         {/* Sticky cart */}

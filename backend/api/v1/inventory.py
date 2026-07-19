@@ -27,6 +27,8 @@ from backend.inventory import bom_service as bom_svc
 from backend.inventory import warehouse_service as wh_svc
 from backend.inventory import optimizer_service as opt_svc
 from backend.inventory import po_pdf
+from backend.inventory import price_break_service as pb_svc
+from backend.inventory import cash_service
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -925,7 +927,196 @@ def send_po_to_suppliers(
 
         sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
 
+    # Stamp the send time once anything actually left: the payment clock starts
+    # here, so the cash calendar (3.6) has no due date to compute without it.
+    # Only on a real delivery — a PO that reached nobody owes nobody. Kept
+    # idempotent (sent_at IS NULL) so re-sending does not push the due dates of
+    # invoices the supplier already issued.
+    if any(s["email"] or s["whatsapp"] for s in sent):
+        rec_svc.mark_po_sent(user.tenant_id, po_log_id)
+
     return ok({"sent": sent, "skipped": skipped})
+
+
+# ── Supplier price breaks (feature 3.5) ──────────────────────────────────────
+
+class PriceBreakUpsert(BaseModel):
+    sku:        str   = Field(min_length=1)
+    min_qty:    float = Field(gt=0)
+    unit_price: float = Field(ge=0)
+    notes:      Optional[str] = None
+
+
+class PriceBreakCartLine(BaseModel):
+    sku:      str
+    quantity: float = Field(ge=0)
+
+
+class PriceBreakEvaluateRequest(BaseModel):
+    items: list[PriceBreakCartLine] = Field(default_factory=list)
+
+
+@router.get("/price-breaks")
+def list_price_breaks(
+    supplier_id: Optional[str] = Query(default=None),
+    sku:         Optional[str] = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Supplier quantity scales, optionally filtered by supplier and/or SKU."""
+    return ok(pb_svc.list_price_breaks(user.tenant_id, supplier_id, sku))
+
+
+@router.post("/suppliers/{supplier_id}/price-breaks", status_code=201)
+def upsert_price_break(
+    supplier_id: str,
+    body: PriceBreakUpsert,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    supplier = sup_svc.get_supplier(user.tenant_id, supplier_id)
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    row = pb_svc.upsert_price_break(
+        user.tenant_id, supplier_id, body.sku,
+        body.min_qty, body.unit_price, body.notes,
+    )
+    return ok(row)
+
+
+@router.delete("/price-breaks/{price_break_id}", status_code=204)
+def delete_price_break(
+    price_break_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    existing = pb_svc.get_price_break(user.tenant_id, price_break_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Escala de precio no encontrada")
+    pb_svc.delete_price_break(user.tenant_id, price_break_id)
+
+
+@router.post("/price-breaks/evaluate")
+def evaluate_price_breaks(
+    session_id: str = Query(...),
+    body: Optional[PriceBreakEvaluateRequest] = None,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Given the cart the buyer currently has on screen, which lines are one step
+    away from a better unit price AND would still be a good idea to step up to.
+
+    POST with a body rather than GET because the cart lives only in the browser
+    until a PO is generated — the same reason /suppliers/contact-health cannot
+    filter server-side. Non-mutating, so viewers may call it.
+
+    Falls back to the session's own recommended quantities when no cart is sent,
+    which is what the daily briefing surface needs.
+    """
+    status_items = svc.get_inventory_status(user.tenant_id, session_id)
+
+    if body and body.items:
+        cart = [{"sku": i.sku, "quantity": i.quantity} for i in body.items]
+    else:
+        cart = [
+            {"sku": i["sku"], "quantity": i.get("cantidad_recomendada") or 0}
+            for i in status_items
+            if (i.get("cantidad_recomendada") or 0) > 0
+        ]
+
+    from backend.db import session_store
+    business_cfg = session_store.get_field(user.tenant_id, session_id, "business_cfg") or {}
+    holding_cost_pct = float(business_cfg.get("holding_cost_pct", pb_svc.DEFAULT_HOLDING_COST_PCT))
+
+    opportunities = pb_svc.evaluate_cart(
+        user.tenant_id, cart, status_items, holding_cost_pct,
+    )
+    return ok({
+        "opportunities": opportunities,
+        "worth_it_count": sum(1 for o in opportunities if o["worth_it"]),
+        "total_net_saving": round(
+            sum(o["net_saving"] for o in opportunities if o["worth_it"]), 2,
+        ),
+        "holding_cost_pct": holding_cost_pct,
+    })
+
+
+# ── Cash calendar / accounts payable (feature 3.6) ───────────────────────────
+
+class CashFitLine(BaseModel):
+    sku:           Optional[str]   = None
+    supplier_name: Optional[str]   = None
+    quantity:      float           = Field(default=0, ge=0)
+    unit_cost:     Optional[float] = Field(default=None, ge=0)
+
+
+class CashFitRequest(BaseModel):
+    items:  list[CashFitLine] = Field(default_factory=list)
+    budget: Optional[float]   = Field(default=None, ge=0)
+
+
+@router.get("/cash-calendar")
+def cash_calendar(
+    horizon_days: int = Query(default=30, ge=1, le=180),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Invoices falling due from POs already sent, dated by each supplier's credit
+    terms. Read-only, so viewers may call it.
+    """
+    return ok(cash_service.get_payables(user.tenant_id, horizon_days))
+
+
+@router.post("/cash-calendar/fit")
+def cash_calendar_fit(
+    horizon_days: int = Query(default=30, ge=1, le=180),
+    session_id:   Optional[str] = Query(default=None),
+    body: Optional[CashFitRequest] = None,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    "Does the recommended purchase fit in the cash I have?"
+
+    The purchase under test comes from the cart the client sends. When no cart
+    is sent and a `session_id` is given, it is taken from the MILP budget
+    optimizer (/inventory/optimize) instead — that is the cross the plan asks
+    for: the optimizer says what to buy at minimum cost, this says whether the
+    business can pay for it in the window it lands in.
+    """
+    budget = body.budget if body else None
+
+    if body and body.items:
+        lines = [
+            {
+                "sku": i.sku,
+                "supplier_name": i.supplier_name,
+                "quantity": i.quantity,
+                "unit_cost": i.unit_cost,
+            }
+            for i in body.items
+        ]
+    elif session_id:
+        from forecasting_core.business.optimizer import optimize
+
+        inp = opt_svc.build_optimization_input(user.tenant_id, session_id, 30)
+        if inp is None:
+            lines = []
+        else:
+            result = optimize(inp)
+            stock_rows = svc.list_stock(user.tenant_id)
+            serialized = opt_svc.serialize_optimization_result(inp, result, stock_rows)
+            lines = [
+                {
+                    "sku": o["sku"],
+                    "supplier_name": o.get("proveedor"),
+                    "quantity": o["qty"],
+                    "unit_cost": o.get("costo_unitario"),
+                }
+                for o in serialized["orders"]
+            ]
+    else:
+        lines = []
+
+    return ok(cash_service.evaluate_purchase_fit(
+        user.tenant_id, lines, budget, horizon_days,
+    ))
 
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
@@ -938,6 +1129,11 @@ class SupplierCreate(BaseModel):
     lead_time_dias: int   = Field(default=15, ge=1, le=365)
     lead_time_std:  int   = Field(default=3, ge=0, le=60)
     payment_terms:  Optional[str] = None
+    # Structured credit days (feature 3.6). Optional: when omitted it is derived
+    # from the free-text `payment_terms`, so existing clients keep working and
+    # the user never has to type the same thing twice. An explicit value always
+    # wins over the parser — the user correcting a bad parse must stick.
+    payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str] = None
 
 
@@ -949,6 +1145,7 @@ class SupplierPatch(BaseModel):
     lead_time_dias: Optional[int]   = Field(default=None, ge=1, le=365)
     lead_time_std:  Optional[int]   = Field(default=None, ge=0, le=60)
     payment_terms:  Optional[str]   = None
+    payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str]   = None
 
 
@@ -965,9 +1162,23 @@ def list_suppliers(user: CurrentUser = Depends(get_current_user)):
     return ok(sup_svc.list_suppliers(user.tenant_id))
 
 
+def _with_derived_credit_days(data: dict) -> dict:
+    """
+    Fills `payment_terms_days` from the free-text `payment_terms` when the
+    client did not send it explicitly (feature 3.6). Unparseable text leaves the
+    field absent rather than guessing a number — see cash_service.
+    """
+    if data.get("payment_terms_days") is None and data.get("payment_terms"):
+        parsed = cash_service.parse_payment_terms_days(data["payment_terms"])
+        if parsed is not None:
+            data["payment_terms_days"] = parsed
+    return data
+
+
 @router.post("/suppliers", status_code=201)
 def create_supplier(body: SupplierCreate, user: CurrentUser = Depends(require_analyst_or_above)):
-    supplier = sup_svc.create_supplier(user.tenant_id, body.model_dump(exclude_none=True))
+    data = _with_derived_credit_days(body.model_dump(exclude_none=True))
+    supplier = sup_svc.create_supplier(user.tenant_id, data)
     return ok(supplier)
 
 
@@ -977,7 +1188,7 @@ def update_supplier(
     body: SupplierPatch,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    data = body.model_dump(exclude_none=True)
+    data = _with_derived_credit_days(body.model_dump(exclude_none=True))
     supplier = sup_svc.update_supplier(user.tenant_id, supplier_id, data)
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")

@@ -49,6 +49,24 @@ def get_po_items(tenant_id: str, po_log_id: str) -> list[dict]:
     )
 
 
+def mark_po_sent(tenant_id: str, po_log_id: str) -> None:
+    """
+    Stamps when a PO actually reached a supplier — the moment the payment clock
+    starts, and therefore the anchor the cash calendar (feature 3.6) dates every
+    invoice from.
+
+    `sent_at IS NULL` in the WHERE clause makes this first-write-wins: resending
+    a PO (a supplier lost the email, a second supplier on the same order) must
+    not move the due date of an invoice already issued against the first send.
+    """
+    execute(
+        """UPDATE inventory_po_log
+              SET sent_at = NOW()
+            WHERE id = %s AND tenant_id = %s AND sent_at IS NULL""",
+        (po_log_id, tenant_id),
+    )
+
+
 def receive_po(
     tenant_id: str,
     po_log_id: str,

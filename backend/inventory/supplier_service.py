@@ -44,7 +44,8 @@ def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
 
 
 def create_supplier(tenant_id: str, data: dict) -> dict:
-    allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std", "payment_terms", "notes"}
+    allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std",
+               "payment_terms", "payment_terms_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
 
     cols = ", ".join(safe.keys())
@@ -61,7 +62,8 @@ def create_supplier(tenant_id: str, data: dict) -> dict:
 
 
 def update_supplier(tenant_id: str, supplier_id: str, data: dict) -> Optional[dict]:
-    allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std", "payment_terms", "notes"}
+    allowed = {"name", "email", "phone", "whatsapp", "lead_time_dias", "lead_time_std",
+               "payment_terms", "payment_terms_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
     if not safe:
         return get_supplier(tenant_id, supplier_id)
