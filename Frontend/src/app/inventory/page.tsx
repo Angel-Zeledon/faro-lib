@@ -425,26 +425,29 @@ function MermaModal({ items, onClose, onSaved }: {
 }
 
 // ── LatAm calendar catalog (feature 3.4) ─────────────────────────────────────
+const COUNTRY_NAMES: Record<string, string> = { CR: 'Costa Rica', CO: 'Colombia' }
 // El catálogo se siembra en la DB (no es un array en el frontend): aquí sólo
 // se muestra su estado y se prende/apaga cada evento.
 function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
  const { t } = useLanguage()
  const [entries, setEntries] = useState<CalendarCatalogEntry[] | null>(null)
+ const [countries, setCountries] = useState<string[]>([])
+ const [country, setCountry] = useState('')   // '' = default del backend (CR)
  const [busy, setBusy] = useState<string | null>(null)
  const [err, setErr] = useState('')
 
  const load = useCallback(() => {
-  getCalendarCatalog('CO')
-   .then(r => setEntries(r.entries))
+  getCalendarCatalog(country || undefined)
+   .then(r => { setEntries(r.entries); setCountries(r.countries); setCountry(c => c || r.country) })
    .catch(e => setErr(e instanceof Error ? e.message : String(e)))
- }, [])
+ }, [country])
 
  useEffect(() => { load() }, [load])
 
  async function handleSeed() {
   setBusy('__seed__'); setErr('')
   try {
-   await seedCalendarCatalog('CO')
+   await seedCalendarCatalog(country || undefined)
    load(); onSeeded()
   } catch (e) { setErr(e instanceof Error ? e.message : t('inventory.calendar_err_seed')) }
   finally { setBusy(null) }
@@ -471,7 +474,23 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
  return (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-    <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.5 }}>{t('inventory.calendar_intro')}</div>
+    <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+     {t('inventory.calendar_intro')}
+     {countries.length > 1 && (
+      <>
+       {' '}
+       <label htmlFor="cal-country" style={{ marginLeft: 4 }}>{t('inventory.calendar_country')}</label>{' '}
+       <select
+        id="cal-country"
+        value={country}
+        onChange={e => { setEntries(null); setCountry(e.target.value) }}
+        style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 5, color: C.text, fontSize: 11, padding: '2px 5px' }}
+       >
+        {countries.map(c => <option key={c} value={c}>{COUNTRY_NAMES[c] ?? c}</option>)}
+       </select>
+      </>
+     )}
+   </div>
     {!anySeeded && (
      <button
       onClick={handleSeed}

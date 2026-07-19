@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { BarChart2, ChevronDown, RefreshCw } from 'lucide-react'
 import type { SessionInfo } from '@/lib/types'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 interface SessionBarProps {
   currentSession:    SessionInfo | undefined
@@ -16,6 +17,7 @@ export default function SessionBar({
   currentSession, completedSessions, sessionId,
   onSelect, loading = false, onRefresh,
 }: SessionBarProps) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -63,7 +65,7 @@ export default function SessionBar({
             </span>
           </>
         ) : (
-          <span style={{ color: 'var(--amber, #f59e0b)' }}>Sin sesión</span>
+          <span style={{ color: 'var(--signal-pedir-pronto-fg)' }}>{t('common.no_session')}</span>
         )}
 
         {completedSessions.length > 1 && (

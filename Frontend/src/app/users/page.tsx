@@ -750,7 +750,7 @@ export default function UsersPage() {
           </div>
         ) : users.length === 0 ? (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>
-            No users found.
+            {t('users.no_users_found')}
           </div>
         ) : users.map((u, idx) => (
           <div

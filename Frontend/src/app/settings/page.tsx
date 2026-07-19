@@ -10,6 +10,7 @@ import type { ApiKey, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
 import Button from '@/components/ui/Button'
 import Spinner from '@/components/ui/Spinner'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
@@ -30,6 +31,7 @@ const CRON_OPTIONS = [
 
 // ── API Keys tab ──────────────────────────────────────────────────────────────
 function ApiKeysTab() {
+  const { t } = useLanguage()
   const [keys,    setKeys]    = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
@@ -134,7 +136,7 @@ function ApiKeysTab() {
         <div style={{ textAlign: 'center', padding: 32 }}><Spinner /></div>
       ) : keys.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>
-          No API keys yet.
+          {t('settings.no_api_keys')}
         </div>
       ) : (
         <table className="data-table">
@@ -167,6 +169,7 @@ function ApiKeysTab() {
 
 // ── Webhooks tab ──────────────────────────────────────────────────────────────
 function WebhooksTab() {
+  const { t } = useLanguage()
   const [hooks,    setHooks]    = useState<Webhook[]>([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
@@ -263,7 +266,7 @@ function WebhooksTab() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spinner /></div>
       ) : hooks.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>No webhooks configured.</div>
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>{t('settings.no_webhooks')}</div>
       ) : (
         <table className="data-table">
           <thead>
@@ -291,6 +294,7 @@ function WebhooksTab() {
 
 // ── Schedules tab ─────────────────────────────────────────────────────────────
 function SchedulesTab() {
+  const { t } = useLanguage()
   const [sessions,   setSessions]  = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId] = useState<string>('')
   const [schedule,   setSchedule]  = useState<JobSchedule | null>(null)
@@ -355,7 +359,7 @@ function SchedulesTab() {
           className="form-input form-select"
           style={{ fontSize: 12, flex: 1, maxWidth: 340 }}
         >
-          {sessions.length === 0 && <option value="">No completed sessions</option>}
+          {sessions.length === 0 && <option value="">{t('settings.no_completed_sessions')}</option>}
           {sessions.map(s => (
             <option key={s.session_id} value={s.session_id}>{s.name}</option>
           ))}
@@ -414,7 +418,7 @@ function SchedulesTab() {
         </div>
       ) : (
         <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>
-          No completed sessions available.
+          {t('settings.no_sessions_available')}
         </div>
       )}
     </div>

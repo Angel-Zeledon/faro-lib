@@ -149,7 +149,7 @@ export default function FloatingChat() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>AI Analyst</div>
               {sessions.length === 0 ? (
-                <div style={{ fontSize: 10, color: 'var(--dim)' }}>No completed sessions yet</div>
+                <div style={{ fontSize: 10, color: 'var(--dim)' }}>{t('chat.no_sessions')}</div>
               ) : (
                 <select
                   value={sessionId ?? ''}
