@@ -653,6 +653,107 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     return items
 
 
+# ── Per-product event multipliers ────────────────────────────────────────────
+# Un multiplicador único por evento es una simplificación falsa: en Black
+# Friday la electrónica se dispara y la leche no se mueve. Estos overrides
+# permiten afinar por SKU o por categoría; la resolución es
+# sku > categoria > multiplicador del evento.
+
+def get_event_multipliers(tenant_id: str, event_id: str) -> list[dict]:
+    return query(
+        """SELECT * FROM inventory_event_multipliers
+           WHERE tenant_id = %s AND event_id = %s
+           ORDER BY scope, scope_value""",
+        (tenant_id, event_id),
+    )
+
+
+def set_event_multiplier(
+    tenant_id: str, event_id: str, scope: str, scope_value: str, multiplier: float,
+) -> dict:
+    """Upsert de un override. `scope` ∈ {'sku', 'categoria'}."""
+    if scope not in ("sku", "categoria"):
+        raise ValueError("scope debe ser 'sku' o 'categoria'")
+    if multiplier <= 0:
+        raise ValueError("multiplier debe ser mayor que 0")
+    value = (scope_value or "").strip()
+    if not value:
+        raise ValueError("scope_value no puede estar vacío")
+
+    mid = f"em_{__import__('uuid').uuid4().hex[:12]}"
+    execute(
+        """INSERT INTO inventory_event_multipliers
+             (id, tenant_id, event_id, scope, scope_value, multiplier)
+           VALUES (%s, %s, %s, %s, %s, %s)
+           ON CONFLICT (tenant_id, event_id, scope, scope_value)
+             DO UPDATE SET multiplier = EXCLUDED.multiplier""",
+        (mid, tenant_id, event_id, scope, value, multiplier),
+    )
+    return query_one(
+        """SELECT * FROM inventory_event_multipliers
+           WHERE tenant_id = %s AND event_id = %s AND scope = %s AND scope_value = %s""",
+        (tenant_id, event_id, scope, value),
+    )
+
+
+def delete_event_multiplier(tenant_id: str, override_id: str) -> bool:
+    existing = query_one(
+        "SELECT id FROM inventory_event_multipliers WHERE id = %s AND tenant_id = %s",
+        (override_id, tenant_id),
+    )
+    if not existing:
+        return False
+    execute(
+        "DELETE FROM inventory_event_multipliers WHERE id = %s AND tenant_id = %s",
+        (override_id, tenant_id),
+    )
+    return True
+
+
+def _index_overrides(rows: list[dict]) -> dict:
+    """Overrides indexados para resolución O(1). Categoría es case-insensitive."""
+    idx = {"sku": {}, "categoria": {}}
+    for r in rows:
+        key = r["scope_value"]
+        if r["scope"] == "categoria":
+            key = key.strip().lower()
+        idx[r["scope"]][key] = float(r["multiplier"])
+    return idx
+
+
+def _resolve_multiplier(item: dict, base: float, idx: dict) -> tuple[float, str]:
+    """Devuelve (multiplicador, origen) — origen ∈ {'sku','categoria','evento'}."""
+    sku = item.get("sku")
+    if sku is not None and sku in idx["sku"]:
+        return idx["sku"][sku], "sku"
+    cat = (item.get("categoria") or "").strip().lower()
+    if cat and cat in idx["categoria"]:
+        return idx["categoria"][cat], "categoria"
+    return base, "evento"
+
+
+def build_multiplier_explanation(event: Optional[dict], base: float,
+                                 overrides: list[dict]) -> dict:
+    """
+    El "por qué" del multiplicador, para que la UI no muestre un ×2.2 sin
+    justificar. Se devuelve estructurado (no una frase armada en el backend)
+    para que el frontend lo traduzca y lo maquete como quiera.
+    """
+    from_catalog = bool(event and event.get("catalog_key"))
+    return {
+        "multiplicador_base": base,
+        # 'catalogo' = estimación precargada por Faro; 'usuario' = lo puso el
+        # administrador (o lo editó sobre la estimación).
+        "origen": "catalogo" if from_catalog else "usuario",
+        "motivo": (event or {}).get("notes"),
+        "editable": True,
+        "es_estimacion": from_catalog,
+        "overrides_activos": len(overrides),
+        "overrides_por_sku": sum(1 for o in overrides if o["scope"] == "sku"),
+        "overrides_por_categoria": sum(1 for o in overrides if o["scope"] == "categoria"),
+    }
+
+
 # ── Promotion / event impact simulator (feature 2.3) ─────────────────────────
 
 def simulate_event_impact(
@@ -662,11 +763,16 @@ def simulate_event_impact(
     end_date,
     multiplier: float,
     event_name: Optional[str] = None,
+    event_id: Optional[str] = None,
 ) -> dict:
     """
     Project what a demand event (promo, season) does to each SKU:
     extra units to sell, whether current stock survives it, how much to order
     and the latest date to place that order (event start − lead time).
+
+    Cuando el evento tiene overrides por SKU o categoría, cada producto usa su
+    propio multiplicador y la fila reporta cuál se aplicó y de dónde salió, de
+    modo que la recomendación siempre se pueda explicar.
 
     Pure read — nothing is persisted. Uses the same per-SKU daily demand the
     semáforo uses, so the simulation is consistent with the rest of the app.
@@ -686,6 +792,10 @@ def simulate_event_impact(
     event_days = (end_date - start_date).days + 1
     days_until_start = max(0, (start_date - today).days)
 
+    # Overrides por SKU / categoría, si la simulación viene de un evento guardado.
+    override_rows = get_event_multipliers(tenant_id, event_id) if event_id else []
+    idx = _index_overrides(override_rows)
+
     items = get_inventory_status(tenant_id, session_id)
     rows: list[dict] = []
 
@@ -699,8 +809,11 @@ def simulate_event_impact(
         stock     = it.get("stock_actual")
         cost      = it.get("costo_unitario")
 
+        # Cada producto puede tener su propio multiplicador.
+        sku_mult, mult_origen = _resolve_multiplier(it, multiplier, idx)
+
         baseline_units = daily * event_days
-        event_units    = baseline_units * multiplier
+        event_units    = baseline_units * sku_mult
         extra_units    = event_units - baseline_units
 
         # Stock projected to the event start: today's stock minus normal
@@ -721,6 +834,11 @@ def simulate_event_impact(
             "sku":               it["sku"],
             "display_name":      it.get("display_name"),
             "proveedor":         it.get("proveedor"),
+            "categoria":         it.get("categoria"),
+            # Qué multiplicador se aplicó a ESTE producto y por qué: sin esto
+            # la fila no se puede explicar cuando hay overrides.
+            "multiplicador":     round(sku_mult, 2),
+            "multiplicador_origen": mult_origen,
             "demanda_diaria":    round(daily, 2),
             "baseline_units":    round(baseline_units, 1),
             "event_units":       round(event_units, 1),
@@ -744,12 +862,30 @@ def simulate_event_impact(
     total_valor = sum(r["valor_pedido"] or 0 for r in at_risk)
     earliest_order_by = min((r["order_by"] for r in at_risk), default=None)
 
+    event_row = get_event(tenant_id, event_id) if event_id else None
+    # Cuántos SKU corrieron con cada multiplicador: deja ver de un vistazo si
+    # el ×2.2 del catálogo se aplicó a todo o sólo a lo que corresponde.
+    desglose: dict[str, dict] = {}
+    for r in rows:
+        k = f"{r['multiplicador']}|{r['multiplicador_origen']}"
+        d = desglose.setdefault(k, {
+            "multiplicador": r["multiplicador"],
+            "origen":        r["multiplicador_origen"],
+            "skus":          0,
+        })
+        d["skus"] += 1
+
     return {
         "event_name":  event_name,
+        "event_id":    event_id,
         "start_date":  start_date.isoformat(),
         "end_date":    end_date.isoformat(),
         "event_days":  event_days,
         "multiplier":  multiplier,
+        "explicacion": build_multiplier_explanation(event_row, multiplier, override_rows),
+        "multiplicadores_aplicados": sorted(
+            desglose.values(), key=lambda d: -d["skus"]
+        ),
         "items":       rows,
         "summary": {
             "skus_simulados":     len(rows),

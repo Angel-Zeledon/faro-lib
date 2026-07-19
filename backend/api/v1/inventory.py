@@ -446,11 +446,60 @@ def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_c
 
     try:
         result = svc.simulate_event_impact(
-            user.tenant_id, body.session_id, start, end, mult, event_name=name,
+            user.tenant_id, body.session_id, start, end, mult,
+            event_name=name, event_id=body.event_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ok(result)
+
+
+# ── Per-product event multipliers ────────────────────────────────────────────
+
+class EventMultiplierUpsert(BaseModel):
+    scope:       str    # 'sku' | 'categoria'
+    scope_value: str
+    multiplier:  float = Field(ge=0.1, le=10.0)
+
+
+@router.get("/events/{event_id}/multipliers")
+def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Overrides de multiplicador por SKU o categoría para este evento."""
+    if not svc.get_event(user.tenant_id, event_id):
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return ok(svc.get_event_multipliers(user.tenant_id, event_id))
+
+
+@router.put("/events/{event_id}/multipliers")
+def upsert_event_multiplier(
+    event_id: str,
+    body: EventMultiplierUpsert,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Fija el multiplicador de un producto o categoría para este evento.
+    En Black Friday la electrónica no se comporta como la leche.
+    """
+    if not svc.get_event(user.tenant_id, event_id):
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    try:
+        row = svc.set_event_multiplier(
+            user.tenant_id, event_id, body.scope, body.scope_value, body.multiplier,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ok(row)
+
+
+@router.delete("/events/{event_id}/multipliers/{override_id}", status_code=204)
+def remove_event_multiplier(
+    event_id: str,
+    override_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Quita el override: el producto vuelve al multiplicador del evento."""
+    if not svc.delete_event_multiplier(user.tenant_id, override_id):
+        raise HTTPException(status_code=404, detail="Override no encontrado")
 
 
 @router.get("/events")

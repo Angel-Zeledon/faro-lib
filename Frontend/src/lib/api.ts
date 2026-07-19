@@ -7,7 +7,7 @@ import type {
   DataSource, DataPreview, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
-  CalendarCatalogResponse, CalendarSeedResult,
+  CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
   MermaReason, MermaRecord,
 } from './types'
@@ -600,6 +600,20 @@ export const createInventoryEvent  = (body: Omit<InventoryEvent, 'id' | 'tenant_
   request<InventoryEvent>('POST', '/inventory/events', body)
 export const updateInventoryEvent  = (id: string, body: Partial<InventoryEvent>) =>
   request<InventoryEvent>('PATCH', `/inventory/events/${id}`, body)
+
+// ── Multiplicadores por producto dentro de un evento ────────────────────────
+export const listEventMultipliers = (eventId: string) =>
+  request<EventMultiplier[]>('GET', `/inventory/events/${eventId}/multipliers`)
+export const setEventMultiplier = (
+  eventId: string, scope: 'sku' | 'categoria', scopeValue: string, multiplier: number,
+) =>
+  request<EventMultiplier>('PUT', `/inventory/events/${eventId}/multipliers`,
+    { scope, scope_value: scopeValue, multiplier })
+export const deleteEventMultiplier = (eventId: string, overrideId: string) =>
+  fetch(`${BASE}/inventory/events/${eventId}/multipliers/${overrideId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  }).then(r => { if (!r.ok) throw new Error('No se pudo eliminar el multiplicador') })
 
 // ── LatAm commercial calendar (feature 3.4) ─────────────────────────────────
 export const getCalendarCatalog = (country?: string) =>

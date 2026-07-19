@@ -544,6 +544,23 @@ _MIGRATIONS = _BASE_SCHEMA + [
      """CREATE UNIQUE INDEX IF NOT EXISTS inventory_events_catalog_uniq
         ON inventory_events (tenant_id, catalog_key)
         WHERE catalog_key IS NOT NULL"""),
+    # Per-product / per-category multipliers for an event.
+    # Un solo multiplicador por evento es falso en la práctica: en Black Friday
+    # la electrónica se dispara y la leche no se mueve. `scope` = 'sku' o
+    # 'categoria'; la resolución es sku > categoria > multiplicador del evento.
+    ("create_inventory_event_multipliers",
+     """CREATE TABLE IF NOT EXISTS inventory_event_multipliers (
+         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id   TEXT NOT NULL,
+         event_id    TEXT NOT NULL REFERENCES inventory_events(id) ON DELETE CASCADE,
+         scope       TEXT NOT NULL CHECK (scope IN ('sku', 'categoria')),
+         scope_value TEXT NOT NULL,
+         multiplier  FLOAT NOT NULL,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_inventory_event_multipliers_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS inventory_event_multipliers_uniq
+        ON inventory_event_multipliers (tenant_id, event_id, scope, scope_value)"""),
 ]
 
 
