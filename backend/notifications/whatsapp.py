@@ -23,9 +23,10 @@ def is_configured() -> bool:
     )
 
 
-def send_whatsapp(to_number: str, body: str) -> bool:
+def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bool:
     """
-    Send a WhatsApp text to +E164 number. Returns True on success.
+    Send a WhatsApp text (optionally with a media attachment, e.g. a PDF URL
+    Twilio will fetch and deliver) to +E164 number. Returns True on success.
     Never raises — alerting must not break the caller's loop.
     """
     if not is_configured():
@@ -38,14 +39,18 @@ def send_whatsapp(to_number: str, body: str) -> bool:
         import httpx
 
         sid = settings.twilio_account_sid
+        data = {
+            "From": settings.twilio_whatsapp_from,
+            "To": f"whatsapp:{to_number}",
+            "Body": body,
+        }
+        if media_url:
+            data["MediaUrl"] = media_url
+
         resp = httpx.post(
             f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
             auth=(sid, settings.twilio_auth_token),
-            data={
-                "From": settings.twilio_whatsapp_from,
-                "To": f"whatsapp:{to_number}",
-                "Body": body,
-            },
+            data=data,
             timeout=15,
         )
         resp.raise_for_status()
@@ -78,4 +83,20 @@ def build_inventory_alert_text(
     if n_warn:
         lines.append(f"🟡 {n_warn} por reabastecer esta semana")
     lines.append(f"Ver y aprobar: {inventory_url}")
+    return "\n".join(lines)
+
+
+def build_po_supplier_text(supplier_name: str, po_log_id: str, items: list[dict]) -> str:
+    """Short WhatsApp message accompanying a PO PDF sent to a supplier."""
+    n = len(items)
+    lines = [
+        f"📦 *Nueva orden de compra* para {supplier_name}",
+        f"{n} producto{'s' if n != 1 else ''}:",
+    ]
+    for i in items[:10]:
+        qty = i.get("cantidad_final") or 0
+        lines.append(f"  • {i.get('display_name') or i.get('sku')} — {qty:,.0f}")
+    if n > 10:
+        lines.append(f"  … y {n - 10} más")
+    lines.append(f"\nDetalle completo en el PDF adjunto. Referencia: {po_log_id}")
     return "\n".join(lines)

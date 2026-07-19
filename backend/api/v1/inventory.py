@@ -14,15 +14,17 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
+from backend.config import settings
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
 from backend.inventory import warehouse_service as wh_svc
 from backend.inventory import optimizer_service as opt_svc
+from backend.inventory import po_pdf
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -598,6 +600,96 @@ def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
     """Per-supplier performance: real lead time range, on-time rate, fill rate."""
     from backend.inventory import reception_service as rec_svc
     return ok(rec_svc.get_supplier_scorecard(user.tenant_id))
+
+
+# ── PO → supplier (feature 2.2) ──────────────────────────────────────────────
+
+@router.get("/po/{po_log_id}/pdf/{supplier_slug}")
+def download_po_pdf(po_log_id: str, supplier_slug: str):
+    """
+    Serves a generated PO PDF by (po_log_id, supplier_slug) — INTENTIONALLY
+    unauthenticated. Twilio's WhatsApp MediaUrl fetch cannot carry this app's
+    Bearer token, and this endpoint is the only way to deliver a PO PDF via
+    WhatsApp. po_log_id is an unguessable id; this serves nothing more
+    sensitive than what's already emailed to the same supplier.
+    """
+    from backend.storage import paths as storage_paths
+
+    # po_log_id is not tenant-scoped here on purpose (see docstring) — we
+    # don't have a tenant to scope by without auth, so we search every
+    # tenant's directory for a matching file. In practice this is a single
+    # glob since po_log_id is unique. po_pdf_dir("") == _base()/"pos" (an
+    # empty tenant_id segment is a no-op in pathlib's `/` join), giving the
+    # root directory one level ABOVE each per-tenant pos/ subdirectory —
+    # do not call .parent on this, that would search one level too high.
+    pos_root = storage_paths.po_pdf_dir("")
+    for candidate in pos_root.glob(f"*/{po_log_id}_{supplier_slug}.pdf"):
+        return FileResponse(candidate, media_type="application/pdf", filename=candidate.name)
+    raise HTTPException(status_code=404, detail="PO PDF not found")
+
+
+@router.post("/po/{po_log_id}/send", status_code=200)
+def send_po_to_suppliers(
+    po_log_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Sends a PO's PDF to each of its suppliers by email and WhatsApp,
+    grouping the PO's lines by supplier name (a PO can span more than one
+    supplier). Lines with no supplier name, or whose supplier has no
+    saved contact info, are skipped and reported back — never a 500.
+    """
+    from backend.inventory import reception_service as rec_svc
+    from backend.notifications import email as email_mod
+    from backend.notifications import whatsapp as wa_mod
+
+    po = rec_svc.get_po(user.tenant_id, po_log_id)
+    if not po:
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+
+    items = rec_svc.get_po_items(user.tenant_id, po_log_id)
+    ordered = [i for i in items if i["status"] in ("approved", "modified")]
+
+    by_supplier: dict[str, list[dict]] = {}
+    for i in ordered:
+        name = (i.get("proveedor") or "").strip()
+        if not name:
+            continue
+        by_supplier.setdefault(name, []).append(i)
+
+    sent: list[dict] = []
+    skipped: list[dict] = []
+    po_meta = {
+        "generated_at": po["generated_at"].isoformat() if po.get("generated_at") else None,
+        "po_log_id": po_log_id,
+    }
+
+    for supplier_name, supplier_items in by_supplier.items():
+        supplier = sup_svc.get_supplier_by_name(user.tenant_id, supplier_name)
+        if not supplier or not (supplier.get("email") or supplier.get("whatsapp")):
+            skipped.append({"supplier": supplier_name, "reason": "Sin datos de contacto en la ficha del proveedor"})
+            continue
+
+        pdf_path = po_pdf.generate_po_pdf(user.tenant_id, po_log_id, supplier_name, supplier_items, po_meta)
+        pdf_bytes = pdf_path.read_bytes()
+        slug = po_pdf.slugify_supplier_name(supplier_name)
+
+        email_ok = False
+        if supplier.get("email"):
+            email_ok = email_mod.send_po_to_supplier_email(
+                to=supplier["email"], supplier_name=supplier_name, po_log_id=po_log_id,
+                items=supplier_items, pdf_bytes=pdf_bytes, pdf_filename=pdf_path.name,
+            )
+
+        whatsapp_ok = False
+        if supplier.get("whatsapp"):
+            media_url = f"{settings.frontend_url}/api/v1/inventory/po/{po_log_id}/pdf/{slug}"
+            text = wa_mod.build_po_supplier_text(supplier_name, po_log_id, supplier_items)
+            whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text, media_url=media_url)
+
+        sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
+
+    return ok({"sent": sent, "skipped": skipped})
 
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────

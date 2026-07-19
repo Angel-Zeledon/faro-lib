@@ -118,6 +118,12 @@ def plots_artifact_dir(tenant_id: str, session_id: str) -> Path:
 def reports_artifact_dir(tenant_id: str, session_id: str) -> Path:
     return artifacts_dir(tenant_id, session_id) / "reports"
 
+def po_pdf_dir(tenant_id: str) -> Path:
+    return _base() / "pos" / tenant_id
+
+def po_pdf_file(tenant_id: str, po_log_id: str, supplier_slug: str) -> Path:
+    return po_pdf_dir(tenant_id) / f"{po_log_id}_{supplier_slug}.pdf"
+
 
 # ── Logs ───────────────────────────────────────────────────────────────────
 

@@ -3,8 +3,10 @@ Email notification service via SMTP (Gmail App Password).
 All email templates live here. Credentials come from settings.
 """
 
+import base64
 import logging
 import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -61,31 +63,47 @@ def _button(text: str, url: str) -> str:
     )
 
 
-def _send_resend(to: str, subject: str, html: str) -> None:
+def _send_resend(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
     """Send via the Resend HTTP API. Raises on failure."""
     import httpx
+
+    payload = {
+        "from": settings.email_from,
+        "to": [to],
+        "subject": f"[{_APP_NAME}] {subject}",
+        "html": html,
+    }
+    if attachment:
+        payload["attachments"] = [{
+            "filename": attachment["filename"],
+            "content": base64.b64encode(attachment["content_bytes"]).decode("ascii"),
+        }]
 
     resp = httpx.post(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {settings.resend_api_key}"},
-        json={
-            "from": settings.email_from,
-            "to": [to],
-            "subject": f"[{_APP_NAME}] {subject}",
-            "html": html,
-        },
+        json=payload,
         timeout=15,
     )
     resp.raise_for_status()
 
 
-def _send_smtp(to: str, subject: str, html: str) -> None:
+def _send_smtp(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
     """Send via SMTP TLS (fallback transport). Raises on failure."""
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("mixed" if attachment else "alternative")
     msg["Subject"] = f"[{_APP_NAME}] {subject}"
     msg["From"]    = f"{_APP_NAME} <{settings.smtp_user}>"
     msg["To"]      = to
-    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    if attachment:
+        body_part = MIMEMultipart("alternative")
+        body_part.attach(MIMEText(html, "html", "utf-8"))
+        msg.attach(body_part)
+        part = MIMEApplication(attachment["content_bytes"], Name=attachment["filename"])
+        part["Content-Disposition"] = f'attachment; filename="{attachment["filename"]}"'
+        msg.attach(part)
+    else:
+        msg.attach(MIMEText(html, "html", "utf-8"))
 
     with smtplib.SMTP(settings.smtp_server, settings.smtp_port) as smtp:
         smtp.ehlo()
@@ -94,14 +112,14 @@ def _send_smtp(to: str, subject: str, html: str) -> None:
         smtp.sendmail(settings.smtp_user, to, msg.as_string())
 
 
-def _transport_send(to: str, subject: str, html: str) -> None:
+def _transport_send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
     """
     Dispatch an email: Resend when RESEND_API_KEY is set, SMTP as fallback,
     logged no-op with neither. Raises on transport failure so callers can
     report `email_sent=False`.
     """
     if settings.resend_api_key:
-        _send_resend(to, subject, html)
+        _send_resend(to, subject, html, attachment)
         log.info("Email sent via Resend → %s | subject: %s", to, subject)
         return
 
@@ -109,14 +127,14 @@ def _transport_send(to: str, subject: str, html: str) -> None:
         log.warning("No email transport configured (RESEND_API_KEY / SMTP) — email not sent to %s", to)
         return
 
-    _send_smtp(to, subject, html)
+    _send_smtp(to, subject, html, attachment)
     log.info("Email sent via SMTP → %s | subject: %s", to, subject)
 
 
-def _send(to: str, subject: str, html: str) -> None:
+def _send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
     # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
     # while the dispatch logic in _transport_send stays independently testable.
-    _transport_send(to, subject, html)
+    _transport_send(to, subject, html, attachment)
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -345,3 +363,56 @@ def send_training_complete_email(to: str, session_name: str, dashboard_url: str)
         _send(to, f"Training complete — {session_name}", html)
     except Exception as exc:
         log.error("Failed to send training complete email to %s: %s", to, exc)
+
+
+def send_po_to_supplier_email(
+    to: str,
+    supplier_name: str,
+    po_log_id: str,
+    items: list[dict],
+    pdf_bytes: bytes,
+    pdf_filename: str,
+) -> bool:
+    """Send a purchase order's PDF to its supplier. Returns True if sent."""
+    def _row(item: dict) -> str:
+        sku = item.get("sku", "")
+        name = item.get("display_name") or sku
+        qty = item.get("cantidad_final") or 0
+        return (
+            f'<tr style="border-bottom:1px solid #1e2030;">'
+            f'<td style="padding:8px 10px;font-family:monospace;font-size:12px;">{sku}</td>'
+            f'<td style="padding:8px 10px;font-size:12px;color:{_DIM};">{name}</td>'
+            f'<td style="padding:8px 10px;font-size:12px;font-weight:600;">{qty:,.0f}</td>'
+            f'</tr>'
+        )
+
+    table_html = (
+        '<table width="100%" style="border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#13141e;">'
+        f'<th style="padding:8px 10px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">SKU</th>'
+        f'<th style="padding:8px 10px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Producto</th>'
+        f'<th style="padding:8px 10px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Cantidad</th>'
+        '</tr></thead><tbody>' + "".join(_row(i) for i in items) + '</tbody></table>'
+    )
+
+    html = _base_html(
+        "Nueva orden de compra",
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Nueva orden de compra</p>
+        <p style="color:{_DIM};margin:0 0 20px;">
+          Hola {supplier_name}, adjuntamos una nueva orden de compra. El detalle completo
+          está en el PDF adjunto.
+        </p>
+        {table_html}
+        <p style="color:{_DIM};font-size:11px;margin:20px 0 0;">
+          Referencia: {po_log_id}
+        </p>
+        """,
+    )
+    try:
+        _send(to, f"Orden de compra — {po_log_id}", html,
+              attachment={"filename": pdf_filename, "content_bytes": pdf_bytes})
+        return True
+    except Exception as exc:
+        log.error("Failed to send PO email to supplier %s <%s>: %s", supplier_name, to, exc)
+        return False

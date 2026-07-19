@@ -132,6 +132,24 @@ def client(app):
             yield c
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _force_local_llm_in_tests():
+    """
+    backend/ai/local_llm.py::get_local_llm_client() returns a real
+    Anthropic-backed client whenever ANTHROPIC_API_KEY is set in .env — the
+    same .env the dev server reads. Without this, any test that reaches an
+    AI call site fires a real, billed request, and stalls for a long time if
+    that key's account has no credit (observed directly: a full-suite run
+    died silently mid-test after several such calls each burned the
+    client's retry/timeout budget). Autouse + session-scoped so every test
+    is protected regardless of whether it uses the `client` fixture.
+    """
+    from backend.ai.local_llm import LocalLLMClient
+
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", side_effect=LocalLLMClient):
+        yield
+
+
 # ── Database helpers ──────────────────────────────────────────────────────────
 
 @pytest.fixture
