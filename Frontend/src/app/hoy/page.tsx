@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
- ChevronDown, ChevronUp, Send, UserX, X,
+ ChevronDown, ChevronUp, Send, UserX, X, Upload, PlayCircle, Check,
 } from 'lucide-react'
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
@@ -403,6 +403,104 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
  return items
 }
 
+// ── Designed empty state (feature 1.2) ────────────────────────────────────────
+// `/hoy` is the post-login landing page, so for a brand-new tenant this screen
+// IS the onboarding. Instead of "select a trained session", it states plainly
+// that there's no data yet, shows what the page will contain once there is, and
+// offers the two real ways forward: upload a sales file, or run the bundled
+// demo (POST /demo/quickstart, driven by /quick-start?demo=1).
+function HoyEmptyState({ variant }: { variant: 'no_session' | 'no_inventory' }) {
+ const { t } = useLanguage()
+ const isNoSession = variant === 'no_session'
+
+ const bullets = [
+  t('hoy.empty_bullet_1'),
+  t('hoy.empty_bullet_2'),
+  t('hoy.empty_bullet_3'),
+ ]
+
+ return (
+  <div style={{
+   display: 'flex', flexDirection: 'column', alignItems: 'center',
+   justifyContent: 'center', flex: 1, padding: '56px 24px',
+  }}>
+   <div style={{
+    width: '100%', maxWidth: 560,
+    background: C.surface, border: `1px solid ${C.border}`,
+    borderRadius: 16, padding: '36px 34px', textAlign: 'center',
+   }}>
+    <div style={{
+     width: 52, height: 52, borderRadius: 14, margin: '0 auto 18px',
+     display: 'flex', alignItems: 'center', justifyContent: 'center',
+     background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.28)',
+    }}>
+     {isNoSession
+      ? <BarChart2 size={24} color={C.indigo} />
+      : <Package   size={24} color={C.indigo} />}
+    </div>
+
+    <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: '0 0 8px' }}>
+     {isNoSession ? t('hoy.empty_title') : t('hoy.no_inventory_data')}
+    </h2>
+    <p style={{ fontSize: 14, color: C.muted, margin: '0 0 22px', lineHeight: 1.6 }}>
+     {isNoSession ? t('hoy.empty_body') : t('hoy.no_inventory_data_hint')}
+    </p>
+
+    {isNoSession && (
+     <ul style={{
+      listStyle: 'none', margin: '0 0 26px', padding: 0,
+      display: 'flex', flexDirection: 'column', gap: 9, textAlign: 'left',
+     }}>
+      {bullets.map(b => (
+       <li key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <Check size={15} color={C.green} style={{ flexShrink: 0, marginTop: 2 }} />
+        <span style={{ fontSize: 13.5, color: C.muted, lineHeight: 1.5 }}>{b}</span>
+       </li>
+      ))}
+     </ul>
+    )}
+
+    <div style={{
+     display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap',
+    }}>
+     <Link
+      href={isNoSession ? '/quick-start' : '/inventory'}
+      style={{
+       display: 'inline-flex', alignItems: 'center', gap: 8,
+       padding: '11px 22px', background: C.indigo, color: '#fff',
+       borderRadius: 10, textDecoration: 'none', fontSize: 14, fontWeight: 700,
+      }}
+     >
+      <Upload size={15} />
+      {isNoSession ? t('hoy.empty_cta_primary') : t('hoy.link_go_inventory')}
+     </Link>
+
+     {isNoSession && (
+      <Link
+       href="/quick-start?demo=1"
+       style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        padding: '11px 22px', background: 'transparent', color: C.indigo,
+        border: `1px solid ${C.indigo}`, borderRadius: 10,
+        textDecoration: 'none', fontSize: 14, fontWeight: 700,
+       }}
+      >
+       <PlayCircle size={15} />
+       {t('hoy.empty_cta_demo')}
+      </Link>
+     )}
+    </div>
+
+    {isNoSession && (
+     <p style={{ fontSize: 12, color: C.dim, margin: '14px 0 0', lineHeight: 1.5 }}>
+      {t('hoy.empty_demo_hint')}
+     </p>
+    )}
+   </div>
+  </div>
+ )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function HoyPage() {
  const { t, lang } = useLanguage()
@@ -703,41 +801,9 @@ export default function HoyPage() {
   )
  }
 
- // ── No session state ──────────────────────────────────────────────────────
+ // ── No trained session yet: this is the new tenant's first screen ─────────
  if (!loading && !sessionsLoading && !sessionId && completedSessions.length === 0) {
-  return (
-   <div style={{
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    justifyContent: 'center', flex: 1, gap: 20, padding: 40,
-    color: C.muted, textAlign: 'center',
-   }}>
-    <BarChart2 size={40} color={C.dim} style={{ opacity: 0.4 }} />
-    <p style={{ fontSize: 16, color: C.text, margin: 0 }}>
-     {t('hoy.no_session_message')}
-    </p>
-    <div style={{ display: 'flex', gap: 12 }}>
-     <Link
-      href="/quick-start"
-      style={{
-       padding: '10px 20px', background: C.indigo, color: '#fff',
-       borderRadius: 8, textDecoration: 'none', fontSize: 14, fontWeight: 600,
-      }}
-     >
-      {t('hoy.link_go_quick_start')}
-     </Link>
-     <Link
-      href="/inventory"
-      style={{
-       padding: '10px 20px', background: C.surface, color: C.text,
-       border: `1px solid ${C.border}`, borderRadius: 8,
-       textDecoration: 'none', fontSize: 14, fontWeight: 600,
-      }}
-     >
-      {t('hoy.link_go_inventory')}
-     </Link>
-    </div>
-   </div>
-  )
+  return <HoyEmptyState variant="no_session" />
  }
 
  return (
@@ -829,29 +895,9 @@ export default function HoyPage() {
    {/* ── Main content ── */}
    {!loading && briefing && (
     <>
-     {/* No-data empty state */}
+     {/* Session trained, but no stock loaded — nothing to put a semáforo on */}
      {!briefing.has_data ? (
-      <div style={{
-       display: 'flex', flexDirection: 'column', alignItems: 'center',
-       justifyContent: 'center', padding: '60px 0', gap: 16, textAlign: 'center',
-      }}>
-       <Package size={36} color={C.dim} style={{ opacity: 0.4 }} />
-       <p style={{ fontSize: 16, color: C.text, margin: 0 }}>
-        {t('hoy.no_inventory_data')}
-       </p>
-       <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>
-        {t('hoy.no_inventory_data_hint')}
-       </p>
-       <Link
-        href="/inventory"
-        style={{
-         padding: '10px 20px', background: C.indigo, color: '#fff',
-         borderRadius: 8, textDecoration: 'none', fontSize: 14, fontWeight: 600,
-        }}
-       >
-        {t('hoy.link_go_inventory')}
-       </Link>
-      </div>
+      <HoyEmptyState variant="no_inventory" />
      ) : (
       <>
        {/* Overdue-reception alerts: expected arrival (learned supplier lead

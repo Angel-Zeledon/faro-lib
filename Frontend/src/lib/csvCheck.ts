@@ -2,6 +2,43 @@
 // failures — wrong separator, missing columns, unparseable dates, non-numeric
 // quantities — and reports them with row numbers BEFORE the file leaves the
 // browser. Excel files (.xlsx/.xls) skip this and are validated server-side.
+//
+// Issues are returned twice: as flat `errors`/`warnings` strings (blocking
+// summary, kept for backwards compatibility) and as `issueGroups` — grouped by
+// kind, each carrying the first few offending rows plus how many were elided
+// ("y 37 más"). The UI renders the groups; the strings drive the block/continue
+// decision.
+
+export type CsvIssueKind =
+  | 'column_count'
+  | 'invalid_date'
+  | 'non_numeric_qty'
+  | 'negative_qty'
+  | 'empty_sku'
+
+export interface CsvIssue {
+  /** 1-based line number in the file, counting the header as row 1. */
+  row:     number
+  kind:    CsvIssueKind
+  /** Human message in Spanish, already prefixed with "Fila N:". */
+  message: string
+}
+
+export interface CsvIssueGroup {
+  kind:  CsvIssueKind
+  /** Short Spanish title for the group, e.g. "Fechas inválidas". */
+  title: string
+  /** What the user should do about it. */
+  hint:  string
+  /** Total rows affected (not just the reported sample). */
+  count: number
+  /** First `MAX_PER_GROUP` messages. */
+  samples: string[]
+  /** count - samples.length — drives the "y N más" line. */
+  hidden: number
+  /** True when this group alone makes the file unusable. */
+  fatal: boolean
+}
 
 export interface CsvCheckResult {
   ok: boolean
@@ -11,11 +48,65 @@ export interface CsvCheckResult {
   warnings: string[]
   rowCount: number
   columns: string[]
+  /** Per-row problems grouped by kind. Populated even when `ok` is true. */
+  issueGroups: CsvIssueGroup[]
 }
 
-const MAX_REPORTED = 8
+/** How many offending rows are listed per group before collapsing into "y N más". */
+const MAX_PER_GROUP = 5
+
 const DATE_HINTS = ['fecha', 'date', 'dia', 'día', 'day', 'periodo']
 const QTY_HINTS  = ['cantidad', 'demanda', 'venta', 'ventas', 'qty', 'quantity', 'demand', 'sales', 'units', 'unidades']
+const SKU_HINTS  = ['sku', 'producto', 'product', 'articulo', 'artículo', 'item', 'codigo', 'código', 'code', 'referencia', 'ref']
+
+// ── Downloadable template ─────────────────────────────────────────────────────
+// Header names are the canonical aliases the backend profiler recognises with
+// high confidence (forecasting_core/data/profiler.py `_CANONICAL_ALIASES`), so
+// a file built from this template auto-maps without manual column picking.
+// sku / fecha / demanda are the three required canonical fields
+// (forecasting_core/data/canonical.py `REQUIRED_FIELDS`); the rest are optional
+// and may be deleted.
+
+export const CSV_TEMPLATE_FILENAME = 'plantilla_faro.csv'
+
+/** Canonical header row of the template, in order. */
+export const CSV_TEMPLATE_HEADERS = [
+  'sku', 'fecha', 'demanda', 'tienda', 'inventario', 'costo', 'precio',
+] as const
+
+const CSV_TEMPLATE_ROWS: string[][] = [
+  ['SKU-001', '2026-01-01', '32', 'Bodega Central', '480', '8.50', '12.90'],
+  ['SKU-001', '2026-01-02', '28', 'Bodega Central', '452', '8.50', '12.90'],
+  ['SKU-001', '2026-01-03', '35', 'Bodega Central', '417', '8.50', '12.90'],
+  ['SKU-002', '2026-01-01', '15', 'Bodega Central', '210', '5.20', '7.80'],
+  ['SKU-002', '2026-01-02', '18', 'Bodega Central', '192', '5.20', '7.80'],
+  ['SKU-002', '2026-01-03', '12', 'Bodega Central', '180', '5.20', '7.80'],
+]
+
+/** Build the example CSV as text (comma-separated, one header + sample rows). */
+export function buildCsvTemplate(): string {
+  const lines = [CSV_TEMPLATE_HEADERS.join(','), ...CSV_TEMPLATE_ROWS.map(r => r.join(','))]
+  return lines.join('\r\n') + '\r\n'
+}
+
+/**
+ * Trigger a browser download of the example CSV. No-op outside the browser.
+ * BOM prefixed so Excel opens the accented headers correctly.
+ */
+export function downloadCsvTemplate(filename: string = CSV_TEMPLATE_FILENAME): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const blob = new Blob(['﻿' + buildCsvTemplate()], { type: 'text/csv;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// ── Parsing helpers ───────────────────────────────────────────────────────────
 
 function detectSeparator(headerLine: string): string {
   const counts: [string, number][] = [
@@ -47,11 +138,22 @@ function splitLine(line: string, sep: string): string[] {
   return out.map(c => c.trim())
 }
 
+/**
+ * `Date.parse` alone is uselessly permissive — in V8 it happily accepts
+ * "not-a-date-13" (it latches onto the trailing number). So a free-form string
+ * is only trusted when it also *looks* like a date: it must carry a 4-digit
+ * year. Everything else falls through to the strict numeric patterns below.
+ */
+function looseDate(raw: string): boolean {
+  if (!/\d{4}/.test(raw)) return false
+  return !isNaN(Date.parse(raw))
+}
+
 function parseableDate(raw: string): boolean {
   if (!raw) return false
   // ISO / y-m-d / d-m-y / d/m/y with 2-4 digit year
   const m = raw.match(/^(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})$/)
-  if (!m) return !isNaN(Date.parse(raw))
+  if (!m) return looseDate(raw)
   const a = parseInt(m[1]), b = parseInt(m[2]), c = parseInt(m[3])
   const [day, month] = a > 31 ? [c, b] : [a, b]   // yyyy-mm-dd vs dd/mm/yyyy
   if (month < 1 || month > 12) return false
@@ -63,6 +165,43 @@ function parseableDate(raw: string): boolean {
   return day <= daysInMonth
 }
 
+/** Why this particular date string could not be read — used in the row message. */
+function dateFailureReason(raw: string): string {
+  if (!raw.trim()) return 'la celda está vacía'
+  const m = raw.match(/^(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})$/)
+  if (!m) return 'no tiene un formato de fecha reconocible'
+  const a = parseInt(m[1]), b = parseInt(m[2]), c = parseInt(m[3])
+  const [day, month] = a > 31 ? [c, b] : [a, b]
+  if (month < 1 || month > 12) return `el mes ${month} no existe`
+  if (day < 1 || day > 31)     return `el día ${day} no existe`
+  return 'ese día no existe en ese mes'
+}
+
+const GROUP_META: Record<CsvIssueKind, { title: string; hint: string }> = {
+  column_count: {
+    title: 'Filas con un número de columnas distinto al encabezado',
+    hint:  'Suele pasar cuando una celda contiene el separador (una coma dentro de un texto). Enciérrala entre comillas dobles o quita la coma.',
+  },
+  invalid_date: {
+    title: 'Fechas inválidas',
+    hint:  'Se espera el formato AAAA-MM-DD (ej. 2026-01-15). También se aceptan DD/MM/AAAA y DD-MM-AAAA.',
+  },
+  non_numeric_qty: {
+    title: 'Cantidades no numéricas',
+    hint:  'La columna de cantidad debe contener solo números. Quita símbolos de moneda, separadores de miles y textos como "N/D".',
+  },
+  negative_qty: {
+    title: 'Cantidades negativas',
+    hint:  'Las devoluciones se registran aparte. Una demanda negativa distorsiona el pronóstico de ese producto.',
+  },
+  empty_sku: {
+    title: 'Filas sin producto',
+    hint:  'Cada fila necesita el código o nombre del producto para poder pronosticar por SKU.',
+  },
+}
+
+// ── Validator ─────────────────────────────────────────────────────────────────
+
 export function validateSalesCsv(text: string): CsvCheckResult {
   const errors: string[] = []
   const warnings: string[] = []
@@ -70,7 +209,11 @@ export function validateSalesCsv(text: string): CsvCheckResult {
   // strip BOM, normalize newlines, drop trailing empties
   const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim().length > 0)
   if (lines.length < 2) {
-    return { ok: false, errors: ['El archivo está vacío o solo tiene encabezado.'], warnings, rowCount: 0, columns: [] }
+    return {
+      ok: false,
+      errors: ['El archivo está vacío o solo tiene encabezado.'],
+      warnings, rowCount: 0, columns: [], issueGroups: [],
+    }
   }
 
   const sep = detectSeparator(lines[0])
@@ -82,22 +225,24 @@ export function validateSalesCsv(text: string): CsvCheckResult {
       `Solo se detectó ${header.length} columna(s). Se necesitan al menos 3: fecha, producto y cantidad. ` +
       'Revisa que el separador sea coma (,) o punto y coma (;).'
     )
-    return { ok: false, errors, warnings, rowCount: lines.length - 1, columns }
+    return { ok: false, errors, warnings, rowCount: lines.length - 1, columns, issueGroups: [] }
   }
 
   const dateIdx = header.findIndex(h => DATE_HINTS.some(k => h.includes(k)))
   const qtyIdx  = header.findIndex(h => QTY_HINTS.some(k => h.includes(k)))
+  const skuIdx  = header.findIndex(h => SKU_HINTS.some(k => h.includes(k)))
 
   if (dateIdx === -1) {
     warnings.push('No se identificó una columna de fecha por su nombre (ej: "fecha"). Podrás elegirla manualmente en el siguiente paso.')
   }
   if (qtyIdx === -1) {
-    warnings.push('No se identificó una columna de cantidad por su nombre (ej: "cantidad"). Podrás elegirla manualmente en el siguiente paso.')
+    warnings.push('No se identificó una columna de cantidad por su nombre (ej: "demanda" o "cantidad"). Podrás elegirla manualmente en el siguiente paso.')
+  }
+  if (skuIdx === -1) {
+    warnings.push('No se identificó una columna de producto por su nombre (ej: "sku" o "producto"). Podrás elegirla manualmente en el siguiente paso.')
   }
 
-  let badDates = 0
-  let badQtys = 0
-  let badCols = 0
+  const issues: CsvIssue[] = []
   const rows = lines.length - 1
 
   for (let i = 1; i < lines.length; i++) {
@@ -105,39 +250,82 @@ export function validateSalesCsv(text: string): CsvCheckResult {
     const rowN = i + 1  // 1-based, counting the header as row 1
 
     if (cells.length !== header.length) {
-      badCols++
-      if (badCols <= MAX_REPORTED) {
-        errors.push(`Fila ${rowN}: tiene ${cells.length} columnas y el encabezado tiene ${header.length}.`)
-      }
-      continue
+      issues.push({
+        row: rowN, kind: 'column_count',
+        message: `Fila ${rowN}: tiene ${cells.length} columna(s) y el encabezado tiene ${header.length}.`,
+      })
+      continue   // cells are misaligned — per-column checks would be nonsense
     }
+
     if (dateIdx >= 0 && !parseableDate(cells[dateIdx])) {
-      badDates++
-      if (badDates <= MAX_REPORTED) {
-        errors.push(`Fila ${rowN}: fecha inválida "${cells[dateIdx]}" en columna "${columns[dateIdx]}".`)
-      }
+      issues.push({
+        row: rowN, kind: 'invalid_date',
+        message: `Fila ${rowN}: fecha inválida "${cells[dateIdx]}" en la columna "${columns[dateIdx]}" — ${dateFailureReason(cells[dateIdx])}. Se esperaba AAAA-MM-DD.`,
+      })
     }
+
     if (qtyIdx >= 0) {
-      const v = cells[qtyIdx].replace(',', '.')
+      const raw = cells[qtyIdx]
+      const v = raw.replace(',', '.')
       if (v === '' || isNaN(Number(v))) {
-        badQtys++
-        if (badQtys <= MAX_REPORTED) {
-          errors.push(`Fila ${rowN}: cantidad no numérica "${cells[qtyIdx]}" en columna "${columns[qtyIdx]}".`)
-        }
+        issues.push({
+          row: rowN, kind: 'non_numeric_qty',
+          message: raw === ''
+            ? `Fila ${rowN}: cantidad vacía en la columna "${columns[qtyIdx]}" — se esperaba un número.`
+            : `Fila ${rowN}: cantidad no numérica "${raw}" en la columna "${columns[qtyIdx]}" — se esperaba un número.`,
+        })
+      } else if (Number(v) < 0) {
+        issues.push({
+          row: rowN, kind: 'negative_qty',
+          message: `Fila ${rowN}: cantidad negativa "${raw}" en la columna "${columns[qtyIdx]}".`,
+        })
       }
+    }
+
+    if (skuIdx >= 0 && cells[skuIdx] === '') {
+      issues.push({
+        row: rowN, kind: 'empty_sku',
+        message: `Fila ${rowN}: la columna de producto "${columns[skuIdx]}" está vacía.`,
+      })
     }
   }
 
-  const totalBad = badDates + badQtys + badCols
-  if (totalBad > MAX_REPORTED) {
-    errors.push(`… y ${totalBad - MAX_REPORTED} problema(s) más.`)
-  }
+  const countOf = (k: CsvIssueKind) => issues.reduce((n, it) => n + (it.kind === k ? 1 : 0), 0)
+  const badCols  = countOf('column_count')
+  const badDates = countOf('invalid_date')
+  const badQtys  = countOf('non_numeric_qty')
 
-  // A few bad rows in a big file are tolerable (backend skips them);
+  // A few bad rows in a big file are tolerable (the backend skips them);
   // a majority of bad rows means the file itself is malformed.
-  const fatal = badCols > rows * 0.1 || badDates > rows * 0.2 || badQtys > rows * 0.2
-  if (totalBad > 0 && !fatal) {
-    warnings.push(`${totalBad} fila(s) con problemas serán ignoradas al procesar. El resto se usará normalmente.`)
+  const fatalKinds = new Set<CsvIssueKind>()
+  if (badCols  > rows * 0.1) fatalKinds.add('column_count')
+  if (badDates > rows * 0.2) fatalKinds.add('invalid_date')
+  if (badQtys  > rows * 0.2) fatalKinds.add('non_numeric_qty')
+  const fatal = fatalKinds.size > 0
+
+  // Group in a stable, severity-ordered sequence
+  const ORDER: CsvIssueKind[] = ['column_count', 'invalid_date', 'non_numeric_qty', 'empty_sku', 'negative_qty']
+  const issueGroups: CsvIssueGroup[] = ORDER.flatMap(kind => {
+    const of = issues.filter(it => it.kind === kind)
+    if (of.length === 0) return []
+    const samples = of.slice(0, MAX_PER_GROUP).map(it => it.message)
+    return [{
+      kind,
+      title:   GROUP_META[kind].title,
+      hint:    GROUP_META[kind].hint,
+      count:   of.length,
+      samples,
+      hidden:  of.length - samples.length,
+      fatal:   fatalKinds.has(kind),
+    }]
+  })
+
+  if (fatal) {
+    for (const g of issueGroups.filter(g => g.fatal)) {
+      errors.push(`${g.title}: ${g.count} de ${rows} fila(s).`)
+    }
+  } else if (issues.length > 0) {
+    warnings.push(`${issues.length} fila(s) con problemas serán ignoradas al procesar. El resto se usará normalmente.`)
   }
 
   if (rows < 30) {
@@ -145,10 +333,11 @@ export function validateSalesCsv(text: string): CsvCheckResult {
   }
 
   return {
-    ok: !fatal && !(header.length < 3),
-    errors: fatal ? errors : [],
-    warnings: fatal ? warnings : [...warnings],
+    ok: !fatal,
+    errors,
+    warnings,
     rowCount: rows,
     columns,
+    issueGroups,
   }
 }

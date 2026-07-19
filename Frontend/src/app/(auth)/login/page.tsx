@@ -1,9 +1,9 @@
 'use client'
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authLogin } from '@/lib/api'
-import { setAuth } from '@/lib/auth'
+import { setAuth, isAuthenticated } from '@/lib/auth'
 import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
 
 // Composition: the card sits left of centre and a touch above the optical
@@ -21,6 +21,15 @@ function LoginPageContent() {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState<string | null>(null)
 
+  // `/login` is a public path, so AuthGuard lets it render even with a live
+  // session — a user coming back to a still-valid tab would otherwise be shown
+  // a login form for an account they're already in. Send them to the same
+  // destination a fresh login would (feature 1.2: post-login lands on /hoy).
+  const destination = wantsDemo ? '/quick-start?demo=1' : '/hoy'
+  useEffect(() => {
+    if (isAuthenticated()) router.replace(destination)
+  }, [router, destination])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -34,7 +43,7 @@ function LoginPageContent() {
         role:      res.user.role,
         tenant_id: res.user.tenant_id,
       })
-      router.replace(wantsDemo ? '/quick-start?demo=1' : '/hoy')
+      router.replace(destination)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

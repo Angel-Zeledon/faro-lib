@@ -8,6 +8,8 @@ import {
  startDemoQuickstart,
 } from '@/lib/api'
 import { validateSalesCsv } from '@/lib/csvCheck'
+import type { CsvIssueGroup } from '@/lib/csvCheck'
+import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
 import type { InspectionResult, CanonicalMapping } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -66,10 +68,12 @@ function StepBar({ step }: { step: number }) {
 // ── CSV example ────────────────────────────────────────────────────────────────
 function CsvExample() {
  const { t } = useLanguage()
+ // Header names mirror the downloadable template (lib/csvCheck.ts) — the
+ // canonical aliases the backend profiler auto-detects.
  const rows = [
- { fecha: '2024-01-01', producto: 'SKU-001', cantidad: '32' },
- { fecha: '2024-01-02', producto: 'SKU-001', cantidad: '28' },
- { fecha: '2024-01-03', producto: 'SKU-002', cantidad: '15' },
+ { sku: 'SKU-001', fecha: '2026-01-01', demanda: '32' },
+ { sku: 'SKU-001', fecha: '2026-01-02', demanda: '28' },
+ { sku: 'SKU-002', fecha: '2026-01-01', demanda: '15' },
  ]
  return (
  <div style={{ marginTop: 20, overflowX: 'auto' }}>
@@ -82,7 +86,7 @@ function CsvExample() {
  }}>
  <thead>
  <tr style={{ background: 'var(--surface-2, #f8fafc)' }}>
- {['fecha', 'producto', 'cantidad'].map(h => (
+ {['sku', 'fecha', 'demanda'].map(h => (
  <th key={h} style={{
  padding: '6px 12px', textAlign: 'left',
  borderBottom: '1px solid var(--border)',
@@ -96,9 +100,9 @@ function CsvExample() {
  <tbody>
  {rows.map((r, i) => (
  <tr key={i} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+ <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.sku}</td>
  <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.fecha}</td>
- <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.producto}</td>
- <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.cantidad}</td>
+ <td style={{ padding: '6px 12px', color: 'var(--text)' }}>{r.demanda}</td>
  </tr>
  ))}
  </tbody>
@@ -257,6 +261,11 @@ function QuickStartPageContent() {
  // Non-fatal pre-upload observations (row counts, ignored rows, short history)
  const [csvWarnings, setCsvWarnings] = useState<string[]>([])
 
+ // Per-row findings of the pre-upload validator, grouped by problem kind.
+ // Kept whether or not the file was rejected: a file that passes can still
+ // carry rows the backend will silently skip, and the user should see them.
+ const [csvIssues, setCsvIssues] = useState<CsvIssueGroup[]>([])
+
  // ── Demo: seed everything server-side and jump straight to training ─────────
  const handleDemo = async () => {
  setError(null)
@@ -289,6 +298,7 @@ function QuickStartPageContent() {
  const handleFile = async (file: File) => {
  setError(null)
  setCsvWarnings([])
+ setCsvIssues([])
  setBusy(true)
  setFileName(file.name)
 
@@ -297,8 +307,12 @@ function QuickStartPageContent() {
  if (file.name.toLowerCase().endsWith('.csv')) {
  try {
  const check = validateSalesCsv(await file.text())
+ setCsvIssues(check.issueGroups)
  if (!check.ok) {
-  setError(check.errors.join('\n'))
+  // The grouped report carries the row-level detail; `error` keeps the
+  // one-line summary for the cases with no per-row issues at all
+  // (empty file, single-column file — issueGroups is empty there).
+  if (check.issueGroups.length === 0) setError(check.errors.join('\n'))
   setFileName(null)
   setBusy(false)
   return
@@ -610,12 +624,15 @@ function QuickStartPageContent() {
  </div>
  )}
 
- <div style={{ marginTop: 10, fontSize: 12 }}>
- <a href="/plantilla_faro.csv" download
- style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
- {t('qs.download_template')}
- </a>
+ {/* Row-level findings: "fila 214: fecha inválida — se esperaba AAAA-MM-DD" */}
+ <CsvIssueReport groups={csvIssues} fileName={fileName} />
+
+ {/* The report embeds its own template button — don't show two */}
+ {csvIssues.length === 0 && (
+ <div style={{ marginTop: 14 }}>
+ <CsvTemplateButton />
  </div>
+ )}
 
  {/* Demo de un clic: ver el semáforo sin preparar ningún archivo */}
  <div style={{
