@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { authLogin } from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
 import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // Composition: the card sits left of centre and a touch above the optical
 // midline, leaving the open right-hand field for the beam to sweep into and
@@ -12,6 +13,7 @@ import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
 // come from (auth)/layout.tsx — this file renders only the card.
 
 function LoginPageContent() {
+  const { t } = useLanguage()
   const router = useRouter()
   const searchParams = useSearchParams()
   const wantsDemo = searchParams.get('demo') === '1'
@@ -97,10 +99,10 @@ function LoginPageContent() {
 
           <div style={{ marginBottom: 30 }}>
             <h1 style={{ fontSize: 26, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.032em', lineHeight: 1.15 }}>
-              Sign in
+              {t('auth.login_title')}
             </h1>
             <p style={{ fontSize: 14, color: '#71717a', margin: 0, lineHeight: 1.5 }}>
-              Enter your credentials to access your workspace
+              {t('auth.login_subtitle')}
             </p>
           </div>
 
@@ -121,7 +123,7 @@ function LoginPageContent() {
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.10s both' }}>
               <label style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: '#52525b' }}>
-                Email address
+                {t('auth.email_label')}
               </label>
               <input
                 type="email" value={email} required autoComplete="email"
@@ -133,9 +135,9 @@ function LoginPageContent() {
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>Password</label>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>{t('auth.password_label')}</label>
                 <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: '#71717a', textDecoration: 'none' }}>
-                  Forgot password?
+                  {t('auth.forgot_password')}
                 </Link>
               </div>
               <div style={{ position: 'relative' }}>
@@ -148,7 +150,7 @@ function LoginPageContent() {
                 />
                 <button
                   type="button" onClick={() => setShowPw(v => !v)}
-                  aria-label={showPw ? 'Hide password' : 'Show password'}
+                  aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')}
                   style={{
                     all: 'unset', position: 'absolute', right: 12, top: '50%',
                     transform: 'translateY(-50%)', cursor: 'pointer', color: '#a1a1aa',
@@ -184,10 +186,10 @@ function LoginPageContent() {
                     borderTopColor: '#fff', borderRadius: '50%',
                     animation: 'spin 0.7s linear infinite', display: 'inline-block',
                   }} />
-                  Signing in…
+                  {t('auth.signing_in')}
                 </>
               ) : (
-                <>Sign in <ArrowRight size={13} /></>
+                <>{t('auth.login_title')} <ArrowRight size={13} /></>
               )}
             </button>
           </form>
@@ -197,9 +199,9 @@ function LoginPageContent() {
           marginTop: 22, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
           animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.3s both',
         }}>
-          Don&apos;t have an account?{' '}
+          {t('auth.no_account')}{' '}
           <Link href="/signup" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
-            Request access
+            {t('auth.request_access')}
           </Link>
         </p>
       </div>

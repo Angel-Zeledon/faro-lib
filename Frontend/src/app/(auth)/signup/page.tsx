@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { authSignup } from '@/lib/api'
 import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // Composition, deliberately NOT a mirror of /login: this screen carries more
 // fields, so the heading is lifted OUT of the card and set as an editorial
@@ -49,6 +50,7 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 function SignupPageContent() {
+  const { t } = useLanguage()
   const searchParams = useSearchParams()
   const wantsDemo = searchParams.get('demo') === '1'
   const loginHref = wantsDemo ? '/login?demo=1' : '/login'
@@ -129,19 +131,19 @@ function SignupPageContent() {
               <CheckCircle2 size={21} color="#fff" strokeWidth={2} />
             </div>
             <h1 style={{ fontSize: 23, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
-              Check your email
+              {t('auth.check_email_title')}
             </h1>
             <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 26px', lineHeight: 1.6 }}>
-              We sent a verification link to <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
-              Click it to activate your account.
-              {wantsDemo && ' After that, sign in and we\'ll take you straight to a working example with sample data.'}
+              {t('auth.check_email_sent_to')} <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
+              {' '}{t('auth.check_email_click')}
+              {wantsDemo && ` ${t('auth.check_email_demo_hint')}`}
             </p>
             <Link href={loginHref} className="auth-submit" style={{
               display: 'inline-flex', alignItems: 'center', padding: '11.5px 24px',
               background: '#0a0a0a', color: '#fff', borderRadius: 11,
               fontSize: 13.5, fontWeight: 600, textDecoration: 'none',
             }}>
-              Go to login
+              {t('auth.go_to_login')}
             </Link>
           </div>
         ) : (
@@ -152,7 +154,7 @@ function SignupPageContent() {
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both',
             }}>
               <h1 style={{ fontSize: 34, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
-                Create your workspace
+                {t('auth.signup_title')}
               </h1>
               <p style={{ fontSize: 14.5, color: '#71717a', margin: 0, lineHeight: 1.55 }}>
                 Faro — Inventario Inteligente
@@ -183,7 +185,7 @@ function SignupPageContent() {
                 }}>
                   <div className="auth-field">
                     <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                      Full name
+                      {t('auth.full_name_label')}
                     </label>
                     <input
                       type="text" value={form.full_name}
@@ -194,7 +196,7 @@ function SignupPageContent() {
                   </div>
                   <div className="auth-field">
                     <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                      Company name <span style={{ color: '#dc2626' }}>*</span>
+                      {t('auth.company_label')} <span style={{ color: '#dc2626' }}>*</span>
                     </label>
                     <input
                       type="text" value={form.tenant_name} required
@@ -207,7 +209,7 @@ function SignupPageContent() {
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.19s both' }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                    Email address <span style={{ color: '#dc2626' }}>*</span>
+                    {t('auth.email_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
                     type="email" value={form.email} required
@@ -219,19 +221,19 @@ function SignupPageContent() {
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.24s both' }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                    Password <span style={{ color: '#dc2626' }}>*</span>
+                    {t('auth.password_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <div style={{ position: 'relative' }}>
                     <input
                       type={showPw ? 'text' : 'password'} value={form.password} required
                       onChange={e => set('password', e.target.value)}
-                      placeholder="Min. 8 characters"
+                      placeholder={t('auth.password_placeholder')}
                       style={{ ...inputStyle, paddingRight: 38 }}
                       onFocus={focusIn} onBlur={focusOut}
                     />
                     <button
                       type="button" onClick={() => setShowPw(v => !v)}
-                      aria-label={showPw ? 'Hide password' : 'Show password'}
+                      aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')}
                       style={{
                         all: 'unset', position: 'absolute', right: 12, top: '50%',
                         transform: 'translateY(-50%)', cursor: 'pointer', color: '#a1a1aa',
@@ -259,7 +261,7 @@ function SignupPageContent() {
                   onMouseEnter={e => { if (!loading) { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(-1.5px)'; b.style.boxShadow = '0 10px 22px -10px rgba(9,9,11,0.45)' } }}
                   onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(0)'; b.style.boxShadow = 'none' }}
                 >
-                  {loading ? 'Creating workspace…' : 'Create workspace'}
+                  {loading ? t('auth.creating_workspace') : t('auth.create_workspace')}
                 </button>
               </form>
             </div>
@@ -268,9 +270,9 @@ function SignupPageContent() {
               marginTop: 20, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
               animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.35s both',
             }}>
-              Already have an account?{' '}
+              {t('auth.have_account')}{' '}
               <Link href="/login" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
-                Sign in
+                {t('auth.login_title')}
               </Link>
             </p>
           </>

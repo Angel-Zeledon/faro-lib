@@ -17,6 +17,7 @@ import type {
  SupplierContactHealthRow, SupplierLeadTimeAlert,
  PriceBreakEvaluation, CashCalendar, CashFitResult,
 } from '@/lib/types'
+import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import {
  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
@@ -55,17 +56,10 @@ const C = {
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-function fmtM(n: number) {
- if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
- if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`
- return `$${n.toFixed(0)}`
-}
-
-// Moneda con separador de miles latinoamericano y sin decimales — las cifras
-// del carrito son montos de compra, no precios unitarios.
-function fmtMoney(n: number) {
- return `$${n.toLocaleString('es-419', { maximumFractionDigits: 0 })}`
-}
+// Money formatting lives in lib/currency.ts — one source of truth for the whole
+// app, in the anchor market's currency (CRC).
+const fmtM = formatMoneyCompact
+const fmtMoney = formatMoney
 
 function fmtPct(n: number | null) {
  if (n == null) return '—'

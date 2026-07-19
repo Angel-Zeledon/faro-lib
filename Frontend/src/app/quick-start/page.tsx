@@ -437,7 +437,13 @@ function QuickStartPageContent() {
  // a fake cycling animation — the backend emits this on every stage.
  if (job.progress) {
  if (typeof job.progress.percent === 'number') setTrainPct(job.progress.percent)
- if (job.progress.message) setTrainMsg(job.progress.message)
+ // The worker emits its message in English (backend code is English-only).
+ // `step` is the stable key, so the Spanish copy lives here; the raw message
+ // is the fallback for any stage this map does not know yet.
+ const stepKey = job.progress.step ? `qs.stage_${job.progress.step}` : null
+ const translated = stepKey ? t(stepKey as never) : null
+ if (translated && translated !== stepKey) setTrainMsg(translated)
+ else if (job.progress.message) setTrainMsg(job.progress.message)
  }
 
  if (job.status === 'COMPLETED') {

@@ -19,6 +19,7 @@ import {
 import Button from '@/components/ui/Button'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { formatMoney } from '@/lib/currency'
 import {
   Search, Package, ChevronDown, RefreshCw,
   AlertTriangle, CheckCircle2, TrendingUp, BarChart2,
@@ -1362,7 +1363,7 @@ function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
     { label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),   color: '#06b6d4' },
     { label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),      color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' },
     inv.holding_cost != null
-      ? { label: t('skus.inv_holding_cost'),  value: `$${fmtNum(inv.holding_cost, 2)}`, color: '#f59e0b' }
+      ? { label: t('skus.inv_holding_cost'),  value: formatMoney(inv.holding_cost), color: '#f59e0b' }
       : { label: t('skus.inv_days_coverage'), value: fmtNum(inv.days_coverage),         color: '#f59e0b' },
   ]
   return (

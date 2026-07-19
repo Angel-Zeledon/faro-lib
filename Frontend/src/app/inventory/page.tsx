@@ -26,6 +26,7 @@ import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
+import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
@@ -1777,12 +1778,10 @@ export default function InventoryPage() {
      {[
       { label: t('inventory.dead_kpi_skus'), value: deadStock.sku_count, color: C.amber },
       { label: t('inventory.dead_kpi_capital_trapped'),
-       value: deadStock.total_capital_trapped >= 1_000_000
-        ? `$${(deadStock.total_capital_trapped / 1_000_000).toFixed(1)}M`
-        : `$${(deadStock.total_capital_trapped / 1_000).toFixed(0)}K`,
+       value: formatMoneyCompact(deadStock.total_capital_trapped),
        color: C.red },
       { label: t('inventory.dead_kpi_holding_cost'),
-       value: `$${(deadStock.total_holding_cost_monthly / 1_000).toFixed(0)}K`,
+       value: formatMoneyCompact(deadStock.total_holding_cost_monthly),
        color: C.amber },
      ].map(({ label, value, color }) => (
       <div key={label} style={{
@@ -1828,12 +1827,10 @@ export default function InventoryPage() {
           {item.stock_actual?.toLocaleString()}
          </td>
          <td style={{ padding: '10px 12px', fontWeight: 700, color: C.red }}>
-          {item.capital_trapped >= 1_000_000
-           ? `$${(item.capital_trapped / 1_000_000).toFixed(1)}M`
-           : `$${(item.capital_trapped / 1_000).toFixed(0)}K`}
+          {formatMoneyCompact(item.capital_trapped)}
          </td>
          <td style={{ padding: '10px 12px', color: C.amber, fontSize: 11 }}>
-          ${(item.holding_cost_monthly / 1_000).toFixed(0)}K{t('inventory.unit_per_month_suffix')}
+          {formatMoneyCompact(item.holding_cost_monthly)}{t('inventory.unit_per_month_suffix')}
          </td>
          <td style={{ padding: '10px 12px' }}>
           <span style={{
