@@ -238,12 +238,44 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     return result
 
 
+def _next_month_key(key: str) -> str:
+    """'2026-06' -> '2026-07'."""
+    y, m = (int(p) for p in key.split("-"))
+    return f"{y + 1}-01" if m == 12 else f"{y}-{m + 1:02d}"
+
+
+def _capital_freed_during(key: str, snap_by_month: dict[str, float]) -> float | None:
+    """
+    Overstock capital freed during calendar month `key`, in currency units.
+
+    Derived strictly from two measured snapshots: the one opening the month and
+    the one opening the next month. Returns None when either snapshot is
+    missing (we cannot measure a change we never observed) or when overstock
+    grew instead of shrinking — an increase is not a saving, and reporting it as
+    0 would read as "we saved nothing this month" rather than "this did not
+    happen". No modelling, no assumptions: it is a difference of two
+    measurements.
+    """
+    nxt = _next_month_key(key)
+    if key not in snap_by_month or nxt not in snap_by_month:
+        return None
+    delta = snap_by_month[key] - snap_by_month[nxt]
+    return round(delta, 2) if delta > 0 else None
+
+
 def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     """
-    Last `months` calendar months (most recent first): pedidos generados,
-    riesgos de quiebre atendidos, valor gestionado, tasa de adopcion, y
-    capital liberado de sobrestock (delta mes a mes de
-    inventory_overstock_snapshots — None hasta tener 2 snapshots seguidos).
+    Last `months` calendar months (most recent first): orders generated,
+    stockout risks acted on, managed value, adoption rate, and overstock
+    capital freed.
+
+    Capital-freed attribution: snapshots are taken on day 1 of each month, so
+    the snapshot stamped month M measures the overstock *at the start* of M.
+    The reduction that happened *during* M is therefore
+    snapshot(M) - snapshot(M+1) — not snapshot(M-1) - snapshot(M). Every other
+    figure in a row describes activity during M, so the capital figure has to
+    describe the same window or the row mixes two different months.
+    Stays None until two consecutive snapshots exist, and when overstock grew.
     """
     now = datetime.now(tz=timezone.utc)
     month_starts: list[datetime] = []
@@ -280,7 +312,6 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     snap_by_month = {r["month"].strftime("%Y-%m"): float(r["overstock_value"]) for r in snap_rows}
 
     result: list[dict] = []
-    prev_key: str | None = None
     for start in month_starts:
         key = start.strftime("%Y-%m")
         po = po_by_month.get(key)
@@ -291,11 +322,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
         total_approved  = int(po["total_approved"]) if po else 0
         adoption_rate = (total_approved / total_suggested) if total_suggested > 0 else None
 
-        capital_liberado = None
-        if prev_key is not None and key in snap_by_month and prev_key in snap_by_month:
-            delta = snap_by_month[prev_key] - snap_by_month[key]
-            if delta > 0:
-                capital_liberado = round(delta, 2)
+        capital_liberado = _capital_freed_during(key, snap_by_month)
 
         result.append({
             "month":            key,
@@ -305,7 +332,187 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
             "adoption_rate":    adoption_rate,
             "capital_liberado": capital_liberado,
         })
-        prev_key = key
 
     result.reverse()  # most recent first
     return result
+
+
+# ── Monthly recap ("what Faro did for you last month") ────────────────────────
+#
+# Provenance of every figure below. Each one is a straight aggregation of rows
+# the product already writes; none is modelled, extrapolated or assumed.
+#
+#   orders_generated        COUNT(inventory_po_log) in the month.
+#   recommendations_shown   SUM(suggested_count)  — lines Faro put in the cart.
+#   recommendations_followed SUM(approved_count)  — lines kept or modified.
+#   adoption_rate           followed / shown, None when nothing was shown.
+#   stockout_risks_handled  SUM(skus_pedir_ya) over ordered lines: PEDIR_YA SKUs
+#                           the buyer actually ordered. This is NOT "stockouts
+#                           avoided" — we never observe the counterfactual, so
+#                           we count the action taken, not an averted outcome.
+#   managed_purchase_value  SUM(total_value), i.e. units x unit cost. None (not
+#                           0) when no line carried a unit cost, so a tenant
+#                           without cost data is told the figure is unavailable
+#                           instead of being shown a fake zero.
+#   capital_freed           See _capital_freed_during: difference of two
+#                           measured overstock snapshots.
+#
+# Deliberately NOT computed: any single "Faro saved you $X" headline, and any
+# count of "stockouts avoided". Both require assumptions we cannot ground in
+# tenant data (lost margin per stockout, holding-cost rate, the counterfactual
+# of not ordering). Inventing them would put an unfalsifiable number in front of
+# the customer's boss.
+
+_MIN_ORDERS_FOR_REPORT = 1
+
+
+def get_month_report(tenant_id: str, year: int, month: int) -> dict:
+    """
+    Recap of one calendar month for a tenant.
+
+    `has_sufficient_history` is False when the tenant generated no purchase
+    order in the month. In that case every metric is None and callers must show
+    an honest "not enough history yet" state — never zeros dressed up as
+    achievements. The monthly email is skipped entirely for such tenants.
+    """
+    key = f"{year}-{month:02d}"
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    nxt_y, nxt_m = (year + 1, 1) if month == 12 else (year, month + 1)
+    end = datetime(nxt_y, nxt_m, 1, tzinfo=timezone.utc)
+
+    agg = query_one(
+        """SELECT COUNT(*)::int                          AS orders_generated,
+                  COALESCE(SUM(suggested_count), 0)::int  AS recommendations_shown,
+                  COALESCE(SUM(approved_count), 0)::int   AS recommendations_followed,
+                  COALESCE(SUM(skus_pedir_ya), 0)::int    AS stockout_risks_handled,
+                  SUM(total_value)                        AS managed_purchase_value
+           FROM inventory_po_log
+           WHERE tenant_id = %s AND generated_at >= %s AND generated_at < %s""",
+        (tenant_id, start, end),
+    ) or {}
+
+    orders_generated = int(agg.get("orders_generated") or 0)
+
+    # Overstock snapshots opening this month and the next one.
+    snap_rows = query(
+        """SELECT date_trunc('month', recorded_at AT TIME ZONE 'UTC') AS month,
+                  AVG(overstock_value) AS overstock_value
+           FROM inventory_overstock_snapshots
+           WHERE tenant_id = %s AND recorded_at >= %s AND recorded_at < %s
+           GROUP BY month""",
+        (tenant_id, start, datetime(
+            nxt_y + 1 if nxt_m == 12 else nxt_y,
+            1 if nxt_m == 12 else nxt_m + 1, 1, tzinfo=timezone.utc,
+        )),
+    )
+    snap_by_month = {
+        r["month"].strftime("%Y-%m"): float(r["overstock_value"]) for r in snap_rows
+    }
+    capital_freed = _capital_freed_during(key, snap_by_month)
+
+    if orders_generated < _MIN_ORDERS_FOR_REPORT:
+        return {
+            "month": key,
+            "has_sufficient_history": False,
+            "orders_generated": 0,
+            "recommendations_shown": 0,
+            "recommendations_followed": 0,
+            "adoption_rate": None,
+            "stockout_risks_handled": None,
+            "managed_purchase_value": None,
+            "capital_freed": capital_freed,
+        }
+
+    shown    = int(agg.get("recommendations_shown") or 0)
+    followed = int(agg.get("recommendations_followed") or 0)
+    raw_value = agg.get("managed_purchase_value")
+
+    return {
+        "month": key,
+        "has_sufficient_history": True,
+        "orders_generated": orders_generated,
+        "recommendations_shown": shown,
+        "recommendations_followed": followed,
+        "adoption_rate": (followed / shown) if shown > 0 else None,
+        "stockout_risks_handled": int(agg.get("stockout_risks_handled") or 0),
+        "managed_purchase_value": (
+            round(float(raw_value), 2) if raw_value is not None else None
+        ),
+        "capital_freed": capital_freed,
+    }
+
+
+def previous_month(now: datetime) -> tuple[int, int]:
+    """(year, month) of the calendar month that closed before `now`."""
+    return (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+
+
+def run_monthly_roi_emails(now: datetime | None = None) -> int:
+    """
+    Send the previous month's recap to every tenant that has enough history.
+
+    Called on the 1st of each month by the worker, right after the overstock
+    snapshot: that snapshot is what closes the previous month's capital-freed
+    figure, so the order matters.
+
+    Tenants without a single purchase order in the month are skipped — they get
+    no email at all rather than a recap full of zeros. Sends are deduped through
+    inventory_roi_email_log so a worker restart cannot mail anyone twice.
+    Returns the number of tenants actually mailed.
+    """
+    from backend.config import settings
+    from backend.inventory.service import (
+        get_tenant_admin_emails,
+        get_tenants_with_active_sessions,
+    )
+    from backend.notifications.email import send_monthly_roi_email
+
+    now = now or datetime.now(tz=timezone.utc)
+    year, month = previous_month(now)
+    month_key = f"{year}-{month:02d}"
+
+    app_url = getattr(settings, "frontend_url", "http://localhost:3000")
+    roi_url = f"{app_url}/inventory/roi"
+
+    tenants = get_tenants_with_active_sessions()
+    log.info("roi_email: checking %d tenants for %s", len(tenants), month_key)
+
+    sent_count = 0
+    for tenant in tenants:
+        tid = tenant["tenant_id"]
+        try:
+            already = query_one(
+                "SELECT id FROM inventory_roi_email_log WHERE tenant_id = %s AND month = %s",
+                (tid, month_key),
+            )
+            if already:
+                continue
+
+            report = get_month_report(tid, year, month)
+            if not report["has_sufficient_history"]:
+                continue
+
+            emails = get_tenant_admin_emails(tid)
+            if not emails:
+                continue
+
+            delivered = 0
+            for email in emails:
+                try:
+                    if send_monthly_roi_email(to=email, report=report, roi_url=roi_url):
+                        delivered += 1
+                except Exception as e:
+                    log.warning("roi_email failed to=%s: %s", email, e)
+
+            if delivered:
+                execute(
+                    """INSERT INTO inventory_roi_email_log (tenant_id, month, recipients)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (tenant_id, month) DO NOTHING""",
+                    (tid, month_key, delivered),
+                )
+                sent_count += 1
+        except Exception as e:
+            log.error("roi_email: tenant=%s error=%s", tid, e)
+
+    return sent_count

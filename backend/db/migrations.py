@@ -619,6 +619,21 @@ _MIGRATIONS = _BASE_SCHEMA + [
     # time, so without this there is no due date to compute.
     ("add_po_log_sent_at",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ"),
+
+    # One row per tenant per month once the monthly recap email has been sent.
+    # The unique constraint is the dedup mechanism: the worker re-runs on every
+    # process restart, and a customer must never receive the same recap twice.
+    ("create_inventory_roi_email_log",
+     """CREATE TABLE IF NOT EXISTS inventory_roi_email_log (
+         id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id     TEXT NOT NULL,
+         month         TEXT NOT NULL,
+         recipients    INT NOT NULL DEFAULT 0,
+         sent_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_inventory_roi_email_log_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS inventory_roi_email_log_uniq
+        ON inventory_roi_email_log (tenant_id, month)"""),
 ]
 
 

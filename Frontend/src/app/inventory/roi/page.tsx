@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { getInventoryROI, getROIMonthly } from '@/lib/api'
-import type { InventoryROISummary, ROIMonthlyRow } from '@/lib/types'
+import { getInventoryROI, getROIMonthly, getROIMonthReport } from '@/lib/api'
+import type { InventoryROISummary, ROIMonthlyRow, ROIMonthReport } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -27,8 +27,9 @@ function fmtDateTime(iso: string): string {
   })
 }
 
+// Target market is Costa Rica, so money renders as colones (CRC).
 function fmtCurrency(n: number): string {
-  return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+  return '₡' + n.toLocaleString('es-CR', { maximumFractionDigits: 0 })
 }
 
 function fmtUnits(n: number): string {
@@ -230,6 +231,140 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   )
 }
 
+// ── Monthly recap (feature 3.2) ───────────────────────────────────────────────
+// Mirrors the monthly email exactly. A null metric is rendered as explicitly
+// unavailable with the reason, never as a zero that could read as an outcome.
+
+function RecapTile({ value, label, note, color, muted }: {
+  value: string; label: string; note: string; color: string; muted?: boolean
+}) {
+  return (
+    <div style={{ padding: '16px 18px', background: C.card, borderRadius: 10, minWidth: 0 }}>
+      <div style={{
+        fontSize: muted ? 15 : 30, fontWeight: muted ? 600 : 800,
+        color, lineHeight: 1.15, wordBreak: 'break-word',
+      }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 6 }}>{label}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4, lineHeight: 1.5 }}>{note}</div>
+    </div>
+  )
+}
+
+function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
+  const { t, lang } = useLanguage()
+  const monthLabel = fmtMonthLabel(report.month, lang)
+
+  const header = (
+    <div style={{
+      padding: '14px 18px', borderBottom: `1px solid ${C.border}`,
+      background: C.card, display: 'flex', alignItems: 'center', gap: 8,
+    }}>
+      <Calendar size={14} color={C.indigo} />
+      <span style={{ fontSize: 13, fontWeight: 600, color: C.text, textTransform: 'capitalize' }}>
+        {t('recap.month_of')} {monthLabel}
+      </span>
+    </div>
+  )
+
+  if (!report.has_sufficient_history) {
+    return (
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+        {header}
+        <div style={{ padding: '28px 26px', textAlign: 'center' }}>
+          <AlertTriangle size={26} color={C.amber} style={{ opacity: 0.7, marginBottom: 12 }} />
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 8 }}>
+            {t('recap.insufficient_title')}
+          </div>
+          <p style={{ margin: '0 auto', maxWidth: 520, fontSize: 12.5, color: C.muted, lineHeight: 1.7 }}>
+            {t('recap.insufficient_body')}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const headline = report.capital_freed != null
+    ? `${fmtCurrency(report.capital_freed)} ${t('recap.headline_freed')}`
+    : t('recap.headline_no_amount')
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      {header}
+      <div style={{ padding: '20px 22px' }}>
+        <p style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 600, color: C.text }}>
+          {headline}
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+          <RecapTile
+            value={`${report.orders_generated}`}
+            label={t('recap.metric_orders')}
+            note={t('recap.metric_orders_note')}
+            color={C.indigo}
+          />
+
+          {report.adoption_rate != null && (
+            <RecapTile
+              value={`${Math.round(report.adoption_rate * 100)}%`}
+              label={t('recap.metric_adoption')}
+              note={t('recap.metric_adoption_note')
+                .replace('{followed}', String(report.recommendations_followed))
+                .replace('{shown}', String(report.recommendations_shown))}
+              color={C.indigo}
+            />
+          )}
+
+          {report.stockout_risks_handled != null && (
+            <RecapTile
+              value={`${report.stockout_risks_handled}`}
+              label={t('recap.metric_risks')}
+              note={t('recap.metric_risks_note')}
+              color={C.red}
+            />
+          )}
+
+          <RecapTile
+            value={report.capital_freed != null ? fmtCurrency(report.capital_freed) : t('recap.unavailable')}
+            label={t('recap.metric_capital')}
+            note={report.capital_freed != null ? t('recap.metric_capital_note') : t('recap.unavailable_capital')}
+            color={report.capital_freed != null ? C.green : C.dim}
+            muted={report.capital_freed == null}
+          />
+
+          <RecapTile
+            value={report.managed_purchase_value != null
+              ? fmtCurrency(report.managed_purchase_value)
+              : t('recap.unavailable')}
+            label={t('recap.metric_managed')}
+            note={report.managed_purchase_value != null
+              ? t('recap.metric_managed_note')
+              : t('recap.unavailable_managed')}
+            color={report.managed_purchase_value != null ? C.text : C.dim}
+            muted={report.managed_purchase_value == null}
+          />
+        </div>
+
+        <div style={{
+          marginTop: 18, padding: '14px 16px', borderRadius: 10,
+          background: 'rgba(129,140,248,0.04)', border: '1px solid rgba(129,140,248,0.18)',
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.indigo, marginBottom: 6 }}>
+            {t('recap.provenance_title')}
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
+            {t('recap.provenance_body')}
+          </p>
+          <p style={{ margin: '8px 0 0', fontSize: 11, color: C.dim }}>
+            {t('recap.email_note')}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function WhyItMattersCard() {
   const { t } = useLanguage()
   return (
@@ -256,6 +391,7 @@ export default function ROIPage() {
   const { t } = useLanguage()
   const [roi,     setRoi]     = useState<InventoryROISummary | null>(null)
   const [monthly, setMonthly] = useState<ROIMonthlyRow[]>([])
+  const [recap,   setRecap]   = useState<ROIMonthReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -263,12 +399,14 @@ export default function ROIPage() {
     if (initial) setLoading(true)
     setError(null)
     try {
-      const [roiData, monthlyData] = await Promise.all([
+      const [roiData, monthlyData, recapData] = await Promise.all([
         getInventoryROI(),
         getROIMonthly(),
+        getROIMonthReport(),
       ])
       setRoi(roiData)
       setMonthly(monthlyData)
+      setRecap(recapData)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t('roi.error_loading'))
     } finally {
@@ -327,6 +465,9 @@ export default function ROIPage() {
         </div>
       ) : roi ? (
         <>
+          {/* Section 0 — Last closed month, mirrors the monthly email */}
+          {recap && <MonthlyRecapCard report={recap} />}
+
           {/* Section 1 — Hero counters */}
           <HeroCard roi={roi} />
 

@@ -807,6 +807,20 @@ export interface ROIMonthlyRow {
   capital_liberado:  number | null
 }
 
+// Monthly recap (feature 3.2). A null metric means "could not be derived from
+// this tenant's own records" — render it as unavailable, never as zero.
+export interface ROIMonthReport {
+  month:                   string          // 'YYYY-MM'
+  has_sufficient_history:  boolean
+  orders_generated:        number
+  recommendations_shown:   number
+  recommendations_followed: number
+  adoption_rate:           number | null
+  stockout_risks_handled:  number | null
+  managed_purchase_value:  number | null
+  capital_freed:           number | null
+}
+
 export interface POLogEntry {
   id:                string
   session_id:        string

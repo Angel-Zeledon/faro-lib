@@ -789,6 +789,16 @@ export const getInventoryROI = () =>
 export const getROIMonthly = (months = 6) =>
   request<import('./types').ROIMonthlyRow[]>('GET', `/inventory/roi/monthly?months=${months}`)
 
+// Omitting year/month asks the backend for the month that just closed — the
+// same period the monthly recap email covers.
+export const getROIMonthReport = (year?: number, month?: number) =>
+  request<import('./types').ROIMonthReport>(
+    'GET',
+    year && month
+      ? `/inventory/roi/month-report?year=${year}&month=${month}`
+      : '/inventory/roi/month-report',
+  )
+
 export const getPOHistory = (limit = 20, opts?: RequestOpts) =>
   request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`, undefined, opts)
 

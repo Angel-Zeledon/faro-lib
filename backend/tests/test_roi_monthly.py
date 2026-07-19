@@ -119,7 +119,9 @@ class TestGetMonthlySummary:
             (tid, this_month),
         )
 
-        # Overstock snapshots: last month 10000, this month 6000 -> 4000 freed.
+        # Overstock snapshots are opening measurements: 10000 at the start of
+        # last month, 6000 at the start of this one. The 4000 drop therefore
+        # happened *during last month* and belongs to last month's row.
         execute(
             """INSERT INTO inventory_overstock_snapshots
                    (tenant_id, session_id, overstock_value, recorded_at)
@@ -143,14 +145,15 @@ class TestGetMonthlySummary:
         assert this_row["skus_pedir_ya"] == 1
         assert this_row["total_value"] == 150.0
         assert this_row["adoption_rate"] == 0.5          # 1 approved / 2 suggested
-        assert this_row["capital_liberado"] == 4000.0
+        # No snapshot opening next month yet, so this month is still unmeasured.
+        assert this_row["capital_liberado"] is None
 
         last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
         assert last_row["pos_count"] == 2
         assert last_row["skus_pedir_ya"] == 3
         assert last_row["total_value"] == 800.0
         assert last_row["adoption_rate"] == pytest.approx(5 / 6)
-        assert last_row["capital_liberado"] is None      # no snapshot before last_month
+        assert last_row["capital_liberado"] == 4000.0    # 10000 -> 6000 during last month
 
     def test_month_with_no_activity_returns_zeroed_row(self, test_tenant):
         from backend.inventory.roi_service import get_monthly_summary
@@ -192,9 +195,13 @@ class TestGetMonthlySummary:
         rows = get_monthly_summary(tid, months=2)
 
         assert len(rows) == 2
+        # Overstock went UP during last month (5000 -> 8000), so no capital was
+        # freed and the row must say "unknown" rather than 0.
+        last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
+        assert last_row["capital_liberado"] is None
         this_row = rows[0]  # most recent first
         assert this_row["month"] == this_month.strftime("%Y-%m")
-        assert this_row["capital_liberado"] is None  # overstock went UP, so no capital freed
+        assert this_row["capital_liberado"] is None
 
 
 class TestRoiMonthlyEndpoint:
