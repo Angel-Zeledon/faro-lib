@@ -99,12 +99,24 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("Could not pre-create preferences/activity tables: %s", exc)
 
+    # A failed migration means the schema is half-built. Booting anyway hands
+    # every request a database that does not match the code — in production that
+    # is worse than not starting at all, so we refuse to boot (same fail-fast
+    # stance as TESTING_MODE in prod). In development we log loudly and continue,
+    # so a local schema hiccup does not block the whole app.
     try:
         from backend.db.migrations import run_all as run_migrations
         run_migrations()
         log.info("Schema migrations applied")
     except Exception as exc:
-        log.warning("Schema migrations failed (non-fatal): %s", exc)
+        if settings.environment.strip().lower() in ("production", "prod"):
+            log.error("Schema migrations failed — refusing to boot: %s", exc)
+            raise
+        log.error(
+            "Schema migrations FAILED: %s — continuing because ENVIRONMENT=%s, "
+            "but the schema is not what the code expects.",
+            exc, settings.environment,
+        )
 
     _recover_running_jobs()
 

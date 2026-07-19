@@ -637,10 +637,49 @@ _MIGRATIONS = _BASE_SCHEMA + [
 ]
 
 
-def run_all() -> None:
+# Postgres SQLSTATE codes that mean "this object is already there", which is the
+# expected outcome of re-running an idempotent migration on a live database.
+# Everything else is a real failure and must not be swallowed.
+#   42P07 duplicate_table · 42701 duplicate_column · 42710 duplicate_object
+#   42P16 invalid_table_definition (re-adding an existing PK/constraint)
+_ALREADY_APPLIED_SQLSTATES = frozenset({"42P07", "42701", "42710", "42P16"})
+
+
+class MigrationError(RuntimeError):
+    """One or more migrations failed for a reason other than 'already applied'."""
+
+
+def run_all(*, strict: bool = True) -> None:
+    """
+    Apply every migration in order.
+
+    Historically this swallowed EVERY exception as a warning, so a genuinely
+    broken migration — a typo, a missing FK target, a bad backfill — looked
+    exactly like a no-op re-run and the server booted on a half-built schema.
+    Now only "object already exists" errors are tolerated; anything else is
+    logged at ERROR with its SQLSTATE and, when `strict`, raised after the whole
+    list has been attempted (so the log shows every problem, not just the first).
+
+    `strict=False` is an escape hatch for recovery/inspection tooling, never for
+    normal startup.
+    """
+    failures: list[tuple[str, str, str]] = []  # (name, sqlstate, message)
+
     for name, sql in _MIGRATIONS:
         try:
             execute(sql)
             log.debug("Migration OK: %s", name)
         except Exception as exc:
-            log.warning("Migration '%s' may already be applied: %s", name, exc)
+            sqlstate = getattr(exc, "pgcode", None) or ""
+            if sqlstate in _ALREADY_APPLIED_SQLSTATES:
+                log.debug("Migration '%s' already applied (%s)", name, sqlstate)
+                continue
+            log.error(
+                "Migration '%s' FAILED (sqlstate=%s): %s",
+                name, sqlstate or "unknown", exc,
+            )
+            failures.append((name, sqlstate or "unknown", str(exc)))
+
+    if failures and strict:
+        detail = "; ".join(f"{n} (sqlstate={s}): {m}" for n, s, m in failures)
+        raise MigrationError(f"{len(failures)} migration(s) failed: {detail}")

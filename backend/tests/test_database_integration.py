@@ -17,9 +17,45 @@ class TestMigrations:
     or the AI Analyst chat.
     """
 
-    def test_run_all_does_not_raise(self):
+    def test_run_all_does_not_raise(self, client):
+        # `client` boots the app, which initialises the connection pool. Without
+        # it every migration failed on "DB pool not initialized" and the old
+        # run_all() swallowed all 60 as warnings — the test passed while applying
+        # nothing at all.
         from backend.db.migrations import run_all
         run_all()  # idempotent — must succeed even when tables already exist
+
+    def test_a_broken_migration_raises_instead_of_being_swallowed(self, client, monkeypatch):
+        """
+        Regression: run_all() used to log EVERY exception as a warning, so a typo,
+        a missing FK target or a bad backfill looked exactly like an idempotent
+        re-run and the server booted on a half-built schema.
+        """
+        from backend.db import migrations
+
+        monkeypatch.setattr(
+            migrations, "_MIGRATIONS",
+            [("deliberately_broken", "CREATE TABLE nope (x INT) REFERENCES ghost_table(id)")],
+        )
+        with pytest.raises(migrations.MigrationError) as exc_info:
+            migrations.run_all()
+        assert "deliberately_broken" in str(exc_info.value)
+
+    def test_already_applied_objects_are_not_treated_as_failures(self, client, monkeypatch):
+        """Re-running a CREATE without IF NOT EXISTS must stay silent, not explode."""
+        from backend.db import migrations
+        from backend.db.connection import execute
+
+        table = f"dup_probe_{uuid4().hex[:8]}"
+        execute(f"CREATE TABLE {table} (x INT)")
+        try:
+            monkeypatch.setattr(
+                migrations, "_MIGRATIONS",
+                [("recreate_existing", f"CREATE TABLE {table} (x INT)")],
+            )
+            migrations.run_all()  # duplicate_table (42P07) is tolerated
+        finally:
+            execute(f"DROP TABLE IF EXISTS {table}")
 
     def test_jobs_chats_chat_messages_tables_exist(self):
         from backend.db.connection import query
