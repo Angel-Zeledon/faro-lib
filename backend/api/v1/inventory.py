@@ -398,6 +398,7 @@ class EventPatch(BaseModel):
     end_date:   Optional[str]   = None
     multiplier: Optional[float] = Field(default=None, ge=0.1, le=10.0)
     notes:      Optional[str]   = None
+    active:     Optional[bool]  = None
 
     @model_validator(mode="after")
     def _check_date_order(self):
@@ -496,6 +497,82 @@ def patch_event(
 @router.delete("/events/{event_id}", status_code=204)
 def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     svc.delete_event(user.tenant_id, event_id)
+
+
+# ── LatAm commercial calendar (feature 3.4) ──────────────────────────────────
+
+class CalendarSeedRequest(BaseModel):
+    country: str = "CO"
+    years:   Optional[list[int]] = Field(default=None, max_length=5)
+
+
+class CatalogToggleRequest(BaseModel):
+    active: bool
+
+
+@router.get("/events/catalog")
+def get_event_catalog(
+    country: str = Query(default="CO", max_length=4),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Which commercial events Faro knows for a country, and whether this tenant
+    has them seeded / switched on. Read-only.
+    """
+    from backend.inventory import calendar_catalog as cat
+
+    country = country.upper()
+    if country not in cat.SUPPORTED_COUNTRIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"País '{country}' sin catálogo. Disponibles: {', '.join(cat.SUPPORTED_COUNTRIES)}",
+        )
+
+    seeded = svc.get_catalog_state(user.tenant_id, country)
+    entries = []
+    for entry in cat.describe_catalog(country):
+        state = seeded.get(entry["key"], {})
+        entries.append({
+            **entry,
+            "seeded":       state.get("total", 0) > 0,
+            "occurrences":  state.get("total", 0),
+            "active":       state.get("active", 0) > 0,
+            "next_start":   state.get("next_start"),
+        })
+    return ok({
+        "country":   country,
+        "countries": cat.SUPPORTED_COUNTRIES,
+        "entries":   entries,
+    })
+
+
+@router.post("/events/catalog/seed")
+def seed_event_catalog(
+    body: CalendarSeedRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Preload the LatAm commercial calendar into this tenant's events."""
+    try:
+        result = svc.seed_calendar_events(user.tenant_id, body.country, body.years)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ok(result)
+
+
+@router.patch("/events/catalog/{catalog_key}")
+def toggle_catalog_entry(
+    catalog_key: str,
+    body: CatalogToggleRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Switch every occurrence of one catalog entry on/off in a single call
+    (e.g. all 24 seeded `co_quincena_15` rows).
+    """
+    updated = svc.set_catalog_group_active(user.tenant_id, catalog_key, body.active)
+    if updated == 0:
+        raise HTTPException(status_code=404, detail="Evento del catálogo no encontrado")
+    return ok({"catalog_key": catalog_key, "active": body.active, "updated": updated})
 
 
 # ── PDF executive summary ─────────────────────────────────────────────────────

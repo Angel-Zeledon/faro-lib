@@ -13,6 +13,7 @@ import {
   resendVerification,
   type AdminUser,
 } from '@/lib/api'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,7 @@ function UserFormModal({
   onClose: () => void
   onSaved: () => void
 }) {
+  const { t } = useLanguage()
   const isCreate = !target
   const [fullName, setFullName] = useState(target?.full_name ?? '')
   const [email,    setEmail]    = useState(target?.email ?? '')
@@ -174,8 +176,8 @@ function UserFormModal({
         <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>
           {isCreate ? 'Create user' : 'Edit user'}
         </h2>
-        <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
-          <X size={16} />
+        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
+          <X size={16} aria-hidden="true" />
         </button>
       </div>
 
@@ -351,6 +353,7 @@ function PermissionsModal({
   user: AdminUser
   onClose: () => void
 }) {
+  const { t } = useLanguage()
   const [perms,   setPerms]   = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving,  setSaving]  = useState(false)
@@ -390,8 +393,8 @@ function PermissionsModal({
             {target.full_name || target.email} · <span style={{ textTransform: 'capitalize' }}>{target.role}</span>
           </p>
         </div>
-        <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
-          <X size={16} />
+        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
+          <X size={16} aria-hidden="true" />
         </button>
       </div>
 

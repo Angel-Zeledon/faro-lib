@@ -7,17 +7,19 @@ import {
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
  listSuppliers, getDeadStock, simulateEvent, logPOGeneration, downloadInventoryTemplate,
  createMerma,
+ getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
- EventSimulationResult, POLineDecision, MermaReason,
+ EventSimulationResult, POLineDecision, MermaReason, CalendarCatalogEntry,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
 import HelpTip from '@/components/ui/HelpTip'
+import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
@@ -36,22 +38,11 @@ const C = {
 }
 
 // ── Signal config ─────────────────────────────────────────────────────────────
-const SIGNAL_CFG: Record<InventorySignal, { labelKey: string; color: string; bg: string; icon: React.ElementType }> = {
- PEDIR_YA: { labelKey: 'inventory.signal_pedir_ya', color: '#ef4444', bg: 'rgba(239,68,68,0.1)', icon: AlertTriangle },
- PEDIR_PRONTO: { labelKey: 'inventory.signal_pedir_pronto', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: AlertTriangle },
- OK: { labelKey: 'inventory.signal_ok', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', icon: CheckCircle2 },
- SOBRESTOCK: { labelKey: 'inventory.signal_sobrestock', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', icon: TrendingDown },
- SIN_DATOS: { labelKey: 'inventory.signal_sin_datos', color: '#64748b', bg: 'rgba(100,116,139,0.1)', icon: Info },
-}
-
+// La presentación del semáforo (icono + etiqueta + color accesible) vive en
+// components/ui/SignalBadge — antes estaba duplicada aquí y en
+// SkuSearchOverlay, con colores que fallaban contraste en tema claro.
 function SignalBadge({ s }: { s: InventorySignal }) {
- const { t } = useLanguage()
- const cfg = SIGNAL_CFG[s]; const Icon = cfg.icon
- return (
- <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: cfg.bg, color: cfg.color }}>
- <Icon size={10} /> {t(cfg.labelKey)}
- </span>
- )
+ return <SharedSignalBadge signal={s} />
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
@@ -217,6 +208,7 @@ function EventSimModal({ ev, sessionId, onClose }: {
  sessionId: string
  onClose: () => void
 }) {
+ const { t } = useLanguage()
  const [result, setResult] = useState<EventSimulationResult | null>(null)
  const [error, setError] = useState<string | null>(null)
 
@@ -235,7 +227,7 @@ function EventSimModal({ ev, sessionId, onClose }: {
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
  <Zap size={16} color={C.amber} />
  <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Simulación: {ev.name}</span>
- <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} /></button>
+ <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
  </div>
  <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim }}>
  {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demanda estimada +{pctExtra}%
@@ -365,7 +357,7 @@ function MermaModal({ items, onClose, onSaved }: {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
      <PackageMinus size={16} color={C.red} />
      <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('inventory.merma_title_register')}</span>
-     <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} /></button>
+     <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
     </div>
     <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>{t('inventory.merma_subtitle')}</p>
 
@@ -432,19 +424,139 @@ function MermaModal({ items, onClose, onSaved }: {
  )
 }
 
+// ── LatAm calendar catalog (feature 3.4) ─────────────────────────────────────
+// El catálogo se siembra en la DB (no es un array en el frontend): aquí sólo
+// se muestra su estado y se prende/apaga cada evento.
+function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
+ const { t } = useLanguage()
+ const [entries, setEntries] = useState<CalendarCatalogEntry[] | null>(null)
+ const [busy, setBusy] = useState<string | null>(null)
+ const [err, setErr] = useState('')
+
+ const load = useCallback(() => {
+  getCalendarCatalog('CO')
+   .then(r => setEntries(r.entries))
+   .catch(e => setErr(e instanceof Error ? e.message : String(e)))
+ }, [])
+
+ useEffect(() => { load() }, [load])
+
+ async function handleSeed() {
+  setBusy('__seed__'); setErr('')
+  try {
+   await seedCalendarCatalog('CO')
+   load(); onSeeded()
+  } catch (e) { setErr(e instanceof Error ? e.message : t('inventory.calendar_err_seed')) }
+  finally { setBusy(null) }
+ }
+
+ async function handleToggle(entry: CalendarCatalogEntry) {
+  setBusy(entry.key); setErr('')
+  const next = !entry.active
+  // Optimista: el toggle debe sentirse inmediato.
+  setEntries(prev => prev?.map(e => e.key === entry.key ? { ...e, active: next } : e) ?? null)
+  try {
+   await toggleCalendarEntry(entry.key, next)
+   onSeeded()
+  } catch (e) {
+   setEntries(prev => prev?.map(x => x.key === entry.key ? { ...x, active: entry.active } : x) ?? null)
+   setErr(e instanceof Error ? e.message : t('inventory.calendar_err_toggle'))
+  } finally { setBusy(null) }
+ }
+
+ if (!entries) return <div style={{ fontSize: 12, color: C.dim, padding: '10px 0' }}>{t('common.loading')}</div>
+
+ const anySeeded = entries.some(e => e.seeded)
+
+ return (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+    <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.5 }}>{t('inventory.calendar_intro')}</div>
+    {!anySeeded && (
+     <button
+      onClick={handleSeed}
+      disabled={busy === '__seed__'}
+      style={{ all: 'unset', cursor: busy ? 'wait' : 'pointer', flexShrink: 0, padding: '6px 12px', borderRadius: 7, background: C.indigo, color: '#fff', fontSize: 12, fontWeight: 600, opacity: busy === '__seed__' ? 0.6 : 1 }}
+     >
+      {busy === '__seed__' ? t('inventory.calendar_seeding') : t('inventory.calendar_btn_load')}
+     </button>
+    )}
+   </div>
+
+   {err && <div style={{ fontSize: 11, color: C.red }}>{err}</div>}
+
+   {entries.map(entry => {
+    const on = entry.seeded && entry.active
+    return (
+     <div key={entry.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, background: C.card, border: `1px solid ${C.border}`, opacity: entry.seeded ? 1 : 0.55 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+       <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>{entry.name}</div>
+       <div style={{ fontSize: 10.5, color: C.dim, marginTop: 2, lineHeight: 1.45 }}>{entry.notes}</div>
+       <div style={{ fontSize: 10, color: C.dim, marginTop: 3 }}>
+        {entry.seeded
+         ? <>×{entry.multiplier.toFixed(1)} · {entry.occurrences} {t('inventory.calendar_occurrences')}
+            {entry.next_start && <> · {t('inventory.calendar_next')} {new Date(entry.next_start + 'T00:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' })}</>}
+           </>
+         : t('inventory.calendar_not_loaded')}
+       </div>
+      </div>
+      <button
+       role="switch"
+       aria-checked={on}
+       aria-label={`${on ? t('inventory.calendar_toggle_off_aria') : t('inventory.calendar_toggle_on_aria')}: ${entry.name}`}
+       disabled={!entry.seeded || busy === entry.key}
+       onClick={() => handleToggle(entry)}
+       style={{
+        all: 'unset', flexShrink: 0,
+        cursor: !entry.seeded ? 'not-allowed' : busy === entry.key ? 'wait' : 'pointer',
+        width: 38, height: 21, borderRadius: 11, position: 'relative',
+        background: on ? C.indigo : C.border,
+        transition: 'background 0.15s',
+       }}
+      >
+       <span style={{
+        position: 'absolute', top: 3, left: on ? 20 : 3,
+        width: 15, height: 15, borderRadius: '50%', background: '#fff',
+        transition: 'left 0.15s',
+       }} />
+      </button>
+      {/* Estado en texto: el toggle no puede comunicarse sólo por posición/color. */}
+      <span style={{ fontSize: 10, fontWeight: 600, width: 52, textAlign: 'right', flexShrink: 0, color: on ? C.indigo : C.dim }}>
+       {entry.seeded ? (on ? t('inventory.calendar_state_on') : t('inventory.calendar_state_off')) : '—'}
+      </span>
+     </div>
+    )
+   })}
+
+   {anySeeded && (
+    <button
+     onClick={handleSeed}
+     disabled={busy === '__seed__'}
+     style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: C.dim, padding: '5px 0', textAlign: 'center' }}
+    >
+     {t('inventory.calendar_btn_refresh')}
+    </button>
+   )}
+  </div>
+ )
+}
+
 // ── Events panel ─────────────────────────────────────────────────────────────
-function EventsPanel({ events, onAdd, onDelete, onSimulate }: {
+function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  events: InventoryEvent[]
  onAdd: (ev: Omit<InventoryEvent, 'id' | 'tenant_id' | 'created_at'>) => void
  onDelete: (id: string) => void
  onSimulate: (ev: InventoryEvent) => void
+ onCatalogChange: () => void
 }) {
  const { t } = useLanguage()
  const [adding, setAdding] = useState(false)
+ const [tab, setTab] = useState<'mine' | 'catalog'>('mine')
  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', multiplier: '1.5', notes: '' })
 
- const upcoming = events.filter(e => new Date(e.end_date) >= new Date())
- const past = events.filter(e => new Date(e.end_date) < new Date())
+ const visible = events.filter(e => e.active !== false)
+ const upcoming = visible.filter(e => new Date(e.end_date) >= new Date())
+ const past = visible.filter(e => new Date(e.end_date) < new Date())
 
  function handleAdd() {
  if (!form.name || !form.start_date || !form.end_date) return
@@ -465,8 +577,26 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate }: {
  return `${t('inventory.day_in_prefix')} ${d} ${t('inventory.day_in_suffix')}`
  }
 
+ const tabS = (active: boolean): React.CSSProperties => ({
+  all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,
+  fontSize: 11.5, fontWeight: 600,
+  background: active ? 'rgba(129,140,248,0.12)' : 'transparent',
+  color: active ? C.indigo : C.dim,
+ })
+
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+ {/* Mis eventos vs. calendario LatAm precargado */}
+ <div role="tablist" aria-label={t('inventory.events_tablist_aria')} style={{ display: 'flex', gap: 4, marginBottom: 2 }}>
+  <button role="tab" aria-selected={tab === 'mine'} onClick={() => setTab('mine')} style={tabS(tab === 'mine')}>
+   {t('inventory.events_tab_mine')}
+  </button>
+  <button role="tab" aria-selected={tab === 'catalog'} onClick={() => setTab('catalog')} style={tabS(tab === 'catalog')}>
+   {t('inventory.events_tab_calendar')}
+  </button>
+ </div>
+
+ {tab === 'catalog' ? <CalendarCatalogPanel onSeeded={onCatalogChange} /> : <>
  {/* Upcoming */}
  {upcoming.map(ev => {
  const until = daysUntil(ev.start_date)
@@ -487,13 +617,21 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate }: {
  </span>
  <button
  onClick={() => onSimulate(ev)}
- title="Simular impacto en el inventario"
- style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: C.amber, fontSize: 11, fontWeight: 600, flexShrink: 0 }}
+ title={t('inventory.events_simulate_tooltip')}
+ aria-label={`${t('inventory.events_btn_simulate')}: ${ev.name}`}
+ style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-pedir-pronto-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0 }}
  >
- <Zap size={11} /> Simular
+ <Zap size={11} aria-hidden="true" /> {t('inventory.events_btn_simulate')}
  </button>
- <button onClick={() => onDelete(ev.id)} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = C.red)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}>
- <Trash2 size={12} />
+ <button
+ onClick={() => onDelete(ev.id)}
+ aria-label={`${t('inventory.events_btn_delete')}: ${ev.name}`}
+ title={t('inventory.events_btn_delete')}
+ style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}
+ onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+ onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
+ >
+ <Trash2 size={12} aria-hidden="true" />
  </button>
  </div>
  )
@@ -546,6 +684,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate }: {
  {past.length} {past.length > 1 ? t('inventory.events_past_count_suffix_plural') : t('inventory.events_past_count_suffix_singular')}
  </div>
  )}
+ </>}
  </div>
  )
 }
@@ -583,7 +722,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '160px 100px 90px 90px 80px 60px auto', gap: 12, padding: '10px 16px', alignItems: 'center', fontSize: 12, background: idx % 2 === 0 ? C.surface : C.card, borderBottom: idx < items.length - 1 ? `1px solid ${C.border}` : 'none' }}>
  <div><div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{item.sku}</div>{item.display_name && <div style={{ color: C.dim, fontSize: 10 }}>{item.display_name}</div>}</div>
  <SignalBadge s={item.signal} />
- <span style={{ color: item.signal === 'PEDIR_YA' ? C.red : item.signal === 'PEDIR_PRONTO' ? C.amber : C.green, fontWeight: 600 }}>{item.dias_cobertura != null ? `${item.dias_cobertura.toFixed(0)}d` : '—'}</span>
+ <span style={{ color: signalColor(item.signal), fontWeight: 600 }}>{item.dias_cobertura != null ? `${item.dias_cobertura.toFixed(0)}d` : '—'}</span>
  <span>
  {item.cantidad_recomendada != null && item.cantidad_recomendada > 0 ? (
  editingQtySku === item.sku ? (
@@ -803,10 +942,14 @@ export default function InventoryPage() {
  const effectiveQty = useCallback((item: InventoryStatusItem): number =>
   editedQty[item.sku] ?? item.cantidad_recomendada ?? 0, [editedQty])
 
- useEffect(() => {
+ const reloadEvents = useCallback(() => {
  listInventoryEvents().then(setEvents).catch(() => {})
- listSuppliers().then(setSuppliers).catch(() => {})
  }, [])
+
+ useEffect(() => {
+ reloadEvents()
+ listSuppliers().then(setSuppliers).catch(() => {})
+ }, [reloadEvents])
 
  const load = useCallback(async (sid: string) => {
  if (!sid) return
@@ -910,6 +1053,7 @@ export default function InventoryPage() {
 
  // Upcoming events within 30 days
  const upcomingAlerts = useMemo(() => events.filter(e => {
+ if (e.active === false) return false   // un evento apagado no debe alertar
  const d = Math.round((new Date(e.start_date).getTime() - Date.now()) / 86400000)
  return d >= 0 && d <= 30 && new Date(e.end_date) >= new Date()
  }), [events])
@@ -1346,7 +1490,7 @@ export default function InventoryPage() {
  <span>{t('inventory.col_sku_product')}</span><span>{t('inventory.col_signal')}</span><span style={{ textAlign: 'right' }}>{t('inventory.col_qty_to_order')}</span><span>{t('inventory.col_provider')}</span>
  </div>
  {items.filter(i => i.signal !== 'OK' && i.signal !== 'SIN_DATOS').concat(items.filter(i => i.signal === 'OK' || i.signal === 'SIN_DATOS')).map((item, idx) => (
- <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 160px', gap: 16, padding: '14px 16px', alignItems: 'center', borderBottom: `1px solid ${C.border}`, background: idx % 2 === 0 ? C.surface : C.card, borderLeft: `3px solid ${item.signal === 'PEDIR_YA' ? C.red : item.signal === 'PEDIR_PRONTO' ? C.amber : 'transparent'}` }}>
+ <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 160px', gap: 16, padding: '14px 16px', alignItems: 'center', borderBottom: `1px solid ${C.border}`, background: idx % 2 === 0 ? C.surface : C.card, borderLeft: `3px solid ${item.signal === 'PEDIR_YA' || item.signal === 'PEDIR_PRONTO' ? signalColor(item.signal) : 'transparent'}` }}>
  <div>
  <div style={{ fontWeight: 600, fontSize: 13 }}>{item.display_name || item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>}
@@ -1354,7 +1498,7 @@ export default function InventoryPage() {
  <SignalBadge s={item.signal} />
  <div style={{ textAlign: 'right' }}>
  {item.cantidad_recomendada != null && item.cantidad_recomendada > 0
- ? <span style={{ fontSize: 18, fontWeight: 800, color: item.signal === 'PEDIR_YA' ? C.red : item.signal === 'PEDIR_PRONTO' ? C.amber : C.green }}>{fmt(item.cantidad_recomendada, 0)}</span>
+ ? <span style={{ fontSize: 18, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.cantidad_recomendada, 0)}</span>
  : <span style={{ fontSize: 13, color: C.dim }}>—</span>}
  </div>
  <span style={{ fontSize: 12, color: C.muted }}>{item.proveedor || '—'}</span>
@@ -1568,7 +1712,7 @@ export default function InventoryPage() {
  <button onClick={() => commitEdit(item.sku)} disabled={saving} style={{ all: 'unset', cursor: saving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.green, color: '#fff', opacity: saving ? 0.6 : 1 }}>
  {saving ? <Spinner size={10} /> : <Save size={10} />} {t('inventory.btn_save')}
  </button>
- <button onClick={cancelEdit} style={{ all: 'unset', cursor: 'pointer', padding: '5px 8px', borderRadius: 6, border: `1px solid ${C.border}`, color: C.dim, fontSize: 11 }}><X size={11} /></button>
+ <button onClick={cancelEdit} aria-label={t('common.cancel')} title={t('common.cancel')} style={{ all: 'unset', cursor: 'pointer', padding: '5px 8px', borderRadius: 6, border: `1px solid ${C.border}`, color: C.dim, fontSize: 11 }}><X size={11} aria-hidden="true" /></button>
  </div>
  </td>
  </tr>
@@ -1609,7 +1753,7 @@ export default function InventoryPage() {
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  {item.dias_cobertura != null ? (
- <span style={{ fontWeight: 600, color: item.signal === 'PEDIR_YA' ? C.red : item.signal === 'PEDIR_PRONTO' ? C.amber : item.signal === 'SOBRESTOCK' ? C.blue : C.green }}>
+ <span style={{ fontWeight: 600, color: signalColor(item.signal) }}>
  {fmt(item.dias_cobertura, 0)}d
  </span>
  ) : '—'}
@@ -1697,7 +1841,7 @@ export default function InventoryPage() {
  <div style={{ fontSize: 12, color: C.dim, marginBottom: 14, marginTop: 12, lineHeight: 1.6 }}>
  {t('inventory.events_section_desc')}
  </div>
- <EventsPanel events={events} onAdd={handleAddEvent} onDelete={handleDeleteEvent} onSimulate={setSimEvent} />
+ <EventsPanel events={events} onAdd={handleAddEvent} onDelete={handleDeleteEvent} onSimulate={setSimEvent} onCatalogChange={reloadEvents} />
  </div>
  )}
  </div>

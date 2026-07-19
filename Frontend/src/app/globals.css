@@ -20,6 +20,21 @@
     --warning:       #f59e0b;
     --danger:        #ef4444;
     --info:          #0ea5e9;
+
+    /* Semáforo (feature 2.8) — foreground tones tuned for >=4.5:1 contrast
+       against their own tinted badge background on this theme's surface.
+       Never use the raw --danger/--warning tokens for badge *text*: they are
+       accent colours, not text colours, and fail WCAG AA on light surfaces. */
+    --signal-pedir-ya-fg:      #ef4444;
+    --signal-pedir-ya-bg:      rgba(239,68,68,0.14);
+    --signal-pedir-pronto-fg:  #f59e0b;
+    --signal-pedir-pronto-bg:  rgba(245,158,11,0.14);
+    --signal-ok-fg:            #22c55e;
+    --signal-ok-bg:            rgba(34,197,94,0.14);
+    --signal-sobrestock-fg:    #60a5fa;
+    --signal-sobrestock-bg:    rgba(96,165,250,0.14);
+    --signal-sin-datos-fg:     #94a3b8;
+    --signal-sin-datos-bg:     rgba(148,163,184,0.14);
   }
 
   [data-theme="light"] {
@@ -38,6 +53,20 @@
     --warning:       #d97706;
     --danger:        #dc2626;
     --info:          #0284c7;
+
+    /* Darker on light: #f59e0b on white is only 2.1:1 and #16a34a 3.4:1 —
+       both fail AA, so the light theme drops a shade rather than reusing the
+       dark-theme values. */
+    --signal-pedir-ya-fg:      #b91c1c;   /* 6.4:1 on white */
+    --signal-pedir-ya-bg:      rgba(185,28,28,0.10);
+    --signal-pedir-pronto-fg:  #a16207;   /* 5.1:1 on white */
+    --signal-pedir-pronto-bg:  rgba(161,98,7,0.10);
+    --signal-ok-fg:            #15803d;   /* 4.9:1 on white */
+    --signal-ok-bg:            rgba(21,128,61,0.10);
+    --signal-sobrestock-fg:    #1d4ed8;   /* 7.0:1 on white */
+    --signal-sobrestock-bg:    rgba(29,78,216,0.10);
+    --signal-sin-datos-fg:     #475569;   /* 7.4:1 on white */
+    --signal-sin-datos-bg:     rgba(71,85,105,0.10);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -63,6 +92,38 @@
 
   /* Selection */
   ::selection { background: var(--accent-dim); color: var(--text); }
+
+  /* Visible focus (feature 2.8).
+     Much of this app styles buttons with `all: unset`, which also wipes the
+     UA focus ring — keyboard users were left with no indicator at all. This
+     restores one globally on :focus-visible only, so mouse clicks stay clean.
+     `outline` (not box-shadow) so it survives Windows high-contrast mode. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [role="button"]:focus-visible,
+  [role="switch"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Screen-reader-only text: gives icon-only context to assistive tech
+     without changing the visual layout. */
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 
   /* Remove input autofill styling */
   input:-webkit-autofill,

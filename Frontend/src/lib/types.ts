@@ -584,6 +584,37 @@ export interface InventoryEvent {
   multiplier: number
   notes:      string | null
   created_at: string
+  /** Preloaded LatAm calendar events carry these; user-created ones do not. */
+  catalog_key?: string | null
+  country?:     string | null
+  source?:      'catalog' | 'user'
+  active?:      boolean
+}
+
+/** One entry of the preloaded LatAm commercial calendar (feature 3.4). */
+export interface CalendarCatalogEntry {
+  key:         string
+  name:        string
+  country:     string
+  multiplier:  number
+  notes:       string
+  seeded:      boolean
+  occurrences: number
+  active:      boolean
+  next_start:  string | null
+}
+
+export interface CalendarCatalogResponse {
+  country:   string
+  countries: string[]
+  entries:   CalendarCatalogEntry[]
+}
+
+export interface CalendarSeedResult {
+  country:         string
+  inserted:        number
+  already_present: number
+  total_catalog:   number
 }
 
 export interface InventoryStatusItem extends InventoryStock {

@@ -17,6 +17,7 @@ import {
  Play, Save, Link2, Table2, AlertTriangle, Eye,
  Layers, ArrowLeft, BarChart2, ChevronUp, ChevronDown,
 } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -980,6 +981,7 @@ function AnalysisTab({ source, columns, activeSheet }: {
 function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  { source: DataSource; onUpdated: (s: DataSource) => void; onDeleted: () => void; onBack?: () => void }
 ) {
+ const { t } = useLanguage()
  const [tab, setTab] = useState<'preview' | 'analysis' | 'sql-editor' | 'connection'>('preview')
  const [preview, setPreview] = useState<DataPreview | null>(null)
  const [loadingPreview, setLoadingPreview] = useState(false)
@@ -1070,9 +1072,9 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  <div style={{ padding: '20px 24px 0', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
  {onBack && (
- <button onClick={onBack} style={{ background: 'transparent', border: 'none',
+ <button onClick={onBack} aria-label={t('common.back')} style={{ background: 'transparent', border: 'none',
  color: C.muted, cursor: 'pointer', padding: 4, marginTop: 2 }}>
- <ArrowLeft size={16} />
+ <ArrowLeft size={16} aria-hidden="true" />
  </button>
  )}
  <SourceIcon type={source.source_type} size={24} />
@@ -1130,9 +1132,10 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  </button>
  )}
  <button onClick={doDelete} disabled={deletingId}
+ aria-label={t('common.delete')} title={t('common.delete')}
  style={{ padding: '7px 12px', borderRadius: 8, background: C.redDim,
  border: `1px solid ${C.red}30`, color: C.red, cursor: 'pointer' }}>
- <Trash2 size={14} />
+ <Trash2 size={14} aria-hidden="true" />
  </button>
  </div>
  </div>
@@ -1338,6 +1341,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
 function NewSourcePanel({ onCreated, onCancel }:
  { onCreated: (s: DataSource) => void; onCancel: () => void }
 ) {
+ const { t } = useLanguage()
  const [mode, setMode] = useState<'file' | 'sql'>('file')
  const [busy, setBusy] = useState(false)
  const [err, setErr] = useState<string | null>(null)
@@ -1372,8 +1376,8 @@ function NewSourcePanel({ onCreated, onCancel }:
  <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
  <h3 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700, flex: 1 }}>New Data Source</h3>
- <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
- <X size={16} />
+ <button onClick={onCancel} aria-label={t('common.close')} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
+ <X size={16} aria-hidden="true" />
  </button>
  </div>
  <div style={{ display: 'flex', gap: 8 }}>
@@ -1442,8 +1446,8 @@ function NewSourcePanel({ onCreated, onCancel }:
  <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
  <h3 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700, flex: 1 }}>New Data Source</h3>
- <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
- <X size={16} />
+ <button onClick={onCancel} aria-label={t('common.close')} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
+ <X size={16} aria-hidden="true" />
  </button>
  </div>
  <div style={{ display: 'flex', gap: 8 }}>
