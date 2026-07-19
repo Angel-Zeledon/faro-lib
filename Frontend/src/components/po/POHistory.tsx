@@ -1,9 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { getPOItems, receivePO } from '@/lib/api'
+import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
 import type { POLogEntry, POItemLine } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
-import { Truck, X } from 'lucide-react'
+import { Truck, X, Send } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
@@ -198,6 +198,60 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   )
 }
 
+function SendPOButton({ poLogId }: { poLogId: string }) {
+  const { t } = useLanguage()
+  const [state, setState] = useState<'idle' | 'confirm' | 'sending' | 'done'>('idle')
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  useEffect(() => {
+    if (state !== 'confirm') return
+    const timer = setTimeout(() => setState('idle'), 4000)
+    return () => clearTimeout(timer)
+  }, [state])
+
+  async function handleConfirm() {
+    setState('sending')
+    try {
+      const res = await sendPOToSuppliers(poLogId)
+      const anySent = res.sent.length > 0
+      const anySkipped = res.skipped.length > 0
+      const message = !anySent
+        ? t('roi.send_po_none_sent')
+        : anySkipped ? t('roi.send_po_partial') : t('roi.send_po_success')
+      setResult({ ok: anySent, message })
+    } catch (e: unknown) {
+      setResult({ ok: false, message: e instanceof Error ? e.message : t('roi.send_po_error') })
+    } finally {
+      setState('done')
+    }
+  }
+
+  if (state === 'done' && result) {
+    return (
+      <span style={{ fontSize: 11, color: result.ok ? C.green : C.red, fontWeight: 600 }}>
+        {result.message}
+      </span>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => (state === 'confirm' ? handleConfirm() : setState('confirm'))}
+      disabled={state === 'sending'}
+      style={{
+        all: 'unset', cursor: state === 'sending' ? 'not-allowed' : 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: '3px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+        border: `1px solid ${state === 'confirm' ? C.indigo : C.border}`,
+        color: state === 'confirm' ? C.indigo : C.text,
+      }}
+    >
+      <Send size={11} />
+      {state === 'sending' ? t('roi.send_po_sending') : state === 'confirm' ? t('roi.send_po_confirm') : t('roi.send_po')}
+    </button>
+  )
+}
+
 export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; onReceive: (id: string) => void }) {
   const { t } = useLanguage()
   if (entries.length === 0) {
@@ -297,6 +351,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
                           <Truck size={11} /> Registrar llegada
                         </button>
                       )}
+                      <SendPOButton poLogId={entry.id} />
                     </span>
                   )
                 })()}
