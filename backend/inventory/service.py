@@ -826,7 +826,7 @@ def delete_event(tenant_id: str, event_id: str) -> None:
 
 def seed_calendar_events(
     tenant_id: str,
-    country: str = "CO",
+    country: str = "CR",
     years: Optional[list[int]] = None,
 ) -> dict:
     """
@@ -839,7 +839,7 @@ def seed_calendar_events(
     """
     from backend.inventory import calendar_catalog as cat
 
-    country = (country or "CO").upper()
+    country = (country or "CR").upper()
     if country not in cat.SUPPORTED_COUNTRIES:
         raise ValueError(
             f"País '{country}' sin catálogo. Disponibles: {', '.join(cat.SUPPORTED_COUNTRIES)}"
@@ -880,7 +880,7 @@ def seed_calendar_events(
     }
 
 
-def get_catalog_state(tenant_id: str, country: str = "CO") -> dict[str, dict]:
+def get_catalog_state(tenant_id: str, country: str = "CR") -> dict[str, dict]:
     """
     Per catalog entry: how many occurrences are seeded, how many are active and
     when the next one starts. Keyed by the catalog entry key (the part of
@@ -897,7 +897,7 @@ def get_catalog_state(tenant_id: str, country: str = "CO") -> dict[str, dict]:
             WHERE tenant_id = %s AND catalog_key IS NOT NULL
               AND (country = %s OR country IS NULL)
             GROUP BY 1""",
-        (tenant_id, (country or "CO").upper()),
+        (tenant_id, (country or "CR").upper()),
     )
     return {
         r["entry_key"]: {

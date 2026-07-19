@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Sparkles, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 type Urgency = 'critical' | 'warning' | 'ok'
 
@@ -81,6 +82,7 @@ export default function NarrativeCard({
   loading = false, fallback = false,
   analytistLink, compact = false, onRefresh,
 }: NarrativeCardProps) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(!compact)
   const [visible,  setVisible]  = useState(false)
   const cfg  = URGENCY_CFG[urgency]
@@ -88,8 +90,8 @@ export default function NarrativeCard({
 
   useEffect(() => {
     if (narrative && !loading) {
-      const t = setTimeout(() => setVisible(true), 80)
-      return () => clearTimeout(t)
+      const timer = setTimeout(() => setVisible(true), 80)
+      return () => clearTimeout(timer)
     }
   }, [narrative, loading])
 
@@ -182,7 +184,7 @@ export default function NarrativeCard({
                   border: '1px solid rgba(129,140,248,0.3)',
                   background: 'rgba(129,140,248,0.06)',
                 }}>
-                  <ExternalLink size={9} /> Preguntarle al Analyst
+                  <ExternalLink size={9} aria-hidden="true" /> {t('narrative.ask_analyst')}
                 </Link>
               )}
             </div>

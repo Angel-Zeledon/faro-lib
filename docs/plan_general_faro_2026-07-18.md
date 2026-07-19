@@ -85,7 +85,7 @@ Diseñado desde la mañana real del usuario: *llega la alerta de WhatsApp → ab
 | 3.1 | **Deep-links en la alerta de WhatsApp** (cada SKU en PEDIR_YA aterriza en `/hoy` con el carrito pre-filtrado) + **PWA ligera** (manifest, viewport, layout responsive de `/hoy` y `/pedidos`) | La alerta ya existe; el salto es que el clic desde el celular aterrice en una pantalla que funcione en el celular. El jefe de compras vive en WhatsApp y la bodega | Medio |
 | 3.2 | **Resumen mensual "Faro te ahorró $X"** (email automático + página): quiebres evitados, capital liberado, % de recomendaciones seguidas — los datos ya se registran en log-po/ROI | Es el argumento de renovación de los $99–299/mes, a veces ante el jefe del usuario | Bajo |
 | 3.3 | Scorecard de proveedores como ritual: alerta cuando un proveedor se desvía de su lead time histórico ("Acme está tardando 12 días, no 7") | Convierte los datos propietarios (lead times reales) en momentos de valor visibles | Bajo-Medio |
-| 3.4 | **Calendario LatAm precargado**: quincenas, primas de junio/diciembre, Día de la Madre, Semana Santa, temporada escolar, Navidad — ya cargados como eventos que alimentan el simulador existente | Hoy el usuario tendría que crear cada evento a mano. Son datos, no código nuevo; demo-able ("Faro ya sabe que viene la prima") y moat local que un competidor global no construye | Bajo |
+| 3.4 | **Calendario LatAm precargado**: quincenas, aguinaldo/primas, Día de la Madre, Semana Santa, temporada escolar, Navidad — ya cargados como eventos que alimentan el simulador existente | Hoy el usuario tendría que crear cada evento a mano. Son datos, no código nuevo; demo-able ("Faro ya sabe que viene la prima") y moat local que un competidor global no construye | Bajo |
 | 3.5 | **Escalas de precio del proveedor (price breaks)**: "si pides 50 más, el costo unitario baja 8% — te conviene adelantar la compra". El MOQ ya redondea cantidades; esto es su hermano natural | Convierte la recomendación en una decisión de plata, no solo de cobertura — el consejo que el jefe de compras presume con su jefe | Medio |
 | 3.6 | **Calendario de caja (cuentas por pagar)**: estructurar `payment_terms` (hoy texto libre) en días de crédito por proveedor; con las POs enviadas, construir "esta semana te vencen $12M en facturas; la compra recomendada cabe / no cabe", cruzado con el optimizador de presupuesto ya existente | La restricción real del SMB LatAm es caja, no información; ningún forecast tradicional responde esto | Medio |
 | 3.7 | **Aprobar el pedido respondiendo el WhatsApp**: la alerta diaria ya llega por WhatsApp; responder "1" aprueba el borrador de PO (webhook entrante de Twilio). Habilita además el flujo analista-prepara / dueño-aprueba | Cierra el ciclo completo sin abrir el navegador — en el canal donde el dueño ya vive | Medio |
@@ -146,7 +146,7 @@ Cerrado y mergeado a `main` (suite backend **818 passed, 19 skipped**; `tsc --no
 | 2.5 | ✅ | endpoint real; eliminó lógica de negocio que vivía en el frontend |
 | 2.10 | ✅ | margen `None` ≠ `0`; margen negativo ya no se aplasta a 0 |
 | 3.3 | ✅ | regla SPC 3-sigma con mediana + IQR/1.349 |
-| 3.4 | ✅ | catálogo LatAm, fechas móviles calculadas — **solo Colombia poblado** |
+| 3.4 | ✅ | catálogo LatAm, fechas móviles calculadas — **Costa Rica (mercado objetivo, `DEFAULT_COUNTRY`) y Colombia poblados** |
 | 2.8 | ✅ | contraste del semáforo estaba roto (2.1:1 y 3.4:1, reprobaban AA) — corregido |
 
 **Riesgos abiertos de lo recién mergeado:**

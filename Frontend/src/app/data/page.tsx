@@ -90,7 +90,8 @@ function fmt(bytes: number | null) {
 
 // ── Data grid ─────────────────────────────────────────────────────────────────
 function DataGrid({ columns, rows }: { columns: string[]; rows: Record<string, unknown>[] }) {
- if (!columns.length) return <p style={{ color: C.muted, padding: 20 }}>No data</p>
+ const { t } = useLanguage()
+ if (!columns.length) return <p style={{ color: C.muted, padding: 20 }}>{t('common.no_data')}</p>
  return (
  <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 380, borderRadius: 8,
  border: `1px solid ${C.border}` }}>
@@ -425,7 +426,8 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  onSort: (col: string) => void
  onSelect: (sku: string) => void
 }) {
- if (!rows.length) return <p style={{ color: C.muted, padding: 20 }}>No SKUs analysed</p>
+ const { t } = useLanguage()
+ if (!rows.length) return <p style={{ color: C.muted, padding: 20 }}>{t('data.no_skus_analysed')}</p>
 
  const Hdr = ({ label, col }: { label: string; col: string }) => {
  const active = sortCol === col
@@ -1485,13 +1487,14 @@ function NewSourcePanel({ onCreated, onCancel }:
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 function EmptyRight({ onCreate }: { onCreate: () => void }) {
+ const { t } = useLanguage()
  return (
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
  justifyContent: 'center', height: '100%', padding: 40, textAlign: 'center' }}>
  <Layers size={48} color={C.border2} style={{ marginBottom: 20 }} />
- <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>No source selected</h2>
+ <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>{t('data.no_source_selected')}</h2>
  <p style={{ color: C.muted, fontSize: 14, margin: '0 0 32px', maxWidth: 340 }}>
- Select a data source from the sidebar, or create a new one to get started.
+ {t('data.no_source_selected_hint')}
  </p>
  <button onClick={onCreate}
  style={{ padding: '12px 24px', borderRadius: 10, background: C.greenDim,

@@ -602,10 +602,10 @@ export const updateInventoryEvent  = (id: string, body: Partial<InventoryEvent>)
   request<InventoryEvent>('PATCH', `/inventory/events/${id}`, body)
 
 // ── LatAm commercial calendar (feature 3.4) ─────────────────────────────────
-export const getCalendarCatalog = (country = 'CO') =>
-  request<CalendarCatalogResponse>('GET', `/inventory/events/catalog?country=${country}`)
-export const seedCalendarCatalog = (country = 'CO', years?: number[]) =>
-  request<CalendarSeedResult>('POST', '/inventory/events/catalog/seed', { country, years })
+export const getCalendarCatalog = (country?: string) =>
+  request<CalendarCatalogResponse>('GET', `/inventory/events/catalog${country ? `?country=${country}` : ''}`)
+export const seedCalendarCatalog = (country?: string, years?: number[]) =>
+  request<CalendarSeedResult>('POST', '/inventory/events/catalog/seed', { ...(country ? { country } : {}), years })
 export const toggleCalendarEntry = (catalogKey: string, active: boolean) =>
   request<{ catalog_key: string; active: boolean; updated: number }>(
     'PATCH', `/inventory/events/catalog/${catalogKey}`, { active },

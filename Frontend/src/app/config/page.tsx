@@ -244,7 +244,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
           {/* WhatsApp para alertas diarias de inventario */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              WhatsApp (alertas de inventario)
+              {t('config.whatsapp_label')}
             </label>
             <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center' }}>
               <input
