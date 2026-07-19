@@ -331,6 +331,7 @@ class Pipeline:
         trainer = Trainer(
             t.train_ratio, t.walk_forward, t.wfv_splits,
             tuning=t.tuning, tuning_trials=t.tuning_trials,
+            max_workers=t.max_workers,
         )
         results_ml = trainer.train(
             df_ml_f, ml_models,

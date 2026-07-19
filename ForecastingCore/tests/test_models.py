@@ -215,6 +215,35 @@ class TestModelFactory:
         model = ModelFactory.create("lightgbm", {"verbosity": 0})
         assert model.get_params()["verbosity"] == -1
 
+    def test_build_ml_defaults_lightgbm_n_jobs_to_one(self):
+        # Trainer parallelizes across SKUs in worker threads; each model must
+        # stay single-threaded internally or concurrent SKUs would
+        # oversubscribe the CPU against each other.
+        factory = ModelFactory({"lightgbm": {"n_estimators": 20}})
+        model = factory.build_ml()["lightgbm"]
+        assert model.get_params()["n_jobs"] == 1
+
+    def test_build_ml_defaults_xgboost_n_jobs_to_one(self):
+        factory = ModelFactory({"xgboost": {"n_estimators": 20}})
+        model = factory.build_ml()["xgboost"]
+        assert model.get_params()["n_jobs"] == 1
+
+    def test_build_ml_respects_explicit_n_jobs(self):
+        # An explicit user setting must still win over the default.
+        factory = ModelFactory({"lightgbm": {"n_jobs": 4}})
+        model = factory.build_ml()["lightgbm"]
+        assert model.get_params()["n_jobs"] == 4
+
+    def test_build_quantile_ml_defaults_n_jobs_to_one(self):
+        factory = ModelFactory({"lightgbm": {"n_estimators": 20}, "xgboost": {"n_estimators": 20}})
+        models = factory.build_quantile_ml(0.1)
+        assert models["lightgbm"].get_params()["n_jobs"] == 1
+        assert models["xgboost"].get_params()["n_jobs"] == 1
+
+    def test_create_defaults_n_jobs_to_one(self):
+        assert ModelFactory.create("lightgbm", {}).get_params()["n_jobs"] == 1
+        assert ModelFactory.create("xgboost", {}).get_params()["n_jobs"] == 1
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WeightedEnsemble

@@ -11,6 +11,7 @@ import random
 import time as _time
 from datetime import datetime
 
+from backend.config import settings
 from backend.db import session_store
 from backend.datasets.service import get_dataset
 from backend.sessions.service import get_session
@@ -20,6 +21,16 @@ from backend.sessions.service import force_status
 from backend.api.v1.webhooks import fire_webhooks
 
 log = logging.getLogger(__name__)
+
+
+def _training_max_workers() -> int:
+    """
+    Cap forecasting_core's per-SKU training parallelism to this machine's
+    core count divided across the job worker's own concurrent-session pool
+    (settings.max_concurrent_jobs), so N sessions training at once can never
+    oversubscribe the CPU between them.
+    """
+    return max(1, (os.cpu_count() or 1) // max(1, settings.max_concurrent_jobs))
 
 
 # ── Config assembly ────────────────────────────────────────────────────────
@@ -118,6 +129,7 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
             "wfv_splits": validation_cfg.get("wfv_splits", 3),
             "min_history": validation_cfg.get("min_history", 20),
             "seasonal_period": validation_cfg.get("seasonal_period", 7),
+            "max_workers": _training_max_workers(),
         },
         "forecast": {
             "horizon": forecast_cfg.get("horizon", validation_cfg.get("horizon", 14)),

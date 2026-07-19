@@ -35,9 +35,9 @@ class ModelFactory:
         for name, params in self.config.items():
             params = params or {}
             if name == "lightgbm":
-                models[name] = LGBMRegressor(**{**params, "verbosity": -1})
+                models[name] = LGBMRegressor(**{"n_jobs": 1, **params, "verbosity": -1})
             elif name == "xgboost":
-                models[name] = XGBRegressor(**{**params, "verbosity": 0})
+                models[name] = XGBRegressor(**{"n_jobs": 1, **params, "verbosity": 0})
         return models
 
     def build_quantile_ml(self, quantile: float) -> dict:
@@ -51,11 +51,11 @@ class ModelFactory:
                       if k not in ("objective", "alpha", "quantile_alpha")}
             if name == "lightgbm":
                 models[name] = LGBMRegressor(
-                    **params, objective="quantile", alpha=quantile, verbosity=-1
+                    **{"n_jobs": 1, **params}, objective="quantile", alpha=quantile, verbosity=-1
                 )
             elif name == "xgboost":
                 models[name] = XGBRegressor(
-                    **params, objective="reg:quantileerror",
+                    **{"n_jobs": 1, **params}, objective="reg:quantileerror",
                     quantile_alpha=quantile, verbosity=0
                 )
         return models
@@ -75,10 +75,10 @@ class ModelFactory:
         p = params or {}
         if name == "lightgbm":
             from lightgbm import LGBMRegressor
-            return LGBMRegressor(**{**p, "verbosity": -1})
+            return LGBMRegressor(**{"n_jobs": 1, **p, "verbosity": -1})
         if name == "xgboost":
             from xgboost import XGBRegressor
-            return XGBRegressor(**{**p, "verbosity": 0})
+            return XGBRegressor(**{"n_jobs": 1, **p, "verbosity": 0})
         raise ValueError(f"ModelFactory.create: unsupported model '{name}'")
 
     @staticmethod

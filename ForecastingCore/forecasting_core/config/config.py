@@ -97,6 +97,11 @@ class TrainingConfig:
     seasonal_period: int = 7
     tuning: bool = False
     tuning_trials: int = 30
+    # Worker count for Trainer's per-SKU parallel loop. None = auto
+    # (use every available core). The backend sets this explicitly to
+    # divide the machine's cores across concurrently-running training
+    # sessions (see backend/workers/runner.py).
+    max_workers: Optional[int] = None
 
 
 @dataclass
