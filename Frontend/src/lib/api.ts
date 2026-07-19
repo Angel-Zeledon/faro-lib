@@ -658,6 +658,9 @@ export const receivePO = (
 ) =>
   request<import('./types').ReceptionResult>('POST', `/inventory/po/${poLogId}/receive`, body ?? {})
 
+export const sendPOToSuppliers = (poLogId: string) =>
+  request<import('./types').SendPOResult>('POST', `/inventory/po/${poLogId}/send`)
+
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
 

@@ -802,6 +802,11 @@ export interface ReceptionResult {
   items:              POItemLine[]
 }
 
+export interface SendPOResult {
+  sent:    { supplier: string; email: boolean; whatsapp: boolean }[]
+  skipped: { supplier: string | null; reason: string }[]
+}
+
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
 export interface EventSimulationRow {
   sku:             string
