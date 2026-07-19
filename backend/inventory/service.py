@@ -349,6 +349,109 @@ def _gate_recommended_by_signal(signal: str, recomendado: float) -> float:
     return 0.0
 
 
+def get_learned_lead_times(tenant_id: str) -> dict[str, float]:
+    """
+    Average REAL lead time per supplier, learned from recorded PO receptions
+    (`supplier_lead_time_obs`, written by reception_service.receive_po).
+    Keys are lower-cased supplier names so callers can match case-insensitively.
+    Suppliers with no reception recorded yet are simply absent from the map —
+    the caller then falls back to the lead time configured on the SKU.
+    """
+    rows = query(
+        """SELECT LOWER(proveedor) AS proveedor, AVG(lead_time_days) AS avg_days
+           FROM supplier_lead_time_obs
+           WHERE tenant_id = %s
+           GROUP BY LOWER(proveedor)""",
+        (tenant_id,),
+    )
+    return {
+        r["proveedor"]: float(r["avg_days"])
+        for r in rows
+        if r.get("proveedor") and r.get("avg_days") is not None
+    }
+
+
+def resolve_lead_time(
+    configured: int,
+    proveedor: Optional[str],
+    learned_by_supplier: dict[str, float],
+) -> tuple[int, str, Optional[float]]:
+    """
+    The lead time a recommendation is actually built on.
+
+    Prefers the lead time LEARNED from this supplier's real receptions over the
+    one typed into the SKU card — a supplier who says 7 days but consistently
+    delivers in 12 must not keep producing recommendations that assume 7.
+
+    Returns (lead_time_dias, origen, learned_raw) where origen is
+    'aprendido' | 'configurado' (business-language, surfaced straight to the UI).
+    """
+    if proveedor:
+        learned = learned_by_supplier.get(proveedor.strip().lower())
+        if learned is not None and learned > 0:
+            return max(1, int(round(learned))), "aprendido", round(learned, 1)
+    return configured, "configurado", None
+
+
+def calc_margen_unitario(
+    precio_venta: Optional[float],
+    costo_unitario: Optional[float],
+) -> Optional[float]:
+    """
+    Gross margin per unit. None (not 0) when either side is missing — the cart
+    summary must be able to tell "this SKU contributes 0 margin" apart from
+    "we don't know this SKU's margin", and report the second as excluded.
+    A negative margin (selling below cost) is reported as-is, never clamped:
+    hiding it would make a loss-making order look profitable.
+    """
+    if precio_venta is None or costo_unitario is None:
+        return None
+    return round(float(precio_venta) - float(costo_unitario), 2)
+
+
+def build_explicacion(
+    stock_actual: float,
+    demanda_diaria: float,
+    dias_cobertura: Optional[float],
+    lead_time: int,
+    lead_time_origen: str,
+    punto_reorden: float,
+    signal: str,
+) -> str:
+    """
+    One plain-Spanish sentence explaining the recommendation — business
+    language, never ML vocabulary. This lives in the backend on purpose: it is
+    business reasoning, not presentation.
+    """
+    lt_frase = (
+        f"tu proveedor tarda {lead_time} días en entregar (aprendido de sus entregas reales)"
+        if lead_time_origen == "aprendido"
+        else f"tu proveedor tarda {lead_time} días en entregar (lead time configurado)"
+    )
+    if demanda_diaria <= 0:
+        # No projected sales at all: coverage is effectively unlimited, saying
+        # "te alcanza para N días" would be nonsense.
+        return (
+            f"Tienes {stock_actual:,.0f} unidades y el pronóstico no proyecta ventas "
+            f"para este producto, así que no hay nada que reponer por ahora."
+        )
+    cobertura = (
+        f"te alcanza para {dias_cobertura:.0f} días"
+        if dias_cobertura is not None
+        else "la cobertura supera el horizonte del pronóstico"
+    )
+    base = (
+        f"Tienes {stock_actual:,.0f} unidades y vendes {demanda_diaria:,.1f} por día, "
+        f"así que {cobertura}. Como {lt_frase}, deberías volver a pedir cuando "
+        f"el stock baje a {punto_reorden:,.0f} unidades"
+    )
+    if signal == "PEDIR_YA":
+        return base + " — ya estás por debajo de ese punto, por eso aparece como urgente."
+    if signal == "PEDIR_PRONTO":
+        return base + " — estás acercándote a ese punto, por eso conviene pedir esta semana."
+    return base + "."
+
+
 def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
     """
     Collapse per-bodega inventory_stock rows into one summary row per SKU:
@@ -405,13 +508,21 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     # past sessions leak into sessions that never uploaded them.
     all_skus = sorted(forecasts.keys())
 
+    # Real lead times learned from recorded receptions, one query for the whole
+    # tenant (never per SKU inside the loop).
+    learned_lead_times = get_learned_lead_times(tenant_id)
+
     items: list[dict] = []
 
     for sku in all_skus:
         stock = stock_map.get(sku)
         model_forecasts = forecasts.get(sku, {})
 
-        lead_time    = int(stock["lead_time_dias"]) if stock else 15
+        proveedor          = stock.get("proveedor") if stock else None
+        lead_time_config   = int(stock["lead_time_dias"]) if stock else 15
+        lead_time, lead_time_origen, lead_time_aprendido = resolve_lead_time(
+            lead_time_config, proveedor, learned_lead_times,
+        )
         stock_actual = float(stock["stock_actual"]) if stock else None
         moq          = float(stock["moq"]) if stock else 1.0
 
@@ -449,6 +560,20 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
                 # Enough stock: keep the numbers (the what-if simulator needs
                 # them) but flag it so the tooltip shows "no ordering needed".
                 calc_explanation["suficiente"] = True
+
+            # Reorder point: the stock level at which an order must be placed so
+            # the shipment arrives before the shelf empties (lead-time demand
+            # plus the safety cushion).
+            punto_reorden = round(_demanda_lt + _safety, 2)
+            explicacion = build_explicacion(
+                stock_actual=stock_actual,
+                demanda_diaria=avg_daily,
+                dias_cobertura=round(dias_cobertura, 1) if dias_cobertura < 9990 else None,
+                lead_time=lead_time,
+                lead_time_origen=lead_time_origen,
+                punto_reorden=punto_reorden,
+                signal=signal,
+            )
         else:
             avg_daily = avg_std = None
             dias_cobertura = None
@@ -456,6 +581,8 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             recomendado = None
             valor_inventario = None
             calc_explanation = None
+            punto_reorden = None
+            explicacion = None
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
         history: list[dict] = []
@@ -478,11 +605,25 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             "stock_actual":       stock_actual,
             "stock_minimo":       float(stock["stock_minimo"]) if stock else 0.0,
             "lead_time_dias":     lead_time,
+            # Which lead time the recommendation actually used, so the UI can
+            # say "aprendido de sus entregas" vs "configurado por ti".
+            "lead_time_origen":     lead_time_origen,
+            "lead_time_configurado": lead_time_config,
+            "lead_time_aprendido":  lead_time_aprendido,
+            "punto_reorden":        punto_reorden,
+            "explicacion":          explicacion,
             "costo_unitario":     float(stock["costo_unitario"]) if stock and stock.get("costo_unitario") is not None else None,
             "moq":                moq,
-            "proveedor":          stock.get("proveedor") if stock else None,
+            "proveedor":          proveedor,
             "notas":              stock.get("notas") if stock else None,
             "precio_venta":       float(stock["precio_venta"]) if stock and stock.get("precio_venta") is not None else None,
+            # Per-unit gross margin — None when price or cost is missing, which
+            # is what lets the cart report "N SKUs sin precio/costo" instead of
+            # silently counting them as zero-margin.
+            "margen_unitario":    calc_margen_unitario(
+                float(stock["precio_venta"]) if stock and stock.get("precio_venta") is not None else None,
+                float(stock["costo_unitario"]) if stock and stock.get("costo_unitario") is not None else None,
+            ),
             "categoria":          stock.get("categoria") if stock else None,
             "marca":              stock.get("marca") if stock else None,
             "unidad_medida":      stock.get("unidad_medida") if stock else None,

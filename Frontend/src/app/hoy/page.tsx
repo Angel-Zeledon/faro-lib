@@ -49,6 +49,12 @@ function fmtM(n: number) {
  return `$${n.toFixed(0)}`
 }
 
+// Moneda con separador de miles latinoamericano y sin decimales — las cifras
+// del carrito son montos de compra, no precios unitarios.
+function fmtMoney(n: number) {
+ return `$${n.toLocaleString('es-419', { maximumFractionDigits: 0 })}`
+}
+
 function fmtPct(n: number | null) {
  if (n == null) return '—'
  return `${(n * 100).toFixed(1)}%`
@@ -96,6 +102,11 @@ interface ActionItem {
  lead_time:      number
  demanda_diaria: number | null   // forecasted daily demand — for the "why" panel
  stock_actual:   number | null   // current stock — for the "why" panel
+ // "Por qué" — every value below is computed by the backend, never here
+ lead_time_origen: 'aprendido' | 'configurado'
+ punto_reorden:    number | null
+ explicacion:      string | null
+ margen_unitario:  number | null   // null = SKU sin precio o sin costo
  reason:         string
  status:         ActionStatus
 }
@@ -124,7 +135,8 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
 
  const estimatedValue = item.qty * (item.unit_cost ?? 0)
  const canOrder = item.qty > 0
- const hasWhyData = item.demanda_diaria != null || item.stock_actual != null || item.dias != null
+ const hasWhyData = item.demanda_diaria != null || item.stock_actual != null
+  || item.dias != null || item.explicacion != null
 
  return (
   <div style={{
@@ -173,13 +185,24 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
     )}
    </div>
 
-   {/* "Why" panel — plain-language breakdown behind the recommendation */}
+   {/* "Why" panel — plain-language breakdown behind the recommendation.
+       The explanatory sentence and every number in it come from the backend
+       (inventory/service.py); nothing here is computed client-side. */}
    {showWhy && (
     <div style={{
-     display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10,
      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
      padding: '10px 12px', marginBottom: 12, fontSize: 12,
     }}>
+     {item.explicacion && (
+      <p style={{
+       margin: '0 0 10px', fontSize: 13, lineHeight: 1.55, color: 'var(--text)',
+      }}>
+       {item.explicacion}
+      </p>
+     )}
+     <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10,
+     }}>
      {item.dias != null && (
       <div>
        <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -207,6 +230,11 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
        {item.lead_time} {t('hoy.why_days')}
       </div>
+      <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
+       {item.lead_time_origen === 'aprendido'
+        ? t('hoy.why_lead_time_learned')
+        : t('hoy.why_lead_time_configured')}
+      </div>
      </div>
      {item.stock_actual != null && (
       <div>
@@ -218,6 +246,17 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
        </div>
       </div>
      )}
+     {item.punto_reorden != null && (
+      <div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {t('hoy.why_reorder_point_label')}
+       </div>
+       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+        {Math.round(item.punto_reorden).toLocaleString('es')} {t('hoy.why_units')}
+       </div>
+      </div>
+     )}
+     </div>
     </div>
    )}
 
@@ -254,7 +293,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.label_units')}</span>
       {estimatedValue > 0 && (
        <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'monospace' }}>
-        ≈ ${(estimatedValue / 1_000_000).toFixed(1)}M
+        ≈ {fmtMoney(estimatedValue)}
        </span>
       )}
      </div>
@@ -375,6 +414,10 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    lead_time:      risk.lead_time_dias,
    demanda_diaria: risk.demanda_diaria ?? null,
    stock_actual:   risk.stock_actual ?? null,
+   lead_time_origen: risk.lead_time_origen ?? 'configurado',
+   punto_reorden:    risk.punto_reorden ?? null,
+   explicacion:      risk.explicacion ?? null,
+   margen_unitario:  risk.margen_unitario ?? null,
    reason,
    status:      'pending',
   })
@@ -395,6 +438,10 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    lead_time:      w.lead_time_dias,
    demanda_diaria: w.demanda_diaria ?? null,
    stock_actual:   w.stock_actual ?? null,
+   lead_time_origen: w.lead_time_origen ?? 'configurado',
+   punto_reorden:    w.punto_reorden ?? null,
+   explicacion:      w.explicacion ?? null,
+   margen_unitario:  w.margen_unitario ?? null,
    reason:      `${d != null ? d + ' ' + t('hoy.reason_days_coverage') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
   })
@@ -656,12 +703,15 @@ export default function HoyPage() {
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
 
- // Feature: margin visible in cart — value of sales this order protects, and
- // the margin within it, from each SKU's own precio_venta / costo_unitario.
- const salesProtected  = approved.reduce((s, i) => s + i.qty * (i.precio_venta ?? 0), 0)
- const marginProtected = approved.reduce(
-  (s, i) => s + i.qty * Math.max(0, (i.precio_venta ?? 0) - (i.unit_cost ?? 0)), 0,
- )
+ // Feature 2.10 — margen visible en el carrito. El margen por unidad lo calcula
+ // el backend (margen_unitario = precio_venta − costo_unitario, null cuando
+ // falta cualquiera de los dos); aquí solo se multiplica por la cantidad que el
+ // usuario aprobó y se suma. Las líneas sin precio o sin costo quedan FUERA de
+ // ambos totales y se reportan aparte, para no inflar ni desinflar la cifra.
+ const priced   = approved.filter(i => i.margen_unitario != null && i.precio_venta != null)
+ const unpriced = approved.filter(i => i.margen_unitario == null || i.precio_venta == null)
+ const salesProtected  = priced.reduce((s, i) => s + i.qty * (i.precio_venta ?? 0), 0)
+ const marginProtected = priced.reduce((s, i) => s + i.qty * (i.margen_unitario ?? 0), 0)
 
  // Feature: supplier contact-health banner — suppliers in the current cart
  // (the approved lines) with no email/whatsapp on file will be skipped when
@@ -1093,13 +1143,21 @@ export default function HoyPage() {
            </div>
            <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
             {approved.map(i => `${i.name}: ${i.qty.toLocaleString('es')} ${t('hoy.cart_unit_abbrev')}`).join(' · ')}
-            {totalValue > 0 && ` · ${t('hoy.cart_total_label')}: $${(totalValue / 1_000_000).toFixed(1)}M`}
+            {totalValue > 0 && ` · ${t('hoy.cart_total_label')}: ${fmtMoney(totalValue)}`}
            </div>
-           {/* Margin visible in cart: value of sales this order protects and its margin */}
+           {/* Margen visible en el carrito (2.10) */}
            {salesProtected > 0 && (
             <div style={{ fontSize: 12, color: C.green, marginTop: 4, fontWeight: 600 }}>
-             {t('hoy.cart_protects_prefix')} {fmtM(salesProtected)} {t('hoy.cart_protects_sales_suffix')}{' '}
-             {fmtM(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
+             {t('hoy.cart_protects_prefix')} {fmtMoney(salesProtected)} {t('hoy.cart_protects_sales_suffix')}{' '}
+             {fmtMoney(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
+            </div>
+           )}
+           {unpriced.length > 0 && (
+            <div style={{ fontSize: 11, color: C.amber, marginTop: 3 }}>
+             {unpriced.length}{' '}
+             {unpriced.length === 1
+              ? t('hoy.cart_margin_excluded_singular')
+              : t('hoy.cart_margin_excluded_plural')}
             </div>
            )}
           </div>

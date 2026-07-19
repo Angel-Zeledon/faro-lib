@@ -601,6 +601,14 @@ export interface InventoryStatusItem extends InventoryStock {
   abc_xyz:              string
   stock_history:        { stock: number; date: string }[]
   calc_explanation:     InventoryCalcExplanation | null
+  // "Por qué" de la recomendación — todo calculado en el backend
+  lead_time_origen?:      'aprendido' | 'configurado'
+  lead_time_configurado?: number
+  lead_time_aprendido?:   number | null
+  punto_reorden?:         number | null
+  explicacion?:           string | null
+  // Margen bruto por unidad; null cuando falta precio_venta o costo_unitario
+  margen_unitario?:       number | null
 }
 
 export type MermaReason = 'breakage' | 'expiry' | 'self_consumption' | 'gift'
