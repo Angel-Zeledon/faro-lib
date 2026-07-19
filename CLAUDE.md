@@ -55,7 +55,12 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 
 The only Spanish in this repo is **end-user copy**: the `es` string values in `Frontend/src/i18n/translations.ts`, and user-facing text the backend produces for the UI (explanation sentences, email/WhatsApp bodies). Those are product content, not code. Translation *keys* are English.
 
-Historic note: the codebase still carries Spanish identifiers from earlier work (`proveedor`, `costo_unitario`, `stock_actual`, `demanda_diaria`, routes like `/hoy`, `/pedidos`). **Write all new code in English even when it sits next to those.** Do not rename existing ones opportunistically — a dedicated sweep handles that; piecemeal renames break parallel work.
+The dedicated sweep has run: identifiers, DB columns and API fields are English throughout. Four categories are deliberately still Spanish, and renaming them is **out of scope, not an oversight**:
+
+- **App routes** — `/hoy`, `/pedidos`, `/skus`. Users may have shared these URLs.
+- **Persisted signal values** — `PEDIR_YA`, `PEDIR_PRONTO`, `OK`, `SOBRESTOCK`, stored on stock rows and in PO history. Renaming needs a data migration, not a code change.
+- **Spanish vocabulary that matches user data** — CSV header aliases (`fecha`, `ventas`, `categoria` in the canonical-column detectors), free-text payment terms (`contado`, `contra entrega`, `quincenal`), and calendar catalog keys (`co_quincena_15`). These are values the product reads from real user input.
+- **End-user copy** — the `es` values in `translations.ts`, Spanish marketing copy in `page.tsx`, the explanation sentences, LLM prompts and email/WhatsApp bodies the backend produces.
 
 ## Testing Standards (mandatory)
 
