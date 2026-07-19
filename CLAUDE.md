@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. All the code needs to be in english
 
 ## Project Overview
 
@@ -48,6 +48,14 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 - **Notifications**: `backend/notifications/email.py` (Resend primary via RESEND_API_KEY, SMTP fallback) and `whatsapp.py` (Twilio). Daily inventory alert loop fires at 8:00 UTC from `backend/workers/worker.py`.
 - **AI features** (narrative, RAG analyst, chat, data-quality diagnosis): all go through the single factory `get_local_llm_client()` in `backend/ai/local_llm.py`. When `ANTHROPIC_API_KEY` is set, it returns a real Anthropic-backed client (model pinned to `settings.anthropic_model`, default the cheapest tier — Haiku); otherwise it falls back to a local Ollama server (`settings.local_llm_model`, default `deepseek-r1`). Every consumer (`rag_service.py`, `chats.py`, `narrator.py`, `narrative_service.py`, `configuration.py`'s data-quality blurb) calls this one factory and is agnostic to which backend actually serves the request — flipping the key alone switches all of them.
 - **Storage**: Postgres for all metadata/results; binary files (datasets, artifacts, documents) on local disk under `storage/` (gitignored, never version it).
+
+## Language (mandatory)
+
+**All code is English. No exceptions.** Comments, docstrings, variable/function/class names, DB column names, API field names, test names, assertion messages and commit messages — English.
+
+The only Spanish in this repo is **end-user copy**: the `es` string values in `Frontend/src/i18n/translations.ts`, and user-facing text the backend produces for the UI (explanation sentences, email/WhatsApp bodies). Those are product content, not code. Translation *keys* are English.
+
+Historic note: the codebase still carries Spanish identifiers from earlier work (`proveedor`, `costo_unitario`, `stock_actual`, `demanda_diaria`, routes like `/hoy`, `/pedidos`). **Write all new code in English even when it sits next to those.** Do not rename existing ones opportunistically — a dedicated sweep handles that; piecemeal renames break parallel work.
 
 ## Testing Standards (mandatory)
 

@@ -349,20 +349,35 @@ def _gate_recommended_by_signal(signal: str, recomendado: float) -> float:
     return 0.0
 
 
+# Minimum receptions before the learned average is allowed to replace the
+# configured lead time. With a single observation, one freak delivery (a public
+# holiday, a strike, a stranded truck) would rewrite that supplier's lead time
+# for ALL of their SKUs, moving the signal because of an accident. Three is the
+# point where the average starts describing the supplier, not the incident.
+#
+# Consistency note: the deviation alert (`supplier_health_service`) requires >=6
+# receptions before accusing a supplier of running late. It is right to be
+# stricter — accusing costs more than adjusting. But trusting at n=1 while
+# accusing at n=6 was a contradiction.
+MIN_LEAD_TIME_OBSERVATIONS = 3
+
+
 def get_learned_lead_times(tenant_id: str) -> dict[str, float]:
     """
     Average REAL lead time per supplier, learned from recorded PO receptions
     (`supplier_lead_time_obs`, written by reception_service.receive_po).
     Keys are lower-cased supplier names so callers can match case-insensitively.
-    Suppliers with no reception recorded yet are simply absent from the map —
-    the caller then falls back to the lead time configured on the SKU.
+    Suppliers with fewer than MIN_LEAD_TIME_OBSERVATIONS receptions are absent
+    from the map — the caller then falls back to the lead time configured on the
+    SKU, which is the honest answer while the evidence is still thin.
     """
     rows = query(
         """SELECT LOWER(proveedor) AS proveedor, AVG(lead_time_days) AS avg_days
            FROM supplier_lead_time_obs
            WHERE tenant_id = %s
-           GROUP BY LOWER(proveedor)""",
-        (tenant_id,),
+           GROUP BY LOWER(proveedor)
+           HAVING COUNT(*) >= %s""",
+        (tenant_id, MIN_LEAD_TIME_OBSERVATIONS),
     )
     return {
         r["proveedor"]: float(r["avg_days"])
@@ -677,11 +692,11 @@ def set_event_multiplier(
     if multiplier <= 0:
         raise ValueError("multiplier debe ser mayor que 0")
     value = (scope_value or "").strip()
-    # Las categorías se guardan normalizadas a minúscula a propósito. El índice
-    # único es case-sensitive, pero `_index_overrides` compara en minúscula:
-    # sin esto, "Lacteos" y "lacteos" crean DOS filas que colisionan al leer y
-    # una se pierde en silencio (cuál, depende del collation de Postgres).
-    # Normalizar en la escritura hace que el ON CONFLICT sea de verdad idempotente.
+    # Categories are deliberately stored lower-cased. The unique index is
+    # case-sensitive but `_index_overrides` compares in lower case: without this,
+    # "Lacteos" and "lacteos" create TWO rows that collide on read and one is
+    # silently lost (which one depends on the Postgres collation). Normalising on
+    # write is what makes the ON CONFLICT genuinely idempotent.
     if scope == "categoria":
         value = value.lower()
     if not value:

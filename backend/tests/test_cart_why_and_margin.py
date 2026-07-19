@@ -183,6 +183,74 @@ class TestExplicacion:
 
 # ── 2.4 — integration: the status endpoint really carries these fields ───────
 
+class TestLearnedLeadTimeThreshold:
+    """
+    On thin evidence the learned average must NOT replace the configured lead
+    time: a single late delivery (holiday, strike, stranded truck) would rewrite
+    the supplier's lead time for all their SKUs and move the signal because of
+    an accident.
+    """
+
+    def test_learned_lead_time_needs_min_observations(
+        self, client, auth_headers, test_tenant,
+    ):
+        from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
+
+        tid = test_tenant["id"]
+        supplier = f"Sparse-{uuid.uuid4().hex[:6]}"
+
+        # One single, very late reception: an accident, not a pattern.
+        _learn_lead_time(client, auth_headers, sku=_sku(), proveedor=supplier, days_ago=30)
+        obs = query_one(
+            """SELECT COUNT(*)::int AS n FROM supplier_lead_time_obs
+               WHERE tenant_id = %s AND LOWER(proveedor) = LOWER(%s)""",
+            (tid, supplier),
+        )
+        assert obs["n"] == 1, "the observation was in fact recorded"
+        assert supplier.lower() not in get_learned_lead_times(tid), \
+            "at n=1 the average must not count as learned"
+
+        # Once the minimum is reached, it is learned.
+        for _ in range(MIN_LEAD_TIME_OBSERVATIONS - 1):
+            _learn_lead_time(client, auth_headers, sku=_sku(), proveedor=supplier, days_ago=30)
+        assert round(get_learned_lead_times(tid)[supplier.lower()]) == 30, \
+            f"at n={MIN_LEAD_TIME_OBSERVATIONS} the average describes the supplier"
+
+    def test_below_threshold_the_configured_lead_time_is_what_drives_the_signal(
+        self, client, auth_headers, test_tenant,
+    ):
+        """Dropping it from the map is not enough: the recommendation must use the configured one."""
+        from backend.db import session_store
+        from backend.sessions.service import create_session
+
+        tid = test_tenant["id"]
+        supplier = f"Single-{uuid.uuid4().hex[:6]}"
+        sku = _sku()
+
+        _learn_lead_time(client, auth_headers, sku=_sku(), proveedor=supplier, days_ago=30)
+        client.put(
+            f"/api/v1/inventory/stock/{sku}",
+            json={"stock_actual": 20, "lead_time_dias": 5, "moq": 1,
+                  "proveedor": supplier, "costo_unitario": 3.5, "precio_venta": 5.9},
+            headers=auth_headers,
+        )
+
+        session_id = create_session(tid, "usr_test", "threshold-test")["id"]
+        session_store.set_forecasts(tid, session_id, {sku: _flat_forecast(10.0, 4.0)})
+
+        item = next(
+            i for i in _ok(client.get(
+                f"/api/v1/inventory/status?session_id={session_id}", headers=auth_headers,
+            ))["items"] if i["sku"] == sku
+        )
+
+        assert item["lead_time_origen"] == "configurado"
+        assert item["lead_time_dias"] == 5, "not the 30 of the single freak delivery"
+        assert item["lead_time_aprendido"] is None
+        # 5 days of lead time -> 50 units of lead-time demand, not 300.
+        assert item["demanda_lead_time"] == 50.0
+
+
 class TestStatusExposesWhyFields:
     def test_learned_lead_time_replaces_configured_one_in_the_recommendation(
         self, client, auth_headers, test_tenant,
@@ -198,9 +266,12 @@ class TestStatusExposesWhyFields:
         prov = f"Lento-{uuid.uuid4().hex[:6]}"
         sku = _sku()
 
-        # The reception below credits its own units back into stock, so it runs
-        # against a throwaway SKU — the SKU under test keeps the stock we set.
-        _learn_lead_time(client, auth_headers, sku=_sku(), proveedor=prov, days_ago=12)
+        # The receptions below credit their own units back into stock, so they run
+        # against throwaway SKUs — the SKU under test keeps the stock we set.
+        # Three of them: below MIN_LEAD_TIME_OBSERVATIONS the learned average is
+        # deliberately ignored (see test_learned_lead_time_needs_min_observations).
+        for _ in range(3):
+            _learn_lead_time(client, auth_headers, sku=_sku(), proveedor=prov, days_ago=12)
         client.put(
             f"/api/v1/inventory/stock/{sku}",
             json={"stock_actual": 20, "lead_time_dias": 5, "moq": 1,
@@ -215,7 +286,7 @@ class TestStatusExposesWhyFields:
                WHERE tenant_id = %s AND LOWER(proveedor) = LOWER(%s)""",
             (tid, prov),
         )
-        assert obs["n"] == 1
+        assert obs["n"] == 3
         assert 11.5 <= float(obs["avg_days"]) <= 12.5
         assert round(get_learned_lead_times(tid)[prov.lower()]) == 12
 
