@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authLogin } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
@@ -11,8 +11,10 @@ import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
 // the lighthouse to occupy. The ambient canvas, wordmark and fixed shell all
 // come from (auth)/layout.tsx — this file renders only the card.
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const wantsDemo = searchParams.get('demo') === '1'
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
@@ -32,7 +34,7 @@ export default function LoginPage() {
         role:      res.user.role,
         tenant_id: res.user.tenant_id,
       })
-      router.replace('/hoy')
+      router.replace(wantsDemo ? '/quick-start?demo=1' : '/hoy')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
@@ -193,5 +195,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   )
 }

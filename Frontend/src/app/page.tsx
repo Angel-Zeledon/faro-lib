@@ -109,9 +109,14 @@ function Nav() {
  >{label}</a>
  ))}
  </div>
- <Link href="/login" style={{ fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+ <Link href="/login" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
  Iniciar sesión
  </Link>
+ <Link href="/signup" style={{ fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
+ Crear cuenta
+ </Link>
+ </div>
  </nav>
  )
 }
@@ -363,8 +368,8 @@ export default function LandingPage() {
  </p>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 60 }}>
- <a href="#contacto" className="btn-primary">Solicitar acceso</a>
- <a href="#demo" className="btn-ghost">Ver ejemplo</a>
+ <Link href="/signup?demo=1" className="btn-primary">Empezar gratis con datos de ejemplo</Link>
+ <a href="#contacto" className="btn-ghost">Solicitar acceso</a>
  </div>
 
  <div id="demo" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 14, padding: '22px 26px 16px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
