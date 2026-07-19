@@ -677,6 +677,13 @@ def set_event_multiplier(
     if multiplier <= 0:
         raise ValueError("multiplier debe ser mayor que 0")
     value = (scope_value or "").strip()
+    # Las categorías se guardan normalizadas a minúscula a propósito. El índice
+    # único es case-sensitive, pero `_index_overrides` compara en minúscula:
+    # sin esto, "Lacteos" y "lacteos" crean DOS filas que colisionan al leer y
+    # una se pierde en silencio (cuál, depende del collation de Postgres).
+    # Normalizar en la escritura hace que el ON CONFLICT sea de verdad idempotente.
+    if scope == "categoria":
+        value = value.lower()
     if not value:
         raise ValueError("scope_value no puede estar vacío")
 

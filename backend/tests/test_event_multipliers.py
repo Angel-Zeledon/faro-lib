@@ -207,7 +207,7 @@ class TestMultiplierEndpoints:
             (test_tenant["id"], saved_event),
         )
         assert row["scope"] == "categoria"
-        assert row["scope_value"] == "Electronica"
+        assert row["scope_value"] == "electronica"  # categorías normalizadas al guardar
         assert row["multiplier"] == 4.0
 
     def test_upsert_updates_instead_of_duplicating(
@@ -314,5 +314,33 @@ class TestMultiplierEndpoints:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert len(data) == 1
-        assert data[0]["scope_value"] == "Lacteos"
+        # Las categorías se normalizan a minúscula al guardar (ver
+        # test_category_override_is_case_insensitive_on_write).
+        assert data[0]["scope_value"] == "lacteos"
         assert data[0]["multiplier"] == 1.0
+
+    def test_category_override_is_case_insensitive_on_write(
+        self, client, analyst_headers, saved_event
+    ):
+        """
+        Regresión: el índice único es case-sensitive pero la resolución compara
+        en minúscula. Sin normalizar al escribir, "Lacteos" y "lacteos" crean
+        dos filas y una se pierde en silencio al simular. Guardar la misma
+        categoría con distinta caja debe ser UN upsert, no dos filas.
+        """
+        for value, mult in (("Lacteos", 2.0), ("LACTEOS", 1.5), ("lacteos", 1.0)):
+            resp = client.put(
+                f"/api/v1/inventory/events/{saved_event}/multipliers",
+                json={"scope": "categoria", "scope_value": value, "multiplier": mult},
+                headers=analyst_headers,
+            )
+            assert resp.status_code == 200, resp.text
+
+        rows = query(
+            """SELECT scope_value, multiplier FROM inventory_event_multipliers
+               WHERE event_id = %s AND scope = 'categoria'""",
+            (saved_event,),
+        )
+        assert len(rows) == 1, f"esperaba 1 fila tras 3 upserts, hay {len(rows)}: {rows}"
+        assert rows[0]["scope_value"] == "lacteos"
+        assert float(rows[0]["multiplier"]) == 1.0  # gana el último upsert
