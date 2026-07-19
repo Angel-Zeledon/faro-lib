@@ -586,6 +586,7 @@ function StatusDropdown({
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
+  const { t } = useLanguage()
   const currentUser = getUser()
 
   const [users,        setUsers]        = useState<AdminUser[]>([])
