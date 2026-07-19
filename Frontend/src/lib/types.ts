@@ -983,6 +983,123 @@ export interface SupplierLeadTimeAlert {
   mensaje:             string
 }
 
+// Feature 3.5 — a supplier quantity scale: "from min_qty units on, each unit
+// costs unit_price" (all-units semantics).
+export interface PriceBreak {
+  id:            string
+  supplier_id:   string
+  supplier_name: string
+  sku:           string
+  min_qty:       number
+  unit_price:    number
+  notes:         string | null
+  created_at:    string
+}
+
+// Why a step-up was or was not recommended. The backend owns this verdict —
+// the UI only renders it.
+export type PriceBreakReason =
+  | 'worth_it'
+  | 'no_discount'
+  | 'no_demand'
+  | 'would_overstock'
+  | 'holding_exceeds_saving'
+  | 'saving_immaterial'
+
+export interface PriceBreakOpportunity {
+  sku:                 string
+  supplier_name:       string | null
+  current_quantity:    number
+  step_quantity:       number
+  extra_units:         number
+  current_unit_price:  number
+  step_unit_price:     number
+  unit_price_drop_pct: number | null
+  gross_saving:        number
+  holding_cost:        number
+  net_saving:          number
+  extra_coverage_days: number | null
+  total_coverage_days: number | null
+  coverage_limit_days: number
+  extra_cash_now:      number
+  worth_it:            boolean
+  reason_code:         PriceBreakReason
+}
+
+export interface PriceBreakEvaluation {
+  opportunities:    PriceBreakOpportunity[]
+  worth_it_count:   number
+  total_net_saving: number
+  holding_cost_pct: number
+}
+
+// Feature 3.6 — one invoice coming due from a PO already sent.
+export interface PayableItem {
+  po_log_id:      string
+  supplier_name:  string | null
+  amount:         number
+  sent_date:      string
+  credit_days:    number
+  due_date:       string
+  days_until_due: number
+  overdue:        boolean
+  within_horizon: boolean
+}
+
+export interface PayableUnknownTerms {
+  po_log_id:     string
+  supplier_name: string | null
+  amount:        number
+  payment_terms: string | null
+}
+
+export interface CashWeek {
+  start:  string
+  end:    string
+  amount: number
+}
+
+export interface CashCalendar {
+  today:               string
+  horizon_days:        number
+  due_items:           PayableItem[]
+  weeks:               CashWeek[]
+  overdue_total:       number
+  this_week_total:     number
+  horizon_total:       number
+  unknown_terms:       PayableUnknownTerms[]
+  unknown_terms_total: number
+}
+
+export interface CashFitLine {
+  sku:            string | null
+  supplier_name:  string | null
+  amount:         number
+  credit_days:    number
+  terms_known:    boolean
+  due_date:       string
+  within_horizon: boolean
+}
+
+// `fits: null` means "no budget supplied" — never a guess.
+export interface CashFitResult {
+  today:                       string
+  horizon_days:                number
+  budget:                      number | null
+  committed_total:             number
+  overdue_total:               number
+  this_week_total:             number
+  purchase_total:              number
+  purchase_in_horizon:         number
+  required_total:              number
+  fits:                        boolean | null
+  shortfall:                   number | null
+  lines:                       CashFitLine[]
+  suppliers_assumed_immediate: string[]
+  unknown_terms_total:         number
+  weeks:                       CashWeek[]
+}
+
 // A single buyer decision sent to /inventory/log-po when a PO is downloaded.
 export interface POLineDecision {
   sku:                   string

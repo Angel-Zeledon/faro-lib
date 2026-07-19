@@ -817,6 +817,53 @@ export const getSupplierContactHealth = () =>
 export const getSupplierLeadTimeAlerts = () =>
   request<import('./types').SupplierLeadTimeAlert[]>('GET', '/inventory/suppliers/lead-time-alerts')
 
+// ── Supplier price breaks (feature 3.5) ──────────────────────────────────────
+export const getPriceBreaks = (params?: { supplier_id?: string; sku?: string }) => {
+  const qs = new URLSearchParams()
+  if (params?.supplier_id) qs.set('supplier_id', params.supplier_id)
+  if (params?.sku) qs.set('sku', params.sku)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request<import('./types').PriceBreak[]>('GET', `/inventory/price-breaks${suffix}`)
+}
+
+export const upsertPriceBreak = (
+  supplierId: string,
+  body: { sku: string; min_qty: number; unit_price: number; notes?: string },
+) =>
+  request<import('./types').PriceBreak>(
+    'POST', `/inventory/suppliers/${supplierId}/price-breaks`, body,
+  )
+
+export const deletePriceBreak = (priceBreakId: string) =>
+  request<void>('DELETE', `/inventory/price-breaks/${priceBreakId}`)
+
+// Evaluated against the cart the browser holds, so the quantities the buyer
+// actually edited are what gets judged.
+export const evaluatePriceBreaks = (
+  sessionId: string,
+  items: { sku: string; quantity: number }[],
+) =>
+  request<import('./types').PriceBreakEvaluation>(
+    'POST', `/inventory/price-breaks/evaluate?session_id=${sessionId}`, { items },
+  )
+
+// ── Cash calendar (feature 3.6) ──────────────────────────────────────────────
+export const getCashCalendar = (horizonDays = 30) =>
+  request<import('./types').CashCalendar>(
+    'GET', `/inventory/cash-calendar?horizon_days=${horizonDays}`,
+  )
+
+export const checkCashFit = (
+  body: {
+    items: { sku?: string | null; supplier_name?: string | null; quantity: number; unit_cost?: number | null }[]
+    budget?: number
+  },
+  horizonDays = 30,
+) =>
+  request<import('./types').CashFitResult>(
+    'POST', `/inventory/cash-calendar/fit?horizon_days=${horizonDays}`, body,
+  )
+
 // ── Event / promo impact simulator ───────────────────────────────────────────
 export const simulateEvent = (body: {
   session_id: string

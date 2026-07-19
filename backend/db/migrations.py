@@ -561,6 +561,64 @@ _MIGRATIONS = _BASE_SCHEMA + [
     ("create_inventory_event_multipliers_uniq",
      """CREATE UNIQUE INDEX IF NOT EXISTS inventory_event_multipliers_uniq
         ON inventory_event_multipliers (tenant_id, event_id, scope, scope_value)"""),
+
+    # ── Supplier price breaks (feature 3.5) ──────────────────────────────────
+    # A break says "from min_qty units on, each unit costs unit_price". Modeled
+    # per (supplier, SKU) because unit price is a property of the product, not
+    # of the supplier: one supplier has a different scale for every SKU it sells.
+    # ALL-UNITS semantics (what LatAm distributors use in practice): once the
+    # break is crossed the price applies to EVERY unit in the order, not only to
+    # the units above min_qty. See price_break_service.py.
+    ("create_supplier_price_breaks",
+     """CREATE TABLE IF NOT EXISTS supplier_price_breaks (
+         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id   TEXT NOT NULL,
+         supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+         sku         TEXT NOT NULL,
+         min_qty     FLOAT NOT NULL,
+         unit_price  FLOAT NOT NULL,
+         notes       TEXT,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_supplier_price_breaks_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS supplier_price_breaks_uniq
+        ON supplier_price_breaks (tenant_id, supplier_id, sku, min_qty)"""),
+    ("create_supplier_price_breaks_sku_idx",
+     """CREATE INDEX IF NOT EXISTS supplier_price_breaks_sku_idx
+        ON supplier_price_breaks (tenant_id, sku)"""),
+
+    # ── Cash calendar / accounts payable (feature 3.6) ────────────────────────
+    # `payment_terms` stays free text and is NEVER touched: it is what the user
+    # typed and the only source of truth when parsing fails.
+    # `payment_terms_days` is its structured counterpart (credit days).
+    ("add_suppliers_payment_terms_days",
+     "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_terms_days INT"),
+    # Backfill of what users already captured. Mirrors parse_payment_terms_days()
+    # in backend/inventory/cash_service.py (same cases, same rule order):
+    #   cash-on-delivery/prepaid → 0 · "N mes(es)" → N*30 · quincenal → 15 ·
+    #   first number found → N days · anything else → NULL.
+    # Unparseable text stays NULL on purpose: the cash calendar reports it under
+    # "missing terms" instead of inventing a due date.
+    ("backfill_suppliers_payment_terms_days",
+     """UPDATE suppliers
+           SET payment_terms_days = CASE
+               WHEN payment_terms ~* '(contado|cash|anticipad|prepag|inmediat|contra ?entrega|\\mcod\\M)'
+                    THEN 0
+               WHEN payment_terms ~* '([0-9]+)\\s*mes'
+                    THEN LEAST((substring(payment_terms from '([0-9]+)\\s*mes'))::int * 30, 365)
+               WHEN payment_terms ~* 'quincen'
+                    THEN 15
+               WHEN payment_terms ~ '[0-9]+'
+                    THEN LEAST((substring(payment_terms from '[0-9]+'))::int, 365)
+               ELSE NULL
+           END
+         WHERE payment_terms_days IS NULL
+           AND payment_terms IS NOT NULL
+           AND btrim(payment_terms) <> ''"""),
+    # When the PO was sent to the supplier. The invoice clock starts at send
+    # time, so without this there is no due date to compute.
+    ("add_po_log_sent_at",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ"),
 ]
 
 
