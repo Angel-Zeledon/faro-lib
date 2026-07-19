@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
- ChevronDown, ChevronUp, Send, UserX, X, Upload, PlayCircle, Check,
+ ChevronDown, ChevronUp, Send, UserX, X, Upload, PlayCircle,
 } from 'lucide-react'
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
@@ -24,6 +24,9 @@ import DataFreshness from '@/components/ui/DataFreshness'
 import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
+import {
+  EmptyState, ErrorState, LoadingState, SkeletonCards, SkeletonTable,
+} from '@/components/ui/States'
 import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
 import { ReceptionModal } from '@/components/po/POHistory'
@@ -468,90 +471,33 @@ function HoyEmptyState({ variant }: { variant: 'no_session' | 'no_inventory' }) 
  const { t } = useLanguage()
  const isNoSession = variant === 'no_session'
 
- const bullets = [
-  t('hoy.empty_bullet_1'),
-  t('hoy.empty_bullet_2'),
-  t('hoy.empty_bullet_3'),
- ]
-
  return (
   <div style={{
    display: 'flex', flexDirection: 'column', alignItems: 'center',
    justifyContent: 'center', flex: 1, padding: '56px 24px',
   }}>
-   <div style={{
-    width: '100%', maxWidth: 560,
-    background: C.surface, border: `1px solid ${C.border}`,
-    borderRadius: 16, padding: '36px 34px', textAlign: 'center',
-   }}>
-    <div style={{
-     width: 52, height: 52, borderRadius: 14, margin: '0 auto 18px',
-     display: 'flex', alignItems: 'center', justifyContent: 'center',
-     background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.28)',
-    }}>
-     {isNoSession
-      ? <BarChart2 size={24} color={C.indigo} />
-      : <Package   size={24} color={C.indigo} />}
-    </div>
+   <EmptyState
+    icon={isNoSession ? <BarChart2 size={24} /> : <Package size={24} />}
+    title={isNoSession ? t('hoy.empty_title') : t('hoy.no_inventory_data')}
+    body={isNoSession ? t('hoy.empty_body') : t('hoy.no_inventory_data_hint')}
+    bullets={isNoSession ? [
+     t('hoy.empty_bullet_1'),
+     t('hoy.empty_bullet_2'),
+     t('hoy.empty_bullet_3'),
+    ] : undefined}
+    actions={isNoSession ? [
+     { label: t('hoy.empty_cta_primary'), href: '/quick-start', icon: <Upload size={15} /> },
+     { label: t('hoy.empty_cta_demo'), href: '/quick-start?demo=1', icon: <PlayCircle size={15} />, variant: 'secondary' },
+    ] : [
+     { label: t('hoy.link_go_inventory'), href: '/inventory', icon: <Upload size={15} /> },
+    ]}
+   />
 
-    <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: '0 0 8px' }}>
-     {isNoSession ? t('hoy.empty_title') : t('hoy.no_inventory_data')}
-    </h2>
-    <p style={{ fontSize: 14, color: C.muted, margin: '0 0 22px', lineHeight: 1.6 }}>
-     {isNoSession ? t('hoy.empty_body') : t('hoy.no_inventory_data_hint')}
+   {isNoSession && (
+    <p style={{ fontSize: 12, color: C.dim, margin: '14px 0 0', lineHeight: 1.5, maxWidth: 560, textAlign: 'center' }}>
+     {t('hoy.empty_demo_hint')}
     </p>
-
-    {isNoSession && (
-     <ul style={{
-      listStyle: 'none', margin: '0 0 26px', padding: 0,
-      display: 'flex', flexDirection: 'column', gap: 9, textAlign: 'left',
-     }}>
-      {bullets.map(b => (
-       <li key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-        <Check size={15} color={C.green} style={{ flexShrink: 0, marginTop: 2 }} />
-        <span style={{ fontSize: 13.5, color: C.muted, lineHeight: 1.5 }}>{b}</span>
-       </li>
-      ))}
-     </ul>
-    )}
-
-    <div style={{
-     display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap',
-    }}>
-     <Link
-      href={isNoSession ? '/quick-start' : '/inventory'}
-      style={{
-       display: 'inline-flex', alignItems: 'center', gap: 8,
-       padding: '11px 22px', background: C.indigo, color: '#fff',
-       borderRadius: 10, textDecoration: 'none', fontSize: 14, fontWeight: 700,
-      }}
-     >
-      <Upload size={15} />
-      {isNoSession ? t('hoy.empty_cta_primary') : t('hoy.link_go_inventory')}
-     </Link>
-
-     {isNoSession && (
-      <Link
-       href="/quick-start?demo=1"
-       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        padding: '11px 22px', background: 'transparent', color: C.indigo,
-        border: `1px solid ${C.indigo}`, borderRadius: 10,
-        textDecoration: 'none', fontSize: 14, fontWeight: 700,
-       }}
-      >
-       <PlayCircle size={15} />
-       {t('hoy.empty_cta_demo')}
-      </Link>
-     )}
-    </div>
-
-    {isNoSession && (
-     <p style={{ fontSize: 12, color: C.dim, margin: '14px 0 0', lineHeight: 1.5 }}>
-      {t('hoy.empty_demo_hint')}
-     </p>
-    )}
-   </div>
+   )}
   </div>
  )
 }
@@ -562,7 +508,8 @@ export default function HoyPage() {
  const { sessionId, setSessionId, currentSession, completedSessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [briefing, setBriefing]             = useState<MorningBriefing | null>(null)
  const [loading, setLoading]               = useState(false)
- const [error, setError]                   = useState<string | null>(null)
+ // Raw error so ErrorState can classify it by kind.
+ const [error, setError]                   = useState<unknown>(null)
  const [loadedAt, setLoadedAt]             = useState<Date | null>(null)
  const [narrative, setNarrative]           = useState<MorningNarrative | null>(null)
  const [loadingNarrative, setLoadingNarrative] = useState(false)
@@ -604,11 +551,13 @@ export default function HoyPage() {
   setLoading(true)
   setError(null)
   try {
-   const data = await getMorningBriefing(sid)
+   // `silent: true` — the failure is rendered as a full ErrorState below, so
+   // the interceptor's toast would say the same thing twice.
+   const data = await getMorningBriefing(sid, 0.95, { silent: true })
    setBriefing(data)
    setLoadedAt(new Date())
   } catch (e: unknown) {
-   setError(e instanceof Error ? e.message : t('hoy.error_loading_briefing'))
+   setError(e)
   } finally {
    setLoading(false)
   }
@@ -927,32 +876,20 @@ export default function HoyPage() {
     )}
    </div>
 
-   {/* ── Loading state ── */}
+   {/* ── Loading state: shaped like the briefing it replaces ── */}
    {loading && (
-    <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
-     <Spinner size={32} color={C.indigo} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '8px 0 40px' }}>
+     <LoadingState label={t('hoy.loading_label')}>
+      <SkeletonCards count={4} height={88} />
+     </LoadingState>
+     <SkeletonTable rows={5} columns={4} />
     </div>
    )}
 
    {/* ── Error state ── */}
-   {!loading && error && (
-    <div style={{
-     background: 'rgba(239,68,68,0.08)', border: `1px solid ${C.red}33`,
-     borderRadius: 10, padding: '16px 20px', marginBottom: 24,
-     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    }}>
-     <span style={{ fontSize: 14, color: C.text }}>{error}</span>
-     <button
-      onClick={() => load(sessionId)}
-      style={{
-       display: 'flex', alignItems: 'center', gap: 6,
-       padding: '6px 14px', background: C.surface,
-       border: `1px solid ${C.border}`, borderRadius: 6,
-       cursor: 'pointer', fontSize: 13, color: C.text,
-      }}
-     >
-      <RefreshCw size={13} /> {t('hoy.btn_retry')}
-     </button>
+   {!loading && error != null && (
+    <div style={{ padding: '24px 0 40px' }}>
+     <ErrorState error={error} onRetry={() => load(sessionId)} />
     </div>
    )}
 

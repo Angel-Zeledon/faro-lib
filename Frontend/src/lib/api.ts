@@ -17,6 +17,80 @@ const BASE = '/api'
 
 let _redirectingToLogin = false
 
+// ── Centralised error interceptor (feature 2.6) ───────────────────────────────
+// Every failing request used to be handled — or silently swallowed — screen by
+// screen, so the same HTTP 403 could show up as a red inline box on one page,
+// a raw "HTTP 403" on another, and nothing at all on a third. Everything now
+// funnels through `request()` and comes out as an `ApiError` carrying a stable
+// `kind`. The UI layer maps that kind to copy (`components/ui/States.tsx`) and
+// to a standard toast (`components/layout/ApiErrorBridge.tsx`), so the wording
+// for a permission failure lives in exactly one place.
+
+export type ApiErrorKind =
+  | 'session'     // 401 after a failed silent refresh — the user is logged out
+  | 'permission'  // 403 — authenticated but the role is not allowed
+  | 'notfound'    // 404 — the resource is gone or never existed
+  | 'validation'  // 400 / 409 / 422 — the request itself was rejected
+  | 'server'      // 5xx — the backend broke
+  | 'network'     // fetch never completed: offline, DNS, CORS, backend down
+
+export class ApiError extends Error {
+  readonly kind:   ApiErrorKind
+  readonly status: number     // 0 when the request never reached the server
+  readonly detail: string     // backend-provided reason, '' when there is none
+  readonly path:   string
+
+  constructor(kind: ApiErrorKind, status: number, detail: string, path: string) {
+    // `message` stays the most specific text available so existing
+    // `e.message` call sites (and console traces) keep working.
+    super(detail || `HTTP ${status}`)
+    this.name   = 'ApiError'
+    this.kind   = kind
+    this.status = status
+    this.detail = detail
+    this.path   = path
+  }
+}
+
+function kindForStatus(status: number): ApiErrorKind {
+  if (status === 401) return 'session'
+  if (status === 403) return 'permission'
+  if (status === 404) return 'notfound'
+  if (status === 400 || status === 409 || status === 422) return 'validation'
+  if (status >= 500) return 'server'
+  return 'validation'
+}
+
+/** Narrow an unknown catch value to an ApiError. */
+export const isApiError = (e: unknown): e is ApiError => e instanceof ApiError
+
+type ApiErrorNotifier = (err: ApiError) => void
+let _notifier: ApiErrorNotifier | null = null
+
+/**
+ * Registered once by `ApiErrorBridge` so the non-React api layer can raise a
+ * toast. Returns an unsubscribe so React strict-mode double-mounts don't leave
+ * a stale notifier behind.
+ */
+export function setApiErrorNotifier(fn: ApiErrorNotifier): () => void {
+  _notifier = fn
+  return () => { if (_notifier === fn) _notifier = null }
+}
+
+function notify(err: ApiError, silent: boolean) {
+  // A lost session already redirects to /login — a toast on a page that is
+  // being torn down would only flash.
+  if (silent || err.kind === 'session') return
+  _notifier?.(err)
+}
+
+/**
+ * Per-call interceptor overrides. `silent: true` suppresses the automatic
+ * toast — used by callers that render the failure themselves (a full-screen
+ * `ErrorState`) so the user isn't told the same thing twice.
+ */
+export interface RequestOpts { silent?: boolean }
+
 // FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
 // instead of a string. Without this, `new Error(detail)` stringifies the array
 // to "[object Object]" and the UI shows that literal text to the user.
@@ -58,18 +132,36 @@ function _sessionLost(): never {
   throw new Error('Session expired')
 }
 
-async function request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-  let res = await _doFetch(method, path, body)
+async function request<T = unknown>(
+  method: string, path: string, body?: unknown, opts: RequestOpts = {},
+): Promise<T> {
+  const silent = opts.silent === true
+
+  let res: Response
+  try {
+    res = await _doFetch(method, path, body)
+  } catch {
+    // fetch() only rejects when the request never completed: offline, DNS
+    // failure, or the backend not listening. Any HTTP status resolves.
+    const err = new ApiError('network', 0, '', path)
+    notify(err, silent)
+    throw err
+  }
 
   if (res.status === 401) {
     // Auth endpoints return 401 for wrong credentials/tokens — surface that
     // error to the form instead of treating it as an expired session.
     if (path.startsWith('/auth/')) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      throw new Error(extractErrorMessage(err) || 'Credenciales inválidas')
+      const payload = await res.json().catch(() => ({ detail: res.statusText }))
+      const err = new ApiError(
+        'validation', 401, extractErrorMessage(payload) || 'Credenciales inválidas', path,
+      )
+      notify(err, silent)
+      throw err
     }
     // Expired access token: renew silently with the refresh token and retry
     // once, so a 15-minute token never kicks the user back to /login mid-task.
+    // `_sessionLost()` never returns — it clears auth and redirects.
     if (await tryRefresh()) {
       res = await _doFetch(method, path, body)
       if (res.status === 401) _sessionLost()
@@ -79,8 +171,12 @@ async function request<T = unknown>(method: string, path: string, body?: unknown
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(extractErrorMessage(err) || `HTTP ${res.status}`)
+    const payload = await res.json().catch(() => ({ detail: res.statusText }))
+    const err = new ApiError(
+      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+    )
+    notify(err, silent)
+    throw err
   }
 
   // Backend wraps responses as { success, data, meta } — unwrap automatically
@@ -106,8 +202,12 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
     }
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`)
+    const payload = await res.json().catch(() => ({ detail: res.statusText }))
+    const err = new ApiError(
+      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+    )
+    notify(err, false)
+    throw err
   }
   const blob = await res.blob()
   const url  = URL.createObjectURL(blob)
@@ -493,9 +593,14 @@ export const deleteWebhook = (id: string) =>
   request<{ deleted: string }>('DELETE', `/webhooks/${id}`)
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
+// "No schedule configured" is a legitimate state, not an error: ask silently
+// and translate the 404 into `null` instead of letting it raise a toast.
 export const getSchedule = (sessionId: string) =>
-  request<import('./types').JobSchedule>('GET', `/sessions/${sessionId}/schedule`)
-    .catch((e: Error) => { if (e.message.includes('404')) return null; throw e })
+  request<import('./types').JobSchedule>('GET', `/sessions/${sessionId}/schedule`, undefined, { silent: true })
+    .catch((e: unknown) => {
+      if (isApiError(e) && e.kind === 'notfound') return null
+      throw e
+    })
 
 export const saveSchedule = (sessionId: string, cronExpr: string, enabled: boolean) =>
   request<import('./types').JobSchedule>('POST', `/sessions/${sessionId}/schedule`, {
@@ -559,10 +664,11 @@ export const deleteInventoryStock = (sku: string) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
 
-export const getInventoryStatus = (sessionId: string, serviceLevel = 0.95) =>
+export const getInventoryStatus = (sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<InventoryStatusResponse>(
     'GET',
     `/inventory/status?session_id=${sessionId}&service_level=${serviceLevel}`,
+    undefined, opts,
   )
 
 export const importInventoryCSV = (file: File) => {
@@ -683,8 +789,8 @@ export const getInventoryROI = () =>
 export const getROIMonthly = (months = 6) =>
   request<import('./types').ROIMonthlyRow[]>('GET', `/inventory/roi/monthly?months=${months}`)
 
-export const getPOHistory = (limit = 20) =>
-  request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`)
+export const getPOHistory = (limit = 20, opts?: RequestOpts) =>
+  request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`, undefined, opts)
 
 // ── PO reception (cerrar el loop de compra) ──────────────────────────────────
 export const getPOItems = (poLogId: string) =>
@@ -729,10 +835,11 @@ export const logPOGeneration = (sessionId: string, items?: POLineDecision[]) =>
     items && items.length ? { items } : undefined,
   )
 
-export const getMorningBriefing = (sessionId: string, serviceLevel = 0.95) =>
+export const getMorningBriefing = (sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<MorningBriefing>(
     'GET',
     `/inventory/morning-briefing?session_id=${sessionId}&service_level=${serviceLevel}`,
+    undefined, opts,
   )
 
 export const setUserPermissions = (id: string, permissions: string[]) =>
@@ -771,6 +878,7 @@ export const getSkuIntelligence = (
   sessionId: string,
   sku: string,
   params?: { model?: string; granularity?: string; agg?: string },
+  opts?: RequestOpts,
 ) => {
   const q = new URLSearchParams()
   if (params?.model)       q.set('model',       params.model)
@@ -780,6 +888,7 @@ export const getSkuIntelligence = (
   return request<import('./types').SkuIntelligenceData>(
     'GET',
     `/sessions/${sessionId}/sku-intelligence/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`,
+    undefined, opts,
   )
 }
 
@@ -846,8 +955,8 @@ export function getDocumentContentUrl(docId: string): string {
 }
 
 // ── Suppliers ─────────────────────────────────────────────────────────────────
-export const listSuppliers    = () =>
-  request<Supplier[]>('GET', '/inventory/suppliers')
+export const listSuppliers    = (opts?: RequestOpts) =>
+  request<Supplier[]>('GET', '/inventory/suppliers', undefined, opts)
 
 export const createSupplier   = (body: Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active'>) =>
   request<Supplier>('POST', '/inventory/suppliers', body)

@@ -20,6 +20,7 @@ import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
+import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonCards, SkeletonTable } from '@/components/ui/States'
 import HelpTip from '@/components/ui/HelpTip'
 import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -29,7 +30,7 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
- Zap, PackageMinus,
+ Zap, PackageMinus, Search, PackagePlus,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -1110,7 +1111,9 @@ export default function InventoryPage() {
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[] } | null>(null)
  const [loading, setLoading] = useState(false)
- const [error, setError] = useState<string | null>(null)
+ // Raw error, so ErrorState can classify by kind instead of showing a
+ // pre-flattened string.
+ const [error, setError] = useState<unknown>(null)
  const [signalFilter, setSignalFilter] = useState<InventorySignal | ''>('')
  const [search, setSearch] = useState('')
  const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'dead'>(() =>
@@ -1156,10 +1159,12 @@ export default function InventoryPage() {
  setLoading(true); setError(null)
  setEditedQty({})
  setEditingQtySku(null)
- try { setData(await getInventoryStatus(sid)) }
- catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_loading')) }
+ // `silent: true` — the failure is rendered as a full ErrorState below, so the
+ // interceptor's toast would say the same thing twice.
+ try { setData(await getInventoryStatus(sid, 0.95, { silent: true })) }
+ catch (e: unknown) { setError(e) }
  finally { setLoading(false) }
- }, [t])
+ }, [])
 
  useEffect(() => { if (sessionId) load(sessionId) }, [sessionId, load])
 
@@ -1169,7 +1174,7 @@ export default function InventoryPage() {
  setLoadingDead(true)
  getDeadStock(sessionId)
   .then(setDeadStock)
-  .catch((e: unknown) => { setError(e instanceof Error ? e.message : t('inventory.err_loading_dead_stock')) })
+  .catch((e: unknown) => setError(e))
   .finally(() => setLoadingDead(false))
  }, [viewMode, sessionId])
 
@@ -1440,12 +1445,9 @@ export default function InventoryPage() {
  </div>
  </div>
 
- {/* Error */}
- {error && (
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 13, color: C.red }}>
- <AlertTriangle size={13} style={{ flexShrink: 0 }} />{error}
- <button onClick={() => setError(null)} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={13} /></button>
- </div>
+ {/* Secondary failure over an already-rendered screen (e.g. dead-stock view). */}
+ {error != null && data != null && (
+ <InlineError error={error} onRetry={() => sessionId && load(sessionId)} onDismiss={() => setError(null)} />
  )}
 
  {/* Excluded SKUs notice — products uploaded but left out of the forecast */}
@@ -1510,7 +1512,8 @@ export default function InventoryPage() {
  </div>
  )}
 
- {/* KPIs */}
+ {/* KPIs — skeleton first so the row does not pop in. */}
+ {loading && !summary && <SkeletonCards count={6} height={74} />}
  {summary && (
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
  <KPICard label={t('inventory.kpi_total_skus')} value={summary.total_skus} color={C.indigo} onClick={() => setSignalFilter('')} active={!signalFilter} />
@@ -1533,7 +1536,14 @@ export default function InventoryPage() {
  </div>
 
  {loading ? (
- <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+ <LoadingState label={t('inventory.loading_label')}>
+ <SkeletonTable rows={8} columns={6} />
+ </LoadingState>
+ ) : error && !data ? (
+ /* ── Status request failed outright ───────────────────────── */
+ <div style={{ padding: '32px 24px' }}>
+ <ErrorState error={error} onRetry={() => sessionId && load(sessionId)} />
+ </div>
  ) : sessionsError ? (
  /* ── Session list failed to load ──────────────────────────── */
  <div style={{ padding: '40px 32px', textAlign: 'center' }}>
@@ -1563,7 +1573,34 @@ export default function InventoryPage() {
  </div>
  </div>
  ) : items.length === 0 ? (
- <div style={{ padding: 48, textAlign: 'center', color: C.dim, fontSize: 13 }}>{signalFilter || search ? t('inventory.empty_no_filtered_skus') : t('inventory.empty_no_session_data')}</div>
+ /* Two very different emptinesses: a filter that matched nothing (clear it)
+    versus a session with no stock loaded (go load it). */
+ <div style={{ padding: '32px 24px' }}>
+ {signalFilter || search ? (
+ <EmptyState
+ compact
+ icon={<Search size={20} />}
+ title={t('inventory.empty_filtered_title')}
+ body={t('inventory.empty_no_filtered_skus')}
+ actions={[{
+ label: t('inventory.empty_filtered_cta'),
+ variant: 'secondary',
+ onClick: () => { setSignalFilter(''); setSearch('') },
+ }]}
+ />
+ ) : (
+ <EmptyState
+ icon={<PackagePlus size={22} />}
+ title={t('inventory.empty_stock_title')}
+ body={t('inventory.empty_stock_body')}
+ actions={[{
+ label: t('inventory.empty_stock_cta'),
+ icon: <Upload size={14} />,
+ onClick: () => setViewMode('update'),
+ }]}
+ />
+ )}
+ </div>
  ) : viewMode === 'provider' ? (
  <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} />)}</div>
 
