@@ -155,6 +155,14 @@ def get_local_llm_client(timeout: float = 60.0):
     (no API key required for the local path). Connectivity/model errors
     surface as exceptions from messages.create() either way, so existing
     try/except fallback paths in callers work unchanged.
+
+    Note for test authors: this reads the same .env the dev server does, so
+    a real ANTHROPIC_API_KEY in local .env means pytest would otherwise fire
+    real, billed requests too (and stall for a long time if that account has
+    no credit — observed directly). backend/tests/conftest.py patches this
+    factory session-wide so tests never reach a real API regardless of what
+    .env has configured, mirroring the existing session-wide patch on
+    backend.notifications.email._send.
     """
     if settings.anthropic_api_key:
         return _AnthropicBackedClient(timeout=timeout)
