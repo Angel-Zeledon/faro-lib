@@ -4,6 +4,8 @@ GET/POST/PATCH/DELETE /inventory/stock     — per-SKU stock CRUD
 GET                   /inventory/status    — traffic-light signal + recommendations
 POST                  /inventory/bulk      — bulk CSV import
 GET                   /inventory/template.csv — downloadable import template
+POST                  /inventory/mermas    — record shrinkage (non-sale stock-out)
+GET                   /inventory/mermas    — shrinkage history
 """
 
 import asyncio
@@ -255,6 +257,69 @@ def inventory_status(
             "valor_total_inventario": round(total_valor, 2),
         },
     })
+
+
+# ── Mermas (shrinkage / non-sale stock-outs) ──────────────────────────────────
+
+class MermaCreate(BaseModel):
+    sku:         str
+    quantity:    float = Field(gt=0)
+    reason:      str   # breakage | expiry | self_consumption | gift
+    bodega:      Optional[str] = None
+    notes:       Optional[str] = None
+    occurred_at: Optional[str] = None  # ISO date/datetime; default: ahora
+
+
+@router.post("/mermas", status_code=201)
+def create_merma(
+    body: MermaCreate,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Registra una salida de inventario que NO es una venta — rotura,
+    vencimiento, consumo propio u obsequio/muestra. Descuenta el stock
+    teórico del SKU por el mismo camino que usa la recepción de PO (para que
+    el semáforo siga siendo preciso) y acumula el costo (cantidad × costo
+    unitario) para un futuro resumen mensual de mermas.
+    """
+    from backend.inventory import merma_service as merma_svc
+    from datetime import datetime as _dt
+
+    occurred_at = None
+    if body.occurred_at:
+        try:
+            occurred_at = _dt.fromisoformat(body.occurred_at)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="occurred_at debe ser fecha ISO (YYYY-MM-DD)")
+
+    try:
+        row = merma_svc.record_merma(
+            user.tenant_id, body.sku, body.quantity, body.reason,
+            user_id=user.user_id, bodega=body.bodega, notes=body.notes,
+            occurred_at=occurred_at,
+        )
+    except ValueError as e:
+        status = 404 if "no encontrado" in str(e) else 422
+        raise HTTPException(status_code=status, detail=str(e))
+    return ok(row)
+
+
+@router.get("/mermas")
+def list_mermas(
+    sku: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Historial reciente de mermas registradas (insumo del futuro resumen mensual)."""
+    from backend.inventory import merma_service as merma_svc
+    return ok(merma_svc.list_mermas(user.tenant_id, sku=sku, limit=limit))
+
+
+@router.get("/mermas/reasons")
+def list_merma_reasons(user: CurrentUser = Depends(get_current_user)):
+    """Returns the valid merma reason codes (labels are handled client-side via i18n)."""
+    from backend.inventory import merma_service as merma_svc
+    return ok(list(merma_svc.REASONS))
 
 
 # ── Stock history ─────────────────────────────────────────────────────────────
@@ -600,6 +665,17 @@ def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
     """Per-supplier performance: real lead time range, on-time rate, fill rate."""
     from backend.inventory import reception_service as rec_svc
     return ok(rec_svc.get_supplier_scorecard(user.tenant_id))
+
+
+@router.get("/po/overdue")
+def po_overdue(user: CurrentUser = Depends(get_current_user)):
+    """
+    POs still pending/partial whose expected arrival — order date plus the
+    supplier's already-learned lead time — has passed with no reception
+    recorded. Powers the /hoy 'did it arrive?' nudge.
+    """
+    from backend.inventory import reception_service as rec_svc
+    return ok(rec_svc.get_overdue_receptions(user.tenant_id))
 
 
 # ── PO → supplier (feature 2.2) ──────────────────────────────────────────────

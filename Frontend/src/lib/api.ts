@@ -8,6 +8,7 @@ import type {
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
+  MermaReason, MermaRecord,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -577,6 +578,18 @@ export const getStockHistory = (sku: string, days = 30) =>
     'GET', `/inventory/stock/${encodeURIComponent(sku)}/history?days=${days}`,
   )
 
+// ── Mermas (shrinkage / non-sale stock-outs) ──────────────────────────────────
+export const createMerma = (body: {
+  sku: string; quantity: number; reason: MermaReason
+  bodega?: string; notes?: string; occurred_at?: string
+}) => request<MermaRecord>('POST', '/inventory/mermas', body)
+
+export const listMermas = (sku?: string, limit = 50) =>
+  request<MermaRecord[]>('GET', `/inventory/mermas?limit=${limit}${sku ? `&sku=${encodeURIComponent(sku)}` : ''}`)
+
+export const listMermaReasons = () =>
+  request<MermaReason[]>('GET', '/inventory/mermas/reasons')
+
 // ── Inventory events ──────────────────────────────────────────────────────────
 export const listInventoryEvents   = () =>
   request<InventoryEvent[]>('GET', '/inventory/events')
@@ -663,6 +676,9 @@ export const sendPOToSuppliers = (poLogId: string) =>
 
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
+
+export const getOverduePOs = () =>
+  request<import('./types').OverdueReception[]>('GET', '/inventory/po/overdue')
 
 // ── Event / promo impact simulator ───────────────────────────────────────────
 export const simulateEvent = (body: {

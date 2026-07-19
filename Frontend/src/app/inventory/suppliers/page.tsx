@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   listSuppliers, createSupplier, updateSupplier, deleteSupplier,
 } from '@/lib/api'
@@ -68,8 +69,8 @@ interface SupplierForm {
   notes:          string
 }
 
-function blankForm(): SupplierForm {
-  return { name: '', email: '', phone: '', whatsapp: '', lead_time_dias: '15', lead_time_std: '3', payment_terms: '', notes: '' }
+function blankForm(name = ''): SupplierForm {
+  return { name, email: '', phone: '', whatsapp: '', lead_time_dias: '15', lead_time_std: '3', payment_terms: '', notes: '' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
@@ -88,16 +89,18 @@ function supplierToForm(s: Supplier): SupplierForm {
 // ── Form panel ────────────────────────────────────────────────────────────────
 function SupplierFormPanel({
   initial,
+  prefillName,
   onSave,
   onCancel,
   saving,
 }: {
   initial?: Supplier
+  prefillName?: string
   onSave: (form: SupplierForm) => void
   onCancel: () => void
   saving: boolean
 }) {
-  const [form, setForm] = useState<SupplierForm>(initial ? supplierToForm(initial) : blankForm())
+  const [form, setForm] = useState<SupplierForm>(initial ? supplierToForm(initial) : blankForm(prefillName))
   const set = (k: keyof SupplierForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -282,7 +285,15 @@ function SupplierRow({
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function SuppliersPage() {
+function SuppliersPageInner() {
+  const searchParams = useSearchParams()
+  // One-click path from /hoy's "missing contact info" banner: ?focus=<name>
+  // opens that supplier's edit form directly, or pre-fills a new one if it
+  // doesn't exist yet under that name.
+  const focusName = searchParams.get('focus')
+  const [prefillName, setPrefillName] = useState<string | undefined>(undefined)
+  const focusHandled = useRef(false)
+
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState<string | null>(null)
@@ -298,6 +309,20 @@ export default function SuppliersPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (loading || !focusName || focusHandled.current) return
+    focusHandled.current = true
+    const match = suppliers.find(s => s.name.toLowerCase() === focusName.toLowerCase())
+    if (match) {
+      setEditing(match)
+      setShowForm(true)
+    } else {
+      setPrefillName(focusName)
+      setEditing(null)
+      setShowForm(true)
+    }
+  }, [loading, focusName, suppliers])
 
   async function handleSave(form: SupplierForm) {
     setSaving(true); setError(null)
@@ -335,7 +360,7 @@ export default function SuppliersPage() {
   }
 
   function handleEdit(s: Supplier) { setEditing(s); setShowForm(true) }
-  function handleCancel() { setShowForm(false); setEditing(null) }
+  function handleCancel() { setShowForm(false); setEditing(null); setPrefillName(undefined) }
 
   const isFormOpen = showForm || !!editing
 
@@ -403,6 +428,7 @@ export default function SuppliersPage() {
       {isFormOpen && (
         <SupplierFormPanel
           initial={editing ?? undefined}
+          prefillName={editing ? undefined : prefillName}
           onSave={handleSave}
           onCancel={handleCancel}
           saving={saving}
@@ -489,5 +515,17 @@ export default function SuppliersPage() {
       ) : null}
 
     </div>
+  )
+}
+
+export default function SuppliersPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}>
+        <Spinner />
+      </div>
+    }>
+      <SuppliersPageInner />
+    </Suspense>
   )
 }
