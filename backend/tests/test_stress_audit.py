@@ -7,7 +7,7 @@ and doesn't crash when fed garbage.
 Bugs targeted:
   1. moq=0 → silently stored (falsy check bypasses MOQ rounding but also bypasses
      division-by-zero); StockUpsert allows ge=0 for moq.
-  2. costo_unitario=0 → valor_inventario returns None instead of 0 due to falsy check.
+  2. unit_cost=0 → inventory_value returns None instead of 0 due to falsy check.
   3. EventCreate has no date-ordering validation (start_date > end_date is accepted).
   4. bulk_upsert bypasses Pydantic → negative lead_time stored via CSV.
   5. BOM self-reference only: indirect cycles (A→B→A) not blocked.
@@ -94,7 +94,7 @@ class TestInventoryEdgeCases:
         from backend.inventory.service import _calc_recommended
         # moq=0: should return raw demand without MOQ rounding
         result = _calc_recommended(
-            stock_actual=10.0, avg_daily=5.0, avg_std=1.0,
+            current_stock=10.0, avg_daily=5.0, avg_std=1.0,
             lead_time=14, moq=0, service_level=0.95
         )
         assert isinstance(result, float), "Must return a float, not raise"
@@ -110,7 +110,7 @@ class TestInventoryEdgeCases:
         sku = _sku()
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 100.0, "moq": 0},
+            json={"current_stock": 100.0, "moq": 0},
             headers=auth_headers,
         )
         assert resp.status_code == 422
@@ -121,68 +121,68 @@ class TestInventoryEdgeCases:
     # ── lead_time = 0 ─────────────────────────────────────────────────────────
 
     def test_lead_time_zero_rejected_by_api(self, client, auth_headers):
-        """lead_time_dias has ge=1 in StockUpsert — zero must return 422."""
+        """lead_time_days has ge=1 in StockUpsert — zero must return 422."""
         sku = _sku()
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 100.0, "lead_time_dias": 0},
+            json={"current_stock": 100.0, "lead_time_days": 0},
             headers=auth_headers,
         )
         assert resp.status_code == 422, (
-            f"lead_time_dias=0 should be rejected (ge=1), got {resp.status_code}"
+            f"lead_time_days=0 should be rejected (ge=1), got {resp.status_code}"
         )
 
     def test_lead_time_zero_calc_does_not_crash(self):
         """
         Even if lead_time=0 somehow reaches _calc_recommended,
-        math.sqrt(0)=0 is safe and demanda_lead_time=0.
+        math.sqrt(0)=0 is safe and lead_time_demand=0.
         """
         from backend.inventory.service import _calc_recommended, _calc_signal
         qty = _calc_recommended(100.0, 10.0, 1.0, lead_time=0, moq=1)
         assert qty >= 0
 
         # _calc_signal with lead_time=0 → threshold = 0 → PEDIR_YA for any coverage
-        sig = _calc_signal(dias_cobertura=5.0, lead_time=0)
+        sig = _calc_signal(coverage_days=5.0, lead_time=0)
         assert isinstance(sig, str), "_calc_signal must return a string even with lead_time=0"
 
     # ── large stock values ─────────────────────────────────────────────────────
 
     def test_stock_very_large_number(self, client, auth_headers):
-        """stock_actual = 1e12 must be accepted and returned without overflow."""
+        """current_stock = 1e12 must be accepted and returned without overflow."""
         sku = _sku()
         large = 1e12
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": large, "lead_time_dias": 15},
+            json={"current_stock": large, "lead_time_days": 15},
             headers=auth_headers,
         )
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["stock_actual"] == large
+        assert data["current_stock"] == large
 
     # ── stock = 0 ─────────────────────────────────────────────────────────────
 
     def test_stock_zero(self, client, auth_headers):
-        """stock_actual=0 is valid and must be stored correctly."""
+        """current_stock=0 is valid and must be stored correctly."""
         sku = _sku()
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 0, "lead_time_dias": 10},
+            json={"current_stock": 0, "lead_time_days": 10},
             headers=auth_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["data"]["stock_actual"] == 0
+        assert resp.json()["data"]["current_stock"] == 0
 
-    # ── costo_unitario = 0 → valor_inventario bug ──────────────────────────────
+    # ── unit_cost = 0 → inventory_value bug ──────────────────────────────
 
     def test_cost_zero_inventory_value_not_none(self, client, auth_headers, registered_user):
         """
         BUG CANDIDATE: in get_inventory_status the check is
-            `if stock.get("costo_unitario")`
-        which is falsy when costo_unitario=0, making valor_inventario=None
+            `if stock.get("unit_cost")`
+        which is falsy when unit_cost=0, making inventory_value=None
         instead of 0.0.  This test verifies the behavior.
 
-        The valor_inventario calculation only runs when has_forecast and
+        The inventory_value calculation only runs when has_forecast and
         has_stock are both true, and /status now scopes its SKU set strictly
         to the session's forecasts (see test_status_nonexistent_session_returns_no_phantom_skus),
         so a forecast must be seeded for this SKU to actually exercise that branch.
@@ -199,7 +199,7 @@ class TestInventoryEdgeCases:
 
         client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 100.0, "costo_unitario": 0.0, "lead_time_dias": 10},
+            json={"current_stock": 100.0, "unit_cost": 0.0, "lead_time_days": 10},
             headers=auth_headers,
         )
         session_store.set_forecasts(tenant_id, session_id, {
@@ -217,10 +217,10 @@ class TestInventoryEdgeCases:
         matching = [i for i in items if i["sku"] == sku]
         assert matching, "SKU not found in status response"
         item = matching[0]
-        # valor_inventario should be 0.0 (100 * 0 = 0), NOT None
-        assert item["valor_inventario"] == 0.0, (
-            "valor_inventario must be 0.0 when costo_unitario=0, not None "
-            f"(falsy-check bug confirmed): got {item['valor_inventario']}"
+        # inventory_value should be 0.0 (100 * 0 = 0), NOT None
+        assert item["inventory_value"] == 0.0, (
+            "inventory_value must be 0.0 when unit_cost=0, not None "
+            f"(falsy-check bug confirmed): got {item['inventory_value']}"
         )
 
     # ── service_level extremes ─────────────────────────────────────────────────
@@ -275,7 +275,7 @@ class TestInventoryEdgeCases:
         xss_name = "Aceite <script>alert(1)</script>"
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 10.0, "display_name": xss_name},
+            json={"current_stock": 10.0, "display_name": xss_name},
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -294,7 +294,7 @@ class TestInventoryEdgeCases:
         sku = "SKU/001"
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 5.0},
+            json={"current_stock": 5.0},
             headers=auth_headers,
         )
         # A slash in the URL path segment is technically a routing issue.
@@ -305,21 +305,21 @@ class TestInventoryEdgeCases:
     # ── lead_time limits via API ───────────────────────────────────────────────
 
     def test_lead_time_over_limit_rejected(self, client, auth_headers):
-        """lead_time_dias > 365 must return 422 (le=365)."""
+        """lead_time_days > 365 must return 422 (le=365)."""
         sku = _sku()
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 10.0, "lead_time_dias": 366},
+            json={"current_stock": 10.0, "lead_time_days": 366},
             headers=auth_headers,
         )
         assert resp.status_code == 422
 
     def test_negative_stock_rejected(self, client, auth_headers):
-        """stock_actual < 0 must return 422 (ge=0)."""
+        """current_stock < 0 must return 422 (ge=0)."""
         sku = _sku()
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": -1.0},
+            json={"current_stock": -1.0},
             headers=auth_headers,
         )
         assert resp.status_code == 422
@@ -333,7 +333,7 @@ class TestInventoryEdgeCases:
         # avg_daily=1, lead=14, stock=100 → demand_lt=14 < stock, raw=0
         # → result = 0 (no order needed)
         qty = _calc_recommended(
-            stock_actual=100.0, avg_daily=1.0, avg_std=0.1,
+            current_stock=100.0, avg_daily=1.0, avg_std=0.1,
             lead_time=14, moq=10000, service_level=0.95
         )
         assert qty == 0.0 or qty % 10000 == 0, (
@@ -359,7 +359,7 @@ class TestInventoryCalculationEdgeCases:
         sku = _sku()
         client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 50.0, "lead_time_dias": 10},
+            json={"current_stock": 50.0, "lead_time_days": 10},
             headers=auth_headers,
         )
         resp = client.get(
@@ -383,7 +383,7 @@ class TestInventoryCalculationEdgeCases:
         for sku in skus:
             client.put(
                 f"/api/v1/inventory/stock/{sku}",
-                json={"stock_actual": 100.0},
+                json={"current_stock": 100.0},
                 headers=auth_headers,
             )
         resp = client.get(
@@ -398,7 +398,7 @@ class TestInventoryCalculationEdgeCases:
         )
         counted = (
             summary["sin_datos"] + summary["ok"] +
-            summary["pedir_ya"] + summary["pedir_pronto"] + summary["sobrestock"]
+            summary["order_now"] + summary["order_soon"] + summary["overstock"]
         )
         assert counted == summary["total_skus"], (
             f"Signal counts don't add up: {summary}"
@@ -406,7 +406,7 @@ class TestInventoryCalculationEdgeCases:
 
     def test_recommendation_zero_demand(self):
         """
-        avg_daily=0 → dias_cobertura is set to 9999 (infinite).
+        avg_daily=0 → coverage_days is set to 9999 (infinite).
         _calc_recommended must return 0 (no order needed if no demand).
         """
         from backend.inventory.service import _calc_recommended, _avg_daily_forecast
@@ -463,7 +463,7 @@ class TestBOMEdgeCases:
         sku = _sku()
         client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 50.0},
+            json={"current_stock": 50.0},
             headers=auth_headers,
         )
         resp = client.put(
@@ -530,7 +530,7 @@ class TestBOMEdgeCases:
         for sku in (parent, child):
             client.put(
                 f"/api/v1/inventory/stock/{sku}",
-                json={"stock_actual": 100.0},
+                json={"current_stock": 100.0},
                 headers=auth_headers,
             )
 
@@ -585,7 +585,7 @@ class TestBOMEdgeCases:
         for sku in (sku_a, sku_b):
             client.put(
                 f"/api/v1/inventory/stock/{sku}",
-                json={"stock_actual": 10.0},
+                json={"current_stock": 10.0},
                 headers=auth_headers,
             )
             # Mark both as finished_good so they could theoretically trigger the loop
@@ -640,7 +640,7 @@ class TestBulkImportEdgeCases:
 
     def test_bulk_no_sku_column_rejected(self, client, auth_headers):
         """CSV without 'sku' column → 422 (no valid rows)."""
-        csv_bytes = b"stock_actual,lead_time_dias\n100,15\n200,10\n"
+        csv_bytes = b"current_stock,lead_time_days\n100,15\n200,10\n"
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -652,7 +652,7 @@ class TestBulkImportEdgeCases:
 
     def test_bulk_only_headers_no_rows_rejected(self, client, auth_headers):
         """CSV with only headers, no data rows → 422."""
-        csv_bytes = b"sku,stock_actual,lead_time_dias\n"
+        csv_bytes = b"sku,current_stock,lead_time_days\n"
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -666,7 +666,7 @@ class TestBulkImportEdgeCases:
         """Rows where sku is empty must be skipped, not cause a 500."""
         good_sku = _sku()
         csv_content = (
-            f"sku,stock_actual\n"
+            f"sku,current_stock\n"
             f",100\n"                   # empty sku
             f"   ,50\n"                 # whitespace-only sku
             f"{good_sku},75\n"          # valid row
@@ -683,11 +683,11 @@ class TestBulkImportEdgeCases:
 
     def test_bulk_invalid_numeric_skipped(self, client, auth_headers):
         """
-        Rows with non-numeric stock_actual values should be stored without the
+        Rows with non-numeric current_stock values should be stored without the
         invalid field (graceful degradation), not cause a 500.
         """
         sku = _sku()
-        csv_bytes = f"sku,stock_actual,lead_time_dias\n{sku},not_a_number,15\n".encode("utf-8")
+        csv_bytes = f"sku,current_stock,lead_time_days\n{sku},not_a_number,15\n".encode("utf-8")
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -718,7 +718,7 @@ class TestBulkImportEdgeCases:
         """CSV with UTF-8 BOM (typical from Windows Excel) must be parsed correctly."""
         sku = _sku()
         # BOM = \xef\xbb\xbf
-        csv_bytes = b"\xef\xbb\xbf" + f"sku,stock_actual\n{sku},99\n".encode("utf-8")
+        csv_bytes = b"\xef\xbb\xbf" + f"sku,current_stock\n{sku},99\n".encode("utf-8")
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -731,16 +731,16 @@ class TestBulkImportEdgeCases:
             headers=auth_headers,
         )
         assert row.status_code == 200
-        assert row.json()["data"]["stock_actual"] == 99.0
+        assert row.json()["data"]["current_stock"] == 99.0
 
     def test_bulk_large_import(self, client, auth_headers):
         """1000 SKUs in a single bulk → must complete without timeout/500."""
         rows = [
-            {"sku": f"BULK-{i:04d}-{uuid4().hex[:4]}", "stock_actual": i * 10, "lead_time_dias": 15}
+            {"sku": f"BULK-{i:04d}-{uuid4().hex[:4]}", "current_stock": i * 10, "lead_time_days": 15}
             for i in range(1000)
         ]
         buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=["sku", "stock_actual", "lead_time_dias"])
+        writer = csv.DictWriter(buf, fieldnames=["sku", "current_stock", "lead_time_days"])
         writer.writeheader()
         writer.writerows(rows)
         csv_bytes = buf.getvalue().encode("utf-8")
@@ -758,13 +758,13 @@ class TestBulkImportEdgeCases:
 
     def test_bulk_negative_lead_time_via_csv_row_rejected_not_stored(self, client, auth_headers):
         """
-        Each CSV row is validated through StockPatch (ge=1 on lead_time_dias) before
+        Each CSV row is validated through StockPatch (ge=1 on lead_time_days) before
         being queued for bulk_upsert (api/v1/inventory.py:152) — a ValidationError just
         skips the row (`continue`), it does not bypass the constraint. With only one,
         invalid row in the file, `rows` ends up empty, which 422s.
         """
         sku = _sku()
-        csv_bytes = f"sku,stock_actual,lead_time_dias\n{sku},100,-5\n".encode("utf-8")
+        csv_bytes = f"sku,current_stock,lead_time_days\n{sku},100,-5\n".encode("utf-8")
         resp = client.post(
             "/api/v1/inventory/bulk",
             headers=auth_headers,
@@ -780,7 +780,7 @@ class TestBulkImportEdgeCases:
         import exactly the valid row and silently skip the invalid one."""
         good_sku, bad_sku = _sku(), _sku()
         csv_bytes = (
-            f"sku,stock_actual,lead_time_dias\n"
+            f"sku,current_stock,lead_time_days\n"
             f"{good_sku},100,10\n"
             f"{bad_sku},100,-5\n"
         ).encode("utf-8")
@@ -794,7 +794,7 @@ class TestBulkImportEdgeCases:
 
         good = client.get(f"/api/v1/inventory/stock/{good_sku}", headers=auth_headers)
         assert good.status_code == 200
-        assert good.json()["data"]["lead_time_dias"] == 10
+        assert good.json()["data"]["lead_time_days"] == 10
 
         bad = client.get(f"/api/v1/inventory/stock/{bad_sku}", headers=auth_headers)
         assert bad.status_code == 404
@@ -832,7 +832,7 @@ class TestSupplierEdgeCases:
 
     def test_supplier_std_greater_than_lead_time_allowed(self, client, auth_headers):
         """
-        lead_time_std > lead_time_dias is mathematically odd but the schema
+        lead_time_std > lead_time_days is mathematically odd but the schema
         allows it (lead_time_std: int = Field(ge=0, le=60)).
         Must not cause crashes in calculations.
         """
@@ -840,7 +840,7 @@ class TestSupplierEdgeCases:
             "/api/v1/inventory/suppliers",
             json={
                 "name": f"StdGtLt-{uuid4().hex[:4]}",
-                "lead_time_dias": 5,
+                "lead_time_days": 5,
                 "lead_time_std": 50,  # std > lead_time
             },
             headers=auth_headers,
@@ -859,7 +859,7 @@ class TestSupplierEdgeCases:
         # Create a real supplier
         cr = client.post(
             "/api/v1/inventory/suppliers",
-            json={"name": f"Sup-{uuid4().hex[:4]}", "lead_time_dias": 10},
+            json={"name": f"Sup-{uuid4().hex[:4]}", "lead_time_days": 10},
             headers=auth_headers,
         )
         assert cr.status_code == 201
@@ -891,7 +891,7 @@ class TestSupplierEdgeCases:
         sku = _sku()
         client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 50.0},
+            json={"current_stock": 50.0},
             headers=auth_headers,
         )
         cr = client.post(
@@ -1206,7 +1206,7 @@ class TestCrossTenantMutations:
         sku = f"PYTEST-STOCK-{uuid4().hex[:8]}"
         put = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 100, "display_name": "Tenant A stock"},
+            json={"current_stock": 100, "display_name": "Tenant A stock"},
             headers=auth_headers,
         )
         assert put.status_code == 200
@@ -1215,7 +1215,7 @@ class TestCrossTenantMutations:
         try:
             resp = client.patch(
                 f"/api/v1/inventory/stock/{sku}",
-                json={"stock_actual": 9999},
+                json={"current_stock": 9999},
                 headers=self._login(client, email2),
             )
             # Stock is keyed by (tenant_id, sku): tenant B has no row for this sku yet,
@@ -1225,7 +1225,7 @@ class TestCrossTenantMutations:
 
             check = client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers)
             assert check.status_code == 200
-            assert check.json()["data"]["stock_actual"] == 100
+            assert check.json()["data"]["current_stock"] == 100
         finally:
             execute("DELETE FROM tenants WHERE id=%s", (t2["id"],))
             execute("DELETE FROM inventory_stock WHERE sku=%s", (sku,))
@@ -1235,7 +1235,7 @@ class TestCrossTenantMutations:
         sku = f"PYTEST-STOCK-{uuid4().hex[:8]}"
         put = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 50},
+            json={"current_stock": 50},
             headers=auth_headers,
         )
         assert put.status_code == 200
@@ -1312,7 +1312,7 @@ class TestCrossTenantMutations:
         from backend.db.connection import execute
         parent, child = f"PARENT-{uuid4().hex[:6]}", f"CHILD-{uuid4().hex[:6]}"
         for sku in (parent, child):
-            assert client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 1}, headers=auth_headers).status_code == 200
+            assert client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 1}, headers=auth_headers).status_code == 200
         put = client.put(
             f"/api/v1/inventory/bom/{parent}/{child}",
             json={"quantity": 2.0},
@@ -1346,7 +1346,7 @@ class TestCrossTenantMutations:
         from backend.db.connection import execute
         parent, child = f"PARENT-{uuid4().hex[:6]}", f"CHILD-{uuid4().hex[:6]}"
         for sku in (parent, child):
-            assert client.put(f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 1}, headers=auth_headers).status_code == 200
+            assert client.put(f"/api/v1/inventory/stock/{sku}", json={"current_stock": 1}, headers=auth_headers).status_code == 200
         put = client.put(
             f"/api/v1/inventory/bom/{parent}/{child}",
             json={"quantity": 3.0},
@@ -1412,7 +1412,7 @@ class TestAINarrativeEdgeCases:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["total_skus"] >= 0
-        for key in ("pedir_ya", "pedir_pronto", "ok", "sobrestock", "sin_datos"):
+        for key in ("order_now", "order_soon", "ok", "overstock", "sin_datos"):
             assert key in data, f"Missing key {key} in dashboard-summary"
 
     def test_morning_briefing_serializable(self, client, auth_headers):
@@ -1420,11 +1420,11 @@ class TestAINarrativeEdgeCases:
         morning-briefing response must be fully JSON-serializable
         (no datetime objects, no NaN, no Infinity).
         """
-        # Create a SKU with cost and stock so valor_inventario is computed
+        # Create a SKU with cost and stock so inventory_value is computed
         sku = _sku()
         client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 500.0, "costo_unitario": 100.0, "lead_time_dias": 7},
+            json={"current_stock": 500.0, "unit_cost": 100.0, "lead_time_days": 7},
             headers=auth_headers,
         )
         resp = client.get(
@@ -1474,7 +1474,7 @@ class TestConcurrencyAndConsistency:
         def do_upsert(stock_val: int):
             r = client.put(
                 f"/api/v1/inventory/stock/{sku}",
-                json={"stock_actual": float(stock_val), "lead_time_dias": 10},
+                json={"current_stock": float(stock_val), "lead_time_days": 10},
                 headers=auth_headers,
             )
             if r.status_code == 500:
@@ -1502,9 +1502,9 @@ class TestConcurrencyAndConsistency:
             headers=auth_headers,
         )
         assert final.status_code == 200
-        final_value = final.json()["data"]["stock_actual"]
+        final_value = final.json()["data"]["current_stock"]
         assert final_value in written_values, (
-            f"Final stock_actual {final_value} does not match any value actually written "
+            f"Final current_stock {final_value} does not match any value actually written "
             f"({written_values}) — possible corrupted/blended write under concurrency"
         )
 
@@ -1518,7 +1518,7 @@ class TestConcurrencyAndConsistency:
         sku = _sku()
         client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 100.0},
+            json={"current_stock": 100.0},
             headers=auth_headers,
         )
 
@@ -1553,20 +1553,20 @@ class TestConcurrencyAndConsistency:
         row = query_one("SELECT sku FROM inventory_stock WHERE sku = %s", (sku,))
         assert row is None, "Delete ran concurrently with reads but the row still exists afterward"
 
-    def test_upsert_null_stock_actual_rejected(self, client, auth_headers):
+    def test_upsert_null_current_stock_rejected(self, client, auth_headers):
         """
-        Sending stock_actual=null in the JSON body must return 422.
-        StockUpsert has `stock_actual: float = Field(ge=0)` with no Optional —
+        Sending current_stock=null in the JSON body must return 422.
+        StockUpsert has `current_stock: float = Field(ge=0)` with no Optional —
         null should fail Pydantic validation.
         """
         sku = _sku()
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": None},
+            json={"current_stock": None},
             headers=auth_headers,
         )
         assert resp.status_code == 422, (
-            f"stock_actual=null should be rejected, got {resp.status_code}"
+            f"current_stock=null should be rejected, got {resp.status_code}"
         )
 
 
@@ -1629,8 +1629,8 @@ class TestPureCalculationEdgeCases:
         """All-zero demand → all SKUs classified as C (no division by zero)."""
         from backend.inventory.service import _classify_abc
         items = [
-            {"sku": "A", "demanda_diaria": 0.0, "costo_unitario": 100.0},
-            {"sku": "B", "demanda_diaria": 0.0, "costo_unitario": 200.0},
+            {"sku": "A", "daily_demand": 0.0, "unit_cost": 100.0},
+            {"sku": "B", "daily_demand": 0.0, "unit_cost": 200.0},
         ]
         result = _classify_abc(items)
         assert result == {"A": "C", "B": "C"}, (
@@ -1640,12 +1640,12 @@ class TestPureCalculationEdgeCases:
     def test_calc_signal_with_zero_lead_time(self):
         """
         _calc_signal with lead_time=0 → all thresholds become 0.
-        dias_cobertura < 0 is False for any positive value.
-        Result depends on whether dias_cobertura < 0 evaluates as expected.
+        coverage_days < 0 is False for any positive value.
+        Result depends on whether coverage_days < 0 evaluates as expected.
         Must return a valid signal string.
         """
         from backend.inventory.service import _calc_signal
-        result = _calc_signal(dias_cobertura=0.0, lead_time=0)
+        result = _calc_signal(coverage_days=0.0, lead_time=0)
         assert result in ("PEDIR_YA", "PEDIR_PRONTO", "OK", "SOBRESTOCK")
 
     def test_calc_recommended_service_level_interpolation(self):
@@ -1666,7 +1666,7 @@ class TestPureCalculationEdgeCases:
 
     def test_generate_recommendations_sin_datos_items(self):
         """
-        Items with SIN_DATOS signal and no dias_cobertura must not crash.
+        Items with SIN_DATOS signal and no coverage_days must not crash.
         """
         from backend.inventory.service import generate_recommendations
         items = [
@@ -1674,13 +1674,13 @@ class TestPureCalculationEdgeCases:
                 "sku": "SKU-001",
                 "display_name": "Test Item",
                 "signal": "SIN_DATOS",
-                "dias_cobertura": None,
-                "lead_time_dias": 15,
-                "cantidad_recomendada": None,
-                "proveedor": None,
+                "coverage_days": None,
+                "lead_time_days": 15,
+                "recommended_qty": None,
+                "supplier": None,
                 "abc": "C",
                 "demand_trend_pct": None,
-                "valor_inventario": None,
+                "inventory_value": None,
             }
         ]
         result = generate_recommendations(items)

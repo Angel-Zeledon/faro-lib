@@ -1,6 +1,6 @@
 'use client'
 /**
- * Supplier health banners shared by /hoy and /pedidos.
+ * Supplier health banners shared by /hoy and /orders.
  *
  * Both are pure presentation: the backend decides WHAT counts as incomplete
  * contact data (feature 2.5) and WHAT counts as a significant lead-time
@@ -27,18 +27,18 @@ const ctaStyle = (color: string): React.CSSProperties => ({
 })
 
 /**
- * "3 proveedores sin email/WhatsApp — el envío de órdenes los omitirá",
+ * "3 suppliers with no email/WhatsApp — PO sending will skip them",
  * with one-click access to complete the ficha.
  */
 export function SupplierContactHealthBanner({ rows }: { rows: SupplierContactHealthRow[] }) {
   const { t } = useLanguage()
   if (rows.length === 0) return null
 
-  const names = rows.map(r => r.proveedor)
+  const names = rows.map(r => r.supplier)
   // One click to fix: ?focus=<name> opens that supplier's edit form directly,
-  // or a pre-filled new-supplier form when there is no ficha yet (motivo
-  // 'sin_ficha') — see SuppliersPageInner.
-  const focus = `/inventory/suppliers?focus=${encodeURIComponent(rows[0].proveedor)}`
+  // or a pre-filled new-supplier form when there is no ficha yet (reason
+  // 'no_supplier_record') — see SuppliersPageInner.
+  const focus = `/inventory/suppliers?focus=${encodeURIComponent(rows[0].supplier)}`
 
   return (
     <div style={bannerStyle(AMBER)}>
@@ -79,8 +79,8 @@ export function SupplierLeadTimeAlertBanner({ alerts }: { alerts: SupplierLeadTi
         </Link>
       </div>
       {alerts.map(a => (
-        <div key={a.proveedor} style={{ fontSize: 12, color: 'var(--text)', paddingLeft: 24 }}>
-          <strong>{a.proveedor}</strong>{' '}
+        <div key={a.supplier} style={{ fontSize: 12, color: 'var(--text)', paddingLeft: 24 }}>
+          <strong>{a.supplier}</strong>{' '}
           {t('suppliers.leadtime_now')} <strong style={{ color }}>{a.lead_time_reciente}</strong>{' '}
           {t('suppliers.leadtime_days_not')}{' '}
           <strong>{a.lead_time_historico}</strong>{' '}

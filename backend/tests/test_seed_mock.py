@@ -20,20 +20,20 @@ class TestSeedMockTenant:
         assert len(wh_rows) >= 3
 
         stock_rows = query(
-            "SELECT sku, bodega, stock_actual, costo_unitario, precio_venta, "
-            "lead_time_dias FROM inventory_stock WHERE tenant_id = %s",
+            "SELECT sku, warehouse, current_stock, unit_cost, sale_price, "
+            "lead_time_days FROM inventory_stock WHERE tenant_id = %s",
             (tid,),
         )
         assert len(stock_rows) > 0
 
-        bodegas = {r["bodega"] for r in stock_rows}
-        assert len(bodegas) >= 3
+        warehouses = {r["warehouse"] for r in stock_rows}
+        assert len(warehouses) >= 3
 
         for row in stock_rows:
-            assert float(row["stock_actual"]) >= 0
-            if row["costo_unitario"] is not None and row["precio_venta"] is not None:
-                assert float(row["costo_unitario"]) < float(row["precio_venta"])
-            assert 3 <= row["lead_time_dias"] <= 30
+            assert float(row["current_stock"]) >= 0
+            if row["unit_cost"] is not None and row["sale_price"] is not None:
+                assert float(row["unit_cost"]) < float(row["sale_price"])
+            assert 3 <= row["lead_time_days"] <= 30
 
         assert summary["tenant_id"] == tid
         assert summary["stock_rows"] == len(stock_rows)
@@ -48,12 +48,12 @@ class TestSeedMockTenant:
         seed_mock_tenant(tid, warehouses=3, skus=5)
 
         rows = query(
-            "SELECT sku, bodega, stock_actual FROM inventory_stock WHERE tenant_id = %s",
+            "SELECT sku, warehouse, current_stock FROM inventory_stock WHERE tenant_id = %s",
             (tid,),
         )
         by_sku: dict[str, set[float]] = {}
         for r in rows:
-            by_sku.setdefault(r["sku"], set()).add(float(r["stock_actual"]))
+            by_sku.setdefault(r["sku"], set()).add(float(r["current_stock"]))
 
         # At least one SKU must show differing stock across warehouses —
         # guards against a lazy implementation that copy-pastes the same

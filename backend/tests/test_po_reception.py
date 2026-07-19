@@ -14,9 +14,9 @@ def _make_po(client, auth_headers, tenant_id, *, skus=None):
     items = []
     for sku, (qty, prov) in skus.items():
         items.append({
-            "sku": sku, "display_name": f"Prod {sku}", "proveedor": prov,
-            "signal": "PEDIR_YA", "cantidad_recomendada": qty,
-            "cantidad_final": qty, "costo_unitario": 2.5, "status": "approved",
+            "sku": sku, "display_name": f"Prod {sku}", "supplier": prov,
+            "signal": "PEDIR_YA", "recommended_qty": qty,
+            "final_qty": qty, "unit_cost": 2.5, "status": "approved",
         })
     resp = client.post(
         "/api/v1/inventory/log-po",
@@ -30,10 +30,10 @@ def _make_po(client, auth_headers, tenant_id, *, skus=None):
 
 def _stock(tenant_id, sku):
     row = query_one(
-        "SELECT stock_actual FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
+        "SELECT current_stock FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
         (tenant_id, sku),
     )
-    return float(row["stock_actual"]) if row else None
+    return float(row["current_stock"]) if row else None
 
 
 class TestReceivePO:
@@ -53,7 +53,7 @@ class TestReceivePO:
         sku = f"REC-{uuid.uuid4().hex[:6]}"
         # Existing stock 100 → after receiving 40 must be 140
         client.put(f"/api/v1/inventory/stock/{sku}",
-                   json={"stock_actual": 100}, headers=auth_headers)
+                   json={"current_stock": 100}, headers=auth_headers)
         po_id = _make_po(client, auth_headers, tid, skus={sku: (40, "Proveedor Real")})
 
         resp = client.post(f"/api/v1/inventory/po/{po_id}/receive", json={}, headers=auth_headers)
@@ -68,15 +68,15 @@ class TestReceivePO:
 
         # DB: line quantities recorded
         item = query_one(
-            "SELECT cantidad_recibida FROM inventory_po_items WHERE po_log_id = %s AND sku = %s",
+            "SELECT received_qty FROM inventory_po_items WHERE po_log_id = %s AND sku = %s",
             (po_id, sku),
         )
-        assert float(item["cantidad_recibida"]) == 40.0
+        assert float(item["received_qty"]) == 40.0
 
         # DB: lead-time observation stored for the supplier
         obs = query_one(
             """SELECT lead_time_days FROM supplier_lead_time_obs
-               WHERE tenant_id = %s AND po_log_id = %s AND proveedor = 'Proveedor Real'""",
+               WHERE tenant_id = %s AND po_log_id = %s AND supplier = 'Proveedor Real'""",
             (tid, po_id),
         )
         assert obs is not None
@@ -84,7 +84,7 @@ class TestReceivePO:
         # Endpoint exposes the learned stats
         stats = client.get("/api/v1/inventory/suppliers/scorecard", headers=auth_headers)
         assert stats.status_code == 200
-        provs = [s["proveedor"] for s in stats.json()["data"]]
+        provs = [s["supplier"] for s in stats.json()["data"]]
         assert "Proveedor Real" in provs
 
     def test_partial_then_complete(self, client, auth_headers, test_tenant):
@@ -95,7 +95,7 @@ class TestReceivePO:
         # First event: only 30 of 50 arrive
         resp = client.post(
             f"/api/v1/inventory/po/{po_id}/receive",
-            json={"lines": [{"sku": sku, "cantidad_recibida": 30}]},
+            json={"lines": [{"sku": sku, "received_qty": 30}]},
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -105,7 +105,7 @@ class TestReceivePO:
         # Second event: remaining 20 arrive → received
         resp = client.post(
             f"/api/v1/inventory/po/{po_id}/receive",
-            json={"lines": [{"sku": sku, "cantidad_recibida": 20}]},
+            json={"lines": [{"sku": sku, "received_qty": 20}]},
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -113,10 +113,10 @@ class TestReceivePO:
         assert _stock(tid, sku) == 50.0
 
         item = query_one(
-            "SELECT cantidad_recibida FROM inventory_po_items WHERE po_log_id = %s AND sku = %s",
+            "SELECT received_qty FROM inventory_po_items WHERE po_log_id = %s AND sku = %s",
             (po_id, sku),
         )
-        assert float(item["cantidad_recibida"]) == 50.0
+        assert float(item["received_qty"]) == 50.0
 
         # Only ONE lead-time observation (first event), partials don't skew
         obs_count = query_one(
@@ -143,7 +143,7 @@ class TestReceivePO:
                          skus={f"REC-U-{uuid.uuid4().hex[:6]}": (5, "Prov U")})
         resp = client.post(
             f"/api/v1/inventory/po/{po_id}/receive",
-            json={"lines": [{"sku": "NO-EXISTE", "cantidad_recibida": 5}]},
+            json={"lines": [{"sku": "NO-EXISTE", "received_qty": 5}]},
             headers=auth_headers,
         )
         assert resp.status_code == 422
@@ -186,4 +186,4 @@ class TestReceivePO:
         data = resp.json()["data"]
         assert data["reception_status"] == "pending"
         assert data["items"][0]["sku"] == sku
-        assert data["items"][0]["cantidad_recibida"] is None
+        assert data["items"][0]["received_qty"] is None

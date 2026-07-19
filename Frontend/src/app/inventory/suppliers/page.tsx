@@ -65,14 +65,14 @@ interface SupplierForm {
   email:          string
   phone:          string
   whatsapp:       string
-  lead_time_dias: string
+  lead_time_days: string
   lead_time_std:  string
   payment_terms:  string
   notes:          string
 }
 
 function blankForm(name = ''): SupplierForm {
-  return { name, email: '', phone: '', whatsapp: '', lead_time_dias: '15', lead_time_std: '3', payment_terms: '', notes: '' }
+  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '15', lead_time_std: '3', payment_terms: '', notes: '' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
@@ -81,7 +81,7 @@ function supplierToForm(s: Supplier): SupplierForm {
     email:          s.email ?? '',
     phone:          s.phone ?? '',
     whatsapp:       s.whatsapp ?? '',
-    lead_time_dias: String(s.lead_time_dias),
+    lead_time_days: String(s.lead_time_days),
     lead_time_std:  String(s.lead_time_std),
     payment_terms:  s.payment_terms ?? '',
     notes:          s.notes ?? '',
@@ -172,7 +172,7 @@ function SupplierFormPanel({
               <Info size={9} color={C.dim} style={{ opacity: 0.5 }} />
             </Tooltip>
           </label>
-          <input style={inputS} type="number" min={1} max={365} value={form.lead_time_dias} onChange={set('lead_time_dias')} />
+          <input style={inputS} type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
@@ -242,7 +242,7 @@ function SupplierRow({
     >
       <td style={{ padding: '12px 16px', fontWeight: 600, fontSize: 13, color: C.text }}>{supplier.name}</td>
       <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: C.indigo, fontWeight: 700 }}>
-        {supplier.lead_time_dias}d
+        {supplier.lead_time_days}d
       </td>
       <td style={{ padding: '12px 16px', fontSize: 12, color: C.dim }}>
         ±{supplier.lead_time_std}d
@@ -340,7 +340,7 @@ function SuppliersPageInner() {
       email:          form.email.trim() || null,
       phone:          form.phone.trim() || null,
       whatsapp:       form.whatsapp.trim() || null,
-      lead_time_dias: parseInt(form.lead_time_dias) || 15,
+      lead_time_days: parseInt(form.lead_time_days) || 15,
       lead_time_std:  parseInt(form.lead_time_std) || 3,
       payment_terms:  form.payment_terms || null,
       notes:          form.notes.trim() || null,
@@ -391,7 +391,7 @@ function SuppliersPageInner() {
               Proveedores
             </h1>
             <p style={{ margin: 0, fontSize: 11, color: C.dim }}>
-              Gestiona tus proveedores y sus tiempos de entrega
+              Gestiona tus suppliers y sus tiempos de delivery
             </p>
           </div>
         </div>
@@ -413,7 +413,7 @@ function SuppliersPageInner() {
                 background: C.indigo, color: '#fff',
               }}
             >
-              <Plus size={14} /> Agregar proveedor
+              <Plus size={14} /> Agregar supplier
             </button>
           )}
         </div>

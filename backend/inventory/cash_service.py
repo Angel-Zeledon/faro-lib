@@ -48,7 +48,7 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     ('backfill_suppliers_payment_terms_days'):
 
       1. "contado" / "contra entrega" / "prepago" / "COD"  -> 0
-         Checked first because "pago de contado a 8 días" must not be read as
+         Checked first because "pago de contado a 8 dias" must not be read as
          8 days of credit.
       2. "N mes(es)"                                       -> N * 30
          Before the generic number rule, otherwise "2 meses" reads as 2 days.
@@ -116,15 +116,15 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
     rows = query(
         """SELECT l.id            AS po_log_id,
                   l.sent_at,
-                  i.proveedor,
-                  SUM(i.cantidad_final * COALESCE(i.costo_unitario, 0)) AS amount
+                  i.supplier,
+                  SUM(i.final_qty * COALESCE(i.unit_cost, 0)) AS amount
              FROM inventory_po_log l
              JOIN inventory_po_items i ON i.po_log_id = l.id
             WHERE l.tenant_id = %s
               AND l.sent_at IS NOT NULL
               AND i.status IN ('approved', 'modified')
-              AND i.cantidad_final > 0
-            GROUP BY l.id, l.sent_at, i.proveedor
+              AND i.final_qty > 0
+            GROUP BY l.id, l.sent_at, i.supplier
             ORDER BY l.sent_at""",
         (tenant_id,),
     )
@@ -147,7 +147,7 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
         amount = round(float(r["amount"] or 0), 2)
         if amount <= 0:
             continue
-        name = (r.get("proveedor") or "").strip()
+        name = (r.get("supplier") or "").strip()
         supplier = suppliers_by_name.get(name.lower())
         credit_days = resolve_credit_days(supplier)
 

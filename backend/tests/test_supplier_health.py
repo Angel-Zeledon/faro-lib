@@ -23,23 +23,23 @@ from backend.inventory import supplier_health_service as health_svc
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_supplier(tenant_id: str, name: str, *, email=None, whatsapp=None,
-                   lead_time_dias: int = 10, active: bool = True) -> str:
+                   lead_time_days: int = 10, active: bool = True) -> str:
     row = query_one(
-        """INSERT INTO suppliers (tenant_id, name, email, whatsapp, lead_time_dias, active)
+        """INSERT INTO suppliers (tenant_id, name, email, whatsapp, lead_time_days, active)
            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-        (tenant_id, name, email, whatsapp, lead_time_dias, active),
+        (tenant_id, name, email, whatsapp, lead_time_days, active),
     )
     return row["id"]
 
 
-def _make_po(client, headers, *, sku: str, proveedor: str, qty: float = 10.0) -> str:
+def _make_po(client, headers, *, sku: str, supplier: str, qty: float = 10.0) -> str:
     resp = client.post(
         "/api/v1/inventory/log-po",
         params={"session_id": f"sess_test_{uuid.uuid4().hex[:6]}"},
         json={"items": [{
-            "sku": sku, "display_name": f"Prod {sku}", "proveedor": proveedor,
-            "signal": "PEDIR_YA", "cantidad_recomendada": qty,
-            "cantidad_final": qty, "costo_unitario": 1.0, "status": "approved",
+            "sku": sku, "display_name": f"Prod {sku}", "supplier": supplier,
+            "signal": "PEDIR_YA", "recommended_qty": qty,
+            "final_qty": qty, "unit_cost": 1.0, "status": "approved",
         }]},
         headers=headers,
     )
@@ -47,8 +47,8 @@ def _make_po(client, headers, *, sku: str, proveedor: str, qty: float = 10.0) ->
     return resp.json()["data"]["id"]
 
 
-def _row_for(rows: list[dict], proveedor: str) -> dict | None:
-    return next((r for r in rows if r["proveedor"] == proveedor), None)
+def _row_for(rows: list[dict], supplier: str) -> dict | None:
+    return next((r for r in rows if r["supplier"] == supplier), None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -64,7 +64,7 @@ class TestContactHealthDetection:
         row = _row_for(health_svc.get_contact_health(tid), prov)
 
         assert row is not None, "supplier with no contact channel must be flagged"
-        assert row["motivo"] == "sin_contacto"
+        assert row["reason"] == "no_contact"
         assert row["supplier_id"] == sup_id
         assert row["tiene_email"] is False
         assert row["tiene_whatsapp"] is False
@@ -95,18 +95,18 @@ class TestContactHealthDetection:
 
         row = _row_for(health_svc.get_contact_health(tid), prov)
         assert row is not None
-        assert row["motivo"] == "sin_contacto"
+        assert row["reason"] == "no_contact"
 
-    def test_proveedor_on_po_with_no_supplier_record_is_flagged(self, client, auth_headers, test_tenant):
+    def test_supplier_on_po_with_no_supplier_record_is_flagged(self, client, auth_headers, test_tenant):
         """The easiest gap to miss: a name typed on a PO that has no ficha."""
         tid = test_tenant["id"]
         prov = f"Fantasma-{uuid.uuid4().hex[:6]}"
-        _make_po(client, auth_headers, sku=f"GH-{uuid.uuid4().hex[:6]}", proveedor=prov)
+        _make_po(client, auth_headers, sku=f"GH-{uuid.uuid4().hex[:6]}", supplier=prov)
 
         row = _row_for(health_svc.get_contact_health(tid), prov)
 
-        assert row is not None, "proveedor with no ficha must be flagged"
-        assert row["motivo"] == "sin_ficha"
+        assert row is not None, "a supplier with no record must be flagged"
+        assert row["reason"] == "no_supplier_record"
         assert row["supplier_id"] is None
 
     def test_inactive_supplier_is_not_flagged(self, client, test_tenant):
@@ -135,7 +135,7 @@ class TestContactHealthRelevance:
         tid = test_tenant["id"]
         prov = f"Pendiente-{uuid.uuid4().hex[:6]}"
         _make_supplier(tid, prov)
-        _make_po(client, auth_headers, sku=f"REL-{uuid.uuid4().hex[:6]}", proveedor=prov)
+        _make_po(client, auth_headers, sku=f"REL-{uuid.uuid4().hex[:6]}", supplier=prov)
 
         row = _row_for(health_svc.get_contact_health(tid), prov)
 
@@ -160,7 +160,7 @@ class TestContactHealthRelevance:
         prov = f"Recibido-{uuid.uuid4().hex[:6]}"
         _make_supplier(tid, prov)
         sku = f"RCV-{uuid.uuid4().hex[:6]}"
-        po = _make_po(client, auth_headers, sku=sku, proveedor=prov)
+        po = _make_po(client, auth_headers, sku=sku, supplier=prov)
 
         before = _row_for(health_svc.get_contact_health(tid), prov)
         assert before["ordenes_pendientes"] == 1
@@ -192,9 +192,9 @@ class TestContactHealthMatchesSendBehaviour:
             "/api/v1/inventory/log-po",
             params={"session_id": f"sess_test_{uuid.uuid4().hex[:6]}"},
             json={"items": [
-                {"sku": f"A-{uuid.uuid4().hex[:5]}", "proveedor": p, "signal": "PEDIR_YA",
-                 "cantidad_recomendada": 5, "cantidad_final": 5,
-                 "costo_unitario": 1.0, "status": "approved"}
+                {"sku": f"A-{uuid.uuid4().hex[:5]}", "supplier": p, "signal": "PEDIR_YA",
+                 "recommended_qty": 5, "final_qty": 5,
+                 "unit_cost": 1.0, "status": "approved"}
                 for p in (ok_prov, no_contact, no_ficha)
             ]},
             headers=auth_headers,
@@ -203,7 +203,7 @@ class TestContactHealthMatchesSendBehaviour:
         po_id = resp.json()["data"]["id"]
 
         flagged = {
-            r["proveedor"] for r in health_svc.get_contact_health(tid)
+            r["supplier"] for r in health_svc.get_contact_health(tid)
             if r["en_ordenes_pendientes"]
         }
 
@@ -298,7 +298,7 @@ class TestDeviationRuleFires:
         assert alert is not None, "a 5-day sustained shift must fire"
         assert alert["lead_time_historico"] == 7.0
         assert alert["lead_time_reciente"] == 12.0
-        assert alert["desviacion_dias"] == 5.0
+        assert alert["deviation_days"] == 5.0
         assert alert["z_score"] >= health_svc.Z_THRESHOLD
         assert alert["n_baseline"] == 5
         assert alert["n_reciente"] == 3
@@ -310,7 +310,7 @@ class TestDeviationRuleFires:
         alert = health_svc._evaluate_supplier("Consistente", series)
 
         assert alert is not None
-        assert alert["desviacion_dias"] == 4.0
+        assert alert["deviation_days"] == 4.0
         # Floor is max(1.0, 0.10 * 7) = 1.0 -> z = 4.0
         assert alert["sigma"] == 1.0
         assert alert["z_score"] == 4.0
@@ -378,7 +378,7 @@ class TestDeviationRuleStaysQuiet:
 class TestDeviationFromRealReceptions:
     """End-to-end through the real reception path, not synthetic series."""
 
-    def _observe(self, tid: str, proveedor: str, days: float, seq: int) -> None:
+    def _observe(self, tid: str, supplier: str, days: float, seq: int) -> None:
         """Writes one real supplier_lead_time_obs row via a real PO row, so
         the reading query and its ordering are exercised too."""
         po = query_one(
@@ -388,9 +388,9 @@ class TestDeviationFromRealReceptions:
         )
         execute(
             """INSERT INTO supplier_lead_time_obs
-                   (tenant_id, proveedor, po_log_id, lead_time_days, observed_at)
+                   (tenant_id, supplier, po_log_id, lead_time_days, observed_at)
                VALUES (%s, %s, %s, %s, NOW() + (%s || ' seconds')::interval)""",
-            (tid, proveedor, po["id"], days, seq),
+            (tid, supplier, po["id"], days, seq),
         )
 
     def test_shifted_supplier_appears_stable_supplier_does_not(self, client, test_tenant):
@@ -404,12 +404,12 @@ class TestDeviationFromRealReceptions:
             self._observe(tid, steady, d, i)
 
         alerts = health_svc.get_lead_time_deviations(tid)
-        names = {a["proveedor"] for a in alerts}
+        names = {a["supplier"] for a in alerts}
 
         assert late in names, "supplier that drifted late must be reported"
         assert steady not in names, "stable supplier must not be reported"
 
-        row = next(a for a in alerts if a["proveedor"] == late)
+        row = next(a for a in alerts if a["supplier"] == late)
         assert row["lead_time_historico"] == 7.0
         assert row["lead_time_reciente"] == 12.0
 
@@ -417,7 +417,7 @@ class TestDeviationFromRealReceptions:
         """Drives supplier_lead_time_obs purely through POST /po/{id}/receive."""
         tid = test_tenant["id"]
         prov = f"RealPO-{uuid.uuid4().hex[:6]}"
-        _make_supplier(tid, prov, lead_time_dias=5)
+        _make_supplier(tid, prov, lead_time_days=5)
 
         # 5 baseline receptions at ~5 days, then 3 at ~15 days.
         plan = [
@@ -429,7 +429,7 @@ class TestDeviationFromRealReceptions:
         ]
         for ordered_on, arrived_on in plan:
             sku = f"LT-{uuid.uuid4().hex[:6]}"
-            po = _make_po(client, auth_headers, sku=sku, proveedor=prov)
+            po = _make_po(client, auth_headers, sku=sku, supplier=prov)
             execute(
                 "UPDATE inventory_po_log SET generated_at = %s WHERE id = %s",
                 (f"{ordered_on}T00:00:00Z", po),
@@ -442,7 +442,7 @@ class TestDeviationFromRealReceptions:
             assert resp.status_code == 200, resp.text
 
         alerts = health_svc.get_lead_time_deviations(tid)
-        row = next((a for a in alerts if a["proveedor"] == prov), None)
+        row = next((a for a in alerts if a["supplier"] == prov), None)
 
         assert row is not None, "8 real receptions shifting 5d -> 15d must alert"
         assert row["lead_time_historico"] == 5.0
@@ -458,7 +458,7 @@ class TestDeviationFromRealReceptions:
 
         other = create_tenant(f"pytest-other-{uuid.uuid4().hex[:8]}")
         try:
-            names = {a["proveedor"] for a in health_svc.get_lead_time_deviations(other["id"])}
+            names = {a["supplier"] for a in health_svc.get_lead_time_deviations(other["id"])}
             assert prov not in names
         finally:
             execute("DELETE FROM tenants WHERE id = %s", (other["id"],))
@@ -483,7 +483,7 @@ class TestLeadTimeAlertsEndpoint:
 
         resp = client.get("/api/v1/inventory/suppliers/lead-time-alerts", headers=auth_headers)
         assert resp.status_code == 200
-        assert prov in {a["proveedor"] for a in resp.json()["data"]}
+        assert prov in {a["supplier"] for a in resp.json()["data"]}
 
 
 class TestDailyLeadTimeAlertJob:
@@ -507,8 +507,8 @@ class TestDailyLeadTimeAlertJob:
         sent = next(
             c for c in send.call_args_list if c.kwargs["to"] == registered_user["email"]
         )
-        proveedores = {d["proveedor"] for d in sent.kwargs["deviations"]}
-        assert prov in proveedores
+        suppliers = {d["supplier"] for d in sent.kwargs["deviations"]}
+        assert prov in suppliers
 
     def test_no_email_when_every_supplier_is_stable(self, client, test_tenant, registered_user):
         tid = test_tenant["id"]

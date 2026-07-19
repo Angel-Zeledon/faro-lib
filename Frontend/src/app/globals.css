@@ -25,14 +25,14 @@
        against their own tinted badge background on this theme's surface.
        Never use the raw --danger/--warning tokens for badge *text*: they are
        accent colours, not text colours, and fail WCAG AA on light surfaces. */
-    --signal-pedir-ya-fg:      #ef4444;
-    --signal-pedir-ya-bg:      rgba(239,68,68,0.14);
-    --signal-pedir-pronto-fg:  #f59e0b;
-    --signal-pedir-pronto-bg:  rgba(245,158,11,0.14);
+    --signal-order-now-fg:      #ef4444;
+    --signal-order-now-bg:      rgba(239,68,68,0.14);
+    --signal-order-soon-fg:  #f59e0b;
+    --signal-order-soon-bg:  rgba(245,158,11,0.14);
     --signal-ok-fg:            #22c55e;
     --signal-ok-bg:            rgba(34,197,94,0.14);
-    --signal-sobrestock-fg:    #60a5fa;
-    --signal-sobrestock-bg:    rgba(96,165,250,0.14);
+    --signal-overstock-fg:    #60a5fa;
+    --signal-overstock-bg:    rgba(96,165,250,0.14);
     --signal-sin-datos-fg:     #94a3b8;
     --signal-sin-datos-bg:     rgba(148,163,184,0.14);
   }
@@ -57,14 +57,14 @@
     /* Darker on light: #f59e0b on white is only 2.1:1 and #16a34a 3.4:1 —
        both fail AA, so the light theme drops a shade rather than reusing the
        dark-theme values. */
-    --signal-pedir-ya-fg:      #b91c1c;   /* 6.4:1 on white */
-    --signal-pedir-ya-bg:      rgba(185,28,28,0.10);
-    --signal-pedir-pronto-fg:  #a16207;   /* 5.1:1 on white */
-    --signal-pedir-pronto-bg:  rgba(161,98,7,0.10);
+    --signal-order-now-fg:      #b91c1c;   /* 6.4:1 on white */
+    --signal-order-now-bg:      rgba(185,28,28,0.10);
+    --signal-order-soon-fg:  #a16207;   /* 5.1:1 on white */
+    --signal-order-soon-bg:  rgba(161,98,7,0.10);
     --signal-ok-fg:            #15803d;   /* 4.9:1 on white */
     --signal-ok-bg:            rgba(21,128,61,0.10);
-    --signal-sobrestock-fg:    #1d4ed8;   /* 7.0:1 on white */
-    --signal-sobrestock-bg:    rgba(29,78,216,0.10);
+    --signal-overstock-fg:    #1d4ed8;   /* 7.0:1 on white */
+    --signal-overstock-bg:    rgba(29,78,216,0.10);
     --signal-sin-datos-fg:     #475569;   /* 7.4:1 on white */
     --signal-sin-datos-bg:     rgba(71,85,105,0.10);
   }

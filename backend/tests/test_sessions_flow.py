@@ -216,7 +216,7 @@ class TestDatasetUpload:
         """POST /datasets with a valid CSV returns 201 and dataset metadata."""
         csv_bytes = _make_csv(n_skus=3, n_days=90)
         r = client.post("/api/v1/datasets", headers=auth_headers,
-                        files={"file": ("ventas.csv", csv_bytes, "text/csv")})
+                        files={"file": ("sales.csv", csv_bytes, "text/csv")})
         assert r.status_code == 201
         d = r.json()["data"]
         assert "id" in d
@@ -225,7 +225,7 @@ class TestDatasetUpload:
         """Uploading a dataset and attaching it to a session transitions status to DATASET_LOADED."""
         csv_bytes = _make_csv(n_skus=2, n_days=60)
         ur = client.post("/api/v1/datasets", headers=auth_headers,
-                         files={"file": ("ventas.csv", csv_bytes, "text/csv")})
+                         files={"file": ("sales.csv", csv_bytes, "text/csv")})
         assert ur.status_code == 201
         dataset_id = ur.json()["data"]["id"]
 

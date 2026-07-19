@@ -1,7 +1,7 @@
 """
-Test completo end-to-end del wizard de forecast.
-Cubre: upload → inspect → columns (con outlier config) → features (Fourier) → models → validation → train → SKU Intelligence.
-20 archivos: 12 CSV + 4 JSON buenos, 4 malos (vacío, sin fechas, todo cero, columnas faltantes).
+Full end-to-end test of the forecast wizard.
+Covers: upload -> inspect -> columns (with outlier config) -> features (Fourier) -> models -> validation -> train -> SKU Intelligence.
+20 files: 12 CSV + 4 JSON valid, 4 invalid (empty, no dates, all zeros, missing columns).
 """
 import requests, time, json, io
 from datetime import date, timedelta
@@ -61,16 +61,16 @@ def monthly_multi(n=36):
     return '\n'.join(rows)
 
 def with_exog(n=90):
-    rows = ['fecha,sku,ventas,precio,promo']
+    rows = ['fecha,sku,ventas,price,promo']
     for i, d in enumerate(_d(n)):
-        ventas = 100 + i%7*5 - (30 if i%20==0 else 0)
-        precio = 9.99 if i%30 < 15 else 12.99
+        sales = 100 + i%7*5 - (30 if i%20==0 else 0)
+        price = 9.99 if i%30 < 15 else 12.99
         promo = 1 if i%20==0 else 0
         rows.append(f'{d},A,{ventas},{precio},{promo}')
     return '\n'.join(rows)
 
 def with_outliers_clean(n=90, skus=3):
-    rows = ['date,sku,sales']
+    rows = ['fecha,sku,ventas']
     for sku, base in [('X', 100), ('Y', 250), ('Z', 50)]:
         for i, d in enumerate(_d(n)):
             val = base + i%7*base//10
@@ -93,7 +93,7 @@ def lumpy(n=90):
     return '\n'.join(rows)
 
 def high_sku_count(n_skus=15, n=60):
-    rows = ['date,sku,sales']
+    rows = ['fecha,sku,ventas']
     for s in range(n_skus):
         sku = f'SKU_{s+1:03d}'
         for i, d in enumerate(_d(n)):
@@ -110,7 +110,7 @@ def seasonal_strong(n=365):
 
 def with_gaps(n=90, gap_pct=0.15):
     import random; random.seed(7)
-    rows = ['date,sku,sales']
+    rows = ['fecha,sku,ventas']
     dates = _d(n)
     for i, d in enumerate(dates):
         if random.random() > gap_pct:
@@ -120,8 +120,8 @@ def with_gaps(n=90, gap_pct=0.15):
 def json_good_records():
     records = []
     for i, d in enumerate(_d(60)):
-        records.append({'fecha': d, 'sku': 'J1', 'ventas': 80 + i%5*4})
-        records.append({'fecha': d, 'sku': 'J2', 'ventas': 200 + i%7*10})
+        records.append({'date': d, 'sku': 'J1', 'sales': 80 + i%5*4})
+        records.append({'date': d, 'sku': 'J2', 'sales': 200 + i%7*10})
     return json.dumps(records, indent=2).encode()
 
 def json_good_table():
@@ -142,7 +142,7 @@ def json_array_flat():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Definición de los 20 archivos de prueba
+# Definition of the 20 test files
 # ─────────────────────────────────────────────────────────────────────────────
 
 TESTS = [
@@ -165,10 +165,10 @@ TESTS = [
     {'name': '15_json_nested',         'ext': 'json', 'data': json_nested(),          'expect': 'good'},
     {'name': '16_json_array_flat',     'ext': 'json', 'data': json_array_flat(),      'expect': 'good'},
     # ── BAD files ──────────────────────────────────────────────────────────
-    {'name': '17_bad_empty',           'ext': 'csv', 'data': 'date,sku,sales\n',       'expect': 'bad'},
+    {'name': '17_bad_empty',           'ext': 'csv', 'data': 'fecha,sku,ventas\n',       'expect': 'bad'},
     {'name': '18_bad_no_numeric',      'ext': 'csv', 'data': 'date,sku,notes\n2024-01-01,A,foo\n2024-01-02,A,bar\n', 'expect': 'bad'},
     {'name': '19_bad_all_zeros',       'ext': 'csv', 'data': daily_single(60).replace(',100',',0').replace(',1',',0'), 'expect': 'bad'},
-    {'name': '20_bad_short_2rows',     'ext': 'csv', 'data': 'date,sku,sales\n2024-01-01,A,10\n2024-01-02,A,12', 'expect': 'bad'},
+    {'name': '20_bad_short_2rows',     'ext': 'csv', 'data': 'fecha,sku,ventas\n2024-01-01,A,10\n2024-01-02,A,12', 'expect': 'bad'},
 ]
 
 

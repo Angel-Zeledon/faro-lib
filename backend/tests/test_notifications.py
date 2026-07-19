@@ -12,7 +12,7 @@ class TestSendPOToSupplierEmail:
 
         monkeypatch.setattr(email_mod, "_send", fake_send)
 
-        items = [{"sku": "SKU-001", "display_name": "Aceite de Oliva 1L", "cantidad_final": 312.0, "costo_unitario": 8.5}]
+        items = [{"sku": "SKU-001", "display_name": "Aceite de Oliva 1L", "final_qty": 312.0, "unit_cost": 8.5}]
         result = email_mod.send_po_to_supplier_email(
             to="ventas@distribuidoraandina.com",
             supplier_name="Distribuidora Andina",
@@ -98,8 +98,8 @@ class TestBuildPOSupplierText:
         from backend.notifications.whatsapp import build_po_supplier_text
 
         items = [
-            {"sku": "SKU-001", "display_name": "Aceite de Oliva 1L", "cantidad_final": 312.0},
-            {"sku": "SKU-002", "display_name": "Arroz 5kg", "cantidad_final": 475.0},
+            {"sku": "SKU-001", "display_name": "Aceite de Oliva 1L", "final_qty": 312.0},
+            {"sku": "SKU-002", "display_name": "Arroz 5kg", "final_qty": 475.0},
         ]
         text = build_po_supplier_text("Distribuidora Andina", "po_abc123", items)
         assert "Distribuidora Andina" in text

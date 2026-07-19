@@ -64,13 +64,13 @@ function ScorecardTable({ rows, alerts }: {
               : row.on_time_rate >= 0.7 ? C.green : row.on_time_rate >= 0.4 ? C.amber : C.red
             // Feature 3.3 — flagged only when the backend's robust 3-sigma
             // rule fired; absence means "within its normal range", not "no data".
-            const alert = alerts.get(row.proveedor.toLowerCase())
+            const alert = alerts.get(row.supplier.toLowerCase())
             return (
-              <tr key={row.proveedor} style={{
+              <tr key={row.supplier} style={{
                 background: idx % 2 === 0 ? C.surface : C.card,
                 borderBottom: `1px solid ${C.border}`,
               }}>
-                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 600 }}>{row.proveedor}</td>
+                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 600 }}>{row.supplier}</td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{row.n_recepciones}</td>
                 <td style={{ padding: '11px 14px', color: C.text, fontFamily: 'monospace' }}>
                   {fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
@@ -90,7 +90,7 @@ function ScorecardTable({ rows, alerts }: {
                         background: `${alert.severidad === 'alta' ? C.red : C.amber}1a`,
                       }}
                     >
-                      <TrendingUp size={11} /> +{alert.desviacion_dias}d
+                      <TrendingUp size={11} /> +{alert.deviation_days}d
                     </span>
                   ) : (
                     <span style={{ color: C.dim }}>Estable</span>
@@ -101,7 +101,7 @@ function ScorecardTable({ rows, alerts }: {
                 </td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{fmtPct(row.fill_rate)}</td>
                 <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace', fontWeight: 600 }}>
-                  {fmtCurrency(row.valor_comprado)}
+                  {fmtCurrency(row.purchased_value)}
                 </td>
                 <td style={{ padding: '11px 14px', color: C.dim }}>{fmtDate(row.ultima_recepcion)}</td>
               </tr>
@@ -138,7 +138,7 @@ export default function SupplierScorecardPage() {
 
   useEffect(() => { load() }, [load])
 
-  const alertsByProveedor = new Map(alerts.map(a => [a.proveedor.toLowerCase(), a]))
+  const alertsBySupplier = new Map(alerts.map(a => [a.supplier.toLowerCase(), a]))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
@@ -155,7 +155,7 @@ export default function SupplierScorecardPage() {
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              Scorecard de proveedores
+              Scorecard de suppliers
             </h1>
             <p style={{ margin: 0, fontSize: 11, color: C.dim }}>
               Lead time real, cumplimiento y fill rate — calculado de tus recepciones registradas
@@ -204,7 +204,7 @@ export default function SupplierScorecardPage() {
                     : `${alerts.length} proveedores se han desviado de su lead time histórico`}
                 </strong>
                 {alerts.map(a => (
-                  <span key={a.proveedor}>
+                  <span key={a.supplier}>
                     {a.mensaje} días{' '}
                     <span style={{ color: C.dim }}>
                       (últimas {a.n_reciente} recepciones vs. {a.n_baseline} previas)
@@ -213,13 +213,13 @@ export default function SupplierScorecardPage() {
                 ))}
                 <span style={{ color: C.dim, fontSize: 11, marginTop: 2 }}>
                   Detectado con una regla de control estadístico de 3 sigma sobre la
-                  mediana y la desviación absoluta mediana del propio historial de cada proveedor.
+                  mediana y la desviación absoluta mediana del propio historial de cada supplier.
                 </span>
               </div>
             </div>
           )}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-            <ScorecardTable rows={rows} alerts={alertsByProveedor} />
+            <ScorecardTable rows={rows} alerts={alertsBySupplier} />
           </div>
         </>
       ) : (
@@ -232,7 +232,7 @@ export default function SupplierScorecardPage() {
             Aún no hay recepciones registradas
           </div>
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
-            Registra la llegada de una orden de compra desde el historial de Impacto para que Faro empiece a aprender el desempeño de tus proveedores.
+            Registra la llegada de una orden de purchase desde el historial de Impacto para que Faro empiece a aprender el desempeño de tus suppliers.
           </div>
           <Link href="/inventory/suppliers" style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,

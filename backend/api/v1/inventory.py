@@ -4,8 +4,8 @@ GET/POST/PATCH/DELETE /inventory/stock     — per-SKU stock CRUD
 GET                   /inventory/status    — traffic-light signal + recommendations
 POST                  /inventory/bulk      — bulk CSV import
 GET                   /inventory/template.csv — downloadable import template
-POST                  /inventory/mermas    — record shrinkage (non-sale stock-out)
-GET                   /inventory/mermas    — shrinkage history
+POST                  /inventory/shrinkage    — record shrinkage (non-sale stock-out)
+GET                   /inventory/shrinkage    — shrinkage history
 """
 
 import asyncio
@@ -39,36 +39,36 @@ log = logging.getLogger(__name__)
 
 class StockUpsert(BaseModel):
     display_name:   Optional[str]   = None
-    stock_actual:   float           = Field(ge=0)
-    stock_minimo:   float           = Field(default=0, ge=0)
-    lead_time_dias: int             = Field(default=15, ge=1, le=365)
-    costo_unitario: Optional[float] = Field(default=None, ge=0)
+    current_stock:   float           = Field(ge=0)
+    min_stock:   float           = Field(default=0, ge=0)
+    lead_time_days: int             = Field(default=15, ge=1, le=365)
+    unit_cost: Optional[float] = Field(default=None, ge=0)
     moq:            float           = Field(default=1, ge=1)
-    proveedor:      Optional[str]   = None
-    notas:          Optional[str]   = None
-    precio_venta:   Optional[float] = Field(default=None, ge=0)
-    categoria:      Optional[str]   = None
-    marca:          Optional[str]   = None
-    unidad_medida:  Optional[str]   = None
-    codigo_barras:  Optional[str]   = None
-    bodega:         Optional[str]   = None
+    supplier:      Optional[str]   = None
+    notes:          Optional[str]   = None
+    sale_price:   Optional[float] = Field(default=None, ge=0)
+    category:      Optional[str]   = None
+    brand:          Optional[str]   = None
+    unit_of_measure:  Optional[str]   = None
+    barcode:  Optional[str]   = None
+    warehouse:         Optional[str]   = None
 
 
 class StockPatch(BaseModel):
     display_name:   Optional[str]   = None
-    stock_actual:   Optional[float] = Field(default=None, ge=0)
-    stock_minimo:   Optional[float] = Field(default=None, ge=0)
-    lead_time_dias: Optional[int]   = Field(default=None, ge=1, le=365)
-    costo_unitario: Optional[float] = Field(default=None, ge=0)
+    current_stock:   Optional[float] = Field(default=None, ge=0)
+    min_stock:   Optional[float] = Field(default=None, ge=0)
+    lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
+    unit_cost: Optional[float] = Field(default=None, ge=0)
     moq:            Optional[float] = Field(default=None, ge=1)
-    proveedor:      Optional[str]   = None
-    notas:          Optional[str]   = None
-    precio_venta:   Optional[float] = Field(default=None, ge=0)
-    categoria:      Optional[str]   = None
-    marca:          Optional[str]   = None
-    unidad_medida:  Optional[str]   = None
-    codigo_barras:  Optional[str]   = None
-    bodega:         Optional[str]   = None
+    supplier:      Optional[str]   = None
+    notes:          Optional[str]   = None
+    sale_price:   Optional[float] = Field(default=None, ge=0)
+    category:      Optional[str]   = None
+    brand:          Optional[str]   = None
+    unit_of_measure:  Optional[str]   = None
+    barcode:  Optional[str]   = None
+    warehouse:         Optional[str]   = None
 
 
 # ── Stock CRUD ─────────────────────────────────────────────────────────────────
@@ -129,9 +129,9 @@ async def bulk_import(
 ):
     """
     Import stock data from CSV.
-    Expected columns (case-insensitive): sku, bodega, display_name, categoria, marca,
-    unidad_medida, codigo_barras, stock_actual, stock_minimo, lead_time_dias,
-    costo_unitario, precio_venta, moq, proveedor, notas
+    Expected columns (case-insensitive): sku, warehouse, display_name, category, brand,
+    unit_of_measure, barcode, current_stock, min_stock, lead_time_days,
+    unit_cost, sale_price, moq, supplier, notes
     """
     content = await file.read()
     try:
@@ -157,20 +157,20 @@ async def bulk_import(
         if not parsed["sku"]:
             continue
 
-        for fld in ("display_name", "proveedor", "notas",
-                    "categoria", "marca", "unidad_medida", "codigo_barras", "bodega"):
+        for fld in ("display_name", "supplier", "notes",
+                    "category", "brand", "unit_of_measure", "barcode", "warehouse"):
             if fld in row:
                 parsed[fld] = row[fld]
-        for fld in ("stock_actual", "stock_minimo", "costo_unitario", "moq", "precio_venta"):
+        for fld in ("current_stock", "min_stock", "unit_cost", "moq", "sale_price"):
             v = _float(fld)
             if v is not None:
                 parsed[fld] = v
-        v = _int("lead_time_dias")
+        v = _int("lead_time_days")
         if v is not None:
-            parsed["lead_time_dias"] = v
+            parsed["lead_time_days"] = v
 
         # Validate against the same constraints as the direct PUT/PATCH endpoints
-        # (e.g. stock_actual/costo_unitario/moq >= 0) — without this, CSV import
+        # (e.g. current_stock/unit_cost/moq >= 0) — without this, CSV import
         # is the only write path that lets negative quantities into the DB.
         try:
             validated = StockPatch(**{k: v for k, v in parsed.items() if k != "sku"})
@@ -192,9 +192,9 @@ async def bulk_import(
 
 
 _TEMPLATE_COLUMNS = [
-    "sku", "bodega", "display_name", "categoria", "marca", "unidad_medida", "codigo_barras",
-    "stock_actual", "stock_minimo", "lead_time_dias", "costo_unitario",
-    "precio_venta", "moq", "proveedor", "notas",
+    "sku", "warehouse", "display_name", "category", "brand", "unit_of_measure", "barcode",
+    "current_stock", "min_stock", "lead_time_days", "unit_cost",
+    "sale_price", "moq", "supplier", "notes",
 ]
 _TEMPLATE_EXAMPLE = [
     "SKU001", "principal", "Agua 600ml", "Bebidas", "AguaPura", "caja", "7501234567890",
@@ -212,7 +212,7 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="plantilla_inventario.csv"'},
+        headers={"Content-Disposition": 'attachment; filename="inventory_template.csv"'},
     )
 
 
@@ -223,7 +223,7 @@ def inventory_status(
     session_id: str = Query(..., description="Completed forecast session to base recommendations on"),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signal: Optional[str] = Query(default=None, description="Filter by signal: PEDIR_YA, PEDIR_PRONTO, OK, SOBRESTOCK, SIN_DATOS"),
-    proveedor: Optional[str] = Query(default=None),
+    supplier: Optional[str] = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -239,10 +239,10 @@ def inventory_status(
         signal_up = signal.upper()
         items = [i for i in items if i["signal"] == signal_up]
 
-    if proveedor:
-        items = [i for i in items if (i.get("proveedor") or "").lower() == proveedor.lower()]
+    if supplier:
+        items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
 
-    total_valor = sum(i["valor_inventario"] for i in items if i.get("valor_inventario"))
+    total_value = sum(i["inventory_value"] for i in items if i.get("inventory_value"))
     critical    = sum(1 for i in items if i["signal"] == "PEDIR_YA")
     warning     = sum(1 for i in items if i["signal"] == "PEDIR_PRONTO")
 
@@ -251,40 +251,40 @@ def inventory_status(
         "excluded_skus": svc.get_excluded_skus(user.tenant_id, session_id),
         "summary": {
             "total_skus":    len(items),
-            "pedir_ya":      critical,
-            "pedir_pronto":  warning,
+            "order_now":      critical,
+            "order_soon":  warning,
             "ok":            sum(1 for i in items if i["signal"] == "OK"),
-            "sobrestock":    sum(1 for i in items if i["signal"] == "SOBRESTOCK"),
+            "overstock":    sum(1 for i in items if i["signal"] == "SOBRESTOCK"),
             "sin_datos":     sum(1 for i in items if i["signal"] == "SIN_DATOS"),
-            "valor_total_inventario": round(total_valor, 2),
+            "total_inventory_value": round(total_value, 2),
         },
     })
 
 
 # ── Mermas (shrinkage / non-sale stock-outs) ──────────────────────────────────
 
-class MermaCreate(BaseModel):
+class ShrinkageCreate(BaseModel):
     sku:         str
     quantity:    float = Field(gt=0)
     reason:      str   # breakage | expiry | self_consumption | gift
-    bodega:      Optional[str] = None
+    warehouse:      Optional[str] = None
     notes:       Optional[str] = None
     occurred_at: Optional[str] = None  # ISO date/datetime; default: ahora
 
 
-@router.post("/mermas", status_code=201)
-def create_merma(
-    body: MermaCreate,
+@router.post("/shrinkage", status_code=201)
+def create_shrinkage(
+    body: ShrinkageCreate,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
-    Registra una salida de inventario que NO es una venta — rotura,
-    vencimiento, consumo propio u obsequio/muestra. Descuenta el stock
-    teórico del SKU por el mismo camino que usa la recepción de PO (para que
-    el semáforo siga siendo preciso) y acumula el costo (cantidad × costo
-    unitario) para un futuro resumen mensual de mermas.
+    Record a stock-out that is NOT a sale — breakage, expiry,
+    self-consumption or a gift/sample. Decrements the SKU's theoretical stock
+    through the same path PO reception uses (so the signal stays accurate) and
+    accumulates the cost (quantity x unit cost) for a future monthly
+    shrinkage summary.
     """
-    from backend.inventory import merma_service as merma_svc
+    from backend.inventory import shrinkage_service as shrinkage_svc
     from datetime import datetime as _dt
 
     occurred_at = None
@@ -295,9 +295,9 @@ def create_merma(
             raise HTTPException(status_code=422, detail="occurred_at debe ser fecha ISO (YYYY-MM-DD)")
 
     try:
-        row = merma_svc.record_merma(
+        row = shrinkage_svc.record_shrinkage(
             user.tenant_id, body.sku, body.quantity, body.reason,
-            user_id=user.user_id, bodega=body.bodega, notes=body.notes,
+            user_id=user.user_id, warehouse=body.warehouse, notes=body.notes,
             occurred_at=occurred_at,
         )
     except ValueError as e:
@@ -306,22 +306,22 @@ def create_merma(
     return ok(row)
 
 
-@router.get("/mermas")
-def list_mermas(
+@router.get("/shrinkage")
+def list_shrinkage(
     sku: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Historial reciente de mermas registradas (insumo del futuro resumen mensual)."""
-    from backend.inventory import merma_service as merma_svc
-    return ok(merma_svc.list_mermas(user.tenant_id, sku=sku, limit=limit))
+    """Recent history of recorded shrinkage (input to the future monthly summary)."""
+    from backend.inventory import shrinkage_service as shrinkage_svc
+    return ok(shrinkage_svc.list_shrinkage(user.tenant_id, sku=sku, limit=limit))
 
 
-@router.get("/mermas/reasons")
-def list_merma_reasons(user: CurrentUser = Depends(get_current_user)):
-    """Returns the valid merma reason codes (labels are handled client-side via i18n)."""
-    from backend.inventory import merma_service as merma_svc
-    return ok(list(merma_svc.REASONS))
+@router.get("/shrinkage/reasons")
+def list_shrinkage_reasons(user: CurrentUser = Depends(get_current_user)):
+    """Returns the valid shrinkage reason codes (labels are handled client-side via i18n)."""
+    from backend.inventory import shrinkage_service as shrinkage_svc
+    return ok(list(shrinkage_svc.REASONS))
 
 
 # ── Stock history ─────────────────────────────────────────────────────────────
@@ -352,18 +352,18 @@ def dashboard_summary(
     Returns only the summary counts without the full item list.
     """
     items = svc.get_inventory_status(user.tenant_id, session_id)
-    total_valor = sum(i["valor_inventario"] for i in items if i.get("valor_inventario"))
+    total_value = sum(i["inventory_value"] for i in items if i.get("inventory_value"))
     return ok({
         "session_id":   session_id,
         "total_skus":   len(items),
-        "pedir_ya":     sum(1 for i in items if i["signal"] == "PEDIR_YA"),
-        "pedir_pronto": sum(1 for i in items if i["signal"] == "PEDIR_PRONTO"),
+        "order_now":     sum(1 for i in items if i["signal"] == "PEDIR_YA"),
+        "order_soon": sum(1 for i in items if i["signal"] == "PEDIR_PRONTO"),
         "ok":           sum(1 for i in items if i["signal"] == "OK"),
-        "sobrestock":   sum(1 for i in items if i["signal"] == "SOBRESTOCK"),
+        "overstock":   sum(1 for i in items if i["signal"] == "SOBRESTOCK"),
         "sin_datos":    sum(1 for i in items if i["signal"] == "SIN_DATOS"),
-        "valor_total_inventario": round(total_valor, 2),
+        "total_inventory_value": round(total_value, 2),
         "top_critical": [
-            {"sku": i["sku"], "display_name": i["display_name"], "dias_cobertura": i["dias_cobertura"]}
+            {"sku": i["sku"], "display_name": i["display_name"], "coverage_days": i["coverage_days"]}
             for i in items if i["signal"] == "PEDIR_YA"
         ][:5],
     })
@@ -459,14 +459,14 @@ def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_c
 # ── Per-product event multipliers ────────────────────────────────────────────
 
 class EventMultiplierUpsert(BaseModel):
-    scope:       str    # 'sku' | 'categoria'
+    scope:       str    # 'sku' | 'category'
     scope_value: str
     multiplier:  float = Field(ge=0.1, le=10.0)
 
 
 @router.get("/events/{event_id}/multipliers")
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
-    """Overrides de multiplicador por SKU o categoría para este evento."""
+    """Per-SKU or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
@@ -479,8 +479,8 @@ def upsert_event_multiplier(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
-    Fija el multiplicador de un producto o categoría para este evento.
-    En Black Friday la electrónica no se comporta como la leche.
+    Pin the multiplier for a product or a category on this event.
+    On Black Friday electronics do not behave like milk.
     """
     if not svc.get_event(user.tenant_id, event_id):
         raise HTTPException(status_code=404, detail="Evento no encontrado")
@@ -499,7 +499,7 @@ def remove_event_multiplier(
     override_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    """Quita el override: el producto vuelve al multiplicador del evento."""
+    """Drop the override: the product falls back to the event multiplier."""
     if not svc.delete_event_multiplier(user.tenant_id, override_id):
         raise HTTPException(status_code=404, detail="Override no encontrado")
 
@@ -641,7 +641,7 @@ def download_pdf_report(
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
     from datetime import date
-    filename = f"inventario_{date.today().isoformat()}.pdf"
+    filename = f"inventory_{date.today().isoformat()}.pdf"
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
@@ -654,13 +654,13 @@ def download_pdf_report(
 class POLineItem(BaseModel):
     sku:                  str
     display_name:         Optional[str]   = None
-    proveedor:            Optional[str]   = None
+    supplier:            Optional[str]   = None
     signal:               Optional[str]   = None
-    cantidad_recomendada: float           = Field(default=0, ge=0)
-    cantidad_final:       float           = Field(default=0, ge=0)
-    costo_unitario:       Optional[float] = Field(default=None, ge=0)
+    recommended_qty: float           = Field(default=0, ge=0)
+    final_qty:       float           = Field(default=0, ge=0)
+    unit_cost:       Optional[float] = Field(default=None, ge=0)
     status:               str             = "approved"
-    bodega:               Optional[str]   = None
+    warehouse:               Optional[str]   = None
 
 
 class POLogRequest(BaseModel):
@@ -692,7 +692,7 @@ def log_po(
         items = svc.get_inventory_status(user.tenant_id, session_id)
         po_items = [
             i for i in items
-            if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("cantidad_recomendada") or 0) > 0
+            if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("recommended_qty") or 0) > 0
         ]
 
     record = log_po_generation(user.tenant_id, session_id, po_items)
@@ -711,7 +711,7 @@ def get_roi_monthly(
     months: int = Query(default=6, ge=1, le=24),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Últimos N meses: pedidos, riesgos de quiebre atendidos, adopción, capital liberado de sobrestock."""
+    """Last N months: orders, stockout risks handled, adoption, capital freed from overstock."""
     from backend.inventory.roi_service import get_monthly_summary
     return ok(get_monthly_summary(user.tenant_id, months))
 
@@ -743,15 +743,15 @@ def po_history(
     return ok(get_po_history(user.tenant_id, limit))
 
 
-# ── PO reception (cerrar el loop de compra) ──────────────────────────────────
+# ── PO reception (cerrar el loop de purchase) ──────────────────────────────────
 
 class ReceptionLine(BaseModel):
     sku: str
-    cantidad_recibida: float = Field(ge=0)
+    received_qty: float = Field(ge=0)
 
 
 class ReceptionRequest(BaseModel):
-    # Omit `lines` → "llegó todo completo" (cada línea recibe su cantidad_final)
+    # Omitting `lines` means "everything arrived" (each line receives its final_qty)
     lines:       Optional[list[ReceptionLine]] = None
     received_at: Optional[str] = None  # ISO date/datetime; default: ahora
 
@@ -780,7 +780,7 @@ def receive_po(
 ):
     """
     Record that a PO arrived (fully, partially, or not at all).
-    Side effects: stock_actual increases by the received units, and Faro logs
+    Side effects: current_stock increases by the received units, and Faro logs
     the supplier's REAL lead time (order date → reception date).
     """
     from datetime import datetime as _dt
@@ -816,7 +816,7 @@ def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
 def supplier_contact_health(user: CurrentUser = Depends(get_current_user)):
     """
     Suppliers that POST /po/{id}/send would silently skip — no email and no
-    WhatsApp on file, or a proveedor name on PO lines with no ficha at all
+    WhatsApp on file, or a supplier name on PO lines with no ficha at all
     (feature 2.5).
 
     Returns BOTH relevant and dormant cases, each carrying
@@ -836,7 +836,7 @@ def supplier_contact_health(user: CurrentUser = Depends(get_current_user)):
 def supplier_lead_time_alerts(user: CurrentUser = Depends(get_current_user)):
     """
     Suppliers whose recent lead time is significantly slower than their own
-    history — "Acme está tardando 12 días, no 7" (feature 3.3).
+    history — "Acme is taking 12 days, not 7" (feature 3.3).
 
     Significance is a robust one-sided 3-sigma SPC rule (median/MAD, with a
     practical-significance floor); see the threshold rationale in
@@ -907,7 +907,7 @@ def send_po_to_suppliers(
 
     by_supplier: dict[str, list[dict]] = {}
     for i in ordered:
-        name = (i.get("proveedor") or "").strip()
+        name = (i.get("supplier") or "").strip()
         if not name:
             continue
         by_supplier.setdefault(name, []).append(i)
@@ -1033,9 +1033,9 @@ def evaluate_price_breaks(
         cart = [{"sku": i.sku, "quantity": i.quantity} for i in body.items]
     else:
         cart = [
-            {"sku": i["sku"], "quantity": i.get("cantidad_recomendada") or 0}
+            {"sku": i["sku"], "quantity": i.get("recommended_qty") or 0}
             for i in status_items
-            if (i.get("cantidad_recomendada") or 0) > 0
+            if (i.get("recommended_qty") or 0) > 0
         ]
 
     from backend.db import session_store
@@ -1122,9 +1122,9 @@ def cash_calendar_fit(
             lines = [
                 {
                     "sku": o["sku"],
-                    "supplier_name": o.get("proveedor"),
+                    "supplier_name": o.get("supplier"),
                     "quantity": o["qty"],
-                    "unit_cost": o.get("costo_unitario"),
+                    "unit_cost": o.get("unit_cost"),
                 }
                 for o in serialized["orders"]
             ]
@@ -1143,7 +1143,7 @@ class SupplierCreate(BaseModel):
     email:          Optional[str] = None
     phone:          Optional[str] = None
     whatsapp:       Optional[str] = None
-    lead_time_dias: int   = Field(default=15, ge=1, le=365)
+    lead_time_days: int   = Field(default=15, ge=1, le=365)
     lead_time_std:  int   = Field(default=3, ge=0, le=60)
     payment_terms:  Optional[str] = None
     # Structured credit days (feature 3.6). Optional: when omitted it is derived
@@ -1159,7 +1159,7 @@ class SupplierPatch(BaseModel):
     email:          Optional[str]   = None
     phone:          Optional[str]   = None
     whatsapp:       Optional[str]   = None
-    lead_time_dias: Optional[int]   = Field(default=None, ge=1, le=365)
+    lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
     lead_time_std:  Optional[int]   = Field(default=None, ge=0, le=60)
     payment_terms:  Optional[str]   = None
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
@@ -1170,7 +1170,7 @@ class SkuSupplierUpsert(BaseModel):
     is_primary:     bool  = True
     unit_cost:      Optional[float] = None
     moq:            float = Field(default=1, ge=1)
-    lead_time_dias: Optional[int]   = Field(default=None, ge=1, le=365)
+    lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
     notes:          Optional[str]   = None
 
 
@@ -1432,7 +1432,7 @@ def dead_stock(
     """
     Returns inventory items that have had little or no stock movement
     for at least min_days_static days — 'dead' or 'slow-moving' inventory.
-    Capital trapped = stock_actual × costo_unitario.
+    Capital trapped = current_stock × unit_cost.
     """
     from backend.inventory.service import get_inventory_status, get_stock_history
 
@@ -1440,7 +1440,7 @@ def dead_stock(
     dead_items = []
 
     for item in items:
-        if not item.get('has_stock') or not item.get('stock_actual'):
+        if not item.get('has_stock') or not item.get('current_stock'):
             continue
 
         # Get stock history to detect if stock has barely moved
@@ -1459,22 +1459,22 @@ def dead_stock(
             continue
 
         # Expected depletion based on forecast
-        avg_daily = item.get('demanda_diaria') or 0
+        avg_daily = item.get('daily_demand') or 0
         expected  = avg_daily * len(history)
 
         # Classify as dead if actual depletion is < 20% of expected
         if expected > 0 and depletion < expected * 0.20:
             days_static = len(history)
-            capital = round(float(item.get('stock_actual', 0)) * float(item.get('costo_unitario') or 0), 2)
+            capital = round(float(item.get('current_stock', 0)) * float(item.get('unit_cost') or 0), 2)
             holding_cost_annual = capital * 0.25  # 25% annual holding cost estimate
             holding_cost_monthly = round(holding_cost_annual / 12, 2)
 
             dead_items.append({
                 'sku':              item['sku'],
                 'display_name':     item.get('display_name'),
-                'proveedor':        item.get('proveedor'),
-                'stock_actual':     item.get('stock_actual'),
-                'costo_unitario':   item.get('costo_unitario'),
+                'supplier':        item.get('supplier'),
+                'current_stock':     item.get('current_stock'),
+                'unit_cost':   item.get('unit_cost'),
                 'capital_trapped':  capital,
                 'holding_cost_monthly': holding_cost_monthly,
                 'days_without_movement': days_static,
@@ -1515,7 +1515,7 @@ def export_po(
     """Export purchase order as CSV, filtered to actionable SKUs."""
     include_signals = {s.strip().upper() for s in signals.split(",")}
     items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
-    po_items = [i for i in items if i["signal"] in include_signals and (i.get("cantidad_recomendada") or 0) > 0]
+    po_items = [i for i in items if i["signal"] in include_signals and (i.get("recommended_qty") or 0) > 0]
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1525,28 +1525,28 @@ def export_po(
         "Cantidad recomendada", "MOQ", "Costo unitario", "Valor orden",
     ])
     for i in po_items:
-        qty   = i.get("cantidad_recomendada") or 0
-        cost  = i.get("costo_unitario")
-        valor = round(qty * cost, 2) if cost else ""
+        qty   = i.get("recommended_qty") or 0
+        cost  = i.get("unit_cost")
+        value = round(qty * cost, 2) if cost else ""
         writer.writerow([
             i["sku"],
             i.get("display_name") or "",
-            i.get("proveedor") or "",
+            i.get("supplier") or "",
             i["signal"],
-            i.get("stock_actual") if i.get("stock_actual") is not None else "",
-            i.get("dias_cobertura") if i.get("dias_cobertura") is not None else "",
-            i.get("demanda_lead_time") or "",
+            i.get("current_stock") if i.get("current_stock") is not None else "",
+            i.get("coverage_days") if i.get("coverage_days") is not None else "",
+            i.get("lead_time_demand") or "",
             qty,
             i.get("moq") or 1,
             cost or "",
-            valor,
+            value,
         ])
 
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=orden_de_compra.csv"},
+        headers={"Content-Disposition": "attachment; filename=purchase_order.csv"},
     )
 
 
@@ -1559,7 +1559,7 @@ def optimize_inventory(
     # lead-time gating (ForecastingCore business/optimizer.py build_problem)
     # blocks EVERY order bucket for a SKU whenever its lead_time_buckets >=
     # horizon_days, and optimizer_service's fallback lead time when a SKU has
-    # no lead_time_dias data is 15 days — a shorter default horizon would put
+    # no lead_time_days data is 15 days — a shorter default horizon would put
     # any under-configured SKU in a total lockout (real shortage, zero
     # possible recommendation) rather than just a smaller ordering window.
     horizon_days: int = Query(default=30, ge=1, le=30),
@@ -1567,7 +1567,7 @@ def optimize_inventory(
 ):
     """
     Runs the MILP purchasing/transfers optimizer for this session and
-    returns suggested purchase quantities per SKU x bodega, plus
+    returns suggested purchase quantities per SKU x warehouse, plus
     recommended inter-warehouse transfers, collapsed to one total per
     line over the full horizon.
     """

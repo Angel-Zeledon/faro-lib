@@ -546,33 +546,33 @@ export interface InventoryStock {
   id?:            string
   sku:            string
   display_name:   string | null
-  stock_actual:   number
-  stock_minimo:   number
-  lead_time_dias: number
-  costo_unitario: number | null
+  current_stock:   number
+  min_stock:   number
+  lead_time_days: number
+  unit_cost: number | null
   moq:            number
-  proveedor:      string | null
-  notas:          string | null
+  supplier:      string | null
+  notes:          string | null
   product_type?:  string
   service_level?: number
   updated_at?:    string
-  precio_venta?:  number | null
-  categoria?:     string | null
-  marca?:         string | null
-  unidad_medida?: string | null
-  codigo_barras?: string | null
+  sale_price?:  number | null
+  category?:     string | null
+  brand?:         string | null
+  unit_of_measure?: string | null
+  barcode?: string | null
 }
 
 export interface InventoryCalcExplanation {
   suficiente?:        boolean
-  demanda_diaria?:    number
-  lead_time_dias?:    number
-  demanda_lead_time?: number
+  daily_demand?:    number
+  lead_time_days?:    number
+  lead_time_demand?: number
   safety_stock?:      number
-  stock_actual?:      number
+  current_stock?:      number
   antes_moq?:         number
   moq?:               number
-  cantidad_final?:    number
+  final_qty?:    number
 }
 
 export interface InventoryEvent {
@@ -620,39 +620,39 @@ export interface CalendarSeedResult {
 export interface InventoryStatusItem extends InventoryStock {
   has_forecast:         boolean
   has_stock:            boolean
-  demanda_diaria:       number | null
-  demanda_lead_time:    number | null
-  dias_cobertura:       number | null
+  daily_demand:       number | null
+  lead_time_demand:    number | null
+  coverage_days:       number | null
   signal:               InventorySignal
-  cantidad_recomendada: number | null
-  valor_inventario:     number | null
+  recommended_qty: number | null
+  inventory_value:     number | null
   n_models:             number
   abc:                  string
   xyz:                  string
   abc_xyz:              string
   stock_history:        { stock: number; date: string }[]
   calc_explanation:     InventoryCalcExplanation | null
-  // "Por qué" de la recomendación — todo calculado en el backend
-  lead_time_origen?:      'aprendido' | 'configurado'
-  lead_time_configurado?: number
-  lead_time_aprendido?:   number | null
-  punto_reorden?:         number | null
-  explicacion?:           string | null
-  // Margen bruto por unidad; null cuando falta precio_venta o costo_unitario
-  margen_unitario?:       number | null
+  // The "why" behind the recommendation — all computed in the backend
+  lead_time_source?:      'learned' | 'configured'
+  lead_time_configured?: number
+  lead_time_learned?:   number | null
+  reorder_point?:         number | null
+  explanation?:           string | null
+  // Margen bruto por unit; null cuando falta sale_price o unit_cost
+  unit_margin?:       number | null
 }
 
-export type MermaReason = 'breakage' | 'expiry' | 'self_consumption' | 'gift'
+export type ShrinkageReason = 'breakage' | 'expiry' | 'self_consumption' | 'gift'
 
-export interface MermaRecord {
+export interface ShrinkageRecord {
   id:             string
   tenant_id:      string
   sku:            string
-  bodega:         string
+  warehouse:         string
   quantity:       number
-  reason:         MermaReason
-  costo_unitario: number | null
-  costo_total:    number | null
+  reason:         ShrinkageReason
+  unit_cost: number | null
+  total_cost:    number | null
   notes:          string | null
   created_by:     string | null
   created_at:     string
@@ -733,16 +733,16 @@ export interface ExcludedSku {
 
 export interface OptimizationOrder {
   sku:             string
-  bodega:          string
+  warehouse:          string
   qty:             number
-  costo_unitario:  number | null
-  proveedor:       string | null
+  unit_cost:  number | null
+  supplier:       string | null
 }
 
 export interface OptimizationTransfer {
   sku:          string
-  from_bodega:  string
-  to_bodega:    string
+  from_warehouse:  string
+  to_warehouse:    string
   qty:          number
 }
 
@@ -759,25 +759,25 @@ export interface InventoryStatusResponse {
   excluded_skus?: ExcludedSku[]
   summary: {
     total_skus:               number
-    pedir_ya:                 number
-    pedir_pronto:             number
+    order_now:                 number
+    order_soon:             number
     ok:                       number
-    sobrestock:               number
+    overstock:               number
     sin_datos:                number
-    valor_total_inventario:   number
+    total_inventory_value:   number
   }
 }
 
 export interface InventoryDashboardSummary {
   session_id:             string
   total_skus:             number
-  pedir_ya:               number
-  pedir_pronto:           number
+  order_now:               number
+  order_soon:           number
   ok:                     number
-  sobrestock:             number
+  overstock:             number
   sin_datos:              number
-  valor_total_inventario: number
-  top_critical:           { sku: string; display_name: string | null; dias_cobertura: number | null }[]
+  total_inventory_value: number
+  top_critical:           { sku: string; display_name: string | null; coverage_days: number | null }[]
 }
 
 // ── Inventory ROI ─────────────────────────────────────────────────────────────
@@ -801,7 +801,7 @@ export interface InventoryROISummary {
 export interface ROIMonthlyRow {
   month:             string          // 'YYYY-MM'
   pos_count:         number
-  skus_pedir_ya:     number
+  skus_order_now:     number
   total_value:       number
   adoption_rate:     number | null
   capital_liberado:  number | null
@@ -828,8 +828,8 @@ export interface POLogEntry {
   sku_count:         number
   total_units:       number
   total_value:       number | null
-  skus_pedir_ya:     number
-  skus_pedir_pronto: number
+  skus_order_now:     number
+  skus_order_soon: number
   // Adoption metrics (present once a cart with decisions is logged)
   suggested_count?:  number
   approved_count?:   number
@@ -845,13 +845,13 @@ export interface POItemLine {
   id:                   string
   sku:                  string
   display_name:         string | null
-  proveedor:            string | null
+  supplier:            string | null
   signal:               string | null
   status:               string
-  cantidad_recomendada: number
-  cantidad_final:       number
-  cantidad_recibida:    number | null
-  costo_unitario:       number | null
+  recommended_qty: number
+  final_qty:       number
+  received_qty:    number | null
+  unit_cost:       number | null
 }
 
 export interface POItemsResponse {
@@ -878,24 +878,24 @@ export interface SendPOResult {
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
 
-/** El "por qué" del multiplicador, para no mostrar un ×2.2 sin justificar. */
+/** El "por qué" del multiplier, para no mostrar un ×2.2 sin justificar. */
 export interface MultiplierExplanation {
-  multiplicador_base:      number
-  origen:                  'catalogo' | 'usuario'
-  motivo:                  string | null
+  base_multiplier:      number
+  source:                  'catalog' | 'user'
+  reason:                  string | null
   editable:                boolean
   es_estimacion:           boolean
   overrides_activos:       number
   overrides_por_sku:       number
-  overrides_por_categoria: number
+  overrides_by_category: number
 }
 
-/** Override de multiplicador por SKU o categoría dentro de un evento. */
+/** Override de multiplier por SKU o categoría dentro de un event. */
 export interface EventMultiplier {
   id:          string
   tenant_id:   string
   event_id:    string
-  scope:       'sku' | 'categoria'
+  scope:       'sku' | 'category'
   scope_value: string
   multiplier:  number
   created_at:  string
@@ -903,24 +903,24 @@ export interface EventMultiplier {
 export interface EventSimulationRow {
   sku:             string
   display_name:    string | null
-  proveedor:       string | null
-  categoria:       string | null
-  /** Multiplicador aplicado a ESTE producto y de dónde salió. */
-  multiplicador:        number
-  multiplicador_origen: 'sku' | 'categoria' | 'evento'
-  demanda_diaria:  number
+  supplier:       string | null
+  category:       string | null
+  /** Multiplier applied to THIS product, and where it came from. */
+  multiplier:        number
+  multiplier_source: 'sku' | 'category' | 'event'
+  daily_demand:  number
   baseline_units:  number
   event_units:     number
   extra_units:     number
-  stock_actual:    number | null
+  current_stock:    number | null
   stock_al_inicio: number | null
   deficit:         number | null
-  cantidad_pedir:  number | null
-  valor_pedido:    number | null
-  lead_time_dias:  number
+  qty_to_order:  number | null
+  order_value:    number | null
+  lead_time_days:  number
   order_by:        string
   llega_tarde:     boolean
-  en_riesgo:       boolean
+  en_risk:       boolean
 }
 
 export interface EventSimulationResult {
@@ -930,18 +930,18 @@ export interface EventSimulationResult {
   event_days: number
   multiplier: number
   event_id:   string | null
-  explicacion: MultiplierExplanation
-  /** Cuántos SKU corrieron con cada multiplicador. */
-  multiplicadores_aplicados: { multiplicador: number; origen: string; skus: number }[]
+  explanation: MultiplierExplanation
+  /** Cuántos SKU corrieron con cada multiplier. */
+  multipliers_applied: { multiplier: number; source: string; skus: number }[]
   items:      EventSimulationRow[]
   summary: {
     skus_simulados:     number
-    skus_en_riesgo:     number
-    unidades_extra:     number
-    total_pedir:        number
-    valor_total_pedido: number
-    pedir_antes_de:     string | null
-    algun_pedido_tarde: boolean
+    skus_at_risk:     number
+    extra_units:     number
+    total_to_order:        number
+    total_order_value: number
+    order_before:     string | null
+    any_order_late: boolean
   }
 }
 
@@ -949,7 +949,7 @@ export interface EventSimulationResult {
 // already-learned lead time) has passed with no reception recorded yet.
 export interface OverdueReception {
   po_log_id:         string
-  proveedor:         string
+  supplier:         string
   generated_at:      string
   expected_arrival:  string
   days_overdue:      number
@@ -958,25 +958,25 @@ export interface OverdueReception {
 }
 
 export interface SupplierScorecardRow {
-  proveedor:            string
+  supplier:            string
   n_recepciones:        number
   lead_time_real_min:   number | null
   lead_time_real_max:   number | null
   lead_time_real_avg:   number | null
   lead_time_declarado:  number | null
-  desviacion_dias:      number | null
+  deviation_days:      number | null
   on_time_rate:         number | null
   fill_rate:            number | null
-  valor_comprado:       number
+  purchased_value:       number
   ultima_recepcion:     string | null
 }
 
 // Feature 2.5 — a supplier the PO-send path would silently skip.
 export interface SupplierContactHealthRow {
-  proveedor:             string
+  supplier:             string
   supplier_id:           string | null
-  motivo:                'sin_ficha' | 'sin_contacto'
-  motivo_texto:          string
+  reason:                'no_supplier_record' | 'no_contact'
+  reason_text:          string
   tiene_email:           boolean
   tiene_whatsapp:        boolean
   ordenes_pendientes:    number
@@ -985,10 +985,10 @@ export interface SupplierContactHealthRow {
 
 // Feature 3.3 — a supplier whose recent lead time drifted off its own history.
 export interface SupplierLeadTimeAlert {
-  proveedor:           string
+  supplier:           string
   lead_time_historico: number
   lead_time_reciente:  number
-  desviacion_dias:     number
+  deviation_days:     number
   z_score:             number
   sigma:               number
   n_baseline:          number
@@ -1118,13 +1118,13 @@ export interface CashFitResult {
 export interface POLineDecision {
   sku:                   string
   display_name?:         string | null
-  proveedor?:            string | null
+  supplier?:            string | null
   signal?:               string | null
-  cantidad_recomendada:  number
-  cantidad_final:        number
+  recommended_qty:  number
+  final_qty:        number
   status:                'approved' | 'modified' | 'rejected'
-  costo_unitario?:       number | null
-  bodega?:               string | null
+  unit_cost?:       number | null
+  warehouse?:               string | null
 }
 
 // ── Suppliers ─────────────────────────────────────────────────────────────────
@@ -1136,7 +1136,7 @@ export interface Supplier {
   email:          string | null
   phone:          string | null
   whatsapp:       string | null
-  lead_time_dias: number
+  lead_time_days: number
   lead_time_std:  number
   payment_terms:  string | null
   notes:          string | null
@@ -1151,13 +1151,13 @@ export interface SkuSupplier {
   is_primary:     boolean
   unit_cost:      number | null
   moq:            number
-  lead_time_dias: number | null  // override; null = use supplier default
+  lead_time_days: number | null  // override; null = use supplier default
   notes:          string | null
   // Joined supplier fields:
   supplier_name:  string
   supplier_email: string | null
   supplier_phone: string | null
-  effective_lead_time: number   // sku_suppliers.lead_time_dias ?? suppliers.lead_time_dias
+  effective_lead_time: number   // sku_suppliers.lead_time_days ?? suppliers.lead_time_days
 }
 
 // ── Morning Briefing ──────────────────────────────────────────────────────────
@@ -1173,10 +1173,10 @@ export interface BriefingRecommendation {
 
 export interface MorningBriefingKPIs {
   total_skus:            number
-  pedir_ya:              number
-  pedir_pronto:          number
+  order_now:              number
+  order_soon:          number
   ok:                    number
-  sobrestock:            number
+  overstock:            number
   sin_datos:             number
   avg_accuracy:          number | null
   total_inventory_value: number
@@ -1190,13 +1190,13 @@ export interface MorningBriefingKPIs {
 export interface DemandSpike {
   sku:             string
   display_name:    string
-  proveedor:       string | null
+  supplier:       string | null
   baseline_diaria: number
   peak_value:      number
   uplift_pct:      number
   peak_date:       string | null
   days_until_peak: number
-  lead_time_dias:  number
+  lead_time_days:  number
   order_by_date:   string | null
   already_late:    boolean
   signal:          string | null
@@ -1264,13 +1264,13 @@ export interface SuggestedQuestion {
   icon: string
 }
 
-// ── Dead Stock / Inventario Inmovilizado ──────────────────────────────────────
+// ── Dead stock / immobilised inventory ────────────────────────────────────────
 export interface DeadStockItem {
   sku:                    string
   display_name:           string | null
-  proveedor:              string | null
-  stock_actual:           number
-  costo_unitario:         number | null
+  supplier:              string | null
+  current_stock:           number
+  unit_cost:         number | null
   capital_trapped:        number
   holding_cost_monthly:   number
   days_without_movement:  number

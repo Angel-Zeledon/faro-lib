@@ -31,9 +31,9 @@ def list_bom(tenant_id: str, parent_sku: str) -> list[dict]:
         """SELECT b.id, b.parent_sku, b.child_sku, b.quantity, b.unit, b.notes,
                   b.created_at,
                   s.display_name AS child_name,
-                  s.stock_actual AS child_stock,
+                  s.current_stock AS child_stock,
                   s.product_type AS child_type,
-                  s.costo_unitario AS child_cost
+                  s.unit_cost AS child_cost
            FROM bom_items b
            LEFT JOIN inventory_stock s
              ON s.tenant_id = b.tenant_id AND s.sku = b.child_sku
@@ -130,8 +130,8 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
         if sku not in bom_map:
             continue
 
-        forecast_demand = round((item.get('demanda_diaria') or 0) * horizon_days, 1)
-        current_stock   = item.get('stock_actual') or 0
+        forecast_demand = round((item.get('daily_demand') or 0) * horizon_days, 1)
+        current_stock   = item.get('current_stock') or 0
         to_produce      = max(0.0, forecast_demand - current_stock)
 
         requirements: list[dict] = []
@@ -141,10 +141,10 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
             required_qty = round(qty_per_unit * to_produce, 2)
 
             child = stock_map.get(child_sku, {})
-            child_stock  = child.get('stock_actual') or 0
+            child_stock  = child.get('current_stock') or 0
             child_name   = child.get('display_name') or child_sku
             child_type   = child.get('product_type', 'component')
-            child_cost   = child.get('costo_unitario')
+            child_cost   = child.get('unit_cost')
             shortage     = round(max(0.0, required_qty - child_stock), 2)
 
             # Accumulate totals across all finished goods
@@ -152,7 +152,7 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
                 material_totals[child_sku] = {
                     'sku': child_sku, 'display_name': child_name,
                     'product_type': child_type, 'current_stock': child_stock,
-                    'costo_unitario': child_cost, 'total_required': 0.0,
+                    'unit_cost': child_cost, 'total_required': 0.0,
                     'unit': bom_item.get('unit'),
                 }
             material_totals[child_sku]['total_required'] += required_qty
@@ -186,7 +186,7 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
         total_req = data['total_required']
         stock     = data['current_stock']
         shortage  = round(max(0.0, total_req - stock), 2)
-        cost      = data.get('costo_unitario')
+        cost      = data.get('unit_cost')
         raw_summary.append({
             'sku':           child_sku,
             'display_name':  data['display_name'],

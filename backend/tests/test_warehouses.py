@@ -6,8 +6,8 @@ def _sku():
     return f"WH_{uuid4().hex[:8]}"
 
 
-def _bodega():
-    return f"Bodega_{uuid4().hex[:8]}"
+def _warehouse():
+    return f"warehouse_{uuid4().hex[:8]}"
 
 
 class TestWarehouseStock:
@@ -15,72 +15,72 @@ class TestWarehouseStock:
         from backend.inventory import service as svc
         tid = test_tenant["id"]
         sku = _sku()
-        svc.upsert_stock(tid, sku, {"stock_actual": 100, "bodega": "Norte"})
-        svc.upsert_stock(tid, sku, {"stock_actual": 40,  "bodega": "Sur"})
+        svc.upsert_stock(tid, sku, {"current_stock": 100, "warehouse": "Norte"})
+        svc.upsert_stock(tid, sku, {"current_stock": 40,  "warehouse": "Sur"})
         from backend.db.connection import query
         rows = query(
-            "SELECT bodega, stock_actual FROM inventory_stock WHERE tenant_id=%s AND sku=%s ORDER BY bodega",
+            "SELECT warehouse, current_stock FROM inventory_stock WHERE tenant_id=%s AND sku=%s ORDER BY warehouse",
             (tid, sku),
         )
         assert len(rows) == 2
-        by_bodega = {r["bodega"]: float(r["stock_actual"]) for r in rows}
-        assert by_bodega == {"Norte": 100.0, "Sur": 40.0}
+        by_warehouse = {r["warehouse"]: float(r["current_stock"]) for r in rows}
+        assert by_warehouse == {"Norte": 100.0, "Sur": 40.0}
 
-    def test_upsert_without_bodega_defaults_to_principal(self, client, auth_headers, test_tenant):
+    def test_upsert_without_warehouse_defaults_to_principal(self, client, auth_headers, test_tenant):
         from backend.inventory import service as svc
         from backend.db.connection import query_one
         tid = test_tenant["id"]
         sku = _sku()
-        svc.upsert_stock(tid, sku, {"stock_actual": 12})
-        row = query_one("SELECT bodega FROM inventory_stock WHERE tenant_id=%s AND sku=%s", (tid, sku))
-        assert row["bodega"] == "principal"
+        svc.upsert_stock(tid, sku, {"current_stock": 12})
+        row = query_one("SELECT warehouse FROM inventory_stock WHERE tenant_id=%s AND sku=%s", (tid, sku))
+        assert row["warehouse"] == "principal"
 
-    def test_upsert_same_sku_same_bodega_updates_not_duplicates(self, client, auth_headers, test_tenant):
+    def test_upsert_same_sku_same_warehouse_updates_not_duplicates(self, client, auth_headers, test_tenant):
         from backend.inventory import service as svc
         from backend.db.connection import query
         tid = test_tenant["id"]
         sku = _sku()
-        svc.upsert_stock(tid, sku, {"stock_actual": 5, "bodega": "Norte"})
-        svc.upsert_stock(tid, sku, {"stock_actual": 9, "bodega": "Norte"})
-        rows = query("SELECT stock_actual FROM inventory_stock WHERE tenant_id=%s AND sku=%s AND bodega='Norte'", (tid, sku))
-        assert len(rows) == 1 and float(rows[0]["stock_actual"]) == 9.0
+        svc.upsert_stock(tid, sku, {"current_stock": 5, "warehouse": "Norte"})
+        svc.upsert_stock(tid, sku, {"current_stock": 9, "warehouse": "Norte"})
+        rows = query("SELECT current_stock FROM inventory_stock WHERE tenant_id=%s AND sku=%s AND warehouse='Norte'", (tid, sku))
+        assert len(rows) == 1 and float(rows[0]["current_stock"]) == 9.0
 
-    def test_upsert_stock_returns_the_bodega_it_wrote(self, client, auth_headers, test_tenant):
+    def test_upsert_stock_returns_the_warehouse_it_wrote(self, client, auth_headers, test_tenant):
         from backend.inventory import service as svc
         tid = test_tenant["id"]
         sku = _sku()
-        svc.upsert_stock(tid, sku, {"stock_actual": 100, "bodega": "Norte"})
-        result = svc.upsert_stock(tid, sku, {"stock_actual": 40, "bodega": "Sur"})
-        assert result["bodega"] == "Sur"
-        assert float(result["stock_actual"]) == 40.0
+        svc.upsert_stock(tid, sku, {"current_stock": 100, "warehouse": "Norte"})
+        result = svc.upsert_stock(tid, sku, {"current_stock": 40, "warehouse": "Sur"})
+        assert result["warehouse"] == "Sur"
+        assert float(result["current_stock"]) == 40.0
 
-    def test_upsert_with_only_bodega_field_on_existing_row_does_not_raise(
+    def test_upsert_with_only_warehouse_field_on_existing_row_does_not_raise(
         self, client, auth_headers, test_tenant,
     ):
         """
-        On an existing (tenant, sku, bodega) row, an update payload containing
-        ONLY "bodega" (already the conflict target, never in the SET list)
+        On an existing (tenant, sku, warehouse) row, an update payload containing
+        ONLY "warehouse" (already the conflict target, never in the SET list)
         must not produce an empty SET clause / SQL syntax error.
         """
         from backend.inventory import service as svc
         tid = test_tenant["id"]
         sku = _sku()
-        svc.upsert_stock(tid, sku, {"stock_actual": 100, "bodega": "Norte"})
-        result = svc.upsert_stock(tid, sku, {"bodega": "Norte"})
-        assert result["bodega"] == "Norte"
-        assert float(result["stock_actual"]) == 100.0  # untouched, no error raised
+        svc.upsert_stock(tid, sku, {"current_stock": 100, "warehouse": "Norte"})
+        result = svc.upsert_stock(tid, sku, {"warehouse": "Norte"})
+        assert result["warehouse"] == "Norte"
+        assert float(result["current_stock"]) == 100.0  # untouched, no error raised
 
 
 class TestWarehouseBulkImport:
-    def test_bulk_import_persists_bodega_and_autocreates_warehouse(self, client, auth_headers, test_tenant):
-        """A CSV with a bodega column persists inventory_stock.bodega and
-        auto-creates a matching row in warehouses the first time that bodega
+    def test_bulk_import_persists_warehouse_and_autocreates_warehouse(self, client, auth_headers, test_tenant):
+        """A CSV with a warehouse column persists inventory_stock.warehouse and
+        auto-creates a matching row in warehouses the first time that warehouse
         name is seen for the tenant."""
         sku = _sku()
-        bodega = _bodega()
+        warehouse = _warehouse()
         csv_text = (
-            "sku,stock_actual,bodega\n"
-            f"{sku},75,{bodega}\n"
+            "sku,current_stock,warehouse\n"
+            f"{sku},75,{warehouse}\n"
         )
         r = client.post(
             "/api/v1/inventory/bulk",
@@ -93,19 +93,19 @@ class TestWarehouseBulkImport:
         tid = test_tenant["id"]
 
         stock_row = query_one(
-            "SELECT stock_actual, bodega FROM inventory_stock WHERE tenant_id=%s AND sku=%s",
+            "SELECT current_stock, warehouse FROM inventory_stock WHERE tenant_id=%s AND sku=%s",
             (tid, sku),
         )
         assert stock_row is not None
-        assert float(stock_row["stock_actual"]) == 75
-        assert stock_row["bodega"] == bodega
+        assert float(stock_row["current_stock"]) == 75
+        assert stock_row["warehouse"] == warehouse
 
         wh_row = query_one(
             "SELECT name FROM warehouses WHERE tenant_id=%s AND name=%s",
-            (tid, bodega),
+            (tid, warehouse),
         )
         assert wh_row is not None
-        assert wh_row["name"] == bodega
+        assert wh_row["name"] == warehouse
 
 
 class TestWarehouseEndpoints:
@@ -114,7 +114,7 @@ class TestWarehouseEndpoints:
     def test_viewer_denied_on_create_no_row_created(self, client, viewer_headers, test_tenant):
         from backend.db.connection import query_one
         tid = test_tenant["id"]
-        name = _bodega()
+        name = _warehouse()
 
         r = client.post(
             "/api/v1/inventory/warehouses",
@@ -132,7 +132,7 @@ class TestWarehouseEndpoints:
     def test_analyst_can_create_warehouse(self, client, analyst_headers, test_tenant):
         from backend.db.connection import query_one
         tid = test_tenant["id"]
-        name = _bodega()
+        name = _warehouse()
 
         r = client.post(
             "/api/v1/inventory/warehouses",
@@ -150,7 +150,7 @@ class TestWarehouseEndpoints:
         assert row["is_default"] is False
 
     def test_list_returns_created_warehouses(self, client, analyst_headers, test_tenant):
-        name = _bodega()
+        name = _warehouse()
         create_r = client.post(
             "/api/v1/inventory/warehouses",
             json={"name": name},
@@ -166,7 +166,7 @@ class TestWarehouseEndpoints:
     def test_duplicate_name_is_idempotent_not_duplicated(self, client, analyst_headers, test_tenant):
         from backend.db.connection import query
         tid = test_tenant["id"]
-        name = _bodega()
+        name = _warehouse()
 
         r1 = client.post("/api/v1/inventory/warehouses", json={"name": name}, headers=analyst_headers)
         r2 = client.post("/api/v1/inventory/warehouses", json={"name": name}, headers=analyst_headers)

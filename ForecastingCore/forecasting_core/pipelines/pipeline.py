@@ -308,11 +308,11 @@ class Pipeline:
                     # intentar convertir a numérico
                     converted = pd.to_numeric(df[col], errors="coerce")
 
-                    # si casi todo se pudo convertir → usar numérico
+                    # almost everything converted cleanly -> treat as numeric
                     if converted.notna().mean() > 0.8:
                         df[col] = converted
                     else:
-                        # si es categórica real → category (solo si usas LightGBM correctamente)
+                        # genuinely categorical -> category dtype (only correct with LightGBM)
                         df[col] = df[col].astype("category")
 
             return df

@@ -11,10 +11,10 @@ def test_generate_po_pdf_writes_a_real_pdf_file(tmp_path, monkeypatch):
     tid = f"tenant_{uuid4().hex[:8]}"
     po_log_id = f"po_{uuid4().hex[:8]}"
     items = [
-        {"sku": "SKU-001", "display_name": "Aceite de Oliva 1L", "proveedor": "Distribuidora Andina",
-         "cantidad_final": 312.0, "costo_unitario": 8.5},
-        {"sku": "SKU-002", "display_name": "Arroz 5kg", "proveedor": "Distribuidora Andina",
-         "cantidad_final": 475.0, "costo_unitario": 5.2},
+        {"sku": "SKU-001", "display_name": "Aceite de Oliva 1L", "supplier": "Distribuidora Andina",
+         "final_qty": 312.0, "unit_cost": 8.5},
+        {"sku": "SKU-002", "display_name": "Arroz 5kg", "supplier": "Distribuidora Andina",
+         "final_qty": 475.0, "unit_cost": 5.2},
     ]
     po_meta = {"generated_at": "2026-07-18T10:00:00", "po_log_id": po_log_id}
 

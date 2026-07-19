@@ -6,7 +6,7 @@ Both answer the same underlying question — "which supplier is about to cost
 me something?" — from data Faro already owns:
 
   2.5  `POST /inventory/po/{id}/send` silently skips any supplier with no
-       email and no whatsapp on file (and any proveedor name that has no
+       email and no whatsapp on file (and any supplier name that has no
        supplier record at all). The buyer only finds out when the goods
        never arrive. get_contact_health() surfaces that gap BEFORE sending.
 
@@ -32,12 +32,12 @@ log = logging.getLogger(__name__)
 # "Incomplete contact" is defined here to match EXACTLY what
 # send_po_to_suppliers() skips, so the warning never lies:
 #   - a registered supplier with neither email nor whatsapp, or
-#   - a proveedor name on a PO line with no supplier record at all.
+#   - a supplier name on a PO line with no supplier record at all.
 # phone is deliberately NOT counted: nothing in the send path uses it.
 
 _SEND_BLOCKING_REASONS = {
-    "sin_ficha":    "Sin ficha de proveedor",
-    "sin_contacto": "Sin email ni WhatsApp",
+    "no_supplier_record":    "Sin ficha de proveedor",
+    "no_contact": "Sin email ni WhatsApp",
 }
 
 # PO line statuses that were actually ordered (mirrors reception_service._ORDERED)
@@ -53,10 +53,10 @@ def get_contact_health(tenant_id: str) -> list[dict]:
     decide whether it matters right now.
 
     Returns one row per supplier name:
-        proveedor              supplier name as it appears on PO lines / ficha
+        supplier              supplier name as it appears on PO lines / ficha
         supplier_id            None when there is no ficha at all
-        motivo                 'sin_ficha' | 'sin_contacto'
-        motivo_texto           user-facing Spanish reason
+        reason                 'no_supplier_record' | 'no_contact'
+        reason_text           user-facing Spanish reason
         tiene_email/whatsapp   booleans (both False by construction)
         ordenes_pendientes     count of open POs (pending/partial) naming it
         en_ordenes_pendientes  ordenes_pendientes > 0
@@ -67,7 +67,7 @@ def get_contact_health(tenant_id: str) -> list[dict]:
     """
     # Registered suppliers with no usable contact channel.
     registered = query(
-        """SELECT id AS supplier_id, name AS proveedor,
+        """SELECT id AS supplier_id, name AS supplier,
                   (email    IS NOT NULL AND email    <> '') AS tiene_email,
                   (whatsapp IS NOT NULL AND whatsapp <> '') AS tiene_whatsapp
            FROM suppliers
@@ -79,60 +79,60 @@ def get_contact_health(tenant_id: str) -> list[dict]:
         (tenant_id,),
     )
 
-    # Proveedor names used on ordered PO lines that have NO supplier record.
+    # Supplier names used on ordered PO lines that have NO supplier record.
     # These are just as un-sendable, and easier to miss because nothing in
     # the suppliers screen hints they exist.
     orphans = query(
-        f"""SELECT DISTINCT TRIM(poi.proveedor) AS proveedor
+        f"""SELECT DISTINCT TRIM(poi.supplier) AS supplier
             FROM inventory_po_items poi
             WHERE poi.tenant_id = %s
               AND poi.status IN %s
-              AND COALESCE(TRIM(poi.proveedor), '') <> ''
+              AND COALESCE(TRIM(poi.supplier), '') <> ''
               AND NOT EXISTS (
                   SELECT 1 FROM suppliers s
                   WHERE s.tenant_id = poi.tenant_id
                     AND s.active = TRUE
-                    AND LOWER(s.name) = LOWER(TRIM(poi.proveedor))
+                    AND LOWER(s.name) = LOWER(TRIM(poi.supplier))
               )
-            ORDER BY proveedor""",
+            ORDER BY supplier""",
         (tenant_id, _ORDERED),
     )
 
-    # How many still-open POs name each proveedor — this is what makes the
+    # How many still-open POs name each supplier — this is what makes the
     # warning actionable rather than housekeeping noise.
     open_counts_rows = query(
-        f"""SELECT LOWER(TRIM(poi.proveedor)) AS key, COUNT(DISTINCT pol.id)::int AS n
+        f"""SELECT LOWER(TRIM(poi.supplier)) AS key, COUNT(DISTINCT pol.id)::int AS n
             FROM inventory_po_items poi
             JOIN inventory_po_log pol ON pol.id = poi.po_log_id
             WHERE poi.tenant_id = %s
               AND poi.status IN %s
-              AND COALESCE(TRIM(poi.proveedor), '') <> ''
+              AND COALESCE(TRIM(poi.supplier), '') <> ''
               AND pol.reception_status IN %s
-            GROUP BY LOWER(TRIM(poi.proveedor))""",
+            GROUP BY LOWER(TRIM(poi.supplier))""",
         (tenant_id, _ORDERED, _OPEN_PO_STATES),
     )
     open_counts = {r["key"]: r["n"] for r in open_counts_rows}
 
     out: list[dict] = []
     for r in registered:
-        out.append(_contact_row(r["proveedor"], r["supplier_id"], "sin_contacto", open_counts))
+        out.append(_contact_row(r["supplier"], r["supplier_id"], "no_contact", open_counts))
     for r in orphans:
-        out.append(_contact_row(r["proveedor"], None, "sin_ficha", open_counts))
+        out.append(_contact_row(r["supplier"], None, "no_supplier_record", open_counts))
 
     # Relevant first (most open orders), then alphabetical — the buyer should
     # see the supplier blocking today's order before the dormant one.
-    out.sort(key=lambda d: (-d["ordenes_pendientes"], d["proveedor"].lower()))
+    out.sort(key=lambda d: (-d["ordenes_pendientes"], d["supplier"].lower()))
     return out
 
 
-def _contact_row(proveedor: str, supplier_id: Optional[str], motivo: str,
+def _contact_row(supplier: str, supplier_id: Optional[str], reason: str,
                  open_counts: dict[str, int]) -> dict:
-    n_open = open_counts.get(proveedor.strip().lower(), 0)
+    n_open = open_counts.get(supplier.strip().lower(), 0)
     return {
-        "proveedor":             proveedor,
+        "supplier":             supplier,
         "supplier_id":           supplier_id,
-        "motivo":                motivo,
-        "motivo_texto":          _SEND_BLOCKING_REASONS[motivo],
+        "reason":                reason,
+        "reason_text":          _SEND_BLOCKING_REASONS[reason],
         "tiene_email":           False,
         "tiene_whatsapp":        False,
         "ordenes_pendientes":    n_open,
@@ -223,10 +223,10 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
     directly; non-alerting suppliers are omitted, not returned with a false
     flag, so a truthiness check on the list is meaningful):
 
-        proveedor              supplier name
+        supplier              supplier name
         lead_time_historico    baseline median, days
         lead_time_reciente     recent median, days
-        desviacion_dias        recent - baseline (always > 0 here)
+        deviation_days        recent - baseline (always > 0 here)
         z_score                robust one-sided z
         sigma                  robust sigma actually used (after the floor)
         n_baseline / n_reciente
@@ -234,10 +234,10 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
         mensaje                ready-to-show Spanish sentence
     """
     rows = query(
-        """SELECT proveedor, lead_time_days, observed_at
+        """SELECT supplier, lead_time_days, observed_at
            FROM supplier_lead_time_obs
            WHERE tenant_id = %s
-           ORDER BY LOWER(proveedor), observed_at""",
+           ORDER BY LOWER(supplier), observed_at""",
         (tenant_id,),
     )
     if not rows:
@@ -245,11 +245,11 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
 
     by_supplier: dict[str, list[dict]] = {}
     for r in rows:
-        by_supplier.setdefault(r["proveedor"], []).append(r)
+        by_supplier.setdefault(r["supplier"], []).append(r)
 
     out: list[dict] = []
-    for proveedor, obs in by_supplier.items():
-        alert = _evaluate_supplier(proveedor, [float(o["lead_time_days"]) for o in obs])
+    for supplier, obs in by_supplier.items():
+        alert = _evaluate_supplier(supplier, [float(o["lead_time_days"]) for o in obs])
         if alert:
             out.append(alert)
 
@@ -257,7 +257,7 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
     return out
 
 
-def _evaluate_supplier(proveedor: str, series: list[float]) -> Optional[dict]:
+def _evaluate_supplier(supplier: str, series: list[float]) -> Optional[dict]:
     """
     Applies the deviation rule to one supplier's chronologically-ordered
     lead-time observations. Returns an alert dict, or None when the supplier
@@ -290,17 +290,17 @@ def _evaluate_supplier(proveedor: str, series: list[float]) -> Optional[dict]:
         return None
 
     return {
-        "proveedor":           proveedor,
+        "supplier":           supplier,
         "lead_time_historico": round(baseline_median, 1),
         "lead_time_reciente":  round(recent_median, 1),
-        "desviacion_dias":     round(delta, 1),
+        "deviation_days":     round(delta, 1),
         "z_score":             round(z, 2),
         "sigma":               round(sigma, 2),
         "n_baseline":          len(baseline),
         "n_reciente":          len(recent),
         "severidad":           "alta" if z >= 2 * Z_THRESHOLD else "media",
         "mensaje": (
-            f"{proveedor} está tardando {_fmt_days(recent_median)} días, "
+            f"{supplier} está tardando {_fmt_days(recent_median)} días, "
             f"no {_fmt_days(baseline_median)}"
         ),
     }

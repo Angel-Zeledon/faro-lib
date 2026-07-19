@@ -100,8 +100,8 @@ def main():
         psycopg2.extras.execute_values(
             cur,
             """INSERT INTO inventory_stock
-               (id, tenant_id, sku, display_name, stock_actual, stock_minimo,
-                lead_time_dias, costo_unitario, moq, product_type, service_level,
+               (id, tenant_id, sku, display_name, current_stock, min_stock,
+                lead_time_days, unit_cost, moq, product_type, service_level,
                 created_at, updated_at)
                VALUES %s""",
             inv_rows,

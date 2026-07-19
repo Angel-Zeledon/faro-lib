@@ -65,7 +65,7 @@ export default function SessionBar({
             </span>
           </>
         ) : (
-          <span style={{ color: 'var(--signal-pedir-pronto-fg)' }}>{t('common.no_session')}</span>
+          <span style={{ color: 'var(--signal-order-soon-fg)' }}>{t('common.no_session')}</span>
         )}
 
         {completedSessions.length > 1 && (

@@ -76,9 +76,9 @@ def good_rows(n_skus=2, n_days=40, sku_prefix="SKU", date_col_ok=True,
             rows.append(row)
     header = ["date", "sku", "target"]
     if stock:
-        header.append("stock_actual")
+        header.append("current_stock")
     if lead:
-        header.append("lead_time_dias")
+        header.append("lead_time_days")
     return header, rows
 
 
@@ -268,36 +268,36 @@ run_case("B7_target_textual",
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", "alto" if d % 2 else "bajo"] for d in range(25)]),
          notes="Target column contains text labels instead of numbers")
 
-# stock_actual / lead_time_dias go through the new sync_stock_from_dataset path
+# current_stock / lead_time_days go through the new sync_stock_from_dataset path
 run_case("B8_lead_time_negative",
-         csv_rows(["date", "sku", "target", "lead_time_dias"],
+         csv_rows(["date", "sku", "target", "lead_time_days"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, -5] for d in range(25)]),
-         notes="lead_time_dias is negative")
+         notes="lead_time_days is negative")
 
 run_case("B9_lead_time_decimal",
-         csv_rows(["date", "sku", "target", "lead_time_dias"],
+         csv_rows(["date", "sku", "target", "lead_time_days"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, 5.7] for d in range(25)]),
-         notes="lead_time_dias is a decimal value")
+         notes="lead_time_days is a decimal value")
 
 run_case("B10_lead_time_blank",
-         csv_rows(["date", "sku", "target", "lead_time_dias"],
+         csv_rows(["date", "sku", "target", "lead_time_days"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, ""] for d in range(25)]),
-         notes="lead_time_dias is blank/empty for every row")
+         notes="lead_time_days is blank/empty for every row")
 
 run_case("B11_stock_negative",
-         csv_rows(["date", "sku", "target", "stock_actual"],
+         csv_rows(["date", "sku", "target", "current_stock"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, -50] for d in range(25)]),
-         notes="stock_actual is negative")
+         notes="current_stock is negative")
 
 run_case("B12_stock_blank",
-         csv_rows(["date", "sku", "target", "stock_actual"],
+         csv_rows(["date", "sku", "target", "current_stock"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, ""] for d in range(25)]),
-         notes="stock_actual is blank for every row")
+         notes="current_stock is blank for every row")
 
 run_case("B13_stock_textual",
-         csv_rows(["date", "sku", "target", "stock_actual"],
+         csv_rows(["date", "sku", "target", "current_stock"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, "mucho"] for d in range(25)]),
-         notes="stock_actual contains text instead of a number")
+         notes="current_stock contains text instead of a number")
 
 # ═══════════════════════════════════════════════════════════════════════
 # C. Data quality
@@ -357,24 +357,24 @@ run_case("D5_decades_of_data", csv_rows(["date", "sku", "target"], _decades_rows
          notes="Weekly data spanning 1990-2024 (~34 years)")
 
 run_case("D6_inventory_zero",
-         csv_rows(["date", "sku", "target", "stock_actual"],
+         csv_rows(["date", "sku", "target", "current_stock"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, 0] for d in range(25)]),
-         notes="stock_actual is 0 for every row", run_training=True)
+         notes="current_stock is 0 for every row", run_training=True)
 
 run_case("D7_inventory_extreme_high",
-         csv_rows(["date", "sku", "target", "stock_actual"],
+         csv_rows(["date", "sku", "target", "current_stock"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, 1_000_000_000] for d in range(25)]),
-         notes="stock_actual is 1 billion", run_training=True)
+         notes="current_stock is 1 billion", run_training=True)
 
 run_case("D8_lead_time_zero",
-         csv_rows(["date", "sku", "target", "lead_time_dias"],
+         csv_rows(["date", "sku", "target", "lead_time_days"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, 0] for d in range(25)]),
-         notes="lead_time_dias is 0", run_training=True)
+         notes="lead_time_days is 0", run_training=True)
 
 run_case("D9_lead_time_huge",
-         csv_rows(["date", "sku", "target", "lead_time_dias"],
+         csv_rows(["date", "sku", "target", "lead_time_days"],
                   [[(date(2024,1,1)+timedelta(days=d)).isoformat(), "SKU_001", 10+d, 3650] for d in range(25)]),
-         notes="lead_time_dias is 3650 (10 years)", run_training=True)
+         notes="lead_time_days is 3650 (10 years)", run_training=True)
 
 # ═══════════════════════════════════════════════════════════════════════
 # E. Full E2E training with WRONG column name (bypassing frontend defaults)
@@ -382,7 +382,7 @@ run_case("D9_lead_time_huge",
 
 run_case("E1_training_with_nonexistent_date_column",
          csv_rows(*good_rows(n_skus=1, n_days=30)),
-         date_col="fecha_que_no_existe", target_col="target",
+         date_col="date_que_no_existe", target_col="target",
          run_training=True, notes="Force a date_column name that is NOT in the file")
 
 run_case("E2_training_with_nonexistent_target_column",

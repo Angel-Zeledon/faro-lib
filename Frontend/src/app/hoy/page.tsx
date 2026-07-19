@@ -62,7 +62,7 @@ function fmtM(n: number) {
 }
 
 // Moneda con separador de miles latinoamericano y sin decimales — las cifras
-// del carrito son montos de compra, no precios unitarios.
+// del carrito son montos de purchase, no prices unitarios.
 function fmtMoney(n: number) {
  return `$${n.toLocaleString('es-419', { maximumFractionDigits: 0 })}`
 }
@@ -104,21 +104,21 @@ type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected'
 interface ActionItem {
  sku:            string
  name:           string
- proveedor:      string | null
+ supplier:      string | null
  qty:            number
  recommended:    number   // original quantity Faro suggested (immutable)
  unit_cost:      number | null
- precio_venta:   number | null   // sale price — for the margin-protected summary
+ sale_price:   number | null   // sale price — for the margin-protected summary
  signal:         string
- dias:           number | null
+ days:           number | null
  lead_time:      number
- demanda_diaria: number | null   // forecasted daily demand — for the "why" panel
- stock_actual:   number | null   // current stock — for the "why" panel
+ daily_demand: number | null   // forecasted daily demand — for the "why" panel
+ current_stock:   number | null   // current stock — for the "why" panel
  // "Por qué" — every value below is computed by the backend, never here
- lead_time_origen: 'aprendido' | 'configurado'
- punto_reorden:    number | null
- explicacion:      string | null
- margen_unitario:  number | null   // null = SKU sin precio o sin costo
+ lead_time_source: 'learned' | 'configured'
+ reorder_point:    number | null
+ explanation:      string | null
+ unit_margin:  number | null   // null = SKU sin price o sin cost
  reason:         string
  status:         ActionStatus
 }
@@ -141,14 +141,14 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
  }, [item.qty])
 
  const isUrgent  = item.signal === 'PEDIR_YA'
- const accent    = isUrgent ? 'var(--signal-pedir-ya-fg)' : 'var(--signal-pedir-pronto-fg)'
+ const accent    = isUrgent ? 'var(--signal-order-now-fg)' : 'var(--signal-order-soon-fg)'
  const isApproved = item.status === 'approved' || item.status === 'modified'
  const isRejected = item.status === 'rejected'
 
  const estimatedValue = item.qty * (item.unit_cost ?? 0)
  const canOrder = item.qty > 0
- const hasWhyData = item.demanda_diaria != null || item.stock_actual != null
-  || item.dias != null || item.explicacion != null
+ const hasWhyData = item.daily_demand != null || item.current_stock != null
+  || item.days != null || item.explanation != null
 
  return (
   <div style={{
@@ -182,8 +182,8 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
       )}
      </div>
      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3 }}>{item.reason}</div>
-     {item.proveedor && (
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{item.proveedor}</div>
+     {item.supplier && (
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{item.supplier}</div>
      )}
     </div>
     {hasWhyData && (
@@ -208,33 +208,33 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
      padding: '10px 12px', marginBottom: 12, fontSize: 12,
     }}>
-     {item.explicacion && (
+     {item.explanation && (
       <p style={{
        margin: '0 0 10px', fontSize: 13, lineHeight: 1.55, color: 'var(--text)',
       }}>
-       {item.explicacion}
+       {item.explanation}
       </p>
      )}
      <div style={{
       display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10,
      }}>
-     {item.dias != null && (
+     {item.days != null && (
       <div>
        <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         {t('hoy.why_coverage_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.dias)} {t('hoy.why_days')}
+        {Math.round(item.days)} {t('hoy.why_days')}
        </div>
       </div>
      )}
-     {item.demanda_diaria != null && (
+     {item.daily_demand != null && (
       <div>
        <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         {t('hoy.why_demand_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {item.demanda_diaria.toLocaleString('es', { maximumFractionDigits: 1 })} {t('hoy.why_units_day')}
+        {item.daily_demand.toLocaleString('es', { maximumFractionDigits: 1 })} {t('hoy.why_units_day')}
        </div>
       </div>
      )}
@@ -246,28 +246,28 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
        {item.lead_time} {t('hoy.why_days')}
       </div>
       <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
-       {item.lead_time_origen === 'aprendido'
+       {item.lead_time_source === 'learned'
         ? t('hoy.why_lead_time_learned')
         : t('hoy.why_lead_time_configured')}
       </div>
      </div>
-     {item.stock_actual != null && (
+     {item.current_stock != null && (
       <div>
        <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         {t('hoy.why_stock_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.stock_actual).toLocaleString('es')} {t('hoy.why_units')}
+        {Math.round(item.current_stock).toLocaleString('es')} {t('hoy.why_units')}
        </div>
       </div>
      )}
-     {item.punto_reorden != null && (
+     {item.reorder_point != null && (
       <div>
        <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         {t('hoy.why_reorder_point_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.punto_reorden).toLocaleString('es')} {t('hoy.why_units')}
+        {Math.round(item.reorder_point).toLocaleString('es')} {t('hoy.why_units')}
        </div>
       </div>
      )}
@@ -390,7 +390,7 @@ function SpikeCard({ s }: { s: DemandSpike }) {
      <div style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
       {t('hoy.spike_peak_expected_prefix')} <strong style={{ color: C.text }}>{shortDateES(s.peak_date, lang)}</strong>
       {' '}({t('hoy.spike_in_days_prefix')} {s.days_until_peak} {t('hoy.spike_days_unit')}{s.days_until_peak !== 1 ? 's' : ''}).
-      {' '}{t('hoy.spike_supplier_lead_prefix')} {s.lead_time_dias} {t('hoy.spike_days_unit')}.
+      {' '}{t('hoy.spike_supplier_lead_prefix')} {s.lead_time_days} {t('hoy.spike_days_unit')}.
      </div>
      <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
@@ -412,51 +412,51 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
  const items: ActionItem[] = []
 
  for (const risk of (b.risks ?? [])) {
-  const d = risk.dias_cobertura != null ? Math.round(risk.dias_cobertura) : null
+  const d = risk.coverage_days != null ? Math.round(risk.coverage_days) : null
   const reason = d != null
-   ? `${t('hoy.reason_stock_left_prefix')} ${d} ${t('hoy.reason_days_unit')} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_dias} ${t('hoy.reason_days_unit')}`
-   : `${t('hoy.reason_immediate_risk')} — ${t('hoy.reason_lead_time_label')} ${risk.lead_time_dias} ${t('hoy.reason_days_unit')}`
+   ? `${t('hoy.reason_stock_left_prefix')} ${d} ${t('hoy.reason_days_unit')} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_days} ${t('hoy.reason_days_unit')}`
+   : `${t('hoy.reason_immediate_risk')} — ${t('hoy.reason_lead_time_label')} ${risk.lead_time_days} ${t('hoy.reason_days_unit')}`
   items.push({
    sku:            risk.sku,
    name:           risk.display_name || risk.sku,
-   proveedor:      risk.proveedor || null,
-   qty:            risk.cantidad_recomendada ?? 0,
-   recommended:    risk.cantidad_recomendada ?? 0,
-   unit_cost:      risk.costo_unitario ?? null,
-   precio_venta:   risk.precio_venta ?? null,
+   supplier:      risk.supplier || null,
+   qty:            risk.recommended_qty ?? 0,
+   recommended:    risk.recommended_qty ?? 0,
+   unit_cost:      risk.unit_cost ?? null,
+   sale_price:   risk.sale_price ?? null,
    signal:         'PEDIR_YA',
-   dias:           risk.dias_cobertura ?? null,
-   lead_time:      risk.lead_time_dias,
-   demanda_diaria: risk.demanda_diaria ?? null,
-   stock_actual:   risk.stock_actual ?? null,
-   lead_time_origen: risk.lead_time_origen ?? 'configurado',
-   punto_reorden:    risk.punto_reorden ?? null,
-   explicacion:      risk.explicacion ?? null,
-   margen_unitario:  risk.margen_unitario ?? null,
+   days:           risk.coverage_days ?? null,
+   lead_time:      risk.lead_time_days,
+   daily_demand: risk.daily_demand ?? null,
+   current_stock:   risk.current_stock ?? null,
+   lead_time_source: risk.lead_time_source ?? 'configured',
+   reorder_point:    risk.reorder_point ?? null,
+   explanation:      risk.explanation ?? null,
+   unit_margin:  risk.unit_margin ?? null,
    reason,
    status:      'pending',
   })
  }
 
  for (const w of (b.warnings ?? [])) {
-  const d = w.dias_cobertura != null ? Math.round(w.dias_cobertura) : null
+  const d = w.coverage_days != null ? Math.round(w.coverage_days) : null
   items.push({
    sku:            w.sku,
    name:           w.display_name || w.sku,
-   proveedor:      w.proveedor || null,
-   qty:            w.cantidad_recomendada ?? 0,
-   recommended:    w.cantidad_recomendada ?? 0,
-   unit_cost:      w.costo_unitario ?? null,
-   precio_venta:   w.precio_venta ?? null,
+   supplier:      w.supplier || null,
+   qty:            w.recommended_qty ?? 0,
+   recommended:    w.recommended_qty ?? 0,
+   unit_cost:      w.unit_cost ?? null,
+   sale_price:   w.sale_price ?? null,
    signal:         'PEDIR_PRONTO',
-   dias:           w.dias_cobertura ?? null,
-   lead_time:      w.lead_time_dias,
-   demanda_diaria: w.demanda_diaria ?? null,
-   stock_actual:   w.stock_actual ?? null,
-   lead_time_origen: w.lead_time_origen ?? 'configurado',
-   punto_reorden:    w.punto_reorden ?? null,
-   explicacion:      w.explicacion ?? null,
-   margen_unitario:  w.margen_unitario ?? null,
+   days:           w.coverage_days ?? null,
+   lead_time:      w.lead_time_days,
+   daily_demand: w.daily_demand ?? null,
+   current_stock:   w.current_stock ?? null,
+   lead_time_source: w.lead_time_source ?? 'configured',
+   reorder_point:    w.reorder_point ?? null,
+   explanation:      w.explanation ?? null,
+   unit_margin:  w.unit_margin ?? null,
    reason:      `${d != null ? d + ' ' + t('hoy.reason_days_coverage') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
   })
@@ -592,17 +592,17 @@ export default function HoyPage() {
  // Generates a fallback narrative from briefing data — no API required
  function buildFallbackNarrative(b: MorningBriefing): MorningNarrative {
   const k = b.kpis
-  const urgency = k.pedir_ya > 0 ? 'critical' : k.pedir_pronto > 0 ? 'warning' : 'ok'
+  const urgency = k.order_now > 0 ? 'critical' : k.order_soon > 0 ? 'warning' : 'ok'
   const parts: string[] = []
-  if (k.pedir_ya > 0) {
+  if (k.order_now > 0) {
    const names = (b.risks ?? []).slice(0, 3).map(r => r.display_name || r.sku).join(', ')
-   parts.push(`${k.pedir_ya} ${t('hoy.narrative_products_immediate_risk')}: ${names}.`)
+   parts.push(`${k.order_now} ${t('hoy.narrative_products_immediate_risk')}: ${names}.`)
   }
-  if (k.pedir_pronto > 0)
-   parts.push(`${k.pedir_pronto} ${t('hoy.narrative_products_need_order_week')}`)
-  if (k.sobrestock > 0 && k.capital_in_overstock > 0)
+  if (k.order_soon > 0)
+   parts.push(`${k.order_soon} ${t('hoy.narrative_products_need_order_week')}`)
+  if (k.overstock > 0 && k.capital_in_overstock > 0)
    parts.push(`$${(k.capital_in_overstock / 1_000_000).toFixed(1)}M ${t('hoy.narrative_capital_tied_overstock')}`)
-  if (k.pedir_ya === 0 && k.pedir_pronto === 0)
+  if (k.order_now === 0 && k.order_soon === 0)
    parts.push(t('hoy.narrative_inventory_under_control'))
   if (k.avg_accuracy)
    parts.push(`${t('hoy.narrative_forecast_accuracy')}: ${(k.avg_accuracy * 100).toFixed(1)}%.`)
@@ -676,15 +676,15 @@ export default function HoyPage() {
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
 
- // Feature 2.10 — margen visible en el carrito. El margen por unidad lo calcula
- // el backend (margen_unitario = precio_venta − costo_unitario, null cuando
- // falta cualquiera de los dos); aquí solo se multiplica por la cantidad que el
- // usuario aprobó y se suma. Las líneas sin precio o sin costo quedan FUERA de
- // ambos totales y se reportan aparte, para no inflar ni desinflar la cifra.
- const priced   = approved.filter(i => i.margen_unitario != null && i.precio_venta != null)
- const unpriced = approved.filter(i => i.margen_unitario == null || i.precio_venta == null)
- const salesProtected  = priced.reduce((s, i) => s + i.qty * (i.precio_venta ?? 0), 0)
- const marginProtected = priced.reduce((s, i) => s + i.qty * (i.margen_unitario ?? 0), 0)
+ // Feature 2.10 — margen visible en el carrito. El margen por unit lo calcula
+ // el backend (unit_margin = sale_price − unit_cost, null cuando
+ // either one is missing); here we only multiply by the qty the
+ // user approved and sum. Lines with no price or no cost stay OUT of
+ // ambos totals y se reportan aparte, para no inflar ni desinflar la cifra.
+ const priced   = approved.filter(i => i.unit_margin != null && i.sale_price != null)
+ const unpriced = approved.filter(i => i.unit_margin == null || i.sale_price == null)
+ const salesProtected  = priced.reduce((s, i) => s + i.qty * (i.sale_price ?? 0), 0)
+ const marginProtected = priced.reduce((s, i) => s + i.qty * (i.unit_margin ?? 0), 0)
 
  // Feature 2.5 — of the suppliers the backend flagged as un-sendable, show
  // only those actually in play right now: named on an approved cart line, or
@@ -692,11 +692,11 @@ export default function HoyPage() {
  // this buyer never orders from is housekeeping, not a warning worth
  // interrupting the morning routine.
  const cartSupplierNames = new Set(
-  approved.map(i => i.proveedor).filter((p): p is string => !!p)
+  approved.map(i => i.supplier).filter((p): p is string => !!p)
          .map(p => p.toLowerCase()),
  )
  const relevantContactHealth = contactHealth.filter(
-  r => cartSupplierNames.has(r.proveedor.toLowerCase()) || r.en_ordenes_pendientes,
+  r => cartSupplierNames.has(r.supplier.toLowerCase()) || r.en_ordenes_pendientes,
  )
 
  // ── Price breaks (3.5) ───────────────────────────────────────────────────
@@ -735,7 +735,7 @@ export default function HoyPage() {
   checkCashFit({
    budget: cashBudget,
    items: approved.map(i => ({
-    sku: i.sku, supplier_name: i.proveedor, quantity: i.qty, unit_cost: i.unit_cost,
+    sku: i.sku, supplier_name: i.supplier, quantity: i.qty, unit_cost: i.unit_cost,
    })),
   }, 30)
    .then(r => { if (!cancelled) setCashFit(r) })
@@ -749,13 +749,13 @@ export default function HoyPage() {
   const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
   for (const item of approved) {
    const val = item.qty * (item.unit_cost ?? 0)
-   rows.push(`${item.sku},"${item.name}",${item.qty},"${item.proveedor || ''}",${val}`)
+   rows.push(`${item.sku},"${item.name}",${item.qty},"${item.supplier || ''}",${val}`)
   }
   const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
   a.href     = url
-  a.download = 'orden_de_compra.csv'
+  a.download = 'purchase_order.csv'
   a.click()
   URL.revokeObjectURL(url)
 
@@ -770,16 +770,16 @@ export default function HoyPage() {
    .map(i => ({
     sku:                  i.sku,
     display_name:         i.name,
-    proveedor:            i.proveedor,
+    supplier:            i.supplier,
     signal:               i.signal,
-    cantidad_recomendada: i.recommended,
-    cantidad_final:       i.status === 'rejected' ? 0 : i.qty,
+    recommended_qty: i.recommended,
+    final_qty:       i.status === 'rejected' ? 0 : i.qty,
     status:               i.status as 'approved' | 'modified' | 'rejected',
-    costo_unitario:       i.unit_cost,
+    unit_cost:       i.unit_cost,
    }))
 
   // Feature: generate→send in one flow. Capture the logged PO so we can offer
-  // "send to suppliers now" right here, instead of sending the buyer to /pedidos.
+  // "send to suppliers now" right here, instead of sending the buyer to /orders.
   try {
    const entry = await logPOGeneration(sessionId, decisions)
    setGeneratedPO(entry)
@@ -821,17 +821,17 @@ export default function HoyPage() {
   if (!sessionId) return
   const decision: POLineDecision = {
    sku:                  order.sku,
-   cantidad_recomendada: order.qty,
-   cantidad_final:       order.qty,
+   recommended_qty: order.qty,
+   final_qty:       order.qty,
    status:               'approved',
-   costo_unitario:       order.costo_unitario,
-   proveedor:            order.proveedor,
-   bodega:               order.bodega,
+   unit_cost:       order.unit_cost,
+   supplier:            order.supplier,
+   warehouse:               order.warehouse,
   }
   await logPOGeneration(sessionId, [decision])
-  addToast(t('hoy.optimizer_po_created'), `${order.sku} — ${order.bodega}`, 'success')
+  addToast(t('hoy.optimizer_po_created'), `${order.sku} — ${order.warehouse}`, 'success')
   setOptimization(prev => prev
-   ? { ...prev, orders: prev.orders.filter(o => !(o.sku === order.sku && o.bodega === order.bodega)) }
+   ? { ...prev, orders: prev.orders.filter(o => !(o.sku === order.sku && o.warehouse === order.warehouse)) }
    : prev)
  }
 
@@ -979,14 +979,14 @@ export default function HoyPage() {
           {t('hoy.overdue_section_title')}
          </div>
          {overduePOs.map(o => (
-          <div key={`${o.po_log_id}-${o.proveedor}`} style={{
+          <div key={`${o.po_log_id}-${o.supplier}`} style={{
            display: 'flex', alignItems: 'center', gap: 10,
            padding: '12px 16px', borderRadius: 10,
            background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)',
           }}>
            <AlertTriangle size={15} color={C.red} style={{ flexShrink: 0 }} />
            <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
-            {t('hoy.overdue_line_prefix')} <strong>{o.proveedor}</strong>{' '}
+            {t('hoy.overdue_line_prefix')} <strong>{o.supplier}</strong>{' '}
             {t('hoy.overdue_line_suffix')} <strong>{o.days_overdue}</strong> {t('hoy.overdue_days_ago_suffix')}
            </span>
            <button
@@ -1030,8 +1030,8 @@ export default function HoyPage() {
        {/* KPI row */}
        <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
         <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
-        <KpiCard label={t('hoy.kpi_risk_today')}        value={String(kpis!.pedir_ya)}         color={kpis!.pedir_ya > 0 ? C.red : C.text} />
-        <KpiCard label={t('hoy.kpi_this_week')}         value={String(kpis!.pedir_pronto)}      color={kpis!.pedir_pronto > 0 ? C.amber : C.text} />
+        <KpiCard label={t('hoy.kpi_risk_today')}        value={String(kpis!.order_now)}         color={kpis!.order_now > 0 ? C.red : C.text} />
+        <KpiCard label={t('hoy.kpi_this_week')}         value={String(kpis!.order_soon)}      color={kpis!.order_soon > 0 ? C.amber : C.text} />
         <KpiCard label={t('hoy.kpi_avg_accuracy')}      value={fmtPct(kpis!.avg_accuracy)}     color={accuracyColor(kpis!.avg_accuracy)}
          help={t('hoy.kpi_avg_accuracy_help')} />
         <KpiCard label={t('hoy.kpi_inventory_value')}   value={fmtM(kpis!.total_inventory_value)} color={C.text} />
@@ -1065,7 +1065,7 @@ export default function HoyPage() {
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
          <div style={{ marginBottom: 24 }}>
           <div style={{
-           fontSize: 11, fontWeight: 700, color: 'var(--signal-pedir-ya-fg)',
+           fontSize: 11, fontWeight: 700, color: 'var(--signal-order-now-fg)',
            textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
            display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -1088,7 +1088,7 @@ export default function HoyPage() {
         {cart.filter(i => i.signal === 'PEDIR_PRONTO').length > 0 && (
          <div style={{ marginBottom: 24 }}>
           <div style={{
-           fontSize: 11, fontWeight: 700, color: 'var(--signal-pedir-pronto-fg)',
+           fontSize: 11, fontWeight: 700, color: 'var(--signal-order-soon-fg)',
            textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
            display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -1207,7 +1207,7 @@ export default function HoyPage() {
         )}
 
         {/* Generate→send in one flow: right after a PO is logged, offer to
-            send it to its suppliers without navigating away to /pedidos. */}
+            send it to its suppliers without navigating away to /orders. */}
         {generatedPO && (
          <div style={{
           marginTop: 12, background: 'var(--surface)', border: '1px solid rgba(129,140,248,0.4)',
@@ -1230,17 +1230,17 @@ export default function HoyPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
            {Object.entries(
             generatedLines.reduce<Record<string, ActionItem[]>>((acc, i) => {
-             const key = i.proveedor || ''
+             const key = i.supplier || ''
              ;(acc[key] = acc[key] || []).push(i)
              return acc
             }, {}),
-           ).map(([proveedor, lines]) => (
-            <div key={proveedor || '__none__'} style={{
+           ).map(([supplier, lines]) => (
+            <div key={supplier || '__none__'} style={{
              display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
              padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)',
             }}>
-             <span style={{ fontWeight: 700, color: proveedor ? C.text : C.amber, flexShrink: 0 }}>
-              {proveedor || t('hoy.generate_send_no_supplier')}
+             <span style={{ fontWeight: 700, color: supplier ? C.text : C.amber, flexShrink: 0 }}>
+              {supplier || t('hoy.generate_send_no_supplier')}
              </span>
              <span style={{ color: 'var(--dim)' }}>
               {lines.map(l => `${l.name} (${l.qty.toLocaleString('es')} ${t('hoy.generate_send_units_abbrev')})`).join(' · ')}
@@ -1281,7 +1281,7 @@ export default function HoyPage() {
              fontSize: 13, color: 'var(--dim)', textDecoration: 'none',
              display: 'flex', alignItems: 'center', padding: '9px 4px',
             }}>
-             {t('hoy.generate_send_go_pedidos')}
+             {t('hoy.generate_send_go_orders')}
             </Link>
            </div>
           )}
@@ -1289,7 +1289,7 @@ export default function HoyPage() {
         )}
        </div>
 
-       {/* Compras y transferencias sugeridas — optimizer plan (MW-3) */}
+       {/* Compras y transferencias suggested — optimizer plan (MW-3) */}
        {optimizationLoading && !optimization && (
         <p style={{ fontSize: 12, color: C.dim, marginTop: 24 }}>
          {t('hoy.optimizer_loading')}
@@ -1310,12 +1310,12 @@ export default function HoyPage() {
             {t('hoy.optimizer_orders_title')}
            </h3>
            {optimization.orders.map(order => (
-            <div key={`${order.sku}-${order.bodega}`} style={{
+            <div key={`${order.sku}-${order.warehouse}`} style={{
              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
              padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6,
             }}>
              <span style={{ fontSize: 13 }}>
-              {order.sku} — {order.bodega}: <strong>{order.qty}</strong>
+              {order.sku} — {order.warehouse}: <strong>{order.qty}</strong>
              </span>
              <button onClick={() => convertOrderToPO(order)} style={{
               all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600,
@@ -1334,15 +1334,15 @@ export default function HoyPage() {
             {t('hoy.optimizer_transfers_title')}
            </h3>
            {optimization.transfers.map(tr => (
-            <div key={`${tr.sku}-${tr.from_bodega}-${tr.to_bodega}`} style={{
+            <div key={`${tr.sku}-${tr.from_warehouse}-${tr.to_warehouse}`} style={{
              fontSize: 13, padding: '10px 12px', border: '1px solid var(--border)',
              borderRadius: 8, marginBottom: 6,
             }}>
              {t('hoy.optimizer_transfer_line')
               .replace('{qty}', String(tr.qty))
               .replace('{sku}', tr.sku)
-              .replace('{from}', tr.from_bodega)
-              .replace('{to}', tr.to_bodega)}
+              .replace('{from}', tr.from_warehouse)
+              .replace('{to}', tr.to_warehouse)}
             </div>
            ))}
           </div>
@@ -1472,14 +1472,14 @@ export default function HoyPage() {
               )}
              </div>
              <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-              {item.dias_cobertura != null && (
+              {item.coverage_days != null && (
                <span style={{ fontSize: 12, color: C.dim }}>
-                {Math.round(item.dias_cobertura)} {t('hoy.reason_days_coverage')}
+                {Math.round(item.coverage_days)} {t('hoy.reason_days_coverage')}
                </span>
               )}
-              {item.valor_inventario != null && (
+              {item.inventory_value != null && (
                <span style={{ fontSize: 13, fontWeight: 600, color: C.blue }}>
-                {fmtM(item.valor_inventario)}
+                {fmtM(item.inventory_value)}
                </span>
               )}
              </div>
@@ -1531,7 +1531,7 @@ export default function HoyPage() {
     </>
    )}
 
-   {/* Reception modal — reused from /pedidos, opened from the overdue-reception nudge */}
+   {/* Reception modal — reused from /orders, opened from the overdue-reception nudge */}
    {receivingPO && (
     <ReceptionModal
      poId={receivingPO}

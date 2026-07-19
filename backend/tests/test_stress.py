@@ -184,7 +184,7 @@ class TestBulkOperations:
         from uuid import uuid4 as _uuid4
 
         n_rows = 3000
-        lines = ["sku,stock_actual,lead_time_dias"]
+        lines = ["sku,current_stock,lead_time_days"]
         for i in range(n_rows):
             lines.append(f"FREEZE-TEST-{_uuid4().hex[:10]}-{i},10,5")
         csv_bytes = ("\n".join(lines) + "\n").encode("utf-8")

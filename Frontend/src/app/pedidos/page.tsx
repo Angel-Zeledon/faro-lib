@@ -15,7 +15,7 @@ const C = {
   text: 'var(--text)', dim: 'var(--dim)', amber: '#f59e0b',
 }
 
-export default function PedidosPage() {
+export default function OrdersPage() {
   const { t } = useLanguage()
   const [history,     setHistory]     = useState<POLogEntry[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -68,9 +68,9 @@ export default function PedidosPage() {
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              {t('pedidos.page_title')}
+              {t('orders.page_title')}
             </h1>
-            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('pedidos.page_subtitle')}</p>
+            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('orders.page_subtitle')}</p>
           </div>
         </div>
         {pendingCount > 0 && (
@@ -78,7 +78,7 @@ export default function PedidosPage() {
             fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
             background: 'rgba(245,158,11,0.1)', color: C.amber,
           }}>
-            {pendingCount} {t('pedidos.pending_suffix')}
+            {pendingCount} {t('orders.pending_suffix')}
           </span>
         )}
       </div>
@@ -90,7 +90,7 @@ export default function PedidosPage() {
       {/* The three states: loading -> error -> empty -> data. */}
       {loading ? (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 8 }}>
-          <LoadingState label={t('pedidos.loading_label')}>
+          <LoadingState label={t('orders.loading_label')}>
             <SkeletonTable rows={6} columns={5} />
           </LoadingState>
         </div>
@@ -99,14 +99,14 @@ export default function PedidosPage() {
       ) : history.length === 0 ? (
         <EmptyState
           icon={<ClipboardList size={22} />}
-          title={t('pedidos.empty_title')}
-          body={t('pedidos.empty_hint')}
+          title={t('orders.empty_title')}
+          body={t('orders.empty_hint')}
           bullets={[
-            t('pedidos.empty_bullet_1'),
-            t('pedidos.empty_bullet_2'),
-            t('pedidos.empty_bullet_3'),
+            t('orders.empty_bullet_1'),
+            t('orders.empty_bullet_2'),
+            t('orders.empty_bullet_3'),
           ]}
-          actions={[{ label: t('pedidos.go_to_hoy'), href: '/hoy', icon: <ShoppingCart size={14} /> }]}
+          actions={[{ label: t('orders.go_to_hoy'), href: '/hoy', icon: <ShoppingCart size={14} /> }]}
         />
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>

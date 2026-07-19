@@ -1,8 +1,9 @@
 """
 Idempotent schema migrations — safe to run on every startup.
 
-The base-schema block below (tenants, users, sessions, datasets, …) MUST come
-first: it lets a brand-new/empty database be bootstrapped from scratch, and the
+The Spanish->English rename block runs first (see _SPANISH_SWEEP), then the
+base schema (tenants, users, sessions, datasets, …): the latter lets a
+brand-new/empty database be bootstrapped from scratch, and the
 incremental ALTER/CREATE migrations that follow reference these tables via FK.
 All statements are CREATE TABLE IF NOT EXISTS, so they are no-ops on databases
 that already have the schema (e.g. the original Supabase instance). Columns
@@ -13,6 +14,131 @@ import logging
 from backend.db.connection import execute
 
 log = logging.getLogger(__name__)
+
+def _rename_column(table: str, old: str, new: str) -> str:
+    """
+    Idempotent `RENAME COLUMN`. Postgres has no `IF EXISTS` for this, and a
+    second run would otherwise abort with "column does not exist", so the rename
+    is guarded on both sides: the old name must still be there AND the new name
+    must not be. That makes the statement a no-op both on an already-renamed
+    database and on a freshly created one (where the base schema already used
+    the new name).
+    """
+    return f"""DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name = '{table}' AND column_name = '{old}')
+        AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name = '{table}' AND column_name = '{new}')
+        THEN
+            ALTER TABLE {table} RENAME COLUMN {old} TO {new};
+        END IF;
+    END $$"""
+
+
+def _rename_table(old: str, new: str) -> str:
+    """Idempotent `ALTER TABLE ... RENAME TO`, guarded the same way."""
+    return f"""DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                    WHERE table_name = '{old}')
+        AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+                    WHERE table_name = '{new}')
+        THEN
+            ALTER TABLE {old} RENAME TO {new};
+        END IF;
+    END $$"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Spanish → English schema sweep.
+#
+# This block MUST run before everything else. The base schema and the
+# incremental ALTERs below now declare the ENGLISH names, and they are all
+# "IF NOT EXISTS": on a database that still has the Spanish columns, letting
+# them run first would ADD an empty English column next to the populated
+# Spanish one and the rename would then be skipped — silent data loss.
+# Renaming first means the later statements correctly find the column present
+# and no-op. Every statement here is idempotent, so this is safe on a brand-new
+# database too (nothing to rename) and on one already swept (nothing left).
+# ─────────────────────────────────────────────────────────────────────────────
+_COLUMN_RENAMES: list[tuple[str, str, str]] = [
+    ("inventory_stock", "stock_actual", "current_stock"),
+    ("inventory_stock", "stock_minimo", "min_stock"),
+    ("inventory_stock", "lead_time_dias", "lead_time_days"),
+    ("inventory_stock", "costo_unitario", "unit_cost"),
+    ("inventory_stock", "proveedor", "supplier"),
+    ("inventory_stock", "notas", "notes"),
+    ("inventory_stock", "precio_venta", "sale_price"),
+    ("inventory_stock", "categoria", "category"),
+    ("inventory_stock", "marca", "brand"),
+    ("inventory_stock", "unidad_medida", "unit_of_measure"),
+    ("inventory_stock", "codigo_barras", "barcode"),
+    ("inventory_stock", "bodega", "warehouse"),
+    ("inventory_snapshots", "stock_actual", "current_stock"),
+    ("inventory_po_log", "skus_pedir_ya", "skus_order_now"),
+    ("inventory_po_log", "skus_pedir_pronto", "skus_order_soon"),
+    ("inventory_po_items", "proveedor", "supplier"),
+    ("inventory_po_items", "cantidad_recomendada", "recommended_qty"),
+    ("inventory_po_items", "cantidad_final", "final_qty"),
+    ("inventory_po_items", "cantidad_recibida", "received_qty"),
+    ("inventory_po_items", "costo_unitario", "unit_cost"),
+    ("inventory_po_items", "bodega", "warehouse"),
+    ("suppliers", "lead_time_dias", "lead_time_days"),
+    ("sku_suppliers", "lead_time_dias", "lead_time_days"),
+    ("supplier_lead_time_obs", "proveedor", "supplier"),
+    # inventory_mermas is renamed to inventory_shrinkage just below; the column
+    # renames are expressed against the NEW table name because the table rename
+    # is ordered first.
+    ("inventory_shrinkage", "bodega", "warehouse"),
+    ("inventory_shrinkage", "costo_unitario", "unit_cost"),
+    ("inventory_shrinkage", "costo_total", "total_cost"),
+]
+
+_SPANISH_SWEEP = (
+    [("rename_table_inventory_mermas", _rename_table("inventory_mermas", "inventory_shrinkage"))]
+    + [
+        (f"rename_{table}_{old}", _rename_column(table, old, new))
+        for table, old, new in _COLUMN_RENAMES
+    ]
+    + [
+        # Indexes and constraints keep their own names after a rename, so the
+        # Spanish ones are renamed explicitly. `ALTER INDEX ... RENAME TO` is
+        # a no-op-safe guard on pg_class.
+        ("rename_inventory_mermas_indexes",
+         """DO $$ BEGIN
+             IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'inventory_mermas_tenant_idx') THEN
+                 ALTER INDEX inventory_mermas_tenant_idx RENAME TO inventory_shrinkage_tenant_idx;
+             END IF;
+             IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'inventory_mermas_sku_idx') THEN
+                 ALTER INDEX inventory_mermas_sku_idx RENAME TO inventory_shrinkage_sku_idx;
+             END IF;
+           END $$"""),
+        ("rename_inventory_stock_bodega_constraint",
+         """DO $$ BEGIN
+             IF EXISTS (SELECT 1 FROM pg_constraint
+                         WHERE conname = 'inventory_stock_tenant_sku_bodega_key') THEN
+                 ALTER TABLE inventory_stock
+                   RENAME CONSTRAINT inventory_stock_tenant_sku_bodega_key
+                   TO inventory_stock_tenant_sku_warehouse_key;
+             END IF;
+           END $$"""),
+        # The event-multiplier scope is a stored VALUE, not a column, so it needs
+        # a data update. The CHECK constraint has to be dropped before the rows
+        # can be rewritten, then re-added over the English vocabulary.
+        ("migrate_event_multiplier_scope_categoria",
+         """DO $$ BEGIN
+             IF EXISTS (SELECT 1 FROM information_schema.tables
+                         WHERE table_name = 'inventory_event_multipliers') THEN
+                 ALTER TABLE inventory_event_multipliers
+                   DROP CONSTRAINT IF EXISTS inventory_event_multipliers_scope_check;
+                 UPDATE inventory_event_multipliers
+                    SET scope = 'category' WHERE scope = 'categoria';
+                 ALTER TABLE inventory_event_multipliers
+                   ADD CONSTRAINT inventory_event_multipliers_scope_check
+                   CHECK (scope IN ('sku', 'category'));
+             END IF;
+           END $$"""),
+    ]
+)
 
 _BASE_SCHEMA = [
     ("base_tenants",
@@ -122,7 +248,7 @@ _BASE_SCHEMA = [
      )"""),
 ]
 
-_MIGRATIONS = _BASE_SCHEMA + [
+_MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_last_login_at",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ"),
     ("add_pending_email",
@@ -228,13 +354,13 @@ _MIGRATIONS = _BASE_SCHEMA + [
          tenant_id      TEXT NOT NULL,
          sku            TEXT NOT NULL,
          display_name   TEXT,
-         stock_actual   FLOAT NOT NULL DEFAULT 0,
-         stock_minimo   FLOAT NOT NULL DEFAULT 0,
-         lead_time_dias INT   NOT NULL DEFAULT 15,
-         costo_unitario FLOAT,
+         current_stock   FLOAT NOT NULL DEFAULT 0,
+         min_stock   FLOAT NOT NULL DEFAULT 0,
+         lead_time_days INT   NOT NULL DEFAULT 15,
+         unit_cost FLOAT,
          moq            FLOAT NOT NULL DEFAULT 1,
-         proveedor      TEXT,
-         notas          TEXT,
+         supplier      TEXT,
+         notes          TEXT,
          updated_at     TIMESTAMPTZ DEFAULT NOW(),
          created_at     TIMESTAMPTZ DEFAULT NOW(),
          UNIQUE (tenant_id, sku)
@@ -246,7 +372,7 @@ _MIGRATIONS = _BASE_SCHEMA + [
          id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
          tenant_id    TEXT NOT NULL,
          sku          TEXT NOT NULL,
-         stock_actual FLOAT NOT NULL,
+         current_stock FLOAT NOT NULL,
          recorded_at  TIMESTAMPTZ DEFAULT NOW()
      )"""),
     ("create_inventory_snapshots_idx",
@@ -273,8 +399,8 @@ _MIGRATIONS = _BASE_SCHEMA + [
          sku_count       INT NOT NULL DEFAULT 0,
          total_units     FLOAT NOT NULL DEFAULT 0,
          total_value     FLOAT,
-         skus_pedir_ya   INT NOT NULL DEFAULT 0,
-         skus_pedir_pronto INT NOT NULL DEFAULT 0
+         skus_order_now   INT NOT NULL DEFAULT 0,
+         skus_order_soon INT NOT NULL DEFAULT 0
      )"""),
     ("create_inventory_po_log_idx",
      "CREATE INDEX IF NOT EXISTS po_log_tenant_idx ON inventory_po_log (tenant_id, generated_at DESC)"),
@@ -290,7 +416,7 @@ _MIGRATIONS = _BASE_SCHEMA + [
     ("add_po_log_rejected_count",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS rejected_count INT NOT NULL DEFAULT 0"),
     # Per-line record of every recommendation in a PO, with the buyer's decision.
-    # cantidad_recomendada = what Faro suggested; cantidad_final = what the buyer
+    # recommended_qty = what Faro suggested; final_qty = what the buyer
     # kept; status ∈ approved | modified | rejected. Rejected lines are stored
     # too (not in the order) so adoption rate is measurable.
     ("create_inventory_po_items",
@@ -300,11 +426,11 @@ _MIGRATIONS = _BASE_SCHEMA + [
          tenant_id            TEXT NOT NULL,
          sku                  TEXT NOT NULL,
          display_name         TEXT,
-         proveedor            TEXT,
+         supplier            TEXT,
          signal               TEXT,
-         cantidad_recomendada FLOAT NOT NULL DEFAULT 0,
-         cantidad_final       FLOAT NOT NULL DEFAULT 0,
-         costo_unitario       FLOAT,
+         recommended_qty FLOAT NOT NULL DEFAULT 0,
+         final_qty       FLOAT NOT NULL DEFAULT 0,
+         unit_cost       FLOAT,
          status               TEXT NOT NULL DEFAULT 'approved',
          created_at           TIMESTAMPTZ DEFAULT NOW()
      )"""),
@@ -312,8 +438,8 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS po_items_log_idx ON inventory_po_items (po_log_id)"),
     ("create_inventory_po_items_sku_idx",
      "CREATE INDEX IF NOT EXISTS po_items_sku_idx ON inventory_po_items (tenant_id, sku)"),
-    ("add_bodega_to_inventory_po_items",
-     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS bodega TEXT NOT NULL DEFAULT 'principal'"),
+    ("add_warehouse_to_inventory_po_items",
+     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS warehouse TEXT NOT NULL DEFAULT 'principal'"),
     ("create_suppliers",
      """CREATE TABLE IF NOT EXISTS suppliers (
          id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -322,7 +448,7 @@ _MIGRATIONS = _BASE_SCHEMA + [
          email          TEXT,
          phone          TEXT,
          whatsapp       TEXT,
-         lead_time_dias INT  NOT NULL DEFAULT 15,
+         lead_time_days INT  NOT NULL DEFAULT 15,
          lead_time_std  INT  NOT NULL DEFAULT 3,
          payment_terms  TEXT,
          notes          TEXT,
@@ -341,7 +467,7 @@ _MIGRATIONS = _BASE_SCHEMA + [
          is_primary     BOOLEAN DEFAULT TRUE,
          unit_cost      FLOAT,
          moq            FLOAT DEFAULT 1,
-         lead_time_dias INT,
+         lead_time_days INT,
          notes          TEXT,
          created_at     TIMESTAMPTZ DEFAULT NOW(),
          UNIQUE (tenant_id, sku, supplier_id)
@@ -368,16 +494,16 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS bom_items_child_idx ON bom_items (tenant_id, child_sku)"),
     ("add_service_level_to_inventory_stock",
      "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS service_level FLOAT NOT NULL DEFAULT 0.95"),
-    ("add_precio_venta_to_inventory_stock",
-     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS precio_venta FLOAT"),
-    ("add_categoria_to_inventory_stock",
-     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS categoria TEXT"),
-    ("add_marca_to_inventory_stock",
-     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS marca TEXT"),
-    ("add_unidad_medida_to_inventory_stock",
-     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS unidad_medida TEXT"),
-    ("add_codigo_barras_to_inventory_stock",
-     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS codigo_barras TEXT"),
+    ("add_sale_price_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS sale_price FLOAT"),
+    ("add_category_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS category TEXT"),
+    ("add_brand_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS brand TEXT"),
+    ("add_unit_of_measure_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS unit_of_measure TEXT"),
+    ("add_barcode_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS barcode TEXT"),
     ("create_warehouses",
      """CREATE TABLE IF NOT EXISTS warehouses (
          id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -387,17 +513,17 @@ _MIGRATIONS = _BASE_SCHEMA + [
          created_at TIMESTAMPTZ DEFAULT NOW(),
          UNIQUE (tenant_id, name)
      )"""),
-    ("add_bodega_to_inventory_stock",
-     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS bodega TEXT NOT NULL DEFAULT 'principal'"),
+    ("add_warehouse_to_inventory_stock",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS warehouse TEXT NOT NULL DEFAULT 'principal'"),
     ("drop_inventory_stock_tenant_sku_unique",
      "ALTER TABLE inventory_stock DROP CONSTRAINT IF EXISTS inventory_stock_tenant_id_sku_key"),
-    ("add_inventory_stock_tenant_sku_bodega_unique",
+    ("add_inventory_stock_tenant_sku_warehouse_unique",
      """DO $$ BEGIN
          IF NOT EXISTS (
-           SELECT 1 FROM pg_constraint WHERE conname = 'inventory_stock_tenant_sku_bodega_key'
+           SELECT 1 FROM pg_constraint WHERE conname = 'inventory_stock_tenant_sku_warehouse_key'
          ) THEN
            ALTER TABLE inventory_stock
-             ADD CONSTRAINT inventory_stock_tenant_sku_bodega_key UNIQUE (tenant_id, sku, bodega);
+             ADD CONSTRAINT inventory_stock_tenant_sku_warehouse_key UNIQUE (tenant_id, sku, warehouse);
          END IF;
        END $$"""),
     ("create_jobs",
@@ -467,21 +593,21 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ"),
     ("add_po_log_received_by",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS received_by TEXT"),
-    ("add_po_items_cantidad_recibida",
-     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS cantidad_recibida FLOAT"),
+    ("add_po_items_received_qty",
+     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS received_qty FLOAT"),
     # Real lead-time observations per supplier, learned from PO receptions.
-    # Keyed by supplier NAME (po lines carry the free-text proveedor field).
+    # Keyed by supplier NAME (po lines carry the free-text supplier field).
     ("create_supplier_lead_time_obs",
      """CREATE TABLE IF NOT EXISTS supplier_lead_time_obs (
          id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
          tenant_id      TEXT NOT NULL,
-         proveedor      TEXT NOT NULL,
+         supplier      TEXT NOT NULL,
          po_log_id      TEXT NOT NULL REFERENCES inventory_po_log(id) ON DELETE CASCADE,
          lead_time_days FLOAT NOT NULL,
          observed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
      )"""),
     ("create_supplier_lead_time_obs_idx",
-     "CREATE INDEX IF NOT EXISTS slto_tenant_prov_idx ON supplier_lead_time_obs (tenant_id, proveedor)"),
+     "CREATE INDEX IF NOT EXISTS slto_tenant_prov_idx ON supplier_lead_time_obs (tenant_id, supplier)"),
     # ── ROI monthly evolution (feature 1.5): capital freed from overstock ────
     # One row per tenant per month, taken by a scheduled job on the 1st.
     # No historical backfill — the metric only exists from here forward.
@@ -504,28 +630,28 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "ALTER TABLE session_configs ADD COLUMN IF NOT EXISTS granularity_cfg JSONB"),
     # ── Mermas (shrinkage / non-sale stock-outs) ─────────────────────────────
     # Records inventory that left stock for a reason OTHER than a sale
-    # (breakage, expiry, self-consumption, gift/sample). costo_unitario is
+    # (breakage, expiry, self-consumption, gift/sample). unit_cost is
     # captured at record time (the SKU's unit cost can change later — this
-    # keeps the historical cost accurate); costo_total = quantity * costo_unitario,
+    # keeps the historical cost accurate); total_cost = quantity * unit_cost,
     # precomputed here so a future monthly shrinkage summary is a simple SUM.
-    ("create_inventory_mermas",
-     """CREATE TABLE IF NOT EXISTS inventory_mermas (
+    ("create_inventory_shrinkage",
+     """CREATE TABLE IF NOT EXISTS inventory_shrinkage (
          id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
          tenant_id      TEXT NOT NULL,
          sku            TEXT NOT NULL,
-         bodega         TEXT NOT NULL DEFAULT 'principal',
+         warehouse         TEXT NOT NULL DEFAULT 'principal',
          quantity       FLOAT NOT NULL,
          reason         TEXT NOT NULL,
-         costo_unitario FLOAT,
-         costo_total    FLOAT,
+         unit_cost FLOAT,
+         total_cost    FLOAT,
          notes          TEXT,
          created_by     TEXT,
          created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
      )"""),
-    ("create_inventory_mermas_tenant_idx",
-     "CREATE INDEX IF NOT EXISTS inventory_mermas_tenant_idx ON inventory_mermas (tenant_id, created_at DESC)"),
-    ("create_inventory_mermas_sku_idx",
-     "CREATE INDEX IF NOT EXISTS inventory_mermas_sku_idx ON inventory_mermas (tenant_id, sku, created_at DESC)"),
+    ("create_inventory_shrinkage_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_shrinkage_tenant_idx ON inventory_shrinkage (tenant_id, created_at DESC)"),
+    ("create_inventory_shrinkage_sku_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_shrinkage_sku_idx ON inventory_shrinkage (tenant_id, sku, created_at DESC)"),
     # ── LatAm commercial calendar (feature 3.4) ───────────────────────────────
     # Seeded events live in the same table as user-created ones so the existing
     # simulator needs no changes. `catalog_key` identifies a seeded occurrence
@@ -545,15 +671,15 @@ _MIGRATIONS = _BASE_SCHEMA + [
         ON inventory_events (tenant_id, catalog_key)
         WHERE catalog_key IS NOT NULL"""),
     # Per-product / per-category multipliers for an event.
-    # Un solo multiplicador por evento es falso en la práctica: en Black Friday
-    # la electrónica se dispara y la leche no se mueve. `scope` = 'sku' o
-    # 'categoria'; la resolución es sku > categoria > multiplicador del evento.
+    # One multiplier per event is false in practice: on Black Friday
+    # electronics spike and milk does not move. `scope` is 'sku' or
+    # 'category'; resolution order is sku > category > the event's multiplier.
     ("create_inventory_event_multipliers",
      """CREATE TABLE IF NOT EXISTS inventory_event_multipliers (
          id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
          tenant_id   TEXT NOT NULL,
          event_id    TEXT NOT NULL REFERENCES inventory_events(id) ON DELETE CASCADE,
-         scope       TEXT NOT NULL CHECK (scope IN ('sku', 'categoria')),
+         scope       TEXT NOT NULL CHECK (scope IN ('sku', 'category')),
          scope_value TEXT NOT NULL,
          multiplier  FLOAT NOT NULL,
          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -595,7 +721,7 @@ _MIGRATIONS = _BASE_SCHEMA + [
      "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_terms_days INT"),
     # Backfill of what users already captured. Mirrors parse_payment_terms_days()
     # in backend/inventory/cash_service.py (same cases, same rule order):
-    #   cash-on-delivery/prepaid → 0 · "N mes(es)" → N*30 · quincenal → 15 ·
+    #   cash-on-delivery/prepaid → 0 · "N mes(es)" → N*30 · "quincenal" → 15 ·
     #   first number found → N days · anything else → NULL.
     # Unparseable text stays NULL on purpose: the cash calendar reports it under
     # "missing terms" instead of inventing a due date.

@@ -20,7 +20,7 @@ from backend.db.connection import execute, query, query_one
 log = logging.getLogger(__name__)
 
 # Same fallback used in service.py's stock signal calc when a SKU has no
-# lead_time_dias on file — keeps the "expected arrival" guess consistent
+# lead_time_days on file — keeps the "expected arrival" guess consistent
 # with the rest of the app when a supplier has no data at all.
 _DEFAULT_LEAD_TIME_DAYS = 15.0
 
@@ -39,12 +39,12 @@ def get_po(tenant_id: str, po_log_id: str) -> Optional[dict]:
 
 def get_po_items(tenant_id: str, po_log_id: str) -> list[dict]:
     return query(
-        """SELECT id, sku, display_name, proveedor, signal, status,
-                  cantidad_recomendada, cantidad_final, cantidad_recibida, costo_unitario,
-                  bodega
+        """SELECT id, sku, display_name, supplier, signal, status,
+                  recommended_qty, final_qty, received_qty, unit_cost,
+                  warehouse
            FROM inventory_po_items
            WHERE po_log_id = %s AND tenant_id = %s
-           ORDER BY proveedor NULLS LAST, sku""",
+           ORDER BY supplier NULLS LAST, sku""",
         (po_log_id, tenant_id),
     )
 
@@ -77,9 +77,9 @@ def receive_po(
     """
     Record a reception for a PO.
 
-    lines: [{sku, cantidad_recibida}] — omit entirely (or None) to mean
+    lines: [{sku, received_qty}] — omit entirely (or None) to mean
            "everything arrived complete" (each ordered line receives its
-           cantidad_final). Lines not mentioned receive 0 for this event.
+           final_qty). Lines not mentioned receive 0 for this event.
 
     Raises ValueError with a user-facing message on invalid state/input.
     """
@@ -108,10 +108,10 @@ def receive_po(
         raise ValueError("La fecha de recepción no puede ser anterior a la fecha de la orden")
 
     # Resolve received qty per ordered PO LINE (keyed by item id, not sku —
-    # a PO can carry the same SKU on separate lines for different bodegas,
-    # and each line has its own cantidad_final/bodega).
+    # a PO can carry the same SKU on separate lines for different warehouses,
+    # and each line has its own final_qty/warehouse).
     if lines is None:
-        received_by_item = {i["id"]: float(i["cantidad_final"] or 0) for i in ordered}
+        received_by_item = {i["id"]: float(i["final_qty"] or 0) for i in ordered}
     else:
         received_by_item = {}
         sku_to_items: dict[str, list[dict]] = {}
@@ -123,61 +123,61 @@ def receive_po(
             if not matches:
                 raise ValueError(f"El SKU '{sku}' no está en esta orden")
             if len(matches) > 1:
-                # The {sku, cantidad_recibida} line shape can't disambiguate
-                # which bodega's line the quantity belongs to.
+                # The {sku, received_qty} line shape can't disambiguate
+                # which warehouse's line the quantity belongs to.
                 raise ValueError(
                     f"El SKU '{sku}' aparece en más de una bodega en esta orden; "
                     "no se puede recibir por SKU, indique la recepción completa"
                 )
-            qty = float(ln.get("cantidad_recibida") or 0)
+            qty = float(ln.get("received_qty") or 0)
             if qty < 0:
                 raise ValueError(f"Cantidad recibida negativa para '{sku}'")
             received_by_item[matches[0]["id"]] = qty
         for i in ordered:
             received_by_item.setdefault(i["id"], 0.0)
 
-    # 1. Per-line: accumulate cantidad_recibida (partial receptions add up)
+    # 1. Per-line: accumulate received_qty (partial receptions add up)
     for i in ordered:
         qty = received_by_item[i["id"]]
         execute(
             """UPDATE inventory_po_items
-               SET cantidad_recibida = COALESCE(cantidad_recibida, 0) + %s
+               SET received_qty = COALESCE(received_qty, 0) + %s
                WHERE id = %s AND tenant_id = %s""",
             (qty, i["id"], tenant_id),
         )
 
-    # 2. Stock: add received units. Creates the stock row if the SKU/bodega
+    # 2. Stock: add received units. Creates the stock row if the SKU/warehouse
     # combination is new. The existence check and the update/insert below
-    # all target the SAME bodega — checking one bodega's presence but
+    # all target the SAME warehouse — checking one warehouse's presence but
     # writing to another would silently drop the received units.
     from backend.inventory import service as inv_svc
     for i in ordered:
         qty = received_by_item[i["id"]]
         if qty <= 0:
             continue
-        bodega = i.get("bodega") or "principal"
-        existing = inv_svc.get_stock(tenant_id, i["sku"], bodega=bodega)
+        warehouse = i.get("warehouse") or "principal"
+        existing = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse)
         if existing:
             execute(
                 """UPDATE inventory_stock
-                   SET stock_actual = stock_actual + %s, updated_at = NOW()
-                   WHERE tenant_id = %s AND sku = %s AND bodega = %s""",
-                (qty, tenant_id, i["sku"], bodega),
+                   SET current_stock = current_stock + %s, updated_at = NOW()
+                   WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
+                (qty, tenant_id, i["sku"], warehouse),
             )
         else:
             inv_svc.upsert_stock(tenant_id, i["sku"], {
-                "stock_actual": qty,
+                "current_stock": qty,
                 "display_name": i.get("display_name"),
-                "proveedor": i.get("proveedor"),
-                "bodega": bodega,
+                "supplier": i.get("supplier"),
+                "warehouse": warehouse,
             })
         # Point-in-time snapshot so /stock/{sku}/history reflects the arrival
         try:
-            new_row = inv_svc.get_stock(tenant_id, i["sku"], bodega=bodega)
+            new_row = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse)
             execute(
-                """INSERT INTO inventory_snapshots (tenant_id, sku, stock_actual)
+                """INSERT INTO inventory_snapshots (tenant_id, sku, current_stock)
                    VALUES (%s, %s, %s)""",
-                (tenant_id, i["sku"], new_row["stock_actual"]),
+                (tenant_id, i["sku"], new_row["current_stock"]),
             )
         except Exception as e:
             log.warning("reception snapshot failed sku=%s: %s", i["sku"], e)
@@ -185,9 +185,9 @@ def receive_po(
     # 3. Header status
     fresh = get_po_items(tenant_id, po_log_id)
     fresh_ordered = [i for i in fresh if i["status"] in _ORDERED]
-    fully = all(float(i["cantidad_recibida"] or 0) >= float(i["cantidad_final"] or 0)
+    fully = all(float(i["received_qty"] or 0) >= float(i["final_qty"] or 0)
                 for i in fresh_ordered)
-    any_received = any(float(i["cantidad_recibida"] or 0) > 0 for i in fresh_ordered)
+    any_received = any(float(i["received_qty"] or 0) > 0 for i in fresh_ordered)
     status = "received" if fully else ("partial" if any_received else "not_received")
 
     execute(
@@ -201,15 +201,15 @@ def receive_po(
     # something in this event (first reception only, so partials don't skew).
     lead_days = max(0.0, (received_at - generated_at).total_seconds() / 86400.0)
     observed_suppliers = sorted({
-        (i.get("proveedor") or "").strip()
+        (i.get("supplier") or "").strip()
         for i in ordered
-        if (i.get("proveedor") or "").strip() and received_by_item[i["id"]] > 0
+        if (i.get("supplier") or "").strip() and received_by_item[i["id"]] > 0
     })
     if po.get("reception_status") == "pending":  # was pending before this event
         for prov in observed_suppliers:
             execute(
                 """INSERT INTO supplier_lead_time_obs
-                       (tenant_id, proveedor, po_log_id, lead_time_days)
+                       (tenant_id, supplier, po_log_id, lead_time_days)
                    VALUES (%s, %s, %s, %s)""",
                 (tenant_id, prov, po_log_id, round(lead_days, 2)),
             )
@@ -235,39 +235,39 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     reception — nothing to score before that.
     """
     lead_rows = query(
-        """SELECT o.proveedor,
+        """SELECT o.supplier,
                   COUNT(*)::int                      AS n_recepciones,
                   MIN(o.lead_time_days)              AS lead_time_real_min,
                   MAX(o.lead_time_days)              AS lead_time_real_max,
                   AVG(o.lead_time_days)              AS lead_time_real_avg,
                   MAX(o.observed_at)                 AS ultima_recepcion,
-                  s.lead_time_dias                   AS lead_time_declarado,
-                  AVG(CASE WHEN o.lead_time_days <= s.lead_time_dias THEN 1.0 ELSE 0.0 END)
-                      FILTER (WHERE s.lead_time_dias IS NOT NULL) AS on_time_rate
+                  s.lead_time_days                   AS lead_time_declarado,
+                  AVG(CASE WHEN o.lead_time_days <= s.lead_time_days THEN 1.0 ELSE 0.0 END)
+                      FILTER (WHERE s.lead_time_days IS NOT NULL) AS on_time_rate
            FROM supplier_lead_time_obs o
            LEFT JOIN suppliers s
-             ON s.tenant_id = o.tenant_id AND LOWER(s.name) = LOWER(o.proveedor)
+             ON s.tenant_id = o.tenant_id AND LOWER(s.name) = LOWER(o.supplier)
            WHERE o.tenant_id = %s
-           GROUP BY o.proveedor, s.lead_time_dias
-           ORDER BY n_recepciones DESC, o.proveedor""",
+           GROUP BY o.supplier, s.lead_time_days
+           ORDER BY n_recepciones DESC, o.supplier""",
         (tenant_id,),
     )
 
     fill_rows = query(
-        """SELECT poi.proveedor,
-                  COALESCE(SUM(poi.cantidad_recibida), 0) AS total_recibido,
-                  COALESCE(SUM(poi.cantidad_final), 0)    AS total_pedido,
-                  COALESCE(SUM(poi.cantidad_final * poi.costo_unitario), 0) AS valor_comprado
+        """SELECT poi.supplier,
+                  COALESCE(SUM(poi.received_qty), 0) AS total_received,
+                  COALESCE(SUM(poi.final_qty), 0)    AS order_total,
+                  COALESCE(SUM(poi.final_qty * poi.unit_cost), 0) AS purchased_value
            FROM inventory_po_items poi
            JOIN inventory_po_log pol ON pol.id = poi.po_log_id
            WHERE poi.tenant_id = %s
              AND poi.status IN ('approved', 'modified')
-             AND poi.proveedor IS NOT NULL AND poi.proveedor <> ''
+             AND poi.supplier IS NOT NULL AND poi.supplier <> ''
              AND pol.reception_status <> 'pending'
-           GROUP BY poi.proveedor""",
+           GROUP BY poi.supplier""",
         (tenant_id,),
     )
-    fill_by_proveedor = {r["proveedor"]: r for r in fill_rows}
+    fill_by_supplier = {r["supplier"]: r for r in fill_rows}
 
     out = []
     for r in lead_rows:
@@ -282,28 +282,28 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
 
         declared = d.get("lead_time_declarado")
         avg = d.get("lead_time_real_avg")
-        d["desviacion_dias"] = round(avg - declared, 1) if (declared is not None and avg is not None) else None
+        d["deviation_days"] = round(avg - declared, 1) if (declared is not None and avg is not None) else None
 
-        fill = fill_by_proveedor.get(d["proveedor"])
-        total_pedido = float(fill["total_pedido"]) if fill else 0.0
-        d["fill_rate"] = round(float(fill["total_recibido"]) / total_pedido, 3) if fill and total_pedido > 0 else None
-        d["valor_comprado"] = round(float(fill["valor_comprado"]), 2) if fill else 0.0
+        fill = fill_by_supplier.get(d["supplier"])
+        order_total = float(fill["order_total"]) if fill else 0.0
+        d["fill_rate"] = round(float(fill["total_received"]) / order_total, 3) if fill and order_total > 0 else None
+        d["purchased_value"] = round(float(fill["purchased_value"]), 2) if fill else 0.0
 
         out.append(d)
 
     # Suppliers with fill/value data (a reception event happened — the PO left
     # 'pending') but zero lead-time observations (e.g. everything received was
     # 0 units, so receive_po never wrote a supplier_lead_time_obs row). They
-    # still belong on the scorecard with a real fill_rate/valor_comprado;
+    # still belong on the scorecard with a real fill_rate/purchased_value;
     # lead-time fields are simply unknown. Appended after the lead-time group,
-    # ordered by proveedor.
-    lead_proveedores = {r["proveedor"] for r in lead_rows}
-    fill_only_proveedores = sorted(p for p in fill_by_proveedor if p not in lead_proveedores)
-    for prov in fill_only_proveedores:
-        fill = fill_by_proveedor[prov]
-        total_pedido = float(fill["total_pedido"])
+    # ordered by supplier.
+    lead_suppliers = {r["supplier"] for r in lead_rows}
+    fill_only_suppliers = sorted(p for p in fill_by_supplier if p not in lead_suppliers)
+    for prov in fill_only_suppliers:
+        fill = fill_by_supplier[prov]
+        order_total = float(fill["order_total"])
         out.append({
-            "proveedor": prov,
+            "supplier": prov,
             "n_recepciones": 0,
             "lead_time_real_min": None,
             "lead_time_real_max": None,
@@ -311,14 +311,14 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "ultima_recepcion": None,
             "lead_time_declarado": None,
             "on_time_rate": None,
-            "desviacion_dias": None,
-            "fill_rate": round(float(fill["total_recibido"]) / total_pedido, 3) if total_pedido > 0 else None,
-            "valor_comprado": round(float(fill["valor_comprado"]), 2),
+            "deviation_days": None,
+            "fill_rate": round(float(fill["total_received"]) / order_total, 3) if order_total > 0 else None,
+            "purchased_value": round(float(fill["purchased_value"]), 2),
         })
     return out
 
 
-def _effective_lead_time(tenant_id: str, proveedor: str) -> tuple[float, str]:
+def _effective_lead_time(tenant_id: str, supplier: str) -> tuple[float, str]:
     """
     The "already-learned" lead time for a supplier, preferring real observed
     receptions over the declared value on the supplier's card, and falling
@@ -328,16 +328,16 @@ def _effective_lead_time(tenant_id: str, proveedor: str) -> tuple[float, str]:
     obs = query_one(
         """SELECT AVG(lead_time_days) AS avg_days, COUNT(*)::int AS n
            FROM supplier_lead_time_obs
-           WHERE tenant_id = %s AND LOWER(proveedor) = LOWER(%s)""",
-        (tenant_id, proveedor),
+           WHERE tenant_id = %s AND LOWER(supplier) = LOWER(%s)""",
+        (tenant_id, supplier),
     )
     if obs and obs.get("n") and obs["n"] > 0 and obs.get("avg_days") is not None:
         return float(obs["avg_days"]), "observed"
 
     from backend.inventory import supplier_service as sup_svc
-    supplier = sup_svc.get_supplier_by_name(tenant_id, proveedor)
-    if supplier and supplier.get("lead_time_dias") is not None:
-        return float(supplier["lead_time_dias"]), "declared"
+    supplier = sup_svc.get_supplier_by_name(tenant_id, supplier)
+    if supplier and supplier.get("lead_time_days") is not None:
+        return float(supplier["lead_time_days"]), "declared"
 
     return _DEFAULT_LEAD_TIME_DAYS, "default"
 
@@ -346,7 +346,7 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
     """
     POs still pending/partial whose expected arrival — generation date plus
     the supplier's already-learned lead time (see _effective_lead_time) — has
-    passed without any recorded reception. One row per (po_log_id, proveedor)
+    passed without any recorded reception. One row per (po_log_id, supplier)
     pair, since a single PO can span several suppliers with different lead
     times and only some of them may actually be late.
     """
@@ -369,22 +369,22 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
 
         items = get_po_items(tenant_id, po_log_id)
         ordered = [i for i in items if i["status"] in _ORDERED]
-        proveedores = sorted({
-            (i.get("proveedor") or "").strip()
+        suppliers = sorted({
+            (i.get("supplier") or "").strip()
             for i in ordered
-            if (i.get("proveedor") or "").strip()
+            if (i.get("supplier") or "").strip()
         })
-        if not proveedores:
+        if not suppliers:
             continue
 
-        for prov in proveedores:
+        for prov in suppliers:
             lead_time, source = _effective_lead_time(tenant_id, prov)
             expected_arrival = generated_at + timedelta(days=lead_time)
             if now <= expected_arrival:
                 continue
             out.append({
                 "po_log_id":        po_log_id,
-                "proveedor":        prov,
+                "supplier":        prov,
                 "generated_at":     generated_at.isoformat(),
                 "expected_arrival": expected_arrival.date().isoformat(),
                 "days_overdue":     (now - expected_arrival).days,

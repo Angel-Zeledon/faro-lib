@@ -199,7 +199,7 @@ class TestInventoryMutationPermissions:
         sku = f"PYTEST-PERM-{uuid4().hex[:8]}"
         put = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 10},
+            json={"current_stock": 10},
             headers=viewer_headers,
         )
         assert put.status_code == 403
@@ -208,11 +208,11 @@ class TestInventoryMutationPermissions:
 
         put = client.put(
             f"/api/v1/inventory/stock/{sku}",
-            json={"stock_actual": 10},
+            json={"current_stock": 10},
             headers=analyst_headers,
         )
         assert put.status_code == 200
-        assert put.json()["data"]["stock_actual"] == 10
+        assert put.json()["data"]["current_stock"] == 10
 
         assert client.delete(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers).status_code == 403
         assert client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).status_code == 200
@@ -282,7 +282,7 @@ class TestInventoryMutationPermissions:
         parent, child = f"PERM-P-{uuid4().hex[:6]}", f"PERM-C-{uuid4().hex[:6]}"
         for sku in (parent, child):
             assert client.put(
-                f"/api/v1/inventory/stock/{sku}", json={"stock_actual": 1}, headers=analyst_headers
+                f"/api/v1/inventory/stock/{sku}", json={"current_stock": 1}, headers=analyst_headers
             ).status_code == 200
 
         assert client.put(
@@ -307,7 +307,7 @@ class TestInventoryMutationPermissions:
 
     def test_bulk_import_viewer_denied_analyst_allowed(self, client, viewer_headers, analyst_headers, auth_headers):
         sku = f"PYTEST-BULK-{uuid4().hex[:8]}"
-        csv_content = f"sku,stock_actual,lead_time_dias\n{sku},25,10\n".encode()
+        csv_content = f"sku,current_stock,lead_time_days\n{sku},25,10\n".encode()
 
         resp = client.post(
             "/api/v1/inventory/bulk",
@@ -327,7 +327,7 @@ class TestInventoryMutationPermissions:
 
         check = client.get(f"/api/v1/inventory/stock/{sku}", headers=viewer_headers)
         assert check.status_code == 200
-        assert check.json()["data"]["stock_actual"] == 25
+        assert check.json()["data"]["current_stock"] == 25
         client.delete(f"/api/v1/inventory/stock/{sku}", headers=analyst_headers)
 
     def test_viewer_can_still_read_inventory(self, client, viewer_headers):
