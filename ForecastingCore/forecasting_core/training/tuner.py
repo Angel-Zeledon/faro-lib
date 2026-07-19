@@ -71,10 +71,10 @@ def _make_model(model_name: str, params: Dict[str, Any]):
     p = params or {}
     if model_name == "lightgbm":
         from lightgbm import LGBMRegressor
-        return LGBMRegressor(**{**p, "verbosity": -1})
+        return LGBMRegressor(**{"n_jobs": 1, **p, "verbosity": -1})
     if model_name == "xgboost":
         from xgboost import XGBRegressor
-        return XGBRegressor(**{**p, "verbosity": 0})
+        return XGBRegressor(**{"n_jobs": 1, **p, "verbosity": 0})
     raise ValueError(f"No search space defined for model '{model_name}'")
 
 

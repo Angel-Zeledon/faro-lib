@@ -241,6 +241,78 @@ class TestTrainer:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Trainer parallelism (per-SKU worker threads)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTrainerParallelism:
+
+    def _get_models(self):
+        return ModelFactory({"lightgbm": {"n_estimators": 20}}).build_ml()
+
+    def test_resolve_max_workers_never_parallelizes_single_group(self):
+        trainer = Trainer(train_ratio=0.8, walk_forward=False)
+        assert trainer._resolve_max_workers(1) == 1
+        assert trainer._resolve_max_workers(0) == 1
+
+    def test_resolve_max_workers_auto_caps_to_group_count(self):
+        trainer = Trainer(train_ratio=0.8, walk_forward=False)
+        n_workers = trainer._resolve_max_workers(3)
+        assert 1 <= n_workers <= 3
+
+    def test_resolve_max_workers_respects_explicit_cap(self):
+        trainer = Trainer(train_ratio=0.8, walk_forward=False, max_workers=2)
+        assert trainer._resolve_max_workers(10) == 2
+        assert trainer._resolve_max_workers(1) == 1
+
+    def test_parallel_and_sequential_produce_same_skus(self):
+        df = _make_feature_df(n=60, skus=["A", "B", "C", "D", "E", "F"])
+        seq = Trainer(train_ratio=0.8, walk_forward=False, max_workers=1)
+        par = Trainer(train_ratio=0.8, walk_forward=False, max_workers=4)
+        res_seq = seq.train(df, self._get_models(), group_col="sku", target="sales", dt="date")
+        res_par = par.train(df, self._get_models(), group_col="sku", target="sales", dt="date")
+        assert set(res_seq.keys()) == set(res_par.keys())
+
+    def test_parallel_metrics_match_sequential(self):
+        """
+        Regression guard for shared-model-state corruption: Trainer._wfv/_simple
+        call .fit() directly on model instances across fold iterations, and
+        those instances used to be shared across every SKU's call. If a future
+        change reintroduced that sharing, concurrent .fit() calls from
+        different worker threads on the same object would corrupt each
+        other's state and metrics would diverge between max_workers=1 and
+        max_workers>1 (or vary from run to run). n_estimators=20 with no
+        early stopping keeps LightGBM deterministic across both runs.
+        """
+        df = _make_feature_df(n=80, skus=["A", "B", "C", "D", "E", "F", "G", "H"])
+        seq = Trainer(train_ratio=0.8, walk_forward=False, max_workers=1)
+        par = Trainer(train_ratio=0.8, walk_forward=False, max_workers=8)
+        res_seq = seq.train(df, self._get_models(), group_col="sku", target="sales", dt="date")
+        res_par = par.train(df, self._get_models(), group_col="sku", target="sales", dt="date")
+        assert set(res_seq.keys()) == set(res_par.keys())
+        for key in res_seq:
+            assert res_seq[key]["sku"] == res_par[key]["sku"]
+            assert res_seq[key]["mae"] == pytest.approx(res_par[key]["mae"], rel=1e-6)
+
+    def test_group_failure_does_not_abort_other_groups(self, monkeypatch):
+        df = _make_feature_df(n=60, skus=["A", "B", "C"])
+        trainer = Trainer(train_ratio=0.8, walk_forward=False, max_workers=3)
+        models = self._get_models()
+
+        original = trainer._train_one_group
+
+        def flaky(group_val, g, dt, target, exclude, trainable):
+            if group_val == "B":
+                raise RuntimeError("synthetic failure for SKU B")
+            return original(group_val, g, dt, target, exclude, trainable)
+
+        monkeypatch.setattr(trainer, "_train_one_group", flaky)
+
+        results = trainer.train(df, models, group_col="sku", target="sales", dt="date")
+        skus = {v["sku"] for v in results.values()}
+        assert skus == {"A", "C"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ModelRouter
 # ─────────────────────────────────────────────────────────────────────────────
 

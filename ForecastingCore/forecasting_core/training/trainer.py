@@ -13,6 +13,8 @@ Example:
 
 import copy
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
@@ -59,12 +61,21 @@ class Trainer:
         wfv_splits: int = 3,
         tuning: bool = False,
         tuning_trials: int = 30,
+        max_workers: Optional[int] = None,
     ):
         self.train_ratio    = train_ratio
         self.walk_forward   = walk_forward
         self.wfv_splits     = wfv_splits
         self.tuning         = tuning
         self.tuning_trials  = tuning_trials
+        # None = auto (min(cpu_count, n_groups)). Each SKU/store group trains
+        # independently, so groups can run concurrently in worker threads —
+        # LightGBM/XGBoost's fit()/predict() are native code and release the
+        # GIL, so this achieves real parallelism despite the GIL. Models are
+        # built with n_jobs=1 (see ModelFactory) so this is the only layer
+        # that parallelizes; letting both layers parallelize independently
+        # would oversubscribe the CPU.
+        self.max_workers    = max_workers
 
     def train(
         self,
@@ -107,50 +118,84 @@ class Trainer:
         else:
             groups = [("__all__", df)]
 
-        for group_val, g in groups:
-            if isinstance(group_val, tuple):
-                sku_val   = str(group_val[0]) if len(group_val) > 0 else "__all__"
-                store_val = str(group_val[1]) if len(group_val) > 1 else "Tienda única"
-            elif isinstance(group_val, str):
-                sku_val   = group_val
-                store_val = "Tienda única"
-            else:
-                sku_val   = str(group_val)
-                store_val = "Tienda única"
+        group_list = list(groups)
+        n_workers = self._resolve_max_workers(len(group_list))
 
-            g = g.sort_values(dt).reset_index(drop=True)
-            X = g.drop(columns=[c for c in exclude if c in g.columns])
-            non_numeric = X.select_dtypes(exclude=["number", "bool"]).columns.tolist()
-            if non_numeric:
-                log.warning(
-                    f"SKU {sku_val} | dropping non-numeric feature column(s) {non_numeric} "
-                    "— not selected as group_col/target/dt but unsuitable as a raw ML feature"
-                )
-                X = X.drop(columns=non_numeric)
-            y = g[target].astype(float)
-
-            # Leakage guard: drop any feature that is an exact copy of the
-            # target (e.g. the canonical 'demand' alias added on top of the
-            # user's mapped column) — a model given the answer as a feature
-            # reports near-zero validation error and is useless in production.
-            leak_cols = [
-                col for col in X.columns
-                if pd.api.types.is_numeric_dtype(X[col]) and X[col].astype(float).equals(y)
-            ]
-            if leak_cols:
-                log.warning(
-                    f"SKU {sku_val} | dropping feature column(s) {leak_cols} — "
-                    f"identical to target '{target}' (data leakage)"
-                )
-                X = X.drop(columns=leak_cols)
-
-            if self.walk_forward:
-                res = self._wfv(X, y, trainable, sku_val, store_val)
-            else:
-                res = self._simple(X, y, trainable, sku_val, store_val)
-            results.update(res)
+        if n_workers <= 1:
+            for group_val, g in group_list:
+                results.update(self._train_one_group(group_val, g, dt, target, exclude, trainable))
+        else:
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                futures = [
+                    executor.submit(self._train_one_group, group_val, g, dt, target, exclude, trainable)
+                    for group_val, g in group_list
+                ]
+                for future in as_completed(futures):
+                    try:
+                        results.update(future.result())
+                    except Exception as e:
+                        log.warning(f"Group training task failed: {e}")
 
         return results
+
+    def _resolve_max_workers(self, n_groups: int) -> int:
+        """Worker count for the per-group parallel loop. None (auto) uses
+        every available core, capped to the number of groups (no point
+        spinning up more workers than there is work)."""
+        if n_groups <= 1:
+            return 1
+        cap = self.max_workers if self.max_workers is not None else (os.cpu_count() or 1)
+        return max(1, min(cap, n_groups))
+
+    def _train_one_group(self, group_val, g, dt, target, exclude, trainable) -> Dict[str, dict]:
+        """Train every model on one SKU/store group. Runs in a worker thread
+        when the group loop is parallelized — must not mutate shared state."""
+        if isinstance(group_val, tuple):
+            sku_val   = str(group_val[0]) if len(group_val) > 0 else "__all__"
+            store_val = str(group_val[1]) if len(group_val) > 1 else "Tienda única"
+        elif isinstance(group_val, str):
+            sku_val   = group_val
+            store_val = "Tienda única"
+        else:
+            sku_val   = str(group_val)
+            store_val = "Tienda única"
+
+        g = g.sort_values(dt).reset_index(drop=True)
+        X = g.drop(columns=[c for c in exclude if c in g.columns])
+        non_numeric = X.select_dtypes(exclude=["number", "bool"]).columns.tolist()
+        if non_numeric:
+            log.warning(
+                f"SKU {sku_val} | dropping non-numeric feature column(s) {non_numeric} "
+                "— not selected as group_col/target/dt but unsuitable as a raw ML feature"
+            )
+            X = X.drop(columns=non_numeric)
+        y = g[target].astype(float)
+
+        # Leakage guard: drop any feature that is an exact copy of the
+        # target (e.g. the canonical 'demand' alias added on top of the
+        # user's mapped column) — a model given the answer as a feature
+        # reports near-zero validation error and is useless in production.
+        leak_cols = [
+            col for col in X.columns
+            if pd.api.types.is_numeric_dtype(X[col]) and X[col].astype(float).equals(y)
+        ]
+        if leak_cols:
+            log.warning(
+                f"SKU {sku_val} | dropping feature column(s) {leak_cols} — "
+                f"identical to target '{target}' (data leakage)"
+            )
+            X = X.drop(columns=leak_cols)
+
+        # _wfv/_simple call .fit() directly on these model instances across
+        # fold iterations (not just the final deepcopy). trainable is shared
+        # across every group's call, so when groups run in parallel worker
+        # threads, concurrent .fit() calls on the same object would corrupt
+        # each other's state — give this group its own private copies.
+        group_models = {name: copy.deepcopy(m) for name, m in trainable.items()}
+
+        if self.walk_forward:
+            return self._wfv(X, y, group_models, sku_val, store_val)
+        return self._simple(X, y, group_models, sku_val, store_val)
 
     def _wfv(self, X, y, models, sku_val, store_val="Tienda única"):
         splitter = WalkForwardSplitter(self.wfv_splits, self.train_ratio / 2)
