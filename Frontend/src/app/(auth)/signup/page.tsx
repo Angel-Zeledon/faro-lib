@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { authSignup } from '@/lib/api'
 import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
@@ -47,7 +48,11 @@ function PasswordStrength({ password }: { password: string }) {
   )
 }
 
-export default function SignupPage() {
+function SignupPageContent() {
+  const searchParams = useSearchParams()
+  const wantsDemo = searchParams.get('demo') === '1'
+  const loginHref = wantsDemo ? '/login?demo=1' : '/login'
+
   const [form, setForm] = useState({ email: '', password: '', full_name: '', tenant_name: '' })
   const [showPw,  setShowPw]  = useState(false)
   const [loading, setLoading] = useState(false)
@@ -129,8 +134,9 @@ export default function SignupPage() {
             <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 26px', lineHeight: 1.6 }}>
               We sent a verification link to <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
               Click it to activate your account.
+              {wantsDemo && ' After that, sign in and we\'ll take you straight to a working example with sample data.'}
             </p>
-            <Link href="/login" className="auth-submit" style={{
+            <Link href={loginHref} className="auth-submit" style={{
               display: 'inline-flex', alignItems: 'center', padding: '11.5px 24px',
               background: '#0a0a0a', color: '#fff', borderRadius: 11,
               fontSize: 13.5, fontWeight: 600, textDecoration: 'none',
@@ -271,5 +277,13 @@ export default function SignupPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupPageContent />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
-import { useState, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, useRef, useCallback, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
  createSession, uploadDataset, attachDataset, inspectSession,
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
@@ -228,8 +228,9 @@ const CANONICAL_FIELDS = [
 ] as const
 
 // ── Quick-start page ───────────────────────────────────────────────────────────
-export default function QuickStartPage() {
+function QuickStartPageContent() {
  const router = useRouter()
+ const searchParams = useSearchParams()
  const { t } = useLanguage()
 
  const [step, setStep] = useState(1)
@@ -270,6 +271,19 @@ export default function QuickStartPage() {
  setBusy(false)
  }
  }
+
+ // Arriving via /quick-start?demo=1 (e.g. from the landing page's "empezar
+ // gratis" CTA, carried through signup + login) auto-starts the demo instead
+ // of waiting on a click — the whole point of that path is zero extra taps
+ // between "create account" and "see the semáforo working".
+ const autoDemoRanRef = useRef(false)
+ useEffect(() => {
+ if (autoDemoRanRef.current) return
+ if (searchParams.get('demo') !== '1') return
+ autoDemoRanRef.current = true
+ handleDemo()
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [searchParams])
 
  // ── Step 1: Upload ───────────────────────────────────────────────────────────
  const handleFile = async (file: File) => {
@@ -769,5 +783,13 @@ export default function QuickStartPage() {
  </div>
  </div>
  </>
+ )
+}
+
+export default function QuickStartPage() {
+ return (
+ <Suspense fallback={null}>
+ <QuickStartPageContent />
+ </Suspense>
  )
 }
