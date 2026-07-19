@@ -125,7 +125,7 @@ Ordenada por riesgo real (los ítems de diseño/UX que estaban aquí se movieron
 2. Worker de entrenamiento como proceso separado (la cola en DB ya existe) — cada deploy mata jobs.
 3. DB o pooler en región cercana a LatAm (hoy us-west-2, ~3s handshake).
 4. Tests: pares de permisos y cross-tenant en los endpoints nuevos (send-PO ya los tiene; optimizer/warehouses/simulator hay que auditarlos).
-5. Export ZIP del tenant + borrado en cascada (Ley 1581 Colombia / GDPR) — necesario antes de clientes serios; a más tardar junto a la Fase 4.
+5. Export ZIP del tenant + borrado en cascada (Costa Rica: **Ley 8968** de Protección de la Persona frente al Tratamiento de sus Datos Personales; Colombia: Ley 1581; GDPR) — necesario antes de clientes serios; a más tardar junto a la Fase 4.
 
 ---
 
@@ -155,7 +155,11 @@ Cerrado y mergeado a `main` (suite backend **818 passed, 19 skipped**; `tsc --no
 2. **Inconsistencia de confianza en `supplier_lead_time_obs`:** 3.3 exige ≥6 recepciones para alertar, pero 2.4 confía en el promedio aprendido con **1 sola observación** (`AVG` sin `HAVING COUNT(*) >= N`). Una recepción atípica sobrescribe el lead time configurado de ese proveedor en todos sus SKUs. Propuesta: mínimo 3 observaciones.
 3. **Validación de fechas más estricta** (1.3): un CSV con formato de fecha exótico en todas las filas puede ahora cruzar el umbral fatal del 20% y bloquear una subida que antes pasaba.
 4. **3.3 no se ve en tenants nuevos:** ≥6 recepciones registradas antes de la primera alerta posible.
-5. Multiplicadores del calendario (×1.4 quincena, ×2.5 Black Friday) son estimaciones, no ajustadas con datos.
+5. Multiplicadores del calendario (×1.4 quincena, ×2.2 Black Friday, ×2.0 Día de la Madre) son **estimaciones informadas, no ajustadas con datos reales**. Sirven para demo; como predicción son un supuesto. Mejora natural: aprenderlos por tenant desde el historial.
+7. **DOCUMENTACIÓN DESALINEADA CON EL MERCADO REAL.** El mercado ancla es **Costa Rica** (confirmado 2026-07-19), pero `docs/auditoria_integral_faro_2026-07-04.md`, `docs/plans/2026-06-02-producto-ganador.md` y `docs/features_propuestas_faro_2026-07-05.md` siguen diciendo "ancla Colombia". Tres consecuencias reales, no cosméticas:
+   - El **moat de conectores documentado es Siigo/Alegra — software contable colombiano**. Para CR hay que definir el equivalente real; el ítem 5.1 del plan ("Conector Siigo") está apuntando al país equivocado.
+   - El régimen legal citado (Ley 1581) es colombiano; para CR aplica la Ley 8968.
+   - Moneda y formato: colón (CRC), no COP.
 6. `/inventory` y el export CSV muestran el lead time aprendido sin etiquetar su origen.
 
 **Siguiente:** 0.3 (recorrido manual) → 2.6 (estados vacíos/carga/error + interceptor en `api.ts`) → 2.7 (sistema de diseño). 2.6 y 2.7 se dejaron fuera del lote paralelo a propósito: tocan las mismas 5 pantallas diarias que este lote acaba de mover.
