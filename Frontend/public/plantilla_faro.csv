@@ -1,7 +1,7 @@
-fecha,producto,cantidad
-2026-01-01,SKU-001,32
-2026-01-01,SKU-002,15
-2026-01-02,SKU-001,28
-2026-01-02,SKU-002,18
-2026-01-03,SKU-001,35
-2026-01-03,SKU-002,12
+sku,fecha,demanda,tienda,inventario,costo,precio
+SKU-001,2026-01-01,32,Bodega Central,480,8.50,12.90
+SKU-001,2026-01-02,28,Bodega Central,452,8.50,12.90
+SKU-001,2026-01-03,35,Bodega Central,417,8.50,12.90
+SKU-002,2026-01-01,15,Bodega Central,210,5.20,7.80
+SKU-002,2026-01-02,18,Bodega Central,192,5.20,7.80
+SKU-002,2026-01-03,12,Bodega Central,180,5.20,7.80
