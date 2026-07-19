@@ -185,3 +185,141 @@
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
   border-radius: 6px;
 }
+
+/* ── Auth ambient scene — shared by /login and /signup ──────────────────
+   Lives in the persistent (auth)/layout so the beam and particles keep
+   running uninterrupted across a login↔signup navigation. */
+
+/* Signal rings — the beacon's emission, as crisp expanding hairlines. On a
+   white page a "light beam" has to be drawn with dark pixels, which always
+   reads as a smudge; a stroked ring stays sharp at any opacity, so this is
+   what carries the beacon idea instead. */
+@keyframes auth-ring {
+  0%   { transform: translate(-50%, -50%) scale(0.06); opacity: 0; }
+  8%   { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+
+/* One soft directional wash, aimed up-left from the lamp. Single layer, so it
+   reads as light falling across the page rather than accumulated haze. */
+@keyframes auth-wash {
+  0%, 100% { opacity: 0.55; transform: translate(0, 0) scale(1); }
+  50%      { opacity: 0.85; transform: translate(-2%, -1.5%) scale(1.06); }
+}
+
+@keyframes auth-drift-a { 0%,100% { transform: translate(0,0); } 50% { transform: translate(7px, -11px); } }
+@keyframes auth-drift-b { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-9px, -6px); } }
+@keyframes auth-drift-c { 0%,100% { transform: translate(0,0); } 50% { transform: translate(5px, 9px); } }
+
+/* Dots pulse gently; they are crisp 2px marks, never blurred, so they read as
+   precise detail rather than dust on the screen. */
+@keyframes auth-dot {
+  0%, 100% { opacity: 0.18; }
+  50%      { opacity: 0.42; }
+}
+
+/* Sea — each hairline slides a few px on its own long cycle. Because the
+   lines sit at different depths, the varying speeds read as perspective. */
+@keyframes auth-swell-a { 0%,100% { transform: translateX(0); }    50% { transform: translateX(14px); } }
+@keyframes auth-swell-b { 0%,100% { transform: translateX(0); }    50% { transform: translateX(-18px); } }
+
+/* The lamp's reflection column on the water, breathing with the lamp. */
+@keyframes auth-reflection {
+  0%, 100% { opacity: 0.5;  transform: scaleX(1); }
+  50%      { opacity: 0.85; transform: scaleX(1.18); }
+}
+
+/* Slow rotation of the bearing ticks around the lamp. */
+@keyframes auth-bearing { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* Clouds drift laterally over a very long cycle. */
+@keyframes auth-cloud-drift {
+  0%, 100% { transform: translateX(-50%) translateX(0); }
+  50%      { transform: translateX(-50%) translateX(5vw); }
+}
+
+/* Birds glide across a stretch of sky and ease back — never a hard loop. */
+@keyframes auth-bird-glide {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(7vw, -2.5vh); }
+}
+
+/* The boat rides the swell: a small rise with a matching roll. */
+@keyframes auth-boat-bob {
+  0%, 100% { transform: translateY(0)    rotate(-1.6deg); }
+  50%      { transform: translateY(-3px) rotate(1.6deg); }
+}
+
+/* The lamp itself pulses — the one element allowed full colour strength. */
+@keyframes auth-lampglow {
+  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(0.94); }
+  50%      { opacity: 1;    transform: translate(-50%, -50%) scale(1.10); }
+}
+
+/* Light motes — luminous specks lifting off the water. Each rises through a
+   long arc while brightening at mid-flight, so the layer never pulses in
+   unison; the horizontal component differs per variant to avoid a visible
+   column of particles. */
+@keyframes auth-mote-a {
+  0%   { transform: translate(0, 0) scale(0.7);       opacity: 0; }
+  18%  { opacity: 0.9; }
+  55%  { transform: translate(16px, -26vh) scale(1.1); opacity: 0.65; }
+  100% { transform: translate(-6px, -54vh) scale(0.85); opacity: 0; }
+}
+@keyframes auth-mote-b {
+  0%   { transform: translate(0, 0) scale(0.6);        opacity: 0; }
+  22%  { opacity: 0.8; }
+  60%  { transform: translate(-22px, -30vh) scale(1.15); opacity: 0.55; }
+  100% { transform: translate(-4px, -58vh) scale(0.8);  opacity: 0; }
+}
+@keyframes auth-mote-c {
+  0%   { transform: translate(0, 0) scale(0.75);      opacity: 0; }
+  20%  { opacity: 1; }
+  50%  { transform: translate(9px, -22vh) scale(1.05); opacity: 0.7; }
+  100% { transform: translate(20px, -50vh) scale(0.9); opacity: 0; }
+}
+
+@keyframes auth-fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes auth-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Occasional unprompted sheen across the primary button. Long gap, short
+   travel — it should register as a material property, not an animation. */
+@keyframes auth-btn-sheen {
+  0%, 86%, 100% { left: -60%; }
+  94%           { left: 130%; }
+}
+
+.auth-particle-layer { transition: transform 1.6s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
+
+.auth-submit { position: relative; overflow: hidden; }
+.auth-submit::after {
+  content: ''; position: absolute; top: 0; left: -60%; width: 38%; height: 100%;
+  background: linear-gradient(115deg, transparent, rgba(255,255,255,0.30), transparent);
+  transform: skewX(-18deg); pointer-events: none;
+  animation: auth-btn-sheen 9s ease-in-out infinite;
+}
+.auth-submit:hover::after { animation: none; left: 130%; transition: left 0.6s ease; }
+
+.auth-link { position: relative; }
+.auth-link::after {
+  content: ''; position: absolute; left: 0; right: 100%; bottom: -1px; height: 1px;
+  background: currentColor; transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.auth-link:hover::after { right: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-ring, .auth-wash, .auth-dot, .auth-drift,
+  .auth-swell, .auth-reflection, .auth-bearing,
+  .auth-cloud, .auth-bird, .auth-boat, .auth-lampglow, .auth-mote,
+  .auth-submit::after { animation: none !important; }
+  .auth-ring { opacity: 0.5 !important; }
+  .auth-particle-layer { transition: none !important; transform: none !important; }
+  [class*="auth-enter"] { animation: none !important; opacity: 1 !important; transform: none !important; }
+}
+
+/* The horizon/tower composition needs a wide canvas to read — on a narrow
+   viewport the tower ends up directly behind the card as a black wedge. Drop
+   the scenery there and keep only the wash and dots for atmosphere. */
+@media (max-width: 820px) {
+  .auth-scenery { display: none !important; }
+}

@@ -4,7 +4,12 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { authLogin } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
-import { Eye, EyeOff, AlertTriangle, TrendingUp, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
+
+// Composition: the card sits left of centre and a touch above the optical
+// midline, leaving the open right-hand field for the beam to sweep into and
+// the lighthouse to occupy. The ambient canvas, wordmark and fixed shell all
+// come from (auth)/layout.tsx — this file renders only the card.
 
 export default function LoginPage() {
   const router = useRouter()
@@ -37,167 +42,156 @@ export default function LoginPage() {
 
   const inputStyle: React.CSSProperties = {
     width: '100%', boxSizing: 'border-box',
-    padding: '11px 13px',
-    background: '#0b1020', border: '1px solid #1a2540', borderRadius: 8,
-    color: '#dde5f5', fontSize: 14, outline: 'none',
-    transition: 'border-color 0.15s, box-shadow 0.15s',
+    padding: '12px 14px',
+    background: 'rgba(250,250,250,0.9)', border: '1px solid rgba(9,9,11,0.085)', borderRadius: 11,
+    color: '#0a0a0a', fontSize: 14, outline: 'none',
+    transition: 'border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease, transform 0.22s ease',
+  }
+  const focusIn = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.style.borderColor = 'rgba(9,9,11,0.55)'
+    e.target.style.background  = '#fff'
+    e.target.style.transform   = 'translateY(-1px)'
+    e.target.style.boxShadow   = '0 0 0 3.5px rgba(9,9,11,0.045), 0 6px 14px -8px rgba(9,9,11,0.22)'
+  }
+  const focusOut = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.style.borderColor = 'rgba(9,9,11,0.085)'
+    e.target.style.background  = 'rgba(250,250,250,0.9)'
+    e.target.style.transform   = 'translateY(0)'
+    e.target.style.boxShadow   = 'none'
   }
 
   return (
-    <>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg) } }
-        body { margin: 0; }
-      `}</style>
+    <div style={{
+      height: '100%', display: 'flex', alignItems: 'center',
+      paddingLeft: "clamp(28px, 10vw, 150px)", paddingRight: "clamp(28px, 6vw, 64px)",
+      paddingBottom: '3vh',   // optical centring — sits a touch above true middle
+    }}>
+      <div style={{ width: '100%', maxWidth: 392 }}>
 
-      <div style={{
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#070b14',
-        backgroundImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, rgba(99,102,241,0.07) 0%, transparent 70%)',
-        padding: '24px 16px',
-      }}>
+        <div className="auth-enter" style={{
+          // Solid white with a real border. A translucent card over a pale
+          // background just looks washed out — the crispness IS the premium
+          // signal here, not the transparency.
+          background: '#fff',
+          border: '1px solid rgba(9,9,11,0.09)',
+          borderRadius: 20,
+          padding: '38px 36px',
+          // Contact hairline, close ambient pool, wide soft cast.
+          boxShadow:
+            '0 1px 2px rgba(9,9,11,0.04),' +
+            '0 12px 28px -14px rgba(9,9,11,0.14),' +
+            '0 44px 80px -36px rgba(9,9,11,0.16)',
+          animation: 'auth-fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both',
+        }}>
 
-        <div style={{ width: '100%', maxWidth: 380 }}>
+          <div style={{ marginBottom: 30 }}>
+            <h1 style={{ fontSize: 26, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.032em', lineHeight: 1.15 }}>
+              Sign in
+            </h1>
+            <p style={{ fontSize: 14, color: '#71717a', margin: 0, lineHeight: 1.5 }}>
+              Enter your credentials to access your workspace
+            </p>
+          </div>
 
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 36, justifyContent: 'center' }}>
+          {error && (
             <div style={{
-              width: 36, height: 36, borderRadius: 9, flexShrink: 0,
-              background: 'linear-gradient(135deg, #818cf8, #6366f1)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex', gap: 8, alignItems: 'center',
+              padding: '10px 12px', borderRadius: 10, marginBottom: 20,
+              background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
+              fontSize: 13, color: '#dc2626',
+              animation: 'auth-fade-up 0.35s ease-out both',
             }}>
-              <TrendingUp size={17} color="#fff" strokeWidth={2.5} />
+              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+              {error}
             </div>
-            <span style={{ fontSize: 17, fontWeight: 700, color: '#dde5f5', letterSpacing: '-0.03em' }}>
-              Faro
-            </span>
-          </div>
+          )}
 
-          {/* Card */}
-          <div style={{
-            background: '#0c1120',
-            border: '1px solid #17233d',
-            borderRadius: 14,
-            padding: '32px 28px',
-          }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-            {/* Heading */}
-            <div style={{ marginBottom: 24 }}>
-              <h1 style={{ fontSize: 20, fontWeight: 700, color: '#dde5f5', margin: '0 0 6px', letterSpacing: '-0.025em' }}>
-                Sign in
-              </h1>
-              <p style={{ fontSize: 13, color: '#3d5280', margin: 0 }}>
-                Enter your credentials to access your workspace
-              </p>
+            <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.10s both' }}>
+              <label style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: '#52525b' }}>
+                Email address
+              </label>
+              <input
+                type="email" value={email} required autoComplete="email"
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                style={inputStyle} onFocus={focusIn} onBlur={focusOut}
+              />
             </div>
 
-            {/* Error */}
-            {error && (
-              <div style={{
-                display: 'flex', gap: 8, alignItems: 'center',
-                padding: '10px 12px', borderRadius: 8, marginBottom: 20,
-                background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)',
-                fontSize: 13, color: '#f87171',
-              }}>
-                <AlertTriangle size={13} style={{ flexShrink: 0 }} />
-                {error}
+            <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>Password</label>
+                <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: '#71717a', textDecoration: 'none' }}>
+                  Forgot password?
+                </Link>
               </div>
-            )}
-
-            {/* Form */}
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-              {/* Email */}
-              <div>
-                <label style={{
-                  display: 'block', marginBottom: 6,
-                  fontSize: 12, fontWeight: 600, color: '#485d80',
-                }}>
-                  Email address
-                </label>
+              <div style={{ position: 'relative' }}>
                 <input
-                  type="email" value={email} required autoComplete="email"
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  style={inputStyle}
-                  onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.12)' }}
-                  onBlur={e =>  { e.target.style.borderColor = '#1a2540'; e.target.style.boxShadow = 'none' }}
+                  type={showPw ? 'text' : 'password'} value={password} required autoComplete="current-password"
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{ ...inputStyle, padding: '12px 40px 12px 14px' }}
+                  onFocus={focusIn} onBlur={focusOut}
                 />
+                <button
+                  type="button" onClick={() => setShowPw(v => !v)}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
+                  style={{
+                    all: 'unset', position: 'absolute', right: 12, top: '50%',
+                    transform: 'translateY(-50%)', cursor: 'pointer', color: '#a1a1aa',
+                    display: 'flex', alignItems: 'center', transition: 'color 0.18s ease',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0a0a0a' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#a1a1aa' }}
+                >
+                  {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
               </div>
+            </div>
 
-              {/* Password */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: '#485d80' }}>
-                    Password
-                  </label>
-                  <Link href="/forgot-password" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none' }}>
-                    Forgot password?
-                  </Link>
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPw ? 'text' : 'password'} value={password} required autoComplete="current-password"
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    style={{ ...inputStyle, padding: '11px 38px 11px 13px' }}
-                    onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.12)' }}
-                    onBlur={e =>  { e.target.style.borderColor = '#1a2540'; e.target.style.boxShadow = 'none' }}
-                  />
-                  <button
-                    type="button" onClick={() => setShowPw(v => !v)}
-                    style={{
-                      all: 'unset', position: 'absolute', right: 11, top: '50%',
-                      transform: 'translateY(-50%)', cursor: 'pointer', color: '#3d5280',
-                      display: 'flex', alignItems: 'center',
-                    }}
-                  >
-                    {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit */}
-              <button
-                type="submit" disabled={loading}
-                style={{
-                  width: '100%', padding: '11px', borderRadius: 8, border: 'none',
-                  background: loading ? '#3a3d7a' : 'linear-gradient(135deg, #5f5fef, #818cf8)',
-                  color: '#fff', fontSize: 14, fontWeight: 600,
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                  marginTop: 6, transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLButtonElement).style.opacity = '0.88' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
-              >
-                {loading ? (
-                  <>
-                    <span style={{
-                      width: 13, height: 13, border: '2px solid rgba(255,255,255,0.3)',
-                      borderTopColor: '#fff', borderRadius: '50%',
-                      animation: 'spin 0.7s linear infinite', display: 'inline-block',
-                    }} />
-                    Signing in…
-                  </>
-                ) : (
-                  <>Sign in <ArrowRight size={13} /></>
-                )}
-              </button>
-            </form>
-
-          </div>
-
-          {/* Footer */}
-          <p style={{ textAlign: 'center', marginTop: 20, fontSize: 13, color: '#2e3f5c' }}>
-            Don&apos;t have an account?{' '}
-            <Link href="/signup" style={{ color: '#818cf8', textDecoration: 'none', fontWeight: 600 }}>
-              Request access
-            </Link>
-          </p>
-
+            <button
+              type="submit" disabled={loading} className="auth-submit auth-enter"
+              style={{
+                width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
+                background: loading ? '#a1a1aa' : '#0a0a0a',
+                color: '#fff', fontSize: 14, fontWeight: 600,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                marginTop: 8,
+                transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease',
+                animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.22s both',
+              }}
+              onMouseEnter={e => { if (!loading) { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(-1.5px)'; b.style.boxShadow = '0 10px 22px -10px rgba(9,9,11,0.45)' } }}
+              onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(0)'; b.style.boxShadow = 'none' }}
+            >
+              {loading ? (
+                <>
+                  <span style={{
+                    width: 13, height: 13, border: '2px solid rgba(255,255,255,0.35)',
+                    borderTopColor: '#fff', borderRadius: '50%',
+                    animation: 'spin 0.7s linear infinite', display: 'inline-block',
+                  }} />
+                  Signing in…
+                </>
+              ) : (
+                <>Sign in <ArrowRight size={13} /></>
+              )}
+            </button>
+          </form>
         </div>
+
+        <p className="auth-enter" style={{
+          marginTop: 22, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
+          animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.3s both',
+        }}>
+          Don&apos;t have an account?{' '}
+          <Link href="/signup" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
+            Request access
+          </Link>
+        </p>
       </div>
-    </>
+    </div>
   )
 }
