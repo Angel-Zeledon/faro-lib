@@ -714,6 +714,23 @@ def get_roi_monthly(
     return ok(get_monthly_summary(user.tenant_id, months))
 
 
+@router.get("/roi/month-report")
+def get_roi_month_report(
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Recap of a single calendar month (feature 3.2). Defaults to the month
+    that just closed — the same period the monthly recap email covers."""
+    from datetime import datetime, timezone
+
+    from backend.inventory.roi_service import get_month_report, previous_month
+
+    if year is None or month is None:
+        year, month = previous_month(datetime.now(tz=timezone.utc))
+    return ok(get_month_report(user.tenant_id, year, month))
+
+
 @router.get("/po-history")
 def po_history(
     limit: int = Query(default=20, ge=1, le=100),

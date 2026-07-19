@@ -486,3 +486,130 @@ def send_po_to_supplier_email(
     except Exception as exc:
         log.error("Failed to send PO email to supplier %s <%s>: %s", supplier_name, to, exc)
         return False
+
+
+# ── Monthly recap ─────────────────────────────────────────────────────────────
+# Target market is Costa Rica, so amounts render as colones (CRC). CR uses the
+# period as thousands separator.
+_MONTH_NAMES_ES = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+)
+
+
+def _fmt_crc(value: float) -> str:
+    return "₡" + f"{value:,.0f}".replace(",", ".")
+
+
+def _month_label_es(month_key: str) -> str:
+    """'2026-06' -> 'junio de 2026'."""
+    year, month = (int(p) for p in month_key.split("-"))
+    return f"{_MONTH_NAMES_ES[month - 1]} de {year}"
+
+
+def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:
+    """One big-number tile. `note` states where the number comes from."""
+    return (
+        f'<td style="padding:14px 16px;vertical-align:top;">'
+        f'<div style="font-size:30px;font-weight:800;color:{color};line-height:1;">{value}</div>'
+        f'<div style="font-size:13px;font-weight:600;color:{_TEXT};margin-top:6px;">{label}</div>'
+        f'<div style="font-size:11px;color:{_DIM};margin-top:4px;line-height:1.5;">{note}</div>'
+        f'</td>'
+    )
+
+
+def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
+    """
+    Monthly recap of what the buyer did with Faro.
+
+    Every figure comes straight from `get_month_report`; metrics that could not
+    be derived from the tenant's own records are omitted from the email rather
+    than shown as zero. Returns True if the email was handed to the transport.
+    """
+    _GRN = "#22c55e"
+    _RED = "#ef4444"
+    month_label = _month_label_es(report["month"])
+
+    tiles: list[str] = []
+
+    adoption = report.get("adoption_rate")
+    if adoption is not None:
+        tiles.append(_recap_metric_block(
+            f"{round(adoption * 100)}%",
+            "de las recomendaciones que seguiste",
+            f'Seguiste {report["recommendations_followed"]} de '
+            f'{report["recommendations_shown"]} líneas que Faro te propuso.',
+            _PRIMARY,
+        ))
+
+    risks = report.get("stockout_risks_handled")
+    if risks:
+        tiles.append(_recap_metric_block(
+            f"{risks}",
+            "riesgos de quiebre atendidos",
+            "Productos marcados “Pedir ya” que sí ordenaste en el mes. "
+            "Es lo que hiciste, no una estimación de quiebres evitados.",
+            _RED,
+        ))
+
+    capital = report.get("capital_freed")
+    if capital is not None:
+        tiles.append(_recap_metric_block(
+            _fmt_crc(capital),
+            "capital liberado de sobrestock",
+            "Diferencia medida entre el valor de tu inventario en sobrestock "
+            "al inicio y al final del mes.",
+            _GRN,
+        ))
+
+    managed = report.get("managed_purchase_value")
+    if managed is not None:
+        tiles.append(_recap_metric_block(
+            _fmt_crc(managed),
+            "en compras gestionadas",
+            "Unidades ordenadas × costo unitario de tus propios datos.",
+            _TEXT,
+        ))
+
+    # Two tiles per row keeps the layout readable in narrow mail clients.
+    rows = "".join(
+        f'<tr>{"".join(tiles[i:i + 2])}</tr>' for i in range(0, len(tiles), 2)
+    )
+    tiles_html = (
+        f'<table width="100%" style="border-collapse:collapse;background:#13141e;'
+        f'border-radius:10px;margin:0 0 20px;">{rows}</table>'
+    )
+
+    headline = (
+        f"En {month_label} liberaste {_fmt_crc(capital)} de inventario detenido."
+        if capital is not None
+        else f"Esto es lo que hiciste con Faro en {month_label}."
+    )
+
+    html = _base_html(
+        f"Tu resumen de {month_label}",
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Tu resumen de {month_label}</p>
+        <p style="color:{_DIM};margin:0 0 20px;font-size:13px;">{headline}</p>
+        {tiles_html}
+        {_button("Ver el resumen completo", roi_url)}
+        <p style="color:{_DIM};font-size:11px;margin:0;line-height:1.6;">
+          Cada cifra sale de tus propios registros en Faro: las órdenes que generaste y
+          las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos
+          quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos
+          lo que quedó registrado.
+        </p>
+        """,
+    )
+
+    subject = (
+        f"Faro — liberaste {_fmt_crc(capital)} en {month_label}"
+        if capital is not None
+        else f"Faro — tu resumen de {month_label}"
+    )
+    try:
+        _send(to, subject, html)
+        return True
+    except Exception as exc:
+        log.error("Failed to send monthly recap to %s: %s", to, exc)
+        return False

@@ -141,7 +141,12 @@ def _next_month_start(now: datetime) -> datetime:
 
 
 def _monthly_overstock_snapshot_loop() -> None:
-    """Snapshots each tenant's SOBRESTOCK value on the 1st of every month."""
+    """Monthly pass on the 1st: snapshot each tenant's SOBRESTOCK value, then
+    mail the previous month's recap (feature 3.2).
+
+    Order is load-bearing: the snapshot taken now is the closing measurement of
+    the month that just ended, so the recap's capital-freed figure only exists
+    once it has been written."""
     log.info("Monthly overstock snapshot scheduler started")
     while True:
         try:
@@ -158,6 +163,12 @@ def _monthly_overstock_snapshot_loop() -> None:
             run_monthly_overstock_snapshot()
         except Exception as e:
             log.error("Overstock snapshot error: %s", e, exc_info=True)
+        try:
+            from backend.inventory.roi_service import run_monthly_roi_emails
+            sent = run_monthly_roi_emails()
+            log.info("Monthly ROI recap: mailed %d tenants", sent)
+        except Exception as e:
+            log.error("Monthly ROI recap error: %s", e, exc_info=True)
 
 
 def start() -> threading.Thread:

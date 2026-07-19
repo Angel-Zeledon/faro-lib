@@ -561,6 +561,20 @@ _MIGRATIONS = _BASE_SCHEMA + [
     ("create_inventory_event_multipliers_uniq",
      """CREATE UNIQUE INDEX IF NOT EXISTS inventory_event_multipliers_uniq
         ON inventory_event_multipliers (tenant_id, event_id, scope, scope_value)"""),
+    # One row per tenant per month once the monthly recap email has been sent.
+    # The unique constraint is the dedup mechanism: the worker re-runs on every
+    # process restart, and a customer must never receive the same recap twice.
+    ("create_inventory_roi_email_log",
+     """CREATE TABLE IF NOT EXISTS inventory_roi_email_log (
+         id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id     TEXT NOT NULL,
+         month         TEXT NOT NULL,
+         recipients    INT NOT NULL DEFAULT 0,
+         sent_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_inventory_roi_email_log_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS inventory_roi_email_log_uniq
+        ON inventory_roi_email_log (tenant_id, month)"""),
 ]
 
 
