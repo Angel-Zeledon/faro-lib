@@ -6,7 +6,7 @@ Two layers:
   * Seeding + toggling through the API, asserted with direct DB queries and
     the mandatory viewer-denied / analyst-allowed permission pairs.
 """
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -85,6 +85,133 @@ class TestMovableDates:
         entry = next(e for e in cat.CATALOG if e.key == "co_quincena_30")
         feb = [o for o in entry.occurrences(2028) if o.start_date.month == 2][0]
         assert feb.start_date == date(2028, 2, 29)
+
+
+class TestCostaRica:
+    """
+    CR es el mercado objetivo y NO es Colombia con otro nombre. Estas pruebas
+    fijan las diferencias que, copiadas de CO, darían fechas erróneas.
+    """
+
+    @pytest.mark.offline
+    def test_default_country_is_costa_rica(self):
+        assert cat.DEFAULT_COUNTRY == "CR"
+        assert cat.catalog_for() == cat.catalog_for("CR")
+
+    @pytest.mark.offline
+    @pytest.mark.parametrize("year", [2025, 2026, 2027, 2028])
+    def test_mothers_day_is_fixed_august_15_not_may(self, year):
+        got = cat.mothers_day_cr(year)
+        assert got == date(year, 8, 15)
+        # La regla colombiana caería en mayo: confirmamos que no se reutilizó.
+        assert got.month != cat.mothers_day_co(year).month
+
+    @pytest.mark.offline
+    def test_mothers_day_window_ends_on_august_15(self):
+        entry = next(e for e in cat.CATALOG if e.key == "cr_dia_madre")
+        occ = entry.occurrences(2026)[0]
+        assert occ.start_date == date(2026, 8, 9)
+        assert occ.end_date == date(2026, 8, 15)
+
+    @pytest.mark.offline
+    @pytest.mark.parametrize("year,expected", [
+        (2025, date(2025, 6, 15)),
+        (2026, date(2026, 6, 21)),
+        (2027, date(2027, 6, 20)),
+    ])
+    def test_fathers_day_is_third_sunday_of_june(self, year, expected):
+        got = cat.fathers_day_cr(year)
+        assert got == expected
+        assert got.weekday() == 6
+
+    @pytest.mark.offline
+    def test_costa_rica_has_no_mid_year_bonus(self):
+        """
+        En CR el aguinaldo es único (diciembre). Una "prima de junio" aquí
+        sería una invención que inflaría la demanda de mitad de año.
+        """
+        keys = {e.key for e in cat.catalog_for("CR")}
+        assert "cr_prima_junio" not in keys
+        assert "cr_aguinaldo" in keys
+        junio = [
+            o for o in cat.build_occurrences("CR", [2026])
+            if "aguinaldo" in o.catalog_key and o.start_date.month == 6
+        ]
+        assert junio == []
+
+    @pytest.mark.offline
+    def test_aguinaldo_falls_in_first_20_days_of_december(self):
+        entry = next(e for e in cat.CATALOG if e.key == "cr_aguinaldo")
+        occ = entry.occurrences(2026)[0]
+        assert occ.start_date == date(2026, 12, 1)
+        assert occ.end_date == date(2026, 12, 20)   # Ley 2412
+
+    @pytest.mark.offline
+    def test_school_season_covers_february_start(self):
+        """El curso lectivo tico arranca en febrero, no a finales de enero."""
+        entry = next(e for e in cat.CATALOG if e.key == "cr_temporada_escolar")
+        occ = entry.occurrences(2026)[0]
+        assert occ.start_date == date(2026, 1, 8)
+        assert occ.end_date == date(2026, 2, 10)
+        assert occ.end_date.month == 2
+
+    @pytest.mark.offline
+    def test_romeria_ends_on_august_2(self):
+        entry = next(e for e in cat.CATALOG if e.key == "cr_romeria")
+        assert entry.occurrences(2026)[0].end_date == date(2026, 8, 2)
+
+    @pytest.mark.offline
+    def test_cr_semana_santa_is_still_movable(self):
+        cr = next(e for e in cat.CATALOG if e.key == "cr_semana_santa")
+        for year, pascua in [(2025, date(2025, 4, 20)), (2026, date(2026, 4, 5))]:
+            occ = cr.occurrences(year)[0]
+            assert occ.end_date == pascua
+            assert occ.start_date == pascua - timedelta(days=7)
+
+    @pytest.mark.offline
+    def test_cr_catalog_covers_the_expected_events(self):
+        assert {e.key for e in cat.catalog_for("CR")} == {
+            "cr_quincena_15", "cr_quincena_30", "cr_aguinaldo",
+            "cr_dia_madre", "cr_dia_padre", "cr_semana_santa",
+            "cr_temporada_escolar", "cr_navidad", "cr_black_friday",
+            "cr_romeria", "cr_independencia", "cr_fin_de_ano",
+        }
+
+    @pytest.mark.offline
+    def test_cr_and_co_keys_never_collide(self):
+        cr = {e.key for e in cat.catalog_for("CR")}
+        co = {e.key for e in cat.catalog_for("CO")}
+        assert cr & co == set(), "las claves deben quedar aisladas por país"
+
+    def test_seeding_defaults_to_costa_rica(self, client, analyst_headers, test_tenant):
+        resp = client.post(
+            "/api/v1/inventory/events/catalog/seed", json={}, headers=analyst_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["country"] == "CR"
+
+        rows = query(
+            "SELECT catalog_key, country FROM inventory_events "
+            "WHERE tenant_id = %s AND catalog_key IS NOT NULL",
+            (test_tenant["id"],),
+        )
+        assert rows, "la siembra por defecto no escribió nada"
+        assert all(r["country"] == "CR" for r in rows)
+        assert all(r["catalog_key"].startswith("cr_") for r in rows)
+
+    def test_seeding_cr_does_not_pull_in_colombian_events(
+        self, client, analyst_headers, test_tenant
+    ):
+        client.post(
+            "/api/v1/inventory/events/catalog/seed",
+            json={"country": "CR", "years": [2026]},
+            headers=analyst_headers,
+        )
+        assert query(
+            "SELECT catalog_key FROM inventory_events "
+            "WHERE tenant_id = %s AND catalog_key LIKE 'co_%%'",
+            (test_tenant["id"],),
+        ) == []
 
 
 class TestCatalogShape:
@@ -350,7 +477,7 @@ class TestCatalogListing:
     def test_catalog_reports_seeded_and_active_state(
         self, client, auth_headers, analyst_headers
     ):
-        before = client.get("/api/v1/inventory/events/catalog", headers=auth_headers)
+        before = client.get("/api/v1/inventory/events/catalog?country=CO", headers=auth_headers)
         assert before.status_code == 200, before.text
         entries = {e["key"]: e for e in before.json()["data"]["entries"]}
         assert len(entries) == 9
@@ -363,7 +490,7 @@ class TestCatalogListing:
             headers=analyst_headers,
         )
 
-        after = client.get("/api/v1/inventory/events/catalog", headers=auth_headers)
+        after = client.get("/api/v1/inventory/events/catalog?country=CO", headers=auth_headers)
         entries = {e["key"]: e for e in after.json()["data"]["entries"]}
         assert entries["co_navidad"]["seeded"] is True
         assert entries["co_navidad"]["active"] is True
@@ -374,7 +501,7 @@ class TestCatalogListing:
             json={"active": False},
             headers=analyst_headers,
         )
-        after = client.get("/api/v1/inventory/events/catalog", headers=auth_headers)
+        after = client.get("/api/v1/inventory/events/catalog?country=CO", headers=auth_headers)
         entries = {e["key"]: e for e in after.json()["data"]["entries"]}
         assert entries["co_navidad"]["active"] is False
         assert entries["co_navidad"]["seeded"] is True, \

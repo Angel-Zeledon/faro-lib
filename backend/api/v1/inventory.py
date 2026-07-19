@@ -502,7 +502,7 @@ def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_a
 # ── LatAm commercial calendar (feature 3.4) ──────────────────────────────────
 
 class CalendarSeedRequest(BaseModel):
-    country: str = "CO"
+    country: str = "CR"
     years:   Optional[list[int]] = Field(default=None, max_length=5)
 
 
@@ -512,7 +512,7 @@ class CatalogToggleRequest(BaseModel):
 
 @router.get("/events/catalog")
 def get_event_catalog(
-    country: str = Query(default="CO", max_length=4),
+    country: str = Query(default="CR", max_length=4),
     user: CurrentUser = Depends(get_current_user),
 ):
     """

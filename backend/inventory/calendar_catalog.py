@@ -8,12 +8,21 @@ un año dado. Esas fechas se siembran en `inventory_events`, la misma tabla que
 ya alimenta el simulador existente (`simulate_event_impact`), así que el
 simulador no cambia — sólo deja de empezar vacío.
 
-Mercado inicial: Colombia (`CO`). El diseño admite más países añadiendo
-entradas con otro `country`; nada aquí está acoplado a Colombia salvo los
-datos mismos.
+Mercado objetivo: **Costa Rica** (`CR`, ver `DEFAULT_COUNTRY`). También se
+incluye Colombia (`CO`). Añadir un país es añadir entradas al `CATALOG` con
+otro `country` — nada del motor está acoplado a un país concreto.
 
-Las fechas móviles (Semana Santa, Día de la Madre, Black Friday) se calculan,
+CR no es CO traducido: el aguinaldo costarricense es uno solo (diciembre,
+Ley 2412 — no existe la prima de mitad de año colombiana), el Día de la Madre
+cae el 15 de agosto y no el segundo domingo de mayo, y el curso lectivo
+empieza en febrero en vez de finales de enero. Reutilizar las reglas
+colombianas habría desplazado ~3 meses la mayor fecha de venta del año.
+
+Las fechas móviles (Semana Santa, Día del Padre, Black Friday) se calculan,
 no se hardcodean — ver `easter_sunday`, `nth_weekday_of_month`.
+
+Los multiplicadores son estimaciones de partida razonables, no valores
+ajustados con datos: son el punto de arranque que el usuario edita.
 """
 from __future__ import annotations
 
@@ -70,6 +79,23 @@ def black_friday(year: int) -> date:
 def mothers_day_co(year: int) -> date:
     """Día de la Madre en Colombia: segundo domingo de mayo."""
     return nth_weekday_of_month(year, 5, weekday=6, n=2)
+
+
+def mothers_day_cr(year: int) -> date:
+    """
+    Día de la Madre en Costa Rica: **15 de agosto**, fecha fija que coincide
+    con la Asunción de la Virgen y es feriado nacional.
+
+    Ojo: NO es el segundo domingo de mayo. Copiar la regla colombiana aquí
+    sería un error de ~3 meses justo en una de las fechas de mayor venta
+    del año.
+    """
+    return date(year, 8, 15)
+
+
+def fathers_day_cr(year: int) -> date:
+    """Día del Padre en Costa Rica: tercer domingo de junio."""
+    return nth_weekday_of_month(year, 6, weekday=6, n=3)
 
 
 def _clamp_day(year: int, month: int, day: int) -> date:
@@ -177,6 +203,48 @@ def _black_friday(year: int):
     yield ("", "Black Friday", bf, bf + timedelta(days=3))
 
 
+# ── Builders específicos de Costa Rica ───────────────────────────────────────
+# CR no es Colombia con otro nombre: el aguinaldo es uno solo (diciembre, no
+# hay prima de junio), el Día de la Madre es fijo el 15 de agosto, y el curso
+# lectivo arranca en febrero — no a finales de enero.
+
+def _cr_aguinaldo(year: int):
+    # Ley 2412: se paga dentro de los primeros 20 días de diciembre. Es el
+    # mayor inyector de liquidez del año.
+    yield ("", "Aguinaldo", date(year, 12, 1), date(year, 12, 20))
+
+
+def _cr_dia_madre(year: int):
+    d = mothers_day_cr(year)
+    yield ("", "Día de la Madre", d - timedelta(days=6), d)
+
+
+def _cr_dia_padre(year: int):
+    d = fathers_day_cr(year)
+    yield ("", "Día del Padre", d - timedelta(days=5), d)
+
+
+def _cr_temporada_escolar(year: int):
+    # El curso lectivo costarricense empieza en febrero: la compra de útiles y
+    # uniformes se concentra en enero y la primera semana de febrero.
+    yield ("", "Temporada escolar (entrada a clases)",
+           date(year, 1, 8), date(year, 2, 10))
+
+
+def _cr_romeria(year: int):
+    # Romería a la Virgen de los Ángeles (Cartago), 2 de agosto.
+    yield ("", "Romería a Cartago", date(year, 7, 30), date(year, 8, 2))
+
+
+def _cr_independencia(year: int):
+    yield ("", "Fiestas patrias (15 de setiembre)",
+           date(year, 9, 10), date(year, 9, 15))
+
+
+def _cr_fin_de_ano(year: int):
+    yield ("", "Fiestas de fin de año", date(year, 12, 25), date(year, 12, 31))
+
+
 CATALOG: list[CatalogEvent] = [
     CatalogEvent("co_temporada_escolar", "Temporada escolar", "CO", 1.7,
                  "Regreso a clases (calendario A): útiles, uniformes, loncheras.",
@@ -209,16 +277,63 @@ CATALOG: list[CatalogEvent] = [
     CatalogEvent("co_quincena_30", "Quincenas (pago fin de mes)", "CO", 1.4,
                  "Repunte quincenal de consumo tras el pago de nómina de fin de mes.",
                  _quincena_30),
+
+    # ── Costa Rica ───────────────────────────────────────────────────────────
+    CatalogEvent("cr_temporada_escolar", "Temporada escolar", "CR", 1.7,
+                 "El curso lectivo arranca en febrero: útiles, uniformes y "
+                 "loncheras se compran en enero y la primera semana de febrero.",
+                 _cr_temporada_escolar),
+    CatalogEvent("cr_semana_santa", "Semana Santa", "CR", 1.6,
+                 "Fecha móvil atada al Domingo de Pascua. El país se detiene "
+                 "jueves y viernes santo: pico en pescado, turismo interno y "
+                 "abarrotes, y muchos comercios cierran esos dos días.",
+                 _semana_santa),
+    CatalogEvent("cr_dia_padre", "Día del Padre", "CR", 1.4,
+                 "Tercer domingo de junio.", _cr_dia_padre),
+    CatalogEvent("cr_romeria", "Romería a Cartago", "CR", 1.5,
+                 "Peregrinación del 2 de agosto a la Virgen de los Ángeles: "
+                 "pico en agua, bebidas, snacks y calzado sobre la ruta.",
+                 _cr_romeria),
+    CatalogEvent("cr_dia_madre", "Día de la Madre", "CR", 2.0,
+                 "15 de agosto (fijo, feriado nacional) — no el segundo domingo "
+                 "de mayo. Una de las mayores fechas de venta del año.",
+                 _cr_dia_madre),
+    CatalogEvent("cr_independencia", "Fiestas patrias", "CR", 1.3,
+                 "Semana del 15 de setiembre: desfiles, faroles y consumo local.",
+                 _cr_independencia),
+    CatalogEvent("cr_black_friday", "Black Friday", "CR", 2.2,
+                 "Viernes siguiente al cuarto jueves de noviembre, extendido "
+                 "hasta el Cyber Monday.", _black_friday),
+    CatalogEvent("cr_aguinaldo", "Aguinaldo", "CR", 1.9,
+                 "Ley 2412: se paga en los primeros 20 días de diciembre. Es el "
+                 "mayor inyector de liquidez del año. A diferencia de Colombia, "
+                 "en Costa Rica no hay una prima de mitad de año.",
+                 _cr_aguinaldo),
+    CatalogEvent("cr_navidad", "Navidad", "CR", 2.2,
+                 "Temporada decembrina completa hasta el 24.", _navidad),
+    CatalogEvent("cr_fin_de_ano", "Fiestas de fin de año", "CR", 1.8,
+                 "Del 25 al 31 de diciembre: festejos populares, turismo interno "
+                 "y consumo de bebidas y carnes.", _cr_fin_de_ano),
+    CatalogEvent("cr_quincena_15", "Quincenas (pago 15)", "CR", 1.4,
+                 "Repunte quincenal de consumo tras el pago de nómina del 15.",
+                 _quincena_15),
+    CatalogEvent("cr_quincena_30", "Quincenas (pago fin de mes)", "CR", 1.4,
+                 "Repunte quincenal de consumo tras el pago de nómina de fin de mes.",
+                 _quincena_30),
 ]
 
 SUPPORTED_COUNTRIES = sorted({e.country for e in CATALOG})
 
+# Mercado objetivo actual. Cambiarlo sólo mueve el default de la UI/API;
+# cualquier país del catálogo sigue disponible vía ?country=.
+DEFAULT_COUNTRY = "CR"
 
-def catalog_for(country: str = "CO") -> list[CatalogEvent]:
+
+def catalog_for(country: str = DEFAULT_COUNTRY) -> list[CatalogEvent]:
     return [e for e in CATALOG if e.country == country.upper()]
 
 
-def build_occurrences(country: str = "CO", years: Iterable[int] | None = None) -> list[Occurrence]:
+def build_occurrences(country: str = DEFAULT_COUNTRY, years: Iterable[int] | None = None) -> list[Occurrence]:
     """
     Materializa el catálogo de `country` en ocurrencias concretas.
     Por defecto: año en curso y el siguiente (para que diciembre no quede ciego
@@ -235,7 +350,7 @@ def build_occurrences(country: str = "CO", years: Iterable[int] | None = None) -
     return out
 
 
-def describe_catalog(country: str = "CO") -> list[dict]:
+def describe_catalog(country: str = DEFAULT_COUNTRY) -> list[dict]:
     """Resumen del catálogo para la UI (qué eventos existen, sin fechas)."""
     return [
         {
