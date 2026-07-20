@@ -16,13 +16,19 @@ const C = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })
+// Map the active UI language to a concrete BCP-47 locale so dates render in the
+// user's language instead of a hardcoded one. Anchored to Costa Rica for es.
+function localeFor(lang: string): string {
+  return lang === 'en' ? 'en-US' : 'es-CR'
 }
 
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('es', {
+function fmtDate(iso: string | null, lang: string): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function fmtDateTime(iso: string, lang: string): string {
+  return new Date(iso).toLocaleString(localeFor(lang), {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -35,7 +41,7 @@ function fmtUnits(n: number): string {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function HeroCard({ roi }: { roi: InventoryROISummary }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const hasValue = roi.estimated_value_protected > 0
 
   return (
@@ -59,7 +65,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
           </div>
           {roi.first_po_at && (
             <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-              {t('roi.since_prefix')} {fmtDate(roi.first_po_at)}
+              {t('roi.since_prefix')} {fmtDate(roi.first_po_at, lang)}
               {roi.active_days > 0 && (
                 <span style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 20, background: 'rgba(129,140,248,0.1)', color: C.indigo, fontSize: 11 }}>
                   {roi.active_days} {t('roi.active_days_suffix')}
@@ -160,7 +166,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
 
 function fmtMonthLabel(month: string, lang: string): string {
   const [y, m] = month.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString(lang, { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleDateString(localeFor(lang), { month: 'long', year: 'numeric' })
 }
 
 function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
@@ -384,7 +390,7 @@ function WhyItMattersCard() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ROIPage() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [roi,     setRoi]     = useState<InventoryROISummary | null>(null)
   const [monthly, setMonthly] = useState<ROIMonthlyRow[]>([])
   const [recap,   setRecap]   = useState<ROIMonthReport | null>(null)
@@ -513,7 +519,7 @@ export default function ROIPage() {
           {/* Last updated note */}
           {roi.last_po_at && (
             <div style={{ fontSize: 11, color: C.dim, textAlign: 'center', paddingBottom: 4 }}>
-              {t('roi.last_order_registered_prefix')} {fmtDateTime(roi.last_po_at)}
+              {t('roi.last_order_registered_prefix')} {fmtDateTime(roi.last_po_at, lang)}
             </div>
           )}
         </>
