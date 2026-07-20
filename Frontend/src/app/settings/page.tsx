@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button'
 import Spinner from '@/components/ui/Spinner'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
@@ -31,6 +32,7 @@ const CRON_OPTIONS = [
 // ── API Keys tab ──────────────────────────────────────────────────────────────
 function ApiKeysTab() {
   const { t } = useLanguage()
+  const confirm = useConfirm()
   const [keys,    setKeys]    = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
@@ -63,7 +65,7 @@ function ApiKeysTab() {
   }
 
   const handleRevoke = async (id: string) => {
-    if (!window.confirm(t('settings.revoke_confirm'))) return
+    if (!(await confirm({ title: t('settings.revoke_title'), message: t('settings.revoke_confirm'), danger: true }))) return
     setRevoking(id)
     try { await revokeApiKey(id); load() }
     catch (e: any) { setError(e.message) }
@@ -169,6 +171,7 @@ function ApiKeysTab() {
 // ── Webhooks tab ──────────────────────────────────────────────────────────────
 function WebhooksTab() {
   const { t } = useLanguage()
+  const confirm = useConfirm()
   const [hooks,    setHooks]    = useState<Webhook[]>([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
@@ -196,7 +199,7 @@ function WebhooksTab() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm(t('settings.delete_webhook_confirm'))) return
+    if (!(await confirm({ title: t('settings.delete_webhook_confirm'), danger: true }))) return
     setDeleting(id)
     try { await deleteWebhook(id); load() }
     catch (e: any) { setError(e.message) }
@@ -294,6 +297,7 @@ function WebhooksTab() {
 // ── Schedules tab ─────────────────────────────────────────────────────────────
 function SchedulesTab() {
   const { t } = useLanguage()
+  const confirm = useConfirm()
   const [sessions,   setSessions]  = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId] = useState<string>('')
   const [schedule,   setSchedule]  = useState<JobSchedule | null>(null)
@@ -337,7 +341,7 @@ function SchedulesTab() {
   }
 
   const handleDelete = async () => {
-    if (!window.confirm(t('settings.remove_schedule_confirm'))) return
+    if (!(await confirm({ title: t('settings.remove_schedule_confirm'), danger: true }))) return
     setDeleting(true)
     try { await deleteSchedule(sessionId); setSchedule(null) }
     catch (e: any) { setError(e.message) }
