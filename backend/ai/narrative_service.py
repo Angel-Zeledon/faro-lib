@@ -12,6 +12,8 @@ All narratives are grounded in the data provided — never invented.
 import json
 import logging
 
+from backend.formatting import money, format_days
+
 log = logging.getLogger(__name__)
 
 # ── Profile-specific focus areas ──────────────────────────────────────────────
@@ -89,8 +91,11 @@ def generate_morning_narrative(briefing: dict, profile: str = 'distributor') -> 
     demand_changes = briefing.get('demand_changes', [])
     overstocked = briefing.get('overstocked', [])
 
-    risk_names = [f"{r.get('display_name') or r.get('sku')} ({r.get('coverage_days', '?'):.0f} días)"
-                  for r in risks[:5]] if risks else []
+    risk_names = [
+        f"{r.get('display_name') or r.get('sku')} "
+        f"({format_days(r['coverage_days']) if r.get('coverage_days') is not None else '? días'})"
+        for r in risks[:5]
+    ] if risks else []
     demand_up   = [f"{i.get('display_name') or i.get('sku')} (+{i.get('demand_trend_pct', 0):.0f}%)"
                    for i in demand_changes if (i.get('demand_trend_pct') or 0) > 0][:3]
     demand_down = [f"{i.get('display_name') or i.get('sku')} ({i.get('demand_trend_pct', 0):.0f}%)"
@@ -311,7 +316,7 @@ def _extract_key_points(data: dict) -> list[str]:
         points.append(f"{data['products_at_immediate_risk']} producto(s) en riesgo inmediato de quiebre")
     if data.get('capital_trapped_in_overstock', 0) > 0:
         val = data['capital_trapped_in_overstock']
-        points.append(f"${val:,.0f} inmovilizado en sobrestock")
+        points.append(f"{money(val)} inmovilizado en sobrestock")
     if data.get('demand_change_alerts', 0) > 0:
         points.append(f"{data['demand_change_alerts']} SKU(s) con cambio significativo en demanda")
     return points
@@ -330,7 +335,7 @@ def _build_fallback_narrative(data: dict, profile: str) -> str:
     if pronto > 0:
         parts.append(f"{pronto} necesitan pedido esta semana. ")
     if capital > 0:
-        parts.append(f"Hay ${capital:,.0f} inmovilizado en sobrestock que puede liberarse. ")
+        parts.append(f"Hay {money(capital)} inmovilizado en sobrestock que puede liberarse. ")
 
     demand_up = data.get('demand_rising', [])
     if demand_up:
@@ -349,4 +354,4 @@ def _build_inventory_fallback(data: dict) -> str:
     over = signals.get('SOBRESTOCK', 0)
     return (f"De {total} SKUs: {ya} en riesgo inmediato, {pronto} requieren pedido esta semana, "
             f"{ok} están bien cubiertos y {over} tienen sobrestock. "
-            f"Valor en sobrestock: ${data.get('overstock_value', 0):,.0f}.")
+            f"Valor en sobrestock: {money(data.get('overstock_value', 0))}.")

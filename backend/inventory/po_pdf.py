@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from backend.storage import paths
+from backend.formatting import money
 
 log = logging.getLogger(__name__)
 
@@ -85,8 +86,8 @@ def generate_po_pdf(
                 str(i.get("sku", "")),
                 str(i.get("display_name") or i.get("sku", "")),
                 f"{qty:,.0f}",
-                f"${cost:,.2f}",
-                f"${qty * cost:,.2f}",
+                money(cost, 2),
+                money(qty * cost, 2),
             ])
         table = Table(rows, colWidths=[1.1*inch, 2.3*inch, 1*inch, 1.1*inch, 1*inch])
         table.setStyle(TableStyle([
@@ -100,7 +101,7 @@ def generate_po_pdf(
         ]))
         story.append(table)
         story.append(Spacer(1, 0.15*inch))
-        story.append(Paragraph(f"<b>Total: ${total_value:,.2f}</b>", body))
+        story.append(Paragraph(f"<b>Total: {money(total_value, 2)}</b>", body))
 
         doc.build(story)
 
@@ -116,8 +117,8 @@ def generate_po_pdf(
         for i in items:
             qty = i.get("final_qty") or 0
             cost = i.get("unit_cost") or 0
-            lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x ${cost:,.2f}")
-        lines.append(f"\nTotal: ${total_value:,.2f}")
+            lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x {money(cost, 2)}")
+        lines.append(f"\nTotal: {money(total_value, 2)}")
         path.with_suffix(".txt").write_text("\n".join(lines), encoding="utf-8")
         return path.with_suffix(".txt")
 

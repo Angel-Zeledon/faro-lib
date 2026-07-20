@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from backend.db.connection import query, query_one, execute
+from backend.formatting import money, format_days as _format_days
 
 log = logging.getLogger(__name__)
 
@@ -422,16 +423,6 @@ def calc_unit_margin(
     if sale_price is None or unit_cost is None:
         return None
     return round(float(sale_price) - float(unit_cost), 2)
-
-
-def _format_days(n: float) -> str:
-    """
-    Pluralises a day count for the end-user sentence: "1 día" / "N días".
-    The product read "te alcanza para 1 días" on every SKU with a single day of
-    cover — the exact screen the user stares at when something is about to run out.
-    """
-    rounded = round(n)
-    return "1 día" if rounded == 1 else f"{rounded:,.0f} días"
 
 
 def build_explanation(
@@ -1206,7 +1197,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         _kpi_cell(ok,      "OK 🟢",          "22c55e"),
         _kpi_cell(over,    "Sobrestock 🔵",  "3b82f6"),
         _kpi_cell(
-            f"${value:,.0f}" if value else "—",
+            money(value) if value else "—",
             "Valor inventario", "6366f1",
         ),
     ]]
@@ -1223,7 +1214,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
             (warning, "Pedir pronto",    "f59e0b"),
             (ok,      "OK",              "22c55e"),
             (over,    "Sobrestock",      "3b82f6"),
-            (f"${value:,.0f}" if value else "—", "Valor bodega", "6366f1"),
+            (money(value) if value else "—", "Valor bodega", "6366f1"),
         ]
     ]]
     kpi_row = [[Table([[v] for v in cell], colWidths=["100%"]) for cell in kpi_table_data[0]]]
@@ -1500,7 +1491,7 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 'priority': 2, 'sku': sku, 'name': name,
                 'rec_type': 'REORDER_SOON',
                 'text': (
-                    f"{name} tiene {days:.0f} días de cobertura frente a un lead time de {lead} días. "
+                    f"{name} tiene {_format_days(days)} de cobertura frente a un lead time de {_format_days(lead)}. "
                     f"Emite el pedido esta semana para mantener el colchón de seguridad."
                 ),
                 'action': f"Pedir {qty:.0f} unidades antes del viernes" if qty > 0 else "Planificar pedido",
@@ -1537,8 +1528,8 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 'priority': 5, 'sku': sku, 'name': name,
                 'rec_type': 'OVERSTOCK',
                 'text': (
-                    f"{name} tiene {days:.0f} días de cobertura ({excess_days:.0f} días más de lo óptimo). "
-                    f"Pausar el próximo pedido liberaría ${value:,.0f} en capital de trabajo."
+                    f"{name} tiene {_format_days(days)} de cobertura ({_format_days(excess_days)} más de lo óptimo). "
+                    f"Pausar el próximo pedido liberaría {money(value)} en capital de trabajo."
                 ),
                 'action': "Pausar próximo pedido",
                 'signal': signal,

@@ -73,6 +73,12 @@ function timeSince(date: Date, t: (k: string) => string) {
  return `${t('hoy.time_mins_ago_prefix')} ${mins} ${t('hoy.time_mins_ago_suffix')}`
 }
 
+// Day unit that agrees in number: "1 día" vs "N días". The risk cards read
+// "1 días de stock" without it — the exact screen shown when stock is lowest.
+function dayUnit(n: number, t: (k: string) => string) {
+ return Math.round(n) === 1 ? t('hoy.reason_day_unit_singular') : t('hoy.reason_days_unit')
+}
+
 function formatDateES(isoDate: string, lang: string) {
  const d = new Date(isoDate + 'T12:00:00')
  return d.toLocaleDateString(lang, {
@@ -408,8 +414,8 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
  for (const risk of (b.risks ?? [])) {
   const d = risk.coverage_days != null ? Math.round(risk.coverage_days) : null
   const reason = d != null
-   ? `${t('hoy.reason_stock_left_prefix')} ${d} ${t('hoy.reason_days_unit')} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_days} ${t('hoy.reason_days_unit')}`
-   : `${t('hoy.reason_immediate_risk')} — ${t('hoy.reason_lead_time_label')} ${risk.lead_time_days} ${t('hoy.reason_days_unit')}`
+   ? `${t('hoy.reason_stock_left_prefix')} ${d} ${dayUnit(d, t)} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_days} ${dayUnit(risk.lead_time_days, t)}`
+   : `${t('hoy.reason_immediate_risk')} — ${t('hoy.reason_lead_time_label')} ${risk.lead_time_days} ${dayUnit(risk.lead_time_days, t)}`
   items.push({
    sku:            risk.sku,
    name:           risk.display_name || risk.sku,
