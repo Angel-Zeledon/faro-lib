@@ -18,6 +18,8 @@ import {
  Layers, ArrowLeft, BarChart2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useToast } from '@/contexts/ToastContext'
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -991,6 +993,8 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  { source: DataSource; onUpdated: (s: DataSource) => void; onDeleted: () => void; onBack?: () => void }
 ) {
  const { t } = useLanguage()
+ const confirm = useConfirm()
+ const { addToast } = useToast()
  const [tab, setTab] = useState<'preview' | 'analysis' | 'sql-editor' | 'connection'>('preview')
  const [preview, setPreview] = useState<DataPreview | null>(null)
  const [loadingPreview, setLoadingPreview] = useState(false)
@@ -1052,7 +1056,11 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  }
 
  const doDelete = async () => {
- if (!confirm(`${t('data.confirm_delete_prefix')} "${source.name}"? ${t('data.confirm_delete_suffix')}`)) return
+ if (!(await confirm({
+ title: `${t('data.confirm_delete_prefix')} "${source.name}"?`,
+ message: t('data.confirm_delete_suffix'),
+ danger: true,
+ }))) return
  setDeletingId(true); setDeleteErr(null)
  try { await deleteDataSource(source.id); onDeleted() }
  catch (e) { setDeleteErr(e instanceof Error ? e.message : t('data.delete_failed')) }
@@ -1336,7 +1344,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  })
  onUpdated(updated)
  setTestResult(null)
- } catch (e: any) { alert(e.message) }
+ } catch (e: any) { addToast(t('data.sql_config_save_failed'), e.message, 'error') }
  }}
  />
  </div>
