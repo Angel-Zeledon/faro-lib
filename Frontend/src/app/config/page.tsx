@@ -243,7 +243,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{me?.email}</div>
           </div>
 
-          {/* WhatsApp para alertas diarias de inventory */}
+          {/* WhatsApp for daily inventory alerts */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {t('config.whatsapp_label')}
