@@ -18,7 +18,6 @@ interface ForecastChartProps {
   isDark?: boolean
 }
 
-// INSTANCIA-3 TAREA-3C: COMPLETADA
 export default function ForecastChart({ series, height = 280, isDark = true }: ForecastChartProps) {
   const hasBands   = series.some(p => p.p10 !== undefined && p.p90 !== undefined)
   const hasActuals = series.some(p => p.actual !== undefined)

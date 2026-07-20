@@ -58,10 +58,11 @@ function guessColumns(cols: string[]): { dateCol: string; targetCol: string; sku
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
+ const { t } = useLanguage()
  const cfg = {
- connected: { icon: CheckCircle2, color: C.green, label: 'Connected' },
- pending: { icon: Clock, color: C.amber, label: 'Pending' },
- error: { icon: XCircle, color: C.red, label: 'Error' },
+ connected: { icon: CheckCircle2, color: C.green, label: t('data.status_connected') },
+ pending: { icon: Clock, color: C.amber, label: t('data.status_pending') },
+ error: { icon: XCircle, color: C.red, label: t('data.status_error') },
  }[status] ?? { icon: Clock, color: C.muted, label: status }
  const Icon = cfg.icon
  return (
@@ -149,8 +150,9 @@ function LineChart({ data, color = C.green, height = 130, outliers, showOutliers
  outliers?: OutlierPoint[]
  showOutliers?: boolean
 }) {
+ const { t } = useLanguage()
  const valid = data.filter(d => d.value != null) as { date: string; value: number }[]
- if (valid.length < 2) return <p style={{ color: C.muted, fontSize: 12, textAlign: 'center', padding: 20 }}>Not enough data</p>
+ if (valid.length < 2) return <p style={{ color: C.muted, fontSize: 12, textAlign: 'center', padding: 20 }}>{t('data.not_enough_data')}</p>
  const VW = 720, VH = height
  const P = { t: 10, b: 22, l: 46, r: 8 }
  const CW = VW - P.l - P.r, CH = VH - P.t - P.b
@@ -207,6 +209,7 @@ function LineChart({ data, color = C.green, height = 130, outliers, showOutliers
 
 // ── Drag-drop upload zone ─────────────────────────────────────────────────────
 function DropZone({ onFile, compact }: { onFile: (f: File) => void; compact?: boolean }) {
+ const { t } = useLanguage()
  const [drag, setDrag] = useState(false)
  const ref = useRef<HTMLInputElement>(null)
  const onDrop = (e: React.DragEvent) => {
@@ -232,9 +235,9 @@ function DropZone({ onFile, compact }: { onFile: (f: File) => void; compact?: bo
  onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }} />
  <Upload size={compact ? 24 : 32} color={drag ? C.green : C.muted} style={{ margin: '0 auto 8px' }} />
  <p style={{ color: drag ? C.green : C.text, fontWeight: 600, margin: '0 0 4px' }}>
- {drag ? 'Drop to upload' : 'Drag & drop or click to browse'}
+ {drag ? t('data.drop_to_upload') : t('data.drag_or_browse')}
  </p>
- <p style={{ color: C.muted, fontSize: 12, margin: 0 }}>CSV, Excel (.xlsx/.xls), Parquet, JSON</p>
+ <p style={{ color: C.muted, fontSize: 12, margin: 0 }}>{t('data.file_types_hint')}</p>
  </div>
  )
 }
@@ -255,6 +258,7 @@ const ENGINE_PORTS: Record<string, string> = {
 function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  { initial?: Partial<SqlFormData>; onSave: (d: SqlFormData) => void; onCancel?: () => void; saving?: boolean; isEdit?: boolean }
 ) {
+ const { t } = useLanguage()
  const [form, setForm] = useState<SqlFormData>({ ...SQL_DEFAULTS, ...initial })
  const set = (k: keyof SqlFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
  setForm(f => ({ ...f, [k]: e.target.value }))
@@ -270,18 +274,18 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  {!isEdit && (
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
  <div>
- <label style={labelStyle}>Source Name *</label>
- <input style={inputStyle} value={form.name} onChange={set('name')} placeholder="My Production DB" />
+ <label style={labelStyle}>{t('data.field_source_name')} *</label>
+ <input style={inputStyle} value={form.name} onChange={set('name')} placeholder={t('data.field_source_name_ph')} />
  </div>
  <div>
- <label style={labelStyle}>Description</label>
- <input style={inputStyle} value={form.description} onChange={set('description')} placeholder="Optional" />
+ <label style={labelStyle}>{t('data.field_description')}</label>
+ <input style={inputStyle} value={form.description} onChange={set('description')} placeholder={t('data.field_optional_ph')} />
  </div>
  </div>
  )}
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
  <div>
- <label style={labelStyle}>Engine *</label>
+ <label style={labelStyle}>{t('data.field_engine')} *</label>
  <select style={inputStyle} value={form.engine} onChange={e => {
  const eng = e.target.value as SqlEngine
  setForm(f => ({ ...f, engine: eng, port: ENGINE_PORTS[eng] || f.port }))
@@ -292,25 +296,25 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  </select>
  </div>
  <div>
- <label style={labelStyle}>Host *</label>
+ <label style={labelStyle}>{t('data.field_host')} *</label>
  <input style={inputStyle} value={form.host} onChange={set('host')} placeholder="localhost" />
  </div>
  <div>
- <label style={labelStyle}>Port *</label>
+ <label style={labelStyle}>{t('data.field_port')} *</label>
  <input style={inputStyle} value={form.port} onChange={set('port')} type="number" />
  </div>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
  <div>
- <label style={labelStyle}>Database *</label>
- <input style={inputStyle} value={form.database} onChange={set('database')} placeholder="mydb" />
+ <label style={labelStyle}>{t('data.field_database')} *</label>
+ <input style={inputStyle} value={form.database} onChange={set('database')} placeholder={t('data.field_database_ph')} />
  </div>
  <div>
- <label style={labelStyle}>Username *</label>
- <input style={inputStyle} value={form.username} onChange={set('username')} placeholder="user" />
+ <label style={labelStyle}>{t('data.field_username')} *</label>
+ <input style={inputStyle} value={form.username} onChange={set('username')} placeholder={t('data.field_username_ph')} />
  </div>
  <div>
- <label style={labelStyle}>Password {isEdit && <span style={{ fontWeight: 400 }}>(leave blank to keep)</span>}</label>
+ <label style={labelStyle}>{t('data.field_password')} {isEdit && <span style={{ fontWeight: 400 }}>{t('data.field_password_keep')}</span>}</label>
  <input style={inputStyle} type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
  </div>
  </div>
@@ -318,7 +322,7 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  {onCancel && (
  <button onClick={onCancel} style={{ padding: '9px 18px', borderRadius: 8,
  background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer' }}>
- Cancel
+ {t('common.cancel')}
  </button>
  )}
  <button onClick={() => onSave(form)} disabled={saving}
@@ -326,7 +330,7 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  border: 'none', color: '#fff', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
  opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
  {saving ? <Spinner size={14} /> : <Save size={14} />}
- {isEdit ? 'Save Changes' : 'Create Connection'}
+ {isEdit ? t('data.btn_save_changes') : t('data.btn_create_connection')}
  </button>
  </div>
  </div>
@@ -335,6 +339,7 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
 
 // ── SQL Editor Panel ──────────────────────────────────────────────────────────
 function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: DataSource) => void }) {
+ const { t } = useLanguage()
  const [sql, setSql] = useState(source.saved_query || '')
  const [result, setResult] = useState<SqlQueryResult | null>(null)
  const [running, setRunning] = useState(false)
@@ -364,20 +369,20 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
- <span style={{ color: C.muted, fontSize: 12, fontWeight: 600 }}>SQL EDITOR</span>
+ <span style={{ color: C.muted, fontSize: 12, fontWeight: 600 }}>{t('data.sql_editor_label')}</span>
  <div style={{ display: 'flex', gap: 8 }}>
  <button onClick={save} disabled={saving || !sql.trim()}
  style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent',
  border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
- {saving ? <Spinner size={12} /> : <Save size={12} />} Save Query
+ {saving ? <Spinner size={12} /> : <Save size={12} />} {t('data.btn_save_query')}
  </button>
  <button onClick={run} disabled={running || !sql.trim()}
  style={{ padding: '6px 16px', borderRadius: 7, background: C.green,
  border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
  opacity: running || !sql.trim() ? 0.6 : 1 }}>
- {running ? <Spinner size={12} /> : <Play size={12} />} Run
+ {running ? <Spinner size={12} /> : <Play size={12} />} {t('data.btn_run')}
  </button>
  </div>
  </div>
@@ -386,7 +391,7 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  onChange={e => setSql(e.target.value)}
  onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run() } }}
  spellCheck={false}
- placeholder="SELECT * FROM your_table LIMIT 100"
+ placeholder={t('data.query_placeholder')}
  style={{
  width: '100%', minHeight: 140, background: 'var(--surface-2)', border: `1px solid ${C.border2}`,
  borderRadius: 8, padding: '12px 14px',
@@ -405,7 +410,7 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
  <Table2 size={14} color={C.green} />
  <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>
- {result.row_count} rows{result.truncated ? ' (truncated)' : ''}
+ {result.row_count} {result.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{result.truncated ? ` ${t('data.truncated_suffix')}` : ''}
  </span>
  </div>
  <DataGrid columns={result.columns} rows={result.rows} />
@@ -451,15 +456,15 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
  <thead>
  <tr>
- <Hdr label="SKU" col="sku" />
- <Hdr label="N" col="n" />
- <Hdr label="Mean" col="mean" />
- <Hdr label="CV" col="cv" />
- <Hdr label="Seasonality" col="seasonality_class" />
- <Hdr label="Period" col="dominant_period" />
- <Hdr label="Trend" col="trend_direction" />
- <Hdr label="Stationarity" col="stationarity" />
- <Hdr label="Demand type" col="croston_class" />
+ <Hdr label={t('data.col_sku')} col="sku" />
+ <Hdr label={t('data.col_n')} col="n" />
+ <Hdr label={t('data.col_mean')} col="mean" />
+ <Hdr label={t('data.col_cv')} col="cv" />
+ <Hdr label={t('data.col_seasonality')} col="seasonality_class" />
+ <Hdr label={t('data.col_period')} col="dominant_period" />
+ <Hdr label={t('data.col_trend')} col="trend_direction" />
+ <Hdr label={t('data.col_stationarity')} col="stationarity" />
+ <Hdr label={t('data.col_demand_type')} col="croston_class" />
  </tr>
  </thead>
  <tbody>
@@ -479,7 +484,7 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  style={{ background: bg, cursor: row.error ? 'default' : 'pointer', transition: 'background 0.1s' }}>
  <td style={{ ...TD, color: C.green, fontWeight: 600 }}>
  {row.sku ?? '__all__'}
- {row.error && <span style={{ color: C.red, fontSize: 10, marginLeft: 6 }}>⚠ error</span>}
+ {row.error && <span style={{ color: C.red, fontSize: 10, marginLeft: 6 }}>⚠ {t('data.error_short')}</span>}
  </td>
  <td style={TD}>{row.n?.toLocaleString() ?? '—'}</td>
  <td style={TD}>{row.mean != null ? row.mean.toFixed(1) : '—'}</td>
@@ -509,10 +514,11 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
 function SkuDetailView({ sku, detail, loading, onBack }: {
  sku: string; detail: SkuDetailResult | null; loading: boolean; onBack: () => void
 }) {
+ const { t } = useLanguage()
  const [showOutliers, setShowOutliers] = useState(true)
  if (loading) return (
  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '80px 0', justifyContent: 'center' }}>
- <Spinner size={22} /> <span style={{ color: C.muted }}>Running deep analysis for {sku}…</span>
+ <Spinner size={22} /> <span style={{ color: C.muted }}>{t('data.running_deep_analysis')} {sku}…</span>
  </div>
  )
  if (!detail) return null
@@ -539,45 +545,45 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 
  const panels = [
  {
- title: 'Distribution', color: C.blue,
+ title: t('data.panel_distribution'), color: C.blue,
  rows: [
- ['Mean', n(dist.mean, 1)],
- ['Median', n(dist.median, 1)],
- ['Std', n(dist.std, 1)],
- ['CV', n(dist.cv)],
- ['Skewness', n(dist.skewness)],
- ['Zero %', pct(dist.zero_pct)],
- ['Outliers', pct(dist.outlier_pct)],
- ['Best dist', String(dist.best_distribution ?? '—')],
+ [t('data.stat_mean'), n(dist.mean, 1)],
+ [t('data.stat_median'), n(dist.median, 1)],
+ [t('data.stat_std'), n(dist.std, 1)],
+ [t('data.stat_cv'), n(dist.cv)],
+ [t('data.stat_skewness'), n(dist.skewness)],
+ [t('data.stat_zero_pct'), pct(dist.zero_pct)],
+ [t('data.stat_outliers'), pct(dist.outlier_pct)],
+ [t('data.stat_best_dist'), String(dist.best_distribution ?? '—')],
  ],
  },
  {
- title: 'Seasonality', color: C.green,
+ title: t('data.panel_seasonality'), color: C.green,
  rows: [
- ['Class', String(seas.classification ?? '—')],
- ['Period', String(seas.dominant_period ?? '—')],
- ['Strength', n(seas.seasonal_strength)],
- ['STL seasonal', n(dec.seasonal_strength)],
- ['STL trend', n(dec.trend_strength)],
+ [t('data.stat_class'), String(seas.classification ?? '—')],
+ [t('data.stat_period'), String(seas.dominant_period ?? '—')],
+ [t('data.stat_strength'), n(seas.seasonal_strength)],
+ [t('data.stat_stl_seasonal'), n(dec.seasonal_strength)],
+ [t('data.stat_stl_trend'), n(dec.trend_strength)],
  ],
  },
  {
- title: 'Trend', color: C.amber,
+ title: t('data.panel_trend'), color: C.amber,
  rows: [
- ['Direction', String(mk.direction ?? '—')],
- ['MK p-value', pf(mk.pvalue)],
- ["Sen's slope", n(trend.sens_slope, 4)],
- ['Linear R²', n(lin.r2)],
- ['Change points', String((trend.change_points as unknown[] | undefined)?.length ?? '—')],
+ [t('data.stat_direction'), String(mk.direction ?? '—')],
+ [t('data.stat_mk_pvalue'), pf(mk.pvalue)],
+ [t('data.stat_sens_slope'), n(trend.sens_slope, 4)],
+ [t('data.stat_linear_r2'), n(lin.r2)],
+ [t('data.stat_change_points'), String((trend.change_points as unknown[] | undefined)?.length ?? '—')],
  ],
  },
  {
- title: 'Stationarity', color: C.muted,
+ title: t('data.panel_stationarity'), color: C.muted,
  rows: [
- ['Verdict', String(stat.verdict ?? '—')],
- ['Diff order', String(stat.diff_order ?? '—')],
- ['ADF p-value', pf(adf.pvalue)],
- ['KPSS p-value', pf(kpss.pvalue)],
+ [t('data.stat_verdict'), String(stat.verdict ?? '—')],
+ [t('data.stat_diff_order'), String(stat.diff_order ?? '—')],
+ [t('data.stat_adf_pvalue'), pf(adf.pvalue)],
+ [t('data.stat_kpss_pvalue'), pf(kpss.pvalue)],
  ],
  },
  ]
@@ -594,15 +600,15 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
  background: 'transparent', border: `1px solid ${C.border2}`, borderRadius: 8,
  color: C.muted, cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>
- <ArrowLeft size={13} /> Back
+ <ArrowLeft size={13} /> {t('common.back')}
  </button>
  <div>
- <h3 style={{ margin: 0, color: C.text, fontSize: 15, fontWeight: 700 }}>{sku === '__all__' ? 'Full Dataset' : sku}</h3>
+ <h3 style={{ margin: 0, color: C.text, fontSize: 15, fontWeight: 700 }}>{sku === '__all__' ? t('data.full_dataset') : sku}</h3>
  <span style={{ color: C.muted, fontSize: 12 }}>
  {dr.start ? `${dr.start} → ${dr.end}` : ''}
- {dr.n_days != null ? ` · ${dr.n_days} days` : ''}
+ {dr.n_days != null ? ` · ${dr.n_days} ${Number(dr.n_days) === 1 ? t('data.days_singular') : t('data.days_plural')}` : ''}
  {dr.freq_detected ? ` · ${dr.freq_detected}` : ''}
- {r.n_observations != null ? ` · ${r.n_observations} observations` : ''}
+ {r.n_observations != null ? ` · ${r.n_observations} ${t('data.observations_suffix')}` : ''}
  </span>
  </div>
  </div>
@@ -613,7 +619,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  border: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
- Time Series
+ {t('data.section_time_series')}
  </div>
  {(detail.outliers?.length ?? 0) > 0 && (
  <button
@@ -628,7 +634,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  }}
  >
  <AlertTriangle size={10} />
- {showOutliers ? 'Hide' : 'Show'} outliers ({detail.outliers!.length})
+ {showOutliers ? t('data.btn_hide') : t('data.btn_show')} {t('data.outliers_word')} ({detail.outliers!.length})
  </button>
  )}
  </div>
@@ -645,15 +651,15 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
  <AlertTriangle size={13} color={C.red} />
  <span style={{ color: C.red, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
- {detail.outliers!.length} outlier{detail.outliers!.length !== 1 ? 's' : ''} detected
+ {detail.outliers!.length} {detail.outliers!.length !== 1 ? t('data.outliers_detected_plural') : t('data.outliers_detected_singular')}
  </span>
- <span style={{ color: C.muted, fontSize: 11 }}>· IQR method (Tukey fences)</span>
+ <span style={{ color: C.muted, fontSize: 11 }}>{t('data.iqr_method')}</span>
  </div>
  <div style={{ overflowX: 'auto' }}>
  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
  <thead>
  <tr>
- {['Date', 'Value', 'Z-score', 'Direction', 'Reason'].map(h => (
+ {[t('data.col_date'), t('data.col_value'), t('data.col_zscore'), t('data.col_direction'), t('data.col_reason')].map(h => (
  <th key={h} style={{
  padding: '6px 12px', textAlign: 'left', background: 'var(--surface-2)',
  color: C.muted, fontWeight: 600, fontSize: 11,
@@ -675,7 +681,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  {o.z_score > 0 ? '+' : ''}{o.z_score}σ
  </td>
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, color: o.value > o.upper_bound ? C.red : C.amber, whiteSpace: 'nowrap' }}>
- {o.value > o.upper_bound ? '▲ High' : '▼ Low'}
+ {o.value > o.upper_bound ? t('data.direction_high') : t('data.direction_low')}
  </td>
  <td style={{ padding: '6px 12px', color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>
  {o.reason}
@@ -717,13 +723,13 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  border: `1px solid ${C.border}` }}>
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
  textTransform: 'uppercase', marginBottom: 14, letterSpacing: '0.05em' }}>
- STL Decomposition
+ {t('data.section_stl')}
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
  {[
- { label: 'Trend', values: decTrend, color: C.green },
- { label: 'Seasonal', values: decSeasonal, color: C.blue },
- { label: 'Residual', values: decResidual, color: C.amber },
+ { label: t('data.stl_trend'), values: decTrend, color: C.green },
+ { label: t('data.stl_seasonal'), values: decSeasonal, color: C.blue },
+ { label: t('data.stl_residual'), values: decResidual, color: C.amber },
  ].map(({ label, values, color }) => (
  <div key={label}>
  <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>{label}</div>
@@ -741,12 +747,12 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  <div style={{ background: C.surface, borderRadius: 10, padding: '12px 14px',
  border: `1px solid ${C.border}` }}>
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 10 }}>Autocorrelation</div>
+ textTransform: 'uppercase', marginBottom: 10 }}>{t('data.section_autocorrelation')}</div>
  {[
- ['Suggested AR order', String(acf.suggested_ar_order ?? '—')],
- ['Suggested MA order', String(acf.suggested_ma_order ?? '—')],
- ['White noise', lb.is_white_noise != null ? (lb.is_white_noise ? 'Yes' : 'No') : '—'],
- ['Ljung-Box p', pf(lb.pvalue)],
+ [t('data.ac_suggested_ar'), String(acf.suggested_ar_order ?? '—')],
+ [t('data.ac_suggested_ma'), String(acf.suggested_ma_order ?? '—')],
+ [t('data.ac_white_noise'), lb.is_white_noise != null ? (lb.is_white_noise ? t('common.yes') : t('common.no')) : '—'],
+ [t('data.ac_ljung_box_p'), pf(lb.pvalue)],
  ].map(([l, v]) => (
  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{l}</span>
@@ -758,13 +764,13 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  <div style={{ background: C.surface, borderRadius: 10, padding: '12px 14px',
  border: `1px solid ${C.border}` }}>
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 10 }}>Demand Classification</div>
+ textTransform: 'uppercase', marginBottom: 10 }}>{t('data.section_demand_class')}</div>
  {[
- ['Croston class', String(croston.classification ?? '—')],
- ['ADI', n(croston.adi)],
- ['CV²', n(croston.cv2)],
- ['Best fit dist', String(dist.best_distribution ?? '—')],
- ['Is normal', norm.is_normal != null ? (norm.is_normal ? 'Yes' : 'No') : '—'],
+ [t('data.dc_croston_class'), String(croston.classification ?? '—')],
+ [t('data.dc_adi'), n(croston.adi)],
+ [t('data.dc_cv2'), n(croston.cv2)],
+ [t('data.dc_best_fit_dist'), String(dist.best_distribution ?? '—')],
+ [t('data.dc_is_normal'), norm.is_normal != null ? (norm.is_normal ? t('common.yes') : t('common.no')) : '—'],
  ].map(([l, v]) => (
  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{l}</span>
@@ -781,6 +787,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 function AnalysisTab({ source, columns, activeSheet }: {
  source: DataSource; columns: string[]; activeSheet?: string
 }) {
+ const { t } = useLanguage()
  const guessed = useMemo(() => guessColumns(columns), [columns.join(',')]) // eslint-disable-line
 
  const [dateCol, setDateCol] = useState('')
@@ -805,7 +812,7 @@ function AnalysisTab({ source, columns, activeSheet }: {
  }, [guessed.dateCol, guessed.targetCol, guessed.skuCol]) // eslint-disable-line
 
  const runAnalysis = async () => {
- if (!dateCol || !targetCol) { setErr('Select a date column and a target column.'); return }
+ if (!dateCol || !targetCol) { setErr(t('data.err_select_columns')); return }
  setLoading(true); setErr(null); setResult(null); setSelSku(null); setSkuDetail(null)
  try {
  const r = await analyzeDataSource(source.id, {
@@ -877,39 +884,39 @@ function AnalysisTab({ source, columns, activeSheet }: {
  border: `1px solid ${C.border}` }}>
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
  textTransform: 'uppercase', marginBottom: 14, letterSpacing: '0.05em' }}>
- Column Mapping
+ {t('data.section_column_mapping')}
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
  <div>
- <label style={lblStyle}>Date Column *</label>
+ <label style={lblStyle}>{t('data.field_date_column')} *</label>
  <select style={selStyle} value={dateCol} onChange={e => setDateCol(e.target.value)}>
- <option value="">— select —</option>
+ <option value="">{t('data.select_placeholder')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
  </div>
  <div>
- <label style={lblStyle}>Target Column *</label>
+ <label style={lblStyle}>{t('data.field_target_column')} *</label>
  <select style={selStyle} value={targetCol} onChange={e => setTargetCol(e.target.value)}>
- <option value="">— select —</option>
+ <option value="">{t('data.select_placeholder')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
  </div>
  <div>
- <label style={lblStyle}>Group / SKU Column</label>
+ <label style={lblStyle}>{t('data.field_group_sku_column')}</label>
  <select style={selStyle} value={skuCol} onChange={e => setSkuCol(e.target.value)}>
- <option value="">None (single series)</option>
+ <option value="">{t('data.option_none_single_series')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
  </div>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
  <div>
- <label style={lblStyle}>Date From (optional)</label>
+ <label style={lblStyle}>{t('data.field_date_from')}</label>
  <input type="date" style={selStyle} value={dateFrom}
  onChange={e => setDateFrom(e.target.value)} />
  </div>
  <div>
- <label style={lblStyle}>Date To (optional)</label>
+ <label style={lblStyle}>{t('data.field_date_to')}</label>
  <input type="date" style={selStyle} value={dateTo}
  onChange={e => setDateTo(e.target.value)} />
  </div>
@@ -920,12 +927,12 @@ function AnalysisTab({ source, columns, activeSheet }: {
  opacity: loading || !dateCol || !targetCol ? 0.55 : 1,
  display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
  {loading ? <Spinner size={14} /> : <BarChart2 size={14} />}
- {loading ? 'Analyzing…' : 'Analyze'}
+ {loading ? t('data.btn_analyzing') : t('data.btn_analyze')}
  </button>
  </div>
  {columns.length === 0 && (
  <p style={{ margin: '10px 0 0', color: C.amber, fontSize: 12 }}>
- ⚠ Preview not loaded — columns will appear after opening the Data Preview tab first.
+ {t('data.warn_preview_not_loaded')}
  </p>
  )}
  </div>
@@ -941,7 +948,7 @@ function AnalysisTab({ source, columns, activeSheet }: {
  <div style={{ display: 'flex', gap: 12, alignItems: 'center',
  padding: '40px 0', justifyContent: 'center' }}>
  <Spinner size={22} />
- <span style={{ color: C.muted }}>Running statistical analysis on all SKUs — this may take a moment…</span>
+ <span style={{ color: C.muted }}>{t('data.running_statistical_analysis')}</span>
  </div>
  )}
 
@@ -952,10 +959,10 @@ function AnalysisTab({ source, columns, activeSheet }: {
  padding: '10px 14px', background: C.surface, borderRadius: 8, border: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', gap: 20 }}>
  {[
- ['SKUs', String(result.summary.length)],
- ['Date col', result.date_col],
- ['Target col', result.target_col],
- ...(result.sku_col ? [['Group col', result.sku_col]] : []),
+ [t('data.summary_skus'), String(result.summary.length)],
+ [t('data.summary_date_col'), result.date_col],
+ [t('data.summary_target_col'), result.target_col],
+ ...(result.sku_col ? [[t('data.summary_group_col'), result.sku_col]] : []),
  ].map(([label, val]) => (
  <div key={label}>
  <span style={{ color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>{label} </span>
@@ -963,7 +970,7 @@ function AnalysisTab({ source, columns, activeSheet }: {
  </div>
  ))}
  </div>
- <span style={{ color: C.muted, fontSize: 11 }}>Click a row for detailed analysis →</span>
+ <span style={{ color: C.muted, fontSize: 11 }}>{t('data.click_row_for_detail')}</span>
  </div>
 
  <AnalysisSummaryTable
@@ -1045,10 +1052,10 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  }
 
  const doDelete = async () => {
- if (!confirm(`Delete "${source.name}"? This cannot be undone.`)) return
+ if (!confirm(`${t('data.confirm_delete_prefix')} "${source.name}"? ${t('data.confirm_delete_suffix')}`)) return
  setDeletingId(true); setDeleteErr(null)
  try { await deleteDataSource(source.id); onDeleted() }
- catch (e) { setDeleteErr(e instanceof Error ? e.message : 'Delete failed') }
+ catch (e) { setDeleteErr(e instanceof Error ? e.message : t('data.delete_failed')) }
  finally { setDeletingId(false) }
  }
 
@@ -1065,8 +1072,8 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  }
 
  const tabs = isSql
- ? [{ id: 'sql-editor', label: 'Query Editor' }, { id: 'connection', label: 'Connection' }]
- : [{ id: 'preview', label: 'Data Preview' }, { id: 'analysis', label: 'Analysis' }, { id: 'connection', label: 'Replace File' }]
+ ? [{ id: 'sql-editor', label: t('data.tab_query_editor') }, { id: 'connection', label: t('data.tab_connection') }]
+ : [{ id: 'preview', label: t('data.tab_data_preview') }, { id: 'analysis', label: t('data.tab_analysis') }, { id: 'connection', label: t('data.tab_replace_file') }]
 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -1091,7 +1098,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  <button onClick={saveName} disabled={savingName}
  style={{ background: C.green, border: 'none', borderRadius: 6,
  padding: '4px 12px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
- {savingName ? '…' : 'Save'}
+ {savingName ? '…' : t('common.save')}
  </button>
  <button onClick={() => setEditName(false)}
  style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
@@ -1130,7 +1137,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  border: `1px solid ${C.blue}40`, color: C.blue, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600 }}>
  {testing ? <Spinner size={12} /> : <Link2 size={12} />}
- Test Connection
+ {t('data.btn_test_connection')}
  </button>
  )}
  <button onClick={doDelete} disabled={deletingId}
@@ -1153,10 +1160,10 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  {/* Stats strip */}
  <div style={{ display: 'flex', gap: 24, paddingBottom: 12 }}>
  {[
- { label: 'Size', value: fmt(source.size_bytes) },
- { label: 'Rows', value: source.row_count?.toLocaleString() ?? '—' },
- { label: 'Columns', value: source.column_count?.toLocaleString() ?? '—' },
- { label: 'Type', value: source.file_type || source.sql_config?.engine || '—' },
+ { label: t('data.stat_size'), value: fmt(source.size_bytes) },
+ { label: t('data.stat_rows'), value: source.row_count?.toLocaleString() ?? '—' },
+ { label: t('data.stat_columns'), value: source.column_count?.toLocaleString() ?? '—' },
+ { label: t('data.stat_type'), value: source.file_type || source.sql_config?.engine || '—' },
  ].map(s => (
  <div key={s.label}>
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>{s.label}</div>
@@ -1174,7 +1181,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  display: 'flex', alignItems: 'center', gap: 6,
  }}>
  {testResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
- {testResult.ok ? 'Connection successful' : `Connection failed: ${testResult.error}`}
+ {testResult.ok ? t('data.connection_successful') : `${t('data.connection_failed')}: ${testResult.error}`}
  </div>
  )}
 
@@ -1221,7 +1228,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  )}
  {loadingPreview ? (
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '40px 0', justifyContent: 'center' }}>
- <Spinner size={20} /> <span style={{ color: C.muted }}>Loading preview…</span>
+ <Spinner size={20} /> <span style={{ color: C.muted }}>{t('data.loading_preview')}</span>
  </div>
  ) : previewErr ? (
  <div style={{ color: C.red, padding: 20 }}>{previewErr}</div>
@@ -1230,8 +1237,8 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
  <Eye size={14} color={C.muted} />
  <span style={{ color: C.muted, fontSize: 12 }}>
- Showing {preview.row_count} rows{preview.truncated ? ' (first 100)' : ''}
- {preview.active_sheet ? ` — sheet: ${preview.active_sheet}` : ''}
+ {t('data.showing')} {preview.row_count} {preview.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{preview.truncated ? ` ${t('data.first_100')}` : ''}
+ {preview.active_sheet ? ` — ${t('data.sheet_label')}: ${preview.active_sheet}` : ''}
  </span>
  <button
  onClick={() => { if (!loadingPreview) loadPreview(activeSheet) }}
@@ -1240,7 +1247,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  color: C.muted, cursor: loadingPreview ? 'default' : 'pointer',
  display: 'flex', alignItems: 'center', gap: 4, fontSize: 12,
  opacity: loadingPreview ? 0.5 : 1 }}>
- {loadingPreview ? <Spinner size={12} /> : <RefreshCw size={12} />} Refresh
+ {loadingPreview ? <Spinner size={12} /> : <RefreshCw size={12} />} {t('common.refresh')}
  </button>
  </div>
  <DataGrid columns={preview.columns} rows={preview.rows} />
@@ -1253,7 +1260,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  {tab === 'analysis' && !isSql && (
  loadingPreview && !preview ? (
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '40px 0', justifyContent: 'center' }}>
- <Spinner size={20} /> <span style={{ color: C.muted }}>Loading column list…</span>
+ <Spinner size={20} /> <span style={{ color: C.muted }}>{t('data.loading_column_list')}</span>
  </div>
  ) : (
  <AnalysisTab
@@ -1269,13 +1276,13 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  source.connection_status !== 'connected' ? (
  <div style={{ textAlign: 'center', padding: '40px 0' }}>
  <AlertTriangle size={32} color={C.amber} style={{ marginBottom: 12 }} />
- <p style={{ color: C.amber, fontWeight: 600 }}>Connection not established</p>
- <p style={{ color: C.muted, fontSize: 13 }}>Test the connection first, then use the SQL editor.</p>
+ <p style={{ color: C.amber, fontWeight: 600 }}>{t('data.connection_not_established')}</p>
+ <p style={{ color: C.muted, fontSize: 13 }}>{t('data.test_connection_first')}</p>
  <button onClick={testConn} disabled={testing}
  style={{ marginTop: 12, padding: '9px 20px', borderRadius: 8, background: C.green,
  border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer',
  display: 'inline-flex', alignItems: 'center', gap: 6 }}>
- {testing ? <Spinner size={14} /> : <Link2 size={14} />} Test Connection
+ {testing ? <Spinner size={14} /> : <Link2 size={14} />} {t('data.btn_test_connection')}
  </button>
  </div>
  ) : (
@@ -1287,7 +1294,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  {tab === 'connection' && !isSql && (
  <div>
  <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>
- Upload a new file to replace the current data. The name and ID stay the same.
+ {t('data.replace_file_hint')}
  </p>
  {replaceErr && (
  <div style={{ background: C.redDim, border: `1px solid ${C.red}30`,
@@ -1297,7 +1304,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  )}
  {replacing ? (
  <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '20px 0' }}>
- <Spinner size={18} /> <span style={{ color: C.muted }}>Replacing file…</span>
+ <Spinner size={18} /> <span style={{ color: C.muted }}>{t('data.replacing_file')}</span>
  </div>
  ) : (
  <DropZone onFile={replaceFile} compact />
@@ -1309,7 +1316,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  {tab === 'connection' && isSql && (
  <div>
  <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>
- Update the connection details. Leave password blank to keep the existing one.
+ {t('data.update_connection_hint')}
  </p>
  <SqlForm
  isEdit
@@ -1377,17 +1384,17 @@ function NewSourcePanel({ onCreated, onCancel }:
  return (
  <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
- <h3 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700, flex: 1 }}>New Data Source</h3>
+ <h3 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700, flex: 1 }}>{t('data.new_data_source')}</h3>
  <button onClick={onCancel} aria-label={t('common.close')} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
  <X size={16} aria-hidden="true" />
  </button>
  </div>
  <div style={{ display: 'flex', gap: 8 }}>
  <button style={typeTabStyle(true, C.green)} onClick={() => setMode('file')}>
- <FileSpreadsheet size={13} /> File Upload
+ <FileSpreadsheet size={13} /> {t('data.file_upload')}
  </button>
  <button style={typeTabStyle(false, C.blue)} onClick={() => { setMode('sql'); setErr(null) }}>
- <Database size={13} /> SQL Database
+ <Database size={13} /> {t('data.sql_database')}
  </button>
  </div>
  {err && (
@@ -1411,7 +1418,7 @@ function NewSourcePanel({ onCreated, onCancel }:
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
  <div>
  <label style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
- Name (optional)
+ {t('data.field_name_optional')}
  </label>
  <input value={name} onChange={e => setName(e.target.value)}
  placeholder={file.name.replace(/\.[^.]+$/, '')}
@@ -1421,9 +1428,9 @@ function NewSourcePanel({ onCreated, onCancel }:
  </div>
  <div>
  <label style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
- Description (optional)
+ {t('data.field_description_optional')}
  </label>
- <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Q1 2024 sales"
+ <input value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('data.desc_example_ph')}
  style={{ width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
  borderRadius: 8, padding: '9px 12px', color: C.text, fontSize: 13,
  outline: 'none', boxSizing: 'border-box' }} />
@@ -1434,7 +1441,7 @@ function NewSourcePanel({ onCreated, onCancel }:
  border: 'none', color: '#fff', fontWeight: 700, fontSize: 14, cursor: busy ? 'not-allowed' : 'pointer',
  opacity: busy ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
  {busy ? <Spinner size={16} /> : <Upload size={16} />}
- {busy ? 'Uploading…' : 'Upload File'}
+ {busy ? t('data.btn_uploading') : t('data.btn_upload_file')}
  </button>
  </div>
  ) : (
@@ -1447,17 +1454,17 @@ function NewSourcePanel({ onCreated, onCancel }:
  return (
  <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
- <h3 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700, flex: 1 }}>New Data Source</h3>
+ <h3 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700, flex: 1 }}>{t('data.new_data_source')}</h3>
  <button onClick={onCancel} aria-label={t('common.close')} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}>
  <X size={16} aria-hidden="true" />
  </button>
  </div>
  <div style={{ display: 'flex', gap: 8 }}>
  <button style={typeTabStyle(false, C.green)} onClick={() => { setMode('file'); setErr(null) }}>
- <FileSpreadsheet size={13} /> File Upload
+ <FileSpreadsheet size={13} /> {t('data.file_upload')}
  </button>
  <button style={typeTabStyle(true, C.blue)} onClick={() => setMode('sql')}>
- <Database size={13} /> SQL Database
+ <Database size={13} /> {t('data.sql_database')}
  </button>
  </div>
  {err && (
@@ -1500,7 +1507,7 @@ function EmptyRight({ onCreate }: { onCreate: () => void }) {
  style={{ padding: '12px 24px', borderRadius: 10, background: C.greenDim,
  border: `1px solid ${C.green}40`, color: C.green, fontWeight: 700, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
- <Plus size={16} /> New Data Source
+ <Plus size={16} /> {t('data.new_data_source')}
  </button>
  </div>
  )
@@ -1508,6 +1515,7 @@ function EmptyRight({ onCreate }: { onCreate: () => void }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function DataPage() {
+ const { t } = useLanguage()
  const [sources, setSources] = useState<DataSource[]>([])
  const [loading, setLoading] = useState(true)
  const [loadErr, setLoadErr] = useState<string | null>(null)
@@ -1560,20 +1568,20 @@ export default function DataPage() {
  <div style={{ padding: '20px 16px 14px', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
  <div>
- <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>Data Sources</h1>
+ <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>{t('data.page_title')}</h1>
  <p style={{ margin: '2px 0 0', fontSize: 12, color: C.muted }}>
- {sources.length} source{sources.length !== 1 ? 's' : ''}
+ {sources.length} {sources.length !== 1 ? t('data.source_plural') : t('data.source_singular')}
  </p>
  </div>
- <button onClick={load} title="Refresh"
+ <button onClick={load} title={t('data.refresh_title')} aria-label={t('data.refresh_title')}
  style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}>
- <RefreshCw size={14} />
+ <RefreshCw size={14} aria-hidden="true" />
  </button>
  </div>
  <input
  value={search}
  onChange={e => setSearch(e.target.value)}
- placeholder="Search sources…"
+ placeholder={t('data.search_sources_ph')}
  style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`,
  borderRadius: 8, padding: '8px 12px', color: C.text, fontSize: 13,
  outline: 'none', boxSizing: 'border-box' }}
@@ -1594,7 +1602,7 @@ export default function DataPage() {
  fontSize: 12, fontWeight: 600, transition: 'all 0.15s',
  }}
  >
- <Plus size={13} /> New Item
+ <Plus size={13} /> {t('data.btn_new_item')}
  </button>
  </div>
 
@@ -1608,7 +1616,7 @@ export default function DataPage() {
  <div style={{ padding: 16, color: C.red, fontSize: 13 }}>{loadErr}</div>
  ) : filtered.length === 0 ? (
  <div style={{ padding: '24px 16px', textAlign: 'center', color: C.muted, fontSize: 13 }}>
- {search ? 'No matches' : 'No data sources yet'}
+ {search ? t('data.no_matches') : t('data.no_sources_yet')}
  </div>
  ) : (
  filtered.map(src => {
@@ -1648,7 +1656,7 @@ export default function DataPage() {
  </span>
  {src.row_count && (
  <span style={{ color: C.muted, fontSize: 11 }}>
- {src.row_count.toLocaleString()} rows
+ {src.row_count.toLocaleString()} {src.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}
  </span>
  )}
  </div>
