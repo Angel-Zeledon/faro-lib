@@ -5,6 +5,7 @@ import type { POLogEntry, POItemLine } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { Truck, X, Send } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { formatMoney } from '@/lib/currency'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
 const C = {
@@ -18,10 +19,6 @@ function fmtDateTime(iso: string): string {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
-}
-
-function fmtCurrency(n: number): string {
-  return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
 }
 
 function fmtUnits(n: number): string {
@@ -278,7 +275,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
     t('roi.col_upcoming'),
     t('roi.col_total_units'),
     t('roi.col_total_value'),
-    'Recepción',
+    t('roi.col_reception'),
   ]
 
   return (
@@ -328,7 +325,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
                 {fmtUnits(entry.total_units)}
               </td>
               <td style={{ padding: '11px 14px', color: entry.total_value ? C.green : C.dim, fontFamily: 'monospace', fontWeight: entry.total_value ? 600 : 400 }}>
-                {entry.total_value != null ? fmtCurrency(entry.total_value) : '—'}
+                {entry.total_value != null ? formatMoney(entry.total_value) : '—'}
               </td>
               <td style={{ padding: '11px 14px', whiteSpace: 'nowrap' }}>
                 {(() => {

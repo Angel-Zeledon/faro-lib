@@ -6,6 +6,7 @@ import type { InventoryROISummary, ROIMonthlyRow, ROIMonthReport } from '@/lib/t
 import Spinner from '@/components/ui/Spinner'
 import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { formatMoney } from '@/lib/currency'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -25,11 +26,6 @@ function fmtDateTime(iso: string): string {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
-}
-
-// Target market is Costa Rica, so money renders as colones (CRC).
-function fmtCurrency(n: number): string {
-  return '₡' + n.toLocaleString('es-CR', { maximumFractionDigits: 0 })
 }
 
 function fmtUnits(n: number): string {
@@ -91,7 +87,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
           {hasValue ? (
             <>
               <div style={{ fontSize: 42, fontWeight: 900, color: C.green, lineHeight: 1 }}>
-                {fmtCurrency(roi.estimated_value_protected)}
+                {formatMoney(roi.estimated_value_protected)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
                 {t('roi.purchases_managed')}
@@ -212,14 +208,14 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                   {row.skus_order_now}
                 </td>
                 <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace' }}>
-                  {fmtCurrency(row.total_value)}
+                  {formatMoney(row.total_value)}
                 </td>
                 <td style={{ padding: '11px 14px', color: C.text }}>
                   {row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—'}
                 </td>
                 <td style={{ padding: '11px 14px', color: row.capital_liberado != null ? C.green : C.dim, fontFamily: 'monospace', fontWeight: row.capital_liberado != null ? 600 : 400 }}>
                   {row.capital_liberado != null
-                    ? fmtCurrency(row.capital_liberado)
+                    ? formatMoney(row.capital_liberado)
                     : t('roi.capital_freed_pending')}
                 </td>
               </tr>
@@ -286,7 +282,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
   }
 
   const headline = report.capital_freed != null
-    ? `${fmtCurrency(report.capital_freed)} ${t('recap.headline_freed')}`
+    ? `${formatMoney(report.capital_freed)} ${t('recap.headline_freed')}`
     : t('recap.headline_no_amount')
 
   return (
@@ -326,7 +322,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
           )}
 
           <RecapTile
-            value={report.capital_freed != null ? fmtCurrency(report.capital_freed) : t('recap.unavailable')}
+            value={report.capital_freed != null ? formatMoney(report.capital_freed) : t('recap.unavailable')}
             label={t('recap.metric_capital')}
             note={report.capital_freed != null ? t('recap.metric_capital_note') : t('recap.unavailable_capital')}
             color={report.capital_freed != null ? C.green : C.dim}
@@ -335,7 +331,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
           <RecapTile
             value={report.managed_purchase_value != null
-              ? fmtCurrency(report.managed_purchase_value)
+              ? formatMoney(report.managed_purchase_value)
               : t('recap.unavailable')}
             label={t('recap.metric_managed')}
             note={report.managed_purchase_value != null
