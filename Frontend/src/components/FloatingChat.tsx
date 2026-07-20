@@ -83,7 +83,7 @@ export default function FloatingChat() {
       const errMsg: ChatMessage = {
         id: `err-${Date.now()}`, chat_id: chatId ?? '',
         role: 'assistant',
-        content: e instanceof Error ? e.message : 'Could not get a response.',
+        content: e instanceof Error ? e.message : t('chat.error_no_response'),
         source: 'error', created_at: new Date().toISOString(),
       }
       setMessages(prev => [...prev.filter(m => !m.id.startsWith('opt-')), errMsg])
@@ -104,6 +104,7 @@ export default function FloatingChat() {
       <button
         onClick={() => setOpen(o => !o)}
         title="AI Analyst"
+        aria-label={t('chat.open_analyst')}
         style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
           width: 52, height: 52, borderRadius: '50%', border: 'none',
@@ -116,7 +117,7 @@ export default function FloatingChat() {
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)' }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)' }}
       >
-        {open ? <X size={20} color="#fff" /> : <MessageCircle size={20} color="#fff" />}
+        {open ? <X size={20} color="#fff" aria-hidden="true" /> : <MessageCircle size={20} color="#fff" aria-hidden="true" />}
       </button>
 
       {/* Chat drawer */}
@@ -160,7 +161,7 @@ export default function FloatingChat() {
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}
                 >
-                  <option value="">— General —</option>
+                  <option value="">{t('chat.general_option')}</option>
                   {sessions.map(s => (
                     <option key={s.session_id} value={s.session_id}>{s.name}</option>
                   ))}
@@ -168,14 +169,15 @@ export default function FloatingChat() {
               )}
             </div>
 
-            <Link href="/analyst" onClick={() => setOpen(false)} title="Open full chat" style={{ color: 'var(--dim)', display: 'flex' }}>
-              <ExternalLink size={13} />
+            <Link href="/analyst" onClick={() => setOpen(false)} title={t('chat.open_full')} aria-label={t('chat.open_full')} style={{ color: 'var(--dim)', display: 'flex' }}>
+              <ExternalLink size={13} aria-hidden="true" />
             </Link>
             <button
               onClick={() => setOpen(false)}
+              aria-label={t('common.close')}
               style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex', padding: 2 }}
             >
-              <X size={14} />
+              <X size={14} aria-hidden="true" />
             </button>
           </div>
 
@@ -193,7 +195,7 @@ export default function FloatingChat() {
               }}>
                 <Sparkles size={28} strokeWidth={1} />
                 <div style={{ fontSize: 12, lineHeight: 1.5 }}>
-                  Ask about forecasts, accuracy, inventory risks, or SKU trends.
+                  {t('chat.empty_hint')}
                 </div>
               </div>
             )}
@@ -257,7 +259,7 @@ export default function FloatingChat() {
                   padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 7,
                 }}>
                   <Spinner size={10} />
-                  <span style={{ fontSize: 11, color: 'var(--dim)' }}>Thinking…</span>
+                  <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('chat.thinking')}</span>
                 </div>
               </div>
             )}
@@ -274,7 +276,7 @@ export default function FloatingChat() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={onKey}
-              placeholder="Ask about your data… (Enter to send)"
+              placeholder={t('chat.input_placeholder')}
               disabled={loading}
               rows={1}
               style={{
