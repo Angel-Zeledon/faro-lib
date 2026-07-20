@@ -95,7 +95,7 @@ def seed_completed_session(tenant_id: str, session_id: str, n_skus: int = 3) -> 
     Bypasses the ML pipeline — use to test results endpoints without running training.
     Also force-transitions the session to COMPLETED.
     """
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone
     from backend.db import session_store
     from backend.sessions.service import force_status
 
@@ -120,7 +120,7 @@ def seed_completed_session(tenant_id: str, session_id: str, n_skus: int = 3) -> 
     result_payload = {
         "job_id": "job_test_seed",
         "run_id": "run_test_seed",
-        "completed_at": _dt.utcnow().isoformat(),
+        "completed_at": _dt.now(timezone.utc).isoformat(),
         "metrics": {"rows": metrics_rows, "n_models": len(models), "n_skus": n_skus},
         "inventory": {
             "rows": [

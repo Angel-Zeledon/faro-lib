@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -6,7 +6,7 @@ def ok(data: Any = None, **meta) -> dict:
     return {
         "success": True,
         "data": data,
-        "meta": {"timestamp": datetime.utcnow().isoformat(), **meta},
+        "meta": {"timestamp": datetime.now(timezone.utc).isoformat(), **meta},
     }
 
 

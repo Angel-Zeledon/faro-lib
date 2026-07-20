@@ -7,7 +7,7 @@ to produce per-SKU signals, ABC-XYZ classification, and order recommendations.
 
 import math
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from backend.db.connection import query, query_one, execute
@@ -1616,7 +1616,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         session_name = session_id[:8]
 
     return {
-        'date':         datetime.utcnow().strftime('%Y-%m-%d'),
+        'date':         datetime.now(timezone.utc).strftime('%Y-%m-%d'),
         'session_id':   session_id,
         'session_name': session_name,
         'has_data':     bool(items),

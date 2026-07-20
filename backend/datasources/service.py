@@ -6,7 +6,7 @@ SQL passwords are encrypted with Fernet (AES-128-CBC + HMAC) keyed from settings
 import base64
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -80,7 +80,7 @@ def _public(row: dict) -> dict:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ── File sources ───────────────────────────────────────────────────────────────
