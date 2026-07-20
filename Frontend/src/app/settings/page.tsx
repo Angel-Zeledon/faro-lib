@@ -1,5 +1,4 @@
 'use client'
-// INSTANCIA-3 TAREA-3D: COMPLETADA
 import { useState, useEffect, useCallback } from 'react'
 import {
   listApiKeys, createApiKey, revokeApiKey,
@@ -15,18 +14,18 @@ import { useLanguage } from '@/contexts/LanguageContext'
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
 const WEBHOOK_EVENTS = [
-  { id: 'job.completed',     label: 'Job completed' },
-  { id: 'job.failed',        label: 'Job failed' },
-  { id: 'accuracy.degraded', label: 'Accuracy degraded' },
+  { id: 'job.completed',     labelKey: 'settings.event_job_completed' },
+  { id: 'job.failed',        labelKey: 'settings.event_job_failed' },
+  { id: 'accuracy.degraded', labelKey: 'settings.event_accuracy_degraded' },
 ]
 
 const CRON_OPTIONS = [
-  { label: 'Every Monday at 6am',  value: '0 6 * * 1' },
-  { label: 'Every day at midnight', value: '0 0 * * *' },
-  { label: 'Weekdays at 6am',      value: '0 6 * * 1-5' },
-  { label: 'Every Sunday at 8am',  value: '0 8 * * 0' },
-  { label: 'Every hour',           value: '0 * * * *' },
-  { label: 'First day of month',   value: '0 0 1 * *' },
+  { labelKey: 'settings.cron_mon_6am',        value: '0 6 * * 1' },
+  { labelKey: 'settings.cron_daily_midnight', value: '0 0 * * *' },
+  { labelKey: 'settings.cron_weekdays_6am',   value: '0 6 * * 1-5' },
+  { labelKey: 'settings.cron_sun_8am',        value: '0 8 * * 0' },
+  { labelKey: 'settings.cron_hourly',         value: '0 * * * *' },
+  { labelKey: 'settings.cron_month_first',    value: '0 0 1 * *' },
 ]
 
 // ── API Keys tab ──────────────────────────────────────────────────────────────
@@ -64,7 +63,7 @@ function ApiKeysTab() {
   }
 
   const handleRevoke = async (id: string) => {
-    if (!window.confirm('Revoke this API key? Any apps using it will stop working.')) return
+    if (!window.confirm(t('settings.revoke_confirm'))) return
     setRevoking(id)
     try { await revokeApiKey(id); load() }
     catch (e: any) { setError(e.message) }
@@ -79,10 +78,10 @@ function ApiKeysTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12, color: 'var(--dim)' }}>
-          API keys let external systems access your forecasts programmatically.
+          {t('settings.api_keys_desc')}
         </div>
         <Button variant="primary" size="sm" icon={<Plus size={12} />} onClick={() => setShowCreate(v => !v)}>
-          Generate key
+          {t('settings.generate_key')}
         </Button>
       </div>
 
@@ -90,17 +89,17 @@ function ApiKeysTab() {
         <div style={{ display: 'flex', gap: 8, padding: '14px 16px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
           <input
             className="form-input"
-            placeholder="Key name (e.g. 'ERP integration')"
+            placeholder={t('settings.key_name_placeholder')}
             value={newName}
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
             style={{ flex: 1, fontSize: 12 }}
           />
           <Button variant="primary" size="sm" loading={creating} disabled={!newName.trim()} onClick={handleCreate}>
-            Create
+            {t('settings.create')}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => { setShowCreate(false); setNewName('') }}>
-            Cancel
+            {t('common.cancel')}
           </Button>
         </div>
       )}
@@ -108,7 +107,7 @@ function ApiKeysTab() {
       {newKey && (
         <div style={{ padding: '14px 16px', borderRadius: 8, background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)' }}>
           <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 600, marginBottom: 8 }}>
-            Key generated — copy it now. It will not be shown again.
+            {t('settings.key_generated')}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
@@ -117,10 +116,10 @@ function ApiKeysTab() {
               style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', background: 'var(--surface)' }}
             />
             <Button variant="secondary" size="sm" icon={copied ? <Check size={12} /> : <Copy size={12} />} onClick={copyKey}>
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('settings.copied') : t('settings.copy')}
             </Button>
-            <button onClick={() => setNewKey(null)} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
-              <X size={16} />
+            <button onClick={() => setNewKey(null)} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
+              <X size={16} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -141,21 +140,21 @@ function ApiKeysTab() {
       ) : (
         <table className="data-table">
           <thead>
-            <tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr>
+            <tr><th>{t('settings.col_name')}</th><th>{t('settings.col_created')}</th><th>{t('settings.col_last_used')}</th><th></th></tr>
           </thead>
           <tbody>
             {keys.map(k => (
               <tr key={k.id}>
                 <td style={{ fontWeight: 500 }}>{k.name}</td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.created_at.slice(0, 10)}</td>
-                <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.last_used ? k.last_used.slice(0, 10) : 'Never'}</td>
+                <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.last_used ? k.last_used.slice(0, 10) : t('settings.never')}</td>
                 <td>
                   <Button
                     variant="danger" size="sm"
                     loading={revoking === k.id}
                     onClick={() => handleRevoke(k.id)}
                   >
-                    Revoke
+                    {t('settings.revoke')}
                   </Button>
                 </td>
               </tr>
@@ -197,7 +196,7 @@ function WebhooksTab() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this webhook?')) return
+    if (!window.confirm(t('settings.delete_webhook_confirm'))) return
     setDeleting(id)
     try { await deleteWebhook(id); load() }
     catch (e: any) { setError(e.message) }
@@ -211,47 +210,47 @@ function WebhooksTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12, color: 'var(--dim)' }}>
-          Receive HTTP POST notifications when events occur in your account.
+          {t('settings.webhooks_desc')}
         </div>
         <Button variant="primary" size="sm" icon={<Plus size={12} />} onClick={() => setShowForm(v => !v)}>
-          Add webhook
+          {t('settings.add_webhook')}
         </Button>
       </div>
 
       {showForm && (
         <div style={{ padding: '16px 18px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Endpoint URL (https://)</label>
+            <label style={{ fontSize: 11, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>{t('settings.endpoint_url')}</label>
             <input
               className="form-input"
-              placeholder="https://your-app.com/webhook"
+              placeholder={t('settings.webhook_url_placeholder')}
               value={url}
               onChange={e => setUrl(e.target.value)}
               style={{ width: '100%', fontSize: 12 }}
             />
             {url && !url.startsWith('https://') && (
-              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>Must start with https://</div>
+              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{t('settings.must_start_https')}</div>
             )}
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', display: 'block', marginBottom: 6 }}>Events to subscribe</label>
+            <label style={{ fontSize: 11, color: 'var(--dim)', display: 'block', marginBottom: 6 }}>{t('settings.events_to_subscribe')}</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {WEBHOOK_EVENTS.map(ev => (
                 <label key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
                   <input type="checkbox" checked={events.includes(ev.id)} onChange={() => toggleEvent(ev.id)} style={{ accentColor: 'var(--accent)' }} />
-                  {ev.label}
+                  {t(ev.labelKey)}
                 </label>
               ))}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setUrl(''); setEvents([]) }}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setUrl(''); setEvents([]) }}>{t('common.cancel')}</Button>
             <Button
               variant="primary" size="sm" loading={saving}
               disabled={!url.startsWith('https://') || !events.length}
               onClick={handleCreate}
             >
-              Save
+              {t('common.save')}
             </Button>
           </div>
         </div>
@@ -270,7 +269,7 @@ function WebhooksTab() {
       ) : (
         <table className="data-table">
           <thead>
-            <tr><th>URL</th><th>Events</th><th>Created</th><th></th></tr>
+            <tr><th>{t('settings.col_url')}</th><th>{t('settings.col_events')}</th><th>{t('settings.col_created')}</th><th></th></tr>
           </thead>
           <tbody>
             {hooks.map(h => (
@@ -280,7 +279,7 @@ function WebhooksTab() {
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{h.created_at.slice(0, 10)}</td>
                 <td>
                   <Button variant="danger" size="sm" loading={deleting === h.id} icon={<Trash2 size={11} />} onClick={() => handleDelete(h.id)}>
-                    Delete
+                    {t('common.delete')}
                   </Button>
                 </td>
               </tr>
@@ -338,7 +337,7 @@ function SchedulesTab() {
   }
 
   const handleDelete = async () => {
-    if (!window.confirm('Remove this schedule?')) return
+    if (!window.confirm(t('settings.remove_schedule_confirm'))) return
     setDeleting(true)
     try { await deleteSchedule(sessionId); setSchedule(null) }
     catch (e: any) { setError(e.message) }
@@ -348,11 +347,11 @@ function SchedulesTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ fontSize: 12, color: 'var(--dim)' }}>
-        Automatically retrain a session on a recurring schedule.
+        {t('settings.schedules_desc')}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <label style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>Session:</label>
+        <label style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('settings.session_label')}</label>
         <select
           value={sessionId}
           onChange={e => setSessionId(e.target.value)}
@@ -371,7 +370,7 @@ function SchedulesTab() {
       ) : sessionId ? (
         <div style={{ padding: '18px 20px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>Frequency</label>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>{t('settings.frequency')}</label>
             <select
               value={cronExpr}
               onChange={e => setCron(e.target.value)}
@@ -379,7 +378,7 @@ function SchedulesTab() {
               style={{ fontSize: 12, width: '100%', maxWidth: 320 }}
             >
               {CRON_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
               ))}
             </select>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4, fontFamily: 'monospace' }}>
@@ -389,12 +388,12 @@ function SchedulesTab() {
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
             <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-            Schedule enabled
+            {t('settings.schedule_enabled')}
           </label>
 
           {schedule?.next_run && (
             <div style={{ fontSize: 11, color: 'var(--dim)' }}>
-              Next run: <strong style={{ color: 'var(--text)' }}>{new Date(schedule.next_run).toLocaleString()}</strong>
+              {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{new Date(schedule.next_run).toLocaleString()}</strong>
             </div>
           )}
 
@@ -406,14 +405,14 @@ function SchedulesTab() {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="primary" size="sm" loading={saving} onClick={handleSave}>
-              {schedule ? 'Update schedule' : 'Save schedule'}
+              {schedule ? t('settings.update_schedule') : t('settings.save_schedule')}
             </Button>
             {schedule && (
               <Button variant="danger" size="sm" loading={deleting} icon={<Trash2 size={11} />} onClick={handleDelete}>
-                Remove
+                {t('settings.remove')}
               </Button>
             )}
-            {saved && <span style={{ fontSize: 12, color: '#22c55e', alignSelf: 'center' }}>Saved.</span>}
+            {saved && <span style={{ fontSize: 12, color: '#22c55e', alignSelf: 'center' }}>{t('settings.saved')}</span>}
           </div>
         </div>
       ) : (
@@ -426,27 +425,28 @@ function SchedulesTab() {
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-const TABS: { id: Tab; label: string; Icon: React.ComponentType<any> }[] = [
-  { id: 'api-keys',   label: 'API Keys',   Icon: Key },
-  { id: 'webhooks',   label: 'Webhooks',   Icon: WebhookIcon },
-  { id: 'schedules',  label: 'Schedules',  Icon: Clock },
+const TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] = [
+  { id: 'api-keys',   labelKey: 'settings.tab_api_keys',   Icon: Key },
+  { id: 'webhooks',   labelKey: 'settings.tab_webhooks',   Icon: WebhookIcon },
+  { id: 'schedules',  labelKey: 'settings.tab_schedules',  Icon: Clock },
 ]
 
 export default function SettingsPage() {
+  const { t } = useLanguage()
   const [tab, setTab] = useState<Tab>('api-keys')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, animation: 'fadeIn 0.3s ease-out' }}>
       <div>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>Settings</div>
+        <div style={{ fontSize: 20, fontWeight: 700 }}>{t('settings.title')}</div>
         <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
-          API keys, webhooks, and automated schedules
+          {t('settings.subtitle')}
         </div>
       </div>
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {TABS.map(({ id, label, Icon }) => {
+        {TABS.map(({ id, labelKey, Icon }) => {
           const active = tab === id
           return (
             <button
@@ -462,7 +462,7 @@ export default function SettingsPage() {
               }}
             >
               <Icon size={13} />
-              {label}
+              {t(labelKey)}
             </button>
           )
         })}

@@ -19,41 +19,43 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 const ROLES = ['admin', 'analyst', 'viewer']
 
-const PERMISSION_GROUPS: { label: string; perms: string[] }[] = [
-  { label: 'Forecasting', perms: ['view_forecasts', 'run_training', 'manage_sessions', 'export_data'] },
-  { label: 'Inventory',   perms: ['view_inventory', 'manage_inventory'] },
-  { label: 'AI Analyst',  perms: ['view_analysts', 'run_analysts'] },
-  { label: 'Data',        perms: ['view_data_sources', 'manage_data_sources'] },
-  { label: 'Admin',       perms: ['view_users', 'manage_users'] },
+const PERMISSION_GROUPS: { labelKey: string; perms: string[] }[] = [
+  { labelKey: 'users.group_forecasting', perms: ['view_forecasts', 'run_training', 'manage_sessions', 'export_data'] },
+  { labelKey: 'users.group_inventory',   perms: ['view_inventory', 'manage_inventory'] },
+  { labelKey: 'users.group_ai_analyst',  perms: ['view_analysts', 'run_analysts'] },
+  { labelKey: 'users.group_data',        perms: ['view_data_sources', 'manage_data_sources'] },
+  { labelKey: 'users.group_admin',       perms: ['view_users', 'manage_users'] },
 ]
 
-const PERM_LABEL: Record<string, string> = {
-  view_forecasts:      'View forecasts',
-  run_training:        'Run training',
-  manage_sessions:     'Manage sessions',
-  export_data:         'Export data',
-  view_inventory:      'View inventory',
-  manage_inventory:    'Manage inventory',
-  view_analysts:       'View AI analyst',
-  run_analysts:        'Run AI analyst',
-  view_data_sources:   'View data sources',
-  manage_data_sources: 'Manage data sources',
-  view_users:          'View users',
-  manage_users:        'Manage users',
+const PERM_LABEL_KEY: Record<string, string> = {
+  view_forecasts:      'users.perm_view_forecasts',
+  run_training:        'users.perm_run_training',
+  manage_sessions:     'users.perm_manage_sessions',
+  export_data:         'users.perm_export_data',
+  view_inventory:      'users.perm_view_inventory',
+  manage_inventory:    'users.perm_manage_inventory',
+  view_analysts:       'users.perm_view_analysts',
+  run_analysts:        'users.perm_run_analysts',
+  view_data_sources:   'users.perm_view_data_sources',
+  manage_data_sources: 'users.perm_manage_data_sources',
+  view_users:          'users.perm_view_users',
+  manage_users:        'users.perm_manage_users',
 }
 
-const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  active:               { label: 'Active',              color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
-  pending_confirmation: { label: 'Pending',             color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  inactive:             { label: 'Inactive',            color: '#64748b', bg: 'rgba(100,116,139,0.1)'},
-  suspended:            { label: 'Suspended',           color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
+const STATUS_META: Record<string, { labelKey: string; color: string; bg: string }> = {
+  active:               { labelKey: 'users.status_active',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
+  pending_confirmation: { labelKey: 'users.status_pending',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  inactive:             { labelKey: 'users.status_inactive',  color: '#64748b', bg: 'rgba(100,116,139,0.1)'},
+  suspended:            { labelKey: 'users.status_suspended', color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
-  const m = STATUS_META[status] ?? {
-    label: status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+  const { t } = useLanguage()
+  const known = STATUS_META[status]
+  const m = known ?? {
+    labelKey: status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     color: '#94a3b8',
     bg: 'rgba(148,163,184,0.1)',
   }
@@ -66,7 +68,7 @@ function StatusBadge({ status }: { status: string }) {
       {status === 'active'   && <CheckCircle2 size={10} />}
       {status === 'suspended'&& <XCircle size={10} />}
       {status === 'pending_confirmation' && <Clock size={10} />}
-      {m.label}
+      {t(m.labelKey)}
     </span>
   )
 }
@@ -164,7 +166,7 @@ function UserFormModal({
       onSaved()
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Operation failed')
+      setError(err instanceof Error ? err.message : t('users.operation_failed'))
     } finally {
       setLoading(false)
     }
@@ -174,7 +176,7 @@ function UserFormModal({
     <Modal onClose={onClose}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>
-          {isCreate ? 'Create user' : 'Edit user'}
+          {isCreate ? t('users.create_user') : t('users.edit_user_title')}
         </h2>
         <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
           <X size={16} aria-hidden="true" />
@@ -195,34 +197,34 @@ function UserFormModal({
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
           <label style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
-            Full name (optional)
+            {t('users.full_name_optional')}
           </label>
           <input
             value={fullName} onChange={e => setFullName(e.target.value)}
-            placeholder="Jane Doe" style={inputStyle}
+            placeholder={t('users.full_name_placeholder')} style={inputStyle}
             onFocus={e => (e.target.style.borderColor = '#818cf8')}
             onBlur={e => (e.target.style.borderColor = '#1e2030')}
           />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
-            Email address {isCreate && <span style={{ color: '#ef4444' }}>*</span>}
+            {t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}
           </label>
           <input
             type="email" required value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="user@company.com" style={inputStyle}
+            placeholder={t('users.email_placeholder')} style={inputStyle}
             onFocus={e => (e.target.style.borderColor = '#818cf8')}
             onBlur={e => (e.target.style.borderColor = '#1e2030')}
           />
           {!isCreate && email !== target?.email && (
             <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
-              Changing the email will require re-verification.
+              {t('users.email_reverify')}
             </p>
           )}
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
-            Role
+            {t('users.role')}
           </label>
           <select
             value={role} onChange={e => setRole(e.target.value)}
@@ -241,7 +243,7 @@ function UserFormModal({
             fontSize: 12, color: '#a5b4fc',
           }}>
             <Mail size={12} style={{ marginTop: 1, flexShrink: 0 }} />
-            An account setup email with a verification link will be sent to the user.
+            {t('users.setup_email_note')}
           </div>
         )}
 
@@ -250,7 +252,7 @@ function UserFormModal({
             padding: '8px 16px', borderRadius: 7, border: '1px solid #1e2030',
             background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
           }}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="submit" disabled={loading} style={{
             padding: '8px 20px', borderRadius: 7, border: 'none',
@@ -259,7 +261,7 @@ function UserFormModal({
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             {loading && <Spinner />}
-            {loading ? 'Saving…' : isCreate ? 'Create user' : 'Save changes'}
+            {loading ? t('users.saving') : isCreate ? t('users.create_user') : t('users.save_changes')}
           </button>
         </div>
       </form>
@@ -278,6 +280,7 @@ function DeleteModal({
   onClose: () => void
   onDeleted: () => void
 }) {
+  const { t } = useLanguage()
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
@@ -288,7 +291,7 @@ function DeleteModal({
       onDeleted()
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Delete failed')
+      setError(err instanceof Error ? err.message : t('users.delete_failed'))
       setLoading(false)
     }
   }
@@ -304,14 +307,14 @@ function DeleteModal({
           <Trash2 size={20} color="#ef4444" />
         </div>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0', margin: '0 0 8px' }}>
-          Delete user?
+          {t('users.delete_user_q')}
         </h2>
         <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 6px' }}>
-          This will permanently delete{' '}
+          {t('users.delete_perm_prefix')}{' '}
           <strong style={{ color: '#e2e8f0' }}>{target.full_name || target.email}</strong>.
         </p>
         <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 20px' }}>
-          All their sessions, tokens, and permissions will be removed. This cannot be undone.
+          {t('users.delete_perm_detail')}
         </p>
         {error && (
           <div style={{
@@ -327,7 +330,7 @@ function DeleteModal({
             padding: '8px 20px', borderRadius: 7, border: '1px solid #1e2030',
             background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
           }}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button onClick={handleDelete} disabled={loading} style={{
             padding: '8px 20px', borderRadius: 7, border: 'none',
@@ -336,7 +339,7 @@ function DeleteModal({
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             {loading && <Spinner />}
-            {loading ? 'Deleting…' : 'Delete user'}
+            {loading ? t('users.deleting') : t('users.delete_user')}
           </button>
         </div>
       </div>
@@ -362,8 +365,8 @@ function PermissionsModal({
   useEffect(() => {
     getUserPermissions(target.id)
       .then(res => { setPerms(res.permissions); setLoading(false) })
-      .catch(() => { setError('Failed to load permissions'); setLoading(false) })
-  }, [target.id])
+      .catch(() => { setError(t('users.perms_load_failed')); setLoading(false) })
+  }, [target.id, t])
 
   function toggle(perm: string) {
     setPerms(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm])
@@ -376,7 +379,7 @@ function PermissionsModal({
       await setUserPermissions(target.id, perms)
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      setError(err instanceof Error ? err.message : t('users.perms_save_failed'))
     } finally {
       setSaving(false)
     }
@@ -387,7 +390,7 @@ function PermissionsModal({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', margin: '0 0 2px' }}>
-            Permissions
+            {t('users.permissions')}
           </h2>
           <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
             {target.full_name || target.email} · <span style={{ textTransform: 'capitalize' }}>{target.role}</span>
@@ -399,7 +402,7 @@ function PermissionsModal({
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 24, color: '#64748b', fontSize: 13 }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: 24, color: '#64748b', fontSize: 13 }}>{t('users.loading_generic')}</div>
       ) : (
         <>
           {error && (
@@ -413,9 +416,9 @@ function PermissionsModal({
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {PERMISSION_GROUPS.map(group => (
-              <div key={group.label}>
+              <div key={group.labelKey}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-                  {group.label}
+                  {t(group.labelKey)}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {group.perms.map(perm => (
@@ -426,7 +429,7 @@ function PermissionsModal({
                         onChange={() => toggle(perm)}
                         style={{ accentColor: '#818cf8', width: 14, height: 14, cursor: 'pointer' }}
                       />
-                      <span style={{ fontSize: 13, color: '#e2e8f0' }}>{PERM_LABEL[perm] ?? perm}</span>
+                      <span style={{ fontSize: 13, color: '#e2e8f0' }}>{t(PERM_LABEL_KEY[perm] ?? perm)}</span>
                     </label>
                   ))}
                 </div>
@@ -439,7 +442,7 @@ function PermissionsModal({
               padding: '8px 16px', borderRadius: 7, border: '1px solid #1e2030',
               background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
             }}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button onClick={handleSave} disabled={saving} style={{
               padding: '8px 20px', borderRadius: 7, border: 'none',
@@ -448,7 +451,7 @@ function PermissionsModal({
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
               {saving && <Spinner />}
-              {saving ? 'Saving…' : 'Save permissions'}
+              {saving ? t('users.saving') : t('users.save_permissions')}
             </button>
           </div>
         </>
@@ -460,6 +463,7 @@ function PermissionsModal({
 // ── Resend verification button ───────────────────────────────────────────────
 
 function ResendButton({ userId, email }: { userId: string; email: string }) {
+  const { t } = useLanguage()
   const [state, setState] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle')
 
   async function handleResend() {
@@ -476,16 +480,17 @@ function ResendButton({ userId, email }: { userId: string; email: string }) {
   }
 
   const color = state === 'sent' ? '#22c55e' : state === 'error' ? '#ef4444' : '#f59e0b'
-  const title = state === 'sent' ? `Sent to ${email}` : state === 'error' ? 'Failed — check SMTP config' : 'Resend verification email'
+  const title = state === 'sent' ? `${t('users.resend_sent_prefix')} ${email}` : state === 'error' ? t('users.resend_failed') : t('users.resend_title')
 
   return (
     <button
       onClick={handleResend}
       title={title}
+      aria-label={title}
       disabled={state === 'loading' || state === 'sent'}
       style={{ all: 'unset', cursor: state === 'loading' ? 'wait' : state === 'sent' ? 'default' : 'pointer', color, padding: 5 }}
     >
-      {state === 'loading' ? <Spinner /> : <Mail size={14} />}
+      {state === 'loading' ? <Spinner /> : <Mail size={14} aria-hidden="true" />}
     </button>
   )
 }
@@ -501,15 +506,16 @@ function StatusDropdown({
   currentUser: ReturnType<typeof getUser>
   onChanged: () => void
 }) {
+  const { t } = useLanguage()
   const [open,    setOpen]    = useState(false)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   const isSelf = target.id === currentUser?.id
 
   const OPTIONS = [
-    { status: 'active',    label: 'Active' },
-    { status: 'inactive',  label: 'Inactive' },
-    { status: 'suspended', label: 'Suspended' },
+    { status: 'active',    labelKey: 'users.status_active' },
+    { status: 'inactive',  labelKey: 'users.status_inactive' },
+    { status: 'suspended', labelKey: 'users.status_suspended' },
   ]
 
   async function pick(s: string) {
@@ -521,7 +527,7 @@ function StatusDropdown({
       await setUserStatus(target.id, s)
       onChanged()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update status')
+      setError(e instanceof Error ? e.message : t('users.update_status_failed'))
       setTimeout(() => setError(null), 4000)
     } finally { setLoading(false) }
   }
@@ -538,9 +544,10 @@ function StatusDropdown({
           borderRadius: 6, border: '1px solid #1e2030', background: '#141520',
           color: '#94a3b8', fontSize: 11, cursor: loading ? 'wait' : 'pointer',
         }}
-        title="Change status"
+        title={t('users.change_status')}
+        aria-label={t('users.change_status')}
       >
-        {loading ? <Spinner /> : <ChevronDown size={11} />}
+        {loading ? <Spinner /> : <ChevronDown size={11} aria-hidden="true" />}
       </button>
       {error && (
         <div style={{
@@ -573,7 +580,7 @@ function StatusDropdown({
                 }}
               >
                 {target.status === o.status && <CheckCircle2 size={10} color={m.color} />}
-                {o.label}
+                {t(o.labelKey)}
               </button>
             )
           })}
@@ -612,9 +619,9 @@ export default function UsersPage() {
       setUsers(res.items)
       setTotal(res.total)
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : 'Failed to load users')
+      setLoadError(e instanceof Error ? e.message : t('users.load_error'))
     } finally { setLoading(false) }
-  }, [search, filterStatus, filterRole, limit, offset])
+  }, [search, filterStatus, filterRole, limit, offset, t])
 
   useEffect(() => { load() }, [load])
 
@@ -623,7 +630,7 @@ export default function UsersPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 }}>
         <XCircle size={32} color="#ef4444" />
-        <p style={{ fontSize: 14, color: '#64748b' }}>You don&apos;t have permission to view this page.</p>
+        <p style={{ fontSize: 14, color: '#64748b' }}>{t('users.no_permission')}</p>
       </div>
     )
   }
@@ -647,10 +654,10 @@ export default function UsersPage() {
           </div>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.02em' }}>
-              Users
+              {t('users.title')}
             </h1>
             <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
-              {total} user{total !== 1 ? 's' : ''} in this workspace
+              {total} {total !== 1 ? t('users.user_plural') : t('users.user_singular')} {t('users.in_workspace')}
             </p>
           </div>
         </div>
@@ -664,7 +671,7 @@ export default function UsersPage() {
             }}
           >
             <RefreshCw size={12} />
-            Refresh
+            {t('common.refresh')}
           </button>
           <button
             onClick={() => setShowCreate(true)}
@@ -675,7 +682,7 @@ export default function UsersPage() {
             }}
           >
             <Plus size={14} />
-            Create user
+            {t('users.create_user')}
           </button>
         </div>
       </div>
@@ -690,7 +697,8 @@ export default function UsersPage() {
           <Search size={13} color="#64748b" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
           <input
             value={search} onChange={e => { setSearch(e.target.value); setOffset(0) }}
-            placeholder="Search by name or email…"
+            placeholder={t('users.search_placeholder')}
+            aria-label={t('users.search_placeholder')}
             style={{
               width: '100%', padding: '8px 10px 8px 30px', boxSizing: 'border-box',
               background: '#141520', border: '1px solid var(--border)', borderRadius: 7,
@@ -700,16 +708,18 @@ export default function UsersPage() {
         </div>
         <select
           value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setOffset(0) }}
+          aria-label={t('users.col_status')}
           style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
         >
-          <option value="">All statuses</option>
-          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="">{t('users.all_statuses')}</option>
+          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{t(v.labelKey)}</option>)}
         </select>
         <select
           value={filterRole} onChange={e => { setFilterRole(e.target.value); setOffset(0) }}
+          aria-label={t('users.col_role')}
           style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
         >
-          <option value="">All roles</option>
+          <option value="">{t('users.all_roles')}</option>
           {ROLES.map(r => <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r}</option>)}
         </select>
       </div>
@@ -737,17 +747,17 @@ export default function UsersPage() {
           fontSize: 11, fontWeight: 600, color: 'var(--dim)',
           textTransform: 'uppercase', letterSpacing: '0.06em',
         }}>
-          <div>Name / Email</div>
-          <div>Status</div>
-          <div>Role</div>
-          <div>Created</div>
-          <div>Last login</div>
-          <div style={{ textAlign: 'right' }}>Actions</div>
+          <div>{t('users.col_name_email')}</div>
+          <div>{t('users.col_status')}</div>
+          <div>{t('users.col_role')}</div>
+          <div>{t('users.col_created')}</div>
+          <div>{t('users.col_last_login')}</div>
+          <div style={{ textAlign: 'right' }}>{t('users.col_actions')}</div>
         </div>
 
         {loading ? (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>
-            Loading users…
+            {t('users.loading')}
           </div>
         ) : users.length === 0 ? (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>
@@ -767,7 +777,7 @@ export default function UsersPage() {
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                 {u.full_name || '—'}
                 {u.id === currentUser?.id && (
-                  <span style={{ fontSize: 10, color: '#818cf8', marginLeft: 6, fontWeight: 400 }}>(you)</span>
+                  <span style={{ fontSize: 10, color: '#818cf8', marginLeft: 6, fontWeight: 400 }}>{t('users.you')}</span>
                 )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{u.email}</div>
@@ -783,25 +793,28 @@ export default function UsersPage() {
               )}
               <button
                 onClick={() => setPermsUser(u)}
-                title="Permissions"
+                title={t('users.permissions_title')}
+                aria-label={t('users.permissions_title')}
                 style={{ all: 'unset', cursor: 'pointer', color: '#64748b', padding: 5 }}
               >
-                <ShieldCheck size={14} />
+                <ShieldCheck size={14} aria-hidden="true" />
               </button>
               <button
                 onClick={() => setEditUser(u)}
-                title="Edit"
+                title={t('users.edit_title')}
+                aria-label={t('users.edit_title')}
                 style={{ all: 'unset', cursor: 'pointer', color: '#64748b', padding: 5 }}
               >
-                <Edit2 size={14} />
+                <Edit2 size={14} aria-hidden="true" />
               </button>
               {u.id !== currentUser?.id && (
                 <button
                   onClick={() => setDeleteUser(u)}
-                  title="Delete"
+                  title={t('users.delete_title')}
+                  aria-label={t('users.delete_title')}
                   style={{ all: 'unset', cursor: 'pointer', color: '#64748b', padding: 5 }}
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={14} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -813,7 +826,7 @@ export default function UsersPage() {
       {pages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
           <span style={{ fontSize: 12, color: 'var(--dim)' }}>
-            Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}
+            {t('users.showing')} {offset + 1}–{Math.min(offset + limit, total)} {t('users.of')} {total}
           </span>
           <div style={{ display: 'flex', gap: 6 }}>
             {Array.from({ length: pages }, (_, i) => (

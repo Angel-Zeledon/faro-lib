@@ -200,13 +200,14 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                 </button>
                 <button
                   onClick={() => { setEditing(false); setName(me?.full_name || '') }}
+                  aria-label={t('cancel')}
                   style={{
                     all: 'unset', cursor: 'pointer', padding: '7px 10px',
                     borderRadius: 7, color: 'var(--dim)',
                     border: '1px solid var(--border)',
                   }}
                 >
-                  <X size={13} />
+                  <X size={13} aria-hidden="true" />
                 </button>
               </div>
             ) : (
@@ -222,12 +223,13 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                 <button
                   onClick={() => setEditing(true)}
                   title={t('edit')}
+                  aria-label={t('edit')}
                   style={{
                     all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5,
                     color: 'var(--dim)', display: 'flex', alignItems: 'center',
                   }}
                 >
-                  <Edit2 size={12} />
+                  <Edit2 size={12} aria-hidden="true" />
                 </button>
               </div>
             )}
@@ -277,7 +279,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               )}
             </div>
             <p style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 0' }}>
-              Con código de país (ej. +57…). Déjalo vacío para no receive alertas por WhatsApp.
+              {t('config.whatsapp_hint')}
             </p>
           </div>
 
@@ -595,7 +597,7 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
           )}
           {actionTypesErr && (
             <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 4, textAlign: 'right' }}>
-              Could not load action types — showing defaults
+              {t('config.action_types_load_error')}
             </div>
           )}
         </div>
@@ -678,7 +680,7 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
                 }}
               >
                 {loadingMore ? <Spinner size={12} /> : null}
-                {t('load_more')} ({total - logs.length} {lang === 'es' ? 'restantes' : 'remaining'})
+                {t('load_more')} ({total - logs.length} {t('config.remaining')})
               </button>
             </div>
           )}
@@ -784,13 +786,14 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
             />
             <button
               onClick={() => setShowPw(v => !v)}
+              aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')}
               style={{
                 all: 'unset', position: 'absolute', right: 10, top: '50%',
                 transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--dim)',
                 display: 'flex',
               }}
             >
-              {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showPw ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
             </button>
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
