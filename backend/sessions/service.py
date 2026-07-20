@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from backend.sessions.state_machine import assert_transition
@@ -114,7 +114,7 @@ def attach_dataset(tenant_id: str, session_id: str, dataset_id: str) -> dict:
     from backend.db import session_store
     session_store.set_field(tenant_id, session_id, "dataset_ref", {
         "dataset_id": dataset_id,
-        "attached_at": datetime.utcnow().isoformat(),
+        "attached_at": datetime.now(timezone.utc).isoformat(),
     })
     return get_session(tenant_id, session_id)
 

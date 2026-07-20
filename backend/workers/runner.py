@@ -9,7 +9,7 @@ import logging
 import os
 import random
 import time as _time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from backend.config import settings
 from backend.db import session_store
@@ -459,7 +459,7 @@ def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str,
     broadcaster.broadcast_sync(job_id, {"type": "progress", "job_id": job_id, **progress})
     session_store.append_log(
         tenant_id, session_id, job_id,
-        f"[{datetime.utcnow().isoformat()}] [{step}] {message}",
+        f"[{datetime.now(timezone.utc).isoformat()}] [{step}] {message}",
     )
 
 
@@ -562,7 +562,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         result_payload = {
             "job_id": job_id,
             "run_id": engine._run_id,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "metrics": metrics,
             "inventory": inventory,
             "routing": routing,

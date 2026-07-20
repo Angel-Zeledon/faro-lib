@@ -16,7 +16,7 @@ Step flow:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import pandas as pd
@@ -47,7 +47,7 @@ def _get_session_or_404(tenant_id: str, session_id: str) -> dict:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _run_granularity_detection(
