@@ -251,7 +251,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
             <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center' }}>
               <input
                 className="form-input"
-                placeholder="+573001234567"
+                placeholder="+50688888888"
                 value={wa}
                 onChange={e => setWa(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSaveWa()}

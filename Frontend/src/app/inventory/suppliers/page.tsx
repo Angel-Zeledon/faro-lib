@@ -139,7 +139,7 @@ function SupplierFormPanel({
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
             {t('suppliers.form_phone_label')}
           </label>
-          <input style={inputS} placeholder="+57 310 000 0000" value={form.phone} onChange={set('phone')} />
+          <input style={inputS} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
         </div>
       </div>
 
@@ -149,7 +149,7 @@ function SupplierFormPanel({
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
             {t('suppliers.form_whatsapp_label')}
           </label>
-          <input style={inputS} placeholder="+57 310 000 0000" value={form.whatsapp} onChange={set('whatsapp')} />
+          <input style={inputS} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
