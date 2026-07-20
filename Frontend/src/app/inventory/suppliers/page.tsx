@@ -102,6 +102,7 @@ function SupplierFormPanel({
   onCancel: () => void
   saving: boolean
 }) {
+  const { t } = useLanguage()
   const [form, setForm] = useState<SupplierForm>(initial ? supplierToForm(initial) : blankForm(prefillName))
   const set = (k: keyof SupplierForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
@@ -114,28 +115,28 @@ function SupplierFormPanel({
       padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16,
     }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
-        {initial ? 'Editar proveedor' : 'Nuevo proveedor'}
+        {initial ? t('suppliers.form_edit_title') : t('suppliers.form_new_title')}
       </div>
 
       {/* Name */}
       <div>
         <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-          Nombre *
+          {t('suppliers.form_name_label')} *
         </label>
-        <input style={inputS} placeholder="Ej. Distribuidora Nacional S.A." value={form.name} onChange={set('name')} autoFocus />
+        <input style={inputS} placeholder={t('suppliers.form_name_placeholder')} value={form.name} onChange={set('name')} autoFocus />
       </div>
 
       {/* Email + Phone */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            Email (para enviar OC)
+            {t('suppliers.form_email_label')}
           </label>
-          <input style={inputS} type="email" placeholder="compras@proveedor.com" value={form.email} onChange={set('email')} />
+          <input style={inputS} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            Teléfono
+            {t('suppliers.form_phone_label')}
           </label>
           <input style={inputS} placeholder="+57 310 000 0000" value={form.phone} onChange={set('phone')} />
         </div>
@@ -145,20 +146,20 @@ function SupplierFormPanel({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            WhatsApp
+            {t('suppliers.form_whatsapp_label')}
           </label>
           <input style={inputS} placeholder="+57 310 000 0000" value={form.whatsapp} onChange={set('whatsapp')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            Términos de pago
+            {t('suppliers.form_payment_terms_label')}
           </label>
           <div style={{ position: 'relative' }}>
-            <select style={{ ...inputS, paddingRight: 28, appearance: 'none' as const }} value={form.payment_terms} onChange={set('payment_terms')}>
-              <option value="">Seleccionar…</option>
-              {PAYMENT_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
+            <select style={{ ...inputS, paddingRight: 28, appearance: 'none' as const }} value={form.payment_terms} onChange={set('payment_terms')} aria-label={t('suppliers.form_payment_terms_label')}>
+              <option value="">{t('suppliers.form_select_placeholder')}</option>
+              {PAYMENT_TERMS.map(term => <option key={term} value={term}>{term}</option>)}
             </select>
-            <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: C.dim }} />
+            <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: C.dim }} aria-hidden="true" />
           </div>
         </div>
       </div>
@@ -167,34 +168,35 @@ function SupplierFormPanel({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            <Tooltip text="Días que tarda en entregarte desde que haces el pedido.">
-              <span>Lead time (días) *</span>
-              <Info size={9} color={C.dim} style={{ opacity: 0.5 }} />
+            <Tooltip text={t('suppliers.form_lead_time_tip')}>
+              <span>{t('suppliers.form_lead_time_label')} *</span>
+              <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
           </label>
-          <input style={inputS} type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} />
+          <input style={inputS} type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            <Tooltip text="¿Qué tanto puede variar? Si dice 15 días pero a veces llega en 18, pon 3.">
-              <span>Variabilidad (días)</span>
-              <Info size={9} color={C.dim} style={{ opacity: 0.5 }} />
+            <Tooltip text={t('suppliers.form_variability_tip')}>
+              <span>{t('suppliers.form_variability_label')}</span>
+              <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
           </label>
-          <input style={inputS} type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} />
+          <input style={inputS} type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} aria-label={t('suppliers.form_variability_label')} />
         </div>
       </div>
 
       {/* Notes */}
       <div>
         <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-          Notas
+          {t('suppliers.form_notes_label')}
         </label>
         <textarea
           style={{ ...inputS, resize: 'vertical', minHeight: 64 }}
-          placeholder="Condiciones especiales, contacto, observaciones…"
+          placeholder={t('suppliers.form_notes_placeholder')}
           value={form.notes}
           onChange={set('notes')}
+          aria-label={t('suppliers.form_notes_label')}
         />
       </div>
 
@@ -204,7 +206,7 @@ function SupplierFormPanel({
           onClick={onCancel}
           style={{ all: 'unset', cursor: 'pointer', padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.border}`, color: C.dim, fontSize: 13 }}
         >
-          Cancelar
+          {t('common.cancel')}
         </button>
         <button
           onClick={() => canSave && onSave(form)}
@@ -216,8 +218,8 @@ function SupplierFormPanel({
             background: C.indigo, color: '#fff', opacity: canSave && !saving ? 1 : 0.5,
           }}
         >
-          {saving ? <Spinner size={12} /> : <Save size={12} />}
-          {initial ? 'Actualizar' : 'Crear proveedor'}
+          {saving ? <Spinner size={12} /> : <Save size={12} aria-hidden="true" />}
+          {initial ? t('suppliers.form_submit_update') : t('suppliers.form_submit_create')}
         </button>
       </div>
     </div>
@@ -234,6 +236,7 @@ function SupplierRow({
   onEdit: (s: Supplier) => void
   onDelete: (id: string) => void
 }) {
+  const { t } = useLanguage()
   return (
     <tr
       style={{ borderBottom: `1px solid ${C.border}` }}
@@ -264,21 +267,23 @@ function SupplierRow({
         <div style={{ display: 'flex', gap: 4 }}>
           <button
             onClick={() => onEdit(supplier)}
-            title="Editar"
+            title={t('suppliers.row_edit')}
+            aria-label={`${t('suppliers.row_edit')}: ${supplier.name}`}
             style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: C.dim, display: 'flex' }}
             onMouseEnter={e => (e.currentTarget.style.color = C.indigo)}
             onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
           >
-            <Edit2 size={13} />
+            <Edit2 size={13} aria-hidden="true" />
           </button>
           <button
             onClick={() => onDelete(supplier.id)}
-            title="Eliminar"
+            title={t('suppliers.row_delete')}
+            aria-label={`${t('suppliers.row_delete')}: ${supplier.name}`}
             style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: C.dim, display: 'flex' }}
             onMouseEnter={e => (e.currentTarget.style.color = C.red)}
             onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
           >
-            <Trash2 size={13} />
+            <Trash2 size={13} aria-hidden="true" />
           </button>
         </div>
       </td>
@@ -362,7 +367,7 @@ function SuppliersPageInner() {
 
   async function handleDelete(id: string) {
     const s = suppliers.find(x => x.id === id)
-    if (!confirm(`¿Eliminar proveedor "${s?.name}"? Esta acción es irreversible.`)) return
+    if (!confirm(`${t('suppliers.delete_confirm_q')} "${s?.name}"? ${t('suppliers.delete_confirm_warn')}`)) return
     setActionError(null)
     try { await deleteSupplier(id); await load() }
     catch (e: unknown) { setActionError(e instanceof Error ? e.message : t('suppliers.err_deleting')) }
@@ -384,14 +389,14 @@ function SuppliersPageInner() {
             background: 'linear-gradient(135deg, #818cf8, #6366f1)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <Truck size={17} color="#fff" strokeWidth={2.5} />
+            <Truck size={17} color="#fff" strokeWidth={2.5} aria-hidden="true" />
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              Proveedores
+              {t('suppliers.page_title')}
             </h1>
             <p style={{ margin: 0, fontSize: 11, color: C.dim }}>
-              Gestiona tus suppliers y sus tiempos de delivery
+              {t('suppliers.page_subtitle')}
             </p>
           </div>
         </div>
@@ -402,7 +407,7 @@ function SuppliersPageInner() {
             fontSize: 12, color: C.dim, textDecoration: 'none',
             padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
           }}>
-            <BarChart3 size={13} /> Scorecard
+            <BarChart3 size={13} aria-hidden="true" /> {t('suppliers.scorecard_link')}
           </Link>
           {!isFormOpen && (
             <button
@@ -413,7 +418,7 @@ function SuppliersPageInner() {
                 background: C.indigo, color: '#fff',
               }}
             >
-              <Plus size={14} /> Agregar supplier
+              <Plus size={14} aria-hidden="true" /> {t('suppliers.add_supplier')}
             </button>
           )}
         </div>
@@ -462,20 +467,20 @@ function SuppliersPageInner() {
           }]}
         />
       ) : suppliers.length > 0 ? (
-        /* ── Tabla ───────────────────────────────────────────────── */
+        /* ── Table ───────────────────────────────────────────────── */
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ background: C.card }}>
                   {[
-                    ['Nombre', ''],
-                    ['Lead time', 'Días promedio desde que haces el pedido hasta que llega'],
-                    ['Variabilidad', 'Desviación estándar del lead time. Más variabilidad = más stock de seguridad necesario'],
-                    ['Términos de pago', ''],
-                    ['Email', ''],
-                    ['Teléfono / WhatsApp', ''],
-                    ['Acciones', ''],
+                    [t('suppliers.table_name'), ''],
+                    [t('suppliers.table_lead_time'), t('suppliers.table_lead_time_tip')],
+                    [t('suppliers.table_variability'), t('suppliers.table_variability_tip')],
+                    [t('suppliers.table_payment_terms'), ''],
+                    [t('suppliers.table_email'), ''],
+                    [t('suppliers.table_contact'), ''],
+                    [t('suppliers.table_actions'), ''],
                   ].map(([label, tip]) => (
                     <th
                       key={label}

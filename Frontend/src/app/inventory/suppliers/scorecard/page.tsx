@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { getSupplierScorecard, getSupplierLeadTimeAlerts } from '@/lib/api'
 import type { SupplierScorecardRow, SupplierLeadTimeAlert } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { formatMoney } from '@/lib/currency'
 import { BarChart3, ArrowLeft, AlertTriangle, Truck, TrendingUp } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -14,13 +16,9 @@ const C = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtDate(iso: string | null): string {
+function fmtDate(iso: string | null, lang: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-function fmtCurrency(n: number): string {
-  return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+  return new Date(iso).toLocaleDateString(lang, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function fmtPct(n: number | null): string {
@@ -37,9 +35,11 @@ function ScorecardTable({ rows, alerts }: {
   rows: SupplierScorecardRow[]
   alerts: Map<string, SupplierLeadTimeAlert>
 }) {
+  const { t, lang } = useLanguage()
   const columns = [
-    'Proveedor', 'Recepciones', 'Lead time real', 'Declarado',
-    'Tendencia', '% A tiempo', '% Fill rate', 'Valor comprado', 'Última recepción',
+    t('scorecard.col_supplier'), t('scorecard.col_receptions'), t('scorecard.col_real_lead_time'),
+    t('scorecard.col_declared'), t('scorecard.col_trend'), t('scorecard.col_on_time'),
+    t('scorecard.col_fill_rate'), t('scorecard.col_purchased_value'), t('scorecard.col_last_reception'),
   ]
 
   return (
@@ -81,7 +81,7 @@ function ScorecardTable({ rows, alerts }: {
                 <td style={{ padding: '11px 14px' }}>
                   {alert ? (
                     <span
-                      title={`${alert.mensaje} (z=${alert.z_score}, ${alert.n_reciente} recepciones recientes vs. ${alert.n_baseline} históricas)`}
+                      title={`${alert.mensaje} (z=${alert.z_score}, ${alert.n_reciente} ${t('scorecard.trend_tooltip_recent')} ${alert.n_baseline} ${t('scorecard.trend_tooltip_historical')})`}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap',
@@ -90,10 +90,10 @@ function ScorecardTable({ rows, alerts }: {
                         background: `${alert.severidad === 'alta' ? C.red : C.amber}1a`,
                       }}
                     >
-                      <TrendingUp size={11} /> +{alert.deviation_days}d
+                      <TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d
                     </span>
                   ) : (
-                    <span style={{ color: C.dim }}>Estable</span>
+                    <span style={{ color: C.dim }}>{t('scorecard.stable')}</span>
                   )}
                 </td>
                 <td style={{ padding: '11px 14px', color: onTimeColor, fontWeight: 700 }}>
@@ -101,9 +101,9 @@ function ScorecardTable({ rows, alerts }: {
                 </td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{fmtPct(row.fill_rate)}</td>
                 <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace', fontWeight: 600 }}>
-                  {fmtCurrency(row.purchased_value)}
+                  {formatMoney(row.purchased_value)}
                 </td>
-                <td style={{ padding: '11px 14px', color: C.dim }}>{fmtDate(row.ultima_recepcion)}</td>
+                <td style={{ padding: '11px 14px', color: C.dim }}>{fmtDate(row.ultima_recepcion, lang)}</td>
               </tr>
             )
           })}
@@ -115,6 +115,7 @@ function ScorecardTable({ rows, alerts }: {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function SupplierScorecardPage() {
+  const { t } = useLanguage()
   const [rows,    setRows]    = useState<SupplierScorecardRow[]>([])
   const [alerts,  setAlerts]  = useState<SupplierLeadTimeAlert[]>([])
   const [loading, setLoading] = useState(true)
@@ -132,9 +133,9 @@ export default function SupplierScorecardPage() {
       setRows(scorecard)
       setAlerts(deviations)
     }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : 'Error cargando el scorecard') }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : t('scorecard.error_loading')) }
     finally { setLoading(false) }
-  }, [])
+  }, [t])
 
   useEffect(() => { load() }, [load])
 
@@ -151,14 +152,14 @@ export default function SupplierScorecardPage() {
             background: 'linear-gradient(135deg, #818cf8, #6366f1)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <BarChart3 size={17} color="#fff" strokeWidth={2.5} />
+            <BarChart3 size={17} color="#fff" strokeWidth={2.5} aria-hidden="true" />
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              Scorecard de suppliers
+              {t('scorecard.title')}
             </h1>
             <p style={{ margin: 0, fontSize: 11, color: C.dim }}>
-              Lead time real, cumplimiento y fill rate — calculado de tus recepciones registradas
+              {t('scorecard.subtitle')}
             </p>
           </div>
         </div>
@@ -167,19 +168,19 @@ export default function SupplierScorecardPage() {
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
         }}>
-          <ArrowLeft size={12} /> Volver a Proveedores
+          <ArrowLeft size={12} aria-hidden="true" /> {t('scorecard.back_to_suppliers')}
         </Link>
       </div>
 
       {/* Error */}
       {error && (
-        <div style={{
+        <div role="alert" style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 14px', borderRadius: 8,
           background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
           fontSize: 13, color: C.red,
         }}>
-          <AlertTriangle size={13} style={{ flexShrink: 0 }} /> {error}
+          <AlertTriangle size={13} style={{ flexShrink: 0 }} aria-hidden="true" /> {error}
         </div>
       )}
 
@@ -196,24 +197,22 @@ export default function SupplierScorecardPage() {
               padding: '12px 16px', borderRadius: 10,
               background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
             }}>
-              <TrendingUp size={15} color={C.amber} style={{ flexShrink: 0, marginTop: 2 }} />
+              <TrendingUp size={15} color={C.amber} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
               <div style={{ fontSize: 12, color: C.text, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <strong>
-                  {alerts.length === 1
-                    ? '1 proveedor se ha desviado de su lead time histórico'
-                    : `${alerts.length} proveedores se han desviado de su lead time histórico`}
+                  {alerts.length}{' '}
+                  {alerts.length === 1 ? t('scorecard.deviation_singular') : t('scorecard.deviation_plural')}
                 </strong>
                 {alerts.map(a => (
                   <span key={a.supplier}>
-                    {a.mensaje} días{' '}
+                    {a.mensaje} {t('scorecard.deviation_days')}{' '}
                     <span style={{ color: C.dim }}>
-                      (últimas {a.n_reciente} recepciones vs. {a.n_baseline} previas)
+                      ({t('scorecard.deviation_recent')} {a.n_reciente} {t('scorecard.deviation_receptions_vs')} {a.n_baseline} {t('scorecard.deviation_previous')})
                     </span>
                   </span>
                 ))}
                 <span style={{ color: C.dim, fontSize: 11, marginTop: 2 }}>
-                  Detectado con una regla de control estadístico de 3 sigma sobre la
-                  mediana y la desviación absoluta mediana del propio historial de cada supplier.
+                  {t('scorecard.deviation_method')}
                 </span>
               </div>
             </div>
@@ -227,12 +226,12 @@ export default function SupplierScorecardPage() {
           padding: '40px 24px', textAlign: 'center', borderRadius: 12,
           background: C.card, border: `1px solid ${C.border}`,
         }}>
-          <Truck size={32} color={C.dim} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
+          <Truck size={32} color={C.dim} style={{ margin: '0 auto 12px', opacity: 0.4 }} aria-hidden="true" />
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
-            Aún no hay recepciones registradas
+            {t('scorecard.empty_title')}
           </div>
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
-            Registra la llegada de una orden de purchase desde el historial de Impacto para que Faro empiece a aprender el desempeño de tus suppliers.
+            {t('scorecard.empty_body')}
           </div>
           <Link href="/inventory/suppliers" style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -240,7 +239,7 @@ export default function SupplierScorecardPage() {
             background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)',
             color: C.indigo, textDecoration: 'none',
           }}>
-            <Truck size={13} /> Ir a Proveedores
+            <Truck size={13} aria-hidden="true" /> {t('scorecard.empty_cta')}
           </Link>
         </div>
       )}

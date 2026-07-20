@@ -428,7 +428,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <strong>{result.summary.total_to_order.toLocaleString()} units extra</strong> en{' '}
  <strong>{result.summary.skus_at_risk} product{result.summary.skus_at_risk !== 1 ? 's' : ''}</strong>
  {result.summary.order_before && <> antes del <strong>{fmtD(result.summary.order_before)}</strong></>}
- {result.summary.total_order_value > 0 && <> (≈ ${result.summary.total_order_value.toLocaleString(undefined, { maximumFractionDigits: 0 })})</>}.
+ {result.summary.total_order_value > 0 && <> (≈ {formatMoney(result.summary.total_order_value)})</>}.
  {result.summary.any_order_late && (
  <div style={{ color: C.red, fontWeight: 600, marginTop: 6 }}>
  ⚠ Para algunos products ya es tarde: pidiendo hoy, el order llegaría con el event en curso.
@@ -965,7 +965,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
 }
 
 function fmt(n: number | null | undefined, d = 1) { if (n == null) return '—'; return n.toLocaleString(undefined, { maximumFractionDigits: d }) }
-function fmtCurrency(n: number | null | undefined) { if (n == null) return '—'; return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 }) }
+function fmtCurrency(n: number | null | undefined) { return formatMoney(n) }
 
 // ── Simulator helpers ─────────────────────────────────────────────────────────
 function simulateRecommendation(
