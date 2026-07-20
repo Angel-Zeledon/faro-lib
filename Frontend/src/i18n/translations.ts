@@ -349,7 +349,7 @@ export const translations = {
     'common.language':    'Idioma',
 
     // ── Config page (profile / activity / security) ──
-    'config.whatsapp_hint':          'Con código de país (ej. +57…). Déjalo vacío para no recibir alertas por WhatsApp.',
+    'config.whatsapp_hint':          'Con código de país (ej. +506…). Déjalo vacío para no recibir alertas por WhatsApp.',
     'config.action_types_load_error':'No se pudieron cargar los tipos de acción — mostrando valores por defecto',
     'config.remaining':              'restantes',
 
@@ -1883,7 +1883,7 @@ export const translations = {
     'common.language':    'Language',
 
     // ── Config page (profile / activity / security) ──
-    'config.whatsapp_hint':          'With country code (e.g. +57…). Leave it empty to not receive WhatsApp alerts.',
+    'config.whatsapp_hint':          'With country code (e.g. +506…). Leave it empty to not receive WhatsApp alerts.',
     'config.action_types_load_error':'Could not load action types — showing defaults',
     'config.remaining':              'remaining',
 
