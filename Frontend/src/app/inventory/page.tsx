@@ -34,6 +34,12 @@ import {
  Zap, PackageMinus, Search, PackagePlus,
 } from 'lucide-react'
 
+// Maps the active UI language to a concrete BCP-47 locale for date formatting,
+// so dates follow the language toggle instead of always rendering in Spanish.
+function localeFor(lang: string): string {
+ return lang === 'en' ? 'en-US' : 'es-CR'
+}
+
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
@@ -385,7 +391,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  onClose: () => void
  onReload: () => void
 }) {
- const { t } = useLanguage()
+ const { t, lang } = useLanguage()
  const [result, setResult] = useState<EventSimulationResult | null>(null)
  const [error, setError] = useState<string | null>(null)
 
@@ -395,7 +401,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  .catch(e => setError(e instanceof Error ? e.message : 'Error al simular'))
  }, [ev.id, sessionId])
 
- const fmtD = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'long' })
+ const fmtD = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long' })
  const pctExtra = Math.round((ev.multiplier - 1) * 100)
 
  return (
@@ -612,7 +618,7 @@ const COUNTRY_NAMES: Record<string, string> = { CR: 'Costa Rica', CO: 'Colombia'
 // The catalog is seeded into the DB (not a frontend array): this only
 // shows its state and switches each event on/off.
 function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
- const { t } = useLanguage()
+ const { t, lang } = useLanguage()
  const [entries, setEntries] = useState<CalendarCatalogEntry[] | null>(null)
  const [countries, setCountries] = useState<string[]>([])
  const [country, setCountry] = useState('')   // '' = default del backend (CR)
@@ -697,7 +703,7 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
        <div style={{ fontSize: 10, color: C.dim, marginTop: 3 }}>
         {entry.seeded
          ? <>×{entry.multiplier.toFixed(1)} · {entry.occurrences} {t('inventory.calendar_occurrences')}
-            {entry.next_start && <> · {t('inventory.calendar_next')} {new Date(entry.next_start + 'T00:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' })}</>}
+            {entry.next_start && <> · {t('inventory.calendar_next')} {new Date(entry.next_start + 'T00:00:00').toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short', year: 'numeric' })}</>}
            </>
          : t('inventory.calendar_not_loaded')}
        </div>
@@ -751,7 +757,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  onSimulate: (ev: InventoryEvent) => void
  onCatalogChange: () => void
 }) {
- const { t } = useLanguage()
+ const { t, lang } = useLanguage()
  const [adding, setAdding] = useState(false)
  const [tab, setTab] = useState<'mine' | 'catalog'>('mine')
  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', multiplier: '1.5', notes: '' })
@@ -809,8 +815,8 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  <div style={{ flex: 1, minWidth: 0 }}>
  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ev.name}</div>
  <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>
- {new Date(ev.start_date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}
- {ev.end_date !== ev.start_date && ` → ${new Date(ev.end_date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}`}
+ {new Date(ev.start_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}
+ {ev.end_date !== ev.start_date && ` → ${new Date(ev.end_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}`}
  {until && <span style={{ marginLeft: 8, color: isClose ? C.amber : C.dim }}>({until})</span>}
  </div>
  </div>

@@ -678,7 +678,7 @@ export const translations = {
     'hoy.cart_protects_margin_suffix': 'en margen',
     'hoy.cart_margin_excluded_singular': 'SKU quedó fuera del cálculo (sin precio de venta o sin costo)',
     'hoy.cart_margin_excluded_plural':   'SKUs quedaron fuera del cálculo (sin precio de venta o sin costo)',
-    // ── Salud de proveedores (2.5) y desviación de lead time (3.3) ──
+    // ── Supplier health (2.5) and lead-time deviation (3.3) ──
     'suppliers.health_singular':    'proveedor sin email/WhatsApp',
     'suppliers.health_plural':      'proveedores sin email/WhatsApp',
     'suppliers.health_consequence': 'el envío de órdenes los omitirá',
@@ -689,7 +689,7 @@ export const translations = {
     'suppliers.leadtime_based_on':  'últimas recepciones vs. historial',
     'suppliers.leadtime_cta':       'Ver scorecard',
     'suppliers.leadtime_advice':    'Considera pedir con más anticipación o buscar un proveedor alterno para estos SKUs.',
-    // ── Escalas de precio del proveedor (3.5) ──
+    // ── Supplier price breaks (3.5) ──
     'pricebreaks.title':               'Te conviene subir la cantidad',
     'pricebreaks.title_none':          'Escalas de precio disponibles',
     'pricebreaks.net_saving_prefix':   'ahorro neto',
