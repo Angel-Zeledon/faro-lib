@@ -12,6 +12,7 @@ import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import Spinner from '@/components/ui/Spinner'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { formatMoney } from '@/lib/currency'
 import {
  Cog, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
  RefreshCw, Plus, Trash2, X, Save, Package, ArrowRight, Info, Layers,
@@ -50,10 +51,6 @@ function TypeBadge({ type }: { type: string }) {
 function fmt(n: number | null | undefined, d = 1) {
  if (n == null) return '—'
  return n.toLocaleString(undefined, { maximumFractionDigits: d })
-}
-function fmtCurrency(n: number | null | undefined) {
- if (n == null) return '—'
- return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
 }
 
 // ── Finished Good card (collapsible) ─────────────────────────────────────────
@@ -460,7 +457,7 @@ export default function ProduccionPage() {
  </div>
  <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
  {t('produccion.label_estimated_purchase_value')}{' '}
- <strong style={{ color: C.text }}>{fmtCurrency(plan.total_shortage_value)}</strong>
+ <strong style={{ color: C.text }}>{formatMoney(plan.total_shortage_value)}</strong>
  </div>
  </div>
  </div>
@@ -472,7 +469,7 @@ export default function ProduccionPage() {
  { label: t('produccion.kpi_products_to_plan'), value: plan.finished_goods_count, color: C.orange },
  { label: t('produccion.kpi_total_to_produce'), value: fmt(totalToProduceUnits, 0), color: C.indigo },
  { label: t('produccion.kpi_materials_in_shortage'), value: shortageCount, color: shortageCount > 0 ? C.red : C.green },
- { label: t('produccion.kpi_value_to_purchase'), value: plan.total_shortage_value > 0 ? fmtCurrency(plan.total_shortage_value) : '—', color: plan.total_shortage_value > 0 ? C.red : C.green },
+ { label: t('produccion.kpi_value_to_purchase'), value: plan.total_shortage_value > 0 ? formatMoney(plan.total_shortage_value) : '—', color: plan.total_shortage_value > 0 ? C.red : C.green },
  ].map(({ label, value, color }) => (
  <div key={label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${color}` }}>
  <div style={{ fontSize: 20, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
@@ -514,7 +511,7 @@ export default function ProduccionPage() {
  : <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.green, fontSize: 11 }}><CheckCircle2 size={11} /> {t('produccion.status_ok')}</span>}
  </td>
  <td style={{ padding: '10px 12px', color: mat.estimated_cost ? C.red : C.dim, fontFamily: 'monospace', fontSize: 11 }}>
- {fmtCurrency(mat.estimated_cost)}
+ {formatMoney(mat.estimated_cost)}
  </td>
  </tr>
  ))}
