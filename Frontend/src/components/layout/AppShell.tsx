@@ -8,6 +8,7 @@ import { ActiveSessionProvider } from '@/contexts/ActiveSessionContext'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { BusinessProfileProvider } from '@/contexts/BusinessProfileContext'
 import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
+import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
 
@@ -16,6 +17,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <AuthGuard>
       <BusinessProfileProvider>
         <ToastProvider>
+          <ConfirmProvider>
           <SidebarProvider>
             <ActiveSessionProvider>
               <SkuSearchProvider>
@@ -34,6 +36,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </SkuSearchProvider>
             </ActiveSessionProvider>
           </SidebarProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </BusinessProfileProvider>
     </AuthGuard>
