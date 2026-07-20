@@ -11,6 +11,7 @@ import type {
 import { useAutoSession } from '@/hooks/useAutoSession'
 import SessionBar from '@/components/ui/SessionBar'
 import Spinner from '@/components/ui/Spinner'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
 import {
@@ -130,6 +131,7 @@ function FinishedGoodCard({ item }: { item: ProductionPlan['finished_goods'][num
 // ── BOM Editor ────────────────────────────────────────────────────────────────
 function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  const { t } = useLanguage()
+ const confirm = useConfirm()
  const [parentSku, setParentSku] = useState('')
  const [bomItems, setBomItems] = useState<BomItem[]>([])
  const [loading, setLoading] = useState(false)
@@ -178,7 +180,10 @@ function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  }
 
  async function handleDelete(childSku: string) {
- if (!confirm(`${t('produccion.confirm_delete_bom_prefix')} ${childSku} ${t('produccion.confirm_delete_bom_mid')} ${parentSku}?`)) return
+ if (!(await confirm({
+  title: `${t('produccion.confirm_delete_bom_prefix')} ${childSku} ${t('produccion.confirm_delete_bom_mid')} ${parentSku}?`,
+  danger: true,
+ }))) return
  try {
   await deleteBOMItem(parentSku, childSku)
   setBomItems(prev => prev.filter(b => b.child_sku !== childSku))
