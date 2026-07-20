@@ -439,7 +439,11 @@ class TestCatalogToggle:
         self, client, analyst_headers, test_tenant
     ):
         """An event switched off must stop raising the dashboard alert."""
-        today = date.today()
+        # Anchor on the DB's date, not Python's: get_upcoming_events filters on
+        # Postgres CURRENT_DATE (UTC in the test container), so date.today() from
+        # a UTC-6 machine drifts a day after ~18:00 local and the event created
+        # for "local today" falls outside end_date >= CURRENT_DATE.
+        today = query_one("SELECT CURRENT_DATE AS d")["d"]
         ev = client.post(
             "/api/v1/inventory/events",
             json={
