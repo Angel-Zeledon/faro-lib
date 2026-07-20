@@ -258,7 +258,7 @@ export default function LandingPage() {
  ]
 
  const COMPARE = [
- { feature: 'Tiempo para generar forecast', excel: 'Días', faro: 'Minutos' },
+ { feature: 'Tiempo para generar pronóstico', excel: 'Días', faro: 'Minutos' },
  { feature: 'Cantidad de SKUs manejables', excel: 'Decenas', faro: 'Miles' },
  { feature: 'Actualización del modelo', excel: 'Manual', faro: 'Automática' },
  { feature: 'Detección de estacionalidad', excel: 'Manual', faro: 'Automática' },
@@ -360,11 +360,11 @@ export default function LandingPage() {
  </div>
 
  <h1 style={{ fontSize: 56, fontWeight: 900, color: T.text, margin: '0 0 18px', letterSpacing: '-0.05em', lineHeight: 1.1, maxWidth: 720 }}>
- Deja de gestionar el inventory<br />a base de intuición.
+ Deja de gestionar el inventario<br />a base de intuición.
  </h1>
 
  <p style={{ fontSize: 18, color: T.body, lineHeight: 1.65, maxWidth: 560, margin: '0 0 36px' }}>
- Faro analiza tus sales históricas y genera pronósticos de demand por product — para que sepas cuánto buy, cuándo buy y qué products están en risk de quiebre.
+ Faro analiza tus ventas históricas y genera pronósticos de demanda por producto — para que sepas cuánto comprar, cuándo comprar y qué productos están en riesgo de quiebre.
  </p>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 60 }}>
@@ -375,7 +375,7 @@ export default function LandingPage() {
  <div id="demo" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 14, padding: '22px 26px 16px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
  <div>
- <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Pronóstico de demand — SKU-042 Aceite 1L</div>
+ <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Pronóstico de demanda — SKU-042 Aceite 1L</div>
  <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>Últimos 12 meses + 6 meses de pronóstico con intervalo de confianza</div>
  </div>
  <div style={{ display: 'flex', gap: 16 }}>
@@ -431,9 +431,9 @@ export default function LandingPage() {
  {/* ── EL PROBLEMA ──────────────────────────────────────────────────── */}
  <Section id="problema" alt>
  <Tag>El problema</Tag>
- <H2>El inventory mal planificado tiene un cost concreto.</H2>
+ <H2>El inventario mal planificado tiene un costo concreto.</H2>
  <Lead>
- La mayoría de empresas toma decisiones de purchase con Excel, intuición acumulada y el criterio del buyer de turno.
+ La mayoría de empresas toma decisiones de compra con Excel, intuición acumulada y el criterio del comprador de turno.
  Eso funciona hasta cierto punto — y después, los errores se vuelven sistemáticos.
  </Lead>
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
@@ -450,8 +450,8 @@ export default function LandingPage() {
  {/* ── CÓMO FUNCIONA ────────────────────────────────────────────────── */}
  <Section id="solucion">
  <Tag>Cómo funciona</Tag>
- <H2>De tus datos históricos a decisiones de purchase.</H2>
- <Lead>Faro transforma el historial de sales en pronósticos precisos por product. Sin configuración estadística, sin necesitar un analista dedicado.</Lead>
+ <H2>De tus datos históricos a decisiones de compra.</H2>
+ <Lead>Faro transforma el historial de ventas en pronósticos precisos por producto. Sin configuración estadística, sin necesitar un analista dedicado.</Lead>
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
  {STEPS.map(({ n, title, desc }) => (
  <div key={n} style={{ display: 'flex', gap: 18, alignItems: 'flex-start', background: T.bg2, borderRadius: 10, padding: '22px 24px', border: `1px solid ${T.border}` }}>
@@ -469,7 +469,7 @@ export default function LandingPage() {
  <Section id="casos" alt>
  <Tag>Industrias</Tag>
  <H2>Diseñado para operaciones reales.</H2>
- <Lead>El problema de inventory no es el mismo en un mayorista que en un retailer o en una planta de producción. Faro se adapta a las características de cada operación.</Lead>
+ <Lead>El problema de inventario no es el mismo en un mayorista que en un retailer o en una planta de producción. Faro se adapta a las características de cada operación.</Lead>
  <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
  {CASES.map(({ label }, i) => (
  <button key={label} onClick={() => setActiveCase(i)} style={{ all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600, background: activeCase === i ? T.accentBg : T.bg, border: `1px solid ${activeCase === i ? T.accentBd : T.border}`, color: activeCase === i ? T.accent : T.muted, transition: 'all 0.15s' }}>
@@ -518,7 +518,7 @@ export default function LandingPage() {
  <Section id="comparacion" alt>
  <Tag>Comparación</Tag>
  <H2>Excel vs Faro.</H2>
- <Lead>Excel es una herramienta de análisis, no un sistema de pronóstico. Funciona para unos pocos products. El problema aparece cuando el negocio crece y los modelos manuales no escalan.</Lead>
+ <Lead>Excel es una herramienta de análisis, no un sistema de pronóstico. Funciona para unos pocos productos. El problema aparece cuando el negocio crece y los modelos manuales no escalan.</Lead>
  <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
  <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Capacidad</div>
@@ -720,7 +720,7 @@ export default function LandingPage() {
  <span style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: '-0.02em' }}>Faro</span>
  </div>
  <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, margin: 0 }}>
- Pronóstico de demand e inteligencia de inventory para distribuidores, retail y manufactura.
+ Pronóstico de demanda e inteligencia de inventario para distribuidores, retail y manufactura.
  </p>
  </div>
  <div>

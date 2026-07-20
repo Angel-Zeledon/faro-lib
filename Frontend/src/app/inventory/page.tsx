@@ -407,7 +407,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
  </div>
  <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim }}>
- {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demand estimada +{pctExtra}%
+ {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demanda estimada +{pctExtra}%
  </p>
 
  {!result && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
@@ -424,23 +424,23 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  }}>
  {result.summary.skus_at_risk > 0 ? (
  <>
- Con <strong>{ev.name}</strong> (+{pctExtra}% demand), necesitarías order{' '}
- <strong>{result.summary.total_to_order.toLocaleString()} units extra</strong> en{' '}
- <strong>{result.summary.skus_at_risk} product{result.summary.skus_at_risk !== 1 ? 's' : ''}</strong>
+ Con <strong>{ev.name}</strong> (+{pctExtra}% de demanda), necesitarías pedir{' '}
+ <strong>{result.summary.total_to_order.toLocaleString()} unidades extra</strong> en{' '}
+ <strong>{result.summary.skus_at_risk} producto{result.summary.skus_at_risk !== 1 ? 's' : ''}</strong>
  {result.summary.order_before && <> antes del <strong>{fmtD(result.summary.order_before)}</strong></>}
  {result.summary.total_order_value > 0 && <> (≈ {formatMoney(result.summary.total_order_value)})</>}.
  {result.summary.any_order_late && (
  <div style={{ color: C.red, fontWeight: 600, marginTop: 6 }}>
- ⚠ Para algunos products ya es tarde: pidiendo hoy, el order llegaría con el event en curso.
+ ⚠ Para algunos productos ya es tarde: si pides hoy, la orden llegaría con el evento en curso.
  </div>
  )}
  </>
  ) : (
- <>✓ Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% demand) sin orders adicionales.</>
+ <>✓ Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% de demanda) sin pedidos adicionales.</>
  )}
  </div>
 
- {/* Por qué este multiplier — nunca mostrar un x2.2 sin justificarlo */}
+ {/* Why this multiplier — never show a x2.2 without justifying it */}
  <MultiplierExplainer result={result} eventId={ev.id} onEdited={onReload} />
 
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -482,8 +482,8 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  </tbody>
  </table>
  <p style={{ margin: '14px 0 0', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
- Cálculo: demand diaria del forecast × {result.event_days} día{result.event_days !== 1 ? 's' : ''} × {ev.multiplier.toFixed(1)},
- contra el stock proyectado al inicio del event. Las qtys respetan el MOQ de cada product. Nada se guarda — es solo una simulación.
+ Cálculo: demanda diaria del pronóstico × {result.event_days} día{result.event_days !== 1 ? 's' : ''} × {ev.multiplier.toFixed(1)},
+ contra el stock proyectado al inicio del evento. Las cantidades respetan el MOQ de cada producto. Nada se guarda — es solo una simulación.
  </p>
  </>
  )}
