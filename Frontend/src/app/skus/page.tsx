@@ -1489,6 +1489,18 @@ export default function SkusPage() {
 
   useEffect(() => { reloadSessions() }, [reloadSessions])
 
+  // When exactly one trained session is available, select it automatically so
+  // the user lands on data instead of an empty state that needs a manual pick.
+  // With several sessions the explicit selector is kept — the choice is real.
+  useEffect(() => {
+    if (sessionId) return
+    const trained = sessions.filter(s => s.status === 'COMPLETED')
+    if (trained.length === 1) {
+      setSessionId(trained[0].session_id)
+      setTab('Forecast')
+    }
+  }, [sessions, sessionId])
+
   useEffect(() => {
     if (!sessionId) return
     setLoading(true)

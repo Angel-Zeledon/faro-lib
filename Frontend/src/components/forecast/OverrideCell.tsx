@@ -8,7 +8,6 @@ interface OverrideCellProps {
   onSave:      (newValue: number) => void
 }
 
-// INSTANCIA-3 TAREA-3A: COMPLETADA
 export default function OverrideCell({ value, original, overridden, onSave }: OverrideCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')

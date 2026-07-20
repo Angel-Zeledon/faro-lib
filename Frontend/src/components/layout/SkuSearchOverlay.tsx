@@ -9,7 +9,7 @@ import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Signal presentation ──────────────────────────────────────────────────────
-// Fuente única: components/ui/SignalBadge (icono + etiqueta + color accesible).
+// Single source: components/ui/SignalBadge (icon + label + accessible colour).
 
 function fmtNum(n: number | null | undefined, d = 0) {
   if (n == null || isNaN(n)) return '—'
@@ -260,6 +260,9 @@ export default function SkuSearchOverlay() {
     >
       <div
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('search.placeholder')}
         style={{
           width: '100%', maxWidth: 640,
           background: 'var(--surface)',
@@ -292,9 +295,10 @@ export default function SkuSearchOverlay() {
           <button
             onClick={close}
             title={t('search.close_title')}
+            aria-label={t('search.close_title')}
             style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex', flexShrink: 0 }}
           >
-            <X size={15} />
+            <X size={15} aria-hidden="true" />
           </button>
         </div>
 
