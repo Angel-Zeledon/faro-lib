@@ -96,9 +96,9 @@ function Spinner() {
   )
 }
 
-function fmtDate(iso: string | null) {
+function fmtDate(iso: string | null, lang: 'es' | 'en') {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(iso).toLocaleString(lang === 'en' ? 'en-US' : 'es-CR', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ── Modal wrapper ────────────────────────────────────────────────────────────
@@ -593,7 +593,7 @@ function StatusDropdown({
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const currentUser = getUser()
 
   const [users,        setUsers]        = useState<AdminUser[]>([])
@@ -784,8 +784,8 @@ export default function UsersPage() {
             </div>
             <div><StatusBadge status={u.status} /></div>
             <div><RoleBadge role={u.role} /></div>
-            <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.created_at)}</div>
-            <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.last_login_at)}</div>
+            <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.created_at, lang)}</div>
+            <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.last_login_at, lang)}</div>
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
               <StatusDropdown user={u} currentUser={currentUser} onChanged={load} />
               {u.status === 'pending_confirmation' && (
