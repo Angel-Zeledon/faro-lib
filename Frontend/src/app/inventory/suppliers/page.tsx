@@ -9,6 +9,7 @@ import type { Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import {
   Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, BarChart3,
 } from 'lucide-react'
@@ -302,6 +303,7 @@ function SuppliersPageInner() {
   const focusHandled = useRef(false)
 
   const { t } = useLanguage()
+  const confirm = useConfirm()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading,   setLoading]   = useState(true)
   // The raw error is kept (not a flattened string) so ErrorState/InlineError
@@ -367,7 +369,11 @@ function SuppliersPageInner() {
 
   async function handleDelete(id: string) {
     const s = suppliers.find(x => x.id === id)
-    if (!confirm(`${t('suppliers.delete_confirm_q')} "${s?.name}"? ${t('suppliers.delete_confirm_warn')}`)) return
+    if (!(await confirm({
+      title: `${t('suppliers.delete_confirm_q')} "${s?.name}"?`,
+      message: t('suppliers.delete_confirm_warn'),
+      danger: true,
+    }))) return
     setActionError(null)
     try { await deleteSupplier(id); await load() }
     catch (e: unknown) { setActionError(e instanceof Error ? e.message : t('suppliers.err_deleting')) }
