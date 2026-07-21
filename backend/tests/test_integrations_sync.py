@@ -95,3 +95,66 @@ def test_sync_records_error_on_provider_failure(client, test_tenant, monkeypatch
     # No dataset/job created on failure
     assert query_one("SELECT COUNT(*) c FROM datasets WHERE tenant_id=%s", (tid,))["c"] == datasets_before
     assert query_one("SELECT COUNT(*) c FROM jobs WHERE tenant_id=%s", (tid,))["c"] == jobs_before
+
+
+def test_run_daily_syncs_all_connections_isolating_failures(client, test_tenant, monkeypatch, fernet_key):
+    """The daily scheduler loop body (`run_daily_integration_syncs`) must
+    attempt every connection across every tenant and isolate per-connection
+    failures: one tenant's broken provider must not stop another tenant's
+    sync from completing, and the loop itself must never raise."""
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    from backend.integrations import store, registry, sync_service, base
+    from backend.db.connection import query_one, execute
+    from backend.tenants.service import create_tenant
+    from uuid import uuid4
+
+    class HealthyProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-OK", "Okay", 4.0)]
+        def fetch_stock(self): return [base.ProviderStock("SKU-OK", 7.0, "principal")]
+        def fetch_sales(self, since=None):
+            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-OK", 2.0, 6.0) for d in range(1, 20)]
+
+    class BrokenProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): raise base.IntegrationSyncError("connection reset by provider")
+        def fetch_stock(self): return []
+        def fetch_sales(self, since=None): return []
+
+    def fake_get_provider(name, creds):
+        if name == "alegra":
+            return HealthyProvider(creds)
+        return BrokenProvider(creds)
+
+    monkeypatch.setattr(registry, "get_provider", fake_get_provider)
+
+    healthy_tenant = test_tenant
+    broken_tenant = create_tenant(f"pytest-{uuid4().hex[:10]}")
+    try:
+        healthy_conn = store.create_connection(
+            healthy_tenant["id"], "alegra", {"email": "a@b.com", "token": "t"}
+        )
+        broken_conn = store.create_connection(
+            broken_tenant["id"], "siigo", {"partner_id": "p", "username": "u", "access_key": "k"}
+        )
+
+        # The loop body must not raise even though one connection fails.
+        sync_service.run_daily_integration_syncs()
+
+        healthy_row = query_one(
+            "SELECT last_sync_at, last_error, status FROM integration_connections WHERE id=%s",
+            (healthy_conn["id"],),
+        )
+        assert healthy_row["last_sync_at"] is not None
+        assert healthy_row["status"] == "connected"
+        assert healthy_row["last_error"] is None
+
+        broken_row = query_one(
+            "SELECT last_sync_at, last_error, status FROM integration_connections WHERE id=%s",
+            (broken_conn["id"],),
+        )
+        assert broken_row["status"] == "error"
+        assert "connection reset by provider" in broken_row["last_error"]
+    finally:
+        execute("DELETE FROM tenants WHERE id = %s", (broken_tenant["id"],))

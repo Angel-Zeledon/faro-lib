@@ -129,6 +129,34 @@ def _inventory_alert_loop() -> None:
             log.error("Supplier lead-time alert error: %s", e, exc_info=True)
 
 
+def _integration_sync_loop() -> None:
+    """Daily accounting-integrations sync, at 6:00 AM UTC — before the
+    8:00 AM inventory alert loop, so a freshly synced stock/sales dataset
+    feeds the same day's stockout digest instead of the previous day's."""
+    log.info("Integration sync scheduler started")
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
+            if now >= next_run:
+                next_run = next_run.replace(day=next_run.day + 1)
+            sleep_secs = (next_run - now).total_seconds()
+            log.info("Integration sync: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
+            time.sleep(max(sleep_secs, 1))
+        except Exception:
+            time.sleep(3600)
+            continue
+        try:
+            from backend.integrations.crypto import integrations_enabled
+            if integrations_enabled():
+                from backend.integrations.sync_service import run_daily_integration_syncs
+                run_daily_integration_syncs()
+            else:
+                log.info("Integration sync skipped: INTEGRATIONS_SECRET_KEY not configured")
+        except Exception as e:
+            log.error("Integration sync error: %s", e, exc_info=True)
+
+
 def _next_month_start(now: datetime) -> datetime:
     """Returns the next day-1 00:05 UTC boundary strictly after `now`."""
     candidate = now.replace(day=1, hour=0, minute=5, second=0, microsecond=0)
@@ -172,7 +200,8 @@ def _monthly_overstock_snapshot_loop() -> None:
 
 
 def start() -> threading.Thread:
-    """Start the worker loop, job scheduler, inventory alert scheduler, and monthly overstock snapshot scheduler."""
+    """Start the worker loop, job scheduler, inventory alert scheduler, monthly
+    overstock snapshot scheduler, and daily integration sync scheduler."""
     def _run():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -194,5 +223,10 @@ def start() -> threading.Thread:
         target=_monthly_overstock_snapshot_loop, daemon=True, name="overstock-snapshot",
     )
     overstock_thread.start()
+
+    integration_sync_thread = threading.Thread(
+        target=_integration_sync_loop, daemon=True, name="integration-sync",
+    )
+    integration_sync_thread.start()
 
     return worker_thread
