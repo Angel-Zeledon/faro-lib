@@ -264,6 +264,66 @@ def test_put_stock_blocks_new_warehouse_beyond_max_locations(
     assert stock_row is None   # blocked write must not have created the stock row
 
 
+def test_patch_stock_blocks_new_warehouse_beyond_max_locations(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """
+    Regression for the 4th max_locations bypass path: PATCH /stock/{sku} calls
+    svc.get_stock(tenant_id, sku) WITHOUT a warehouse filter, so its 404 check
+    passes as long as the SKU exists in ANY warehouse. If the PATCH body then
+    sets a DIFFERENT warehouse, svc.upsert_stock inserts a brand-new
+    (tenant_id, sku, warehouse) row and auto-creates the warehouse via
+    _ensure_warehouse — bypassing max_locations entirely, with no per-caller
+    guard on this endpoint (unlike PUT /stock, POST /bulk and receive_po).
+    The fix enforces max_locations inside upsert_stock itself so every caller
+    is covered.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+
+    # Seed SKU X in the default warehouse -> warehouse #1 ("principal"),
+    # consuming Starter's max_locations=1 cap.
+    r0 = client.put(
+        "/api/v1/inventory/stock/X",
+        json={"current_stock": 10},
+        headers=headers,
+    )
+    assert r0.status_code == 200
+
+    wh_before = query_one(
+        "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    stock_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert wh_before == 1
+    assert stock_before == 1
+
+    # PATCH the SKU into a DIFFERENT warehouse -> would be warehouse #2,
+    # exceeding Starter's max_locations=1.
+    r1 = client.patch(
+        "/api/v1/inventory/stock/X",
+        json={"warehouse": "Norte"},
+        headers=headers,
+    )
+    assert r1.status_code == 403
+    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
+    assert r1.json()["detail"]["limit"] == "max_locations"
+
+    wh_after = query_one(
+        "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    stock_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert wh_after == wh_before        # no new warehouse leaked through
+    assert stock_after == stock_before  # no new inventory_stock row created
+
+
 def test_bulk_import_blocks_new_skus_beyond_max_skus_quota_override(
     monkeypatch, make_tenant_user_headers, client,
 ):

@@ -40,6 +40,20 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     if not safe:
         raise ValueError("No valid fields to update")
 
+    # CHOKEPOINT: max_locations must be enforced here, not per-caller. Every
+    # write path (PUT /stock, PATCH /stock, POST /bulk, receive_po, dataset
+    # sync, demo/seed scripts) funnels through this function before it can
+    # create a new (tenant_id, sku, warehouse) row and auto-create a
+    # warehouse via _ensure_warehouse below. Checking per-caller was
+    # whack-a-mole — PATCH /stock/{sku} was missed because it 404-checks
+    # get_stock() without a warehouse filter, so it never knew the target
+    # warehouse was new. This runs BEFORE any INSERT/UPDATE for this row, so
+    # a blocked call leaves the DB completely unchanged (no partial write).
+    from backend.entitlements.service import enforce_limit
+    from backend.inventory import warehouse_service as wh_svc
+    if not wh_svc.get_warehouse_by_name(tenant_id, safe["warehouse"]):
+        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id))
+
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
     phs    = ", ".join(["%s"] * len(safe))
