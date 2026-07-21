@@ -197,7 +197,7 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
             'shortage':       shortage,
             'status':         'SHORTAGE' if shortage > 0 else 'OK',
             'must_order':     shortage,
-            'estimated_cost': round(shortage * cost, 2) if cost and shortage > 0 else None,
+            'estimated_cost': round(shortage * cost, 2) if cost is not None and shortage > 0 else None,
         })
     raw_summary.sort(key=lambda x: x['shortage'], reverse=True)
 
