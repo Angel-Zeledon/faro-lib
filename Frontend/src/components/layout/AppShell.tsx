@@ -11,10 +11,13 @@ import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
+import { EntitlementsProvider } from '@/lib/entitlements'
+import ReadOnlyBanner from './ReadOnlyBanner'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
+      <EntitlementsProvider>
       <BusinessProfileProvider>
         <ToastProvider>
           <ConfirmProvider>
@@ -26,6 +29,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="main-content">
                     <TopBar />
                     <div className="page-content">
+                      <ReadOnlyBanner />
                       {children}
                     </div>
                   </div>
@@ -39,6 +43,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </ConfirmProvider>
         </ToastProvider>
       </BusinessProfileProvider>
+      </EntitlementsProvider>
     </AuthGuard>
   )
 }

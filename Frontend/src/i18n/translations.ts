@@ -1545,6 +1545,13 @@ export const translations = {
     'inventory.empty_filtered_cta':    'Limpiar filtros',
 
     'hoy.loading_label':               'Preparando tu resumen del día…',
+
+    // ── Entitlements (nav lock, read-only banner, upsell) ──
+    'entitlements.readonly_banner':    'Tu período de prueba terminó. Puedes seguir viendo tus datos, pero para crear pedidos o entrenar modelos necesitas activar un plan.',
+    'entitlements.upsell_title':       'Función no disponible en tu plan',
+    'entitlements.upsell_body':        'Esta función requiere un plan superior. Actualiza tu plan para desbloquearla.',
+    'entitlements.upsell_cta':         'Ver planes',
+    'entitlements.locked_tooltip':     'Disponible en un plan superior',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -3075,6 +3082,13 @@ export const translations = {
     'inventory.empty_filtered_cta':    'Clear filters',
 
     'hoy.loading_label':               'Preparing your daily summary…',
+
+    // ── Entitlements (nav lock, read-only banner, upsell) ──
+    'entitlements.readonly_banner':    'Your trial period has ended. You can still view your data, but you need to upgrade your plan to create orders or train models.',
+    'entitlements.upsell_title':       'Feature not available on your plan',
+    'entitlements.upsell_body':        'This feature requires a higher plan. Upgrade to unlock it.',
+    'entitlements.upsell_cta':         'View plans',
+    'entitlements.locked_tooltip':     'Available on a higher plan',
   },
 } as const
 
