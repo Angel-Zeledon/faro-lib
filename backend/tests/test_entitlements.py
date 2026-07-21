@@ -100,3 +100,38 @@ def test_create_tenant_starts_on_starter_trial(client):  # client fixture ensure
         assert timedelta(days=13) < delta < timedelta(days=15)
     finally:
         _db_execute("DELETE FROM tenants WHERE id = %s", (t["id"],))
+
+
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+
+def _mini_app():
+    from backend.auth.guards import CurrentUser
+    from backend.entitlements.guards import require_feature
+    app = FastAPI()
+
+    @app.get("/whatsapp-thing")
+    def thing(user: CurrentUser = Depends(require_feature(Feature.WHATSAPP_ALERTS))):
+        return {"ok": True}
+
+    return app
+
+
+def test_require_feature_blocks_starter(monkeypatch, make_tenant_user_headers):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    headers = make_tenant_user_headers(plan="starter")
+    r = TestClient(_mini_app()).get("/whatsapp-thing", headers=headers)
+    assert r.status_code == 403
+    body = r.json()["detail"]
+    assert body["code"] == "PLAN_UPGRADE_REQUIRED"
+    assert body["feature"] == "whatsapp_alerts"
+    assert body["current_plan"] == "starter"
+    assert body["required_plans"] == ["professional", "enterprise"]
+
+
+def test_require_feature_allows_professional(monkeypatch, make_tenant_user_headers):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    headers = make_tenant_user_headers(plan="professional")
+    r = TestClient(_mini_app()).get("/whatsapp-thing", headers=headers)
+    assert r.status_code == 200

@@ -15,6 +15,7 @@ Requires:
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 from uuid import uuid4
 
@@ -249,6 +250,65 @@ def viewer_headers(client, viewer_user):
     assert resp.status_code == 200
     token = resp.json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def make_tenant_user_headers(client):
+    """
+    Factory fixture for entitlements tests: creates a fresh tenant on a given
+    plan/trial state, plus a verified user with a given role, and returns
+    login headers for that user.
+
+    make_tenant_user_headers(plan="starter", role="analyst",
+                              expired_trial=False, return_tenant_id=False)
+
+    Every tenant created through the factory is tracked and CASCADE-deleted
+    on teardown, mirroring `test_tenant`.
+    """
+    from backend.tenants.service import create_tenant
+    from backend.db.connection import execute
+    from backend.users import service as user_svc
+
+    created_tenant_ids: list[str] = []
+
+    def _make(plan="starter", role="analyst", expired_trial=False, return_tenant_id=False):
+        tenant = create_tenant(f"pytest-{uuid4().hex[:10]}")
+        tenant_id = tenant["id"]
+        created_tenant_ids.append(tenant_id)
+
+        if expired_trial:
+            trial_ends_at = datetime.now(timezone.utc) - timedelta(days=1)
+        else:
+            trial_ends_at = None
+        execute(
+            "UPDATE tenants SET plan=%s, trial_ends_at=%s WHERE id=%s",
+            (plan, trial_ends_at, tenant_id),
+        )
+
+        email = f"{role}-{uuid4().hex[:8]}@example.com"
+        password = "TestPass123!"
+        user = user_svc.create_user(
+            tenant_id=tenant_id,
+            email=email,
+            password=password,
+            role=role,
+            full_name="Test User",
+        )
+        user_svc.mark_verified(tenant_id, user["id"])
+
+        resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        assert resp.status_code == 200, resp.text
+        token = resp.json()["data"]["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        if return_tenant_id:
+            return headers, tenant_id
+        return headers
+
+    yield _make
+
+    for tid in created_tenant_ids:
+        execute("DELETE FROM tenants WHERE id = %s", (tid,))
 
 
 # ── Resource helpers ──────────────────────────────────────────────────────────
