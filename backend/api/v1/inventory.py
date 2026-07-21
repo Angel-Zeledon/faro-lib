@@ -247,7 +247,9 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
 
 # ── Status endpoint — the core of the product ─────────────────────────────────
 
-def _strip_abc_xyz_unless_entitled(items: list[dict], tenant_id: str) -> list[dict]:
+def _strip_abc_xyz_unless_entitled(
+    items: list[dict], tenant_id: str, extra_keys: tuple[str, ...] = (),
+) -> list[dict]:
     """
     ABC-XYZ classification is a Professional+ feature (Feature.ABC_XYZ), but
     it rides along as extra keys on otherwise-core inventory items rather than
@@ -255,6 +257,11 @@ def _strip_abc_xyz_unless_entitled(items: list[dict], tenant_id: str) -> list[di
     signal/coverage/recommendation data — so we omit the classification keys
     (graceful degradation) instead of 403-ing the whole read. No-op in
     testing_mode, matching every other entitlement check.
+
+    ``extra_keys`` lets a call site drop additional fields that are DERIVED
+    from the classification (e.g. dead-stock's ``action_suggested``, which is
+    picked from ``item['abc']``) — otherwise a non-entitled tenant could
+    reverse-engineer the stripped classification from those derived fields.
     """
     if settings.testing_mode:
         return items
@@ -265,6 +272,8 @@ def _strip_abc_xyz_unless_entitled(items: list[dict], tenant_id: str) -> list[di
         item.pop("abc", None)
         item.pop("xyz", None)
         item.pop("abc_xyz", None)
+        for key in extra_keys:
+            item.pop(key, None)
     return items
 
 
@@ -1338,18 +1347,21 @@ def remove_sku_supplier(
 
 # ── Alert test-fire ───────────────────────────────────────────────────────────
 
-@router.post(
-    "/alerts/send-now", status_code=202,
-    dependencies=[Depends(require_feature(Feature.WHATSAPP_ALERTS))],
-)
+@router.post("/alerts/send-now", status_code=202)
 def send_alert_now(
     session_id: str = Query(...),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
-    Fire the daily inventory alert immediately for this tenant (email +
-    WhatsApp to opted-in admins). Lets the user verify their channels without
-    waiting for the 8:00 UTC scheduler run.
+    Fire the daily inventory alert immediately for this tenant (email to all
+    plans + WhatsApp to opted-in admins on Professional+). Lets the user
+    verify their channels without waiting for the 8:00 UTC scheduler run.
+
+    Email is core to every plan and always test-fired here. WhatsApp is a
+    Professional+ feature (Feature.WHATSAPP_ALERTS) — only that slice is
+    gated, mirroring the daily loop in backend/inventory/service.py's
+    run_daily_inventory_alerts(). The endpoint itself must never 403 a
+    Starter tenant out of its core email alert.
     """
     items = svc.get_inventory_status(user.tenant_id, session_id)
     critical = [i for i in items if i["signal"] == "PEDIR_YA"]
@@ -1359,7 +1371,6 @@ def send_alert_now(
 
     from backend.config import settings as _settings
     from backend.notifications.email import send_inventory_alert_email
-    from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
 
     inventory_url = f"{_settings.frontend_url}/inventory"
     emails = svc.get_tenant_admin_emails(user.tenant_id)
@@ -1372,11 +1383,15 @@ def send_alert_now(
         except Exception as e:
             log.warning("alert test email failed to=%s: %s", email, e)
 
-    numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
     wa_sent = 0
-    if numbers:
-        text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
-        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
+    tenant = get_tenant(user.tenant_id) or {}
+    if has_feature(tenant, Feature.WHATSAPP_ALERTS):
+        from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+
+        numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
+        if numbers:
+            text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+            wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
 
     return ok({
         "sent": True,
@@ -1568,7 +1583,9 @@ def dead_stock(
             })
 
     dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
-    dead_items = _strip_abc_xyz_unless_entitled(dead_items, user.tenant_id)
+    dead_items = _strip_abc_xyz_unless_entitled(
+        dead_items, user.tenant_id, extra_keys=("action_suggested",)
+    )
 
     total_capital = sum(d['capital_trapped'] for d in dead_items)
     total_holding = sum(d['holding_cost_monthly'] for d in dead_items)

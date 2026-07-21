@@ -417,3 +417,146 @@ def test_router_feature_gate_allows_enterprise(
     headers = make_tenant_user_headers(plan="enterprise")
     r = TestClient(app).get("/api/v1/api-keys", headers=headers)
     assert r.status_code != 403
+
+
+def test_dead_stock_hides_abc_and_derived_action_for_starter(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """
+    Regression: GET /dead-stock computed `action_suggested` from
+    item['abc'] BEFORE _strip_abc_xyz_unless_entitled ran, and the strip
+    only removed the raw abc/xyz/abc_xyz keys — leaving action_suggested as
+    a way for a Starter tenant (no Feature.ABC_XYZ) to reverse-engineer the
+    gated classification ('Devolver al proveedor' <=> abc == 'C', etc).
+    The fix drops action_suggested too whenever the raw keys are stripped.
+
+    Real dead-stock classification depends on stock-history-derived demand
+    data that's impractical to seed deterministically through the API, so
+    this monkeypatches the two service calls the handler makes
+    (get_inventory_status / get_stock_history) to produce exactly one
+    dead-stock item, while still exercising the real endpoint handler
+    end-to-end — including the actual strip call site.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    def _fake_item():
+        return {
+            "sku": "DEAD-1", "has_stock": True, "current_stock": 50,
+            "daily_demand": 5, "unit_cost": 2.0, "abc": "C", "xyz": "Z",
+            "signal": "OK", "display_name": "Dead Item", "supplier": "Acme",
+        }
+
+    # first_stock == last_stock == 50 -> depletion 0; expected = 5 * 2 = 10;
+    # 0 < 10 * 0.20 -> classified as dead stock.
+    history = [{"stock": 50}, {"stock": 50}]
+
+    monkeypatch.setattr(
+        "backend.inventory.service.get_inventory_status",
+        lambda tenant_id, session_id: [_fake_item()],
+    )
+    monkeypatch.setattr(
+        "backend.inventory.service.get_stock_history",
+        lambda tenant_id, sku, days=30: history,
+    )
+
+    starter_headers = make_tenant_user_headers(plan="starter", role="analyst")
+    r = client.get(
+        "/api/v1/inventory/dead-stock",
+        params={"session_id": "sess_x"},
+        headers=starter_headers,
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["data"]["items"]
+    assert len(items) == 1
+    for key in ("abc", "xyz", "abc_xyz", "action_suggested"):
+        assert key not in items[0], f"Starter dead-stock response leaked {key!r}"
+
+    # Proves the gate actually toggles rather than the field being always
+    # absent: an entitled plan gets the classification and derived action.
+    pro_headers = make_tenant_user_headers(plan="professional", role="analyst")
+    r2 = client.get(
+        "/api/v1/inventory/dead-stock",
+        params={"session_id": "sess_x"},
+        headers=pro_headers,
+    )
+    assert r2.status_code == 200, r2.text
+    items2 = r2.json()["data"]["items"]
+    assert len(items2) == 1
+    assert items2[0]["abc"] == "C"
+    assert items2[0]["action_suggested"] == "Devolver al proveedor"
+
+
+def test_send_now_allows_starter_without_whatsapp(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """
+    Regression: POST /alerts/send-now used to 403 the ENTIRE endpoint for
+    Starter tenants via an endpoint-level require_feature(WHATSAPP_ALERTS)
+    dependency, even though the handler also test-fires email — a core,
+    all-plans feature (Feature.EMAIL_ALERTS is in every plan). The fix
+    removes the endpoint-level gate and instead wraps only the
+    WhatsApp-sending block in a has_feature check, mirroring
+    run_daily_inventory_alerts() in backend/inventory/service.py.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import execute
+
+    critical_item = [{
+        "sku": "SKU-1", "signal": "PEDIR_YA", "display_name": "X",
+        "coverage_days": 1.0, "recommended_qty": 10,
+    }]
+    monkeypatch.setattr(
+        "backend.inventory.service.get_inventory_status",
+        lambda tenant_id, session_id, *a, **kw: critical_item,
+    )
+
+    sent_calls = []
+
+    def _fake_send_whatsapp(number, text):
+        sent_calls.append((number, text))
+        return True
+
+    monkeypatch.setattr(
+        "backend.notifications.whatsapp.send_whatsapp", _fake_send_whatsapp
+    )
+
+    # Starter tenant, admin has a WhatsApp number on file — must still be
+    # skipped purely because the plan lacks Feature.WHATSAPP_ALERTS, and the
+    # endpoint itself must NOT 403.
+    starter_headers, starter_tid = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    execute(
+        "UPDATE users SET whatsapp_number=%s WHERE tenant_id=%s",
+        ("+573001112222", starter_tid),
+    )
+    r = client.post(
+        "/api/v1/inventory/alerts/send-now",
+        params={"session_id": "sess_x"},
+        headers=starter_headers,
+    )
+    assert r.status_code == 202, r.text
+    data = r.json()["data"]
+    assert data["sent"] is True
+    assert data["whatsapp_sent"] == 0
+    assert sent_calls == []
+
+    # Professional tenant, same setup — WhatsApp IS attempted.
+    pro_headers, pro_tid = make_tenant_user_headers(
+        plan="professional", role="admin", return_tenant_id=True
+    )
+    execute(
+        "UPDATE users SET whatsapp_number=%s WHERE tenant_id=%s",
+        ("+573003334444", pro_tid),
+    )
+    r2 = client.post(
+        "/api/v1/inventory/alerts/send-now",
+        params={"session_id": "sess_x"},
+        headers=pro_headers,
+    )
+    assert r2.status_code == 202, r2.text
+    data2 = r2.json()["data"]
+    assert data2["sent"] is True
+    assert data2["whatsapp_sent"] == 1
+    assert len(sent_calls) == 1
+    assert sent_calls[0][0] == "+573003334444"
