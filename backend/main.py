@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.v1 import auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo
+from backend.api.v1 import auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
 from backend.middleware.request_logger import RequestLoggerMiddleware
@@ -179,6 +179,7 @@ app.include_router(schedule.router,        prefix=_PREFIX)
 app.include_router(inventory_router.router, prefix=_PREFIX)
 app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)
+app.include_router(entitlements.router,    prefix=_PREFIX)
 app.include_router(ws_router)
 
 

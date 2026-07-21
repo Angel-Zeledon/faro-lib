@@ -1,11 +1,12 @@
 'use client'
 import Link from 'next/link'
+import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Database, TrendingUp, Package,
   BrainCircuit, Settings, LogOut, User, Users,
   ChevronLeft, ChevronRight, FlaskConical,
-  ShoppingCart, Truck, Upload, Zap, ClipboardList,
+  ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -13,6 +14,8 @@ import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useEntitlements } from '@/lib/entitlements'
+import UpsellModal from './UpsellModal'
 
 // ── Nav definition ────────────────────────────────────────────────────────────
 interface NavItem {
@@ -21,6 +24,9 @@ interface NavItem {
   Icon:       React.ElementType
   group:      string
   adminOnly?: boolean
+  /** Feature enum value gating this route (see backend `Feature`). Items
+   *  without this always render as a normal link. */
+  feature?:   string
 }
 
 const NAV: NavItem[] = [
@@ -35,7 +41,7 @@ const NAV: NavItem[] = [
   { href: '/inventory/suppliers', labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
 
   { href: '/inventory/roi',       labelKey: 'nav.roi',         Icon: TrendingUp,      group: 'analysis' },
-  { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis' },
+  { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
 
   { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
   { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
@@ -50,6 +56,8 @@ export default function Sidebar() {
   const { collapsed, toggle } = useSidebar()
   const { advancedMode, setAdvancedMode } = useBusinessProfile()
   const { t, lang, setLang } = useLanguage()
+  const { has } = useEntitlements()
+  const [lockedFeature, setLockedFeature] = useState<string | null>(null)
 
   function handleLogout() {
     authLogout().catch(() => {})
@@ -63,6 +71,7 @@ export default function Sidebar() {
   })
 
   return (
+    <>
     <aside style={{
       width: collapsed ? 48 : 220, minWidth: collapsed ? 48 : 220,
       background: 'var(--surface)', borderRight: '1px solid var(--border)',
@@ -110,9 +119,42 @@ export default function Sidebar() {
                   {t(`group.${group}`)}
                 </div>
               )}
-              {items.map(({ href, labelKey, Icon }) => {
+              {items.map(({ href, labelKey, Icon, feature }) => {
                 const active = path === href || path.startsWith(`${href}/`)
                 const label = t(labelKey)
+                const locked = !!feature && !has(feature)
+
+                if (locked) {
+                  return (
+                    <div
+                      key={href}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setLockedFeature(feature!)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setLockedFeature(feature!) }}
+                      title={collapsed ? label : t('entitlements.locked_tooltip')}
+                      className="nav-item nav-item-idle"
+                      style={{
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: collapsed ? 'center' : 'flex-start',
+                        gap: collapsed ? 0 : 10,
+                        padding: collapsed ? '8px 0' : '8px 10px',
+                        borderRadius: 7, marginBottom: 1,
+                        color: 'var(--dim)', fontWeight: 400, fontSize: 13,
+                        transition: 'all 0.15s', cursor: 'pointer',
+                      }}
+                    >
+                      <Icon size={15} strokeWidth={1.8} />
+                      {!collapsed && (
+                        <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          {label}
+                          <Lock size={11} style={{ flexShrink: 0, marginLeft: 6 }} />
+                        </span>
+                      )}
+                    </div>
+                  )
+                }
+
                 return (
                   <Link key={href} href={href} style={{ textDecoration: 'none' }} title={collapsed ? label : undefined}>
                     <div
@@ -261,5 +303,9 @@ export default function Sidebar() {
         )}
       </div>
     </aside>
+    {lockedFeature && (
+      <UpsellModal feature={lockedFeature} onClose={() => setLockedFeature(null)} />
+    )}
+    </>
   )
 }

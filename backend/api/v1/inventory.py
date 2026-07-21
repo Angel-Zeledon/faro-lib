@@ -21,6 +21,10 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.config import settings
+from backend.entitlements.guards import require_feature
+from backend.entitlements.plans import Feature
+from backend.entitlements.service import has_feature
+from backend.tenants.service import get_tenant
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
@@ -92,6 +96,16 @@ def upsert_stock(
     body: StockUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    from backend.entitlements.service import enforce_limit
+
+    warehouse = body.warehouse or "principal"
+    if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse):
+        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
+    # A new warehouse name would otherwise be auto-created for free by
+    # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations entirely.
+    # Enforce BEFORE the write so a blocked request never creates the row.
+    if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
+        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
     row = svc.upsert_stock(user.tenant_id, sku, body.model_dump(exclude_none=True))
     return ok(row)
 
@@ -182,6 +196,21 @@ async def bulk_import(
     if not rows:
         raise HTTPException(status_code=422, detail="No valid rows found in CSV. Ensure 'sku' column exists.")
 
+    existing_keys = svc.list_stock_keys(user.tenant_id)
+    new_keys = {(r["sku"], r.get("warehouse") or "principal") for r in rows} - existing_keys
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id), adding=len(new_keys))
+
+    # Same bypass risk as PUT /stock: a CSV with N distinct new warehouse
+    # names would otherwise create all N for free via
+    # svc.upsert_stock -> _ensure_warehouse inside bulk_upsert's loop.
+    # Compute the DISTINCT new names up front and enforce max_locations
+    # against (current count + new names) BEFORE bulk_upsert writes anything,
+    # so a blocked import never partially creates stock/warehouse rows.
+    existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
+    new_wh_names = {r.get("warehouse") or "principal" for r in rows} - existing_wh_names
+    enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id), adding=len(new_wh_names))
+
     # bulk_upsert does one synchronous (blocking) DB round-trip per row. Without
     # offloading to a thread, a large CSV freezes the asyncio event loop — and
     # with it the entire backend, for every tenant — for the whole duration of
@@ -218,6 +247,36 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
 
 # ── Status endpoint — the core of the product ─────────────────────────────────
 
+def _strip_abc_xyz_unless_entitled(
+    items: list[dict], tenant_id: str, extra_keys: tuple[str, ...] = (),
+) -> list[dict]:
+    """
+    ABC-XYZ classification is a Professional+ feature (Feature.ABC_XYZ), but
+    it rides along as extra keys on otherwise-core inventory items rather than
+    living behind its own endpoint. Starter tenants must still get the core
+    signal/coverage/recommendation data — so we omit the classification keys
+    (graceful degradation) instead of 403-ing the whole read. No-op in
+    testing_mode, matching every other entitlement check.
+
+    ``extra_keys`` lets a call site drop additional fields that are DERIVED
+    from the classification (e.g. dead-stock's ``action_suggested``, which is
+    picked from ``item['abc']``) — otherwise a non-entitled tenant could
+    reverse-engineer the stripped classification from those derived fields.
+    """
+    if settings.testing_mode:
+        return items
+    tenant = get_tenant(tenant_id) or {}
+    if has_feature(tenant, Feature.ABC_XYZ):
+        return items
+    for item in items:
+        item.pop("abc", None)
+        item.pop("xyz", None)
+        item.pop("abc_xyz", None)
+        for key in extra_keys:
+            item.pop(key, None)
+    return items
+
+
 @router.get("/status")
 def inventory_status(
     session_id: str = Query(..., description="Completed forecast session to base recommendations on"),
@@ -234,6 +293,7 @@ def inventory_status(
     - inventory value
     """
     items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
+    items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
 
     if signal:
         signal_up = signal.upper()
@@ -425,7 +485,7 @@ class SimulateEventRequest(BaseModel):
     name:       Optional[str]   = None
 
 
-@router.post("/events/simulate")
+@router.post("/events/simulate", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_current_user)):
     """
     "¿Qué pasa si…?" — project a promo/season's impact per SKU: extra demand,
@@ -464,7 +524,7 @@ class EventMultiplierUpsert(BaseModel):
     multiplier:  float = Field(ge=0.1, le=10.0)
 
 
-@router.get("/events/{event_id}/multipliers")
+@router.get("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
     """Per-SKU or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
@@ -472,7 +532,7 @@ def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_curren
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
 
 
-@router.put("/events/{event_id}/multipliers")
+@router.put("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def upsert_event_multiplier(
     event_id: str,
     body: EventMultiplierUpsert,
@@ -493,7 +553,10 @@ def upsert_event_multiplier(
     return ok(row)
 
 
-@router.delete("/events/{event_id}/multipliers/{override_id}", status_code=204)
+@router.delete(
+    "/events/{event_id}/multipliers/{override_id}", status_code=204,
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def remove_event_multiplier(
     event_id: str,
     override_id: str,
@@ -504,12 +567,12 @@ def remove_event_multiplier(
         raise HTTPException(status_code=404, detail="Override no encontrado")
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def list_events(user: CurrentUser = Depends(get_current_user)):
     return ok(svc.list_events(user.tenant_id))
 
 
-@router.get("/events/upcoming")
+@router.get("/events/upcoming", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def upcoming_events(
     days: int = Query(default=60, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -517,13 +580,16 @@ def upcoming_events(
     return ok(svc.get_upcoming_events(user.tenant_id, days_ahead=days))
 
 
-@router.post("/events", status_code=201)
+@router.post(
+    "/events", status_code=201,
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def create_event(body: EventCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     ev = svc.create_event(user.tenant_id, body.model_dump())
     return ok(ev)
 
 
-@router.patch("/events/{event_id}")
+@router.patch("/events/{event_id}", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def patch_event(
     event_id: str,
     body: EventPatch,
@@ -545,7 +611,10 @@ def patch_event(
     return ok(ev)
 
 
-@router.delete("/events/{event_id}", status_code=204)
+@router.delete(
+    "/events/{event_id}", status_code=204,
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     svc.delete_event(user.tenant_id, event_id)
 
@@ -561,7 +630,7 @@ class CatalogToggleRequest(BaseModel):
     active: bool
 
 
-@router.get("/events/catalog")
+@router.get("/events/catalog", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def get_event_catalog(
     country: str = Query(default="CR", max_length=4),
     user: CurrentUser = Depends(get_current_user),
@@ -597,7 +666,7 @@ def get_event_catalog(
     })
 
 
-@router.post("/events/catalog/seed")
+@router.post("/events/catalog/seed", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def seed_event_catalog(
     body: CalendarSeedRequest,
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -610,7 +679,10 @@ def seed_event_catalog(
     return ok(result)
 
 
-@router.patch("/events/catalog/{catalog_key}")
+@router.patch(
+    "/events/catalog/{catalog_key}",
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def toggle_catalog_entry(
     catalog_key: str,
     body: CatalogToggleRequest,
@@ -1227,13 +1299,19 @@ class WarehouseCreate(BaseModel):
     is_default: bool = False
 
 
-@router.get("/warehouses")
+@router.get("/warehouses", dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))])
 def list_warehouses(user: CurrentUser = Depends(get_current_user)):
     return ok(wh_svc.list_warehouses(user.tenant_id))
 
 
-@router.post("/warehouses", status_code=201)
+@router.post(
+    "/warehouses", status_code=201,
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
+    if not wh_svc.get_warehouse_by_name(user.tenant_id, body.name):
+        from backend.entitlements.service import enforce_limit
+        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
     warehouse = wh_svc.create_warehouse(user.tenant_id, body.name, is_default=body.is_default)
     return ok(warehouse)
 
@@ -1275,9 +1353,15 @@ def send_alert_now(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
-    Fire the daily inventory alert immediately for this tenant (email +
-    WhatsApp to opted-in admins). Lets the user verify their channels without
-    waiting for the 8:00 UTC scheduler run.
+    Fire the daily inventory alert immediately for this tenant (email to all
+    plans + WhatsApp to opted-in admins on Professional+). Lets the user
+    verify their channels without waiting for the 8:00 UTC scheduler run.
+
+    Email is core to every plan and always test-fired here. WhatsApp is a
+    Professional+ feature (Feature.WHATSAPP_ALERTS) — only that slice is
+    gated, mirroring the daily loop in backend/inventory/service.py's
+    run_daily_inventory_alerts(). The endpoint itself must never 403 a
+    Starter tenant out of its core email alert.
     """
     items = svc.get_inventory_status(user.tenant_id, session_id)
     critical = [i for i in items if i["signal"] == "PEDIR_YA"]
@@ -1287,7 +1371,6 @@ def send_alert_now(
 
     from backend.config import settings as _settings
     from backend.notifications.email import send_inventory_alert_email
-    from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
 
     inventory_url = f"{_settings.frontend_url}/inventory"
     emails = svc.get_tenant_admin_emails(user.tenant_id)
@@ -1300,11 +1383,15 @@ def send_alert_now(
         except Exception as e:
             log.warning("alert test email failed to=%s: %s", email, e)
 
-    numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
     wa_sent = 0
-    if numbers:
-        text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
-        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
+    tenant = get_tenant(user.tenant_id) or {}
+    if has_feature(tenant, Feature.WHATSAPP_ALERTS):
+        from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+
+        numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
+        if numbers:
+            text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+            wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
 
     return ok({
         "sent": True,
@@ -1366,13 +1453,16 @@ class BomItemUpsert(BaseModel):
     notes:    Optional[str] = None
 
 
-@router.get("/bom/{parent_sku}")
+@router.get("/bom/{parent_sku}", dependencies=[Depends(require_feature(Feature.BOM))])
 def get_bom(parent_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns BOM (Bill of Materials) for a finished good."""
     return ok(bom_svc.list_bom(user.tenant_id, parent_sku))
 
 
-@router.put("/bom/{parent_sku}/{child_sku}", status_code=200)
+@router.put(
+    "/bom/{parent_sku}/{child_sku}", status_code=200,
+    dependencies=[Depends(require_feature(Feature.BOM))],
+)
 def upsert_bom_item(
     parent_sku: str,
     child_sku:  str,
@@ -1388,7 +1478,10 @@ def upsert_bom_item(
         raise HTTPException(status_code=422, detail=str(e))
 
 
-@router.delete("/bom/{parent_sku}/{child_sku}", status_code=204)
+@router.delete(
+    "/bom/{parent_sku}/{child_sku}", status_code=204,
+    dependencies=[Depends(require_feature(Feature.BOM))],
+)
 def delete_bom_item(
     parent_sku: str,
     child_sku:  str,
@@ -1397,7 +1490,7 @@ def delete_bom_item(
     bom_svc.delete_bom_item(user.tenant_id, parent_sku, child_sku)
 
 
-@router.get("/bom/{child_sku}/used-in")
+@router.get("/bom/{child_sku}/used-in", dependencies=[Depends(require_feature(Feature.BOM))])
 def where_used(child_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns all finished goods that use this component."""
     return ok(bom_svc.get_parents_using(user.tenant_id, child_sku))
@@ -1490,6 +1583,9 @@ def dead_stock(
             })
 
     dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
+    dead_items = _strip_abc_xyz_unless_entitled(
+        dead_items, user.tenant_id, extra_keys=("action_suggested",)
+    )
 
     total_capital = sum(d['capital_trapped'] for d in dead_items)
     total_holding = sum(d['holding_cost_monthly'] for d in dead_items)
@@ -1552,7 +1648,7 @@ def export_po(
 
 # ── MILP purchasing/transfers optimizer (MW-3) ───────────────────────────────
 
-@router.get("/optimize")
+@router.get("/optimize", dependencies=[Depends(require_feature(Feature.MILP_OPTIMIZER))])
 def optimize_inventory(
     session_id:   str = Query(...),
     # 30 (the max allowed) rather than a shorter default: the optimizer's own

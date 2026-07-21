@@ -32,10 +32,6 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = 2
     worker_poll_interval_seconds: float = 2.0
 
-    # Quotas
-    default_max_sessions: int = 20
-    default_max_skus: int = 1000
-
     # Upload
     max_upload_size_mb: int = 200
 

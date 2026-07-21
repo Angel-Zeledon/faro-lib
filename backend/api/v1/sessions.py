@@ -25,8 +25,8 @@ def create_session(
     body: SessionCreate,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    # if not check_session_quota(user.tenant_id):
-    #     raise HTTPException(status_code=429, detail="Session quota exceeded for your plan")
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_sessions", session_svc.count_sessions(user.tenant_id))
     session = session_svc.create_session(
         user.tenant_id, user.user_id, body.name, body.description, body.tags
     )

@@ -103,6 +103,11 @@ def update_last_login(tenant_id: str, user_id: str) -> None:
     )
 
 
+def count_users(tenant_id: str) -> int:
+    row = query_one("SELECT COUNT(*) AS c FROM users WHERE tenant_id = %s", (tenant_id,))
+    return row["c"] if row else 0
+
+
 def list_users(tenant_id: str) -> list[dict]:
     rows = query(
         "SELECT * FROM users WHERE tenant_id = %s ORDER BY created_at",

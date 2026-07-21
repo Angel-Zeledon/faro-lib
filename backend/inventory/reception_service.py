@@ -136,6 +136,49 @@ def receive_po(
         for i in ordered:
             received_by_item.setdefault(i["id"], 0.0)
 
+    # Pre-check max_locations BEFORE any write. A PO line whose warehouse has
+    # no existing inventory_stock row yet will, further down, create one via
+    # inv_svc.upsert_stock -> _ensure_warehouse — the same auto-create bypass
+    # that exists on the direct stock-write endpoints. Computing the distinct
+    # NEW warehouse names up front and enforcing here (before step 1 touches
+    # inventory_po_items) keeps this reception all-or-nothing: a blocked
+    # reception must not leave received_qty partially accumulated.
+    from backend.entitlements.service import enforce_limit
+    from backend.inventory import warehouse_service as wh_svc
+    existing_wh_names = wh_svc.list_warehouse_names(tenant_id)
+    new_wh_names = {
+        (i.get("warehouse") or "principal")
+        for i in ordered
+        if received_by_item[i["id"]] > 0
+    } - existing_wh_names
+    if new_wh_names:
+        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id), adding=len(new_wh_names))
+
+    # Pre-check max_skus BEFORE any write, mirroring the max_locations pre-check
+    # above. A reception line whose (sku, warehouse) pair has no existing
+    # inventory_stock row is a NEW row that step 2 below will create via
+    # inv_svc.upsert_stock -> the same auto-create chokepoint that PUT/PATCH
+    # /stock and bulk import go through. Computing the distinct NEW (sku,
+    # warehouse) pairs up front and enforcing here (before step 1 touches
+    # inventory_po_items) keeps this reception all-or-nothing: a blocked
+    # reception must not leave received_qty partially accumulated. Uses the
+    # same list_stock_keys/count_stock helpers the dataset-sync/bulk pre-loop
+    # checks use, and the same warehouse-default handling ('principal') as
+    # the rest of this function and upsert_stock, so "new pair" detection here
+    # matches exactly what upsert_stock would actually insert.
+    from backend.inventory import service as inv_svc
+    existing_stock_keys = inv_svc.list_stock_keys(tenant_id)
+    new_sku_warehouse_pairs = {
+        (i["sku"], i.get("warehouse") or "principal")
+        for i in ordered
+        if received_by_item[i["id"]] > 0
+    } - existing_stock_keys
+    if new_sku_warehouse_pairs:
+        enforce_limit(
+            tenant_id, "max_skus", inv_svc.count_stock(tenant_id),
+            adding=len(new_sku_warehouse_pairs),
+        )
+
     # 1. Per-line: accumulate received_qty (partial receptions add up)
     for i in ordered:
         qty = received_by_item[i["id"]]

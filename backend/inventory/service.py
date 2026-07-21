@@ -40,6 +40,24 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     if not safe:
         raise ValueError("No valid fields to update")
 
+    # CHOKEPOINT: max_skus and max_locations must be enforced here, not
+    # per-caller. Every write path (PUT /stock, PATCH /stock, POST /bulk,
+    # receive_po, dataset sync, demo/seed scripts) funnels through this
+    # function before it can create a new (tenant_id, sku, warehouse) row and
+    # auto-create a warehouse via _ensure_warehouse below. Checking per-caller
+    # was whack-a-mole — PATCH /stock/{sku} was missed for BOTH limits because
+    # it 404-checks get_stock() without a warehouse filter, so it never knew
+    # the target (sku, warehouse) pair was new. This runs BEFORE any
+    # INSERT/UPDATE for this row, so a blocked call leaves the DB completely
+    # unchanged (no partial write).
+    from backend.entitlements.service import enforce_limit
+    from backend.inventory import warehouse_service as wh_svc
+    is_new_row = not get_stock(tenant_id, sku, warehouse=safe["warehouse"])
+    if is_new_row:
+        enforce_limit(tenant_id, "max_skus", count_stock(tenant_id))
+    if not wh_svc.get_warehouse_by_name(tenant_id, safe["warehouse"]):
+        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id))
+
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
     phs    = ", ".join(["%s"] * len(safe))
@@ -80,6 +98,22 @@ def _ensure_warehouse(tenant_id: str, name: str) -> None:
         )
     except Exception as e:
         log.warning("_ensure_warehouse: failed to upsert warehouse=%s tenant=%s err=%s", name, tenant_id, e)
+
+
+def count_stock(tenant_id: str) -> int:
+    row = query_one("SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id = %s", (tenant_id,))
+    return row["c"] if row else 0
+
+
+def list_stock_keys(tenant_id: str) -> set:
+    """(sku, warehouse) pairs already present for this tenant — the same
+    conflict target `upsert_stock` writes to, used to tell how many rows a
+    bulk import would actually ADD (vs. update in place)."""
+    rows = query(
+        "SELECT sku, warehouse FROM inventory_stock WHERE tenant_id = %s",
+        (tenant_id,),
+    )
+    return {(r["sku"], r["warehouse"]) for r in rows}
 
 
 def get_stock(tenant_id: str, sku: str, warehouse: Optional[str] = None) -> Optional[dict]:
@@ -125,6 +159,7 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
     to whatever was entered manually in a previous session.
     """
     import pandas as pd
+    from fastapi import HTTPException
 
     if df is None or df.empty:
         return 0
@@ -140,7 +175,10 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
 
     groups = work.groupby(group_col) if group_col and group_col in work.columns else [("__all__", work)]
 
-    count = 0
+    # Resolve the per-SKU payload up front (instead of inside the write loop)
+    # so the max_skus check below can see the FULL set of rows this sync would
+    # add before writing anything.
+    entries: list[tuple[str, dict]] = []
     for sku, g in groups:
         last = g.iloc[-1]
         data: dict = {}
@@ -156,9 +194,36 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
                 data[col] = str(val)
         if not data:
             continue
+        entries.append((str(sku), data))
+
+    if not entries:
+        return 0
+
+    # CHOKEPOINT (pre-loop): this is the PRIMARY way SKUs enter Faro (Quick
+    # Start upload), yet unlike PUT /stock and POST /bulk it had no max_skus
+    # check at all — a Starter tenant could seed thousands of SKUs in one
+    # upload. Computed BEFORE the loop, atomically over the WHOLE dataset, so
+    # a blocked sync leaves inventory_stock completely unchanged rather than
+    # inserting rows until the per-row upsert_stock chokepoint finally objects
+    # partway through (mirrors POST /bulk's pre-loop max_locations/max_skus
+    # checks). Dataset rows never carry an explicit warehouse (not in
+    # _DATASET_STOCK_COLS), so every new key lands in "principal".
+    existing_keys = list_stock_keys(tenant_id)
+    new_keys = {(sku, "principal") for sku, _ in entries} - existing_keys
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(tenant_id, "max_skus", count_stock(tenant_id), adding=len(new_keys))
+
+    count = 0
+    for sku, data in entries:
         try:
-            upsert_stock(tenant_id, str(sku), data)
+            upsert_stock(tenant_id, sku, data)
             count += 1
+        except HTTPException:
+            # A plan-limit 403 from the per-row chokepoint must propagate, not
+            # be swallowed as a skipped row — see the bare-except note this
+            # replaces. The pre-loop check above should make this unreachable
+            # in practice; this is defense in depth for future callers.
+            raise
         except Exception as e:
             log.warning("sync_stock_from_dataset: skipped sku=%s err=%s", sku, e)
     return count
@@ -166,6 +231,8 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
 
 def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
     """Upsert multiple SKUs from a CSV/bulk import. Returns count saved."""
+    from fastapi import HTTPException
+
     count = 0
     for row in rows:
         sku = row.get("sku", "").strip()
@@ -174,6 +241,12 @@ def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
         try:
             upsert_stock(tenant_id, sku, {k: v for k, v in row.items() if k != "sku"})
             count += 1
+        except HTTPException:
+            # A plan-limit 403 from the per-row chokepoint must propagate, not
+            # be swallowed as a skipped row. The caller (POST /bulk) already
+            # runs a pre-loop max_skus/max_locations check, so this should be
+            # unreachable in practice — defense in depth for future callers.
+            raise
         except Exception as e:
             log.warning("bulk_upsert: skipped sku=%s err=%s", sku, e)
     return count
@@ -1730,12 +1803,21 @@ def run_daily_inventory_alerts() -> None:
 
             # WhatsApp channel — highest open-rate in LatAm; opt-in per user
             # via users.whatsapp_number. No-op when Twilio isn't configured.
-            from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
-            numbers = get_tenant_admin_whatsapps(tid)
-            if numbers:
-                text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
-                for number in numbers:
-                    send_whatsapp(number, text)
+            # Also gated by plan: WHATSAPP_ALERTS is a Professional+ feature.
+            # `tenant` here only carries tenant_id/tenant_name/last_session_at
+            # (from get_tenants_with_active_sessions), not plan/trial_ends_at,
+            # so the full tenant row must be fetched to check entitlement.
+            from backend.entitlements.service import has_feature
+            from backend.entitlements.plans import Feature
+            from backend.tenants.service import get_tenant
+            full_tenant = get_tenant(tid) or {}
+            if has_feature(full_tenant, Feature.WHATSAPP_ALERTS):
+                from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+                numbers = get_tenant_admin_whatsapps(tid)
+                if numbers:
+                    text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+                    for number in numbers:
+                        send_whatsapp(number, text)
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)

@@ -78,6 +78,38 @@ def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
                 detail=f"Too many active training jobs ({active}). Wait for one to finish.",
             )
 
+    # Plan limit: quickstart creates a real session same as POST /sessions,
+    # so it must be gated by the same max_sessions cap — otherwise a tenant
+    # could walk past its plan limit by repeatedly clicking "try the demo"
+    # instead of creating sessions directly.
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_sessions", session_svc.count_sessions(user.tenant_id))
+
+    # Plan limit: quickstart also creates real inventory_stock rows for the
+    # fixed _DEMO_STOCK set (step 3 below), all in the "principal" warehouse.
+    # Without this pre-check, a tenant near its max_skus/max_locations cap
+    # would sail through the dataset/session/config writes above and only get
+    # blocked MID-LOOP by upsert_stock's own per-row chokepoint — leaving an
+    # orphaned session (MODELS_CONFIGURED) + demo dataset behind, plus 1..4
+    # partially-created stock rows and no training job (the same "committed
+    # prefix, aborted suffix" bug the receive_po fix addressed). Computed here,
+    # before ANY write, mirrors the pre-loop pattern already used by
+    # sync_stock_from_dataset / bulk_upsert / receive_po.
+    from backend.inventory import warehouse_service as wh_svc
+    existing_keys = inv_svc.list_stock_keys(user.tenant_id)
+    new_pairs = {(sku, "principal") for sku in _DEMO_STOCK} - existing_keys
+    if new_pairs:
+        enforce_limit(
+            user.tenant_id, "max_skus", inv_svc.count_stock(user.tenant_id),
+            adding=len(new_pairs),
+        )
+        new_warehouses = {"principal"} - wh_svc.list_warehouse_names(user.tenant_id)
+        if new_warehouses:
+            enforce_limit(
+                user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id),
+                adding=len(new_warehouses),
+            )
+
     # 1. Dataset: copy the bundled CSV into the tenant's storage + DB row
     dataset_id = generate_id("ds")
     dst_dir = paths.dataset_dir(user.tenant_id, dataset_id)

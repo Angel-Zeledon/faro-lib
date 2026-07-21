@@ -6,10 +6,15 @@ from pydantic import BaseModel, field_validator
 
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.db.connection import execute, query_one
+from backend.entitlements.guards import require_feature
+from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
-router = APIRouter(tags=["schedule"])
+router = APIRouter(
+    tags=["schedule"],
+    dependencies=[Depends(require_feature(Feature.SCHEDULED_REPORTS))],
+)
 log = logging.getLogger(__name__)
 
 CRON_PRESETS = {

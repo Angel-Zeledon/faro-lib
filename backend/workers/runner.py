@@ -11,6 +11,8 @@ import random
 import time as _time
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
+
 from backend.config import settings
 from backend.db import session_store
 from backend.datasets.service import get_dataset
@@ -541,6 +543,14 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 )
                 if n_synced:
                     log.info(f"Synced inventory stock for {n_synced} SKU(s) from uploaded dataset")
+            except HTTPException:
+                # A plan-limit breach (e.g. max_skus) must fail the job with a
+                # clear reason — swallowing it here as "non-fatal" like a real
+                # sync bug would report the job as a silent success while
+                # quietly capping how many SKUs got synced. Falls through to
+                # the outer except below, which calls mark_failed with this
+                # exception's message and marks the session FAILED.
+                raise
             except Exception as e:
                 log.warning(f"Inventory stock sync failed (non-fatal): {e}")
 
