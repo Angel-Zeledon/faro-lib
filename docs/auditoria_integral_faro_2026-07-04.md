@@ -11,13 +11,13 @@
 
 **Problema que resuelve:** quiebres de stock y sobrestock en distribuidoras/comercializadoras que hoy deciden compras "a ojo" en Excel.
 
-**Usuario objetivo:** jefe de compras o dueño de distribuidora LatAm (ancla Colombia), 50–2.000 SKUs, sin data scientist. **Modelo de negocio:** suscripción ($99/$299/$799 por tier según SKUs/usuarios/ubicaciones).
+**Usuario objetivo:** jefe de compras o dueño de distribuidora LatAm (ancla Costa Rica), 50–2.000 SKUs, sin data scientist. **Modelo de negocio:** suscripción ($99/$299/$799 por tier según SKUs/usuarios/ubicaciones).
 
 **Propuesta de valor real:** no vende "modelos ML", vende *"sabe lo que necesitas antes de que te falte"* — la página `/hoy` (briefing matutino + carrito de acciones aprobar/modificar/rechazar → PO) es el producto; todo lo demás es soporte.
 
 **Funcionalidades identificadas:** auth multi-tenant con roles y verificación de email; wizard de forecast de 8 pasos; inventario completo (stock, bulk import, eventos, proveedores, BOM, requerimientos de producción, dead stock, historial de PO, ROI); SKU Intelligence con gráficos histórico+forecast+intervalos de confianza; analista AI con RAG sobre resultados y documentos (Pinecone + LLM local Ollama); reportes PDF/Excel; API keys, webhooks, scheduling; monitoreo de drift; i18n ES/EN.
 
-**Faltantes importantes:** alertas proactivas (email/WhatsApp), integraciones con facturación LatAm (Siigo, Alegra) y e-commerce (WooCommerce/Shopify), multi-ubicación, billing (Stripe), y — crítico — no está desplegado: no hay producto vendible sin deploy, email transaccional confiable y hardening.
+**Faltantes importantes:** alertas proactivas (email/WhatsApp), integraciones con facturación LatAm (Siigo, Alegra — ⚠️ software colombiano; para Costa Rica falta definir el conector equivalente, decisión de producto pendiente) y e-commerce (WooCommerce/Shopify), multi-ubicación, billing (Stripe), y — crítico — no está desplegado: no hay producto vendible sin deploy, email transaccional confiable y hardening.
 
 ---
 
@@ -46,10 +46,10 @@
 | 19 | Higiene | Repo con basura: logs, `a.txt`, `26.1.1`, `=0.28.0`, PDF personal (`Guia_Influencia_Interpersonal.pdf`), decenas de `storage/artifacts/ten_*` sin ignorar, `tsconfig.tsbuildinfo` trackeado | Bajo | — | Fugas de datos de prueba al repo; ruido en cada PR | `.gitignore` para `storage/`, `*.log`, buildinfo; limpiar raíz | Media | Bajo |
 | 20 | Producto | Sin billing (Stripe), sin deploy (docker-compose existe pero no hay entorno vivo), sin dominio/landing | Crítico | No puede pagar aunque quiera | Ingresos = $0 estructuralmente | Deploy en Railway/Render + Stripe Checkout con los 3 tiers ya definidos | Alta | Medio |
 | 21 | Producto | Sin alertas proactivas: el valor ("avisarme antes de que falte") exige que Faro te busque; hoy el usuario debe entrar a `/hoy` | Alto | Si olvida entrar un día, hay quiebre de stock | La retención depende de un hábito no asistido | Email diario del briefing (ya existe el JSON) + WhatsApp (Twilio) para PEDIR_YA | Alta | Medio |
-| 22 | Producto | Sin integraciones de datos: el CSV manual es el único camino; el dato de ventas envejece cada día | Alto | Trabajo manual recurrente; forecast desactualizado | Churn: el Excel-hábito regresa | Conectores Siigo/Alegra/WooCommerce/Shopify (empezar por 1); recarga programada con el scheduler existente | Alta | Alto |
+| 22 | Producto | Sin integraciones de datos: el CSV manual es el único camino; el dato de ventas envejece cada día | Alto | Trabajo manual recurrente; forecast desactualizado | Churn: el Excel-hábito regresa | Conectores Siigo/Alegra/WooCommerce/Shopify (empezar por 1; ⚠️ Siigo/Alegra son software colombiano — para Costa Rica falta definir el conector equivalente, decisión de producto pendiente); recarga programada con el scheduler existente | Alta | Alto |
 | 23 | Seguridad | CORS con `allow_methods=["*"]`/`allow_headers=["*"]` + credentials y orígenes localhost hardcodeados en `main.py:136` | Bajo | — | Superficie innecesaria en prod | Lista explícita por entorno | Baja | Bajo |
 | 24 | Accesibilidad | Colores hardcodeados (#ef4444 etc.) con significado semántico (rojo=urgente) sin texto alternativo consistente; sin evidencia de foco/ARIA en componentes propios | Medio | Usuarios daltónicos no distinguen el semáforo | Riesgo en ventas enterprise | Iconos + etiquetas junto al color (ya parcial con RecIcon); auditoría axe en CI | Media | Medio |
-| 25 | Datos | Sin export/import completo del tenant ni borrado de cuenta (GDPR/Habeas Data Colombia — Ley 1581) | Medio | No puede llevarse sus datos | Bloqueo legal con clientes serios | Endpoint de export ZIP + delete tenant en cascada (los cascade-tests ya existen) | Media | Medio |
+| 25 | Datos | Sin export/import completo del tenant ni borrado de cuenta (GDPR/Ley 8968 — Protección de la Persona frente al Tratamiento de sus Datos Personales, Costa Rica) | Medio | No puede llevarse sus datos | Bloqueo legal con clientes serios | Endpoint de export ZIP + delete tenant en cascada (los cascade-tests ya existen) | Media | Medio |
 
 ---
 
@@ -96,13 +96,13 @@
 | Funcionalidad | Problema que resuelve | Usuario gana | Negocio gana | Complejidad | Prioridad |
 |---|---|---|---|---|---|
 | Alertas WhatsApp/email de quiebre inminente | Olvido de revisar | No más stockouts por descuido | Retención/hábito | Media | Alta |
-| Conector Siigo/Alegra (facturación Colombia) | Carga manual de ventas | Datos siempre frescos | Moat local vs. gringos | Alta | Alta |
+| Conector Siigo/Alegra (facturación — ⚠️ Siigo/Alegra son software colombiano; para Costa Rica falta definir el conector equivalente, decisión de producto pendiente) | Carga manual de ventas | Datos siempre frescos | Moat local vs. gringos | Alta | Alta |
 | Envío de PO directo al proveedor (email/WhatsApp con PDF) | El ciclo termina fuera de Faro | Cierra el loop de compra | Faro se vuelve el sistema de registro | Media | Alta |
 | Multi-ubicación (bodegas/tiendas) | Distribuidoras medianas la exigen | Transferencias sugeridas entre bodegas | Habilita tier Professional | Alta | Media |
 | Registro de recepción de PO (llegó/parcial/no llegó) | Sin feedback, el stock teórico deriva | Lead times reales aprendidos por proveedor | Datos propietarios acumulados | Media | Alta |
 | Simulador "¿qué pasa si?" (promoción, +20% demanda) | Decisiones ante eventos | Compra informada para promos | Diferenciador demo-able | Media | Media |
 | Scorecard de proveedores (fill rate, lead time real) | Negociación a ciegas | Poder de negociación | Upsell analytics | Media | Media |
-| Presupuesto de compra con optimización (¿qué compro con $X?) | Caja limitada, no puede comprar todo | Prioriza por ROI de cada peso | Feature enterprise | Alta | Media |
+| Presupuesto de compra con optimización (¿qué compro con $X?) | Caja limitada, no puede comprar todo | Prioriza por ROI de cada colón | Feature enterprise | Alta | Media |
 | App móvil/PWA del semáforo + aprobar PO | El jefe de compras vive en el celular | Decidir desde la bodega | Engagement diario | Media | Media |
 | Benchmark anónimo por vertical ("tu rotación vs. sector") | No sabe si lo hace bien | Contexto competitivo | Network effect de datos | Alta | Baja |
 
@@ -144,7 +144,7 @@
 
 **Año 3 — Monetizar la confianza (métrica: revenue no-suscripción > 20%).** Financiamiento de inventario embebido sobre POs recomendadas y benchmark/red de demanda vertical. Justificación: el margen del software SMB tiene techo ($299/mes × mercado finito); el margen de mover dinero sobre decisiones que ya controlas no. Es el momento correcto — no antes — porque el crédito requiere el historial de precisión de los años 1–2 como colateral reputacional.
 
-**Lo que deliberadamente NO haría:** más modelos ML (rendimiento decreciente, el cliente no los pide), apps nativas antes de PWA, expansión fuera de LatAm antes del año 3 (el moat es local: Siigo, WhatsApp, semana santa en el calendario de features de Colombia — eso es exactamente lo que un competidor global no va a construir).
+**Lo que deliberadamente NO haría:** más modelos ML (rendimiento decreciente, el cliente no los pide), apps nativas antes de PWA, expansión fuera de LatAm antes del año 3 (el moat es local: Siigo (⚠️ software colombiano — conector equivalente para Costa Rica pendiente de definir), WhatsApp, semana santa en el calendario de features de Costa Rica — eso es exactamente lo que un competidor global no va a construir).
 
 ---
 

@@ -52,9 +52,10 @@ El semáforo ya funciona; el problema es que **depende de que el usuario se acue
 
 ## Horizonte 2 — Retención y expansión de cuenta (mes 3-6)
 
-### 2.1 Conector Siigo/Alegra (facturación Colombia)
+### 2.1 Conector Siigo/Alegra (facturación)
 - **Qué:** sincronización automática de ventas diarias desde el software de facturación que ya usan. El scheduler y la infraestructura de datasources ya existen.
 - **Por qué:** elimina el CSV recurrente (el trabajo manual que reactiva el hábito-Excel) y mantiene el forecast siempre fresco. Es además el **moat local**: ningún competidor gringo va a integrar Siigo.
+- ⚠️ Siigo/Alegra son software colombiano; para Costa Rica falta definir el conector equivalente — decisión de producto pendiente.
 - **Esfuerzo:** Alto. Empezar por UNO solo (el que tenga tu primer cliente pagado).
 
 ### 2.2 Envío de PO directo al proveedor
@@ -92,7 +93,7 @@ El semáforo ya funciona; el problema es que **depende de que el usuario se acue
 - **Esfuerzo:** Alto.
 
 ### 3.3 Presupuesto de compra optimizado
-- **Qué:** "tengo $5M COP esta semana, ¿qué compro?" — priorización de la PO por riesgo de quiebre × margen, recortada al presupuesto.
+- **Qué:** "tengo ₡5M CRC esta semana, ¿qué compro?" — priorización de la PO por riesgo de quiebre × margen, recortada al presupuesto.
 - **Por qué:** la restricción real del cliente pequeño es caja, no información. Ningún forecast tradicional responde esta pregunta.
 - **Esfuerzo:** Alto.
 
