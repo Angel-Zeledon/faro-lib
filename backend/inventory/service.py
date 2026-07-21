@@ -638,6 +638,9 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
             calc_explanation = {
                 "daily_demand":    round(avg_daily, 2),
                 "lead_time_days":    lead_time,
+                # Where the lead time came from, so the breakdown can label it
+                # 'learned'/'configured' the same way /hoy does.
+                "lead_time_source":  lead_time_source,
                 "lead_time_demand": _demand_lt,
                 "safety_stock":      _safety,
                 "current_stock":      current_stock,

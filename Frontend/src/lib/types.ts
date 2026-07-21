@@ -567,6 +567,8 @@ export interface InventoryCalcExplanation {
   suficiente?:        boolean
   daily_demand?:    number
   lead_time_days?:    number
+  // 'learned' (from real receptions) vs 'configured' (typed on the SKU card).
+  lead_time_source?: 'learned' | 'configured'
   lead_time_demand?: number
   safety_stock?:      number
   current_stock?:      number

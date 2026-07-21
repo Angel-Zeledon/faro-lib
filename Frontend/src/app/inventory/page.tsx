@@ -142,9 +142,16 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  }
 
  const unitWord = t('inventory.calc_unit_units')
+ // Label where the lead time came from, so the buyer knows whether the number
+ // is learned from real receptions or the one typed on the SKU card.
+ const leadOrigin = exp.lead_time_source === 'learned'
+ ? t('inventory.lead_origin_learned')
+ : exp.lead_time_source === 'configured'
+ ? t('inventory.lead_origin_configured')
+ : null
  const steps = [
  { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.daily_demand!.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
- { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_days}d)`, value: `= ${exp.lead_time_demand!.toFixed(0)} ${unitWord}`, op: '×' },
+ { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_days}d${leadOrigin ? ` · ${leadOrigin}` : ''})`, value: `= ${exp.lead_time_demand!.toFixed(0)} ${unitWord}`, op: '×' },
  { label: `+ ${t('inventory.calc_step_safety_stock')}`, value: `+ ${exp.safety_stock!.toFixed(0)} ${unitWord}`, op: '+' },
  { label: `− ${t('inventory.calc_step_current_stock')}`, value: `− ${exp.current_stock!.toFixed(0)} ${unitWord}`, op: '−' },
  { label: `= ${t('inventory.calc_step_before_rounding')}`, value: `${exp.antes_moq!.toFixed(0)} ${unitWord}`, op: '=' },
