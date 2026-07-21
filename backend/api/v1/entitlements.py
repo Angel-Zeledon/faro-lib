@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from backend.auth.guards import CurrentUser, get_current_user
-from backend.entitlements.plans import Feature, PLAN_CATALOG
+from backend.entitlements.plans import Feature
 from backend.entitlements.service import (
     get_plan_def, is_read_only, tenant_limits, trial_state,
 )

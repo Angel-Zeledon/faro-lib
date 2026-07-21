@@ -78,6 +78,13 @@ def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
                 detail=f"Too many active training jobs ({active}). Wait for one to finish.",
             )
 
+    # Plan limit: quickstart creates a real session same as POST /sessions,
+    # so it must be gated by the same max_sessions cap — otherwise a tenant
+    # could walk past its plan limit by repeatedly clicking "try the demo"
+    # instead of creating sessions directly.
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_sessions", session_svc.count_sessions(user.tenant_id))
+
     # 1. Dataset: copy the bundled CSV into the tenant's storage + DB row
     dataset_id = generate_id("ds")
     dst_dir = paths.dataset_dir(user.tenant_id, dataset_id)

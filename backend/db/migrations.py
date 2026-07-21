@@ -146,7 +146,7 @@ _BASE_SCHEMA = [
          id         TEXT PRIMARY KEY,
          name       TEXT NOT NULL,
          slug       TEXT UNIQUE NOT NULL,
-         plan       TEXT NOT NULL DEFAULT 'free',
+         plan       TEXT NOT NULL DEFAULT 'starter',
          status     TEXT NOT NULL DEFAULT 'active',
          quota      JSONB NOT NULL DEFAULT '{}',
          settings   JSONB NOT NULL DEFAULT '{}',
@@ -771,6 +771,12 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("migrate_free_plan_to_enterprise",
      "UPDATE tenants SET plan = 'enterprise', trial_ends_at = NULL "
      "WHERE plan = 'free'"),
+    # CREATE TABLE IF NOT EXISTS above never runs again on an existing
+    # database, so its DEFAULT 'free' (now updated to 'starter' in the
+    # CREATE TABLE itself, for fresh databases) never reaches a database that
+    # already has the tenants table — only an explicit ALTER does.
+    ("alter_tenants_plan_default_starter",
+     "ALTER TABLE tenants ALTER COLUMN plan SET DEFAULT 'starter'"),
 ]
 
 

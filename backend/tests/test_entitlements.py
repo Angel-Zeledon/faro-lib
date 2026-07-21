@@ -366,6 +366,101 @@ def test_bulk_import_blocks_new_skus_beyond_max_skus_quota_override(
     assert stock_after == stock_before   # blocked import created nothing
 
 
+def test_dataset_sync_respects_max_skus(monkeypatch, make_tenant_user_headers):
+    """
+    Regression: the dataset-sync path (runner.py -> sync_stock_from_dataset,
+    the PRIMARY way SKUs enter Faro via Quick Start upload) had NO max_skus
+    enforcement at all, unlike PUT /stock and POST /bulk. A Starter tenant
+    could seed thousands of SKUs through an upload despite a low quota.
+
+    Calls sync_stock_from_dataset directly (its actual signature) with a
+    2-new-SKU dataset against a max_skus=1 quota override, and asserts the
+    pre-loop chokepoint blocks it BEFORE any row is inserted (no partial
+    write) rather than silently truncating to 1 row.
+    """
+    import pandas as pd
+    from fastapi import HTTPException
+    from backend.inventory.service import sync_stock_from_dataset
+    from backend.db.connection import execute, query_one, _json
+
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    _, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
+
+    stock_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_before == 0
+
+    df = pd.DataFrame({
+        "sku":           ["DSKU-A", "DSKU-B"],
+        "fecha":         ["2026-01-01", "2026-01-01"],
+        "current_stock": [10, 20],
+    })
+
+    with pytest.raises(HTTPException) as exc_info:
+        sync_stock_from_dataset(tenant_id, df, group_col="sku", date_col="fecha")
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "PLAN_LIMIT_REACHED"
+    assert exc_info.value.detail["limit"] == "max_skus"
+
+    stock_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_after <= 1
+    assert stock_after == stock_before  # blocked BEFORE the loop: nothing inserted
+
+
+def test_patch_stock_respects_max_skus(monkeypatch, make_tenant_user_headers, client):
+    """
+    Regression for the max_skus class of the max_locations PATCH bug: PATCH
+    /stock/{sku} 404-checks svc.get_stock(tenant_id, sku) WITHOUT a warehouse
+    filter, so as long as the SKU exists in ANY warehouse the 404 guard passes.
+    If the PATCH body then targets a DIFFERENT warehouse, svc.upsert_stock
+    inserts a brand-new (tenant_id, sku, warehouse) row — a class of write the
+    old per-caller max_skus checks (PUT /stock, POST /bulk) never covered.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import execute, query_one, _json
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
+
+    # Establish the 1 SKU this tenant's quota allows.
+    r0 = client.put(
+        "/api/v1/inventory/stock/PSKU-1",
+        json={"current_stock": 5},
+        headers=headers,
+    )
+    assert r0.status_code == 200
+
+    stock_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_before == 1
+
+    # PATCH the SAME sku into a DIFFERENT warehouse -> a NEW (sku, warehouse)
+    # row, which would be stock row #2, exceeding max_skus=1.
+    r1 = client.patch(
+        "/api/v1/inventory/stock/PSKU-1",
+        json={"warehouse": "Sur", "current_stock": 7},
+        headers=headers,
+    )
+    assert r1.status_code == 403
+    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
+    assert r1.json()["detail"]["limit"] == "max_skus"
+
+    stock_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_after == stock_before  # blocked write created no new row
+
+
 def test_expired_trial_blocks_mutation_but_allows_read(
     monkeypatch, make_tenant_user_headers
 ):
