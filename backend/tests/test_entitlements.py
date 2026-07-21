@@ -84,3 +84,19 @@ def test_trial_state_and_read_only():
 def test_required_plans_for():
     assert ent.required_plans_for(Feature.WHATSAPP_ALERTS) == ["professional", "enterprise"]
     assert ent.required_plans_for(Feature.API_ACCESS) == ["enterprise"]
+
+
+from backend.tenants import service as tenant_svc
+from backend.db.connection import execute as _db_execute
+
+
+def test_create_tenant_starts_on_starter_trial(client):  # client fixture ensures migrations ran
+    t = tenant_svc.create_tenant("Acme Trial Co")
+    try:
+        assert t["plan"] == "starter"
+        assert t["trial_ends_at"] is not None
+        ends = t["trial_ends_at"]
+        delta = ends - datetime.now(timezone.utc)
+        assert timedelta(days=13) < delta < timedelta(days=15)
+    finally:
+        _db_execute("DELETE FROM tenants WHERE id = %s", (t["id"],))

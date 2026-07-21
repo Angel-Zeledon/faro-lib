@@ -760,6 +760,17 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("create_inventory_roi_email_log_uniq",
      """CREATE UNIQUE INDEX IF NOT EXISTS inventory_roi_email_log_uniq
         ON inventory_roi_email_log (tenant_id, month)"""),
+
+    # ── Plan-based entitlements (feature: plan catalog) ──────────────────────
+    # New tenants start on a time-boxed Starter trial; trial_ends_at is NULL
+    # once the trial converts/expires-to-paid. Existing 'free' tenants had no
+    # trial concept, so they are migrated straight to 'enterprise' (no
+    # feature loss for accounts that predate this plan model) with no trial.
+    ("add_tenants_trial_ends_at",
+     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ"),
+    ("migrate_free_plan_to_enterprise",
+     "UPDATE tenants SET plan = 'enterprise', trial_ends_at = NULL "
+     "WHERE plan = 'free'"),
 ]
 
 
