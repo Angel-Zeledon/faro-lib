@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     local_llm_base_url: str = "http://localhost:11434"
     local_llm_model: str = "deepseek-r1"
 
+    # Accounting integrations (Alegra + Siigo)
+    integrations_secret_key: str = ""
+    alegra_base_url: str = "https://api.alegra.com/api/v1"
+    siigo_base_url: str = "https://api.siigo.com/v1"
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
