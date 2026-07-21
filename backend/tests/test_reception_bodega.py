@@ -82,3 +82,47 @@ class TestReceptionRespectsWarehouse:
         assert principal is not None
         assert float(principal["current_stock"]) == 30.0  # created, not silently dropped
         assert float(norte["current_stock"]) == 100.0      # untouched
+
+
+class TestReceptionLeadTimeObservationPerSupplier:
+    """A PO can span multiple suppliers who deliver at different times.
+    Lead-time learning must record ONE observation per supplier, taken on
+    THAT supplier's own first delivery against this PO — not gated on
+    whether the PO header itself was still 'pending' before the event,
+    which silently starves any supplier who isn't part of the very first
+    reception event.
+    """
+
+    def test_second_supplier_delivering_in_a_later_event_still_gets_observed(
+        self, client, auth_headers, test_tenant,
+    ):
+        from backend.inventory import roi_service
+        from backend.inventory import reception_service as rec_svc
+        from backend.db.connection import query
+
+        tid = test_tenant["id"]
+        sku_a = _sku()
+        sku_b = _sku()
+
+        po = roi_service.log_po_generation(tid, "sess-test", [
+            {"sku": sku_a, "final_qty": 10, "status": "approved", "supplier": "Prov A"},
+            {"sku": sku_b, "final_qty": 5, "status": "approved", "supplier": "Prov B"},
+        ])
+
+        # Event 1: only Prov A delivers. PO goes pending -> partial.
+        rec_svc.receive_po(tid, po["id"], user_id="u1",
+                            lines=[{"sku": sku_a, "received_qty": 10}])
+
+        # Event 2: Prov B delivers for the FIRST time (PO is now 'partial').
+        rec_svc.receive_po(tid, po["id"], user_id="u1",
+                            lines=[{"sku": sku_b, "received_qty": 5}])
+
+        rows = query(
+            "SELECT supplier FROM supplier_lead_time_obs WHERE tenant_id=%s AND po_log_id=%s",
+            (tid, po["id"]),
+        )
+        observed = {r["supplier"] for r in rows}
+        assert observed == {"Prov A", "Prov B"}, (
+            "Prov B's first-ever delivery on this PO must produce a "
+            f"lead-time observation too, got {observed}"
+        )

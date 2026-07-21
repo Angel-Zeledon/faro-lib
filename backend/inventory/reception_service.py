@@ -240,22 +240,36 @@ def receive_po(
         (status, received_at, user_id, po_log_id, tenant_id),
     )
 
-    # 4. Learn real lead times — one observation per supplier that delivered
-    # something in this event (first reception only, so partials don't skew).
+    # 4. Learn real lead times — one observation per supplier, taken on THAT
+    # supplier's own first delivery against this PO. Gating this on whether
+    # the PO HEADER was still 'pending' (its state before this event) is
+    # wrong for a multi-supplier PO: if supplier A delivers in event 1 (PO
+    # goes pending -> partial) and supplier B only delivers in event 2, a
+    # pending-only gate would silently never observe B — the PO is no longer
+    # 'pending' by the time B's first delivery happens. Instead, gate per
+    # supplier on whether THIS po_log_id already has an observation for them.
     lead_days = max(0.0, (received_at - generated_at).total_seconds() / 86400.0)
     observed_suppliers = sorted({
         (i.get("supplier") or "").strip()
         for i in ordered
         if (i.get("supplier") or "").strip() and received_by_item[i["id"]] > 0
     })
-    if po.get("reception_status") == "pending":  # was pending before this event
-        for prov in observed_suppliers:
-            execute(
-                """INSERT INTO supplier_lead_time_obs
-                       (tenant_id, supplier, po_log_id, lead_time_days)
-                   VALUES (%s, %s, %s, %s)""",
-                (tenant_id, prov, po_log_id, round(lead_days, 2)),
-            )
+    already_observed = {
+        r["supplier"] for r in query(
+            """SELECT DISTINCT supplier FROM supplier_lead_time_obs
+               WHERE tenant_id = %s AND po_log_id = %s""",
+            (tenant_id, po_log_id),
+        )
+    }
+    for prov in observed_suppliers:
+        if prov in already_observed:
+            continue  # this supplier already has its first-delivery observation for this PO
+        execute(
+            """INSERT INTO supplier_lead_time_obs
+                   (tenant_id, supplier, po_log_id, lead_time_days)
+               VALUES (%s, %s, %s, %s)""",
+            (tenant_id, prov, po_log_id, round(lead_days, 2)),
+        )
 
     log.info("[reception] tenant=%s po=%s status=%s lead_days=%.1f suppliers=%s",
              tenant_id, po_log_id, status, lead_days, observed_suppliers)

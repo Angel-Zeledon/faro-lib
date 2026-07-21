@@ -114,8 +114,18 @@ def upsert_sku_supplier(tenant_id: str, sku: str, supplier_id: str, data: dict) 
     allowed = {"is_primary", "unit_cost", "moq", "lead_time_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
 
-    # Build SET clause for the ON CONFLICT branch
-    upd_sets = ", ".join(f"{k} = EXCLUDED.{k}" for k in safe) if safe else "is_primary = EXCLUDED.is_primary"
+    # Build the ON CONFLICT branch. When there is nothing to set, use DO
+    # NOTHING rather than a placeholder "is_primary = EXCLUDED.is_primary":
+    # since is_primary isn't in the INSERT column list on a conflict, EXCLUDED
+    # would resolve to the column's schema default (TRUE), silently flipping
+    # an existing row's is_primary back to TRUE even when it was explicitly
+    # FALSE — an unconditional write where update_supplier's sibling behavior
+    # (no-op on empty data) is what callers expect.
+    if safe:
+        upd_sets = ", ".join(f"{k} = EXCLUDED.{k}" for k in safe)
+        conflict_action = f"DO UPDATE SET {upd_sets}"
+    else:
+        conflict_action = "DO NOTHING"
 
     cols   = ", ".join(["tenant_id", "sku", "supplier_id"] + list(safe.keys()))
     phs    = ", ".join(["%s"] * (3 + len(safe)))
@@ -124,8 +134,7 @@ def upsert_sku_supplier(tenant_id: str, sku: str, supplier_id: str, data: dict) 
     row = query_one(
         f"""INSERT INTO sku_suppliers ({cols})
             VALUES ({phs})
-            ON CONFLICT (tenant_id, sku, supplier_id) DO UPDATE
-            SET {upd_sets}
+            ON CONFLICT (tenant_id, sku, supplier_id) {conflict_action}
             RETURNING *""",
         tuple(values),
     )
