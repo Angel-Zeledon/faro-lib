@@ -30,6 +30,7 @@ class Feature(str, Enum):
     BOM = "bom"
     API_ACCESS = "api_access"
     WEBHOOKS = "webhooks"
+    INTEGRATIONS = "integrations"
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,7 @@ _PRO_EXTRA = frozenset({
     Feature.SCHEDULED_REPORTS, Feature.MULTI_LOCATION,
 })
 
-_ENT_EXTRA = frozenset({Feature.BOM, Feature.API_ACCESS, Feature.WEBHOOKS})
+_ENT_EXTRA = frozenset({Feature.BOM, Feature.API_ACCESS, Feature.WEBHOOKS, Feature.INTEGRATIONS})
 
 PLAN_CATALOG: dict[str, PlanDef] = {
     "starter": PlanDef(
