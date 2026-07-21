@@ -10,8 +10,9 @@ import Spinner from '@/components/ui/Spinner'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
 import {
-  Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, BarChart3,
+  Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, ChevronRight, BarChart3, Tag,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -232,63 +233,88 @@ function SupplierRow({
   supplier,
   onEdit,
   onDelete,
+  expanded,
+  onToggleExpand,
 }: {
   supplier: Supplier
   onEdit: (s: Supplier) => void
   onDelete: (id: string) => void
+  expanded: boolean
+  onToggleExpand: (id: string) => void
 }) {
   const { t } = useLanguage()
   return (
-    <tr
-      style={{ borderBottom: `1px solid ${C.border}` }}
-      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(129,140,248,0.03)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-    >
-      <td style={{ padding: '12px 16px', fontWeight: 600, fontSize: 13, color: C.text }}>{supplier.name}</td>
-      <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: C.indigo, fontWeight: 700 }}>
-        {supplier.lead_time_days}d
-      </td>
-      <td style={{ padding: '12px 16px', fontSize: 12, color: C.dim }}>
-        ±{supplier.lead_time_std}d
-      </td>
-      <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
-        {supplier.payment_terms || <span style={{ color: C.dim }}>—</span>}
-      </td>
-      <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
-        {supplier.email
-          ? <a href={`mailto:${supplier.email}`} style={{ color: C.indigo, textDecoration: 'none' }}>{supplier.email}</a>
-          : <span style={{ color: C.dim }}>—</span>}
-      </td>
-      <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
-        {supplier.phone || supplier.whatsapp
-          ? <>{supplier.phone || ''}{supplier.phone && supplier.whatsapp ? ' / ' : ''}{supplier.whatsapp || ''}</>
-          : <span style={{ color: C.dim }}>—</span>}
-      </td>
-      <td style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            onClick={() => onEdit(supplier)}
-            title={t('suppliers.row_edit')}
-            aria-label={`${t('suppliers.row_edit')}: ${supplier.name}`}
-            style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: C.dim, display: 'flex' }}
-            onMouseEnter={e => (e.currentTarget.style.color = C.indigo)}
-            onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
-          >
-            <Edit2 size={13} aria-hidden="true" />
-          </button>
-          <button
-            onClick={() => onDelete(supplier.id)}
-            title={t('suppliers.row_delete')}
-            aria-label={`${t('suppliers.row_delete')}: ${supplier.name}`}
-            style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: C.dim, display: 'flex' }}
-            onMouseEnter={e => (e.currentTarget.style.color = C.red)}
-            onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
-          >
-            <Trash2 size={13} aria-hidden="true" />
-          </button>
-        </div>
-      </td>
-    </tr>
+    <>
+      <tr
+        style={{ borderBottom: expanded ? 'none' : `1px solid ${C.border}` }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(129,140,248,0.03)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        <td style={{ padding: '12px 16px', fontWeight: 600, fontSize: 13, color: C.text }}>{supplier.name}</td>
+        <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: C.indigo, fontWeight: 700 }}>
+          {supplier.lead_time_days}d
+        </td>
+        <td style={{ padding: '12px 16px', fontSize: 12, color: C.dim }}>
+          ±{supplier.lead_time_std}d
+        </td>
+        <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
+          {supplier.payment_terms || <span style={{ color: C.dim }}>—</span>}
+        </td>
+        <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
+          {supplier.email
+            ? <a href={`mailto:${supplier.email}`} style={{ color: C.indigo, textDecoration: 'none' }}>{supplier.email}</a>
+            : <span style={{ color: C.dim }}>—</span>}
+        </td>
+        <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
+          {supplier.phone || supplier.whatsapp
+            ? <>{supplier.phone || ''}{supplier.phone && supplier.whatsapp ? ' / ' : ''}{supplier.whatsapp || ''}</>
+            : <span style={{ color: C.dim }}>—</span>}
+        </td>
+        <td style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button
+              onClick={() => onToggleExpand(supplier.id)}
+              title={t('suppliers.pb_toggle')}
+              aria-label={`${t('suppliers.pb_toggle')}: ${supplier.name}`}
+              aria-expanded={expanded}
+              style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: expanded ? C.indigo : C.dim, display: 'flex', alignItems: 'center', gap: 2 }}
+              onMouseEnter={e => (e.currentTarget.style.color = C.indigo)}
+              onMouseLeave={e => (e.currentTarget.style.color = expanded ? C.indigo : C.dim)}
+            >
+              {expanded ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
+              <Tag size={13} aria-hidden="true" />
+            </button>
+            <button
+              onClick={() => onEdit(supplier)}
+              title={t('suppliers.row_edit')}
+              aria-label={`${t('suppliers.row_edit')}: ${supplier.name}`}
+              style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: C.dim, display: 'flex' }}
+              onMouseEnter={e => (e.currentTarget.style.color = C.indigo)}
+              onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
+            >
+              <Edit2 size={13} aria-hidden="true" />
+            </button>
+            <button
+              onClick={() => onDelete(supplier.id)}
+              title={t('suppliers.row_delete')}
+              aria-label={`${t('suppliers.row_delete')}: ${supplier.name}`}
+              style={{ all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 5, color: C.dim, display: 'flex' }}
+              onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+              onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+            </button>
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+          <td colSpan={7} style={{ padding: '0 16px 14px' }}>
+            <PriceBreakManager supplier={supplier} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -314,6 +340,7 @@ function SuppliersPageInner() {
   const [saving,    setSaving]    = useState(false)
   const [showForm,  setShowForm]  = useState(false)
   const [editing,   setEditing]   = useState<Supplier | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // `silent: true` — the failure is rendered inline as a full ErrorState, so the
   // interceptor's toast would duplicate it.
@@ -381,6 +408,7 @@ function SuppliersPageInner() {
 
   function handleEdit(s: Supplier) { setEditing(s); setShowForm(true) }
   function handleCancel() { setShowForm(false); setEditing(null); setPrefillName(undefined) }
+  function handleToggleExpand(id: string) { setExpandedId(cur => (cur === id ? null : id)) }
 
   const isFormOpen = showForm || !!editing
 
@@ -509,7 +537,14 @@ function SuppliersPageInner() {
               </thead>
               <tbody>
                 {suppliers.map(s => (
-                  <SupplierRow key={s.id} supplier={s} onEdit={handleEdit} onDelete={handleDelete} />
+                  <SupplierRow
+                    key={s.id}
+                    supplier={s}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    expanded={expandedId === s.id}
+                    onToggleExpand={handleToggleExpand}
+                  />
                 ))}
               </tbody>
             </table>
