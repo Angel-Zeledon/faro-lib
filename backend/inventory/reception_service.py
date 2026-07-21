@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
-from backend.db.connection import execute, query, query_one
+from backend.db.connection import execute, query, query_one, transaction
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,12 @@ def get_po(tenant_id: str, po_log_id: str) -> Optional[dict]:
     )
 
 
-def get_po_items(tenant_id: str, po_log_id: str) -> list[dict]:
+def get_po_items(tenant_id: str, po_log_id: str, conn: Optional[Any] = None) -> list[dict]:
+    """
+    `conn`: optional shared connection from db.connection.transaction() — see
+    receive_po, which reads its own just-written (still uncommitted)
+    received_qty updates back through this function inside its transaction.
+    """
     return query(
         """SELECT id, sku, display_name, supplier, signal, status,
                   recommended_qty, final_qty, received_qty, unit_cost,
@@ -46,6 +51,7 @@ def get_po_items(tenant_id: str, po_log_id: str) -> list[dict]:
            WHERE po_log_id = %s AND tenant_id = %s
            ORDER BY supplier NULLS LAST, sku""",
         (po_log_id, tenant_id),
+        conn=conn,
     )
 
 
@@ -179,97 +185,113 @@ def receive_po(
             adding=len(new_sku_warehouse_pairs),
         )
 
-    # 1. Per-line: accumulate received_qty (partial receptions add up)
-    for i in ordered:
-        qty = received_by_item[i["id"]]
-        execute(
-            """UPDATE inventory_po_items
-               SET received_qty = COALESCE(received_qty, 0) + %s
-               WHERE id = %s AND tenant_id = %s""",
-            (qty, i["id"], tenant_id),
-        )
-
-    # 2. Stock: add received units. Creates the stock row if the SKU/warehouse
-    # combination is new. The existence check and the update/insert below
-    # all target the SAME warehouse — checking one warehouse's presence but
-    # writing to another would silently drop the received units.
-    from backend.inventory import service as inv_svc
-    for i in ordered:
-        qty = received_by_item[i["id"]]
-        if qty <= 0:
-            continue
-        warehouse = i.get("warehouse") or "principal"
-        existing = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse)
-        if existing:
+    # Steps 1-4 below all run inside ONE transaction so the whole reception is
+    # all-or-nothing: a failure anywhere in the sequence must leave
+    # received_qty, stock, the snapshot, the PO header and the lead-time
+    # observations exactly as they were before this call — not partially
+    # applied. Every write (and every read that needs to see this
+    # transaction's own not-yet-committed writes) passes `conn` through;
+    # reads that only need already-committed data (e.g. supplier_service
+    # lookups elsewhere) don't need it.
+    with transaction() as conn:
+        # 1. Per-line: accumulate received_qty (partial receptions add up)
+        for i in ordered:
+            qty = received_by_item[i["id"]]
             execute(
-                """UPDATE inventory_stock
-                   SET current_stock = current_stock + %s, updated_at = NOW()
-                   WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
-                (qty, tenant_id, i["sku"], warehouse),
+                """UPDATE inventory_po_items
+                   SET received_qty = COALESCE(received_qty, 0) + %s
+                   WHERE id = %s AND tenant_id = %s""",
+                (qty, i["id"], tenant_id),
+                conn=conn,
             )
-        else:
-            inv_svc.upsert_stock(tenant_id, i["sku"], {
-                "current_stock": qty,
-                "display_name": i.get("display_name"),
-                "supplier": i.get("supplier"),
-                "warehouse": warehouse,
-            })
-        # Point-in-time snapshot so /stock/{sku}/history reflects the arrival
-        try:
-            new_row = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse)
+
+        # 2. Stock: add received units. Creates the stock row if the SKU/warehouse
+        # combination is new. The existence check and the update/insert below
+        # all target the SAME warehouse — checking one warehouse's presence but
+        # writing to another would silently drop the received units.
+        for i in ordered:
+            qty = received_by_item[i["id"]]
+            if qty <= 0:
+                continue
+            warehouse = i.get("warehouse") or "principal"
+            existing = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse, conn=conn)
+            if existing:
+                execute(
+                    """UPDATE inventory_stock
+                       SET current_stock = current_stock + %s, updated_at = NOW()
+                       WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
+                    (qty, tenant_id, i["sku"], warehouse),
+                    conn=conn,
+                )
+            else:
+                inv_svc.upsert_stock(tenant_id, i["sku"], {
+                    "current_stock": qty,
+                    "display_name": i.get("display_name"),
+                    "supplier": i.get("supplier"),
+                    "warehouse": warehouse,
+                }, conn=conn)
+            # Point-in-time snapshot so /stock/{sku}/history reflects the arrival.
+            # Runs on the SAME transaction connection as everything else in this
+            # reception: unlike before this fix, a failure here is no longer
+            # swallowed — it must roll back the whole reception like any other
+            # write in this sequence, not leave received_qty/stock committed
+            # without a matching snapshot.
+            new_row = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse, conn=conn)
             execute(
                 """INSERT INTO inventory_snapshots (tenant_id, sku, current_stock)
                    VALUES (%s, %s, %s)""",
                 (tenant_id, i["sku"], new_row["current_stock"]),
+                conn=conn,
             )
-        except Exception as e:
-            log.warning("reception snapshot failed sku=%s: %s", i["sku"], e)
 
-    # 3. Header status
-    fresh = get_po_items(tenant_id, po_log_id)
-    fresh_ordered = [i for i in fresh if i["status"] in _ORDERED]
-    fully = all(float(i["received_qty"] or 0) >= float(i["final_qty"] or 0)
-                for i in fresh_ordered)
-    any_received = any(float(i["received_qty"] or 0) > 0 for i in fresh_ordered)
-    status = "received" if fully else ("partial" if any_received else "not_received")
+        # 3. Header status
+        fresh = get_po_items(tenant_id, po_log_id, conn=conn)
+        fresh_ordered = [i for i in fresh if i["status"] in _ORDERED]
+        fully = all(float(i["received_qty"] or 0) >= float(i["final_qty"] or 0)
+                    for i in fresh_ordered)
+        any_received = any(float(i["received_qty"] or 0) > 0 for i in fresh_ordered)
+        status = "received" if fully else ("partial" if any_received else "not_received")
 
-    execute(
-        """UPDATE inventory_po_log
-           SET reception_status = %s, received_at = %s, received_by = %s
-           WHERE id = %s AND tenant_id = %s""",
-        (status, received_at, user_id, po_log_id, tenant_id),
-    )
-
-    # 4. Learn real lead times — one observation per supplier, taken on THAT
-    # supplier's own first delivery against this PO. Gating this on whether
-    # the PO HEADER was still 'pending' (its state before this event) is
-    # wrong for a multi-supplier PO: if supplier A delivers in event 1 (PO
-    # goes pending -> partial) and supplier B only delivers in event 2, a
-    # pending-only gate would silently never observe B — the PO is no longer
-    # 'pending' by the time B's first delivery happens. Instead, gate per
-    # supplier on whether THIS po_log_id already has an observation for them.
-    lead_days = max(0.0, (received_at - generated_at).total_seconds() / 86400.0)
-    observed_suppliers = sorted({
-        (i.get("supplier") or "").strip()
-        for i in ordered
-        if (i.get("supplier") or "").strip() and received_by_item[i["id"]] > 0
-    })
-    already_observed = {
-        r["supplier"] for r in query(
-            """SELECT DISTINCT supplier FROM supplier_lead_time_obs
-               WHERE tenant_id = %s AND po_log_id = %s""",
-            (tenant_id, po_log_id),
-        )
-    }
-    for prov in observed_suppliers:
-        if prov in already_observed:
-            continue  # this supplier already has its first-delivery observation for this PO
         execute(
-            """INSERT INTO supplier_lead_time_obs
-                   (tenant_id, supplier, po_log_id, lead_time_days)
-               VALUES (%s, %s, %s, %s)""",
-            (tenant_id, prov, po_log_id, round(lead_days, 2)),
+            """UPDATE inventory_po_log
+               SET reception_status = %s, received_at = %s, received_by = %s
+               WHERE id = %s AND tenant_id = %s""",
+            (status, received_at, user_id, po_log_id, tenant_id),
+            conn=conn,
         )
+
+        # 4. Learn real lead times — one observation per supplier, taken on THAT
+        # supplier's own first delivery against this PO. Gating this on whether
+        # the PO HEADER was still 'pending' (its state before this event) is
+        # wrong for a multi-supplier PO: if supplier A delivers in event 1 (PO
+        # goes pending -> partial) and supplier B only delivers in event 2, a
+        # pending-only gate would silently never observe B — the PO is no longer
+        # 'pending' by the time B's first delivery happens. Instead, gate per
+        # supplier on whether THIS po_log_id already has an observation for them.
+        lead_days = max(0.0, (received_at - generated_at).total_seconds() / 86400.0)
+        observed_suppliers = sorted({
+            (i.get("supplier") or "").strip()
+            for i in ordered
+            if (i.get("supplier") or "").strip() and received_by_item[i["id"]] > 0
+        })
+        already_observed = {
+            r["supplier"] for r in query(
+                """SELECT DISTINCT supplier FROM supplier_lead_time_obs
+                   WHERE tenant_id = %s AND po_log_id = %s""",
+                (tenant_id, po_log_id),
+                conn=conn,
+            )
+        }
+        for prov in observed_suppliers:
+            if prov in already_observed:
+                continue  # this supplier already has its first-delivery observation for this PO
+            execute(
+                """INSERT INTO supplier_lead_time_obs
+                       (tenant_id, supplier, po_log_id, lead_time_days)
+                   VALUES (%s, %s, %s, %s)""",
+                (tenant_id, prov, po_log_id, round(lead_days, 2)),
+                conn=conn,
+            )
 
     log.info("[reception] tenant=%s po=%s status=%s lead_days=%.1f suppliers=%s",
              tenant_id, po_log_id, status, lead_days, observed_suppliers)

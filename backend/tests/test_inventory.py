@@ -414,6 +414,77 @@ class TestDatasetSyncSanitization:
         )
 
 
+class TestDirectUpsertSanitization:
+    """
+    upsert_stock/bulk_upsert (backend/inventory/service.py) called directly —
+    not through PUT/PATCH /stock (which reject out-of-range values via
+    Pydantic's ge=0/ge=1) — is the path receive_po and any other in-process
+    caller uses. Before this fix it had no numeric floor at all, so a
+    0/negative lead_time_days/current_stock/moq passed straight through
+    could corrupt the reorder-point math exactly like the unvalidated
+    dataset-sync column did (see TestDatasetSyncSanitization above). This
+    mirrors the same _DATASET_STOCK_MIN floor now applied inside
+    upsert_stock itself, so the guard holds regardless of caller.
+    """
+
+    def test_direct_upsert_zero_lead_time_dropped(self, test_tenant):
+        from backend.inventory.service import upsert_stock
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        row = upsert_stock(test_tenant["id"], sku, {
+            "current_stock": 40,
+            "lead_time_days": 0,
+        })
+        assert float(row["current_stock"]) == 40  # valid field still saved
+
+        db_row = query_one(
+            "SELECT lead_time_days FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        )
+        assert db_row["lead_time_days"] != 0, (
+            "lead_time_days=0 passed directly to upsert_stock was persisted — "
+            "this collapses _calc_signal's thresholds to 0"
+        )
+
+    def test_direct_upsert_negative_current_stock_dropped(self, test_tenant):
+        from backend.inventory.service import upsert_stock
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        upsert_stock(test_tenant["id"], sku, {
+            "current_stock": -25,
+            "supplier": "Prov Directo",
+        })
+
+        db_row = query_one(
+            "SELECT current_stock, supplier FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        )
+        assert db_row["supplier"] == "Prov Directo"  # other valid fields still saved
+        assert db_row["current_stock"] is None or float(db_row["current_stock"]) >= 0, (
+            "negative current_stock passed directly to upsert_stock was persisted"
+        )
+
+    def test_direct_bulk_upsert_negative_moq_dropped(self, test_tenant):
+        from backend.inventory.service import bulk_upsert
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        count = bulk_upsert(test_tenant["id"], [
+            {"sku": sku, "current_stock": 10, "moq": -3},
+        ])
+        assert count == 1
+
+        db_row = query_one(
+            "SELECT moq FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        )
+        assert db_row["moq"] is None or float(db_row["moq"]) >= 1, (
+            "negative moq passed directly to bulk_upsert was persisted"
+        )
+
+
 # ── Signal calculation (unit-level, no DB) ────────────────────────────────────
 
 class TestSignalCalculation:
