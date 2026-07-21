@@ -461,6 +461,100 @@ def test_patch_stock_respects_max_skus(monkeypatch, make_tenant_user_headers, cl
     assert stock_after == stock_before  # blocked write created no new row
 
 
+def test_receive_po_respects_max_skus_atomically(monkeypatch, make_tenant_user_headers):
+    """
+    Regression: receive_po (backend/inventory/reception_service.py) writes in
+    multiple auto-committed steps — step 1 accumulates received_qty on every
+    PO line, step 2 upserts inventory_stock per line (creating a new row when
+    the (sku, warehouse) pair doesn't exist yet), step 3 updates the PO header
+    status. Only a pre-loop max_locations check existed; there was no max_skus
+    pre-check, so a Starter tenant at its max_skus cap receiving a PO into a
+    warehouse it already has (so max_locations doesn't fire) but for a NEW
+    (sku, warehouse) pair could 403 mid-loop, after step 1 already committed
+    received_qty for every line — a partial write that leaves PO items marked
+    received without matching stock, and the header status never updated.
+
+    This asserts both directions: the capped tenant gets a 403 with NOTHING
+    written (atomic), and an entitled tenant (quota override raised) succeeds
+    and actually writes stock — proving the gate toggles rather than reception
+    being unconditionally broken.
+    """
+    from uuid import uuid4
+    from backend.db.connection import execute, query_one, _json
+    from backend.inventory import service as inv_svc
+    from backend.inventory import roi_service
+    from backend.inventory import reception_service as rec_svc
+    from fastapi import HTTPException
+
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    _, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
+
+    # One existing stock row in "principal" -> tenant is already at its max_skus=1 cap.
+    existing_sku = f"RCV_CAP_{uuid4().hex[:8]}"
+    inv_svc.upsert_stock(tenant_id, existing_sku, {"current_stock": 10, "warehouse": "principal"})
+
+    stock_count_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_count_before == 1
+
+    # PO for a DIFFERENT sku, destined for "principal" (a warehouse that already
+    # exists, so the max_locations pre-check does NOT fire) -> a NEW (sku,
+    # warehouse) stock row, which would push stock count to 2, over the cap.
+    new_sku = f"RCV_NEW_{uuid4().hex[:8]}"
+    po = roi_service.log_po_generation(tenant_id, "sess-test", [{
+        "sku": new_sku, "final_qty": 20, "status": "approved",
+        "warehouse": "principal",
+    }])
+
+    with pytest.raises(HTTPException) as exc_info:
+        rec_svc.receive_po(tenant_id, po["id"], user_id="u1")
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "PLAN_LIMIT_REACHED"
+    assert exc_info.value.detail["limit"] == "max_skus"
+
+    # Nothing was written: no new stock row, PO item's received_qty untouched,
+    # PO header status untouched.
+    stock_count_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_count_after == stock_count_before
+
+    po_item = query_one(
+        "SELECT received_qty FROM inventory_po_items WHERE po_log_id=%s AND sku=%s",
+        (po["id"], new_sku),
+    )
+    assert po_item["received_qty"] in (None, 0)
+
+    po_log = query_one(
+        "SELECT reception_status FROM inventory_po_log WHERE id=%s", (po["id"],)
+    )
+    assert po_log["reception_status"] == "pending"
+
+    # Entitled case: raise the quota override so the same reception succeeds
+    # and actually writes stock -- proving the gate toggles.
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 10}), tenant_id))
+
+    result = rec_svc.receive_po(tenant_id, po["id"], user_id="u1")
+    assert result["reception_status"] == "received"
+
+    new_row = query_one(
+        "SELECT current_stock FROM inventory_stock WHERE tenant_id=%s AND sku=%s AND warehouse='principal'",
+        (tenant_id, new_sku),
+    )
+    assert new_row is not None
+    assert float(new_row["current_stock"]) == 20.0
+
+    stock_count_final = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_count_final == 2
+
+
 def test_expired_trial_blocks_mutation_but_allows_read(
     monkeypatch, make_tenant_user_headers
 ):
