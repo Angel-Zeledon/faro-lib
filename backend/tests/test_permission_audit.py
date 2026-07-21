@@ -89,7 +89,8 @@ class TestOptimizerCrossTenant:
         sku = f"OPTAUDIT_{uuid4().hex[:8]}"
 
         inv_svc.upsert_stock(tid, sku, {
-            "current_stock": 0, "lead_time_days": 0, "unit_cost": 5.0, "warehouse": "principal",
+            # lead_time_days must be >=1 (0 is sanitized by upsert_stock).
+            "current_stock": 0, "lead_time_days": 3, "unit_cost": 5.0, "warehouse": "principal",
         })
         session_store.set_forecasts(tid, sid, {
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},

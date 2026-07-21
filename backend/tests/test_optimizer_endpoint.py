@@ -36,7 +36,9 @@ class TestOptimizeEndpoint:
         sku = _sku()
 
         inv_svc.upsert_stock(tid, sku, {
-            "current_stock": 0, "lead_time_days": 0, "unit_cost": 5.0, "warehouse": "principal",
+            # lead_time_days must be >=1 and < horizon so an order arrives in time;
+            # sanitized by upsert_stock, same as the API's ge=1 validation).
+            "current_stock": 0, "lead_time_days": 3, "unit_cost": 5.0, "warehouse": "principal",
         })
         session_store.set_forecasts(tid, sid, {
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
