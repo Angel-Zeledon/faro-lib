@@ -25,6 +25,16 @@ def count_warehouses(tenant_id: str) -> int:
     return row["c"] if row else 0
 
 
+def list_warehouse_names(tenant_id: str) -> set[str]:
+    """Names of warehouses already on file for this tenant — used by every
+    stock-write path (PUT /stock, POST /bulk, PO reception) to figure out
+    which warehouse names in an incoming payload are actually NEW, so
+    max_locations can be enforced against (current count + new names) before
+    any row is written."""
+    rows = query("SELECT name FROM warehouses WHERE tenant_id = %s", (tenant_id,))
+    return {r["name"] for r in rows}
+
+
 def get_warehouse_by_name(tenant_id: str, name: str):
     return query_one(
         "SELECT * FROM warehouses WHERE tenant_id = %s AND name = %s",

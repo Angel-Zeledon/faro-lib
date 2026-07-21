@@ -92,10 +92,16 @@ def upsert_stock(
     body: StockUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    from backend.entitlements.service import enforce_limit
+
     warehouse = body.warehouse or "principal"
     if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse):
-        from backend.entitlements.service import enforce_limit
         enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
+    # A new warehouse name would otherwise be auto-created for free by
+    # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations entirely.
+    # Enforce BEFORE the write so a blocked request never creates the row.
+    if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
+        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
     row = svc.upsert_stock(user.tenant_id, sku, body.model_dump(exclude_none=True))
     return ok(row)
 
@@ -190,6 +196,16 @@ async def bulk_import(
     new_keys = {(r["sku"], r.get("warehouse") or "principal") for r in rows} - existing_keys
     from backend.entitlements.service import enforce_limit
     enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id), adding=len(new_keys))
+
+    # Same bypass risk as PUT /stock: a CSV with N distinct new warehouse
+    # names would otherwise create all N for free via
+    # svc.upsert_stock -> _ensure_warehouse inside bulk_upsert's loop.
+    # Compute the DISTINCT new names up front and enforce max_locations
+    # against (current count + new names) BEFORE bulk_upsert writes anything,
+    # so a blocked import never partially creates stock/warehouse rows.
+    existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
+    new_wh_names = {r.get("warehouse") or "principal" for r in rows} - existing_wh_names
+    enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id), adding=len(new_wh_names))
 
     # bulk_upsert does one synchronous (blocking) DB round-trip per row. Without
     # offloading to a thread, a large CSV freezes the asyncio event loop — and

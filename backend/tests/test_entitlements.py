@@ -165,6 +165,147 @@ def test_user_limit_on_starter(monkeypatch, make_tenant_user_headers):
     assert after == before
 
 
+def test_bulk_import_blocks_new_warehouses_beyond_max_locations(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """
+    Regression for the max_locations bypass: POST /bulk used to create every
+    NEW warehouse name it saw (via svc.upsert_stock -> _ensure_warehouse) with
+    no limit check at all, so a Starter tenant (max_locations=1) could get
+    unlimited warehouses through a CSV import even though POST /warehouses
+    enforced the same limit correctly. A CSV introducing 2 distinct new
+    warehouse names must be blocked before anything is written — the
+    warehouses AND inventory_stock row counts must be unchanged after.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+
+    wh_before = query_one(
+        "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    stock_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert wh_before == 0  # fresh tenant, no warehouse auto-seeded
+
+    csv_text = (
+        "sku,current_stock,warehouse\n"
+        "BULKWH-A,10,Norte\n"
+        "BULKWH-B,20,Sur\n"
+    )
+    r = client.post(
+        "/api/v1/inventory/bulk",
+        files={"file": ("stock.csv", csv_text.encode("utf-8"), "text/csv")},
+        headers=headers,
+    )
+    assert r.status_code == 403
+    body = r.json()["detail"]
+    assert body["code"] == "PLAN_LIMIT_REACHED"
+    assert body["limit"] == "max_locations"
+
+    wh_after = query_one(
+        "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    stock_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert wh_after == wh_before          # no warehouse row leaked through
+    assert stock_after == stock_before    # no partial stock insert either
+
+
+def test_put_stock_blocks_new_warehouse_beyond_max_locations(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """Same bypass, direct PUT /stock/{sku} path: a Starter tenant already at
+    its 1-warehouse cap must not get a 2nd warehouse auto-created by writing
+    stock for a SKU tagged with a brand-new warehouse name."""
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+
+    # First write establishes warehouse #1 ("principal"), consuming the cap.
+    r0 = client.put(
+        "/api/v1/inventory/stock/PUTWH-1",
+        json={"current_stock": 5},
+        headers=headers,
+    )
+    assert r0.status_code == 200
+
+    wh_before = query_one(
+        "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert wh_before == 1
+
+    # Second write targets a NEW warehouse name -> would be warehouse #2,
+    # exceeding Starter's max_locations=1.
+    r1 = client.put(
+        "/api/v1/inventory/stock/PUTWH-2",
+        json={"current_stock": 7, "warehouse": "Norte"},
+        headers=headers,
+    )
+    assert r1.status_code == 403
+    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
+    assert r1.json()["detail"]["limit"] == "max_locations"
+
+    wh_after = query_one(
+        "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert wh_after == wh_before
+    stock_row = query_one(
+        "SELECT 1 FROM inventory_stock WHERE tenant_id=%s AND sku='PUTWH-2'", (tenant_id,)
+    )
+    assert stock_row is None   # blocked write must not have created the stock row
+
+
+def test_bulk_import_blocks_new_skus_beyond_max_skus_quota_override(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """
+    max_skus enforcement, exercised through a per-tenant quota override rather
+    than the full 500-row Starter catalog value — cheap to set up and doubles
+    as proof that quota overrides actually take effect.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import execute, query_one, _json
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
+
+    stock_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_before == 0
+
+    csv_text = (
+        "sku,current_stock\n"
+        "QUOTASKU-A,10\n"
+        "QUOTASKU-B,20\n"
+    )
+    r = client.post(
+        "/api/v1/inventory/bulk",
+        files={"file": ("stock.csv", csv_text.encode("utf-8"), "text/csv")},
+        headers=headers,
+    )
+    assert r.status_code == 403
+    body = r.json()["detail"]
+    assert body["code"] == "PLAN_LIMIT_REACHED"
+    assert body["limit"] == "max_skus"
+
+    stock_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_after == stock_before   # blocked import created nothing
+
+
 def test_expired_trial_blocks_mutation_but_allows_read(
     monkeypatch, make_tenant_user_headers
 ):

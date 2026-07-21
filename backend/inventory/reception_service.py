@@ -136,6 +136,24 @@ def receive_po(
         for i in ordered:
             received_by_item.setdefault(i["id"], 0.0)
 
+    # Pre-check max_locations BEFORE any write. A PO line whose warehouse has
+    # no existing inventory_stock row yet will, further down, create one via
+    # inv_svc.upsert_stock -> _ensure_warehouse — the same auto-create bypass
+    # that exists on the direct stock-write endpoints. Computing the distinct
+    # NEW warehouse names up front and enforcing here (before step 1 touches
+    # inventory_po_items) keeps this reception all-or-nothing: a blocked
+    # reception must not leave received_qty partially accumulated.
+    from backend.entitlements.service import enforce_limit
+    from backend.inventory import warehouse_service as wh_svc
+    existing_wh_names = wh_svc.list_warehouse_names(tenant_id)
+    new_wh_names = {
+        (i.get("warehouse") or "principal")
+        for i in ordered
+        if received_by_item[i["id"]] > 0
+    } - existing_wh_names
+    if new_wh_names:
+        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id), adding=len(new_wh_names))
+
     # 1. Per-line: accumulate received_qty (partial receptions add up)
     for i in ordered:
         qty = received_by_item[i["id"]]
