@@ -881,15 +881,7 @@ export default function HoyPage() {
  }
 
  return (
-  <div className="hoy-root" style={{ background: C.bg, minHeight: '100vh', padding: '32px 40px', position: 'relative' }}>
-   {/* Minimal mobile pass (feature 3.1): additive media query only, desktop
-       padding/layout above is untouched. */}
-   <style jsx>{`
-    @media (max-width: 640px) {
-     .hoy-root { padding: 16px !important; }
-     .hoy-header { flex-wrap: wrap; row-gap: 12px; }
-    }
-   `}</style>
+  <div style={{ background: C.bg, minHeight: '100vh', padding: '32px 40px', position: 'relative' }}>
 
    {/* ── Tagline ── */}
    <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -905,9 +897,9 @@ export default function HoyPage() {
    </div>
 
    {/* ── Header ── */}
-   <div className="hoy-header" style={{
+   <div style={{
     display: 'flex', alignItems: 'flex-start',
-    justifyContent: 'space-between', marginBottom: 28, gap: 12,
+    justifyContent: 'space-between', marginBottom: 28,
    }}>
     <div>
      <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
@@ -1169,10 +1161,10 @@ export default function HoyPage() {
           background: 'var(--surface)', border: '1px solid rgba(34,197,94,0.4)',
           borderRadius: 12, padding: '14px 20px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-          display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+          display: 'flex', alignItems: 'center', gap: 16,
           marginTop: 8,
          }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ flex: 1 }}>
            <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>
             {approved.length} {t('hoy.cart_products_approved')}
            </div>
@@ -1323,7 +1315,6 @@ export default function HoyPage() {
            {optimization.orders.map(order => (
             <div key={`${order.sku}-${order.warehouse}`} style={{
              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-             flexWrap: 'wrap', gap: 8,
              padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6,
             }}>
              <span style={{ fontSize: 13 }}>
@@ -1399,7 +1390,7 @@ export default function HoyPage() {
             <div
              key={item.sku}
              style={{
-              display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+              display: 'flex', alignItems: 'center', gap: 14,
               padding: '12px 16px',
               borderBottom: idx < briefing.demand_changes.length - 1
                ? `1px solid ${C.border}` : 'none',
@@ -1473,7 +1464,6 @@ export default function HoyPage() {
              key={item.sku}
              style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              flexWrap: 'wrap', gap: 8,
               background: C.surface, border: `1px solid ${C.border}`,
               borderRadius: 8, padding: '10px 14px',
              }}
@@ -1484,7 +1474,7 @@ export default function HoyPage() {
                <span style={{ fontSize: 13, color: C.muted }}> — {item.display_name}</span>
               )}
              </div>
-             <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+             <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
               {item.coverage_days != null && (
                <span style={{ fontSize: 12, color: C.dim }}>
                 {Math.round(item.coverage_days)} {t('hoy.reason_days_coverage')}
