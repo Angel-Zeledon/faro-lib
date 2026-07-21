@@ -1079,6 +1079,8 @@ export interface Entitlements {
   trial: { state: string; ends_at: string | null }
   limits: Record<string, number | null>
   features: Record<string, boolean>
+  // Minimum plan that unlocks each feature (e.g. { ai_analyst: 'professional' }).
+  feature_plans: Record<string, string>
   read_only: boolean
 }
 
