@@ -555,6 +555,89 @@ def test_receive_po_respects_max_skus_atomically(monkeypatch, make_tenant_user_h
     assert stock_count_final == 2
 
 
+def test_demo_quickstart_respects_max_skus_atomically(
+    monkeypatch, make_tenant_user_headers, client,
+):
+    """
+    Regression for the last "committed prefix, aborted suffix" bug in the demo
+    onboarding path: POST /demo/quickstart commits the dataset row, forces the
+    session to MODELS_CONFIGURED, and writes the config blobs BEFORE looping
+    over the fixed 5-SKU _DEMO_STOCK calling upsert_stock per SKU. A tenant
+    already at (or near) its max_skus cap would sail through every one of
+    those earlier commits and only get blocked mid-loop by upsert_stock's own
+    per-row chokepoint — leaving an orphaned session + demo dataset behind
+    plus 1..4 partially-created stock rows, with the training job never
+    created.
+
+    This asserts the pre-loop max_skus check blocks the whole call BEFORE the
+    first write (no session, no dataset, no stock row leaks through), and
+    that an entitled tenant (quota raised) still gets the full quickstart.
+    """
+    from backend.db.connection import execute, query_one, _json
+
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    # 1 pre-existing stock row + max_skus=1 quota override -> the demo's 5
+    # brand-new SKUs would all exceed the cap.
+    from backend.inventory import service as inv_svc
+    inv_svc.upsert_stock(tenant_id, "PRE_EXISTING", {"current_stock": 5, "warehouse": "principal"})
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
+
+    stock_before = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    sessions_before = query_one(
+        "SELECT COUNT(*) AS c FROM sessions WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    datasets_before = query_one(
+        "SELECT COUNT(*) AS c FROM datasets WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_before == 1
+
+    resp = client.post("/api/v1/demo/quickstart", headers=headers)
+    assert resp.status_code == 403
+    body = resp.json()["detail"]
+    assert body["code"] == "PLAN_LIMIT_REACHED"
+    assert body["limit"] == "max_skus"
+
+    # Atomicity: nothing partially written -- no new stock row, no orphaned
+    # session, no orphaned dataset.
+    stock_after = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    sessions_after = query_one(
+        "SELECT COUNT(*) AS c FROM sessions WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    datasets_after = query_one(
+        "SELECT COUNT(*) AS c FROM datasets WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_after == stock_before
+    assert sessions_after == sessions_before
+    assert datasets_after == datasets_before
+
+    # Entitled case: raise the quota override -> quickstart succeeds and
+    # actually creates the session + demo stock, proving the gate toggles.
+    execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 100}), tenant_id))
+
+    resp2 = client.post("/api/v1/demo/quickstart", headers=headers)
+    assert resp2.status_code == 202, resp2.text
+    data = resp2.json()["data"]
+
+    sess = query_one(
+        "SELECT status FROM sessions WHERE id=%s AND tenant_id=%s", (data["session_id"], tenant_id)
+    )
+    assert sess is not None
+    assert sess["status"] == "QUEUED"
+
+    stock_final = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert stock_final == stock_before + 5  # the 1 pre-existing + all 5 demo SKUs
+
+
 def test_expired_trial_blocks_mutation_but_allows_read(
     monkeypatch, make_tenant_user_headers
 ):
