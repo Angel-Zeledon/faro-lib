@@ -529,6 +529,11 @@ class TestPOExport:
         assert header is not None
         assert "SKU" in header
         assert "Cantidad recomendada" in header
+        # The exported PO must be transparent about the lead time it used and
+        # whether that lead time was learned from real receptions or configured
+        # by hand (Faro plan open risk #6).
+        assert "Lead time (días)" in header
+        assert "Origen lead time" in header
 
 
 # ── Log PO: 0-unit lines must never become ordered PO items ───────────────────

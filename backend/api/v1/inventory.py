@@ -1618,12 +1618,16 @@ def export_po(
     writer.writerow([
         "SKU", "Nombre", "Proveedor", "Señal",
         "Stock actual", "Días cobertura", "Demanda (lead time)",
+        "Lead time (días)", "Origen lead time",
         "Cantidad recomendada", "MOQ", "Costo unitario", "Valor orden",
     ])
     for i in po_items:
         qty   = i.get("recommended_qty") or 0
         cost  = i.get("unit_cost")
         value = round(qty * cost, 2) if cost else ""
+        # Label where the lead time came from so the buyer can trust (or
+        # question) it — same distinction the /hoy and /inventory screens show.
+        lead_origin = "Aprendido" if i.get("lead_time_source") == "learned" else "Configurado"
         writer.writerow([
             i["sku"],
             i.get("display_name") or "",
@@ -1632,6 +1636,8 @@ def export_po(
             i.get("current_stock") if i.get("current_stock") is not None else "",
             i.get("coverage_days") if i.get("coverage_days") is not None else "",
             i.get("lead_time_demand") or "",
+            i.get("lead_time_days") if i.get("lead_time_days") is not None else "",
+            lead_origin,
             qty,
             i.get("moq") or 1,
             cost or "",
