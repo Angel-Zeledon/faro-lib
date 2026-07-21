@@ -1880,7 +1880,7 @@ def run_daily_inventory_alerts() -> None:
                 continue
 
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
-            inventory_url = f"{app_url}/inventory"
+            inventory_url = f"{app_url}/hoy"
 
             emails = get_tenant_admin_emails(tid)
             for email in emails:

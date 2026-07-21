@@ -1,0 +1,16 @@
+{
+  "name": "Faro",
+  "short_name": "Faro",
+  "start_url": "/hoy",
+  "display": "standalone",
+  "background_color": "#08090d",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
