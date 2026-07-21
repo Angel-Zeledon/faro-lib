@@ -374,7 +374,18 @@ def _effective_lead_time(tenant_id: str, supplier: str) -> tuple[float, str]:
            WHERE tenant_id = %s AND LOWER(supplier) = LOWER(%s)""",
         (tenant_id, supplier),
     )
-    if obs and obs.get("n") and obs["n"] > 0 and obs.get("avg_days") is not None:
+    # Require enough receptions before trusting the observed average: a single
+    # freak delivery must not rewrite the supplier's lead time and move the
+    # "overdue" verdict because of an accident. Same threshold the semaphore
+    # calc uses (service.get_learned_lead_times) — trusting at n=1 here while
+    # that path waits for MIN_LEAD_TIME_OBSERVATIONS was an inconsistency.
+    from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
+    if (
+        obs
+        and obs.get("n")
+        and obs["n"] >= MIN_LEAD_TIME_OBSERVATIONS
+        and obs.get("avg_days") is not None
+    ):
         return float(obs["avg_days"]), "observed"
 
     from backend.inventory import supplier_service as sup_svc

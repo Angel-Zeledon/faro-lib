@@ -103,12 +103,15 @@ class TestGetOverdueReceptions:
         _make_supplier(tid, prov, lead_time_days=20)
         # supplier_lead_time_obs.po_log_id FKs into inventory_po_log, so the
         # seed observations need real (already-received) POs behind them.
+        # At least MIN_LEAD_TIME_OBSERVATIONS of them: below that threshold the
+        # learned average is intentionally ignored (see the thin-evidence test).
         seed_po_a = _make_po(client, auth_headers, sku=f"SEED-A-{uuid.uuid4().hex[:6]}", qty=1, supplier=prov)
         seed_po_b = _make_po(client, auth_headers, sku=f"SEED-B-{uuid.uuid4().hex[:6]}", qty=1, supplier=prov)
+        seed_po_c = _make_po(client, auth_headers, sku=f"SEED-C-{uuid.uuid4().hex[:6]}", qty=1, supplier=prov)
         execute(
             """INSERT INTO supplier_lead_time_obs (tenant_id, supplier, po_log_id, lead_time_days)
-               VALUES (%s, %s, %s, %s), (%s, %s, %s, %s)""",
-            (tid, prov, seed_po_a, 2.0, tid, prov, seed_po_b, 4.0),
+               VALUES (%s, %s, %s, %s), (%s, %s, %s, %s), (%s, %s, %s, %s)""",
+            (tid, prov, seed_po_a, 2.0, tid, prov, seed_po_b, 4.0, tid, prov, seed_po_c, 3.0),
         )
 
         sku = f"OD4-{uuid.uuid4().hex[:6]}"
@@ -121,6 +124,40 @@ class TestGetOverdueReceptions:
         assert row["lead_time_source"] == "observed"
         assert row["lead_time_used"] == 3.0  # avg(2.0, 4.0)
         assert row["days_overdue"] >= 4
+
+    def test_ignores_observed_lead_time_below_minimum(self, client, auth_headers, test_tenant):
+        """With fewer than MIN_LEAD_TIME_OBSERVATIONS receptions, one atypical
+        delivery must NOT rewrite the supplier's lead time. The overdue detector
+        falls back to the declared value until the evidence is thick enough —
+        consistent with the semaphore calc (get_learned_lead_times)."""
+        from backend.inventory.reception_service import get_overdue_receptions
+        from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
+
+        tid = test_tenant["id"]
+        prov = f"Thin-{uuid.uuid4().hex[:6]}"
+        # Declared 20 days (NOT overdue at day 8). Two freak-fast observations
+        # (below the minimum) must be ignored, so the PO is judged on 20 days.
+        _make_supplier(tid, prov, lead_time_days=20)
+        seed_pos = [
+            _make_po(client, auth_headers, sku=f"THIN-{i}-{uuid.uuid4().hex[:6]}", qty=1, supplier=prov)
+            for i in range(MIN_LEAD_TIME_OBSERVATIONS - 1)
+        ]
+        for sp in seed_pos:
+            execute(
+                """INSERT INTO supplier_lead_time_obs (tenant_id, supplier, po_log_id, lead_time_days)
+                   VALUES (%s, %s, %s, %s)""",
+                (tid, prov, sp, 2.0),
+            )
+
+        sku = f"OD-THIN-{uuid.uuid4().hex[:6]}"
+        po = _make_po(client, auth_headers, sku=sku, qty=10, supplier=prov)
+        _set_generated_at(po, datetime.now(timezone.utc) - timedelta(days=8))
+
+        rows = get_overdue_receptions(tid)
+        # Judged on the declared 20 days -> at day 8 it is NOT overdue.
+        assert not any(r["po_log_id"] == po for r in rows), (
+            "thin evidence (n < MIN_LEAD_TIME_OBSERVATIONS) wrongly rewrote the lead time"
+        )
 
     def test_po_with_no_supplier_name_excluded(self, client, auth_headers, test_tenant):
         from backend.inventory.reception_service import get_overdue_receptions

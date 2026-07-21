@@ -131,6 +131,13 @@ Ordenada por riesgo real (los ítems de diseño/UX que estaban aquí se movieron
 
 ---
 
+## Actualización 2026-07-21
+
+- **Plan-based entitlements mergeado a `main`** (feature nueva, fuera del alcance original de este plan): feature gating (17 features) + límites numéricos (SKUs/usuarios/ubicaciones/sesiones) + trial Starter de 14 días con read-only al vencer, todo derivado de `tenant.plan`. Enforcement en el chokepoint `upsert_stock` + guards de API; catálogo único en `backend/entitlements/`. Suite de la feature verde; barrido definitivo cerró 5 huecos sucesivos de bypass/escritura parcial de límites.
+- **Riesgo abierto #2 RESUELTO:** el detector de recepción vencida (`_effective_lead_time`) ya no confía en el promedio aprendido con n=1; exige `MIN_LEAD_TIME_OBSERVATIONS` (=3), igual que el cálculo del semáforo. (rama `fix/lead-time-min-observations`)
+- **Riesgo abierto #6 PARCIAL:** el export CSV de la orden ahora etiqueta el lead time y su origen (columnas "Lead time (días)" y "Origen lead time" = Aprendido/Configurado). Falta la etiqueta in-app en `/inventory` (requiere pasar `lead_time_source` al tipo del front) — pendiente menor.
+- **0.3 (verificación en navegador) — parcial:** verificada end-to-end la UI nueva de entitlements en el navegador (backend :8010 + front :5000): signup crea tenant `starter` + trial de 14 días; nav bloquea "Asistente IA" con candado + tooltip "Disponible en un plan superior"; click abre el UpsellModal ("Ver planes" → `/planes`); al vencer el trial aparece el banner read-only. **Sin issues.** Follow-ups conocidos: UpsellModal usa copy genérico (no nombra el plan) y la ruta `/planes` aún no existe. El recorrido del flujo diario con datos (semáforo→PO→recepción) sigue pendiente.
+
 ## Estado de ejecución — actualizado 2026-07-19
 
 Cerrado y mergeado a `main` (suite backend **818 passed, 19 skipped**; `tsc --noEmit` exit 0):
