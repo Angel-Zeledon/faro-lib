@@ -113,6 +113,11 @@ duplicated matrix per tenant, guaranteed drift).
   - Endpoint-level in `inventory.py`: `events/*` → `EVENT_SIMULATOR`;
     `bom/*` → `BOM`; `warehouses/*` → `MULTI_LOCATION`; MILP optimize endpoint →
     `MILP_OPTIMIZER`; `alerts/send-now` → `WHATSAPP_ALERTS`.
+  - `ABC_XYZ`: the classification is surfaced as a field inside otherwise-core
+    inventory responses (e.g. dashboard summary / scorecard), not a standalone
+    endpoint. Gate it by **omitting the ABC-XYZ field** when the plan lacks the
+    feature (graceful degradation), rather than returning 403 for the whole
+    endpoint. The exact response shapes are pinned during planning.
   - Daily WhatsApp alert loop (worker) skips tenants without `WHATSAPP_ALERTS`.
 - `settings.testing_mode = True` **bypasses** all enforcement (same pattern as
   today's `check_session_quota`), so the suite is unaffected unless a test opts in.
