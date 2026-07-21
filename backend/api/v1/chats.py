@@ -22,10 +22,15 @@ from backend.ai import rag
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.config import settings
 from backend.db import chat_store
+from backend.entitlements.guards import require_feature
+from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
-router = APIRouter(tags=["chats"])
+router = APIRouter(
+    tags=["chats"],
+    dependencies=[Depends(require_feature(Feature.AI_ANALYST))],
+)
 log = logging.getLogger(__name__)
 
 MAX_QUESTION_LENGTH = 4000

@@ -1760,12 +1760,21 @@ def run_daily_inventory_alerts() -> None:
 
             # WhatsApp channel — highest open-rate in LatAm; opt-in per user
             # via users.whatsapp_number. No-op when Twilio isn't configured.
-            from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
-            numbers = get_tenant_admin_whatsapps(tid)
-            if numbers:
-                text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
-                for number in numbers:
-                    send_whatsapp(number, text)
+            # Also gated by plan: WHATSAPP_ALERTS is a Professional+ feature.
+            # `tenant` here only carries tenant_id/tenant_name/last_session_at
+            # (from get_tenants_with_active_sessions), not plan/trial_ends_at,
+            # so the full tenant row must be fetched to check entitlement.
+            from backend.entitlements.service import has_feature
+            from backend.entitlements.plans import Feature
+            from backend.tenants.service import get_tenant
+            full_tenant = get_tenant(tid) or {}
+            if has_feature(full_tenant, Feature.WHATSAPP_ALERTS):
+                from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+                numbers = get_tenant_admin_whatsapps(tid)
+                if numbers:
+                    text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+                    for number in numbers:
+                        send_whatsapp(number, text)
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)

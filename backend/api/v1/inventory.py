@@ -21,6 +21,10 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.config import settings
+from backend.entitlements.guards import require_feature
+from backend.entitlements.plans import Feature
+from backend.entitlements.service import has_feature
+from backend.tenants.service import get_tenant
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
@@ -243,6 +247,27 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
 
 # ── Status endpoint — the core of the product ─────────────────────────────────
 
+def _strip_abc_xyz_unless_entitled(items: list[dict], tenant_id: str) -> list[dict]:
+    """
+    ABC-XYZ classification is a Professional+ feature (Feature.ABC_XYZ), but
+    it rides along as extra keys on otherwise-core inventory items rather than
+    living behind its own endpoint. Starter tenants must still get the core
+    signal/coverage/recommendation data — so we omit the classification keys
+    (graceful degradation) instead of 403-ing the whole read. No-op in
+    testing_mode, matching every other entitlement check.
+    """
+    if settings.testing_mode:
+        return items
+    tenant = get_tenant(tenant_id) or {}
+    if has_feature(tenant, Feature.ABC_XYZ):
+        return items
+    for item in items:
+        item.pop("abc", None)
+        item.pop("xyz", None)
+        item.pop("abc_xyz", None)
+    return items
+
+
 @router.get("/status")
 def inventory_status(
     session_id: str = Query(..., description="Completed forecast session to base recommendations on"),
@@ -259,6 +284,7 @@ def inventory_status(
     - inventory value
     """
     items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
+    items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
 
     if signal:
         signal_up = signal.upper()
@@ -450,7 +476,7 @@ class SimulateEventRequest(BaseModel):
     name:       Optional[str]   = None
 
 
-@router.post("/events/simulate")
+@router.post("/events/simulate", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_current_user)):
     """
     "¿Qué pasa si…?" — project a promo/season's impact per SKU: extra demand,
@@ -489,7 +515,7 @@ class EventMultiplierUpsert(BaseModel):
     multiplier:  float = Field(ge=0.1, le=10.0)
 
 
-@router.get("/events/{event_id}/multipliers")
+@router.get("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
     """Per-SKU or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
@@ -497,7 +523,7 @@ def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_curren
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
 
 
-@router.put("/events/{event_id}/multipliers")
+@router.put("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def upsert_event_multiplier(
     event_id: str,
     body: EventMultiplierUpsert,
@@ -518,7 +544,10 @@ def upsert_event_multiplier(
     return ok(row)
 
 
-@router.delete("/events/{event_id}/multipliers/{override_id}", status_code=204)
+@router.delete(
+    "/events/{event_id}/multipliers/{override_id}", status_code=204,
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def remove_event_multiplier(
     event_id: str,
     override_id: str,
@@ -529,12 +558,12 @@ def remove_event_multiplier(
         raise HTTPException(status_code=404, detail="Override no encontrado")
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def list_events(user: CurrentUser = Depends(get_current_user)):
     return ok(svc.list_events(user.tenant_id))
 
 
-@router.get("/events/upcoming")
+@router.get("/events/upcoming", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def upcoming_events(
     days: int = Query(default=60, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -542,13 +571,16 @@ def upcoming_events(
     return ok(svc.get_upcoming_events(user.tenant_id, days_ahead=days))
 
 
-@router.post("/events", status_code=201)
+@router.post(
+    "/events", status_code=201,
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def create_event(body: EventCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     ev = svc.create_event(user.tenant_id, body.model_dump())
     return ok(ev)
 
 
-@router.patch("/events/{event_id}")
+@router.patch("/events/{event_id}", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def patch_event(
     event_id: str,
     body: EventPatch,
@@ -570,7 +602,10 @@ def patch_event(
     return ok(ev)
 
 
-@router.delete("/events/{event_id}", status_code=204)
+@router.delete(
+    "/events/{event_id}", status_code=204,
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     svc.delete_event(user.tenant_id, event_id)
 
@@ -586,7 +621,7 @@ class CatalogToggleRequest(BaseModel):
     active: bool
 
 
-@router.get("/events/catalog")
+@router.get("/events/catalog", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def get_event_catalog(
     country: str = Query(default="CR", max_length=4),
     user: CurrentUser = Depends(get_current_user),
@@ -622,7 +657,7 @@ def get_event_catalog(
     })
 
 
-@router.post("/events/catalog/seed")
+@router.post("/events/catalog/seed", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def seed_event_catalog(
     body: CalendarSeedRequest,
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -635,7 +670,10 @@ def seed_event_catalog(
     return ok(result)
 
 
-@router.patch("/events/catalog/{catalog_key}")
+@router.patch(
+    "/events/catalog/{catalog_key}",
+    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
+)
 def toggle_catalog_entry(
     catalog_key: str,
     body: CatalogToggleRequest,
@@ -1252,12 +1290,15 @@ class WarehouseCreate(BaseModel):
     is_default: bool = False
 
 
-@router.get("/warehouses")
+@router.get("/warehouses", dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))])
 def list_warehouses(user: CurrentUser = Depends(get_current_user)):
     return ok(wh_svc.list_warehouses(user.tenant_id))
 
 
-@router.post("/warehouses", status_code=201)
+@router.post(
+    "/warehouses", status_code=201,
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     if not wh_svc.get_warehouse_by_name(user.tenant_id, body.name):
         from backend.entitlements.service import enforce_limit
@@ -1297,7 +1338,10 @@ def remove_sku_supplier(
 
 # ── Alert test-fire ───────────────────────────────────────────────────────────
 
-@router.post("/alerts/send-now", status_code=202)
+@router.post(
+    "/alerts/send-now", status_code=202,
+    dependencies=[Depends(require_feature(Feature.WHATSAPP_ALERTS))],
+)
 def send_alert_now(
     session_id: str = Query(...),
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -1394,13 +1438,16 @@ class BomItemUpsert(BaseModel):
     notes:    Optional[str] = None
 
 
-@router.get("/bom/{parent_sku}")
+@router.get("/bom/{parent_sku}", dependencies=[Depends(require_feature(Feature.BOM))])
 def get_bom(parent_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns BOM (Bill of Materials) for a finished good."""
     return ok(bom_svc.list_bom(user.tenant_id, parent_sku))
 
 
-@router.put("/bom/{parent_sku}/{child_sku}", status_code=200)
+@router.put(
+    "/bom/{parent_sku}/{child_sku}", status_code=200,
+    dependencies=[Depends(require_feature(Feature.BOM))],
+)
 def upsert_bom_item(
     parent_sku: str,
     child_sku:  str,
@@ -1416,7 +1463,10 @@ def upsert_bom_item(
         raise HTTPException(status_code=422, detail=str(e))
 
 
-@router.delete("/bom/{parent_sku}/{child_sku}", status_code=204)
+@router.delete(
+    "/bom/{parent_sku}/{child_sku}", status_code=204,
+    dependencies=[Depends(require_feature(Feature.BOM))],
+)
 def delete_bom_item(
     parent_sku: str,
     child_sku:  str,
@@ -1425,7 +1475,7 @@ def delete_bom_item(
     bom_svc.delete_bom_item(user.tenant_id, parent_sku, child_sku)
 
 
-@router.get("/bom/{child_sku}/used-in")
+@router.get("/bom/{child_sku}/used-in", dependencies=[Depends(require_feature(Feature.BOM))])
 def where_used(child_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns all finished goods that use this component."""
     return ok(bom_svc.get_parents_using(user.tenant_id, child_sku))
@@ -1518,6 +1568,7 @@ def dead_stock(
             })
 
     dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
+    dead_items = _strip_abc_xyz_unless_entitled(dead_items, user.tenant_id)
 
     total_capital = sum(d['capital_trapped'] for d in dead_items)
     total_holding = sum(d['holding_cost_monthly'] for d in dead_items)
@@ -1580,7 +1631,7 @@ def export_po(
 
 # ── MILP purchasing/transfers optimizer (MW-3) ───────────────────────────────
 
-@router.get("/optimize")
+@router.get("/optimize", dependencies=[Depends(require_feature(Feature.MILP_OPTIMIZER))])
 def optimize_inventory(
     session_id:   str = Query(...),
     # 30 (the max allowed) rather than a shorter default: the optimizer's own

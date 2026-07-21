@@ -14,10 +14,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.ai import rag
 from backend.ai.narrator import narrate
 from backend.auth.guards import CurrentUser, get_current_user
+from backend.entitlements.guards import require_feature
+from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
-router = APIRouter(tags=["analyst"])
+router = APIRouter(
+    tags=["analyst"],
+    dependencies=[Depends(require_feature(Feature.AI_ANALYST))],
+)
 log = logging.getLogger(__name__)
 
 

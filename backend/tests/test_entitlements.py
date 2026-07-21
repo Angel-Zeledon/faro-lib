@@ -392,3 +392,28 @@ def test_expired_trial_blocks_mutation_but_allows_read(
         "SELECT COUNT(*) AS c FROM sessions WHERE tenant_id=%s", (tenant_id,)
     )["c"]
     assert after == before
+
+
+@pytest.mark.parametrize("path,method", [
+    ("/api/v1/documents", "get"),
+    ("/api/v1/api-keys", "get"),
+])
+def test_router_feature_gate_blocks_starter(
+    monkeypatch, make_tenant_user_headers, path, method
+):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.main import app
+    headers = make_tenant_user_headers(plan="starter")
+    r = getattr(TestClient(app), method)(path, headers=headers)
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "PLAN_UPGRADE_REQUIRED"
+
+
+def test_router_feature_gate_allows_enterprise(
+    monkeypatch, make_tenant_user_headers
+):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.main import app
+    headers = make_tenant_user_headers(plan="enterprise")
+    r = TestClient(app).get("/api/v1/api-keys", headers=headers)
+    assert r.status_code != 403

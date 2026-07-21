@@ -9,9 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth.guards import CurrentUser, get_current_user
+from backend.entitlements.guards import require_feature
+from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 
-router = APIRouter(prefix="/ai", tags=["ai-insights"])
+router = APIRouter(
+    prefix="/ai", tags=["ai-insights"],
+    dependencies=[Depends(require_feature(Feature.AI_ANALYST))],
+)
 log = logging.getLogger(__name__)
 
 
