@@ -58,6 +58,7 @@ class SiigoProvider(AccountingProvider):
         super().__init__(credentials)
         self._base = settings.siigo_base_url
         self._token_cache: Optional[str] = None
+        self._products_cache: Optional[list[dict]] = None
 
     def test_connection(self) -> None:
         self._token()
@@ -107,7 +108,13 @@ class SiigoProvider(AccountingProvider):
     # ── internals ────────────────────────────────────────────────────────
 
     def _fetch_products_raw(self) -> list[dict]:
-        return self._paginate("/products")
+        """Fetch + paginate `/products` once per instance. `fetch_products`
+        and `fetch_stock` both read this same endpoint, so within one sync
+        (which calls both on the same provider instance) the second caller
+        reuses the cached page set instead of re-walking the catalog."""
+        if self._products_cache is None:
+            self._products_cache = self._paginate("/products")
+        return self._products_cache
 
     def _paginate(self, path: str, params: Optional[dict] = None) -> list[dict]:
         base_params = dict(params or {})

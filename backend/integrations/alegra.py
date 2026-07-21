@@ -39,6 +39,7 @@ class AlegraProvider(AccountingProvider):
         super().__init__(credentials)
         self._auth = HTTPBasicAuth(credentials["email"], credentials["token"])
         self._base = settings.alegra_base_url
+        self._items_cache: Optional[list[dict]] = None
 
     def test_connection(self) -> None:
         self._get("/items", params={"limit": 1})
@@ -91,7 +92,13 @@ class AlegraProvider(AccountingProvider):
     # ── internals ────────────────────────────────────────────────────────
 
     def _fetch_items(self) -> list[dict]:
-        return self._paginate("/items")
+        """Fetch + paginate `/items` once per instance. `fetch_products` and
+        `fetch_stock` both read this same endpoint, so within one sync
+        (which calls both on the same provider instance) the second caller
+        reuses the cached page set instead of re-walking the catalog."""
+        if self._items_cache is None:
+            self._items_cache = self._paginate("/items")
+        return self._items_cache
 
     def _paginate(self, path: str, params: Optional[dict] = None) -> list[dict]:
         base_params = dict(params or {})

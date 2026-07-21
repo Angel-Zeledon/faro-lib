@@ -61,8 +61,17 @@ def sync_connection(connection_id: str) -> dict:
 
         products = provider.fetch_products()
         stock = provider.fetch_stock()
-        since = conn_row["last_sync_at"].date() if conn_row.get("last_sync_at") else None
-        sales = provider.fetch_sales(since=since)
+        # The TRAINING dataset must always be built from the tenant's FULL
+        # sales history, not just what changed since the last sync. Passing
+        # `last_sync_at` here would starve every sync after the first down to
+        # ~1 day of invoices — well under `validation_cfg.min_history`
+        # (backend/sessions/defaults.py), so the trainer would skip every SKU
+        # and auto-train would refresh nothing. There is no persistent sales
+        # store to merge incremental fetches into (out of scope), so the
+        # simplest correct approach is: every sync re-fetches and re-trains on
+        # the complete history. `last_sync_at` is still recorded by
+        # `store.mark_synced` below for display purposes only.
+        sales = provider.fetch_sales(since=None)
 
         merged = _merge_products_and_stock(products, stock)
 
