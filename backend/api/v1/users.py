@@ -115,6 +115,9 @@ def create_user_admin(
     if _lookup_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
+
     temp_password = secrets.token_urlsafe(16)
     new_user = user_svc.create_user_admin(
         user.tenant_id, body.email, temp_password, body.role, body.full_name
@@ -346,6 +349,9 @@ def invite_user(
     from backend.api.v1.auth import _lookup_email
     if _lookup_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
+
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
 
     temp_password = secrets.token_urlsafe(16)
     new_user = user_svc.create_user_admin(

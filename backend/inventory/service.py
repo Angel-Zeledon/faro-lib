@@ -82,6 +82,22 @@ def _ensure_warehouse(tenant_id: str, name: str) -> None:
         log.warning("_ensure_warehouse: failed to upsert warehouse=%s tenant=%s err=%s", name, tenant_id, e)
 
 
+def count_stock(tenant_id: str) -> int:
+    row = query_one("SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id = %s", (tenant_id,))
+    return row["c"] if row else 0
+
+
+def list_stock_keys(tenant_id: str) -> set:
+    """(sku, warehouse) pairs already present for this tenant — the same
+    conflict target `upsert_stock` writes to, used to tell how many rows a
+    bulk import would actually ADD (vs. update in place)."""
+    rows = query(
+        "SELECT sku, warehouse FROM inventory_stock WHERE tenant_id = %s",
+        (tenant_id,),
+    )
+    return {(r["sku"], r["warehouse"]) for r in rows}
+
+
 def get_stock(tenant_id: str, sku: str, warehouse: Optional[str] = None) -> Optional[dict]:
     if warehouse is not None:
         return query_one(

@@ -92,6 +92,10 @@ def upsert_stock(
     body: StockUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    warehouse = body.warehouse or "principal"
+    if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse):
+        from backend.entitlements.service import enforce_limit
+        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
     row = svc.upsert_stock(user.tenant_id, sku, body.model_dump(exclude_none=True))
     return ok(row)
 
@@ -181,6 +185,11 @@ async def bulk_import(
 
     if not rows:
         raise HTTPException(status_code=422, detail="No valid rows found in CSV. Ensure 'sku' column exists.")
+
+    existing_keys = svc.list_stock_keys(user.tenant_id)
+    new_keys = {(r["sku"], r.get("warehouse") or "principal") for r in rows} - existing_keys
+    from backend.entitlements.service import enforce_limit
+    enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id), adding=len(new_keys))
 
     # bulk_upsert does one synchronous (blocking) DB round-trip per row. Without
     # offloading to a thread, a large CSV freezes the asyncio event loop — and
@@ -1234,6 +1243,9 @@ def list_warehouses(user: CurrentUser = Depends(get_current_user)):
 
 @router.post("/warehouses", status_code=201)
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
+    if not wh_svc.get_warehouse_by_name(user.tenant_id, body.name):
+        from backend.entitlements.service import enforce_limit
+        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
     warehouse = wh_svc.create_warehouse(user.tenant_id, body.name, is_default=body.is_default)
     return ok(warehouse)
 

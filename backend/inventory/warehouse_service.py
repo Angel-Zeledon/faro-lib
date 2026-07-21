@@ -20,6 +20,18 @@ def list_warehouses(tenant_id: str) -> list[dict]:
     )
 
 
+def count_warehouses(tenant_id: str) -> int:
+    row = query_one("SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id = %s", (tenant_id,))
+    return row["c"] if row else 0
+
+
+def get_warehouse_by_name(tenant_id: str, name: str):
+    return query_one(
+        "SELECT * FROM warehouses WHERE tenant_id = %s AND name = %s",
+        (tenant_id, name),
+    )
+
+
 def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dict:
     """Idempotent create: if a warehouse with this name already exists for the
     tenant, returns the existing row unchanged rather than 409ing (matches the

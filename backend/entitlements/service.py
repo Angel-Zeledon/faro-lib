@@ -44,3 +44,22 @@ def is_read_only(tenant: dict) -> bool:
 
 def required_plans_for(feature: Feature) -> list[str]:
     return [name for name, d in PLAN_CATALOG.items() if feature in d.features]
+
+
+def enforce_limit(tenant_id: str, limit_key: str, current: int, adding: int = 1) -> None:
+    """Raise 403 PLAN_LIMIT_REACHED when `current + adding` would exceed the
+    tenant's plan (or quota-override) limit for `limit_key`. No-op in testing
+    mode, and no-op when the limit is unbounded (None, e.g. enterprise)."""
+    from fastapi import HTTPException, status
+    from backend.config import settings
+    from backend.tenants.service import get_tenant
+    if settings.testing_mode:
+        return
+    tenant = get_tenant(tenant_id) or {"plan": "starter", "quota": {}}
+    max_allowed = tenant_limits(tenant)[limit_key]
+    if max_allowed is not None and current + adding > max_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "PLAN_LIMIT_REACHED", "limit": limit_key,
+                    "current": current, "max": max_allowed},
+        )

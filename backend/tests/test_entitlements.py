@@ -137,6 +137,34 @@ def test_require_feature_allows_professional(monkeypatch, make_tenant_user_heade
     assert r.status_code == 200
 
 
+def test_user_limit_on_starter(monkeypatch, make_tenant_user_headers):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.main import app
+    from backend.db.connection import query_one
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", role="admin", return_tenant_id=True
+    )
+    client = TestClient(app)
+    # tenant already has 1 admin user; Starter allows 2 → first create OK
+    r1 = client.post("/api/v1/users", headers=headers,
+                     json={"email": "u2@x.com", "full_name": "U2",
+                           "password": "pw12345678", "role": "analyst"})
+    assert r1.status_code in (200, 201)
+
+    before = query_one("SELECT COUNT(*) AS c FROM users WHERE tenant_id=%s",
+                       (tenant_id,))["c"]
+    # 3rd user exceeds Starter's max_users=2 → blocked, count unchanged
+    r2 = client.post("/api/v1/users", headers=headers,
+                     json={"email": "u3@x.com", "full_name": "U3",
+                           "password": "pw12345678", "role": "analyst"})
+    assert r2.status_code == 403
+    assert r2.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
+    after = query_one("SELECT COUNT(*) AS c FROM users WHERE tenant_id=%s",
+                      (tenant_id,))["c"]
+    assert after == before
+
+
 def test_expired_trial_blocks_mutation_but_allows_read(
     monkeypatch, make_tenant_user_headers
 ):
