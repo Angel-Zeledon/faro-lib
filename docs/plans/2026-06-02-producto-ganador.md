@@ -2,6 +2,8 @@
 
 > **Este es el plan estratégico + roadmap técnico completo.**
 > Escrito el 2026-06-02. Revisarlo cada 90 días.
+>
+> **NOTA (2026-07-21):** mercado ancla es Costa Rica, no Colombia; los datos de mercado colombianos abajo (cliente objetivo, gremios, metas de dominio de mercado) están desalineados y quedan pendientes de revisión. Moneda (COP) corregida a CRC donde el documento la menciona.
 
 ---
 
@@ -377,7 +379,7 @@ Faro ajusta el forecast para esas fechas y genera recomendaciones de compra anti
 En orden de ROI para el LatAm market:
 
 1. **Google Sheets** (más fácil, más común) — sync bidireccional de stock actual
-2. **Siigo** (software contable más popular en Colombia) — importar ventas automáticamente
+2. **Siigo** (software contable más popular en Colombia) — importar ventas automáticamente. ⚠️ Siigo/Alegra son software colombiano; para Costa Rica falta definir el conector equivalente — decisión de producto pendiente.
 3. **WooCommerce / Shopify** — para distribuidores con canal digital
 4. **WhatsApp Business API** — alertas donde el usuario ya está
 5. **API pública** (ya existe con API Keys) — para clientes que quieren integrar su ERP propio
@@ -389,13 +391,13 @@ La métrica que justifica la suscripción:
 ```
 Abril 2026 — Tu resumen con Faro
 
-Capital en inventario:         $48M COP
-Capital liberado vs mes ant.:  $12M COP  ✅
-Stockouts evitados:            7 eventos (est. $18M COP en ventas protegidas)
-Productos con sobrestock:      3 SKUs ($6M COP inmovilizado — acción recomendada)
+Capital en inventario:         ₡48M CRC
+Capital liberado vs mes ant.:  ₡12M CRC  ✅
+Stockouts evitados:            7 eventos (est. ₡18M CRC en ventas protegidas)
+Productos con sobrestock:      3 SKUs (₡6M CRC inmovilizado — acción recomendada)
 Forecast accuracy promedio:    91.4%
 
-ROI estimado del mes:          ~$30M COP ahorrados / $299.000 COP pagados
+ROI estimado del mes:          ~₡30M CRC ahorrados / ₡299.000 CRC pagados
                                 → 100x retorno
 ```
 
@@ -458,7 +460,7 @@ Con las API Keys ya implementadas, abrir un programa de partners:
 
 ## El modelo de negocio
 
-### Pricing (en USD, facturación en COP también disponible)
+### Pricing (en USD, facturación en CRC también disponible)
 
 | Plan | Precio/mes | SKUs | Usuarios | Ubicaciones | Soporte |
 |---|---|---|---|---|---|
@@ -506,7 +508,7 @@ Con las API Keys ya implementadas, abrir un programa de partners:
 
 3. **Localización LatAm**: Los feriados de Colombia (Semana Santa, festivos movibles) ya están en el modelo. Entender los ciclos de demanda locales (quincenas, días de mercado, temporadas específicas de la región) es difícil de replicar desde afuera.
 
-4. **Integración operacional**: Cuando Faro está integrado con Siigo y WhatsApp del cliente, cambiar implica reconfigurar flujos de trabajo que el equipo ya tiene internalizados.
+4. **Integración operacional**: Cuando Faro está integrado con Siigo (⚠️ software colombiano — conector equivalente para Costa Rica pendiente de definir) y WhatsApp del cliente, cambiar implica reconfigurar flujos de trabajo que el equipo ya tiene internalizados.
 
 ---
 
