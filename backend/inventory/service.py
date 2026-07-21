@@ -8,7 +8,7 @@ to produce per-SKU signals, ABC-XYZ classification, and order recommendations.
 import math
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
 from backend.formatting import money, format_days as _format_days
@@ -22,7 +22,15 @@ _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
-def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
+def upsert_stock(tenant_id: str, sku: str, data: dict, conn: Optional[Any] = None) -> dict:
+    """
+    `conn`: optional shared connection from db.connection.transaction(). When
+    provided, every DB call this function makes runs on THAT connection and
+    does not commit — the caller's transaction() commits once for the whole
+    block (used by reception_service.receive_po to make a reception
+    atomic). When omitted (the default), behavior is exactly as before: each
+    DB call opens its own pooled connection and auto-commits immediately.
+    """
     allowed = {
         "display_name", "current_stock", "min_stock",
         "lead_time_days", "unit_cost", "moq", "supplier", "notes",
@@ -40,6 +48,32 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     if not safe:
         raise ValueError("No valid fields to update")
 
+    # Numeric floor guard — mirrors the _DATASET_STOCK_MIN sanitization applied
+    # in sync_stock_from_dataset. upsert_stock is the one chokepoint every
+    # direct (non-HTTP) caller (bulk_upsert, receive_po, demo/seed scripts)
+    # funnels through; PUT/PATCH /stock already reject out-of-range values via
+    # Pydantic's ge=0, but a direct call bypasses that entirely. Without this,
+    # a 0/negative lead_time_days/current_stock/moq would corrupt the
+    # reorder-point math the same way an unvalidated dataset column would (see
+    # _DATASET_STOCK_MIN's docstring above). Out-of-range fields are dropped
+    # (not the whole call rejected) so a partially-bad payload still saves the
+    # fields that are valid, same graceful-degradation behavior as the sync path.
+    for col, floor in _DATASET_STOCK_MIN.items():
+        if col not in safe or safe[col] is None:
+            continue
+        try:
+            numeric_val = float(safe[col])
+        except (TypeError, ValueError):
+            continue
+        if numeric_val < floor:
+            log.warning(
+                "upsert_stock: dropped out-of-range %s=%r (floor=%s) sku=%s tenant=%s",
+                col, safe[col], floor, sku, tenant_id,
+            )
+            del safe[col]
+    if not safe:
+        raise ValueError("No valid fields to update")
+
     # CHOKEPOINT: max_skus and max_locations must be enforced here, not
     # per-caller. Every write path (PUT /stock, PATCH /stock, POST /bulk,
     # receive_po, dataset sync, demo/seed scripts) funnels through this
@@ -52,7 +86,15 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
     # unchanged (no partial write).
     from backend.entitlements.service import enforce_limit
     from backend.inventory import warehouse_service as wh_svc
-    is_new_row = not get_stock(tenant_id, sku, warehouse=safe["warehouse"])
+    # These chokepoint reads intentionally do NOT take `conn`: warehouse_service
+    # is a separate module this fix doesn't own, and count_stock's role here is
+    # only a pre-write sanity check, not a value this call's own writes below
+    # depend on for correctness. When receive_po calls this inside a
+    # transaction(), the outer pre-checks in receive_po already enforced the
+    # limits for the WHOLE batch of writes before the transaction opened, so
+    # this per-row check staying on its own connection is redundant-but-safe,
+    # not a bypass.
+    is_new_row = not get_stock(tenant_id, sku, warehouse=safe["warehouse"], conn=conn)
     if is_new_row:
         enforce_limit(tenant_id, "max_skus", count_stock(tenant_id))
     if not wh_svc.get_warehouse_by_name(tenant_id, safe["warehouse"]):
@@ -74,27 +116,33 @@ def upsert_stock(tenant_id: str, sku: str, data: dict) -> dict:
             ON CONFLICT (tenant_id, sku, warehouse) DO UPDATE
             SET {upd}updated_at = NOW()""",
         (tenant_id, sku, *values),
+        conn=conn,
     )
-    _ensure_warehouse(tenant_id, safe["warehouse"])
+    _ensure_warehouse(tenant_id, safe["warehouse"], conn=conn)
 
-    row = get_stock(tenant_id, sku, warehouse=safe["warehouse"])
+    row = get_stock(tenant_id, sku, warehouse=safe["warehouse"], conn=conn)
 
     # Auto-snapshot when current_stock is updated
     if "current_stock" in safe and row:
-        _record_snapshot(tenant_id, sku, float(safe["current_stock"]))
+        _record_snapshot(tenant_id, sku, float(safe["current_stock"]), conn=conn)
 
     return row
 
 
-def _ensure_warehouse(tenant_id: str, name: str) -> None:
+def _ensure_warehouse(tenant_id: str, name: str, conn: Optional[Any] = None) -> None:
     """Auto-create a `warehouses` row the first time a warehouse name is seen for
     this tenant. Best-effort: a warehouse-insert hiccup must never fail the
-    stock write it's attached to."""
+    stock write it's attached to.
+
+    `conn`: see upsert_stock's docstring — when provided, runs on the caller's
+    shared transaction connection instead of its own auto-committing one.
+    """
     try:
         execute(
             "INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s) "
             "ON CONFLICT (tenant_id, name) DO NOTHING",
             (tenant_id, name),
+            conn=conn,
         )
     except Exception as e:
         log.warning("_ensure_warehouse: failed to upsert warehouse=%s tenant=%s err=%s", name, tenant_id, e)
@@ -116,15 +164,24 @@ def list_stock_keys(tenant_id: str) -> set:
     return {(r["sku"], r["warehouse"]) for r in rows}
 
 
-def get_stock(tenant_id: str, sku: str, warehouse: Optional[str] = None) -> Optional[dict]:
+def get_stock(
+    tenant_id: str, sku: str, warehouse: Optional[str] = None, conn: Optional[Any] = None
+) -> Optional[dict]:
+    """
+    `conn`: see upsert_stock's docstring — pass the transaction() connection
+    to read back a row this SAME transaction just wrote (needed because an
+    uncommitted write is invisible to any other connection).
+    """
     if warehouse is not None:
         return query_one(
             "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s AND warehouse = %s",
             (tenant_id, sku, warehouse),
+            conn=conn,
         )
     return query_one(
         "SELECT * FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
         (tenant_id, sku),
+        conn=conn,
     )
 
 
@@ -279,12 +336,18 @@ def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
 
 # ── Stock snapshots ───────────────────────────────────────────────────────────
 
-def _record_snapshot(tenant_id: str, sku: str, current_stock: float) -> None:
-    """Record a point-in-time stock level. Called automatically on upsert."""
+def _record_snapshot(
+    tenant_id: str, sku: str, current_stock: float, conn: Optional[Any] = None
+) -> None:
+    """Record a point-in-time stock level. Called automatically on upsert.
+
+    `conn`: see upsert_stock's docstring.
+    """
     try:
         execute(
             "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
             (tenant_id, sku, current_stock),
+            conn=conn,
         )
     except Exception as e:
         log.warning("snapshot record failed sku=%s: %s", sku, e)
@@ -608,8 +671,8 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         for sku_key, q in quality.items():
             if isinstance(q, dict):
                 cv_by_sku[str(sku_key)] = q.get("cv")
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("cv_by_sku lookup failed for session=%s: %s", session_id, e)
 
     stock_rows = list_stock(tenant_id)
     stock_map  = _aggregate_stock_rows_by_sku(stock_rows)
@@ -706,8 +769,8 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
         if has_stock:
             try:
                 history = get_stock_history(tenant_id, sku, days=14)[-10:]
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("stock history sparkline failed sku=%s: %s", sku, e)
 
         # "__all__" is the internal sentinel used when the dataset has no SKU/group
         # column (single-series session) — it must never surface unexplained as a SKU
@@ -1525,7 +1588,8 @@ def get_demand_spikes(
             try:
                 peak_date = _date.fromisoformat(peak["date"])
                 days_until = (peak_date - today).days
-            except Exception:
+            except Exception as e:
+                log.debug("peak date parse failed sku=%s date=%r: %s", sku, peak.get("date"), e)
                 peak_date = None
 
         # Skip peaks already in the past (stale session run long after training).
@@ -1702,8 +1766,8 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
             wapes = [r['wape'] for r in rows if r.get('wape') is not None]
             if wapes:
                 avg_accuracy = round(1 - (sum(wapes) / len(wapes)), 4)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("session accuracy lookup failed session=%s: %s", session_id, e)
 
     total_value    = sum(i['inventory_value'] for i in items if i.get('inventory_value') or 0)
     overstock_val  = sum(i['inventory_value'] for i in overstocked if i.get('inventory_value') or 0)
@@ -1713,7 +1777,8 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         from backend.sessions.service import get_session
         sess = get_session(tenant_id, session_id) or {}
         session_name = sess.get('name', session_id[:8])
-    except Exception:
+    except Exception as e:
+        log.debug("session name lookup failed session=%s: %s", session_id, e)
         session_name = session_id[:8]
 
     return {

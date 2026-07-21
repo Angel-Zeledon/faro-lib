@@ -4,6 +4,8 @@ the PO line's own destination warehouse should receive the incoming units.
 """
 from uuid import uuid4
 
+import pytest
+
 
 def _sku():
     return f"RCV_{uuid4().hex[:8]}"
@@ -126,3 +128,135 @@ class TestReceptionLeadTimeObservationPerSupplier:
             "Prov B's first-ever delivery on this PO must produce a "
             f"lead-time observation too, got {observed}"
         )
+
+
+class TestReceptionIsAtomic:
+    """
+    receive_po writes across 5 tables (inventory_po_items, inventory_stock,
+    inventory_snapshots, inventory_po_log, supplier_lead_time_obs). Before the
+    atomic-transaction fix, each write auto-committed independently, so a
+    failure partway through the sequence left genuinely partial state:
+    received_qty incremented and stock credited, but the PO header never
+    flipped out of 'pending'. This forces a failure in the LAST write of the
+    sequence (the header UPDATE in step 3, which runs strictly after
+    received_qty and stock have already been written earlier in the same
+    call) and asserts that NOTHING committed — proving the whole reception is
+    one all-or-nothing transaction, not proving the trivial case where the
+    failure happens before any write at all.
+    """
+
+    def test_failure_mid_sequence_rolls_back_everything(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        from backend.inventory import service as inv_svc
+        from backend.inventory import roi_service
+        from backend.inventory import reception_service as rec_svc
+        from backend.db.connection import query_one
+
+        tid = test_tenant["id"]
+        sku = _sku()
+
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 100, "warehouse": "principal"})
+        po = roi_service.log_po_generation(tid, "sess-test", [{
+            "sku": sku, "final_qty": 20, "status": "approved",
+            "warehouse": "principal", "supplier": "Prov Atomic",
+        }])
+        po_item = query_one(
+            "SELECT id, received_qty FROM inventory_po_items WHERE po_log_id = %s AND sku = %s",
+            (po["id"], sku),
+        )
+        assert float(po_item["received_qty"] or 0) == 0.0
+
+        # Fail on the PO header UPDATE — the 3rd write in the sequence, after
+        # received_qty (step 1) and stock (step 2) have already run inside the
+        # SAME still-open transaction.
+        real_execute = rec_svc.execute
+
+        def _boom(sql, params=(), conn=None):
+            if "inventory_po_log" in sql and "reception_status" in sql:
+                raise RuntimeError("simulated failure mid-reception")
+            return real_execute(sql, params, conn=conn)
+
+        monkeypatch.setattr(rec_svc, "execute", _boom)
+
+        try:
+            with pytest.raises(RuntimeError, match="simulated failure mid-reception"):
+                rec_svc.receive_po(tid, po["id"], user_id="u1")
+        finally:
+            monkeypatch.setattr(rec_svc, "execute", real_execute)
+
+        # Nothing committed: received_qty, stock and the PO header must all
+        # be exactly as they were before the call.
+        po_item_after = query_one(
+            "SELECT received_qty FROM inventory_po_items WHERE id = %s",
+            (po_item["id"],),
+        )
+        assert float(po_item_after["received_qty"] or 0) == 0.0, (
+            "received_qty was persisted despite the header update failing later "
+            "in the same reception — the transaction did not roll back"
+        )
+
+        stock_row = query_one(
+            "SELECT current_stock FROM inventory_stock WHERE tenant_id = %s AND sku = %s "
+            "AND warehouse = 'principal'",
+            (tid, sku),
+        )
+        assert float(stock_row["current_stock"]) == 100.0, (
+            "stock was credited despite the reception failing later in the "
+            "same sequence — the transaction did not roll back"
+        )
+
+        po_log_after = query_one(
+            "SELECT reception_status, received_at, received_by FROM inventory_po_log WHERE id = %s",
+            (po["id"],),
+        )
+        assert po_log_after["reception_status"] == "pending"
+        assert po_log_after["received_at"] is None
+        assert po_log_after["received_by"] is None
+
+        obs = query_one(
+            "SELECT 1 FROM supplier_lead_time_obs WHERE tenant_id = %s AND po_log_id = %s",
+            (tid, po["id"]),
+        )
+        assert obs is None, "a lead-time observation was persisted from a rolled-back reception"
+
+    def test_normal_reception_still_fully_commits(
+        self, client, auth_headers, test_tenant,
+    ):
+        """Sanity companion to the rollback test above: with no injected
+        failure, the same call path commits every write."""
+        from backend.inventory import service as inv_svc
+        from backend.inventory import roi_service
+        from backend.inventory import reception_service as rec_svc
+        from backend.db.connection import query_one
+
+        tid = test_tenant["id"]
+        sku = _sku()
+
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 100, "warehouse": "principal"})
+        po = roi_service.log_po_generation(tid, "sess-test", [{
+            "sku": sku, "final_qty": 20, "status": "approved",
+            "warehouse": "principal", "supplier": "Prov Atomic OK",
+        }])
+
+        result = rec_svc.receive_po(tid, po["id"], user_id="u1")
+        assert result["reception_status"] == "received"
+
+        stock_row = query_one(
+            "SELECT current_stock FROM inventory_stock WHERE tenant_id = %s AND sku = %s "
+            "AND warehouse = 'principal'",
+            (tid, sku),
+        )
+        assert float(stock_row["current_stock"]) == 120.0
+
+        po_log_after = query_one(
+            "SELECT reception_status FROM inventory_po_log WHERE id = %s", (po["id"],),
+        )
+        assert po_log_after["reception_status"] == "received"
+
+        obs = query_one(
+            "SELECT lead_time_days FROM supplier_lead_time_obs "
+            "WHERE tenant_id = %s AND po_log_id = %s AND supplier = %s",
+            (tid, po["id"], "Prov Atomic OK"),
+        )
+        assert obs is not None

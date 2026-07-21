@@ -60,15 +60,58 @@ def _json(val: Any) -> psycopg2.extras.Json:
     return psycopg2.extras.Json(_sanitize(val))
 
 
-def query(sql: str, params: tuple = ()) -> list[dict]:
+@contextmanager
+def transaction():
+    """
+    Explicit multi-statement transaction for callers that need several writes
+    to commit (or roll back) as one unit — e.g. reception_service.receive_po,
+    which otherwise updates inventory_po_items, inventory_stock, inventory_snapshots,
+    inventory_po_log and supplier_lead_time_obs as 5+ independent auto-committing
+    calls, so a failure mid-sequence leaves genuinely partial state behind.
+
+    Usage:
+
+        with transaction() as conn:
+            execute(sql1, params1, conn=conn)
+            execute(sql2, params2, conn=conn)
+
+    Every write inside the block MUST pass this `conn` through to
+    execute()/query()/query_one() via their optional `conn` kwarg — passing
+    `conn` tells those helpers to run on THIS connection and not commit
+    themselves; the block below commits once at the end, or rolls back
+    everything if any statement raises. Callers that omit `conn` on some
+    calls inside the block would silently return to today's non-atomic
+    behavior for those calls, so every write in the sequence needs it.
+
+    Implemented on top of `get_conn` so it shares the exact same
+    commit/rollback/dead-connection handling as every other pooled connection
+    in this module.
+    """
+    with get_conn() as conn:
+        yield conn
+
+
+def query(sql: str, params: tuple = (), conn: Optional[Any] = None) -> list[dict]:
+    # `conn` provided: caller is inside a transaction() block — run on THAT
+    # connection and let the block's own commit/rollback own the outcome.
+    # This must be a plain, no-retry path: retrying on this shared connection
+    # after a failed statement would run against a connection whose
+    # transaction is already in an aborted state.
+    if conn is not None:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            if cur.description:
+                return [dict(row) for row in cur.fetchall()]
+            return []
+
     # Retry once on a dead connection — Supabase's pooler can silently drop a
     # pooled connection server-side; the pool only discovers this when the
     # connection is next used, so a single retry against a fresh connection
     # is needed instead of surfacing a transient error to the caller.
     for attempt in range(2):
         try:
-            with get_conn() as conn:
-                with conn.cursor() as cur:
+            with get_conn() as pooled_conn:
+                with pooled_conn.cursor() as cur:
                     cur.execute(sql, params)
                     if cur.description:
                         return [dict(row) for row in cur.fetchall()]
@@ -78,16 +121,21 @@ def query(sql: str, params: tuple = ()) -> list[dict]:
                 raise
 
 
-def query_one(sql: str, params: tuple = ()) -> Optional[dict]:
-    rows = query(sql, params)
+def query_one(sql: str, params: tuple = (), conn: Optional[Any] = None) -> Optional[dict]:
+    rows = query(sql, params, conn=conn)
     return rows[0] if rows else None
 
 
-def execute(sql: str, params: tuple = ()) -> None:
+def execute(sql: str, params: tuple = (), conn: Optional[Any] = None) -> None:
+    if conn is not None:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+        return
+
     for attempt in range(2):
         try:
-            with get_conn() as conn:
-                with conn.cursor() as cur:
+            with get_conn() as pooled_conn:
+                with pooled_conn.cursor() as cur:
                     cur.execute(sql, params)
             return
         except psycopg2.OperationalError:
