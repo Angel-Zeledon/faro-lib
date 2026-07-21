@@ -148,6 +148,23 @@ _DATASET_STOCK_INT_COLS   = {"lead_time_days"}
 _DATASET_STOCK_STR_COLS   = {"supplier", "notes", "display_name", "category", "brand", "unit_of_measure", "barcode"}
 _DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DATASET_STOCK_STR_COLS
 
+# Minimum valid value per numeric dataset column, mirroring the ge=0/ge=1
+# bounds StockUpsert/StockPatch enforce on every OTHER inventory write path
+# (PUT /stock, PATCH /stock, POST /bulk). sync_stock_from_dataset is the one
+# path that parses a numeric column straight out of a user's sales-history
+# file with no Pydantic validation in front of it — without this floor, a
+# stray 0 in a "lead_time_days" column would collapse every _calc_signal
+# threshold to 0 (lead_time * 0.5/1.2/3 are all 0), permanently misreporting
+# the SKU as SOBRESTOCK regardless of real coverage and silently hiding a
+# stockout risk. A stray negative current_stock/moq would similarly corrupt
+# the reorder-point math. Columns not listed here (e.g. service_level) have
+# no hard floor: an out-of-range value just falls back to the default z-score
+# (see get_inventory_status), which is a documented, harmless fallback.
+_DATASET_STOCK_MIN = {
+    "current_stock": 0.0, "min_stock": 0.0, "unit_cost": 0.0, "sale_price": 0.0,
+    "moq": 1.0, "lead_time_days": 1,
+}
+
 
 def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_col: str) -> int:
     """
@@ -187,9 +204,17 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
             if pd.isna(val):
                 continue
             if col in _DATASET_STOCK_FLOAT_COLS:
-                data[col] = float(val)
+                parsed_float = float(val)
+                floor = _DATASET_STOCK_MIN.get(col)
+                if floor is not None and parsed_float < floor:
+                    continue
+                data[col] = parsed_float
             elif col in _DATASET_STOCK_INT_COLS:
-                data[col] = int(val)
+                parsed_int = int(val)
+                floor = _DATASET_STOCK_MIN.get(col)
+                if floor is not None and parsed_int < floor:
+                    continue
+                data[col] = parsed_int
             else:
                 data[col] = str(val)
         if not data:
