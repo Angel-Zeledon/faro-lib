@@ -464,6 +464,30 @@ class TestDeviationFromRealReceptions:
             execute("DELETE FROM tenants WHERE id = %s", (other["id"],))
 
 
+class TestSkuSupplierUpsertDoesNotResetIsPrimary:
+    """upsert_sku_supplier's ON CONFLICT branch must behave like its sibling
+    update_supplier: no fields to set means no-op, not an unconditional
+    write of is_primary back to the column's schema default (TRUE)."""
+
+    def test_upsert_with_no_fields_leaves_is_primary_untouched(
+        self, client, test_tenant,
+    ):
+        from backend.inventory import supplier_service as sup_svc
+
+        tid = test_tenant["id"]
+        sku = f"SKUSUP-{uuid.uuid4().hex[:6]}"
+        sup_id = _make_supplier(tid, f"ProvLink-{uuid.uuid4().hex[:6]}")
+
+        link = sup_svc.upsert_sku_supplier(tid, sku, sup_id, {"is_primary": False})
+        assert link["is_primary"] is False
+
+        # Re-upsert with no updatable fields at all — must not touch is_primary.
+        link2 = sup_svc.upsert_sku_supplier(tid, sku, sup_id, {})
+        assert link2["is_primary"] is False, (
+            "upsert with empty data must not reset is_primary to the schema default"
+        )
+
+
 class TestLeadTimeAlertsEndpoint:
     def test_viewer_can_read(self, client, viewer_headers):
         resp = client.get("/api/v1/inventory/suppliers/lead-time-alerts", headers=viewer_headers)
