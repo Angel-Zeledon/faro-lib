@@ -135,3 +135,31 @@ def test_require_feature_allows_professional(monkeypatch, make_tenant_user_heade
     headers = make_tenant_user_headers(plan="professional")
     r = TestClient(_mini_app()).get("/whatsapp-thing", headers=headers)
     assert r.status_code == 200
+
+
+def test_expired_trial_blocks_mutation_but_allows_read(
+    monkeypatch, make_tenant_user_headers
+):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.main import app
+    from backend.db.connection import query_one
+
+    headers, tenant_id = make_tenant_user_headers(
+        plan="starter", expired_trial=True, return_tenant_id=True
+    )
+    client = TestClient(app)
+
+    # read still works
+    assert client.get("/api/v1/sessions", headers=headers).status_code == 200
+
+    # mutation blocked with TRIAL_EXPIRED, and no session row created
+    before = query_one(
+        "SELECT COUNT(*) AS c FROM sessions WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    r = client.post("/api/v1/sessions", headers=headers, json={"name": "X"})
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "TRIAL_EXPIRED"
+    after = query_one(
+        "SELECT COUNT(*) AS c FROM sessions WHERE tenant_id=%s", (tenant_id,)
+    )["c"]
+    assert after == before

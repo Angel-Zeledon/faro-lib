@@ -69,5 +69,16 @@ def require_role(*roles: str):
 
 
 require_admin = require_role("admin")
-require_analyst_or_above = require_role("admin", "analyst")
+
+
+def require_analyst_or_above(
+    user: CurrentUser = Depends(require_role("admin", "analyst")),
+) -> CurrentUser:
+    # Delegates to the entitlements guard so trial read-only is enforced
+    # on every mutating endpoint. Imported lazily to avoid a circular import
+    # (entitlements.guards imports from this module).
+    from backend.entitlements.guards import require_active_analyst as _active
+    return _active(user)
+
+
 require_any = require_role("admin", "analyst", "viewer")
