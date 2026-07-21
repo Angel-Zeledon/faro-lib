@@ -64,19 +64,3 @@ def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dic
     return row  # type: ignore[return-value]
 
 
-def ensure_default_warehouse(tenant_id: str) -> dict:
-    """Creates the 'principal' warehouse with is_default=True for this tenant
-    if no warehouse exists yet. Returns the default warehouse row."""
-    existing = query_one(
-        "SELECT * FROM warehouses WHERE tenant_id = %s AND is_default = TRUE",
-        (tenant_id,),
-    )
-    if existing:
-        return existing
-    any_row = query_one(
-        "SELECT * FROM warehouses WHERE tenant_id = %s LIMIT 1",
-        (tenant_id,),
-    )
-    if any_row:
-        return any_row
-    return create_warehouse(tenant_id, "principal", is_default=True)
