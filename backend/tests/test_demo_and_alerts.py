@@ -165,11 +165,11 @@ class TestWhatsappTransport:
             [{"sku": "SKU-001", "display_name": "Aceite 1L", "coverage_days": 2.0,
               "recommended_qty": 120}],
             [{"sku": "SKU-002"}],
-            "http://localhost:5000/inventory",
+            "http://localhost:5000/hoy",
         )
         assert "Aceite 1L" in text
         assert "120" in text
-        assert "http://localhost:5000/inventory" in text
+        assert "http://localhost:5000/hoy" in text
         assert "🔴" in text and "🟡" in text
 
 
