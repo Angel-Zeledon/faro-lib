@@ -560,3 +560,17 @@ def test_send_now_allows_starter_without_whatsapp(
     assert data2["whatsapp_sent"] == 1
     assert len(sent_calls) == 1
     assert sent_calls[0][0] == "+573003334444"
+
+
+def test_entitlements_endpoint_reports_plan(monkeypatch, make_tenant_user_headers):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.main import app
+    headers = make_tenant_user_headers(plan="professional")
+    r = TestClient(app).get("/api/v1/entitlements", headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"] if "data" in r.json() else r.json()
+    assert data["plan"] == "professional"
+    assert data["features"]["whatsapp_alerts"] is True
+    assert data["features"]["api_access"] is False
+    assert data["limits"]["max_skus"] == 5000
+    assert data["read_only"] is False
