@@ -317,6 +317,103 @@ class TestBulkImport:
         assert len(lines[1].split(",")) == len(expected)   # example row is parseable
 
 
+class TestDatasetSyncSanitization:
+    """
+    sync_stock_from_dataset (backend/inventory/service.py) is the Quick Start
+    upload path that seeds inventory_stock straight from a training dataframe
+    (backend/workers/runner.py). Unlike PUT /stock, PATCH /stock and POST /bulk
+    (see test_bulk_import_rejects_negative_quantities above), it never went
+    through StockUpsert/StockPatch's ge=0/ge=1 bounds — it parses whatever a
+    sales-history column happens to contain and hands it straight to
+    upsert_stock. A stray lead_time_days=0 collapses every _calc_signal
+    threshold (lead_time*0.5/1.2/3 all become 0), permanently misreporting the
+    SKU as SOBRESTOCK regardless of real coverage and silently hiding a
+    stockout risk; a stray negative current_stock corrupts the reorder-point
+    math the same way bulk_import's ge=0 guard exists to prevent.
+    """
+
+    def test_zero_lead_time_from_dataset_is_rejected(self, client, test_tenant):
+        import pandas as pd
+        from backend.inventory.service import sync_stock_from_dataset
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        df = pd.DataFrame({
+            "sku":            [sku],
+            "fecha":          ["2026-01-01"],
+            "current_stock":  [40],
+            "lead_time_days": [0],
+        })
+        n = sync_stock_from_dataset(test_tenant["id"], df, group_col="sku", date_col="fecha")
+        assert n == 1
+
+        row = query_one(
+            "SELECT current_stock, lead_time_days FROM inventory_stock "
+            "WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        )
+        assert row is not None
+        assert float(row["current_stock"]) == 40   # the valid field must still be saved
+        assert row["lead_time_days"] != 0, (
+            "lead_time_days=0 from a dataset column was persisted — this collapses "
+            "_calc_signal's thresholds to 0 and forces every coverage value into "
+            "SOBRESTOCK, permanently hiding real stockout risk for this SKU"
+        )
+
+    def test_negative_current_stock_from_dataset_is_rejected(self, client, test_tenant):
+        import pandas as pd
+        from backend.inventory.service import sync_stock_from_dataset
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        df = pd.DataFrame({
+            "sku":           [sku],
+            "fecha":         ["2026-01-01"],
+            "current_stock": [-25],
+            "supplier":      ["Prov Dataset"],
+        })
+        n = sync_stock_from_dataset(test_tenant["id"], df, group_col="sku", date_col="fecha")
+        assert n == 1
+
+        row = query_one(
+            "SELECT current_stock, supplier FROM inventory_stock "
+            "WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        )
+        assert row is not None
+        assert row["supplier"] == "Prov Dataset"   # other valid fields still saved
+        assert float(row["current_stock"]) >= 0, (
+            "negative current_stock from a dataset column was persisted, unlike "
+            "every other write path (PUT/PATCH/bulk CSV) which enforces ge=0"
+        )
+
+    def test_negative_moq_from_dataset_is_rejected(self, client, test_tenant):
+        import pandas as pd
+        from backend.inventory.service import sync_stock_from_dataset
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        df = pd.DataFrame({
+            "sku":           [sku],
+            "fecha":         ["2026-01-01"],
+            "current_stock": [10],
+            "moq":           [-3],
+        })
+        n = sync_stock_from_dataset(test_tenant["id"], df, group_col="sku", date_col="fecha")
+        assert n == 1
+
+        row = query_one(
+            "SELECT moq FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        )
+        assert row is not None
+        assert float(row["moq"]) >= 1, (
+            "negative moq from a dataset column was persisted — downstream "
+            "_calc_recommended treats moq<=0 as 'no rounding', but a negative "
+            "moq stored on the SKU is nonsense data that should never land in the DB"
+        )
+
+
 # ── Signal calculation (unit-level, no DB) ────────────────────────────────────
 
 class TestSignalCalculation:
