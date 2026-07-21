@@ -62,6 +62,26 @@ class TestSignup:
         })
         assert resp.status_code == 422
 
+    def test_signup_password_over_bcrypt_byte_limit_returns_400(self, client):
+        """
+        Regression: bcrypt hard-rejects passwords over 72 bytes (ValueError:
+        "password cannot be longer than 72 bytes"). validate_strength() had no
+        upper bound, so a long-but-otherwise-strong password sailed past
+        validation and crashed hash_password() with an unhandled 500 instead
+        of a clean 400 — and left no tenant/user behind either way, so we
+        assert directly on the DB that signup did not partially succeed.
+        """
+        email = f"toolong-{uuid4().hex[:8]}@example.com"
+        resp = client.post("/api/v1/auth/signup", json={
+            "email": email,
+            "password": "Aa1" * 30,  # 90 bytes, all-ASCII, otherwise passes strength rules
+            "tenant_name": f"tenant-{uuid4().hex[:6]}",
+        })
+        assert resp.status_code == 400, resp.text
+
+        from backend.db.connection import query_one
+        assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
+
 
 class TestLogin:
     def test_login_returns_tokens(self, client, registered_user):

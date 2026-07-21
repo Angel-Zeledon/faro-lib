@@ -5,7 +5,7 @@ JWT access-token blocklist backed by PostgreSQL.
 import logging
 from datetime import datetime
 
-from backend.db.connection import execute, query_one
+from backend.db.connection import execute, get_conn, query_one
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,13 @@ def is_revoked(jti: str) -> bool:
 
 
 def purge_expired() -> int:
-    """Delete expired entries — call periodically to keep the table small."""
-    from backend.db.connection import execute as _exec
-    _exec("DELETE FROM revoked_tokens WHERE expires_at <= NOW()")
-    return 0
+    """Delete expired entries — call periodically to keep the table small.
+
+    Returns the number of rows actually deleted (was hardcoded to 0
+    regardless of what was purged, which would make any future monitoring/
+    logging around this a silent no-op)."""
+    ensure_table()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM revoked_tokens WHERE expires_at <= NOW()")
+            return cur.rowcount
