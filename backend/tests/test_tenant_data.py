@@ -180,3 +180,63 @@ class TestDeleteCascade:
             ) is not None
         finally:
             execute("DELETE FROM tenants WHERE id = %s", (other_tenant["id"],))
+
+
+@pytest.fixture
+def fernet_key(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setattr(
+        "backend.config.settings.integrations_secret_key", Fernet.generate_key().decode()
+    )
+
+
+class TestIntegrationConnectionsExportAndDelete:
+
+    def test_export_includes_connections_without_credentials(
+        self, client, auth_headers, test_tenant, fernet_key
+    ):
+        from backend.integrations import store
+
+        tenant_id = test_tenant["id"]
+        secret_token = f"SECRET-{uuid4().hex}"
+        store.create_connection(tenant_id, "alegra", {"email": "a@b.com", "token": secret_token})
+
+        resp = client.get("/api/v1/tenant/export", headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+
+        zf = zipfile.ZipFile(io.BytesIO(resp.content))
+        names = set(zf.namelist())
+        assert "integration_connections.json" in names
+
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["tables"]["integration_connections"] >= 1
+
+        connections_bytes = zf.read("integration_connections.json")
+        connections_rows = json.loads(connections_bytes)
+        assert len(connections_rows) >= 1
+        for row in connections_rows:
+            assert "credentials" not in row
+        # Belt and suspenders: neither ciphertext nor plaintext token anywhere
+        # in the exported file (not just absent as a top-level key).
+        assert secret_token not in connections_bytes.decode("utf-8")
+        assert secret_token.encode("utf-8") not in connections_bytes
+
+    def test_delete_removes_connections(self, client, auth_headers, test_tenant, fernet_key):
+        from backend.integrations import store
+
+        tenant_id = test_tenant["id"]
+        conn = store.create_connection(tenant_id, "siigo", {"partner_id": "p1", "username": "u1"})
+        assert query_one(
+            "SELECT id FROM integration_connections WHERE id = %s", (conn["id"],)
+        ) is not None
+
+        resp = client.request(
+            "DELETE", "/api/v1/tenant", headers=auth_headers,
+            json={"confirm": test_tenant["slug"]},
+        )
+        assert resp.status_code == 200, resp.text
+
+        assert query_one(
+            "SELECT id FROM integration_connections WHERE id = %s", (conn["id"],)
+        ) is None
