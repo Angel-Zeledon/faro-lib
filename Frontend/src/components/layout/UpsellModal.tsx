@@ -10,14 +10,23 @@
 import Link from 'next/link'
 import { X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useEntitlements } from '@/lib/entitlements'
 
 export interface UpsellModalProps {
   feature: string
   onClose: () => void
 }
 
-export default function UpsellModal({ onClose }: UpsellModalProps) {
+// Tier names are brand proper nouns, shown as-is in both languages.
+const PLAN_LABEL: Record<string, string> = {
+  starter: 'Starter', professional: 'Professional', enterprise: 'Enterprise',
+}
+
+export default function UpsellModal({ feature, onClose }: UpsellModalProps) {
   const { t } = useLanguage()
+  const { ent } = useEntitlements()
+  const requiredPlan = ent?.feature_plans?.[feature]
+  const planLabel = requiredPlan ? PLAN_LABEL[requiredPlan] ?? requiredPlan : null
 
   return (
     <div
@@ -52,6 +61,19 @@ export default function UpsellModal({ onClose }: UpsellModalProps) {
         <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
           {t('entitlements.upsell_title')}
         </h3>
+        {planLabel && (
+          <div
+            style={{
+              display: 'inline-flex', alignItems: 'baseline', gap: 6,
+              margin: '0 0 12px', padding: '4px 10px', borderRadius: 999,
+              background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+            }}
+          >
+            <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('entitlements.upsell_plan_label')}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>{planLabel}</span>
+          </div>
+        )}
         <p style={{ margin: '0 0 20px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--dim)' }}>
           {t('entitlements.upsell_body')}
         </p>

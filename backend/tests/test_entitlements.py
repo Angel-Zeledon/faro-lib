@@ -846,3 +846,8 @@ def test_entitlements_endpoint_reports_plan(monkeypatch, make_tenant_user_header
     assert data["features"]["api_access"] is False
     assert data["limits"]["max_skus"] == 5000
     assert data["read_only"] is False
+    # feature_plans: the minimum plan that unlocks each feature, so the upsell
+    # can name the tier the user needs to reach.
+    assert data["feature_plans"]["ai_analyst"] == "professional"
+    assert data["feature_plans"]["api_access"] == "enterprise"
+    assert data["feature_plans"]["semaphore"] == "starter"  # core = available from starter
