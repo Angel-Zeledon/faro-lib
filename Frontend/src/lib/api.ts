@@ -1072,3 +1072,15 @@ export const getSuggestedQuestions = (profile = 'distributor', hasInventory = tr
   request<import('./types').SuggestedQuestion[]>(
     'POST', '/ai/suggested-questions', { profile, has_inventory: hasInventory, has_production: hasProduction }
   )
+
+// ── Entitlements ──────────────────────────────────────────────────────────────
+export interface Entitlements {
+  plan: string
+  trial: { state: string; ends_at: string | null }
+  limits: Record<string, number | null>
+  features: Record<string, boolean>
+  read_only: boolean
+}
+
+export const getEntitlements = () =>
+  request<Entitlements>('GET', '/entitlements')
