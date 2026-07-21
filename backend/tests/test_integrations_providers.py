@@ -122,3 +122,136 @@ def test_alegra_non_auth_error_raises_sync_error(monkeypatch):
     p = AlegraProvider({"email": "a@b.com", "token": "t"})
     with pytest.raises(IntegrationSyncError):
         p.test_connection()
+
+
+def test_siigo_auths_then_maps(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http
+
+    monkeypatch.setattr(http, "post_json", lambda url, **kw: {"access_token": "TOK"})
+    # Real Siigo list responses wrap results in a pagination envelope
+    # (confirmed against developers.siigo.com's "Listar Facturas" page and
+    # consistent across list endpoints per docs) — see task-6-report.md.
+    products = {"results": [
+        {"code": "A", "name": "Aceite", "available_quantity": 10,
+         "prices": [{"currency_code": "COP", "price_list": [{"position": 1, "name": "General", "value": 8}]}],
+         "unit_cost": 5},
+    ], "pagination": {"page": 1, "page_size": 30, "total_results": 1}}
+    invoices = {"results": [
+        {"date": "2026-01-01", "items": [{"code": "A", "quantity": 3, "price": 8}]},
+    ], "pagination": {"page": 1, "page_size": 30, "total_results": 1}}
+
+    def fake_get(url, **kw):
+        return products if "/products" in url else invoices if "/invoices" in url else {"results": []}
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
+    assert p.fetch_products()[0].sku == "A"
+    assert p.fetch_stock()[0].quantity == 10
+    assert p.fetch_sales()[0].quantity == 3
+
+
+def test_siigo_sends_bearer_and_partner_id_headers(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http
+
+    monkeypatch.setattr(http, "post_json", lambda url, **kw: {"access_token": "TOK"})
+    seen_headers = {}
+
+    def fake_get(url, **kw):
+        seen_headers.update(kw.get("headers") or {})
+        return {"results": []}
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
+    p.fetch_products()
+    assert seen_headers["Authorization"] == "Bearer TOK"
+    assert seen_headers["Partner-Id"] == "faro"
+
+
+def test_siigo_paginates_products(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http
+
+    monkeypatch.setattr(http, "post_json", lambda url, **kw: {"access_token": "TOK"})
+    page1 = {"results": [
+        {"code": f"SKU{i}", "name": f"Item {i}", "available_quantity": 1} for i in range(30)
+    ]}
+    page2 = {"results": [{"code": "SKU30", "name": "Item 30", "available_quantity": 1}]}
+    seen_pages = []
+
+    def fake_get(url, **kw):
+        if "/products" not in url:
+            return {"results": []}
+        page = (kw.get("params") or {}).get("page", 1)
+        seen_pages.append(page)
+        return page1 if page == 1 else page2
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
+    products = p.fetch_products()
+    assert len(products) == 31
+    assert products[-1].sku == "SKU30"
+    assert seen_pages == [1, 2]
+
+
+def test_siigo_auth_failure_raises_auth_error(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http
+    from backend.integrations.base import IntegrationAuthError
+
+    def fake_post(url, **kw):
+        resp = requests.Response()
+        resp.status_code = 401
+        raise requests.exceptions.HTTPError(response=resp)
+    monkeypatch.setattr(http, "post_json", fake_post)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "bad"})
+    with pytest.raises(IntegrationAuthError):
+        p.test_connection()
+
+
+def test_siigo_retries_on_429_then_succeeds(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http, siigo as siigo_module
+
+    monkeypatch.setattr(http, "post_json", lambda url, **kw: {"access_token": "TOK"})
+    sleep_calls = []
+    monkeypatch.setattr(siigo_module.time, "sleep", lambda s: sleep_calls.append(s))
+
+    call_count = {"n": 0}
+
+    def fake_get(url, **kw):
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            resp = requests.Response()
+            resp.status_code = 429
+            raise requests.exceptions.HTTPError(response=resp)
+        return {"results": [{"code": "A", "name": "Aceite", "available_quantity": 1}]}
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
+    products = p.fetch_products()
+    assert products[0].sku == "A"
+    assert len(sleep_calls) == 2  # two 429s absorbed before the third call succeeds
+
+
+def test_siigo_gives_up_after_bounded_429_retries(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http, siigo as siigo_module
+    from backend.integrations.base import IntegrationSyncError
+
+    monkeypatch.setattr(http, "post_json", lambda url, **kw: {"access_token": "TOK"})
+    sleep_calls = []
+    monkeypatch.setattr(siigo_module.time, "sleep", lambda s: sleep_calls.append(s))
+
+    def fake_get(url, **kw):
+        resp = requests.Response()
+        resp.status_code = 429
+        raise requests.exceptions.HTTPError(response=resp)
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
+    with pytest.raises(IntegrationSyncError):
+        p.fetch_products()
+    assert len(sleep_calls) == siigo_module._MAX_429_RETRIES
