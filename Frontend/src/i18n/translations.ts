@@ -112,7 +112,7 @@ export const translations = {
     'orders.page_title':        'Pedidos',
     'orders.page_subtitle':     'Órdenes generadas y registro de llegadas',
     'orders.pending_suffix':    'por recibir',
-    // Transferencias entre bodegas (feature 5.4)
+    // Inter-warehouse transfers (feature 5.4)
     'transfers.tablist_aria': 'Pedidos y transferencias',
     'transfers.tab_orders': 'Órdenes de compra',
     'transfers.tab_transfers': 'Transferencias',
@@ -685,7 +685,7 @@ export const translations = {
     'hoy.optimizer_loading':        'Calculando recomendaciones…',
     'hoy.optimizer_po_created':     'Orden de compra generada',
     'hoy.section_urgent': 'Urgente — actúa hoy',
-    // Sugerencias de transferencia entre bodegas (feature 5.4)
+    // Inter-warehouse transfer suggestions (feature 5.4)
     'hoy.transfers_title': '{n} se resuelven moviendo stock, sin comprar',
     'hoy.transfers_sub': 'Otra bodega tiene excedente de estos productos — transferir evita la compra.',
     'hoy.transfers_line': 'Mover {qty} desde {from} a {to} — {from} queda con {days} días de cobertura.',
@@ -1211,7 +1211,7 @@ export const translations = {
     'inventory.events_tablist_aria': 'Tipo de eventos',
     'inventory.events_tab_mine': 'Mis eventos',
     'inventory.events_tab_calendar': 'Calendario LatAm',
-    // Multi-bodega (feature 5.4)
+    // Multi-warehouse (feature 5.4)
     'inventory.wh_selector_aria': 'Bodega',
     'inventory.wh_all': 'Todas',
     'inventory.wh_shares_btn': 'Reparto de demanda',
