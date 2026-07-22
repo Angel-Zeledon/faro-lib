@@ -17,6 +17,8 @@ import type {
  EventMultiplier,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
+import { useWarehouses, WarehouseSelector } from '@/components/inventory/WarehouseControls'
+import { WarehouseStatusTable } from '@/components/inventory/WarehouseStatusTable'
 import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
@@ -1154,6 +1156,9 @@ export default function InventoryPage() {
  const [editedQty, setEditedQty] = useState<Record<string, number>>({})
  const [editingQtySku, setEditingQtySku] = useState<string | null>(null)
  const [showShrinkageModal, setShowShrinkageModal] = useState(false)
+ // Multi-warehouse (feature 5.4): selector + per-warehouse view. null = all.
+ const { warehouses, multi: multiWarehouse, reload: reloadWarehouses } = useWarehouses()
+ const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
 
  // Effective order quantity for an item: the buyer's edit if present, else the recommendation.
  const effectiveQty = useCallback((item: InventoryStatusItem): number =>
@@ -1539,6 +1544,25 @@ export default function InventoryPage() {
  </div>
  )}
 
+ {/* Warehouse selector (feature 5.4) — renders only with 2+ warehouses */}
+ {multiWarehouse && sessionId && (
+ <WarehouseSelector
+ value={selectedWarehouse}
+ onChange={setSelectedWarehouse}
+ warehouses={warehouses}
+ onSharesChanged={() => { reloadWarehouses(); if (sessionId) load(sessionId) }}
+ />
+ )}
+
+ {/* Per-warehouse semáforo replaces the main table while a warehouse is selected */}
+ {selectedWarehouse && sessionId ? (
+ <WarehouseStatusTable
+ sessionId={sessionId}
+ warehouse={selectedWarehouse}
+ onTransferCreated={() => load(sessionId)}
+ />
+ ) : (
+ <>
  {/* Main table / view */}
  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
 
@@ -2080,6 +2104,8 @@ export default function InventoryPage() {
  </div>
  )}
  </div>
+ </>
+ )}
 
  {/* Events panel */}
  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
