@@ -25,6 +25,34 @@ class TestOptimizeEndpoint:
         )
         assert resp.status_code == 401
 
+    def test_pool_exhaustion_returns_503_not_500(
+        self, client, auth_headers, test_session, monkeypatch,
+    ):
+        """
+        Under a concurrent burst the DB pool (ThreadedConnectionPool, max=10)
+        raises PoolError rather than blocking when every connection is checked
+        out. That is transient and retryable, so the optimize endpoint must map
+        it to 503, not surface a bare 500 (which reads as a server bug). This
+        is the defensive fix for the one-off 500 QA saw during a ~15-request
+        burst against /hoy.
+        """
+        from psycopg2.pool import PoolError
+        import backend.inventory.service as inv_service
+
+        def _raise_pool_exhausted(*args, **kwargs):
+            raise PoolError("connection pool exhausted")
+
+        # The endpoint reads the stock snapshot via svc.list_stock before the
+        # solve; make that call hit an exhausted pool.
+        monkeypatch.setattr(inv_service, "list_stock", _raise_pool_exhausted)
+
+        resp = client.get(
+            "/api/v1/inventory/optimize",
+            params={"session_id": test_session["id"], "horizon_days": 7},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 503
+
     def test_returns_real_order_recommendation_for_understocked_sku(
         self, client, auth_headers, test_tenant, test_session,
     ):
@@ -71,7 +99,7 @@ class TestOptimizeEndpoint:
         import backend.inventory.optimizer_service as opt_svc
         from forecasting_core.business.optimizer import OptimizationInput
 
-        def _fake_build(tenant_id, session_id, horizon_days):
+        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None):
             return OptimizationInput(
                 skus=["XFER-SKU"], warehouses=["Norte", "Sur"], horizon=horizon_days,
                 demand={("XFER-SKU", "Norte"): [0.0] * horizon_days,

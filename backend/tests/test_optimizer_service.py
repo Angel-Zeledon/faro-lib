@@ -69,6 +69,44 @@ class TestBuildOptimizationInput:
         assert inp.demand[(sku, "Norte")][0] == 5.0
         assert inp.demand[(sku, "Sur")][0] == 5.0
 
+    def test_uses_provided_stock_rows_without_requerying(
+        self, test_tenant, test_session, monkeypatch,
+    ):
+        """
+        When the caller passes stock_rows, build_optimization_input must NOT
+        call list_stock again — the optimize endpoint relies on this to read
+        inventory_stock once per request instead of twice, cutting the path's
+        pooled-connection checkouts under concurrent load.
+        """
+        from backend.db import session_store
+        import backend.inventory.optimizer_service as opt_svc
+
+        tid = test_tenant["id"]
+        sid = test_session["id"]
+        sku = _sku()
+
+        session_store.set_forecasts(tid, sid, {
+            sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 5.0}] * 7}},
+        })
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("list_stock must not be called when stock_rows is provided")
+
+        monkeypatch.setattr(opt_svc, "list_stock", _boom)
+
+        provided = [{
+            "sku": sku, "warehouse": "principal", "current_stock": 12,
+            "lead_time_days": 4, "unit_cost": 7.0,
+        }]
+        inp = opt_svc.build_optimization_input(
+            tid, sid, horizon_days=7, stock_rows=provided,
+        )
+
+        assert inp is not None
+        assert inp.warehouses == ["principal"]
+        assert inp.stock0[(sku, "principal")] == 12.0
+        assert inp.order_cost[sku] == 7.0
+
     def test_missing_cost_data_defaults_to_one(self, test_tenant, test_session):
         from backend.inventory import service as inv_svc
         from backend.db import session_store
