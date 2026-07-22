@@ -30,6 +30,12 @@ _ORDERED = ("approved", "modified")
 RECEIVABLE_STATES = ("pending", "partial")
 
 
+def _line_warehouse(item: dict, po: dict) -> str:
+    """A PO line lands in its own warehouse if set, else the PO's destination
+    warehouse (feature 5.4), else the historical default."""
+    return item.get("warehouse") or po.get("destination_warehouse") or "principal"
+
+
 def get_po(tenant_id: str, po_log_id: str) -> Optional[dict]:
     return query_one(
         "SELECT * FROM inventory_po_log WHERE id = %s AND tenant_id = %s",
@@ -153,7 +159,7 @@ def receive_po(
     from backend.inventory import warehouse_service as wh_svc
     existing_wh_names = wh_svc.list_warehouse_names(tenant_id)
     new_wh_names = {
-        (i.get("warehouse") or "principal")
+        _line_warehouse(i, po)
         for i in ordered
         if received_by_item[i["id"]] > 0
     } - existing_wh_names
@@ -175,7 +181,7 @@ def receive_po(
     from backend.inventory import service as inv_svc
     existing_stock_keys = inv_svc.list_stock_keys(tenant_id)
     new_sku_warehouse_pairs = {
-        (i["sku"], i.get("warehouse") or "principal")
+        (i["sku"], _line_warehouse(i, po))
         for i in ordered
         if received_by_item[i["id"]] > 0
     } - existing_stock_keys
@@ -213,7 +219,7 @@ def receive_po(
             qty = received_by_item[i["id"]]
             if qty <= 0:
                 continue
-            warehouse = i.get("warehouse") or "principal"
+            warehouse = _line_warehouse(i, po)
             existing = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse, conn=conn)
             if existing:
                 execute(

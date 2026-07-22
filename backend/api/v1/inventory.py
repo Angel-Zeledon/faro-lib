@@ -757,6 +757,9 @@ class POLineItem(BaseModel):
 
 class POLogRequest(BaseModel):
     items: Optional[list[POLineItem]] = None
+    # Where the goods should physically arrive. None = tenant default
+    # warehouse ('principal'), which is the pre-5.4 behavior.
+    destination_warehouse: Optional[str] = None
 
 
 @router.post("/log-po", status_code=201)
@@ -787,7 +790,10 @@ def log_po(
             if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("recommended_qty") or 0) > 0
         ]
 
-    record = log_po_generation(user.tenant_id, session_id, po_items)
+    record = log_po_generation(
+        user.tenant_id, session_id, po_items,
+        destination_warehouse=body.destination_warehouse if body else None,
+    )
     return ok(record)
 
 

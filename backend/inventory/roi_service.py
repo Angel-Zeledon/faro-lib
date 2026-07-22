@@ -57,7 +57,10 @@ def _normalize_decisions(items: list[dict]) -> list[dict]:
     return norm
 
 
-def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dict:
+def log_po_generation(
+    tenant_id: str, session_id: str, items: list[dict],
+    destination_warehouse: str | None = None,
+) -> dict:
     """
     Called every time a user exports a PO.
     Records the buyer's actual decisions per line for ROI / adoption tracking.
@@ -105,15 +108,15 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
                    (tenant_id, session_id, sku_count, total_units, total_value,
                     skus_order_now, skus_order_soon,
                     suggested_count, approved_count, modified_count, rejected_count,
-                    po_number)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    destination_warehouse, po_number)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(po_number), 0) + 1
                           FROM inventory_po_log WHERE tenant_id = %s))
                RETURNING *""",
             (tenant_id, session_id, sku_count, total_units, total_value,
              skus_order_now, skus_order_soon,
              suggested_count, approved_count, modified_count, rejected_count,
-             tenant_id),
+             destination_warehouse, tenant_id),
         )
 
     try:
@@ -139,7 +142,11 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
                      float(i.get("recommended_qty") or 0),
                      _ordered_qty(i) if i["status"] in _ORDERED else 0.0,
                      (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
-                     i["status"], i.get("warehouse") or "principal"),
+                     i["status"],
+                     # Lines without their own warehouse inherit the PO's
+                     # destination (feature 5.4); 'principal' keeps the
+                     # pre-5.4 behavior when neither is given.
+                     i.get("warehouse") or destination_warehouse or "principal"),
                 )
             except Exception as e:
                 log.warning("log_po_generation: skipped line sku=%s err=%s", i.get("sku"), e)
