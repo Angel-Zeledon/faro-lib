@@ -354,19 +354,29 @@ def _generate_forecast_series(engine, config: dict) -> dict:
     col_cfg    = config["columns"]
     dt_col     = col_cfg["date"]
     target_col = col_cfg["target"]
-    group_col  = _primary_group_col(col_cfg)
+    group_keys = [c for c in (col_cfg.get("group_keys") or []) if c]
 
     df = engine._df.copy() if engine._df is not None else pd.DataFrame()
 
-    # Historical series per SKU
+    # Historical series per forecast key. With two group keys the engine keys
+    # its forecast rows by series_key(sku, store) = "sku│store" — group the
+    # history the same way so each store keeps its own past, instead of every
+    # store sharing the combined SKU history.
+    from backend.inventory.series import SERIES_SEPARATOR
+
     historical_by_sku: dict = {}
     if not df.empty and dt_col in df.columns and target_col in df.columns:
         df[dt_col] = pd.to_datetime(df[dt_col])
-        src = (
-            df.groupby(group_col)
-            if group_col and group_col in df.columns
-            else [("__all__", df)]
-        )
+        present_keys = [c for c in group_keys if c in df.columns]
+        if len(present_keys) >= 2:
+            src = (
+                (f"{g[0]}{SERIES_SEPARATOR}{g[1]}", frame)
+                for g, frame in df.groupby(present_keys[:2])
+            )
+        elif len(present_keys) == 1:
+            src = df.groupby(present_keys[0])
+        else:
+            src = [("__all__", df)]
         for sku, g in src:
             historical_by_sku[str(sku)] = [
                 {"date": str(row[dt_col])[:10], "value": round(float(row[target_col]), 4)}
