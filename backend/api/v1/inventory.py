@@ -283,6 +283,7 @@ def inventory_status(
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signal: Optional[str] = Query(default=None, description="Filter by signal: PEDIR_YA, PEDIR_PRONTO, OK, SOBRESTOCK, SIN_DATOS"),
     supplier: Optional[str] = Query(default=None),
+    by_warehouse: bool = Query(default=False, description="Per-(sku, warehouse) rows with network transfer suggestions"),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -292,6 +293,24 @@ def inventory_status(
     - recommended order quantity
     - inventory value
     """
+    if by_warehouse:
+        items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level)
+        items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
+        if signal:
+            items = [i for i in items if i["signal"] == signal.upper()]
+        if supplier:
+            items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
+        return ok({
+            "items": items,
+            "summary": {
+                "total_rows": len(items),
+                "order_now": sum(1 for i in items if i["signal"] == "PEDIR_YA"),
+                "order_soon": sum(1 for i in items if i["signal"] == "PEDIR_PRONTO"),
+                "transfers_suggested": sum(
+                    1 for i in items if i.get("recommended_action") == "transfer"),
+            },
+        })
+
     items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
     items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
 

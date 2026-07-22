@@ -1,0 +1,113 @@
+"""Network-aware per-warehouse semaphore (feature 5.4, spec §2)."""
+
+import pytest
+
+from backend.db import session_store
+from backend.inventory import service as inv_svc
+from backend.inventory import warehouse_service as wh_svc
+from backend.inventory.series import SERIES_SEPARATOR
+
+
+def _forecast_entry(daily, days=30):
+    return {"lightgbm": {
+        "historical": [],
+        "forecast": [
+            {"date": f"2026-08-{i+1:02d}", "value": daily, "lower": None, "upper": None}
+            for i in range(days)
+        ],
+    }}
+
+
+def _seed_stock(tid, sku, warehouse, stock, lead_time=5):
+    inv_svc.upsert_stock(tid, sku, {
+        "current_stock": stock, "lead_time_days": lead_time,
+        "warehouse": warehouse, "moq": 1,
+    })
+
+
+class TestPerWarehouseDemand:
+    def test_share_split_demand(self, test_tenant, completed_session):
+        tid = test_tenant["id"]
+        sid = completed_session["id"]
+        # Global demand 10/day, split 80/20
+        session_store.set_forecasts(tid, sid, {"A": _forecast_entry(10.0)})
+        _seed_stock(tid, "A", "principal", 100)
+        _seed_stock(tid, "A", "Norte", 100)
+        wh_svc.set_demand_share(tid, "principal", 80)
+        wh_svc.set_demand_share(tid, "Norte", 20)
+
+        items = inv_svc.get_inventory_status_by_warehouse(tid, sid)
+        by_wh = {i["warehouse"]: i for i in items if i["sku"] == "A"}
+        assert by_wh["principal"]["daily_demand"] == pytest.approx(8.0)
+        assert by_wh["Norte"]["daily_demand"] == pytest.approx(2.0)
+
+    def test_store_keyed_forecasts_override_shares(self, test_tenant, completed_session):
+        tid = test_tenant["id"]
+        sid = completed_session["id"]
+        session_store.set_forecasts(tid, sid, {
+            f"A{SERIES_SEPARATOR}Norte": _forecast_entry(3.0),
+            f"A{SERIES_SEPARATOR}principal": _forecast_entry(7.0),
+        })
+        _seed_stock(tid, "A", "principal", 100)
+        _seed_stock(tid, "A", "Norte", 100)
+        items = inv_svc.get_inventory_status_by_warehouse(tid, sid)
+        by_wh = {i["warehouse"]: i for i in items if i["sku"] == "A"}
+        assert by_wh["Norte"]["daily_demand"] == pytest.approx(3.0)
+        assert by_wh["principal"]["daily_demand"] == pytest.approx(7.0)
+
+
+class TestNetworkPass:
+    def _seed_donor_and_needy(self, tid, sid, donor_stock=600.0):
+        # 10/day everywhere; needy warehouse has 5 units (0.5 days of
+        # coverage); the donor's default 600 units = 60 days, comfortably
+        # above the 30-day post-donation floor.
+        session_store.set_forecasts(tid, sid, {
+            f"A{SERIES_SEPARATOR}Norte": _forecast_entry(10.0),
+            f"A{SERIES_SEPARATOR}principal": _forecast_entry(10.0),
+        })
+        _seed_stock(tid, "A", "Norte", 5)
+        _seed_stock(tid, "A", "principal", donor_stock)
+
+    def test_donor_converts_order_to_transfer(self, test_tenant, completed_session):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        self._seed_donor_and_needy(tid, sid)
+        items = inv_svc.get_inventory_status_by_warehouse(tid, sid)
+        needy = next(i for i in items if i["warehouse"] == "Norte" and i["sku"] == "A")
+        assert needy["signal"] == "PEDIR_YA"
+        assert needy["recommended_action"] == "transfer"
+        ts = needy["transfer_suggestion"]
+        assert ts["from_warehouse"] == "principal"
+        assert ts["qty"] > 0
+        assert ts["donor_coverage_days_after"] >= 30
+
+    def test_no_donor_stays_order(self, test_tenant, completed_session):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        # Donor has 60 units = 6 days of coverage -> cannot donate anything
+        self._seed_donor_and_needy(tid, sid, donor_stock=60.0)
+        items = inv_svc.get_inventory_status_by_warehouse(tid, sid)
+        needy = next(i for i in items if i["warehouse"] == "Norte" and i["sku"] == "A")
+        assert needy["recommended_action"] == "order"
+        assert needy["transfer_suggestion"] is None
+
+    def test_aggregated_status_unchanged(self, test_tenant, completed_session):
+        """Regression: the SKU-level status must not learn about warehouses."""
+        tid, sid = test_tenant["id"], completed_session["id"]
+        self._seed_donor_and_needy(tid, sid)
+        items = inv_svc.get_inventory_status(tid, sid)
+        row = next(i for i in items if i["sku"] == "A")
+        assert row["current_stock"] == 605.0  # summed across warehouses
+        assert "recommended_action" not in row
+
+
+class TestApi:
+    def test_by_warehouse_param(self, client, auth_headers, test_tenant, completed_session):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        session_store.set_forecasts(tid, sid, {"A": _forecast_entry(10.0)})
+        _seed_stock(tid, "A", "principal", 100)
+        r = client.get(
+            f"/api/v1/inventory/status?session_id={sid}&by_warehouse=true",
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert all("warehouse" in i for i in data["items"])
+        assert "transfers_suggested" in data["summary"]

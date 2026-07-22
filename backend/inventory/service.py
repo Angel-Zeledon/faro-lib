@@ -660,8 +660,13 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     Includes ABC-XYZ classification, stock trend, and order recommendation.
     """
     from backend.db import session_store
+    from backend.inventory.series import rollup_by_sku
 
     forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
+    # Store-keyed sessions ("sku│store") collapse to per-SKU totals here — this
+    # view is the whole-tenant aggregate; the per-warehouse view is
+    # get_inventory_status_by_warehouse. Legacy dicts pass through unchanged.
+    forecasts = rollup_by_sku(forecasts)
 
     # Try to pull CV per SKU from the quality report stored in training_result
     cv_by_sku: dict[str, Optional[float]] = {}
@@ -831,6 +836,180 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
 
     items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5), x["coverage_days"] or 9999))
     return items
+
+
+# ── Per-warehouse status + network transfer pass (feature 5.4) ───────────────
+
+# Minimum days of coverage a donor warehouse must keep AFTER donating for the
+# network pass to suggest a transfer instead of a purchase (spec 5.4 §2).
+TRANSFER_MIN_DONOR_COVERAGE_DAYS = 30.0
+
+
+def get_inventory_status_by_warehouse(
+    tenant_id: str, session_id: str, service_level: float = 0.95
+) -> list[dict]:
+    """
+    Per-(sku, warehouse) semaphore rows (feature 5.4).
+
+    Demand per warehouse comes from, in order of preference:
+      1. store-keyed session forecasts ("sku│store"), store matched to the
+         warehouse name case-insensitively;
+      2. the SKU-global forecast split by warehouses.demand_share fractions.
+
+    Each row gets the same signal/recommendation math as the aggregated
+    status, then _network_transfer_pass() converts purchases into transfer
+    suggestions where another warehouse can donate.
+    """
+    from backend.db import session_store
+    from backend.inventory import warehouse_service as wh_svc
+    from backend.inventory.series import stores_in, for_store, rollup_by_sku
+
+    forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
+    stock_rows = list_stock(tenant_id)
+    learned_lead_times = get_learned_lead_times(tenant_id)
+
+    warehouses = [w["name"] for w in wh_svc.list_warehouses(tenant_id)] or ["principal"]
+    store_names = stores_in(forecasts)
+    wh_by_lower = {w.lower().strip(): w for w in warehouses}
+
+    shares: dict[str, float] = {}
+    per_wh_forecasts: dict[str, dict] = {}
+    if store_names:
+        demand_mode = "store"
+        for store in store_names:
+            wh = wh_by_lower.get(store.lower().strip(), store)
+            per_wh_forecasts[wh] = for_store(forecasts, store)
+        sku_forecasts = rollup_by_sku(forecasts)
+    else:
+        demand_mode = "share"
+        shares = wh_svc.get_demand_shares(tenant_id)
+        sku_forecasts = forecasts
+
+    stock_by_pair = {(r["sku"], r.get("warehouse") or "principal"): r for r in stock_rows}
+    all_skus = sorted(sku_forecasts.keys())
+
+    items: list[dict] = []
+    for sku in all_skus:
+        for wh in warehouses:
+            stock = stock_by_pair.get((sku, wh))
+            if demand_mode == "store":
+                model_forecasts = per_wh_forecasts.get(wh, {}).get(sku, {})
+                share = 1.0
+            else:
+                model_forecasts = sku_forecasts.get(sku, {})
+                share = shares.get(wh, 0.0)
+            # Pairs with neither stock nor demand don't exist for this tenant.
+            if stock is None and (not model_forecasts or share == 0.0):
+                continue
+
+            supplier = stock.get("supplier") if stock else None
+            lead_time_config = int(stock["lead_time_days"]) if stock else 15
+            lead_time, lead_time_source, _ = resolve_lead_time(
+                lead_time_config, supplier, learned_lead_times)
+            current_stock = float(stock["current_stock"]) if stock else 0.0
+            moq = float(stock["moq"]) if stock else 1.0
+
+            if model_forecasts and share > 0.0:
+                sku_service_level = (
+                    float(stock.get("service_level") or service_level)
+                    if stock else service_level)
+                z = _Z.get(sku_service_level, 1.645)
+                avg_daily, avg_std = _avg_daily_forecast(model_forecasts, lead_time)
+                avg_daily *= share
+                avg_std *= share
+                coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
+                signal = _calc_signal(coverage_days, lead_time)
+                recommended = _calc_recommended(
+                    current_stock, avg_daily, avg_std, lead_time, moq,
+                    sku_service_level)
+                recommended = _gate_recommended_by_signal(signal, recommended)
+                reorder_point = round(
+                    avg_daily * lead_time
+                    + z * avg_std * math.sqrt(lead_time), 2)
+            else:
+                avg_daily = avg_std = None
+                coverage_days = None
+                signal = "SIN_DATOS"
+                recommended = None
+                reorder_point = None
+
+            items.append({
+                "sku": sku,
+                "warehouse": wh,
+                "display_name": stock.get("display_name") if stock else None,
+                "supplier": supplier,
+                "current_stock": current_stock if stock else None,
+                "lead_time_days": lead_time,
+                "lead_time_source": lead_time_source,
+                "moq": moq,
+                "daily_demand": round(avg_daily, 4) if avg_daily is not None else None,
+                "coverage_days": (round(coverage_days, 1)
+                                  if coverage_days is not None and coverage_days < 9990
+                                  else None),
+                "reorder_point": reorder_point,
+                "signal": signal,
+                "recommended_qty": recommended,
+                "recommended_action": None,
+                "transfer_suggestion": None,
+                "unit_cost": (float(stock["unit_cost"])
+                              if stock and stock.get("unit_cost") is not None else None),
+            })
+
+    _network_transfer_pass(items)
+    items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5),
+                              x["coverage_days"] or 9999))
+    return items
+
+
+def _network_transfer_pass(items: list[dict]) -> None:
+    """
+    Convert purchase recommendations into transfer suggestions where another
+    warehouse of the same SKU can donate (spec 5.4 §2). Mutates items in place.
+
+    A donor qualifies iff after donating qty = min(need, surplus):
+      - its stock stays >= its own reorder point, and
+      - its remaining coverage stays >= TRANSFER_MIN_DONOR_COVERAGE_DAYS.
+    Best donor = highest post-donation coverage. The transfer replaces the
+    order when it covers >= 80% of the need; below that the purchase stands.
+    """
+    by_sku: dict[str, list[dict]] = {}
+    for it in items:
+        by_sku.setdefault(it["sku"], []).append(it)
+
+    for sku, rows in by_sku.items():
+        needy = [r for r in rows
+                 if r["signal"] in ("PEDIR_YA", "PEDIR_PRONTO")
+                 and (r.get("recommended_qty") or 0) > 0]
+        for r in needy:
+            r["recommended_action"] = "order"
+            need = float(r["recommended_qty"])
+            best = None
+            for d in rows:
+                if d is r or not d.get("current_stock"):
+                    continue
+                daily = d.get("daily_demand") or 0.0
+                reorder = d.get("reorder_point") or 0.0
+                donatable = min(need, float(d["current_stock"]) - reorder)
+                if daily > 0:
+                    donatable = min(
+                        donatable,
+                        float(d["current_stock"])
+                        - daily * TRANSFER_MIN_DONOR_COVERAGE_DAYS)
+                if donatable <= 0:
+                    continue
+                after = float(d["current_stock"]) - donatable
+                cov_after = after / daily if daily > 0 else 9999.0
+                if cov_after < TRANSFER_MIN_DONOR_COVERAGE_DAYS:
+                    continue
+                if best is None or cov_after > best["cov_after"]:
+                    best = {"donor": d, "qty": donatable, "cov_after": cov_after}
+            if best and best["qty"] >= 0.8 * need:
+                r["recommended_action"] = "transfer"
+                r["transfer_suggestion"] = {
+                    "from_warehouse": best["donor"]["warehouse"],
+                    "qty": round(best["qty"], 2),
+                    "donor_coverage_days_after": round(best["cov_after"], 1),
+                }
 
 
 # ── Per-product event multipliers ────────────────────────────────────────────
