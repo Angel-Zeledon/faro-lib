@@ -676,11 +676,34 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     """
     Merges inventory_stock with session forecast.
     Includes ABC-XYZ classification, stock trend, and order recommendation.
+
+    Thin public wrapper (signature is frozen — API + alert/snapshot callers):
+    the actual work, including the option to reuse already-fetched data, lives
+    in _compute_inventory_status below.
+    """
+    return _compute_inventory_status(tenant_id, session_id, service_level)
+
+
+def _compute_inventory_status(
+    tenant_id: str, session_id: str, service_level: float = 0.95,
+    *,
+    forecasts: Optional[dict] = None,
+    stock_rows: Optional[list] = None,
+    learned_lead_times: Optional[dict] = None,
+) -> list[dict]:
+    """
+    Implementation of get_inventory_status. The keyword-only args accept
+    preloaded data (raw get_forecasts blob, list_stock rows,
+    get_learned_lead_times map) so run_daily_inventory_alerts can fetch each
+    ONCE per tenant and share them with get_inventory_status_by_warehouse
+    instead of double-fetching; None means fetch here as always. Inputs are
+    never mutated (rollup_by_sku copies).
     """
     from backend.db import session_store
     from backend.inventory.series import rollup_by_sku
 
-    forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
+    if forecasts is None:
+        forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
     # Store-keyed sessions ("sku│store") collapse to per-SKU totals here — this
     # view is the whole-tenant aggregate; the per-warehouse view is
     # get_inventory_status_by_warehouse. Legacy dicts pass through unchanged.
@@ -697,8 +720,9 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     except Exception as e:
         log.debug("cv_by_sku lookup failed for session=%s: %s", session_id, e)
 
-    stock_rows = list_stock(tenant_id)
-    stock_map  = _aggregate_stock_rows_by_sku(stock_rows)
+    if stock_rows is None:
+        stock_rows = list_stock(tenant_id)
+    stock_map = _aggregate_stock_rows_by_sku(stock_rows)
 
     # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
     # tenant-wide table (no session_id column) that accumulates rows from every
@@ -710,7 +734,8 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
 
     # Real lead times learned from recorded receptions, one query for the whole
     # tenant (never per SKU inside the loop).
-    learned_lead_times = get_learned_lead_times(tenant_id)
+    if learned_lead_times is None:
+        learned_lead_times = get_learned_lead_times(tenant_id)
 
     items: list[dict] = []
 
@@ -864,7 +889,11 @@ TRANSFER_MIN_DONOR_COVERAGE_DAYS = 30.0
 
 
 def get_inventory_status_by_warehouse(
-    tenant_id: str, session_id: str, service_level: float = 0.95
+    tenant_id: str, session_id: str, service_level: float = 0.95,
+    *,
+    forecasts: Optional[dict] = None,
+    stock_rows: Optional[list] = None,
+    learned_lead_times: Optional[dict] = None,
 ) -> list[dict]:
     """
     Per-(sku, warehouse) semaphore rows (feature 5.4).
@@ -877,14 +906,25 @@ def get_inventory_status_by_warehouse(
     Each row gets the same signal/recommendation math as the aggregated
     status, then _network_transfer_pass() converts purchases into transfer
     suggestions where another warehouse can donate.
+
+    `forecasts` / `stock_rows` / `learned_lead_times`: optional preloaded
+    data (raw get_forecasts blob, list_stock rows, get_learned_lead_times
+    map). When provided, the corresponding fetch is skipped — the daily alert
+    loop computes the aggregated AND per-warehouse status for the same
+    tenant/session back-to-back, and without this the forecasts blob (can be
+    MBs) plus both DB reads were fetched twice per tenant. Inputs are never
+    mutated, so a caller can safely share them across both calls.
     """
     from backend.db import session_store
     from backend.inventory import warehouse_service as wh_svc
     from backend.inventory.series import stores_in, for_store, split_key
 
-    forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
-    stock_rows = list_stock(tenant_id)
-    learned_lead_times = get_learned_lead_times(tenant_id)
+    if forecasts is None:
+        forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
+    if stock_rows is None:
+        stock_rows = list_stock(tenant_id)
+    if learned_lead_times is None:
+        learned_lead_times = get_learned_lead_times(tenant_id)
 
     warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
                   or [wh_svc.DEFAULT_WAREHOUSE])
@@ -2073,14 +2113,30 @@ def run_daily_inventory_alerts() -> None:
     tenants = get_tenants_with_active_sessions()
     log.info("inventory_alert: checking %d tenants", len(tenants))
 
+    from backend.db import session_store
+
     for tenant in tenants:
         tid = tenant["tenant_id"]
         try:
             session = get_latest_completed_session(tid)
             if not session:
                 continue
+            sid = session["session_id"]
 
-            items = get_inventory_status(tid, session["session_id"])
+            # Fetch the shared inputs ONCE per tenant: the aggregated status
+            # and (for multi-warehouse tenants) the per-warehouse status both
+            # need the same forecasts blob (can be MBs), stock rows and
+            # learned lead times — before this, each call re-fetched all
+            # three itself.
+            forecasts = session_store.get_forecasts(tid, sid) or {}
+            stock_rows = list_stock(tid)
+            learned_lead_times = get_learned_lead_times(tid)
+
+            items = _compute_inventory_status(
+                tid, sid,
+                forecasts=forecasts, stock_rows=stock_rows,
+                learned_lead_times=learned_lead_times,
+            )
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
 
@@ -2093,7 +2149,11 @@ def run_daily_inventory_alerts() -> None:
             transfer_count = 0
             if wh_svc.count_warehouses(tid) >= 2:
                 try:
-                    wh_items = get_inventory_status_by_warehouse(tid, session["session_id"])
+                    wh_items = get_inventory_status_by_warehouse(
+                        tid, sid,
+                        forecasts=forecasts, stock_rows=stock_rows,
+                        learned_lead_times=learned_lead_times,
+                    )
                     transfer_count = sum(
                         1 for i in wh_items if i.get("recommended_action") == "transfer")
                 except Exception as e:

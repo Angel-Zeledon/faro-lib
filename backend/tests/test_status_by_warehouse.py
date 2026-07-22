@@ -99,6 +99,71 @@ class TestNetworkPass:
         assert "recommended_action" not in row
 
 
+class TestPreloadedData:
+    """The daily alert loop fetches forecasts/stock/lead-times once per tenant
+    and shares them with both status computations — preloaded inputs must be
+    honored (no re-fetch) and produce identical results."""
+
+    def _seed(self, tid, sid):
+        session_store.set_forecasts(tid, sid, {
+            f"A{SERIES_SEPARATOR}Norte": _forecast_entry(10.0),
+            f"A{SERIES_SEPARATOR}principal": _forecast_entry(10.0),
+        })
+        _seed_stock(tid, "A", "Norte", 5)
+        _seed_stock(tid, "A", "principal", 600)
+
+    def _patch_fetchers_to_fail(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise AssertionError(
+                "data fetch called even though preloaded data was provided")
+        monkeypatch.setattr(session_store, "get_forecasts", boom)
+        monkeypatch.setattr(inv_svc, "list_stock", boom)
+        monkeypatch.setattr(inv_svc, "get_learned_lead_times", boom)
+
+    def test_by_warehouse_preloaded_equals_self_fetching(
+        self, test_tenant, completed_session, monkeypatch,
+    ):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        self._seed(tid, sid)
+
+        baseline = inv_svc.get_inventory_status_by_warehouse(tid, sid)
+        forecasts = session_store.get_forecasts(tid, sid) or {}
+        stock_rows = inv_svc.list_stock(tid)
+        learned = inv_svc.get_learned_lead_times(tid)
+
+        self._patch_fetchers_to_fail(monkeypatch)
+        preloaded = inv_svc.get_inventory_status_by_warehouse(
+            tid, sid,
+            forecasts=forecasts, stock_rows=stock_rows,
+            learned_lead_times=learned,
+        )
+        assert preloaded == baseline
+        assert any(i["signal"] != "SIN_DATOS" for i in preloaded)  # non-trivial result
+
+    def test_aggregate_impl_preloaded_equals_public_call(
+        self, test_tenant, completed_session, monkeypatch,
+    ):
+        """_compute_inventory_status with preloaded data must equal the public
+        self-fetching get_inventory_status (same alert-loop guarantee for the
+        aggregated view)."""
+        tid, sid = test_tenant["id"], completed_session["id"]
+        self._seed(tid, sid)
+
+        baseline = inv_svc.get_inventory_status(tid, sid)
+        forecasts = session_store.get_forecasts(tid, sid) or {}
+        stock_rows = inv_svc.list_stock(tid)
+        learned = inv_svc.get_learned_lead_times(tid)
+
+        self._patch_fetchers_to_fail(monkeypatch)
+        preloaded = inv_svc._compute_inventory_status(
+            tid, sid,
+            forecasts=forecasts, stock_rows=stock_rows,
+            learned_lead_times=learned,
+        )
+        assert preloaded == baseline
+        assert any(i["signal"] != "SIN_DATOS" for i in preloaded)
+
+
 class TestApi:
     def test_by_warehouse_param(self, client, auth_headers, test_tenant, completed_session):
         tid, sid = test_tenant["id"], completed_session["id"]
