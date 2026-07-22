@@ -967,6 +967,7 @@ def send_po_to_suppliers(
     saved contact info, are skipped and reported back — never a 500.
     """
     from backend.inventory import reception_service as rec_svc
+    from backend.inventory.roi_service import format_po_number
     from backend.notifications import email as email_mod
     from backend.notifications import whatsapp as wa_mod
 
@@ -1006,6 +1007,7 @@ def send_po_to_suppliers(
             email_ok = email_mod.send_po_to_supplier_email(
                 to=supplier["email"], supplier_name=supplier_name, po_log_id=po_log_id,
                 items=supplier_items, pdf_bytes=pdf_bytes, pdf_filename=pdf_path.name,
+                po_ref=format_po_number(po.get("po_number"), po_log_id),
             )
 
         whatsapp_ok = False

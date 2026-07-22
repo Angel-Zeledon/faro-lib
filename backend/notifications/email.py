@@ -436,14 +436,17 @@ def send_training_complete_email(to: str, session_name: str, dashboard_url: str)
 
 
 def send_po_to_supplier_email(
+    *,
     to: str,
     supplier_name: str,
     po_log_id: str,
     items: list[dict],
     pdf_bytes: bytes,
     pdf_filename: str,
+    po_ref: str | None = None,
 ) -> bool:
     """Send a purchase order's PDF to its supplier. Returns True if sent."""
+    ref = po_ref or po_log_id
     def _row(item: dict) -> str:
         sku = item.get("sku", "")
         name = item.get("display_name") or sku
@@ -475,12 +478,12 @@ def send_po_to_supplier_email(
         </p>
         {table_html}
         <p style="color:{_DIM};font-size:11px;margin:20px 0 0;">
-          Referencia: {po_log_id}
+          Referencia: {ref}
         </p>
         """,
     )
     try:
-        _send(to, f"Orden de compra — {po_log_id}", html,
+        _send(to, f"Orden de compra {ref}", html,
               attachment={"filename": pdf_filename, "content_bytes": pdf_bytes})
         return True
     except Exception as exc:
