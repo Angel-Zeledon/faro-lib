@@ -142,6 +142,8 @@ def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dic
     silently discarded — the existing row's `is_default` wins. No caller flips
     an existing warehouse's default flag yet; if one is added, this function
     needs an explicit UPDATE path for that case."""
+    if not (name or "").strip():
+        raise ValueError("Warehouse name is required")
     # Normalize-at-write: 'norte' must reuse an existing 'Norte' row, never
     # create a case-variant duplicate location.
     name = resolve_canonical_name(tenant_id, name)

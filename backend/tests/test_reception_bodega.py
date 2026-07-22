@@ -86,6 +86,52 @@ class TestReceptionRespectsWarehouse:
         assert float(norte["current_stock"]) == 100.0      # untouched
 
 
+class TestReceptionOverReceiptCap:
+    """QA received 5000 units against a line ordered for 312, inflating stock.
+    A reception must not book more than the line's outstanding quantity."""
+
+    def test_receiving_more_than_outstanding_is_rejected(self, client, test_tenant):
+        from backend.inventory import service as inv_svc
+        from backend.inventory import roi_service
+        from backend.inventory import reception_service as rec_svc
+        from backend.db.connection import query_one
+
+        tid = test_tenant["id"]
+        sku = _sku()
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 0, "warehouse": "principal"})
+        po = roi_service.log_po_generation(tid, "sess-test", [
+            {"sku": sku, "final_qty": 312, "status": "approved", "supplier": "Prov A"},
+        ])
+
+        with pytest.raises(ValueError):
+            rec_svc.receive_po(tid, po["id"], user_id="u1",
+                               lines=[{"sku": sku, "received_qty": 5000}])
+
+        # Nothing booked; stock unchanged.
+        row = query_one(
+            "SELECT current_stock FROM inventory_stock "
+            "WHERE tenant_id=%s AND sku=%s AND warehouse='principal'", (tid, sku))
+        assert float(row["current_stock"]) == 0.0
+
+    def test_partial_then_over_remaining_is_rejected(self, client, test_tenant):
+        from backend.inventory import service as inv_svc
+        from backend.inventory import roi_service
+        from backend.inventory import reception_service as rec_svc
+
+        tid = test_tenant["id"]
+        sku = _sku()
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 0, "warehouse": "principal"})
+        po = roi_service.log_po_generation(tid, "sess-test", [
+            {"sku": sku, "final_qty": 100, "status": "approved", "supplier": "Prov A"},
+        ])
+        rec_svc.receive_po(tid, po["id"], user_id="u1",
+                           lines=[{"sku": sku, "received_qty": 60}])
+        # 40 outstanding — receiving 50 must be rejected.
+        with pytest.raises(ValueError):
+            rec_svc.receive_po(tid, po["id"], user_id="u1",
+                               lines=[{"sku": sku, "received_qty": 50}])
+
+
 class TestReceptionLeadTimeObservationPerSupplier:
     """A PO can span multiple suppliers who deliver at different times.
     Lead-time learning must record ONE observation per supplier, taken on

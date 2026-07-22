@@ -31,15 +31,34 @@ def _adjust_stock(conn, tenant_id: str, sku: str, warehouse: str, delta: float) 
     invariant every lifecycle step (send, receive, cancel) shares. RETURNING
     avoids a re-read; the snapshot goes through the canonical service helper.
     Returns the new stock level.
+
+    A DECREMENT carries an atomic floor: `AND current_stock >= -delta` in the
+    WHERE clause, so two concurrent sends of the same stock can't both pass a
+    Python-side availability check and drive the row negative (the TOCTOU race
+    QA found). The loser's UPDATE matches no row → we raise. This mirrors the
+    conditional-UPDATE guard shrinkage_service already uses.
     """
     from backend.inventory import service as inv_svc
 
-    row = query_one(
-        """UPDATE inventory_stock
-           SET current_stock = current_stock + %s, updated_at = NOW()
-           WHERE tenant_id = %s AND sku = %s AND warehouse = %s
-           RETURNING current_stock""",
-        (delta, tenant_id, sku, warehouse), conn=conn)
+    if delta < 0:
+        row = query_one(
+            """UPDATE inventory_stock
+               SET current_stock = current_stock + %s, updated_at = NOW()
+               WHERE tenant_id = %s AND sku = %s AND warehouse = %s
+                 AND current_stock >= %s
+               RETURNING current_stock""",
+            (delta, tenant_id, sku, warehouse, -delta), conn=conn)
+        if row is None:
+            raise ValueError(
+                f"Insufficient stock of '{sku}' in '{warehouse}' "
+                "(it may have changed from another operation)")
+    else:
+        row = query_one(
+            """UPDATE inventory_stock
+               SET current_stock = current_stock + %s, updated_at = NOW()
+               WHERE tenant_id = %s AND sku = %s AND warehouse = %s
+               RETURNING current_stock""",
+            (delta, tenant_id, sku, warehouse), conn=conn)
     new_stock = float(row["current_stock"])
     inv_svc._record_snapshot(tenant_id, sku, new_stock, conn=conn)
     return new_stock
@@ -213,11 +232,22 @@ def receive_transfer(
 
     with transaction() as conn:
         for sku, qty in sorted(to_receive.items()):
-            execute(
+            # Atomic cap: only accept this receipt if it keeps qty_received
+            # <= qty_sent. Two concurrent full-receives of the same transfer
+            # would otherwise both pass the outstanding check above and credit
+            # the destination twice (the TOCTOU race QA found); the loser
+            # matches no row here and the reception is rejected.
+            accepted = query_one(
                 """UPDATE inventory_transfer_items
                    SET qty_received = COALESCE(qty_received, 0) + %s
-                   WHERE transfer_id = %s AND tenant_id = %s AND sku = %s""",
-                (qty, transfer_id, tenant_id, sku), conn=conn)
+                   WHERE transfer_id = %s AND tenant_id = %s AND sku = %s
+                     AND COALESCE(qty_received, 0) + %s <= qty_sent
+                   RETURNING qty_received""",
+                (qty, transfer_id, tenant_id, sku, qty), conn=conn)
+            if accepted is None:
+                raise ValueError(
+                    f"'{sku}': received quantity exceeds what was sent "
+                    "(it may have been received from another operation)")
             if (sku, dest) in new_pairs:
                 origin_row = inv_svc.get_stock(
                     tenant_id, sku, warehouse=t["from_warehouse"], conn=conn)

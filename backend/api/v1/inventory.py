@@ -35,6 +35,7 @@ from backend.inventory import transfer_service as tr_svc
 from backend.inventory import price_break_service as pb_svc
 from backend.inventory import cash_service
 from backend.schemas.common import ok
+from backend.utils.csv_safe import csv_safe
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 log = logging.getLogger(__name__)
@@ -1351,6 +1352,8 @@ def list_warehouses(user: CurrentUser = Depends(get_current_user)):
     dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
+    if not (body.name or "").strip():
+        raise HTTPException(status_code=422, detail="Warehouse name is required")
     # Resolve first so a case-variant of an existing warehouse ('norte' vs
     # 'Norte') is treated as the idempotent re-create it is, not a new
     # location for the max_locations pre-check.
@@ -1797,9 +1800,12 @@ def export_po(
         # question) it — same distinction the /hoy and /inventory screens show.
         lead_origin = "Aprendido" if i.get("lead_time_source") == "learned" else "Configurado"
         writer.writerow([
-            i["sku"],
-            i.get("display_name") or "",
-            i.get("supplier") or "",
+            # Neutralize the user-controlled text cells against CSV formula
+            # injection — these can carry `=`/`+`/`@` from an imported catalog
+            # or an accounting-integration supplier name.
+            csv_safe(i["sku"]),
+            csv_safe(i.get("display_name") or ""),
+            csv_safe(i.get("supplier") or ""),
             i["signal"],
             i.get("current_stock") if i.get("current_stock") is not None else "",
             i.get("coverage_days") if i.get("coverage_days") is not None else "",

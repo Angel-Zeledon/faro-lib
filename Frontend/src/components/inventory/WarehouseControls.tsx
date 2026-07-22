@@ -100,6 +100,10 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
       setName('')
       setAdding(false)
       onCreated()
+    } catch {
+      // The api.ts interceptor already surfaces a standard toast (e.g. the
+      // 403 a viewer gets). Swallow here so the rejection isn't uncaught —
+      // the form stays open for a retry.
     } finally { setSaving(false) }
   }
 
@@ -173,6 +177,9 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
       setEditingShares(false)
       reload()
       onSharesChanged?.()
+    } catch {
+      // Interceptor toasts the failure (e.g. viewer 403); don't leave the
+      // rejection uncaught.
     } finally { setSaving(false) }
   }
 

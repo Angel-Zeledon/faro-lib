@@ -126,6 +126,66 @@ class TestTransferLifecycle:
                                    "principal", "principal", [{"sku": "A", "qty": 1}])
 
 
+class TestConcurrencyGuards:
+    """QA found TOCTOU races: two concurrent sends drove stock negative, and
+    two concurrent receives double-credited the destination. The fixes are
+    atomic conditional UPDATEs, verified here with real threads."""
+
+    def test_concurrent_sends_cannot_oversell(self, two_warehouses, user_id):
+        import threading
+        tid = two_warehouses
+        # 100 in principal; two threads each try to send all 100.
+        results: list = []
+
+        def send():
+            try:
+                tr_svc.create_transfer(tid, user_id, "principal", "Norte",
+                                       [{"sku": "A", "qty": 100}])
+                results.append("ok")
+            except ValueError:
+                results.append("rejected")
+
+        threads = [threading.Thread(target=send) for _ in range(2)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        # Exactly one succeeds; stock never goes negative.
+        assert sorted(results) == ["ok", "rejected"]
+        assert _stock(tid, "A", "principal") == 0.0
+        assert query_one(
+            "SELECT COUNT(*)::int AS c FROM inventory_stock "
+            "WHERE tenant_id=%s AND current_stock < 0", (tid,))["c"] == 0
+        assert query_one(
+            "SELECT COUNT(*)::int AS c FROM inventory_transfer_log "
+            "WHERE tenant_id=%s AND status='in_transit'", (tid,))["c"] == 1
+
+    def test_concurrent_receives_cannot_overcredit(self, two_warehouses, user_id):
+        import threading
+        tid = two_warehouses
+        t = tr_svc.create_transfer(tid, user_id, "principal", "Norte",
+                                   [{"sku": "A", "qty": 40}])
+        results: list = []
+
+        def receive():
+            try:
+                tr_svc.receive_transfer(tid, t["id"], None)
+                results.append("ok")
+            except ValueError:
+                results.append("rejected")
+
+        threads = [threading.Thread(target=receive) for _ in range(2)]
+        for t2 in threads: t2.start()
+        for t2 in threads: t2.join()
+
+        assert "ok" in results  # at least one applied
+        # Destination credited exactly once (10 base + 40), never doubled.
+        assert _stock(tid, "A", "Norte") == 50.0
+        row = query_one(
+            "SELECT qty_sent, qty_received FROM inventory_transfer_items "
+            "WHERE tenant_id=%s AND transfer_id=%s", (tid, t["id"]))
+        assert float(row["qty_received"]) <= float(row["qty_sent"])
+
+
 class TestCloseWithLoss:
     """Closing a partial transfer writes off the missing units as shrinkage
     (reason transfer_loss) WITHOUT touching stock — the in-transit units

@@ -145,7 +145,19 @@ def receive_po(
             qty = float(ln.get("received_qty") or 0)
             if qty < 0:
                 raise ValueError(f"Cantidad recibida negativa para '{sku}'")
-            received_by_item[matches[0]["id"]] = qty
+            # Cap at what is still outstanding on this line (ordered minus
+            # already received). Without this, a reception could book more
+            # units than were ordered and inflate stock arbitrarily — QA
+            # received 5000 against a line of 312. Partial receptions
+            # accumulate, so the bound is per remaining, not per final_qty.
+            item = matches[0]
+            outstanding = float(item["final_qty"] or 0) - float(item.get("received_qty") or 0)
+            if qty > outstanding:
+                raise ValueError(
+                    f"La cantidad recibida de '{sku}' ({qty:g}) excede lo pendiente "
+                    f"de esta orden ({outstanding:g})"
+                )
+            received_by_item[item["id"]] = qty
         for i in ordered:
             received_by_item.setdefault(i["id"], 0.0)
 
