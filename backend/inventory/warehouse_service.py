@@ -42,6 +42,45 @@ def get_warehouse_by_name(tenant_id: str, name: str):
     )
 
 
+def set_demand_share(tenant_id: str, name: str, share: float | None) -> dict:
+    """
+    Store the manual demand share (0-100, or None to clear) for one warehouse.
+    Used only by tenants whose sales history has no store column — see
+    get_demand_shares() for how raw values become the actual split.
+    """
+    if share is not None and not (0 <= float(share) <= 100):
+        raise ValueError("demand_share must be between 0 and 100")
+    row = get_warehouse_by_name(tenant_id, name)
+    if not row:
+        raise ValueError(f"Warehouse '{name}' not found")
+    execute(
+        "UPDATE warehouses SET demand_share = %s WHERE tenant_id = %s AND name = %s",
+        (share, tenant_id, name),
+    )
+    return get_warehouse_by_name(tenant_id, name)
+
+
+def get_demand_shares(tenant_id: str) -> dict[str, float]:
+    """
+    Warehouse name -> demand fraction (sums to 1.0).
+
+    Shares are normalized over the warehouses that have a non-NULL
+    demand_share. With none set anywhere, the whole demand belongs to the
+    default warehouse (falling back to the alphabetically-first one) — which
+    is exactly the pre-multi-warehouse behavior for mono-warehouse tenants.
+    """
+    rows = list_warehouses(tenant_id)
+    if not rows:
+        return {}
+    set_rows = [r for r in rows if r.get("demand_share") is not None]
+    total = sum(float(r["demand_share"]) for r in set_rows)
+    if set_rows and total > 0:
+        return {r["name"]: float(r["demand_share"]) / total for r in set_rows}
+    default = next((r for r in rows if r.get("is_default")), None) or \
+        sorted(rows, key=lambda r: r["name"])[0]
+    return {default["name"]: 1.0}
+
+
 def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dict:
     """Idempotent create: if a warehouse with this name already exists for the
     tenant, returns the existing row unchanged rather than 409ing (matches the

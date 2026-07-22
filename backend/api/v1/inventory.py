@@ -1318,6 +1318,28 @@ def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_
     return ok(warehouse)
 
 
+class WarehousePatch(BaseModel):
+    demand_share: Optional[float] = Field(default=None, ge=0, le=100)
+
+
+@router.patch(
+    "/warehouses/{name}",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def patch_warehouse(
+    name: str,
+    body: WarehousePatch,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Set or clear the manual demand share for one warehouse (feature 5.4)."""
+    try:
+        row = wh_svc.set_demand_share(user.tenant_id, name, body.demand_share)
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e) else 422,
+                            detail=str(e))
+    return ok(row)
+
+
 @router.get("/stock/{sku}/suppliers")
 def get_sku_suppliers(sku: str, user: CurrentUser = Depends(get_current_user)):
     return ok(sup_svc.get_sku_suppliers(user.tenant_id, sku))
