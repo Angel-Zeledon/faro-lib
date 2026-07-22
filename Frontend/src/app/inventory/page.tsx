@@ -1157,7 +1157,7 @@ export default function InventoryPage() {
  const [editingQtySku, setEditingQtySku] = useState<string | null>(null)
  const [showShrinkageModal, setShowShrinkageModal] = useState(false)
  // Multi-warehouse (feature 5.4): selector + per-warehouse view. null = all.
- const { warehouses, multi: multiWarehouse, reload: reloadWarehouses } = useWarehouses()
+ const { warehouses, multi: multiWarehouse } = useWarehouses()
  const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
 
  // Effective order quantity for an item: the buyer's edit if present, else the recommendation.
@@ -1551,8 +1551,7 @@ export default function InventoryPage() {
  value={selectedWarehouse}
  onChange={setSelectedWarehouse}
  warehouses={warehouses}
- onSharesChanged={() => { reloadWarehouses(); if (sessionId) load(sessionId) }}
- onCreated={reloadWarehouses}
+ onSharesChanged={() => { if (sessionId) load(sessionId) }}
  />
  )}
 

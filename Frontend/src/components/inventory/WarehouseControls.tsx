@@ -2,7 +2,7 @@
 // Warehouse selector + manual demand-share editor (feature 5.4).
 // Self-contained: pages mount it and only receive the selected warehouse.
 // Renders nothing for mono-warehouse tenants (spec: zero visual change).
-import { useCallback, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { listWarehouses, patchWarehouse, createWarehouse } from '@/lib/api'
 import type { Warehouse } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -16,7 +16,7 @@ const C = {
 // Single-flight cache: several components mount useWarehouses on one page
 // (/hoy renders three), and without this each fired its own identical GET.
 // One in-flight promise is shared; reload() busts it (e.g. after creating a
-// warehouse) so the next mount refetches.
+// warehouse) so the refetch hits the network.
 let _warehousesPromise: Promise<Warehouse[]> | null = null
 
 function fetchWarehousesShared(): Promise<Warehouse[]> {
@@ -29,7 +29,21 @@ function fetchWarehousesShared(): Promise<Warehouse[]> {
   return _warehousesPromise
 }
 
-export function useWarehouses() {
+interface WarehousesValue {
+  warehouses: Warehouse[]
+  multi: boolean
+  reload: () => void
+}
+
+// Shared warehouse state (review finding #7): without a provider each
+// useWarehouses() instance kept its own copy, so after AddWarehouse created
+// warehouse #2 only the calling instance flipped `multi` — /hoy's transfer
+// panel, /pedidos' tab bar and the global SKU search overlay stayed
+// mono-warehouse until remount. The provider owns ONE copy; reload() updates
+// it and every consumer re-renders together.
+const WarehousesContext = createContext<WarehousesValue | null>(null)
+
+export function WarehousesProvider({ children }: { children: React.ReactNode }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const reload = useCallback(() => {
     _warehousesPromise = null
@@ -40,6 +54,30 @@ export function useWarehouses() {
     fetchWarehousesShared().then(w => { if (alive) setWarehouses(w) })
     return () => { alive = false }
   }, [])
+  return (
+    <WarehousesContext.Provider value={{ warehouses, multi: warehouses.length >= 2, reload }}>
+      {children}
+    </WarehousesContext.Provider>
+  )
+}
+
+export function useWarehouses(): WarehousesValue {
+  const ctx = useContext(WarehousesContext)
+  // Standalone fallback for mounts outside the provider. Hooks must run
+  // unconditionally; the effect no-ops when the provider owns the data.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const reload = useCallback(() => {
+    _warehousesPromise = null
+    fetchWarehousesShared().then(setWarehouses)
+  }, [])
+  const standalone = ctx === null
+  useEffect(() => {
+    if (!standalone) return
+    let alive = true
+    fetchWarehousesShared().then(w => { if (alive) setWarehouses(w) })
+    return () => { alive = false }
+  }, [standalone])
+  if (ctx) return ctx
   return { warehouses, multi: warehouses.length >= 2, reload }
 }
 
@@ -104,6 +142,9 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   onCreated?: () => void
 }) {
   const { t } = useLanguage()
+  // Warehouse mutations refresh the shared state directly; the optional
+  // callbacks are for page-specific side effects (e.g. reloading status).
+  const { reload } = useWarehouses()
   const [editingShares, setEditingShares] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -112,7 +153,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   if (warehouses.length < 2) {
     return (
       <div style={{ display: 'flex', alignItems: 'center' }}>
-        <AddWarehouse subtle onCreated={() => onCreated?.()} />
+        <AddWarehouse subtle onCreated={() => { reload(); onCreated?.() }} />
       </div>
     )
   }
@@ -130,6 +171,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
         if (num !== w.demand_share) await patchWarehouse(w.name, num)
       }
       setEditingShares(false)
+      reload()
       onSharesChanged?.()
     } finally { setSaving(false) }
   }
@@ -161,7 +203,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
                 style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
           <Percent size={12} /> {t('inventory.wh_shares_btn')}
         </button>
-        <AddWarehouse onCreated={() => onCreated?.()} />
+        <AddWarehouse onCreated={() => { reload(); onCreated?.() }} />
       </div>
 
       {noShares && !editingShares && (
