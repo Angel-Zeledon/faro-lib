@@ -27,10 +27,14 @@ log = logging.getLogger(__name__)
 
 # Canonical reason codes. Spanish labels live in Frontend/src/i18n/translations.ts
 # (inventory.shrinkage_reason_*) — the same pattern as the signal/product_type enums.
-# transfer_loss is system-generated only (closing a partial transfer with
-# missing units — see transfer_service.close_transfer); the manual shrinkage
-# form deliberately does not offer it.
-REASONS = ("breakage", "expiry", "self_consumption", "gift", "transfer_loss")
+REASONS = ("breakage", "expiry", "self_consumption", "gift")
+
+# Reasons that only the SYSTEM writes, never the manual shrinkage form:
+# transfer_loss rows come from transfer_service.close_transfer (a partial
+# transfer closed with missing units). They live in the same ledger and the
+# UI labels them, but /shrinkage/reasons (the form's option list) exposes
+# only the manual REASONS above.
+SYSTEM_REASONS = ("transfer_loss",)
 
 
 def record_shrinkage(
