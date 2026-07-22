@@ -46,6 +46,7 @@ from backend.integrations.base import (
     ProviderProduct,
     ProviderSaleLine,
     ProviderStock,
+    parse_warehouse_name,
 )
 
 _PAGE_SIZE = 30
@@ -93,6 +94,12 @@ class SiigoProvider(AccountingProvider):
                 continue
             if since is not None and invoice_date < since:
                 continue
+            # Siigo item lines carry a `warehouse` object ({"id", "name"})
+            # when the account has inventory-by-warehouse enabled; some
+            # payloads only reference it on the invoice header. Prefer the
+            # line's, fall back to the invoice's, leave None when neither
+            # exists.
+            invoice_store = parse_warehouse_name(invoice.get("warehouse"))
             for line in invoice.get("items") or []:
                 code = line.get("code")
                 if not code:
@@ -102,6 +109,7 @@ class SiigoProvider(AccountingProvider):
                     sku=str(code),
                     quantity=line.get("quantity") or 0,
                     unit_price=line.get("price"),
+                    store=parse_warehouse_name(line.get("warehouse")) or invoice_store,
                 ))
         return sales
 

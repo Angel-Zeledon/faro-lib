@@ -12,6 +12,7 @@ def test_provider_abc_and_dtos():
     s = ProviderStock(sku="A", quantity=10.0, warehouse="principal")
     line = ProviderSaleLine(date=date(2026, 1, 1), sku="A", quantity=3.0, unit_price=8.0)
     assert (p.sku, s.quantity, line.quantity) == ("A", 10.0, 3.0)
+    assert line.store is None  # store is optional and defaults to None
 
     class Dummy(AccountingProvider):
         def test_connection(self): pass
@@ -44,6 +45,36 @@ def test_alegra_maps_items_and_invoices(monkeypatch):
     assert prods[0].sku == "A" and prods[0].name == "Aceite" and prods[0].unit_cost == 5
     assert stock[0].sku == "A" and stock[0].quantity == 10 and stock[0].warehouse == "principal"
     assert sales[0].sku == "A" and sales[0].quantity == 3 and sales[0].unit_price == 8
+    assert sales[0].store is None  # payload carried no warehouse anywhere
+
+
+def test_alegra_sale_lines_carry_warehouse_when_present(monkeypatch):
+    from backend.integrations.alegra import AlegraProvider
+    from backend.integrations import http
+
+    # Multi-warehouse Alegra accounts put a {"id", "name"} warehouse object on
+    # the invoice header; item lines may override it with their own.
+    invoices = [
+        {"date": "2026-01-01", "warehouse": {"id": 2, "name": "Norte"},
+         "items": [
+             {"reference": "A", "quantity": 3, "price": 8},
+             {"reference": "B", "quantity": 1, "price": 4,
+              "warehouse": {"id": 3, "name": "Sur"}},
+         ]},
+        {"date": "2026-01-02",
+         "items": [{"reference": "A", "quantity": 2, "price": 8}]},
+    ]
+
+    def fake_get(url, **kw):
+        return invoices if url.endswith("/invoices") else []
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = AlegraProvider({"email": "a@b.com", "token": "t"})
+    sales = p.fetch_sales()
+    by_sku_date = {(s.sku, s.date.isoformat()): s.store for s in sales}
+    assert by_sku_date[("A", "2026-01-01")] == "Norte"   # invoice-level warehouse
+    assert by_sku_date[("B", "2026-01-01")] == "Sur"     # line-level wins over invoice-level
+    assert by_sku_date[("A", "2026-01-02")] is None      # no warehouse info at all
 
 
 def test_alegra_skips_items_without_reference(monkeypatch):
@@ -148,7 +179,39 @@ def test_siigo_auths_then_maps(monkeypatch):
     p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
     assert p.fetch_products()[0].sku == "A"
     assert p.fetch_stock()[0].quantity == 10
-    assert p.fetch_sales()[0].quantity == 3
+    sale = p.fetch_sales()[0]
+    assert sale.quantity == 3
+    assert sale.store is None  # payload carried no warehouse anywhere
+
+
+def test_siigo_sale_lines_carry_warehouse_when_present(monkeypatch):
+    from backend.integrations.siigo import SiigoProvider
+    from backend.integrations import http
+
+    monkeypatch.setattr(http, "post_json", lambda url, **kw: {"access_token": "TOK"})
+    # Siigo accounts with inventory-by-warehouse enabled put a {"id", "name"}
+    # warehouse object on each item line; fall back to the invoice header.
+    invoices = {"results": [
+        {"date": "2026-01-01",
+         "items": [
+             {"code": "A", "quantity": 3, "price": 8,
+              "warehouse": {"id": 5, "name": "Bodega Centro"}},
+             {"code": "B", "quantity": 1, "price": 4},
+         ]},
+        {"date": "2026-01-02", "warehouse": {"id": 6, "name": "Bodega Sur"},
+         "items": [{"code": "A", "quantity": 2, "price": 8}]},
+    ], "pagination": {"page": 1, "page_size": 30, "total_results": 2}}
+
+    def fake_get(url, **kw):
+        return invoices if "/invoices" in url else {"results": []}
+    monkeypatch.setattr(http, "get_json", fake_get)
+
+    p = SiigoProvider({"partner_id": "faro", "username": "u", "access_key": "k"})
+    sales = p.fetch_sales()
+    by_sku_date = {(s.sku, s.date.isoformat()): s.store for s in sales}
+    assert by_sku_date[("A", "2026-01-01")] == "Bodega Centro"  # line-level warehouse
+    assert by_sku_date[("B", "2026-01-01")] is None             # no warehouse on line or invoice
+    assert by_sku_date[("A", "2026-01-02")] == "Bodega Sur"     # invoice-level fallback
 
 
 def test_siigo_sends_bearer_and_partner_id_headers(monkeypatch):

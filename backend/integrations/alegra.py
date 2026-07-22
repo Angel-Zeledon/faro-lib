@@ -29,6 +29,7 @@ from backend.integrations.base import (
     ProviderProduct,
     ProviderSaleLine,
     ProviderStock,
+    parse_warehouse_name,
 )
 
 _PAGE_LIMIT = 30
@@ -77,6 +78,11 @@ class AlegraProvider(AccountingProvider):
                 continue
             if since is not None and invoice_date < since:
                 continue
+            # Alegra puts the warehouse on the invoice header ({"id", "name"})
+            # for accounts with the multi-warehouse feature; individual item
+            # lines may also carry their own warehouse. Prefer the line's,
+            # fall back to the invoice's, leave None when neither exists.
+            invoice_store = parse_warehouse_name(invoice.get("warehouse"))
             for line in invoice.get("items") or []:
                 sku = self._line_sku(line)
                 if not sku:
@@ -86,6 +92,7 @@ class AlegraProvider(AccountingProvider):
                     sku=sku,
                     quantity=line.get("quantity") or 0,
                     unit_price=line.get("price"),
+                    store=parse_warehouse_name(line.get("warehouse")) or invoice_store,
                 ))
         return sales
 

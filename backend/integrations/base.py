@@ -33,6 +33,22 @@ class ProviderSaleLine:
     sku: str
     quantity: float
     unit_price: Optional[float]
+    store: Optional[str] = None  # branch/warehouse the sale shipped from; None when the payload has none
+
+
+def parse_warehouse_name(value) -> Optional[str]:
+    """Best-effort extraction of a warehouse/branch display name from a
+    provider payload value.
+
+    Both Alegra and Siigo represent a warehouse as an object like
+    ``{"id": ..., "name": ...}``; be defensive and also accept a bare
+    scalar (some payload variants carry just the name or id). Returns
+    None when the value carries nothing usable.
+    """
+    if isinstance(value, dict):
+        name = value.get("name") or value.get("id")
+        return str(name) if name else None
+    return str(value) if value else None
 
 
 class AccountingProvider(ABC):
