@@ -120,6 +120,68 @@ def test_sync_with_store_lines_builds_store_column_and_mapping(client, test_tena
     assert ("2026-01-02", "SKU-Z", "7.0", "principal") in rows  # store-less line fallback
 
 
+def test_sync_normalizes_warehouse_and_store_spellings(client, test_tenant, monkeypatch, fernet_key):
+    """Normalize-at-write at the integrations boundary: a provider sending
+    case-variants of an existing warehouse ('NORTE' vs the tenant's 'Norte')
+    must land on the existing warehouse/stock rows, and the sales CSV's store
+    values must use the same canonical spellings — including intra-sync
+    consistency for a warehouse first seen in this very sync ('Sur'/'sur')."""
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    from backend.integrations import store, registry, sync_service, base
+    from backend.inventory import warehouse_service as wh_svc
+    from backend.db.connection import execute, query, query_one
+    from pathlib import Path
+
+    tid = test_tenant["id"]
+    # testing_mode=False re-enables plan limits; the default plan allows only
+    # 1 location and this scenario legitimately needs 2 ('Norte' + 'Sur').
+    execute("UPDATE tenants SET plan = 'enterprise' WHERE id = %s", (tid,))
+    wh_svc.create_warehouse(tid, "Norte")  # canonical spelling on file
+
+    class CaseProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-Z", "Zeta", 5.0)]
+        def fetch_stock(self):
+            # Distinct SKUs: _merge_products_and_stock keys by sku, one
+            # warehouse per sku.
+            return [
+                base.ProviderStock("SKU-Z", 12.0, "NORTE"),  # variant of existing 'Norte'
+                base.ProviderStock("SKU-Y", 4.0, "Sur"),     # new name, first seen here
+            ]
+        def fetch_sales(self, since=None):
+            lines = [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0, 8.0, store="norte")
+                     for d in range(1, 20)]
+            # 'sur' must match the 'Sur' spelling introduced by THIS sync's
+            # stock import, even though it isn't committed yet.
+            lines.append(base.ProviderSaleLine(date(2026, 1, 1), "SKU-Y", 5.0, 8.0, store="sur"))
+            return lines
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: CaseProvider(creds))
+
+    conn = store.create_connection(tid, "alegra", {"email": "a@b.com", "token": "t"})
+    result = sync_service.sync_connection(conn["id"])
+
+    # Stock rows landed on canonical spellings — no 'NORTE' duplicate.
+    stock_rows = query(
+        "SELECT sku, warehouse FROM inventory_stock WHERE tenant_id=%s AND sku IN ('SKU-Z','SKU-Y') ORDER BY sku",
+        (tid,),
+    )
+    assert [(r["sku"], r["warehouse"]) for r in stock_rows] == [("SKU-Y", "Sur"), ("SKU-Z", "Norte")]
+    wh_rows = query(
+        "SELECT name FROM warehouses WHERE tenant_id=%s AND LOWER(name) IN ('norte', 'sur') ORDER BY name",
+        (tid,),
+    )
+    assert [w["name"] for w in wh_rows] == ["Norte", "Sur"]
+
+    # Sales CSV store values use the canonical spellings too.
+    dataset_row = query_one("SELECT file_path FROM datasets WHERE id=%s AND tenant_id=%s",
+                             (result["dataset_id"], tid))
+    csv_lines = Path(dataset_row["file_path"]).read_text(encoding="utf-8").splitlines()
+    assert csv_lines[0] == "fecha,sku,cantidad,store"
+    stores_in_csv = {line.rsplit(",", 1)[1] for line in csv_lines[1:]}
+    assert stores_in_csv == {"Norte", "Sur"}
+
+
 def test_sync_records_error_on_provider_failure(client, test_tenant, monkeypatch, fernet_key):
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 

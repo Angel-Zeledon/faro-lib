@@ -75,6 +75,25 @@ def sync_connection(connection_id: str) -> dict:
 
         merged = _merge_products_and_stock(products, stock)
 
+        # Normalize-at-write: resolve every provider warehouse/store spelling
+        # to the tenant's canonical one BEFORE the limit pre-check, the stock
+        # upserts, and the sales CSV — a provider sending 'norte' must land on
+        # an existing 'Norte' location, not create a case-variant duplicate.
+        # The lowercase-keyed cache avoids one query per row AND keeps a
+        # single sync internally consistent: stock 'Norte' and sales 'norte'
+        # first seen in the SAME sync resolve to one spelling even though
+        # neither is committed to `warehouses` yet.
+        _canonical_cache: dict[str, str] = {}
+
+        def _canonical(raw: str | None) -> str:
+            key = (raw or "").strip().lower() or wh_svc.DEFAULT_WAREHOUSE
+            if key not in _canonical_cache:
+                _canonical_cache[key] = wh_svc.resolve_canonical_name(tenant_id, raw)
+            return _canonical_cache[key]
+
+        for fields in merged.values():
+            fields["warehouse"] = _canonical(fields["warehouse"])
+
         # Pre-check max_skus/max_locations for the NEW (sku, warehouse) pairs
         # before any write — mirrors demo_quickstart's pre-loop check, so a
         # tenant near its plan cap is rejected cleanly instead of failing
@@ -96,7 +115,7 @@ def sync_connection(connection_id: str) -> dict:
         # maps it, so training groups per (sku, store) — see runner.py's
         # group_keys assembly. Store-less providers keep today's exact output.
         has_store = any(line.store is not None for line in sales)
-        csv_bytes = _build_sales_csv(sales, with_store=has_store)
+        csv_bytes = _build_sales_csv(sales, with_store=has_store, resolve_store=_canonical)
         dst_dir = paths.dataset_dir(tenant_id, dataset_id)
         dst_dir.mkdir(parents=True, exist_ok=True)
         file_path = dst_dir / "data.csv"
@@ -193,7 +212,7 @@ def _merge_products_and_stock(products, stock) -> dict[str, dict]:
     return merged
 
 
-def _build_sales_csv(sales, with_store: bool = False) -> bytes:
+def _build_sales_csv(sales, with_store: bool = False, resolve_store=None) -> bytes:
     """Aggregate ProviderSaleLine rows to (date, sku) -> summed quantity and
     write the canonical CSV header the wizard/demo default config expects:
     `default_quickstart_configs()["columns_cfg"]["canonical_mapping"]` maps
@@ -205,11 +224,19 @@ def _build_sales_csv(sales, with_store: bool = False) -> bytes:
     no warehouse fall back to 'principal' (the same default warehouse name the
     stock import uses) so every row keeps a concrete store value. With
     `with_store=False` the output is byte-identical to the pre-store format.
+
+    `resolve_store`: optional (raw name | None) -> canonical name mapper —
+    sync_connection passes its normalize-at-write resolver so store values
+    written to the dataset use the tenant's canonical warehouse spellings
+    ('norte' -> existing 'Norte'). Defaults to the plain
+    'raw or DEFAULT_WAREHOUSE' fallback.
     """
     from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
+    if resolve_store is None:
+        resolve_store = lambda raw: raw or DEFAULT_WAREHOUSE  # noqa: E731
     totals: dict[tuple, float] = {}
     for line in sales:
-        key = ((line.date, line.sku, line.store or DEFAULT_WAREHOUSE)
+        key = ((line.date, line.sku, resolve_store(line.store))
                if with_store else (line.date, line.sku))
         totals[key] = totals.get(key, 0.0) + line.quantity
 

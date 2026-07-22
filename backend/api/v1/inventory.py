@@ -99,7 +99,10 @@ def upsert_stock(
 ):
     from backend.entitlements.service import enforce_limit
 
-    warehouse = body.warehouse or "principal"
+    # Resolve to the canonical spelling FIRST so the pre-checks below judge
+    # the same (sku, warehouse) row svc.upsert_stock will actually write —
+    # 'norte' with an existing 'Norte' is an update, not a new location.
+    warehouse = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
     if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse):
         enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
     # A new warehouse name would otherwise be auto-created for free by
@@ -197,8 +200,19 @@ async def bulk_import(
     if not rows:
         raise HTTPException(status_code=422, detail="No valid rows found in CSV. Ensure 'sku' column exists.")
 
+    # Resolve every distinct warehouse spelling in the CSV to its canonical
+    # form BEFORE the limit pre-checks and the writes: 'norte' rows must land
+    # on an existing 'Norte' location instead of counting as (and creating) a
+    # new one. One lookup per distinct name, not per row.
+    resolved_wh = {
+        raw: wh_svc.resolve_canonical_name(user.tenant_id, raw)
+        for raw in {r.get("warehouse") for r in rows}
+    }
+    for r in rows:
+        r["warehouse"] = resolved_wh[r.get("warehouse")]
+
     existing_keys = svc.list_stock_keys(user.tenant_id)
-    new_keys = {(r["sku"], r.get("warehouse") or "principal") for r in rows} - existing_keys
+    new_keys = {(r["sku"], r["warehouse"]) for r in rows} - existing_keys
     from backend.entitlements.service import enforce_limit
     enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id), adding=len(new_keys))
 
@@ -209,7 +223,7 @@ async def bulk_import(
     # against (current count + new names) BEFORE bulk_upsert writes anything,
     # so a blocked import never partially creates stock/warehouse rows.
     existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
-    new_wh_names = {r.get("warehouse") or "principal" for r in rows} - existing_wh_names
+    new_wh_names = {r["warehouse"] for r in rows} - existing_wh_names
     enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id), adding=len(new_wh_names))
 
     # bulk_upsert does one synchronous (blocking) DB round-trip per row. Without
@@ -1337,10 +1351,14 @@ def list_warehouses(user: CurrentUser = Depends(get_current_user)):
     dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
-    if not wh_svc.get_warehouse_by_name(user.tenant_id, body.name):
+    # Resolve first so a case-variant of an existing warehouse ('norte' vs
+    # 'Norte') is treated as the idempotent re-create it is, not a new
+    # location for the max_locations pre-check.
+    name = wh_svc.resolve_canonical_name(user.tenant_id, body.name)
+    if not wh_svc.get_warehouse_by_name(user.tenant_id, name):
         from backend.entitlements.service import enforce_limit
         enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
-    warehouse = wh_svc.create_warehouse(user.tenant_id, body.name, is_default=body.is_default)
+    warehouse = wh_svc.create_warehouse(user.tenant_id, name, is_default=body.is_default)
     return ok(warehouse)
 
 

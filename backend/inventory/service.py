@@ -86,6 +86,12 @@ def upsert_stock(tenant_id: str, sku: str, data: dict, conn: Optional[Any] = Non
     # unchanged (no partial write).
     from backend.entitlements.service import enforce_limit
     from backend.inventory import warehouse_service as wh_svc
+    # Normalize-at-write, BEFORE the max_locations check below: ' norte ' must
+    # resolve to an existing 'Norte' so it neither counts as a new location
+    # nor creates case-variant duplicate warehouse/stock rows. This also
+    # canonicalizes the name _ensure_warehouse (only reachable through here)
+    # auto-creates further down.
+    safe["warehouse"] = wh_svc.resolve_canonical_name(tenant_id, safe["warehouse"])
     # These chokepoint reads intentionally do NOT take `conn`: warehouse_service
     # is a separate module this fix doesn't own, and count_stock's role here is
     # only a pre-write sanity check, not a value this call's own writes below
@@ -133,6 +139,11 @@ def _ensure_warehouse(tenant_id: str, name: str, conn: Optional[Any] = None) -> 
     """Auto-create a `warehouses` row the first time a warehouse name is seen for
     this tenant. Best-effort: a warehouse-insert hiccup must never fail the
     stock write it's attached to.
+
+    `name` is expected to already be canonical: the only caller (upsert_stock)
+    runs it through warehouse_service.resolve_canonical_name before the
+    chokepoint checks, so a case-variant of an existing warehouse never
+    reaches this INSERT.
 
     `conn`: see upsert_stock's docstring — when provided, runs on the caller's
     shared transaction connection instead of its own auto-committing one.

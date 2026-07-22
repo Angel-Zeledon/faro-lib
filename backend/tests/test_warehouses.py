@@ -71,6 +71,103 @@ class TestWarehouseStock:
         assert float(result["current_stock"]) == 100.0  # untouched, no error raised
 
 
+class TestWarehouseNameNormalization:
+    """Normalize-at-write: case/whitespace variants of an existing warehouse
+    name must land on the existing rows, never create duplicates. Read paths
+    are unchanged; existing duplicates are not migrated."""
+
+    def test_upsert_stock_case_variant_lands_on_existing_stock_row(self, client, auth_headers, test_tenant):
+        from backend.inventory import service as svc
+        from backend.db.connection import query
+        tid = test_tenant["id"]
+        sku = _sku()
+
+        svc.upsert_stock(tid, sku, {"current_stock": 5, "warehouse": "Norte"})
+        svc.upsert_stock(tid, sku, {"current_stock": 9, "warehouse": "norte"})
+
+        stock_rows = query(
+            "SELECT warehouse, current_stock FROM inventory_stock WHERE tenant_id=%s AND sku=%s",
+            (tid, sku),
+        )
+        assert len(stock_rows) == 1
+        assert stock_rows[0]["warehouse"] == "Norte"
+        assert float(stock_rows[0]["current_stock"]) == 9.0  # updated, not duplicated
+
+        wh_rows = query(
+            "SELECT name FROM warehouses WHERE tenant_id=%s AND LOWER(name)='norte'", (tid,),
+        )
+        assert [r["name"] for r in wh_rows] == ["Norte"]
+
+    def test_upsert_stock_strips_and_case_resolves_to_principal(self, client, auth_headers, test_tenant):
+        """warehouse=' PRINCIPAL ' resolves to the existing 'principal'
+        row-space (stripped + case-insensitive match on the auto-created
+        default warehouse)."""
+        from backend.inventory import service as svc
+        from backend.db.connection import query
+        tid = test_tenant["id"]
+        sku = _sku()
+
+        svc.upsert_stock(tid, sku, {"current_stock": 3})  # creates 'principal'
+        svc.upsert_stock(tid, sku, {"current_stock": 8, "warehouse": " PRINCIPAL "})
+
+        rows = query(
+            "SELECT warehouse, current_stock FROM inventory_stock WHERE tenant_id=%s AND sku=%s",
+            (tid, sku),
+        )
+        assert len(rows) == 1
+        assert rows[0]["warehouse"] == "principal"
+        assert float(rows[0]["current_stock"]) == 8.0
+
+    def test_put_stock_endpoint_case_variant_does_not_duplicate(self, client, analyst_headers, test_tenant):
+        from backend.db.connection import query
+        tid = test_tenant["id"]
+        sku = _sku()
+
+        r1 = client.put(f"/api/v1/inventory/stock/{sku}",
+                        json={"current_stock": 4, "warehouse": "Sur"}, headers=analyst_headers)
+        r2 = client.put(f"/api/v1/inventory/stock/{sku}",
+                        json={"current_stock": 11, "warehouse": "sur"}, headers=analyst_headers)
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+
+        rows = query(
+            "SELECT warehouse, current_stock FROM inventory_stock WHERE tenant_id=%s AND sku=%s",
+            (tid, sku),
+        )
+        assert len(rows) == 1
+        assert rows[0]["warehouse"] == "Sur"
+        assert float(rows[0]["current_stock"]) == 11.0
+
+    def test_bulk_import_case_variant_reuses_existing_warehouse(self, client, analyst_headers, test_tenant):
+        from backend.inventory import service as svc
+        from backend.db.connection import query
+        tid = test_tenant["id"]
+        sku_existing, sku_new = _sku(), _sku()
+
+        svc.upsert_stock(tid, sku_existing, {"current_stock": 1, "warehouse": "Bodega Este"})
+
+        csv_text = (
+            "sku,current_stock,warehouse\n"
+            f"{sku_new},20,bodega este\n"
+        )
+        r = client.post(
+            "/api/v1/inventory/bulk",
+            files={"file": ("stock.csv", csv_text.encode("utf-8"), "text/csv")},
+            headers=analyst_headers,
+        )
+        assert r.status_code == 200
+
+        row = query(
+            "SELECT warehouse FROM inventory_stock WHERE tenant_id=%s AND sku=%s",
+            (tid, sku_new),
+        )
+        assert len(row) == 1 and row[0]["warehouse"] == "Bodega Este"
+        wh_rows = query(
+            "SELECT name FROM warehouses WHERE tenant_id=%s AND LOWER(name)='bodega este'", (tid,),
+        )
+        assert [w["name"] for w in wh_rows] == ["Bodega Este"]
+
+
 class TestWarehouseBulkImport:
     def test_bulk_import_persists_warehouse_and_autocreates_warehouse(self, client, auth_headers, test_tenant):
         """A CSV with a warehouse column persists inventory_stock.warehouse and
@@ -162,6 +259,26 @@ class TestWarehouseEndpoints:
         assert r.status_code == 200
         names = [w["name"] for w in r.json()["data"]]
         assert name in names
+
+    def test_case_variant_name_reuses_existing_warehouse(self, client, analyst_headers, test_tenant):
+        """Normalize-at-write: creating 'norte' when 'Norte' exists must reuse
+        the existing row (existing spelling wins) — never create a second,
+        case-variant location."""
+        from backend.db.connection import query
+        tid = test_tenant["id"]
+        base = f"Wh_{_warehouse()}"  # mixed-case canonical spelling
+
+        r1 = client.post("/api/v1/inventory/warehouses", json={"name": base}, headers=analyst_headers)
+        r2 = client.post("/api/v1/inventory/warehouses", json={"name": base.lower()}, headers=analyst_headers)
+        assert r1.status_code == 201
+        assert r2.status_code == 201
+        assert r2.json()["data"]["name"] == base  # existing spelling returned
+
+        rows = query(
+            "SELECT name FROM warehouses WHERE tenant_id=%s AND LOWER(name) = LOWER(%s)",
+            (tid, base),
+        )
+        assert [r["name"] for r in rows] == [base]  # exactly one row, original casing
 
     def test_duplicate_name_is_idempotent_not_duplicated(self, client, analyst_headers, test_tenant):
         from backend.db.connection import query

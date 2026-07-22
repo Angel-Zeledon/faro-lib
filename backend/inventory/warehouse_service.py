@@ -35,6 +35,28 @@ def name_precedence_key(name: str | None) -> tuple:
     return (name != DEFAULT_WAREHOUSE, (name or "").casefold())
 
 
+def resolve_canonical_name(tenant_id: str, name: str | None) -> str:
+    """Normalize a warehouse name at a WRITE boundary (normalize-at-write).
+
+    Strips whitespace and, when the tenant already has a warehouse under a
+    different casing, returns THAT existing spelling — so 'norte' lands on the
+    existing 'Norte' warehouse/stock rows instead of creating a case-variant
+    duplicate (every other query in the codebase matches names exactly).
+    An unknown name is returned stripped and becomes the canonical spelling on
+    first use. Empty/missing names fall back to DEFAULT_WAREHOUSE, matching
+    upsert_stock's historical default. Read paths are NOT normalized.
+    """
+    stripped = (name or "").strip()
+    if not stripped:
+        return DEFAULT_WAREHOUSE
+    row = query_one(
+        "SELECT name FROM warehouses WHERE tenant_id = %s AND LOWER(name) = LOWER(%s) "
+        "ORDER BY name LIMIT 1",
+        (tenant_id, stripped),
+    )
+    return row["name"] if row else stripped
+
+
 def list_warehouses(tenant_id: str) -> list[dict]:
     return query(
         "SELECT * FROM warehouses WHERE tenant_id = %s ORDER BY name",
@@ -120,6 +142,9 @@ def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dic
     silently discarded — the existing row's `is_default` wins. No caller flips
     an existing warehouse's default flag yet; if one is added, this function
     needs an explicit UPDATE path for that case."""
+    # Normalize-at-write: 'norte' must reuse an existing 'Norte' row, never
+    # create a case-variant duplicate location.
+    name = resolve_canonical_name(tenant_id, name)
     execute(
         "INSERT INTO warehouses (tenant_id, name, is_default) VALUES (%s, %s, %s) "
         "ON CONFLICT (tenant_id, name) DO NOTHING",
