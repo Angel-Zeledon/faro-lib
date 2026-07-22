@@ -138,6 +138,20 @@ Ordenada por riesgo real (los ítems de diseño/UX que estaban aquí se movieron
 - **Riesgo abierto #6 PARCIAL:** el export CSV de la orden ahora etiqueta el lead time y su origen (columnas "Lead time (días)" y "Origen lead time" = Aprendido/Configurado). Falta la etiqueta in-app en `/inventory` (requiere pasar `lead_time_source` al tipo del front) — pendiente menor.
 - **0.3 (verificación en navegador) — parcial:** verificada end-to-end la UI nueva de entitlements en el navegador (backend :8010 + front :5000): signup crea tenant `starter` + trial de 14 días; nav bloquea "Asistente IA" con candado + tooltip "Disponible en un plan superior"; click abre el UpsellModal ("Ver planes" → `/planes`); al vencer el trial aparece el banner read-only. **Sin issues.** Follow-ups conocidos: UpsellModal usa copy genérico (no nombra el plan) y la ruta `/planes` aún no existe. El recorrido del flujo diario con datos (semáforo→PO→recepción) sigue pendiente.
 
+## Actualización 2026-07-22
+
+- **0.3 COMPLETO — recorrido en navegador del flujo diario con datos, sin errores de consola.** Tenant nuevo (`verificacion-0-3@example.com`, Distribuidora Verificacion 0.3) recorrido end-to-end contra backend :8010 + front :5000:
+  - Signup → pantalla "Revisa tu correo" (email de verificación salió por SMTP real) → login rebota a `/hoy` con estado vacío real y CTA de demo.
+  - "Probar con datos demo" → auto-entrenamiento (~90 s) → redirige al semáforo poblado: 5 SKUs, 2 PEDIR_YA / 3 SOBRESTOCK, valor de inventario en colones (₡27 590). Vista Proveedor agrupa con urgencias, lead time, ABC y cantidad editable.
+  - `/hoy`: cards urgentes con "Ver por qué" (números coherentes: 40 uds / 33,1 por día = 1 día; reorden 345 ≈ 33,1×10; lead time etiquetado "configurado por ti"), Aprobar/Rechazar con Deshacer, carrito con total, "Descargar orden de compra" → `POST /inventory/log-po` 201 y fila + ítems en `inventory_po_log`/`inventory_po_items`.
+  - `/pedidos`: aviso reactivo de proveedores sin email/WhatsApp con "Completar ficha" (crea el proveedor prellenado); "Enviar pedido" → **"Enviado parcialmente"** correcto: email SMTP al proveedor con ficha, omitido el que no tiene contacto; `sent_at` grabado.
+  - "Registrar llegada" con recepción parcial (Arroz 400/475) → estado "Parcial", stock actualizado en DB (+312/+400), 2 observaciones en `supplier_lead_time_obs` (0 días — mismo día; inocuo por el mínimo de 3 observaciones), y el semáforo se recalcula: ambos PEDIR_YA pasan a "Pedir pronto" y el Arroz sugiere pedir las 75 unidades faltantes.
+- **Hallazgos menores del recorrido (ninguno bloqueante):**
+  1. El confirm inline de "Enviar pedido" se auto-resetea a los 4 s (`POHistory.tsx` `setTimeout(..., 4000)`) — con cualquier vacilación el usuario pierde el estado armado sin feedback. Considerar 8 s o un mini-modal.
+  2. El asunto del email de OC usa el UUID crudo (`Orden de compra — a432074b-…`) — debería usar un número de orden legible (correlativo por tenant).
+  3. Copy del carrito en `/hoy`: "N SKUs quedaron fuera del cálculo (sin precio de venta o sin costo)" cuenta los aprobados sin precio de venta (margen no calculable) pero aparece junto al total, sugiriendo que el total está incompleto. Reordenar o re-redactar.
+  4. Sigue pendiente (ya conocido): etiqueta de origen del lead time in-app en `/inventory` y la ruta `/planes` del UpsellModal.
+
 ## Estado de ejecución — actualizado 2026-07-19
 
 Cerrado y mergeado a `main` (suite backend **818 passed, 19 skipped**; `tsc --noEmit` exit 0):
@@ -155,6 +169,7 @@ Cerrado y mergeado a `main` (suite backend **818 passed, 19 skipped**; `tsc --no
 | 3.3 | ✅ | regla SPC 3-sigma con mediana + IQR/1.349 |
 | 3.4 | ✅ | catálogo LatAm, fechas móviles calculadas — **Costa Rica (mercado objetivo, `DEFAULT_COUNTRY`) y Colombia poblados** |
 | 2.8 | ✅ | contraste del semáforo estaba roto (2.1:1 y 3.4:1, reprobaban AA) — corregido |
+| 2.6 | ✅ | `669f940` (2026-07-19): `ApiError` con kind estable + interceptor único en `request()` → toast estándar vía `ApiErrorBridge`; primitivos `Skeleton`/`EmptyState`/`ErrorState` en `components/ui/States.tsx`, en uso en las 5 pantallas diarias — la tabla no se había actualizado |
 
 **Riesgos abiertos de lo recién mergeado:**
 
