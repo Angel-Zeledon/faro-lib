@@ -1454,6 +1454,22 @@ def cancel_transfer(
     return ok(t)
 
 
+@router.post(
+    "/transfers/{transfer_id}/close",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def close_transfer(
+    transfer_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Close a partial transfer, writing the missing units off as shrinkage."""
+    try:
+        t = tr_svc.close_transfer(user.tenant_id, transfer_id, user.user_id)
+    except ValueError as e:
+        raise _transfer_error(e)
+    return ok(t)
+
+
 @router.put("/stock/{sku}/suppliers/{supplier_id}")
 def assign_sku_supplier(
     sku: str,

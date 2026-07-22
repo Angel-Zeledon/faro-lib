@@ -126,6 +126,60 @@ class TestTransferLifecycle:
                                    "principal", "principal", [{"sku": "A", "qty": 1}])
 
 
+class TestCloseWithLoss:
+    """Closing a partial transfer writes off the missing units as shrinkage
+    (reason transfer_loss) WITHOUT touching stock — the in-transit units
+    already left the origin at send time and never arrived anywhere."""
+
+    def _partial(self, tid, user_id):
+        t = tr_svc.create_transfer(tid, user_id, "principal", "Norte",
+                                   [{"sku": "A", "qty": 30}])
+        tr_svc.receive_transfer(tid, t["id"], [{"sku": "A", "received_qty": 20}])
+        return t["id"]
+
+    def test_close_records_loss_and_status(self, two_warehouses, user_id):
+        tid = two_warehouses
+        transfer_id = self._partial(tid, user_id)
+        out = tr_svc.close_transfer(tid, transfer_id, user_id)
+        assert out["status"] == "closed"
+        # Shrinkage row: 10 missing units attributed to the origin warehouse
+        row = query_one(
+            """SELECT quantity, reason, warehouse FROM inventory_shrinkage
+               WHERE tenant_id = %s AND sku = 'A'""", (tid,))
+        assert row is not None
+        assert float(row["quantity"]) == 10.0
+        assert row["reason"] == "transfer_loss"
+        assert row["warehouse"] == "principal"
+        # Stock untouched by the close: origin lost the units at send time
+        assert _stock(tid, "A", "principal") == 70.0
+        assert _stock(tid, "A", "Norte") == 30.0
+
+    def test_close_requires_partial_status(self, two_warehouses, user_id):
+        tid = two_warehouses
+        t = tr_svc.create_transfer(tid, user_id, "principal", "Norte",
+                                   [{"sku": "A", "qty": 30}])
+        with pytest.raises(ValueError):
+            tr_svc.close_transfer(tid, t["id"], user_id)  # in_transit -> cancel instead
+        tr_svc.receive_transfer(tid, t["id"], None)
+        with pytest.raises(ValueError):
+            tr_svc.close_transfer(tid, t["id"], user_id)  # fully received
+
+    def test_close_api_permission_pair(self, client, viewer_headers, analyst_headers,
+                                       two_warehouses, user_id):
+        tid = two_warehouses
+        transfer_id = self._partial(tid, user_id)
+        r = client.post(f"/api/v1/inventory/transfers/{transfer_id}/close",
+                        headers=viewer_headers)
+        assert r.status_code == 403
+        assert query_one(
+            "SELECT status FROM inventory_transfer_log WHERE id=%s",
+            (transfer_id,))["status"] == "partial"
+        r = client.post(f"/api/v1/inventory/transfers/{transfer_id}/close",
+                        headers=analyst_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["status"] == "closed"
+
+
 class TestTransferApi:
     def test_viewer_denied_state_unchanged(self, client, viewer_headers, two_warehouses):
         tid = two_warehouses

@@ -1544,13 +1544,15 @@ export default function InventoryPage() {
  </div>
  )}
 
- {/* Warehouse selector (feature 5.4) — renders only with 2+ warehouses */}
- {multiWarehouse && sessionId && (
+ {/* Warehouse selector (feature 5.4). With 2+ warehouses: full selector;
+     mono-warehouse: only the discreet add-warehouse entry point. */}
+ {sessionId && (
  <WarehouseSelector
  value={selectedWarehouse}
  onChange={setSelectedWarehouse}
  warehouses={warehouses}
  onSharesChanged={() => { reloadWarehouses(); if (sessionId) load(sessionId) }}
+ onCreated={reloadWarehouses}
  />
  )}
 

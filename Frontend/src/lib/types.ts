@@ -675,7 +675,7 @@ export interface Transfer {
   id: string
   from_warehouse: string
   to_warehouse: string
-  status: 'in_transit' | 'partial' | 'received' | 'cancelled'
+  status: 'in_transit' | 'partial' | 'received' | 'cancelled' | 'closed'
   notes: string | null
   created_by: string
   created_at: string
@@ -708,7 +708,9 @@ export interface InventoryStatusItem extends InventoryStock {
   unit_margin?:       number | null
 }
 
-export type ShrinkageReason = 'breakage' | 'expiry' | 'self_consumption' | 'gift'
+// transfer_loss is system-generated (closing a partial transfer) — the manual
+// shrinkage form does not offer it, but history rows can carry it.
+export type ShrinkageReason = 'breakage' | 'expiry' | 'self_consumption' | 'gift' | 'transfer_loss'
 
 export interface ShrinkageRecord {
   id:             string

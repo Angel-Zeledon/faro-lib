@@ -2,7 +2,7 @@
 // Inter-warehouse transfers list + reception (feature 5.4).
 // Mirrors the PO reception UX: partial quantities accumulate until complete.
 import { useCallback, useEffect, useState } from 'react'
-import { listTransfers, receiveTransfer, cancelTransfer } from '@/lib/api'
+import { listTransfers, receiveTransfer, cancelTransfer, closeTransfer } from '@/lib/api'
 import type { Transfer } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States'
@@ -20,6 +20,7 @@ const STATUS_STYLE: Record<Transfer['status'], { color: string; key: string }> =
   partial:    { color: C.amber, key: 'transfers.status_partial' },
   received:   { color: C.green, key: 'transfers.status_received' },
   cancelled:  { color: C.dim,   key: 'transfers.status_cancelled' },
+  closed:     { color: C.dim,   key: 'transfers.status_closed' },
 }
 
 function ReceiveForm({ transfer, onDone }: { transfer: Transfer; onDone: () => void }) {
@@ -104,6 +105,18 @@ export function TransfersPanel() {
     load()
   }
 
+  async function onClose(tr: Transfer) {
+    const missing = tr.items.reduce((s, it) => s + (it.qty_sent - it.qty_received), 0)
+    const okd = await confirm({
+      title: t('transfers.close_title'),
+      message: t('transfers.close_msg').replace('{qty}', String(missing)),
+      danger: true,
+    })
+    if (!okd) return
+    await closeTransfer(tr.id)
+    load()
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {transfers.map(tr => {
@@ -140,6 +153,15 @@ export function TransfersPanel() {
                             aria-label={t('transfers.cancel_btn')}
                             style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
                       <XCircle size={14} color={C.dim} />
+                    </button>
+                  )}
+                  {tr.status === 'partial' && (
+                    /* The remainder is lost: write it off as shrinkage and
+                       stop the transfer from sitting in 'partial' forever. */
+                    <button onClick={() => onClose(tr)}
+                            style={{ all: 'unset', cursor: 'pointer', fontSize: 12,
+                                     fontWeight: 600, color: C.dim }}>
+                      {t('transfers.close_btn')}
                     </button>
                   )}
                 </>

@@ -3,10 +3,10 @@
 // Self-contained: pages mount it and only receive the selected warehouse.
 // Renders nothing for mono-warehouse tenants (spec: zero visual change).
 import { useCallback, useEffect, useState } from 'react'
-import { listWarehouses, patchWarehouse } from '@/lib/api'
+import { listWarehouses, patchWarehouse, createWarehouse } from '@/lib/api'
 import type { Warehouse } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { Warehouse as WarehouseIcon, Percent, X } from 'lucide-react'
+import { Warehouse as WarehouseIcon, Percent, Plus, X } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -22,18 +22,79 @@ export function useWarehouses() {
   return { warehouses, multi: warehouses.length >= 2, reload }
 }
 
-export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged }: {
+function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: boolean }) {
+  // The chicken-and-egg closer (walkthrough finding #14): warehouses used to
+  // be creatable only via API or a stock CSV, so a customer clicking around
+  // could never START using multi-warehouse. For mono-warehouse tenants this
+  // renders as one subtle pill — the only multi-warehouse affordance they see.
+  const { t } = useLanguage()
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setSaving(true)
+    try {
+      await createWarehouse(trimmed)
+      setName('')
+      setAdding(false)
+      onCreated()
+    } finally { setSaving(false) }
+  }
+
+  if (!adding) {
+    return (
+      <button onClick={() => setAdding(true)}
+              style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
+                       alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 7,
+                       fontSize: 11.5, fontWeight: 600,
+                       color: subtle ? 'var(--dim)' : C.indigo }}>
+        <Plus size={12} /> {t('inventory.wh_add_btn')}
+      </button>
+    )
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <input autoFocus value={name}
+             placeholder={t('inventory.wh_add_placeholder')}
+             onChange={e => setName(e.target.value)}
+             onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setAdding(false) }}
+             style={{ width: 140, background: 'transparent', border: `1px solid ${C.border}`,
+                      borderRadius: 6, color: C.text, fontSize: 12, padding: '4px 8px' }} />
+      <button onClick={save} disabled={saving || !name.trim()}
+              style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo }}>
+        {saving ? t('common.saving') : t('common.save')}
+      </button>
+      <button onClick={() => setAdding(false)} aria-label={t('common.cancel')}
+              style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
+        <X size={13} color={C.dim} />
+      </button>
+    </span>
+  )
+}
+
+export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged, onCreated }: {
   value: string | null
   onChange: (name: string | null) => void
   warehouses: Warehouse[]
   onSharesChanged?: () => void
+  onCreated?: () => void
 }) {
   const { t } = useLanguage()
   const [editingShares, setEditingShares] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
-  if (warehouses.length < 2) return null
+  // Mono-warehouse: no selector, only the discreet add-warehouse entry point.
+  if (warehouses.length < 2) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <AddWarehouse subtle onCreated={() => onCreated?.()} />
+      </div>
+    )
+  }
 
   const noShares = warehouses.every(w => w.demand_share == null)
 
@@ -79,6 +140,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
                 style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
           <Percent size={12} /> {t('inventory.wh_shares_btn')}
         </button>
+        <AddWarehouse onCreated={() => onCreated?.()} />
       </div>
 
       {noShares && !editingShares && (

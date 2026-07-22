@@ -237,6 +237,66 @@ def receive_transfer(
     return result
 
 
+def close_transfer(tenant_id: str, transfer_id: str, user_id: str) -> dict:
+    """
+    Close a PARTIAL transfer whose remainder is lost (fell off the truck,
+    miscount at dispatch): the outstanding units are written off as shrinkage
+    (reason transfer_loss, attributed to the origin warehouse) and the header
+    becomes 'closed'.
+
+    Stock is deliberately NOT touched here: the units left the origin at send
+    time and never arrived anywhere, so the loss is already reflected in
+    stock — this call only makes it visible in the shrinkage ledger instead
+    of leaving a transfer stuck in 'partial' forever.
+    """
+    from backend.inventory import service as inv_svc
+
+    t = get_transfer(tenant_id, transfer_id)
+    if not t:
+        raise ValueError("Transfer not found")
+    if t["status"] != "partial":
+        raise ValueError(
+            "Only partially received transfers can be closed with a loss "
+            "(cancel an in-transit transfer instead)")
+
+    outstanding = {
+        i["sku"]: float(i["qty_sent"]) - float(i["qty_received"] or 0)
+        for i in t["items"]
+        if float(i["qty_sent"]) - float(i["qty_received"] or 0) > 0
+    }
+    if not outstanding:
+        raise ValueError("Nothing outstanding to write off")
+
+    origin = t["from_warehouse"]
+    with transaction() as conn:
+        for sku, qty in sorted(outstanding.items()):
+            origin_row = inv_svc.get_stock(tenant_id, sku, warehouse=origin, conn=conn)
+            unit_cost = (float(origin_row["unit_cost"])
+                         if origin_row and origin_row.get("unit_cost") is not None
+                         else None)
+            total_cost = round(qty * unit_cost, 2) if unit_cost is not None else None
+            execute(
+                """INSERT INTO inventory_shrinkage
+                       (tenant_id, sku, warehouse, quantity, reason,
+                        unit_cost, total_cost, notes, created_by)
+                   VALUES (%s, %s, %s, %s, 'transfer_loss', %s, %s, %s, %s)""",
+                (tenant_id, sku, origin, qty, unit_cost, total_cost,
+                 # End-user copy (Spanish by design, like every explanation string)
+                 f"Faltante al cerrar transferencia {origin} → {t['to_warehouse']}",
+                 user_id),
+                conn=conn,
+            )
+        execute(
+            """UPDATE inventory_transfer_log SET status = 'closed'
+               WHERE id = %s AND tenant_id = %s""",
+            (transfer_id, tenant_id), conn=conn)
+        result = get_transfer(tenant_id, transfer_id, conn=conn)
+
+    log.info("[transfer] closed-with-loss tenant=%s id=%s skus=%d",
+             tenant_id, transfer_id, len(outstanding))
+    return result
+
+
 def cancel_transfer(tenant_id: str, transfer_id: str) -> dict:
     """Cancel an in-transit transfer with nothing received: goods go back home."""
     t = get_transfer(tenant_id, transfer_id)

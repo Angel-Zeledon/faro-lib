@@ -27,7 +27,10 @@ log = logging.getLogger(__name__)
 
 # Canonical reason codes. Spanish labels live in Frontend/src/i18n/translations.ts
 # (inventory.shrinkage_reason_*) — the same pattern as the signal/product_type enums.
-REASONS = ("breakage", "expiry", "self_consumption", "gift")
+# transfer_loss is system-generated only (closing a partial transfer with
+# missing units — see transfer_service.close_transfer); the manual shrinkage
+# form deliberately does not offer it.
+REASONS = ("breakage", "expiry", "self_consumption", "gift", "transfer_loss")
 
 
 def record_shrinkage(

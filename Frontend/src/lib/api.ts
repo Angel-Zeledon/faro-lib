@@ -757,6 +757,10 @@ export const receiveTransfer = (transferId: string,
   request<Transfer>('POST', `/inventory/transfers/${transferId}/receive`, { lines })
 export const cancelTransfer = (transferId: string) =>
   request<Transfer>('POST', `/inventory/transfers/${transferId}/cancel`)
+export const closeTransfer = (transferId: string) =>
+  request<Transfer>('POST', `/inventory/transfers/${transferId}/close`)
+export const createWarehouse = (name: string) =>
+  request<Warehouse>('POST', '/inventory/warehouses', { name })
 
 // ── PDF export ────────────────────────────────────────────────────────────────
 export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) => {
