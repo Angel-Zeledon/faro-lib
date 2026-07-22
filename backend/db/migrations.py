@@ -805,6 +805,40 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # loser gets a 23505 and retries (see roi_service.log_po_generation).
     ("po_log_po_number_unique_idx",
      "CREATE UNIQUE INDEX IF NOT EXISTS po_log_tenant_po_number_idx ON inventory_po_log (tenant_id, po_number)"),
+    # ── Multi-warehouse complete (feature 5.4) ───────────────────────────────
+    ("create_inventory_transfer_log",
+     """CREATE TABLE IF NOT EXISTS inventory_transfer_log (
+         id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id      TEXT NOT NULL,
+         from_warehouse TEXT NOT NULL,
+         to_warehouse   TEXT NOT NULL,
+         status         TEXT NOT NULL DEFAULT 'in_transit',
+         notes          TEXT,
+         created_by     TEXT NOT NULL,
+         created_at     TIMESTAMPTZ DEFAULT NOW(),
+         received_at    TIMESTAMPTZ
+     )"""),
+    ("create_inventory_transfer_log_idx",
+     "CREATE INDEX IF NOT EXISTS transfer_log_tenant_idx ON inventory_transfer_log (tenant_id, created_at DESC)"),
+    ("create_inventory_transfer_items",
+     """CREATE TABLE IF NOT EXISTS inventory_transfer_items (
+         id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id    TEXT NOT NULL,
+         transfer_id  TEXT NOT NULL,
+         sku          TEXT NOT NULL,
+         qty_sent     FLOAT NOT NULL,
+         qty_received FLOAT NOT NULL DEFAULT 0
+     )"""),
+    ("create_inventory_transfer_items_idx",
+     "CREATE INDEX IF NOT EXISTS transfer_items_transfer_idx ON inventory_transfer_items (tenant_id, transfer_id)"),
+    # Manual demand split for tenants whose sales history has no store column:
+    # per-warehouse demand = SKU-global demand x normalized share (0-100).
+    ("add_warehouses_demand_share",
+     "ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS demand_share FLOAT"),
+    # Where a PO's goods physically arrive. NULL = tenant default warehouse
+    # (today's implicit behavior, preserved).
+    ("add_po_log_destination_warehouse",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS destination_warehouse TEXT"),
 ]
 
 
