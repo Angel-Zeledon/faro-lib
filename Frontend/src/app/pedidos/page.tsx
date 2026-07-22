@@ -110,7 +110,11 @@ export default function OrdersPage() {
         />
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-          <POHistoryTable entries={history} onReceive={setReceivingPO} />
+          <POHistoryTable
+            entries={history}
+            onReceive={setReceivingPO}
+            suppliersWithoutContact={contactHealth.map(r => r.supplier)}
+          />
         </div>
       )}
 

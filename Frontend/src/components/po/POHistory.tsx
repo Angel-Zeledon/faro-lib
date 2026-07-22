@@ -6,6 +6,8 @@ import Spinner from '@/components/ui/Spinner'
 import { Truck, X, Send } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { formatPoNumber } from '@/lib/poNumber'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
 const C = {
@@ -200,30 +202,53 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   )
 }
 
-function SendPOButton({ poLogId }: { poLogId: string }) {
+function SendPOButton({ poLogId, suppliersWithoutContact }: {
+  poLogId: string
+  suppliersWithoutContact: string[]
+}) {
   const { t } = useLanguage()
-  const [state, setState] = useState<'idle' | 'confirm' | 'sending' | 'done'>('idle')
+  const confirm = useConfirm()
+  const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
 
-  useEffect(() => {
-    if (state !== 'confirm') return
-    const timer = setTimeout(() => setState('idle'), 4000)
-    return () => clearTimeout(timer)
-  }, [state])
-
-  async function handleConfirm() {
+  async function handleClick() {
     setState('sending')
     try {
-      const res = await sendPOToSuppliers(poLogId)
-      const anySent = res.sent.length > 0
-      const anySkipped = res.skipped.length > 0
+      // Preview what the send will actually do BEFORE doing it: which
+      // suppliers get the order, and which get silently skipped for having
+      // no contact info on file.
+      const res = await getPOItems(poLogId)
+      const names = Array.from(new Set(
+        res.items
+          .filter(i => i.status === 'approved' || i.status === 'modified')
+          .map(i => (i.supplier || '').trim())
+          .filter(Boolean),
+      ))
+      const skipped = names.filter(n => suppliersWithoutContact.includes(n))
+      const toSend  = names.filter(n => !suppliersWithoutContact.includes(n))
+
+      const lines = [
+        toSend.length > 0 ? `${t('po.send_confirm_to')}: ${toSend.join(', ')}.` : '',
+        skipped.length > 0 ? `${t('po.send_confirm_skipped')}: ${skipped.join(', ')}.` : '',
+      ].filter(Boolean).join(' ')
+
+      const ok = await confirm({
+        title: t('po.send_confirm_title'),
+        message: lines || t('po.send_confirm_no_suppliers'),
+        confirmLabel: t('po.send_confirm_action'),
+      })
+      if (!ok) { setState('idle'); return }
+
+      const sendRes = await sendPOToSuppliers(poLogId)
+      const anySent = sendRes.sent.length > 0
+      const anySkipped = sendRes.skipped.length > 0
       const message = !anySent
         ? t('roi.send_po_none_sent')
         : anySkipped ? t('roi.send_po_partial') : t('roi.send_po_success')
       setResult({ ok: anySent, message })
+      setState('done')
     } catch (e: unknown) {
       setResult({ ok: false, message: e instanceof Error ? e.message : t('roi.send_po_error') })
-    } finally {
       setState('done')
     }
   }
@@ -238,23 +263,26 @@ function SendPOButton({ poLogId }: { poLogId: string }) {
 
   return (
     <button
-      onClick={() => (state === 'confirm' ? handleConfirm() : setState('confirm'))}
+      onClick={handleClick}
       disabled={state === 'sending'}
       style={{
         all: 'unset', cursor: state === 'sending' ? 'not-allowed' : 'pointer',
         display: 'inline-flex', alignItems: 'center', gap: 4,
         padding: '3px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
-        border: `1px solid ${state === 'confirm' ? C.indigo : C.border}`,
-        color: state === 'confirm' ? C.indigo : C.text,
+        border: `1px solid ${C.border}`, color: C.text,
       }}
     >
       <Send size={11} />
-      {state === 'sending' ? t('roi.send_po_sending') : state === 'confirm' ? t('roi.send_po_confirm') : t('roi.send_po')}
+      {state === 'sending' ? t('roi.send_po_sending') : t('roi.send_po')}
     </button>
   )
 }
 
-export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; onReceive: (id: string) => void }) {
+export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [] }: {
+  entries: POLogEntry[]
+  onReceive: (id: string) => void
+  suppliersWithoutContact?: string[]
+}) {
   const { t } = useLanguage()
   if (entries.length === 0) {
     return (
@@ -269,6 +297,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
   }
 
   const columns = [
+    t('roi.col_order'),
     t('roi.col_datetime'),
     t('roi.col_skus_in_order'),
     t('roi.col_urgent'),
@@ -299,6 +328,9 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
               background: idx % 2 === 0 ? C.surface : C.card,
               borderBottom: `1px solid ${C.border}`,
             }}>
+              <td style={{ padding: '11px 14px', color: C.text, fontFamily: 'monospace', fontWeight: 600 }}>
+                {formatPoNumber(entry.po_number)}
+              </td>
               <td style={{ padding: '11px 14px', color: C.text, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtDateTime(entry.generated_at)}
               </td>
@@ -353,7 +385,7 @@ export function POHistoryTable({ entries, onReceive }: { entries: POLogEntry[]; 
                           <Truck size={11} aria-hidden="true" /> {t('po.reception_btn_register')}
                         </button>
                       )}
-                      <SendPOButton poLogId={entry.id} />
+                      <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
                     </span>
                   )
                 })()}

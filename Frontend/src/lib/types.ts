@@ -825,6 +825,7 @@ export interface ROIMonthReport {
 
 export interface POLogEntry {
   id:                string
+  po_number?:        number | null
   session_id:        string
   generated_at:      string
   sku_count:         number
