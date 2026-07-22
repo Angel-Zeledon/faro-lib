@@ -845,6 +845,23 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # (today's implicit behavior, preserved).
     ("add_po_log_destination_warehouse",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS destination_warehouse TEXT"),
+    # Negative stock is nonsensical. App-level guards (transfer_service._adjust_stock's
+    # atomic decrement floor, shrinkage_service's conditional UPDATE) close the TOCTOU
+    # races, but a DB CHECK is the backstop that makes the invariant unviolable no matter
+    # which code path writes the row. Clamp any pre-existing negatives to 0 FIRST — there
+    # is no better recovery signal than "empty" — so the constraint below can be added.
+    # Idempotent by nature (a second run matches no rows).
+    ("clamp_negative_inventory_stock",
+     "UPDATE inventory_stock SET current_stock = 0 WHERE current_stock < 0"),
+    ("add_inventory_stock_current_stock_nonneg",
+     """DO $$ BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint WHERE conname = 'inventory_stock_current_stock_nonneg'
+         ) THEN
+           ALTER TABLE inventory_stock
+             ADD CONSTRAINT inventory_stock_current_stock_nonneg CHECK (current_stock >= 0);
+         END IF;
+       END $$"""),
 ]
 
 
