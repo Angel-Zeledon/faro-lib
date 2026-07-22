@@ -6,7 +6,7 @@ import {
   Database, TrendingUp, Package,
   BrainCircuit, Settings, LogOut, User, Users,
   ChevronLeft, ChevronRight, FlaskConical,
-  ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock,
+  ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock, Plug,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -44,6 +44,7 @@ const NAV: NavItem[] = [
   { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
 
   { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
+  { href: '/integraciones',       labelKey: 'nav.integrations', Icon: Plug,           group: 'system',  feature: 'integrations' },
   { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
 ]
 

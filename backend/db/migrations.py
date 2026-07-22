@@ -777,6 +777,20 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # already has the tenants table — only an explicit ALTER does.
     ("alter_tenants_plan_default_starter",
      "ALTER TABLE tenants ALTER COLUMN plan SET DEFAULT 'starter'"),
+    ("create_integration_connections",
+     """CREATE TABLE IF NOT EXISTS integration_connections (
+         id           TEXT PRIMARY KEY,
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         provider     TEXT NOT NULL,
+         credentials  TEXT NOT NULL,
+         status       TEXT NOT NULL DEFAULT 'connected',
+         last_sync_at TIMESTAMPTZ,
+         last_error   TEXT,
+         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_integration_connections_uniq",
+     "CREATE UNIQUE INDEX IF NOT EXISTS integration_conn_tenant_provider_idx "
+     "ON integration_connections (tenant_id, provider)"),
 ]
 
 

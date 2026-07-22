@@ -1086,3 +1086,34 @@ export interface Entitlements {
 
 export const getEntitlements = () =>
   request<Entitlements>('GET', '/entitlements')
+
+// ── Accounting integrations ────────────────────────────────────────────────────
+export interface Integration {
+  id:            string
+  provider:      string
+  status:        string
+  last_sync_at:  string | null
+  last_error:    string | null
+  created_at:    string
+}
+
+export interface ProviderInfo {
+  fields: string[]
+}
+
+export interface IntegrationsListResponse {
+  connections: Integration[]
+  providers:   Record<string, ProviderInfo>
+}
+
+export const listIntegrations = (opts?: RequestOpts) =>
+  request<IntegrationsListResponse>('GET', '/integrations', undefined, opts)
+
+export const connectIntegration = (provider: string, creds: Record<string, string>) =>
+  request<Integration>('POST', `/integrations/${encodeURIComponent(provider)}/connect`, creds)
+
+export const syncIntegration = (id: string) =>
+  request<unknown>('POST', `/integrations/${encodeURIComponent(id)}/sync`)
+
+export const deleteIntegration = (id: string) =>
+  request<{ deleted: string }>('DELETE', `/integrations/${encodeURIComponent(id)}`)

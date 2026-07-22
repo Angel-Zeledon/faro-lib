@@ -20,6 +20,7 @@ from backend.db.connection import execute
 from backend.inventory import service as inv_svc
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
+from backend.sessions.defaults import default_quickstart_configs
 from backend.storage import paths
 from backend.training import job_service
 from backend.utils.ids import generate_id
@@ -46,21 +47,10 @@ _DEMO_STOCK = {
 }
 
 # Same defaults the quick-start wizard posts (Frontend quick-start page).
-_DEMO_CONFIGS = {
-    "columns_cfg": {
-        "schema_version": "canonical_v1",
-        "canonical_mapping": {"sku": "sku", "date": "fecha", "demand": "cantidad"},
-        "defaults_override": {},
-    },
-    "features_cfg": {"lags": [1, 7, 14, 28], "rolling": [7, 14, 28], "diffs": [1],
-                     "calendar": True, "ewm_spans": [7, 14]},
-    "models_cfg": {"selected_models": ["lightgbm", "prophet", "croston", "xgboost"]},
-    "validation_cfg": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 3,
-                       "min_history": 20, "seasonal_period": 7},
-    "forecast_cfg": {"horizon": 30},
-    "business_cfg": {"service_level": 0.95, "lead_time_days": 15,
-                     "holding_cost_pct": 0.20, "stockout_cost_multiplier": 3.0},
-}
+# Lifted into backend/sessions/defaults.py so the accounting-integrations
+# sync service can seed the identical six config blobs (pure constant
+# extraction — this call returns an equal dict each time).
+_DEMO_CONFIGS = default_quickstart_configs()
 
 
 @router.post("/quickstart", status_code=202)

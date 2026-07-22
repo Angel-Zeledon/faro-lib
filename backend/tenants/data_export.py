@@ -78,6 +78,9 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
     ("webhooks", "webhooks", "id, tenant_id, url, events, created_at"),
     ("user_permissions", "user_permissions", "*"),
+    # credentials is never exported — only connection metadata.
+    ("integration_connections", "integration_connections",
+     "id, tenant_id, provider, status, last_sync_at, last_error, created_at"),
 ]
 
 # Deliberately NOT exported: pure security/credential artifacts, not "the
@@ -160,6 +163,7 @@ _DELETE_ORDER: list[str] = [
     "api_keys",
     "documents",
     "user_permissions",
+    "integration_connections",
     "refresh_tokens",
     "pw_change_codes",
     "training_logs",

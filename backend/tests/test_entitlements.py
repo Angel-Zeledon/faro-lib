@@ -851,3 +851,11 @@ def test_entitlements_endpoint_reports_plan(monkeypatch, make_tenant_user_header
     assert data["feature_plans"]["ai_analyst"] == "professional"
     assert data["feature_plans"]["api_access"] == "enterprise"
     assert data["feature_plans"]["semaphore"] == "starter"  # core = available from starter
+
+
+@pytest.mark.offline
+def test_integrations_is_enterprise_only():
+    from backend.entitlements.plans import Feature, PLAN_CATALOG
+    assert Feature.INTEGRATIONS not in PLAN_CATALOG["starter"].features
+    assert Feature.INTEGRATIONS not in PLAN_CATALOG["professional"].features
+    assert Feature.INTEGRATIONS in PLAN_CATALOG["enterprise"].features
