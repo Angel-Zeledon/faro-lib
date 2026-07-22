@@ -17,6 +17,14 @@ log = logging.getLogger(__name__)
 # Statuses that mean "the buyer decided to order this line".
 _ORDERED = ("approved", "modified")
 
+# SQLSTATE for unique_violation — the losing side of a po_number race.
+_UNIQUE_VIOLATION = "23505"
+
+
+def format_po_number(po_number: int | None, fallback: str) -> str:
+    """Human-readable order reference (OC-000123); raw id when unnumbered."""
+    return f"OC-{int(po_number):06d}" if po_number else fallback
+
 
 def _ordered_qty(item: dict) -> float:
     """
@@ -88,17 +96,32 @@ def log_po_generation(tenant_id: str, session_id: str, items: list[dict]) -> dic
             value_parts.append(_ordered_qty(i) * float(cost))
     total_value: float | None = sum(value_parts) if value_parts else None
 
-    inserted = query_one(
-        """INSERT INTO inventory_po_log
-               (tenant_id, session_id, sku_count, total_units, total_value,
-                skus_order_now, skus_order_soon,
-                suggested_count, approved_count, modified_count, rejected_count)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-           RETURNING *""",
-        (tenant_id, session_id, sku_count, total_units, total_value,
-         skus_order_now, skus_order_soon,
-         suggested_count, approved_count, modified_count, rejected_count),
-    )
+    def _insert() -> dict | None:
+        # po_number is computed inside the INSERT so number and row commit
+        # atomically. Volume is human-driven, so MAX+1 contention is rare;
+        # the unique index catches the race and we retry once.
+        return query_one(
+            """INSERT INTO inventory_po_log
+                   (tenant_id, session_id, sku_count, total_units, total_value,
+                    skus_order_now, skus_order_soon,
+                    suggested_count, approved_count, modified_count, rejected_count,
+                    po_number)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       (SELECT COALESCE(MAX(po_number), 0) + 1
+                          FROM inventory_po_log WHERE tenant_id = %s))
+               RETURNING *""",
+            (tenant_id, session_id, sku_count, total_units, total_value,
+             skus_order_now, skus_order_soon,
+             suggested_count, approved_count, modified_count, rejected_count,
+             tenant_id),
+        )
+
+    try:
+        inserted = _insert()
+    except Exception as exc:
+        if getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
+            raise
+        inserted = _insert()
 
     # Persist every line (including rejected) so adoption is auditable per SKU.
     if inserted and norm:
@@ -220,7 +243,7 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     rows = query(
         """SELECT id, session_id, generated_at, sku_count, total_units,
                   total_value, skus_order_now, skus_order_soon,
-                  reception_status, received_at
+                  reception_status, received_at, po_number
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC

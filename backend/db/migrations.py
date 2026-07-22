@@ -791,6 +791,20 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("create_integration_connections_uniq",
      "CREATE UNIQUE INDEX IF NOT EXISTS integration_conn_tenant_provider_idx "
      "ON integration_connections (tenant_id, provider)"),
+    # Human-readable per-tenant order number (spec 2026-07-22-po-flow-polish).
+    ("po_log_add_po_number",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS po_number INT"),
+    # Backfill pre-feature rows per tenant in generated_at order. Idempotent:
+    # only NULL rows are numbered, and post-feature rows are never NULL.
+    ("po_log_backfill_po_number",
+     """UPDATE inventory_po_log t SET po_number = s.rn
+        FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY generated_at, id) AS rn
+              FROM inventory_po_log WHERE po_number IS NULL) s
+        WHERE t.id = s.id AND t.po_number IS NULL"""),
+    # Uniqueness guard: two concurrent inserts computing the same MAX+1 — the
+    # loser gets a 23505 and retries (see roi_service.log_po_generation).
+    ("po_log_po_number_unique_idx",
+     "CREATE UNIQUE INDEX IF NOT EXISTS po_log_tenant_po_number_idx ON inventory_po_log (tenant_id, po_number)"),
 ]
 
 
