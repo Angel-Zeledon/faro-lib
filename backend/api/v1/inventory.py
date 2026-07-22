@@ -17,6 +17,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
+from psycopg2.pool import PoolError
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
@@ -1849,13 +1850,34 @@ def optimize_inventory(
     """
     from forecasting_core.business.optimizer import optimize
 
-    inp = opt_svc.build_optimization_input(user.tenant_id, session_id, horizon_days)
+    # Read the inventory snapshot once and thread it through both build and
+    # serialize — the endpoint used to call list_stock twice (once inside
+    # build_optimization_input, once here), doubling this path's pooled-
+    # connection checkouts for no benefit.
+    try:
+        stock_rows = svc.list_stock(user.tenant_id)
+        inp = opt_svc.build_optimization_input(
+            user.tenant_id, session_id, horizon_days, stock_rows=stock_rows,
+        )
+    except PoolError:
+        # The DB pool (ThreadedConnectionPool, max=10) raises rather than
+        # blocking once every connection is checked out, so a concurrent burst
+        # can momentarily starve this request. That is transient and retryable,
+        # not a server bug — surface 503 (retry) instead of a bare 500.
+        raise HTTPException(
+            status_code=503,
+            detail="Optimizer temporarily unavailable (database busy); please retry.",
+        )
+
     if inp is None:
         return ok({
             "status": "optimal", "total_cost": 0.0, "horizon_days": horizon_days,
             "orders": [], "transfers": [],
         })
 
+    # optimize() never raises on structurally-valid-but-degenerate input
+    # (infeasible/unbounded/oversized LP all degrade to a "fallback" result),
+    # so a genuine 500 here would only come from an unexpected programming
+    # error, which should stay a 500 rather than be masked.
     result = optimize(inp)
-    stock_rows = svc.list_stock(user.tenant_id)
     return ok(opt_svc.serialize_optimization_result(inp, result, stock_rows))

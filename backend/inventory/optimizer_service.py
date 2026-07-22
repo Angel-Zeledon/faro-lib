@@ -21,12 +21,25 @@ _DEFAULT_LEAD_TIME_DAYS = 15
 
 
 def build_optimization_input(
-    tenant_id: str, session_id: str, horizon_days: int = 14,
+    tenant_id: str,
+    session_id: str,
+    horizon_days: int = 14,
+    stock_rows: Optional[list[dict]] = None,
 ) -> Optional[OptimizationInput]:
+    """
+    `stock_rows` lets the caller pass an already-fetched inventory snapshot so
+    the optimize path reads inventory_stock once instead of twice (build here +
+    serialize at the endpoint). Fewer pooled-connection checkouts per request
+    matters under a concurrent burst: the DB pool (ThreadedConnectionPool,
+    max=10) raises PoolError rather than blocking once every connection is in
+    use, so trimming redundant queries reduces the chance this path tips it.
+    Omit it and the function fetches the snapshot itself, as before.
+    """
     forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
     skus = sorted(forecasts.keys())
 
-    stock_rows = list_stock(tenant_id)
+    if stock_rows is None:
+        stock_rows = list_stock(tenant_id)
     warehouses = sorted({r["warehouse"] for r in stock_rows if r.get("warehouse")})
 
     if not skus or not warehouses:
