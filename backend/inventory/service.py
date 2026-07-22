@@ -1989,24 +1989,47 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     )
     demand_changes = [i for i in items if i.get('demand_trend_pct') is not None]
 
+    # The forecasts blob (can be MBs) is fetched ONCE here and shared by the
+    # demand-spike scan and the transfer-suggestion pass below.
+    from backend.db import session_store
+    try:
+        briefing_forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
+    except Exception as e:
+        log.warning("briefing forecasts fetch failed session=%s: %s", session_id, e)
+        briefing_forecasts = {}
+
     # Proactive: future demand peaks the forecast sees, with order-by dates.
     demand_spikes: list[dict] = []
     try:
-        from backend.db import session_store
-        spike_forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
         demand_spikes = get_demand_spikes(
             tenant_id, session_id, service_level,
-            items=items, forecasts=spike_forecasts,
+            items=items, forecasts=briefing_forecasts,
         )
     except Exception as e:
         log.warning("get_demand_spikes failed for session=%s: %s", session_id, e)
+
+    # Network transfer suggestions (feature 5.4): folded into the briefing so
+    # /hoy renders them without a second full by-warehouse status request —
+    # the landing page used to double-run the heaviest inventory computation.
+    transfer_suggestions: list[dict] = []
+    try:
+        from backend.inventory import warehouse_service as wh_svc
+        if wh_svc.count_warehouses(tenant_id) >= 2:
+            wh_items = get_inventory_status_by_warehouse(
+                tenant_id, session_id, service_level,
+                forecasts=briefing_forecasts,
+            )
+            transfer_suggestions = [
+                i for i in wh_items if i.get("recommended_action") == "transfer"
+            ]
+    except Exception as e:
+        log.warning("briefing transfer suggestions failed session=%s: %s", session_id, e)
 
     recs = generate_recommendations(items)
 
     # Pull session-level forecast accuracy if available
     avg_accuracy: Optional[float] = None
     try:
-        from backend.db import session_store
         result = session_store.get_training_result(tenant_id, session_id) or {}
         metrics = result.get('metrics', {})
         rows = metrics.get('rows', [])
@@ -2039,6 +2062,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         'overstocked':  overstocked[:10],
         'demand_changes': demand_changes[:8],
         'demand_spikes': demand_spikes,
+        'transfer_suggestions': transfer_suggestions,
         'excluded_skus': get_excluded_skus(tenant_id, session_id),
         'recommendations': recs,
         'kpis': {

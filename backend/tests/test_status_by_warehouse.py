@@ -164,6 +164,33 @@ class TestPreloadedData:
         assert any(i["signal"] != "SIN_DATOS" for i in preloaded)
 
 
+class TestBriefingFold:
+    def test_briefing_carries_transfer_suggestions(self, test_tenant, completed_session):
+        """/hoy reads suggestions from the briefing instead of re-running the
+        by-warehouse status — the payloads must match."""
+        tid, sid = test_tenant["id"], completed_session["id"]
+        session_store.set_forecasts(tid, sid, {
+            f"A{SERIES_SEPARATOR}Norte": _forecast_entry(10.0),
+            f"A{SERIES_SEPARATOR}principal": _forecast_entry(10.0),
+        })
+        _seed_stock(tid, "A", "Norte", 5)
+        _seed_stock(tid, "A", "principal", 600)
+
+        briefing = inv_svc.get_morning_briefing(tid, sid)
+        suggestions = briefing["transfer_suggestions"]
+        assert len(suggestions) == 1
+        assert suggestions[0]["sku"] == "A"
+        assert suggestions[0]["warehouse"] == "Norte"
+        assert suggestions[0]["transfer_suggestion"]["from_warehouse"] == "principal"
+
+    def test_mono_warehouse_briefing_has_empty_suggestions(self, test_tenant, completed_session):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        session_store.set_forecasts(tid, sid, {"A": _forecast_entry(10.0)})
+        _seed_stock(tid, "A", "principal", 100)
+        briefing = inv_svc.get_morning_briefing(tid, sid)
+        assert briefing["transfer_suggestions"] == []
+
+
 class TestApi:
     def test_by_warehouse_param(self, client, auth_headers, test_tenant, completed_session):
         tid, sid = test_tenant["id"], completed_session["id"]

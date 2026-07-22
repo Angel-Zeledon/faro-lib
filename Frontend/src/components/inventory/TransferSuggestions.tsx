@@ -2,11 +2,15 @@
 // 🔁 transfer suggestion cards for /hoy (feature 5.4): stock exists in the
 // network, just in the wrong place — approving creates the transfer
 // (in_transit) instead of adding a purchase to the cart.
-import { useCallback, useEffect, useState } from 'react'
-import { getStatusByWarehouse, createTransfer } from '@/lib/api'
+//
+// Prop-driven on purpose: the suggestions ride in on the morning briefing
+// (computed server-side alongside it), so this component fires ZERO requests
+// of its own — /hoy used to re-run the heaviest inventory endpoint just to
+// render these cards.
+import { useState } from 'react'
+import { createTransfer } from '@/lib/api'
 import type { WarehouseStatusItem } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { useWarehouses } from '@/components/inventory/WarehouseControls'
 import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
@@ -14,31 +18,24 @@ const C = {
   text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8', green: '#22c55e',
 }
 
-export function TransferSuggestions({ sessionId }: { sessionId: string }) {
+export function TransferSuggestions({ suggestions }: {
+  suggestions: WarehouseStatusItem[]
+}) {
   const { t } = useLanguage()
-  const { multi } = useWarehouses()
-  const [suggestions, setSuggestions] = useState<WarehouseStatusItem[]>([])
-  const [busySku, setBusySku] = useState<string | null>(null)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
   const [done, setDone] = useState<Set<string>>(new Set())
 
-  const load = useCallback(() => {
-    if (!multi) return
-    getStatusByWarehouse(sessionId)
-      .then(r => setSuggestions(r.items.filter(i => i.recommended_action === 'transfer')))
-      .catch(() => setSuggestions([]))
-  }, [sessionId, multi])
-  useEffect(() => { load() }, [load])
-
-  if (!multi || suggestions.length === 0) return null
+  if (suggestions.length === 0) return null
 
   async function approve(row: WarehouseStatusItem) {
     const ts = row.transfer_suggestion
     if (!ts) return
-    setBusySku(`${row.sku}|${row.warehouse}`)
+    const key = `${row.sku}|${row.warehouse}`
+    setBusyKey(key)
     try {
       await createTransfer(ts.from_warehouse, row.warehouse, [{ sku: row.sku, qty: ts.qty }])
-      setDone(prev => new Set(prev).add(`${row.sku}|${row.warehouse}`))
-    } finally { setBusySku(null) }
+      setDone(prev => new Set(prev).add(key))
+    } finally { setBusyKey(null) }
   }
 
   return (
@@ -80,7 +77,7 @@ export function TransferSuggestions({ sessionId }: { sessionId: string }) {
                 {t('hoy.transfers_done')}
               </span>
             ) : (
-              <button onClick={() => approve(row)} disabled={busySku === key}
+              <button onClick={() => approve(row)} disabled={busyKey === key}
                       style={{ all: 'unset', cursor: 'pointer', padding: '6px 14px',
                                borderRadius: 8, background: 'rgba(129,140,248,0.12)',
                                color: C.indigo, fontSize: 12, fontWeight: 700 }}>

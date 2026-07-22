@@ -1286,6 +1286,9 @@ export interface MorningBriefing {
   overstocked:      InventoryStatusItem[]
   demand_changes:   (InventoryStatusItem & { demand_trend_pct: number })[]
   demand_spikes?:   DemandSpike[]
+  /** Network transfer suggestions (5.4), computed server-side inside the
+   * briefing so /hoy never re-runs the by-warehouse status for them. */
+  transfer_suggestions?: WarehouseStatusItem[]
   excluded_skus?:   ExcludedSku[]
   recommendations:  BriefingRecommendation[]
   kpis:             MorningBriefingKPIs

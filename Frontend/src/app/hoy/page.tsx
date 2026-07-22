@@ -1078,9 +1078,9 @@ export default function HoyPage() {
 
         {/* Transfer suggestions (feature 5.4) — stock exists, wrong warehouse.
             Rendered before the urgent purchases: moving boxes is free. The
-            component renders null (no leftover spacing) when there is nothing
-            to transfer or the tenant has a single warehouse. */}
-        {sessionId && <TransferSuggestions sessionId={sessionId} />}
+            suggestions arrive with the morning briefing (no extra request);
+            the component renders null when there is nothing to transfer. */}
+        <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} />
 
         {/* URGENTE section */}
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
