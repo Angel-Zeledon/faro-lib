@@ -555,7 +555,14 @@ export default function HoyPage() {
  const [destWarehouse, setDestWarehouse] = useState<string>('')
  useEffect(() => {
   if (warehouses.length > 0 && destWarehouse === '') {
-   setDestWarehouse((warehouses.find(w => w.is_default) ?? warehouses[0]).name)
+   // Precedence mirrors the backend default-warehouse rule: is_default flag,
+   // then 'principal' (auto-created rows carry is_default=false, so without
+   // this the destination fell to the alphabetically-first warehouse — an
+   // emoji/capitalized name would win over 'principal').
+   const def = warehouses.find(w => w.is_default)
+    ?? warehouses.find(w => w.name === 'principal')
+    ?? warehouses[0]
+   setDestWarehouse(def.name)
   }
  }, [warehouses, destWarehouse])
 
