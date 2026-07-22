@@ -21,6 +21,7 @@ import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import {
  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
+import { TransferSuggestions } from '@/components/inventory/TransferSuggestions'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
@@ -1063,6 +1064,12 @@ export default function HoyPage() {
           />
          </div>
         )}
+
+        {/* Transfer suggestions (feature 5.4) — stock exists, wrong warehouse.
+            Rendered before the urgent purchases: moving boxes is free. The
+            component renders null (no leftover spacing) when there is nothing
+            to transfer or the tenant has a single warehouse. */}
+        {sessionId && <TransferSuggestions sessionId={sessionId} />}
 
         {/* URGENTE section */}
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
