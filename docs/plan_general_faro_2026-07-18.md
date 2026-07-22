@@ -146,11 +146,18 @@ Ordenada por riesgo real (los ítems de diseño/UX que estaban aquí se movieron
   - `/hoy`: cards urgentes con "Ver por qué" (números coherentes: 40 uds / 33,1 por día = 1 día; reorden 345 ≈ 33,1×10; lead time etiquetado "configurado por ti"), Aprobar/Rechazar con Deshacer, carrito con total, "Descargar orden de compra" → `POST /inventory/log-po` 201 y fila + ítems en `inventory_po_log`/`inventory_po_items`.
   - `/pedidos`: aviso reactivo de proveedores sin email/WhatsApp con "Completar ficha" (crea el proveedor prellenado); "Enviar pedido" → **"Enviado parcialmente"** correcto: email SMTP al proveedor con ficha, omitido el que no tiene contacto; `sent_at` grabado.
   - "Registrar llegada" con recepción parcial (Arroz 400/475) → estado "Parcial", stock actualizado en DB (+312/+400), 2 observaciones en `supplier_lead_time_obs` (0 días — mismo día; inocuo por el mínimo de 3 observaciones), y el semáforo se recalcula: ambos PEDIR_YA pasan a "Pedir pronto" y el Arroz sugiere pedir las 75 unidades faltantes.
-- **Hallazgos menores del recorrido (ninguno bloqueante):**
-  1. El confirm inline de "Enviar pedido" se auto-resetea a los 4 s (`POHistory.tsx` `setTimeout(..., 4000)`) — con cualquier vacilación el usuario pierde el estado armado sin feedback. Considerar 8 s o un mini-modal.
-  2. El asunto del email de OC usa el UUID crudo (`Orden de compra — a432074b-…`) — debería usar un número de orden legible (correlativo por tenant).
-  3. Copy del carrito en `/hoy`: "N SKUs quedaron fuera del cálculo (sin precio de venta o sin costo)" cuenta los aprobados sin precio de venta (margen no calculable) pero aparece junto al total, sugiriendo que el total está incompleto. Reordenar o re-redactar.
+- **Hallazgos menores del recorrido — los 3 primeros RESUELTOS el mismo día** (rama `polish/po-flow-0-3-findings`, mergeada a `main`; spec `docs/superpowers/specs/2026-07-22-po-flow-polish-design.md`):
+  1. ✅ Confirm de "Enviar pedido": reemplazado por `ConfirmDialog` que muestra ANTES del envío a qué proveedores llega y cuáles se omiten por falta de contacto (sin timer que perder).
+  2. ✅ Número de orden legible: `po_number` correlativo por tenant (migración + backfill con offset anti-colisión + índice único), mostrado como `OC-000123` en el asunto/cuerpo del email al proveedor y columna "Orden" en `/pedidos`.
+  3. ✅ Copy del carrito: amarrado al margen ("El margen protegido no incluye N SKU(s) sin precio de venta registrado"); cuando ningún aprobado tiene precio, invitación a registrar precios.
   4. Sigue pendiente (ya conocido): etiqueta de origen del lead time in-app en `/inventory` y la ruta `/planes` del UpsellModal.
+- **Fix extra:** test pre-existente `test_chats.py::TestRateLimit` roto por el gate de entitlements (403 antes del rate limit al apagar `testing_mode`) — el test ahora sube el tenant a `professional`.
+- **Follow-ups nuevos del review final de esa rama (menores, no bloqueantes):**
+  - El preview del diálogo de envío compara nombres de proveedor **case-sensitive**; el backend resuelve case-insensitive — un desajuste de mayúsculas listaría un proveedor como "se enviará" y el envío real lo omitiría. Fix de una línea (comparar en lowercase).
+  - Gate del caveat de margen (`priced.length > 0`) vs gate de la fila de margen (`salesProtected > 0`) difieren cuando `sale_price === 0`.
+  - `convertOrderToPO` (`hoy/page.tsx`) no deshabilita el botón en vuelo — un doble click crea 2 POs idénticas (observado en vivo: OC-000002/3). Pre-existente a la rama.
+  - Asignación de `po_number` reintenta 1 vez ante carrera de 2; una carrera de 3+ simultáneos aún daría 500 (aceptado: volumen humano).
+  - `SendPOButton` muestra "Enviando…" mientras el diálogo de confirmación está abierto (funciona como guard de doble click; etiqueta imprecisa).
 
 ## Estado de ejecución — actualizado 2026-07-19
 
