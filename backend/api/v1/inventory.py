@@ -31,6 +31,7 @@ from backend.inventory import bom_service as bom_svc
 from backend.inventory import warehouse_service as wh_svc
 from backend.inventory import optimizer_service as opt_svc
 from backend.inventory import po_pdf
+from backend.inventory import transfer_service as tr_svc
 from backend.inventory import price_break_service as pb_svc
 from backend.inventory import cash_service
 from backend.schemas.common import ok
@@ -1362,6 +1363,89 @@ def patch_warehouse(
 @router.get("/stock/{sku}/suppliers")
 def get_sku_suppliers(sku: str, user: CurrentUser = Depends(get_current_user)):
     return ok(sup_svc.get_sku_suppliers(user.tenant_id, sku))
+
+
+# ── Inter-warehouse transfers (feature 5.4) ──────────────────────────────────
+
+class TransferItemIn(BaseModel):
+    sku: str
+    qty: float = Field(gt=0)
+
+
+class TransferCreate(BaseModel):
+    from_warehouse: str
+    to_warehouse: str
+    items: list[TransferItemIn]
+    notes: Optional[str] = None
+
+
+class TransferReceive(BaseModel):
+    lines: Optional[list[dict]] = None  # [{sku, received_qty}] | null = all
+
+
+def _transfer_error(e: ValueError) -> HTTPException:
+    msg = str(e)
+    return HTTPException(status_code=404 if "not found" in msg.lower() else 422,
+                         detail=msg)
+
+
+@router.post(
+    "/transfers", status_code=201,
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def create_transfer(
+    body: TransferCreate,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    try:
+        t = tr_svc.create_transfer(
+            user.tenant_id, user.user_id, body.from_warehouse, body.to_warehouse,
+            [i.model_dump() for i in body.items], body.notes)
+    except ValueError as e:
+        raise _transfer_error(e)
+    return ok(t)
+
+
+@router.get(
+    "/transfers",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def list_transfers(
+    status: Optional[str] = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+):
+    return ok(tr_svc.list_transfers(user.tenant_id, status))
+
+
+@router.post(
+    "/transfers/{transfer_id}/receive",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def receive_transfer(
+    transfer_id: str,
+    body: TransferReceive,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    try:
+        t = tr_svc.receive_transfer(user.tenant_id, transfer_id, body.lines)
+    except ValueError as e:
+        raise _transfer_error(e)
+    return ok(t)
+
+
+@router.post(
+    "/transfers/{transfer_id}/cancel",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def cancel_transfer(
+    transfer_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    try:
+        t = tr_svc.cancel_transfer(user.tenant_id, transfer_id)
+    except ValueError as e:
+        raise _transfer_error(e)
+    return ok(t)
 
 
 @router.put("/stock/{sku}/suppliers/{supplier_id}")

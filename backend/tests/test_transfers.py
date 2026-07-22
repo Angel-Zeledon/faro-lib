@@ -124,3 +124,59 @@ class TestTransferLifecycle:
         with pytest.raises(ValueError):
             tr_svc.create_transfer(two_warehouses, user_id,
                                    "principal", "principal", [{"sku": "A", "qty": 1}])
+
+
+class TestTransferApi:
+    def test_viewer_denied_state_unchanged(self, client, viewer_headers, two_warehouses):
+        tid = two_warehouses
+        r = client.post("/api/v1/inventory/transfers", json={
+            "from_warehouse": "principal", "to_warehouse": "Norte",
+            "items": [{"sku": "A", "qty": 10}],
+        }, headers=viewer_headers)
+        assert r.status_code == 403
+        assert _stock(tid, "A", "principal") == 100.0
+        assert query_one(
+            "SELECT COUNT(*)::int AS c FROM inventory_transfer_log WHERE tenant_id=%s",
+            (tid,))["c"] == 0
+
+    def test_analyst_full_cycle(self, client, analyst_headers, two_warehouses):
+        tid = two_warehouses
+        r = client.post("/api/v1/inventory/transfers", json={
+            "from_warehouse": "principal", "to_warehouse": "Norte",
+            "items": [{"sku": "A", "qty": 10}],
+        }, headers=analyst_headers)
+        assert r.status_code == 201, r.text
+        transfer_id = r.json()["data"]["id"]
+        assert _stock(tid, "A", "principal") == 90.0
+
+        r = client.get("/api/v1/inventory/transfers?status=in_transit",
+                       headers=analyst_headers)
+        assert r.status_code == 200
+        assert len(r.json()["data"]) == 1
+
+        r = client.post(f"/api/v1/inventory/transfers/{transfer_id}/receive",
+                        json={"lines": None}, headers=analyst_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["status"] == "received"
+        assert _stock(tid, "A", "Norte") == 20.0
+
+    def test_cross_tenant_denied(self, client, analyst_headers, two_warehouses,
+                                 make_tenant_user_headers):
+        """A transfer of tenant A must be invisible/untouchable from tenant B."""
+        tid = two_warehouses
+        r = client.post("/api/v1/inventory/transfers", json={
+            "from_warehouse": "principal", "to_warehouse": "Norte",
+            "items": [{"sku": "A", "qty": 10}],
+        }, headers=analyst_headers)
+        assert r.status_code == 201
+        transfer_id = r.json()["data"]["id"]
+
+        other_headers = make_tenant_user_headers(role="analyst")
+        r2 = client.post(f"/api/v1/inventory/transfers/{transfer_id}/receive",
+                         json={"lines": None}, headers=other_headers)
+        assert r2.status_code == 404
+        assert _stock(tid, "A", "Norte") == 10.0  # nothing arrived
+
+        listed = client.get("/api/v1/inventory/transfers", headers=other_headers)
+        assert listed.status_code == 200
+        assert listed.json()["data"] == []
