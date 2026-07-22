@@ -43,16 +43,26 @@ log = logging.getLogger(__name__)
 
 # ── Request models ─────────────────────────────────────────────────────────────
 
+# Sane upper bounds shared by the direct PUT/PATCH endpoints and the CSV
+# import. They sit comfortably above any realistic SMB value but reject the
+# absurd inputs (e.g. current_stock=1e15) that an adversarial or garbage CSV
+# would otherwise let straight into the DB. Lower bounds (ge=0 / ge=1) are
+# preserved unchanged; only maximums are added.
+_MAX_QTY = 1_000_000_000        # current_stock / min_stock levels (1e9)
+_MAX_MONEY = 1_000_000_000      # unit_cost / sale_price (1e9)
+_MAX_MOQ = 1_000_000            # minimum order quantity (1e6)
+
+
 class StockUpsert(BaseModel):
     display_name:   Optional[str]   = None
-    current_stock:   float           = Field(ge=0)
-    min_stock:   float           = Field(default=0, ge=0)
+    current_stock:   float           = Field(ge=0, le=_MAX_QTY)
+    min_stock:   float           = Field(default=0, ge=0, le=_MAX_QTY)
     lead_time_days: int             = Field(default=15, ge=1, le=365)
-    unit_cost: Optional[float] = Field(default=None, ge=0)
-    moq:            float           = Field(default=1, ge=1)
+    unit_cost: Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
+    moq:            float           = Field(default=1, ge=1, le=_MAX_MOQ)
     supplier:      Optional[str]   = None
     notes:          Optional[str]   = None
-    sale_price:   Optional[float] = Field(default=None, ge=0)
+    sale_price:   Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
     category:      Optional[str]   = None
     brand:          Optional[str]   = None
     unit_of_measure:  Optional[str]   = None
@@ -62,14 +72,14 @@ class StockUpsert(BaseModel):
 
 class StockPatch(BaseModel):
     display_name:   Optional[str]   = None
-    current_stock:   Optional[float] = Field(default=None, ge=0)
-    min_stock:   Optional[float] = Field(default=None, ge=0)
+    current_stock:   Optional[float] = Field(default=None, ge=0, le=_MAX_QTY)
+    min_stock:   Optional[float] = Field(default=None, ge=0, le=_MAX_QTY)
     lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
-    unit_cost: Optional[float] = Field(default=None, ge=0)
-    moq:            Optional[float] = Field(default=None, ge=1)
+    unit_cost: Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
+    moq:            Optional[float] = Field(default=None, ge=1, le=_MAX_MOQ)
     supplier:      Optional[str]   = None
     notes:          Optional[str]   = None
-    sale_price:   Optional[float] = Field(default=None, ge=0)
+    sale_price:   Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
     category:      Optional[str]   = None
     brand:          Optional[str]   = None
     unit_of_measure:  Optional[str]   = None
@@ -159,47 +169,76 @@ async def bulk_import(
         text = content.decode("latin-1")
 
     reader = csv.DictReader(io.StringIO(text))
-    # Normalize headers: lowercase + strip
+    # Normalize headers: lowercase + strip. Whitespace-only cells are treated
+    # as empty (dropped here) so an optional column left blank is skipped, not
+    # reported as a bad numeric value.
     rows: list[dict] = []
-    for raw_row in reader:
-        row = {k.strip().lower(): v.strip() for k, v in raw_row.items() if v}
+    # Per-row problems are collected and returned to the caller instead of
+    # being silently swallowed: a non-numeric cell in a numeric column, or a
+    # value that fails a model constraint (negative, or above the sane upper
+    # bounds), fails ONLY that row and is surfaced in ``errors`` so the user
+    # learns their data was rejected.
+    errors: list[dict] = []
+    # enumerate from 2: DictReader consumed line 1 as the header, so the first
+    # data row is CSV line 2 — the number a user sees in their spreadsheet.
+    for line_no, raw_row in enumerate(reader, start=2):
+        row = {k.strip().lower(): v.strip() for k, v in raw_row.items() if v and v.strip()}
 
-        def _float(k: str):
-            try: return float(row[k]) if k in row else None
-            except: return None
-
-        def _int(k: str):
-            try: return int(float(row[k])) if k in row else None
-            except: return None
-
-        parsed: dict = {"sku": row.get("sku", "").strip()}
-        if not parsed["sku"]:
+        sku = row.get("sku", "").strip()
+        if not sku:
             continue
+
+        parsed: dict = {"sku": sku}
+        row_error: Optional[str] = None
 
         for fld in ("display_name", "supplier", "notes",
                     "category", "brand", "unit_of_measure", "barcode", "warehouse"):
             if fld in row:
                 parsed[fld] = row[fld]
-        for fld in ("current_stock", "min_stock", "unit_cost", "moq", "sale_price"):
-            v = _float(fld)
-            if v is not None:
-                parsed[fld] = v
-        v = _int("lead_time_days")
-        if v is not None:
-            parsed["lead_time_days"] = v
 
-        # Validate against the same constraints as the direct PUT/PATCH endpoints
-        # (e.g. current_stock/unit_cost/moq >= 0) — without this, CSV import
-        # is the only write path that lets negative quantities into the DB.
+        # A field only appears in ``row`` when the cell was non-empty, so a
+        # parse failure here means genuine garbage (e.g. 'not-a-date'), NOT a
+        # blank/optional cell. Report it as a row error rather than coercing
+        # to 0 and importing silently.
+        for fld in ("current_stock", "min_stock", "unit_cost", "moq", "sale_price"):
+            if fld in row:
+                try:
+                    parsed[fld] = float(row[fld])
+                except (ValueError, TypeError):
+                    row_error = f"column '{fld}' is not a number: '{row[fld]}'"
+                    break
+        if row_error is None and "lead_time_days" in row:
+            try:
+                parsed["lead_time_days"] = int(float(row["lead_time_days"]))
+            except (ValueError, TypeError):
+                row_error = f"column 'lead_time_days' is not a number: '{row['lead_time_days']}'"
+
+        if row_error is not None:
+            log.warning(f"bulk_import: rejected row {line_no} sku={sku}: {row_error}")
+            errors.append({"row": line_no, "sku": sku, "error": row_error})
+            continue
+
+        # Validate against the same constraints as the direct PUT/PATCH
+        # endpoints (ge=0 lower bounds and the sane upper bounds above) —
+        # without this, CSV import would be the only write path that lets
+        # negative or absurd (1e15) quantities into the DB.
         try:
             validated = StockPatch(**{k: v for k, v in parsed.items() if k != "sku"})
         except ValidationError as e:
-            log.warning(f"bulk_import: skipped invalid row sku={parsed['sku']}: {e}")
+            detail = "; ".join(
+                f"{(err['loc'][0] if err.get('loc') else 'value')}: {err['msg']}"
+                for err in e.errors()
+            )
+            log.warning(f"bulk_import: rejected row {line_no} sku={sku}: {detail}")
+            errors.append({"row": line_no, "sku": sku, "error": detail})
             continue
-        rows.append({"sku": parsed["sku"], **validated.model_dump(exclude_none=True)})
+        rows.append({"sku": sku, **validated.model_dump(exclude_none=True)})
 
     if not rows:
-        raise HTTPException(status_code=422, detail="No valid rows found in CSV. Ensure 'sku' column exists.")
+        detail = "No valid rows found in CSV. Ensure 'sku' column exists."
+        if errors:
+            raise HTTPException(status_code=422, detail={"message": detail, "errors": errors})
+        raise HTTPException(status_code=422, detail=detail)
 
     # Resolve every distinct warehouse spelling in the CSV to its canonical
     # form BEFORE the limit pre-checks and the writes: 'norte' rows must land
@@ -233,7 +272,13 @@ async def bulk_import(
     # the import (confirmed: a 10k-row file blocked even the unrelated /health
     # endpoint for other tenants).
     count = await asyncio.to_thread(svc.bulk_upsert, user.tenant_id, rows)
-    return ok({"imported": count, "total_rows": len(rows)})
+    result = {"imported": count, "total_rows": len(rows)}
+    # Surface rejected rows so the user learns their data was garbage instead
+    # of it being silently dropped/coerced.
+    if errors:
+        result["errors"] = errors
+        result["error_count"] = len(errors)
+    return ok(result)
 
 
 _TEMPLATE_COLUMNS = [

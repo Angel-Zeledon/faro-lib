@@ -301,6 +301,99 @@ class TestBulkImport:
         bad_resp = client.get(f"/api/v1/inventory/stock/{bad_sku}", headers=auth_headers)
         assert bad_resp.status_code == 404
 
+    def test_bulk_import_rejects_absurd_upper_bound(self, client, auth_headers):
+        """current_stock=1e15 exceeds the sane upper bound (1e9): the row is
+        rejected and reported, and no row with that value reaches the DB."""
+        good_sku, bad_sku = _sku(), _sku()
+        csv_bytes = self._make_csv([
+            {"sku": good_sku, "current_stock": 100},
+            {"sku": bad_sku, "current_stock": "1000000000000000"},  # 1e15
+        ])
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            headers=auth_headers,
+            files={"file": ("stock.csv", csv_bytes, "text/csv")},
+        )
+        data = _ok(resp)
+        assert data["imported"] == 1
+        # The absurd row is surfaced, not silently dropped.
+        assert data["error_count"] == 1
+        assert any(e["sku"] == bad_sku for e in data["errors"])
+
+        from backend.db.connection import query_one
+        # DB check: the absurd 1e15 row never reached the DB under its sku.
+        assert query_one("SELECT 1 FROM inventory_stock WHERE sku = %s", (bad_sku,)) is None
+        good_row = client.get(f"/api/v1/inventory/stock/{good_sku}", headers=auth_headers).json()["data"]
+        assert good_row["current_stock"] == 100
+
+    def test_bulk_import_reports_non_numeric_cell(self, client, auth_headers):
+        """A non-numeric value ('not-a-date') in a numeric column is reported
+        as a row error and that row is NOT imported (no silent coercion to 0)."""
+        good_sku, bad_sku = _sku(), _sku()
+        csv_bytes = self._make_csv([
+            {"sku": good_sku, "current_stock": 70},
+            {"sku": bad_sku, "current_stock": "not-a-date"},
+        ])
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            headers=auth_headers,
+            files={"file": ("stock.csv", csv_bytes, "text/csv")},
+        )
+        data = _ok(resp)
+        assert data["imported"] == 1
+        assert data["error_count"] == 1
+        err = next(e for e in data["errors"] if e["sku"] == bad_sku)
+        assert "current_stock" in err["error"]
+        assert "not-a-date" in err["error"]
+
+        from backend.db.connection import query_one
+        # DB check: the garbage row was rejected, not coerced to current_stock=0.
+        assert query_one("SELECT 1 FROM inventory_stock WHERE sku = %s", (bad_sku,)) is None
+        good_row = client.get(f"/api/v1/inventory/stock/{good_sku}", headers=auth_headers).json()["data"]
+        assert good_row["current_stock"] == 70
+
+    def test_bulk_import_empty_optional_cell_still_imports(self, client, auth_headers):
+        """A blank optional numeric cell is skipped (not treated as garbage):
+        the row imports cleanly with no error reported."""
+        sku = _sku()
+        # unit_cost and min_stock left blank; current_stock present.
+        csv_text = (
+            "sku,current_stock,min_stock,unit_cost\n"
+            f"{sku},80,,\n"
+        )
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            headers=auth_headers,
+            files={"file": ("stock.csv", csv_text.encode("utf-8"), "text/csv")},
+        )
+        data = _ok(resp)
+        assert data["imported"] == 1
+        assert "errors" not in data          # blank optional cells are not errors
+
+        from backend.db.connection import query_one
+        row = query_one(
+            "SELECT current_stock FROM inventory_stock WHERE sku = %s", (sku,))
+        assert float(row["current_stock"]) == 80
+
+    def test_bulk_import_valid_csv_reports_no_errors(self, client, auth_headers):
+        """Regression: a fully valid CSV imports cleanly with no errors key."""
+        skus = [_sku() for _ in range(2)]
+        csv_bytes = self._make_csv([
+            {"sku": s, "current_stock": 10 * (i + 1), "unit_cost": 1.5, "moq": 2}
+            for i, s in enumerate(skus)
+        ])
+        resp = client.post(
+            "/api/v1/inventory/bulk",
+            headers=auth_headers,
+            files={"file": ("stock.csv", csv_bytes, "text/csv")},
+        )
+        data = _ok(resp)
+        assert data["imported"] == 2
+        assert "errors" not in data
+        for i, sku in enumerate(skus):
+            row = client.get(f"/api/v1/inventory/stock/{sku}", headers=auth_headers).json()["data"]
+            assert row["current_stock"] == 10 * (i + 1)
+
     def test_template_csv_has_canonical_header(self, client, auth_headers):
         r = client.get("/api/v1/inventory/template.csv", headers=auth_headers)
         assert r.status_code == 200
