@@ -679,8 +679,9 @@ export const translations = {
     'hoy.cart_protects_prefix':  'Este pedido protege',
     'hoy.cart_protects_sales_suffix':  'en ventas con',
     'hoy.cart_protects_margin_suffix': 'en margen',
-    'hoy.cart_margin_excluded_singular': 'SKU quedó fuera del cálculo (sin precio de venta o sin costo)',
-    'hoy.cart_margin_excluded_plural':   'SKUs quedaron fuera del cálculo (sin precio de venta o sin costo)',
+    'hoy.cart_margin_excludes_prefix': 'El margen protegido no incluye',
+    'hoy.cart_margin_excludes_suffix': 'SKU(s) sin precio de venta registrado',
+    'hoy.cart_margin_add_prices': 'Para ver el margen que protege este pedido, registra el precio de venta de tus SKUs.',
     // ── Supplier health (2.5) and lead-time deviation (3.3) ──
     'suppliers.health_singular':    'proveedor sin email/WhatsApp',
     'suppliers.health_plural':      'proveedores sin email/WhatsApp',
@@ -2295,8 +2296,9 @@ export const translations = {
     'hoy.cart_protects_prefix':  'This order protects',
     'hoy.cart_protects_sales_suffix':  'in sales with',
     'hoy.cart_protects_margin_suffix': 'in margin',
-    'hoy.cart_margin_excluded_singular': 'SKU left out of the calculation (no sale price or no cost)',
-    'hoy.cart_margin_excluded_plural':   'SKUs left out of the calculation (no sale price or no cost)',
+    'hoy.cart_margin_excludes_prefix': 'Protected margin excludes',
+    'hoy.cart_margin_excludes_suffix': 'SKU(s) with no sale price on file',
+    'hoy.cart_margin_add_prices': 'To see the margin this order protects, add sale prices to your SKUs.',
     // ── Supplier health (2.5) and lead-time deviation (3.3) ──
     'suppliers.health_singular':    'supplier with no email/WhatsApp',
     'suppliers.health_plural':      'suppliers with no email/WhatsApp',

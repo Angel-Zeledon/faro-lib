@@ -1179,12 +1179,19 @@ export default function HoyPage() {
              {fmtMoney(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
             </div>
            )}
-           {unpriced.length > 0 && (
+           {/* Margin caveat (2.6/0.3 polish): tie the message to the MARGIN
+               figure, never to the money total above it — the total uses cost
+               and is complete. Two cases: partial (some approved SKUs priced)
+               and none priced, where the margin row is absent entirely and the
+               note becomes an invitation instead of a warning. */}
+           {unpriced.length > 0 && priced.length > 0 && (
             <div style={{ fontSize: 11, color: C.amber, marginTop: 3 }}>
-             {unpriced.length}{' '}
-             {unpriced.length === 1
-              ? t('hoy.cart_margin_excluded_singular')
-              : t('hoy.cart_margin_excluded_plural')}
+             {t('hoy.cart_margin_excludes_prefix')} {unpriced.length} {t('hoy.cart_margin_excludes_suffix')}
+            </div>
+           )}
+           {unpriced.length > 0 && priced.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 3 }}>
+             {t('hoy.cart_margin_add_prices')}
             </div>
            )}
           </div>
