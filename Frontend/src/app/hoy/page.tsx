@@ -22,6 +22,7 @@ import {
  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
 import { TransferSuggestions } from '@/components/inventory/TransferSuggestions'
+import { useWarehouses } from '@/components/inventory/WarehouseControls'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
@@ -548,6 +549,16 @@ export default function HoyPage() {
  // PO currently being received via the reused ReceptionModal (feature: overdue nudge)
  const [receivingPO, setReceivingPO] = useState<string | null>(null)
 
+ // Destination warehouse for the PO cart (5.4). Only meaningful when the
+ // tenant has ≥2 warehouses; mono-warehouse tenants never send it.
+ const { warehouses, multi } = useWarehouses()
+ const [destWarehouse, setDestWarehouse] = useState<string>('')
+ useEffect(() => {
+  if (warehouses.length > 0 && destWarehouse === '') {
+   setDestWarehouse((warehouses.find(w => w.is_default) ?? warehouses[0]).name)
+  }
+ }, [warehouses, destWarehouse])
+
  // Generate→send in one flow: the PO just logged, awaiting the "send now" decision
  const [generatedPO, setGeneratedPO]   = useState<POLogEntry | null>(null)
  const [generatedLines, setGeneratedLines] = useState<ActionItem[]>([])
@@ -785,7 +796,7 @@ export default function HoyPage() {
   // Feature: generate→send in one flow. Capture the logged PO so we can offer
   // "send to suppliers now" right here, instead of sending the buyer to /orders.
   try {
-   const entry = await logPOGeneration(sessionId, decisions)
+   const entry = await logPOGeneration(sessionId, decisions, multi ? destWarehouse || undefined : undefined)
    setGeneratedPO(entry)
    setGeneratedLines(approved)
    setSendState('idle')
@@ -832,7 +843,7 @@ export default function HoyPage() {
    supplier:            order.supplier,
    warehouse:               order.warehouse,
   }
-  await logPOGeneration(sessionId, [decision])
+  await logPOGeneration(sessionId, [decision], multi ? destWarehouse || undefined : undefined)
   addToast(t('hoy.optimizer_po_created'), `${order.sku} — ${order.warehouse}`, 'success')
   setOptimization(prev => prev
    ? { ...prev, orders: prev.orders.filter(o => !(o.sku === order.sku && o.warehouse === order.warehouse)) }
@@ -1213,6 +1224,26 @@ export default function HoyPage() {
           >
            {t('hoy.btn_clear')}
           </button>
+          {/* Destination warehouse (5.4) — only rendered for multi-warehouse
+              tenants; mono-warehouse tenants see the cart exactly as before. */}
+          {multi && (
+           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--dim)' }}>
+            {t('hoy.cart_destination')}
+            <select
+             value={destWarehouse}
+             onChange={e => setDestWarehouse(e.target.value)}
+             style={{
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+              borderRadius: 6, padding: '5px 8px', color: 'var(--text)',
+              fontSize: 12, fontWeight: 600, outline: 'none', cursor: 'pointer',
+             }}
+            >
+             {warehouses.map(w => (
+              <option key={w.id} value={w.name}>{w.name}</option>
+             ))}
+            </select>
+           </label>
+          )}
           <button onClick={downloadOC} style={{
            all: 'unset', cursor: 'pointer', padding: '10px 20px', borderRadius: 8,
            background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 700,
