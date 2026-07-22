@@ -56,12 +56,68 @@ def test_sync_imports_stock_dataset_and_enqueues_training(client, test_tenant, m
     assert cfg["columns_cfg"]["schema_version"] == "canonical_v1"
     assert cfg["models_cfg"]["selected_models"]
 
+    # Store-less provider regression: dataset keeps the exact pre-store
+    # 3-column shape and the canonical mapping gains no store entry.
+    assert "store" not in cfg["columns_cfg"]["canonical_mapping"]
+    from pathlib import Path
+    dataset_row = query_one("SELECT file_path FROM datasets WHERE id=%s AND tenant_id=%s",
+                             (result["dataset_id"], tid))
+    csv_lines = Path(dataset_row["file_path"]).read_text(encoding="utf-8").splitlines()
+    assert csv_lines[0] == "fecha,sku,cantidad"
+
     # last_sync_at set, no error
     conn_row = query_one("SELECT last_sync_at, last_error, status FROM integration_connections WHERE id=%s",
                           (conn["id"],))
     assert conn_row["last_sync_at"] is not None
     assert conn_row["last_error"] is None
     assert conn_row["status"] == "connected"
+
+
+def test_sync_with_store_lines_builds_store_column_and_mapping(client, test_tenant, monkeypatch, fernet_key):
+    """When any provider sale line carries a branch/warehouse, the sales
+    dataset gains a `store` column (lines without one fall back to
+    'principal') and the session's canonical mapping maps it, so training
+    groups per (sku, store)."""
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+
+    from backend.integrations import store, registry, sync_service, base
+    from backend.db.connection import query_one
+    from pathlib import Path
+
+    class StoreProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-Z", "Zeta", 5.0)]
+        def fetch_stock(self): return [base.ProviderStock("SKU-Z", 12.0, "principal")]
+        def fetch_sales(self, since=None):
+            lines = [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0, 8.0, store="Norte")
+                     for d in range(1, 20)]
+            # Same sku+date as a Norte line but a different store: must stay
+            # a separate dataset row, not be summed into Norte's.
+            lines.append(base.ProviderSaleLine(date(2026, 1, 1), "SKU-Z", 5.0, 8.0, store="Sur"))
+            # A line with no warehouse in a store-bearing sync falls back to
+            # 'principal' so every row keeps a concrete store value.
+            lines.append(base.ProviderSaleLine(date(2026, 1, 2), "SKU-Z", 7.0, 8.0))
+            return lines
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: StoreProvider(creds))
+
+    tid = test_tenant["id"]
+    conn = store.create_connection(tid, "alegra", {"email": "a@b.com", "token": "t"})
+    result = sync_service.sync_connection(conn["id"])
+
+    # Canonical mapping persisted with the store entry (direct DB assert).
+    cfg = query_one("SELECT columns_cfg FROM session_configs WHERE session_id=%s AND tenant_id=%s",
+                     (result["session_id"], tid))
+    assert cfg["columns_cfg"]["canonical_mapping"]["store"] == "store"
+
+    # Dataset on disk has the store column with per-store aggregation.
+    dataset_row = query_one("SELECT file_path FROM datasets WHERE id=%s AND tenant_id=%s",
+                             (result["dataset_id"], tid))
+    csv_lines = Path(dataset_row["file_path"]).read_text(encoding="utf-8").splitlines()
+    assert csv_lines[0] == "fecha,sku,cantidad,store"
+    rows = {tuple(line.split(",")) for line in csv_lines[1:]}
+    assert ("2026-01-01", "SKU-Z", "3.0", "Norte") in rows
+    assert ("2026-01-01", "SKU-Z", "5.0", "Sur") in rows
+    assert ("2026-01-02", "SKU-Z", "7.0", "principal") in rows  # store-less line fallback
 
 
 def test_sync_records_error_on_provider_failure(client, test_tenant, monkeypatch, fernet_key):

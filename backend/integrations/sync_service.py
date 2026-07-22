@@ -91,7 +91,12 @@ def sync_connection(connection_id: str) -> dict:
                               adding=len(new_warehouses))
 
         dataset_id = generate_id("ds")
-        csv_bytes = _build_sales_csv(sales)
+        # When the provider exposed a branch/warehouse on any sale line, the
+        # dataset gains a `store` column and the session's canonical mapping
+        # maps it, so training groups per (sku, store) — see runner.py's
+        # group_keys assembly. Store-less providers keep today's exact output.
+        has_store = any(line.store is not None for line in sales)
+        csv_bytes = _build_sales_csv(sales, with_store=has_store)
         dst_dir = paths.dataset_dir(tenant_id, dataset_id)
         dst_dir.mkdir(parents=True, exist_ok=True)
         file_path = dst_dir / "data.csv"
@@ -136,7 +141,10 @@ def sync_connection(connection_id: str) -> dict:
         )
         session_id = s.get("session_id") or s["id"]
         session_svc.attach_dataset(tenant_id, session_id, dataset_id)
-        for field, cfg in default_quickstart_configs().items():
+        configs = default_quickstart_configs()
+        if has_store:
+            configs["columns_cfg"]["canonical_mapping"]["store"] = "store"
+        for field, cfg in configs.items():
             session_store.set_field(tenant_id, session_id, field, cfg)
         session_svc.force_status(tenant_id, session_id, "MODELS_CONFIGURED")
 
@@ -184,22 +192,35 @@ def _merge_products_and_stock(products, stock) -> dict[str, dict]:
     return merged
 
 
-def _build_sales_csv(sales) -> bytes:
+def _build_sales_csv(sales, with_store: bool = False) -> bytes:
     """Aggregate ProviderSaleLine rows to (date, sku) -> summed quantity and
     write the canonical CSV header the wizard/demo default config expects:
     `default_quickstart_configs()["columns_cfg"]["canonical_mapping"]` maps
     canonical sku/date/demand to actual columns "sku"/"fecha"/"cantidad"
-    (same header shape as backend/resources/demo_ventas.csv)."""
+    (same header shape as backend/resources/demo_ventas.csv).
+
+    With `with_store=True` (some sale line carried a provider warehouse) the
+    aggregation key and the CSV gain a `store` column; lines whose payload had
+    no warehouse fall back to 'principal' (the same default warehouse name the
+    stock import uses) so every row keeps a concrete store value. With
+    `with_store=False` the output is byte-identical to the pre-store format.
+    """
     totals: dict[tuple, float] = {}
     for line in sales:
-        key = (line.date, line.sku)
+        key = (line.date, line.sku, line.store or "principal") if with_store else (line.date, line.sku)
         totals[key] = totals.get(key, 0.0) + line.quantity
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["fecha", "sku", "cantidad"])
-    for (d, sku), qty in sorted(totals.items(), key=lambda kv: (kv[0][0].isoformat(), kv[0][1])):
-        writer.writerow([d.isoformat(), sku, qty])
+    header = ["fecha", "sku", "cantidad"] + (["store"] if with_store else [])
+    writer.writerow(header)
+    for key, qty in sorted(totals.items(), key=lambda kv: (kv[0][0].isoformat(),) + kv[0][1:]):
+        if with_store:
+            (d, sku, store_name) = key
+            writer.writerow([d.isoformat(), sku, qty, store_name])
+        else:
+            (d, sku) = key
+            writer.writerow([d.isoformat(), sku, qty])
     return buf.getvalue().encode("utf-8")
 
 
