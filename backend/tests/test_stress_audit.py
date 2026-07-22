@@ -148,9 +148,11 @@ class TestInventoryEdgeCases:
     # ── large stock values ─────────────────────────────────────────────────────
 
     def test_stock_very_large_number(self, client, auth_headers):
-        """current_stock = 1e12 must be accepted and returned without overflow."""
+        """A large-but-sane current_stock (1e9, the upper bound) must be accepted
+        and returned without overflow; an absurd value (1e15) is rejected, not
+        silently stored."""
         sku = _sku()
-        large = 1e12
+        large = 1_000_000_000  # 1e9 — the sane maximum
         resp = client.put(
             f"/api/v1/inventory/stock/{sku}",
             json={"current_stock": large, "lead_time_days": 15},
@@ -159,6 +161,18 @@ class TestInventoryEdgeCases:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["current_stock"] == large
+
+        # Above the bound: rejected with 422, and no row is created.
+        absurd_sku = _sku()
+        resp = client.put(
+            f"/api/v1/inventory/stock/{absurd_sku}",
+            json={"current_stock": 1e15, "lead_time_days": 15},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert client.get(
+            f"/api/v1/inventory/stock/{absurd_sku}", headers=auth_headers
+        ).status_code == 404
 
     # ── stock = 0 ─────────────────────────────────────────────────────────────
 
