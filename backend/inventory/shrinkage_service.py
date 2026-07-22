@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from backend.db.connection import execute, query, query_one
 
@@ -70,7 +70,6 @@ def record_shrinkage(
         )
 
     unit_cost = existing.get("unit_cost")
-    cost_total = round(quantity * float(unit_cost), 2) if unit_cost is not None else None
 
     occurred_at = occurred_at or datetime.now(timezone.utc)
     if occurred_at.tzinfo is None:
@@ -106,6 +105,34 @@ def record_shrinkage(
         log.warning("shrinkage snapshot failed sku=%s: %s", sku, e)
 
     # 3. Record the shrinkage event with its accumulated cost.
+    return insert_ledger_row(
+        tenant_id, sku=sku, warehouse=warehouse, quantity=quantity,
+        reason=reason, unit_cost=unit_cost, notes=notes, user_id=user_id,
+        occurred_at=occurred_at,
+    )
+
+
+def insert_ledger_row(
+    tenant_id: str,
+    *,
+    sku: str,
+    warehouse: str,
+    quantity: float,
+    reason: str,
+    unit_cost: Optional[float] = None,
+    notes: Optional[str] = None,
+    user_id: Optional[str] = None,
+    occurred_at: Optional[datetime] = None,
+    conn: Optional[Any] = None,
+) -> dict:
+    """
+    The single writer of the shrinkage ledger: cost math + INSERT, nothing
+    else. record_shrinkage (manual form: validates reason, decrements stock)
+    and transfer_service.close_transfer (system transfer_loss: stock already
+    gone) both end here, so the ledger row shape lives in exactly one place.
+    """
+    cost_total = round(quantity * float(unit_cost), 2) if unit_cost is not None else None
+    occurred_at = occurred_at or datetime.now(timezone.utc)
     row = query_one(
         """INSERT INTO inventory_shrinkage
                (tenant_id, sku, warehouse, quantity, reason, unit_cost, total_cost,
@@ -114,8 +141,8 @@ def record_shrinkage(
            RETURNING *""",
         (tenant_id, sku, warehouse, quantity, reason, unit_cost, cost_total,
          notes, user_id, occurred_at),
+        conn=conn,
     )
-
     log.info(
         "[shrinkage] tenant=%s sku=%s warehouse=%s qty=%s reason=%s total_cost=%s",
         tenant_id, sku, warehouse, quantity, reason, cost_total,

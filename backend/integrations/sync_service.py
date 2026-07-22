@@ -187,8 +187,9 @@ def _merge_products_and_stock(products, stock) -> dict[str, dict]:
         fields = merged.setdefault(s.sku, {})
         fields["current_stock"] = s.quantity
         fields["warehouse"] = s.warehouse
+    from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
     for fields in merged.values():
-        fields.setdefault("warehouse", "principal")
+        fields.setdefault("warehouse", DEFAULT_WAREHOUSE)
     return merged
 
 
@@ -205,9 +206,11 @@ def _build_sales_csv(sales, with_store: bool = False) -> bytes:
     stock import uses) so every row keeps a concrete store value. With
     `with_store=False` the output is byte-identical to the pre-store format.
     """
+    from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
     totals: dict[tuple, float] = {}
     for line in sales:
-        key = (line.date, line.sku, line.store or "principal") if with_store else (line.date, line.sku)
+        key = ((line.date, line.sku, line.store or DEFAULT_WAREHOUSE)
+               if with_store else (line.date, line.sku))
         totals[key] = totals.get(key, 0.0) + line.quantity
 
     buf = io.StringIO()

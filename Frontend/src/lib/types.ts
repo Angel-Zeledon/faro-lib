@@ -548,6 +548,9 @@ export interface InventoryStock {
   display_name:   string | null
   current_stock:   number
   min_stock:   number
+  // Rows from /inventory/stock are per (sku, warehouse) since the 5.4
+  // migration — the column was always in the DB, the type just lagged.
+  warehouse?:     string | null
   lead_time_days: number
   unit_cost: number | null
   moq:            number
@@ -631,7 +634,9 @@ export interface Warehouse {
 export interface TransferSuggestion {
   from_warehouse: string
   qty: number
-  donor_coverage_days_after: number
+  /** null = donor has no measurable demand (ample coverage) — same null
+   * convention as coverage_days; the backend never ships a 9999 sentinel. */
+  donor_coverage_days_after: number | null
 }
 
 /** One row of the network-aware per-(SKU, warehouse) semáforo. */

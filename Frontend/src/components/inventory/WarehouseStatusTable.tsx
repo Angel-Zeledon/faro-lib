@@ -7,19 +7,12 @@ import { getStatusByWarehouse, createTransfer } from '@/lib/api'
 import type { WarehouseStatusItem } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
+import SignalBadge from '@/components/ui/SignalBadge'
 import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
   text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8', green: '#22c55e',
-}
-
-const SIGNAL_COLORS: Record<string, string> = {
-  PEDIR_YA: 'var(--signal-order-now-fg)',
-  PEDIR_PRONTO: 'var(--signal-order-soon-fg)',
-  OK: 'var(--signal-ok-fg, #22c55e)',
-  SOBRESTOCK: 'var(--signal-overstock-fg, #818cf8)',
-  SIN_DATOS: 'var(--dim)',
 }
 
 export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }: {
@@ -54,11 +47,14 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
   async function sendTransfer(row: WarehouseStatusItem) {
     const ts = row.transfer_suggestion
     if (!ts) return
-    setSendingSku(row.sku)
+    // Keyed by (sku, warehouse) — the same SKU can need transfers into
+    // several warehouses, and a bare-sku key would conflate them.
+    const key = `${row.sku}|${row.warehouse}`
+    setSendingSku(key)
     try {
       await createTransfer(ts.from_warehouse, row.warehouse,
                            [{ sku: row.sku, qty: ts.qty }])
-      setSentSkus(prev => new Set(prev).add(row.sku))
+      setSentSkus(prev => new Set(prev).add(key))
       onTransferCreated?.()
     } finally { setSendingSku(null) }
   }
@@ -81,15 +77,18 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
         <tbody>
           {rows.map(row => {
             const ts = row.transfer_suggestion
-            const sent = sentSkus.has(row.sku)
+            const key = `${row.sku}|${row.warehouse}`
+            const sent = sentSkus.has(key)
             return (
-              <tr key={`${row.sku}|${row.warehouse}`}>
+              <tr key={key}>
                 <td style={td}>{row.display_name || row.sku}</td>
                 <td style={td}>{row.current_stock ?? '—'}</td>
                 <td style={td}>{row.coverage_days != null
                   ? `${row.coverage_days} ${t('inventory.wh_days')}` : '—'}</td>
-                <td style={{ ...td, color: SIGNAL_COLORS[row.signal] || C.text, fontWeight: 600 }}>
-                  {row.signal.replace('_', ' ')}
+                <td style={td}>
+                  {/* Shared badge: icon + translated label + WCAG palette —
+                      never a raw colored enum (see SignalBadge header). */}
+                  <SignalBadge signal={row.signal} />
                 </td>
                 <td style={td}>
                   {row.recommended_action === 'transfer' && ts ? (
@@ -99,7 +98,7 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                       </span>
                     ) : (
                       <button onClick={() => sendTransfer(row)}
-                              disabled={sendingSku === row.sku}
+                              disabled={sendingSku === key}
                               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
                                        alignItems: 'center', gap: 6, color: C.indigo,
                                        fontSize: 12, fontWeight: 600 }}>

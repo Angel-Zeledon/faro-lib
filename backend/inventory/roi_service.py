@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone
 
 from backend.db.connection import execute, query, query_one
+from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE as _DEFAULT_WAREHOUSE
 
 log = logging.getLogger(__name__)
 
@@ -144,9 +145,9 @@ def log_po_generation(
                      (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
                      i["status"],
                      # Lines without their own warehouse inherit the PO's
-                     # destination (feature 5.4); 'principal' keeps the
-                     # pre-5.4 behavior when neither is given.
-                     i.get("warehouse") or destination_warehouse or "principal"),
+                     # destination (feature 5.4); the default warehouse keeps
+                     # the pre-5.4 behavior when neither is given.
+                     i.get("warehouse") or destination_warehouse or _DEFAULT_WAREHOUSE),
                 )
             except Exception as e:
                 log.warning("log_po_generation: skipped line sku=%s err=%s", i.get("sku"), e)

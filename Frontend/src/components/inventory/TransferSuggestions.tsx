@@ -64,10 +64,9 @@ export function TransferSuggestions({ sessionId }: { sessionId: string }) {
                 {row.display_name || row.sku}
               </div>
               <div style={{ fontSize: 11.5, color: C.dim }}>
-                {/* >= 9990 is the backend's "donor has no measurable demand"
-                    sentinel — showing "9999 días" to a buyer reads as a bug,
-                    so that case gets its own copy without the number. */}
-                {(ts.donor_coverage_days_after >= 9990
+                {/* null = donor has no measurable demand ("ample coverage") —
+                    same null convention as coverage_days across the API. */}
+                {(ts.donor_coverage_days_after == null
                   ? t('hoy.transfers_line_ample')
                   : t('hoy.transfers_line')
                       .replace('{days}', String(ts.donor_coverage_days_after)))

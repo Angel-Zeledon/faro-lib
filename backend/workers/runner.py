@@ -359,10 +359,11 @@ def _generate_forecast_series(engine, config: dict) -> dict:
     df = engine._df.copy() if engine._df is not None else pd.DataFrame()
 
     # Historical series per forecast key. With two group keys the engine keys
-    # its forecast rows by series_key(sku, store) = "sku│store" — group the
-    # history the same way so each store keeps its own past, instead of every
-    # store sharing the combined SKU history.
-    from backend.inventory.series import SERIES_SEPARATOR
+    # its forecast rows via series_key(sku, store) = "sku│store" — build the
+    # history keys with the ENGINE'S OWN helper (this module is the one place
+    # allowed to import forecasting_core), so history and forecast can never
+    # drift onto different key formats.
+    from forecasting_core.data.canonical import series_key
 
     historical_by_sku: dict = {}
     if not df.empty and dt_col in df.columns and target_col in df.columns:
@@ -370,7 +371,7 @@ def _generate_forecast_series(engine, config: dict) -> dict:
         present_keys = [c for c in group_keys if c in df.columns]
         if len(present_keys) >= 2:
             src = (
-                (f"{g[0]}{SERIES_SEPARATOR}{g[1]}", frame)
+                (series_key(g[0], g[1]), frame)
                 for g, frame in df.groupby(present_keys[:2])
             )
         elif len(present_keys) == 1:

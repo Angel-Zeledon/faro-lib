@@ -19,6 +19,31 @@ log = logging.getLogger(__name__)
 
 RECEIVABLE = ("in_transit", "partial")
 
+# Newest-first page size for list_transfers. The /pedidos tab renders the
+# recent history; without a bound the query grows monotonically with every
+# transfer the tenant ever made.
+_LIST_LIMIT = 200
+
+
+def _adjust_stock(conn, tenant_id: str, sku: str, warehouse: str, delta: float) -> float:
+    """
+    Apply a stock delta and record the point-in-time snapshot — the one
+    invariant every lifecycle step (send, receive, cancel) shares. RETURNING
+    avoids a re-read; the snapshot goes through the canonical service helper.
+    Returns the new stock level.
+    """
+    from backend.inventory import service as inv_svc
+
+    row = query_one(
+        """UPDATE inventory_stock
+           SET current_stock = current_stock + %s, updated_at = NOW()
+           WHERE tenant_id = %s AND sku = %s AND warehouse = %s
+           RETURNING current_stock""",
+        (delta, tenant_id, sku, warehouse), conn=conn)
+    new_stock = float(row["current_stock"])
+    inv_svc._record_snapshot(tenant_id, sku, new_stock, conn=conn)
+    return new_stock
+
 
 def get_transfer(tenant_id: str, transfer_id: str, conn: Optional[Any] = None) -> Optional[dict]:
     header = query_one(
@@ -35,15 +60,14 @@ def get_transfer(tenant_id: str, transfer_id: str, conn: Optional[Any] = None) -
 
 
 def list_transfers(tenant_id: str, status: Optional[str] = None) -> list[dict]:
+    sql = "SELECT * FROM inventory_transfer_log WHERE tenant_id = %s"
+    params: list = [tenant_id]
     if status:
-        headers = query(
-            """SELECT * FROM inventory_transfer_log
-               WHERE tenant_id = %s AND status = %s ORDER BY created_at DESC""",
-            (tenant_id, status))
-    else:
-        headers = query(
-            "SELECT * FROM inventory_transfer_log WHERE tenant_id = %s ORDER BY created_at DESC",
-            (tenant_id,))
+        sql += " AND status = %s"
+        params.append(status)
+    sql += " ORDER BY created_at DESC LIMIT %s"
+    params.append(_LIST_LIMIT)
+    headers = query(sql, tuple(params))
     if not headers:
         return []
     ids = tuple(h["id"] for h in headers)
@@ -76,7 +100,6 @@ def create_transfer(
     the origin stock and writes header+items in one transaction.
     items: [{sku, qty}].
     """
-    from backend.inventory import service as inv_svc
     from backend.inventory import warehouse_service as wh_svc
 
     from_warehouse = (from_warehouse or "").strip()
@@ -103,14 +126,17 @@ def create_transfer(
             raise ValueError(f"Quantity for '{sku}' must be positive")
         qty_by_sku[sku] = qty_by_sku.get(sku, 0.0) + qty
 
-    # Availability check BEFORE any write.
+    # Availability check BEFORE any write — one query for all lines.
+    available_rows = query(
+        """SELECT sku, current_stock FROM inventory_stock
+           WHERE tenant_id = %s AND warehouse = %s AND sku = ANY(%s)""",
+        (tenant_id, from_warehouse, list(qty_by_sku)))
+    available = {r["sku"]: float(r["current_stock"] or 0) for r in available_rows}
     for sku, qty in qty_by_sku.items():
-        row = inv_svc.get_stock(tenant_id, sku, warehouse=from_warehouse)
-        available = float(row["current_stock"]) if row else 0.0
-        if qty > available:
+        if qty > available.get(sku, 0.0):
             raise ValueError(
                 f"Insufficient stock of '{sku}' in '{from_warehouse}' "
-                f"({available:g} available, {qty:g} requested)")
+                f"({available.get(sku, 0.0):g} available, {qty:g} requested)")
 
     with transaction() as conn:
         header = query_one(
@@ -126,15 +152,7 @@ def create_transfer(
                        (tenant_id, transfer_id, sku, qty_sent)
                    VALUES (%s, %s, %s, %s)""",
                 (tenant_id, header["id"], sku, qty), conn=conn)
-            execute(
-                """UPDATE inventory_stock
-                   SET current_stock = current_stock - %s, updated_at = NOW()
-                   WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
-                (qty, tenant_id, sku, from_warehouse), conn=conn)
-            new_row = inv_svc.get_stock(tenant_id, sku, warehouse=from_warehouse, conn=conn)
-            execute(
-                "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
-                (tenant_id, sku, new_row["current_stock"]), conn=conn)
+            _adjust_stock(conn, tenant_id, sku, from_warehouse, -qty)
         result = get_transfer(tenant_id, header["id"], conn=conn)
 
     log.info("[transfer] sent tenant=%s id=%s %s->%s skus=%d",
@@ -151,7 +169,6 @@ def receive_transfer(
     """
     from backend.entitlements.service import enforce_limit
     from backend.inventory import service as inv_svc
-    from backend.inventory import warehouse_service as wh_svc
 
     t = get_transfer(tenant_id, transfer_id)
     if not t:
@@ -183,16 +200,16 @@ def receive_transfer(
         raise ValueError("Nothing to receive")
 
     dest = t["to_warehouse"]
-    # Pre-check limits BEFORE any write: destination rows that don't exist yet
-    # are NEW stock rows created through upsert_stock — same chokepoint rules
-    # (and all-or-nothing guarantee) as PO reception.
+    # Pre-check max_skus BEFORE any write: destination rows that don't exist
+    # yet are NEW stock rows created through upsert_stock — same chokepoint
+    # rules (and all-or-nothing guarantee) as PO reception. No max_locations
+    # check is needed: create_transfer already validated the destination
+    # warehouse exists, and warehouses cannot be deleted.
     existing_keys = inv_svc.list_stock_keys(tenant_id)
     new_pairs = {(sku, dest) for sku in to_receive} - existing_keys
     if new_pairs:
         enforce_limit(tenant_id, "max_skus", inv_svc.count_stock(tenant_id),
                       adding=len(new_pairs))
-    if dest not in wh_svc.list_warehouse_names(tenant_id):
-        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id))
 
     with transaction() as conn:
         for sku, qty in sorted(to_receive.items()):
@@ -201,14 +218,7 @@ def receive_transfer(
                    SET qty_received = COALESCE(qty_received, 0) + %s
                    WHERE transfer_id = %s AND tenant_id = %s AND sku = %s""",
                 (qty, transfer_id, tenant_id, sku), conn=conn)
-            existing = inv_svc.get_stock(tenant_id, sku, warehouse=dest, conn=conn)
-            if existing:
-                execute(
-                    """UPDATE inventory_stock
-                       SET current_stock = current_stock + %s, updated_at = NOW()
-                       WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
-                    (qty, tenant_id, sku, dest), conn=conn)
-            else:
+            if (sku, dest) in new_pairs:
                 origin_row = inv_svc.get_stock(
                     tenant_id, sku, warehouse=t["from_warehouse"], conn=conn)
                 inv_svc.upsert_stock(tenant_id, sku, {
@@ -217,14 +227,13 @@ def receive_transfer(
                     "supplier": (origin_row or {}).get("supplier"),
                     "warehouse": dest,
                 }, conn=conn)
-            new_row = inv_svc.get_stock(tenant_id, sku, warehouse=dest, conn=conn)
-            execute(
-                "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
-                (tenant_id, sku, new_row["current_stock"]), conn=conn)
+            else:
+                _adjust_stock(conn, tenant_id, sku, dest, qty)
 
-        fresh = get_transfer(tenant_id, transfer_id, conn=conn)
-        fully = all(float(i["qty_received"] or 0) >= float(i["qty_sent"])
-                    for i in fresh["items"])
+        # 'fully' is derivable from what we already hold in memory — the
+        # outstanding map minus this event's receipts — no re-read needed.
+        fully = all(outstanding[sku] - to_receive.get(sku, 0.0) <= 0
+                    for sku in outstanding)
         status = "received" if fully else "partial"
         execute(
             """UPDATE inventory_transfer_log
@@ -249,8 +258,6 @@ def close_transfer(tenant_id: str, transfer_id: str, user_id: str) -> dict:
     stock — this call only makes it visible in the shrinkage ledger instead
     of leaving a transfer stuck in 'partial' forever.
     """
-    from backend.inventory import service as inv_svc
-
     t = get_transfer(tenant_id, transfer_id)
     if not t:
         raise ValueError("Transfer not found")
@@ -267,24 +274,25 @@ def close_transfer(tenant_id: str, transfer_id: str, user_id: str) -> dict:
     if not outstanding:
         raise ValueError("Nothing outstanding to write off")
 
+    from backend.inventory.shrinkage_service import insert_ledger_row
+
     origin = t["from_warehouse"]
+    cost_rows = query(
+        """SELECT sku, unit_cost FROM inventory_stock
+           WHERE tenant_id = %s AND warehouse = %s AND sku = ANY(%s)""",
+        (tenant_id, origin, list(outstanding)))
+    unit_costs = {r["sku"]: (float(r["unit_cost"]) if r["unit_cost"] is not None else None)
+                  for r in cost_rows}
+
     with transaction() as conn:
         for sku, qty in sorted(outstanding.items()):
-            origin_row = inv_svc.get_stock(tenant_id, sku, warehouse=origin, conn=conn)
-            unit_cost = (float(origin_row["unit_cost"])
-                         if origin_row and origin_row.get("unit_cost") is not None
-                         else None)
-            total_cost = round(qty * unit_cost, 2) if unit_cost is not None else None
-            execute(
-                """INSERT INTO inventory_shrinkage
-                       (tenant_id, sku, warehouse, quantity, reason,
-                        unit_cost, total_cost, notes, created_by)
-                   VALUES (%s, %s, %s, %s, 'transfer_loss', %s, %s, %s, %s)""",
-                (tenant_id, sku, origin, qty, unit_cost, total_cost,
-                 # End-user copy (Spanish by design, like every explanation string)
-                 f"Faltante al cerrar transferencia {origin} → {t['to_warehouse']}",
-                 user_id),
-                conn=conn,
+            insert_ledger_row(
+                tenant_id, sku=sku, warehouse=origin, quantity=qty,
+                reason="transfer_loss",
+                unit_cost=unit_costs.get(sku),
+                # End-user copy (Spanish by design, like every explanation string)
+                notes=f"Faltante al cerrar transferencia {origin} → {t['to_warehouse']}",
+                user_id=user_id, conn=conn,
             )
         execute(
             """UPDATE inventory_transfer_log SET status = 'closed'
@@ -306,21 +314,10 @@ def cancel_transfer(tenant_id: str, transfer_id: str) -> dict:
             float(i["qty_received"] or 0) > 0 for i in t["items"]):
         raise ValueError("Only in-transit transfers with nothing received can be cancelled")
 
-    from backend.inventory import service as inv_svc
-
     with transaction() as conn:
         for i in t["items"]:
-            execute(
-                """UPDATE inventory_stock
-                   SET current_stock = current_stock + %s, updated_at = NOW()
-                   WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
-                (float(i["qty_sent"]), tenant_id, i["sku"], t["from_warehouse"]),
-                conn=conn)
-            new_row = inv_svc.get_stock(
-                tenant_id, i["sku"], warehouse=t["from_warehouse"], conn=conn)
-            execute(
-                "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
-                (tenant_id, i["sku"], new_row["current_stock"]), conn=conn)
+            _adjust_stock(conn, tenant_id, i["sku"], t["from_warehouse"],
+                          float(i["qty_sent"]))
         execute(
             """UPDATE inventory_transfer_log SET status = 'cancelled'
                WHERE id = %s AND tenant_id = %s""",

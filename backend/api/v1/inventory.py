@@ -294,13 +294,23 @@ def inventory_status(
     - recommended order quantity
     - inventory value
     """
+    # Both views share the source-then-filter shape; only the response
+    # envelope differs. abc/xyz stripping applies to the aggregated view only
+    # — per-warehouse rows never carry classification fields.
     if by_warehouse:
         items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level)
+    else:
+        items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
         items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
-        if signal:
-            items = [i for i in items if i["signal"] == signal.upper()]
-        if supplier:
-            items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
+
+    if signal:
+        signal_up = signal.upper()
+        items = [i for i in items if i["signal"] == signal_up]
+
+    if supplier:
+        items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
+
+    if by_warehouse:
         return ok({
             "items": items,
             "summary": {
@@ -311,16 +321,6 @@ def inventory_status(
                     1 for i in items if i.get("recommended_action") == "transfer"),
             },
         })
-
-    items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
-    items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
-
-    if signal:
-        signal_up = signal.upper()
-        items = [i for i in items if i["signal"] == signal_up]
-
-    if supplier:
-        items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
 
     total_value = sum(i["inventory_value"] for i in items if i.get("inventory_value"))
     critical    = sum(1 for i in items if i["signal"] == "PEDIR_YA")
@@ -1361,8 +1361,7 @@ def patch_warehouse(
     try:
         row = wh_svc.set_demand_share(user.tenant_id, name, body.demand_share)
     except ValueError as e:
-        raise HTTPException(status_code=404 if "not found" in str(e) else 422,
-                            detail=str(e))
+        raise _svc_error(e)
     return ok(row)
 
 
@@ -1389,7 +1388,9 @@ class TransferReceive(BaseModel):
     lines: Optional[list[dict]] = None  # [{sku, received_qty}] | null = all
 
 
-def _transfer_error(e: ValueError) -> HTTPException:
+def _svc_error(e: ValueError) -> HTTPException:
+    """Service-layer ValueError → HTTP: 'not found' wording means 404, the
+    rest is a rejected request. Shared by the transfer and warehouse routes."""
     msg = str(e)
     return HTTPException(status_code=404 if "not found" in msg.lower() else 422,
                          detail=msg)
@@ -1408,7 +1409,7 @@ def create_transfer(
             user.tenant_id, user.user_id, body.from_warehouse, body.to_warehouse,
             [i.model_dump() for i in body.items], body.notes)
     except ValueError as e:
-        raise _transfer_error(e)
+        raise _svc_error(e)
     return ok(t)
 
 
@@ -1435,7 +1436,7 @@ def receive_transfer(
     try:
         t = tr_svc.receive_transfer(user.tenant_id, transfer_id, body.lines)
     except ValueError as e:
-        raise _transfer_error(e)
+        raise _svc_error(e)
     return ok(t)
 
 
@@ -1450,7 +1451,7 @@ def cancel_transfer(
     try:
         t = tr_svc.cancel_transfer(user.tenant_id, transfer_id)
     except ValueError as e:
-        raise _transfer_error(e)
+        raise _svc_error(e)
     return ok(t)
 
 
@@ -1466,7 +1467,7 @@ def close_transfer(
     try:
         t = tr_svc.close_transfer(user.tenant_id, transfer_id, user.user_id)
     except ValueError as e:
-        raise _transfer_error(e)
+        raise _svc_error(e)
     return ok(t)
 
 

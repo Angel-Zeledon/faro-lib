@@ -12,6 +12,12 @@ from backend.db.connection import execute, query, query_one
 
 log = logging.getLogger(__name__)
 
+# Name of the auto-created default warehouse. Every fallback that used to
+# hardcode 'principal' (reception, PO lines, sync CSV, per-warehouse status)
+# points here so the definition of "default warehouse" has a single owner.
+# The DB-side DEFAULT on inventory_stock.warehouse must match (migrations.py).
+DEFAULT_WAREHOUSE = "principal"
+
 
 def list_warehouses(tenant_id: str) -> list[dict]:
     return query(
@@ -50,14 +56,14 @@ def set_demand_share(tenant_id: str, name: str, share: float | None) -> dict:
     """
     if share is not None and not (0 <= float(share) <= 100):
         raise ValueError("demand_share must be between 0 and 100")
-    row = get_warehouse_by_name(tenant_id, name)
-    if not row:
-        raise ValueError(f"Warehouse '{name}' not found")
-    execute(
-        "UPDATE warehouses SET demand_share = %s WHERE tenant_id = %s AND name = %s",
+    # Single round-trip: RETURNING doubles as the existence check.
+    row = query_one(
+        "UPDATE warehouses SET demand_share = %s WHERE tenant_id = %s AND name = %s RETURNING *",
         (share, tenant_id, name),
     )
-    return get_warehouse_by_name(tenant_id, name)
+    if not row:
+        raise ValueError(f"Warehouse '{name}' not found")
+    return row
 
 
 def get_demand_shares(tenant_id: str) -> dict[str, float]:
@@ -84,7 +90,7 @@ def get_demand_shares(tenant_id: str) -> dict[str, float]:
     # then a casefolded alphabetical sort as the deterministic last resort.
     default = (
         next((r for r in rows if r.get("is_default")), None)
-        or next((r for r in rows if r["name"] == "principal"), None)
+        or next((r for r in rows if r["name"] == DEFAULT_WAREHOUSE), None)
         or sorted(rows, key=lambda r: (r["name"] or "").casefold())[0]
     )
     return {default["name"]: 1.0}

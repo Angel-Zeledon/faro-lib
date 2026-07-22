@@ -9,10 +9,6 @@ import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
 
-// GET /inventory/stock returns raw inventory_stock rows, which are keyed per
-// (sku, warehouse); the shared InventoryStock type just doesn't declare the
-// warehouse column yet.
-type StockRow = InventoryStock & { warehouse?: string | null }
 
 // ── Signal presentation ──────────────────────────────────────────────────────
 // Single source: components/ui/SignalBadge (icon + label + accessible colour).
@@ -124,7 +120,7 @@ export default function SkuSearchOverlay() {
 
   // Per-warehouse stock breakdown (multi-warehouse tenants only).
   const { multi } = useWarehouses()
-  const [stockRows, setStockRows] = useState<StockRow[] | null>(null)
+  const [stockRows, setStockRows] = useState<InventoryStock[] | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -246,7 +242,7 @@ export default function SkuSearchOverlay() {
   useEffect(() => {
     if (!selectedSku || !multi || stockRows) return
     listInventoryStock()
-      .then(rows => setStockRows(rows as StockRow[]))
+      .then(setStockRows)
       .catch(() => setStockRows([]))
   }, [selectedSku, multi, stockRows])
 
@@ -401,7 +397,7 @@ function SkuDetail({ item, intel, loading, error, warehouseBreakdown, onBack }: 
   intel: SkuIntelligenceData | null
   loading: boolean
   error: string | null
-  warehouseBreakdown: StockRow[] | null
+  warehouseBreakdown: InventoryStock[] | null
   onBack: () => void
 }) {
   const { t } = useLanguage()

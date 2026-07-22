@@ -33,7 +33,8 @@ RECEIVABLE_STATES = ("pending", "partial")
 def _line_warehouse(item: dict, po: dict) -> str:
     """A PO line lands in its own warehouse if set, else the PO's destination
     warehouse (feature 5.4), else the historical default."""
-    return item.get("warehouse") or po.get("destination_warehouse") or "principal"
+    from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
+    return item.get("warehouse") or po.get("destination_warehouse") or DEFAULT_WAREHOUSE
 
 
 def get_po(tenant_id: str, po_log_id: str) -> Optional[dict]:

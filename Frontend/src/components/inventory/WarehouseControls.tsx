@@ -13,12 +13,33 @@ const C = {
   text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8',
 }
 
+// Single-flight cache: several components mount useWarehouses on one page
+// (/hoy renders three), and without this each fired its own identical GET.
+// One in-flight promise is shared; reload() busts it (e.g. after creating a
+// warehouse) so the next mount refetches.
+let _warehousesPromise: Promise<Warehouse[]> | null = null
+
+function fetchWarehousesShared(): Promise<Warehouse[]> {
+  if (!_warehousesPromise) {
+    _warehousesPromise = listWarehouses().catch(() => {
+      _warehousesPromise = null  // don't cache failures
+      return [] as Warehouse[]
+    })
+  }
+  return _warehousesPromise
+}
+
 export function useWarehouses() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const reload = useCallback(() => {
-    listWarehouses().then(setWarehouses).catch(() => setWarehouses([]))
+    _warehousesPromise = null
+    fetchWarehousesShared().then(setWarehouses)
   }, [])
-  useEffect(() => { reload() }, [reload])
+  useEffect(() => {
+    let alive = true
+    fetchWarehousesShared().then(w => { if (alive) setWarehouses(w) })
+    return () => { alive = false }
+  }, [])
   return { warehouses, multi: warehouses.length >= 2, reload }
 }
 

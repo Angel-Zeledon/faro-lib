@@ -862,13 +862,14 @@ def get_inventory_status_by_warehouse(
     """
     from backend.db import session_store
     from backend.inventory import warehouse_service as wh_svc
-    from backend.inventory.series import stores_in, for_store, rollup_by_sku
+    from backend.inventory.series import stores_in, for_store, split_key
 
     forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
     stock_rows = list_stock(tenant_id)
     learned_lead_times = get_learned_lead_times(tenant_id)
 
-    warehouses = [w["name"] for w in wh_svc.list_warehouses(tenant_id)] or ["principal"]
+    warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
+                  or [wh_svc.DEFAULT_WAREHOUSE])
     store_names = stores_in(forecasts)
     wh_by_lower = {w.lower().strip(): w for w in warehouses}
 
@@ -879,13 +880,17 @@ def get_inventory_status_by_warehouse(
         for store in store_names:
             wh = wh_by_lower.get(store.lower().strip(), store)
             per_wh_forecasts[wh] = for_store(forecasts, store)
-        sku_forecasts = rollup_by_sku(forecasts)
+        # Only the SKU names are needed here — per-warehouse rows read their
+        # forecasts from per_wh_forecasts, so a full rollup_by_sku (which
+        # deep-copies every forecast point) would be pure waste on this path.
+        sku_forecasts = {split_key(k)[0]: True for k in forecasts}
     else:
         demand_mode = "share"
         shares = wh_svc.get_demand_shares(tenant_id)
         sku_forecasts = forecasts
 
-    stock_by_pair = {(r["sku"], r.get("warehouse") or "principal"): r for r in stock_rows}
+    stock_by_pair = {(r["sku"], r.get("warehouse") or wh_svc.DEFAULT_WAREHOUSE): r
+                     for r in stock_rows}
     all_skus = sorted(sku_forecasts.keys())
 
     items: list[dict] = []
@@ -1008,7 +1013,13 @@ def _network_transfer_pass(items: list[dict]) -> None:
                 r["transfer_suggestion"] = {
                     "from_warehouse": best["donor"]["warehouse"],
                     "qty": round(best["qty"], 2),
-                    "donor_coverage_days_after": round(best["cov_after"], 1),
+                    # None = donor has no measurable demand ("ample coverage"),
+                    # matching how coverage_days is nulled at this boundary —
+                    # the 9999 sentinel must never cross the API.
+                    "donor_coverage_days_after": (
+                        round(best["cov_after"], 1)
+                        if best["cov_after"] < 9990 else None
+                    ),
                 }
 
 
