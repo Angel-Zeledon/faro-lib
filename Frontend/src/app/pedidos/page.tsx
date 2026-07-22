@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { getPOHistory, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
 import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
+import { TransfersPanel } from '@/components/po/TransfersPanel'
+import { useWarehouses } from '@/components/inventory/WarehouseControls'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
@@ -25,6 +27,9 @@ export default function OrdersPage() {
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
   const [contactHealth,  setContactHealth]  = useState<SupplierContactHealthRow[]>([])
   const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
+  // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
+  const { multi: multiWarehouse } = useWarehouses()
+  const [tab, setTab] = useState<'orders' | 'transfers'>('orders')
 
   // `silent: true` — this screen renders the failure itself as a full ErrorState,
   // so the interceptor's toast would say the same thing twice.
@@ -83,6 +88,18 @@ export default function OrdersPage() {
         )}
       </div>
 
+      {/* Orders vs. transfers (feature 5.4) — tab bar only for multi-warehouse tenants */}
+      {multiWarehouse && (
+        <div role="tablist" aria-label={t('transfers.tablist_aria')} style={{ display: 'flex', gap: 4 }}>
+          <button role="tab" aria-selected={tab === 'orders'} onClick={() => setTab('orders')}
+                  style={tabStyle(tab === 'orders')}>{t('transfers.tab_orders')}</button>
+          <button role="tab" aria-selected={tab === 'transfers'} onClick={() => setTab('transfers')}
+                  style={tabStyle(tab === 'transfers')}>{t('transfers.tab_transfers')}</button>
+        </div>
+      )}
+
+      {tab === 'transfers' && multiWarehouse ? <TransfersPanel /> : (
+      <>
       {/* Supplier health (2.5) and lead-time deviation (3.3) */}
       <SupplierContactHealthBanner rows={relevantContactHealth} />
       <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
@@ -125,6 +142,15 @@ export default function OrdersPage() {
           onSaved={() => { setReceivingPO(null); load() }}
         />
       )}
+      </>
+      )}
     </div>
   )
 }
+
+const tabStyle = (active: boolean): React.CSSProperties => ({
+  all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,
+  fontSize: 11.5, fontWeight: 600,
+  background: active ? 'rgba(129,140,248,0.12)' : 'transparent',
+  color: active ? '#818cf8' : C.dim,
+})
