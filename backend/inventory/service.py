@@ -635,17 +635,24 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
     current_stock is SUMMED across warehouses (true total stock the tenant
     holds); every other field (lead_time_days, unit_cost, supplier,
     etc.) is taken from a single deterministic representative row (the
-    'principal' warehouse if present, else the alphabetically-first warehouse) —
-    those are per-SKU catalog attributes, not per-warehouse quantities, so
-    picking one is correct as long as it's deterministic.
+    default warehouse if present, else the casefolded-alphabetically-first
+    warehouse — warehouse_service.name_precedence_key) — those are per-SKU
+    catalog attributes, not per-warehouse quantities, so picking one is
+    correct as long as it's deterministic.
+
+    This is a hot path fed ONLY stock rows: precedence is decided by NAME
+    (shared name_precedence_key), deliberately without a DB query for
+    warehouses.is_default — see the key's docstring.
     """
+    from backend.inventory.warehouse_service import name_precedence_key
+
     by_sku: dict[str, list[dict]] = {}
     for r in stock_rows:
         by_sku.setdefault(r["sku"], []).append(r)
 
     result: dict[str, dict] = {}
     for sku, rows in by_sku.items():
-        rows_sorted = sorted(rows, key=lambda r: (r.get("warehouse") != "principal", r.get("warehouse") or ""))
+        rows_sorted = sorted(rows, key=lambda r: name_precedence_key(r.get("warehouse")))
         representative = dict(rows_sorted[0])
         representative["current_stock"] = sum(float(r["current_stock"] or 0) for r in rows)
         result[sku] = representative

@@ -19,6 +19,22 @@ log = logging.getLogger(__name__)
 DEFAULT_WAREHOUSE = "principal"
 
 
+def name_precedence_key(name: str | None) -> tuple:
+    """Sort key for default-warehouse precedence by NAME only:
+    DEFAULT_WAREHOUSE first, then case-insensitive alphabetical order.
+
+    Name-based on purpose: hot read paths (service._aggregate_stock_rows_by_sku
+    runs once per status request over every stock row) only have stock rows in
+    hand, and consulting warehouses.is_default there would add a DB round-trip
+    to a pure in-memory aggregation. Paths that already load warehouse rows
+    (get_demand_shares) check is_default explicitly BEFORE falling back to
+    this key. The casefold matters: a case-sensitive sort lets any Capitalized
+    name — 'Tienda Norte' < 'principal' in ASCII — beat lowercase names it
+    should follow alphabetically.
+    """
+    return (name != DEFAULT_WAREHOUSE, (name or "").casefold())
+
+
 def list_warehouses(tenant_id: str) -> list[dict]:
     return query(
         "SELECT * FROM warehouses WHERE tenant_id = %s ORDER BY name",
@@ -82,16 +98,14 @@ def get_demand_shares(tenant_id: str) -> dict[str, float]:
     total = sum(float(r["demand_share"]) for r in set_rows)
     if set_rows and total > 0:
         return {r["name"]: float(r["demand_share"]) / total for r in set_rows}
-    # Fallback precedence: explicit is_default flag, then the historical
-    # 'principal' warehouse (auto-created rows carry is_default=FALSE, and a
-    # case-sensitive sort would let any Capitalized store name — 'Tienda
-    # Norte' < 'principal' in ASCII — silently steal 100% of the demand,
-    # contradicting the UI's "demand goes to the default warehouse" promise),
-    # then a casefolded alphabetical sort as the deterministic last resort.
+    # Fallback precedence: explicit is_default flag, then name_precedence_key
+    # — the shared name-based ordering (DEFAULT_WAREHOUSE first, then
+    # casefolded alphabetical; see its docstring for the 'Tienda Norte' <
+    # 'principal' ASCII trap) also used by _aggregate_stock_rows_by_sku, so
+    # "which warehouse is the default" is answered identically everywhere.
     default = (
         next((r for r in rows if r.get("is_default")), None)
-        or next((r for r in rows if r["name"] == DEFAULT_WAREHOUSE), None)
-        or sorted(rows, key=lambda r: (r["name"] or "").casefold())[0]
+        or sorted(rows, key=lambda r: name_precedence_key(r["name"]))[0]
     )
     return {default["name"]: 1.0}
 
