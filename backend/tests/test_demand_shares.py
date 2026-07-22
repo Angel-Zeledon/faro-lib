@@ -48,6 +48,24 @@ class TestShares:
         wh_svc.set_demand_share(tid, "Norte", None)
         assert wh_svc.get_demand_shares(tid) == {"principal": 1.0}
 
+    def test_fallback_prefers_principal_over_ascii_sort(self, client, test_tenant):
+        """Walkthrough finding (2026-07-22): with no is_default flag anywhere,
+        a capitalized warehouse name ('Tienda Norte' < 'principal' in ASCII)
+        must NOT steal the demand fallback from 'principal' — the UI promises
+        the default warehouse gets 100% until shares are configured."""
+        tid = test_tenant["id"]
+        # Auto-created path: is_default is FALSE for both (like _ensure_warehouse)
+        wh_svc.create_warehouse(tid, "principal")
+        wh_svc.create_warehouse(tid, "Tienda Norte")
+        assert wh_svc.get_demand_shares(tid) == {"principal": 1.0}
+
+    def test_fallback_without_principal_uses_casefold_sort(self, client, test_tenant):
+        tid = test_tenant["id"]
+        wh_svc.create_warehouse(tid, "Zona Sur")
+        wh_svc.create_warehouse(tid, "bodega central")
+        # Casefolded: 'bodega central' < 'Zona Sur' regardless of capitalization
+        assert wh_svc.get_demand_shares(tid) == {"bodega central": 1.0}
+
 
 class TestSharesApi:
     def test_viewer_denied_and_unchanged(self, client, viewer_headers, test_tenant):

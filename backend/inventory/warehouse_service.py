@@ -76,8 +76,17 @@ def get_demand_shares(tenant_id: str) -> dict[str, float]:
     total = sum(float(r["demand_share"]) for r in set_rows)
     if set_rows and total > 0:
         return {r["name"]: float(r["demand_share"]) / total for r in set_rows}
-    default = next((r for r in rows if r.get("is_default")), None) or \
-        sorted(rows, key=lambda r: r["name"])[0]
+    # Fallback precedence: explicit is_default flag, then the historical
+    # 'principal' warehouse (auto-created rows carry is_default=FALSE, and a
+    # case-sensitive sort would let any Capitalized store name — 'Tienda
+    # Norte' < 'principal' in ASCII — silently steal 100% of the demand,
+    # contradicting the UI's "demand goes to the default warehouse" promise),
+    # then a casefolded alphabetical sort as the deterministic last resort.
+    default = (
+        next((r for r in rows if r.get("is_default")), None)
+        or next((r for r in rows if r["name"] == "principal"), None)
+        or sorted(rows, key=lambda r: (r["name"] or "").casefold())[0]
+    )
     return {default["name"]: 1.0}
 
 
