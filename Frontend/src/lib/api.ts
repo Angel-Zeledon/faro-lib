@@ -907,12 +907,22 @@ export const simulateEvent = (body: {
 }) =>
   request<import('./types').EventSimulationResult>('POST', '/inventory/events/simulate', body)
 
-export const logPOGeneration = (sessionId: string, items?: POLineDecision[]) =>
-  request<POLogEntry>(
+export const logPOGeneration = (
+  sessionId: string,
+  items?: POLineDecision[],
+  destinationWarehouse?: string,
+) => {
+  // destination_warehouse omitted = tenant default warehouse (mono-warehouse
+  // tenants never send it, so their behavior is byte-identical to before 5.4).
+  const body: { items?: POLineDecision[]; destination_warehouse?: string } = {}
+  if (items && items.length) body.items = items
+  if (destinationWarehouse) body.destination_warehouse = destinationWarehouse
+  return request<POLogEntry>(
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,
-    items && items.length ? { items } : undefined,
+    Object.keys(body).length ? body : undefined,
   )
+}
 
 export const getMorningBriefing = (sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<MorningBriefing>(
