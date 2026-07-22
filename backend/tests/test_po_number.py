@@ -72,6 +72,27 @@ class TestPONumberBackfill:
         assert [r["id"] for r in numbered] == ids
         assert [r["po_number"] for r in numbered] == [1, 2, 3]
 
+    def test_backfill_offsets_past_existing_numbers(self, test_tenant):
+        from backend.db.migrations import run_all
+        tid = test_tenant["id"]
+        # Rows 1 and 2 assigned normally by the insert path…
+        roi_service.log_po_generation(tid, "sess-mixed", [_line()])
+        roi_service.log_po_generation(tid, "sess-mixed", [_line()])
+        # …then a NULL row appears (e.g. an old-code instance during a rolling deploy).
+        row = query_one(
+            """INSERT INTO inventory_po_log (tenant_id, session_id, sku_count, total_units)
+               VALUES (%s, %s, 1, 5) RETURNING id""",
+            (tid, "sess-mixed"),
+        )
+        run_all()  # must not collide with the unique index, must not renumber 1/2
+        numbered = query(
+            "SELECT po_number FROM inventory_po_log WHERE tenant_id = %s ORDER BY po_number",
+            (tid,),
+        )
+        assert [r["po_number"] for r in numbered] == [1, 2, 3]
+        got = query_one("SELECT po_number FROM inventory_po_log WHERE id = %s", (row["id"],))
+        assert got["po_number"] == 3
+
 
 class TestFormatPONumber:
     def test_pads_to_six_digits(self):

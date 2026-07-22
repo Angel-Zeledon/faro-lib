@@ -794,10 +794,16 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # Human-readable per-tenant order number (spec 2026-07-22-po-flow-polish).
     ("po_log_add_po_number",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS po_number INT"),
-    # Backfill pre-feature rows per tenant in generated_at order. Idempotent:
-    # only NULL rows are numbered, and post-feature rows are never NULL.
+    # Backfill pre-feature rows per tenant in generated_at order. Offset numbering
+    # past the tenant's existing maximum to avoid collisions with already-numbered
+    # rows (which can occur if a NULL row appears after some rows are already
+    # numbered, e.g., during a rolling deploy with an old-code instance).
+    # Idempotent: only NULL rows are updated.
     ("po_log_backfill_po_number",
-     """UPDATE inventory_po_log t SET po_number = s.rn
+     """UPDATE inventory_po_log t
+        SET po_number = s.rn + COALESCE((SELECT MAX(m.po_number)
+                                           FROM inventory_po_log m
+                                          WHERE m.tenant_id = t.tenant_id), 0)
         FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY generated_at, id) AS rn
               FROM inventory_po_log WHERE po_number IS NULL) s
         WHERE t.id = s.id AND t.po_number IS NULL"""),
