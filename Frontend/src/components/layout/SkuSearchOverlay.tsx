@@ -1,12 +1,18 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Search, X, Package, AlertTriangle, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-react'
-import { getSessions, getInventoryStatus, getSkuIntelligence } from '@/lib/api'
-import type { InventoryStatusItem, InventorySignal, SkuIntelligenceData } from '@/lib/types'
+import { getSessions, getInventoryStatus, getSkuIntelligence, listInventoryStock } from '@/lib/api'
+import type { InventoryStatusItem, InventorySignal, InventoryStock, SkuIntelligenceData } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import SignalBadge, { SIGNAL_ORDER } from '@/components/ui/SignalBadge'
 import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useWarehouses } from '@/components/inventory/WarehouseControls'
+
+// GET /inventory/stock returns raw inventory_stock rows, which are keyed per
+// (sku, warehouse); the shared InventoryStock type just doesn't declare the
+// warehouse column yet.
+type StockRow = InventoryStock & { warehouse?: string | null }
 
 // ── Signal presentation ──────────────────────────────────────────────────────
 // Single source: components/ui/SignalBadge (icon + label + accessible colour).
@@ -115,6 +121,10 @@ export default function SkuSearchOverlay() {
   const [intel,        setIntel]      = useState<SkuIntelligenceData | null>(null)
   const [intelLoading, setIntelLoading] = useState(false)
   const [intelError,   setIntelError] = useState<string | null>(null)
+
+  // Per-warehouse stock breakdown (multi-warehouse tenants only).
+  const { multi } = useWarehouses()
+  const [stockRows, setStockRows] = useState<StockRow[] | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -230,6 +240,24 @@ export default function SkuSearchOverlay() {
       .finally(() => setIntelLoading(false))
   }, [selectedSku, sessionId, t])
 
+  // ── Per-warehouse stock rows — fetched once, on the first SKU selection ──────
+  // Raw inventory_stock rows are per (sku, warehouse); one fetch covers every
+  // SKU the user drills into during this overlay session (never per keystroke).
+  useEffect(() => {
+    if (!selectedSku || !multi || stockRows) return
+    listInventoryStock()
+      .then(rows => setStockRows(rows as StockRow[]))
+      .catch(() => setStockRows([]))
+  }, [selectedSku, multi, stockRows])
+
+  const warehouseBreakdown = useMemo(() => {
+    if (!multi || !selectedSku || !stockRows) return null
+    const rows = stockRows.filter(r => r.sku === selectedSku && r.warehouse)
+    // Only meaningful when the SKU is actually held in more than one warehouse.
+    if (rows.length < 2) return null
+    return [...rows].sort((a, b) => (b.current_stock ?? 0) - (a.current_stock ?? 0))
+  }, [multi, selectedSku, stockRows])
+
   // ── List keyboard navigation (only while no SKU is selected) ──────────────────
   const onInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (selectedSku) return
@@ -308,6 +336,7 @@ export default function SkuSearchOverlay() {
             intel={intel}
             loading={intelLoading}
             error={intelError}
+            warehouseBreakdown={warehouseBreakdown}
             onBack={() => setSelectedSku(null)}
           />
         ) : (
@@ -367,11 +396,12 @@ export default function SkuSearchOverlay() {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function SkuDetail({ item, intel, loading, error, onBack }: {
+function SkuDetail({ item, intel, loading, error, warehouseBreakdown, onBack }: {
   item: InventoryStatusItem
   intel: SkuIntelligenceData | null
   loading: boolean
   error: string | null
+  warehouseBreakdown: StockRow[] | null
   onBack: () => void
 }) {
   const { t } = useLanguage()
@@ -419,6 +449,14 @@ function SkuDetail({ item, intel, loading, error, onBack }: {
           <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{t('search.stat_recommended_qty')}</div>
         </div>
       </div>
+
+      {/* Per-warehouse stock breakdown — only for SKUs held in ≥2 warehouses */}
+      {warehouseBreakdown && (
+        <div style={{ fontSize: 10.5, color: 'var(--dim)', margin: '-8px 2px 14px' }}>
+          {t('search.warehouse_breakdown_label')}:{' '}
+          {warehouseBreakdown.map(r => `${r.warehouse}: ${fmtNum(r.current_stock)}`).join(' · ')}
+        </div>
+      )}
 
       {/* Mini forecast */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>

@@ -1483,6 +1483,7 @@ export const translations = {
     'search.legend_forecast':         'Pronóstico',
     'search.model_label':             'Modelo',
     'search.no_forecast_data':        'Sin datos de pronóstico para este producto.',
+    'search.warehouse_breakdown_label': 'Por bodega',
 
     // -- Shared empty / loading / error states (feature 2.6) --
     'states.loading_generic':          'Cargando datos…',
@@ -3138,6 +3139,7 @@ export const translations = {
     'search.legend_forecast':         'Forecast',
     'search.model_label':             'Model',
     'search.no_forecast_data':        'No forecast data for this product.',
+    'search.warehouse_breakdown_label': 'By warehouse',
 
     // -- Shared empty / loading / error states (feature 2.6) --
     'states.loading_generic':          'Loading data…',
