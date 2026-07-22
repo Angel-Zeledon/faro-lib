@@ -54,6 +54,11 @@ class TestRateLimit:
         # TESTING_MODE=true silently turns this into a test that can't fail.
         from backend.config import settings
         monkeypatch.setattr(settings, "testing_mode", False)
+        # Disabling testing_mode also activates plan-based entitlement gating;
+        # the AI analyst needs professional+, so upgrade the tenant or the 403
+        # PLAN_UPGRADE_REQUIRED fires before the rate limit ever can.
+        from backend.db.connection import execute
+        execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (chat["tenant_id"],))
         # The rate limit uses a sliding window keyed on RATE_LIMIT_WINDOW_SECONDS
         # (60s in production). Sending RATE_LIMIT_MAX_MESSAGES requests against a
         # real remote DB takes long enough in wall-clock time that, at the
