@@ -2058,6 +2058,18 @@ def run_daily_inventory_alerts() -> None:
             if not critical and not warning:
                 continue
 
+            # Transfer suggestions (feature 5.4): only meaningful — and only
+            # computed — for tenants with 2+ warehouses.
+            from backend.inventory import warehouse_service as wh_svc
+            transfer_count = 0
+            if wh_svc.count_warehouses(tid) >= 2:
+                try:
+                    wh_items = get_inventory_status_by_warehouse(tid, session["session_id"])
+                    transfer_count = sum(
+                        1 for i in wh_items if i.get("recommended_action") == "transfer")
+                except Exception as e:
+                    log.debug("alert transfer count failed tenant=%s: %s", tid, e)
+
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
             inventory_url = f"{app_url}/hoy"
 
@@ -2087,7 +2099,10 @@ def run_daily_inventory_alerts() -> None:
                 from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
                 numbers = get_tenant_admin_whatsapps(tid)
                 if numbers:
-                    text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+                    text = build_inventory_alert_text(
+                        critical[:10], warning[:5], inventory_url,
+                        transfer_count=transfer_count,
+                    )
                     for number in numbers:
                         send_whatsapp(number, text)
 

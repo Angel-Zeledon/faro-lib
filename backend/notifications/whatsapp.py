@@ -65,6 +65,7 @@ def build_inventory_alert_text(
     critical_items: list[dict],
     warning_items: list[dict],
     inventory_url: str,
+    transfer_count: int = 0,
 ) -> str:
     """Compact daily-alert message: WhatsApp favours short, scannable text."""
     lines: list[str] = []
@@ -82,6 +83,13 @@ def build_inventory_alert_text(
     n_warn = len(warning_items)
     if n_warn:
         lines.append(f"🟡 {n_warn} por reabastecer esta semana")
+    if transfer_count > 0:
+        # Network-aware suggestion (feature 5.4): stock exists, it's just in
+        # the wrong warehouse — no money needs to be spent.
+        lines.append(
+            f"🔁 {transfer_count} producto{'s' if transfer_count != 1 else ''} "
+            f"se resuelve{'n' if transfer_count != 1 else ''} moviendo stock, sin comprar"
+        )
     lines.append(f"Ver y aprobar: {inventory_url}")
     return "\n".join(lines)
 
