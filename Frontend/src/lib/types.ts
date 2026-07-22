@@ -619,6 +619,70 @@ export interface CalendarSeedResult {
   total_catalog:   number
 }
 
+// ── Multi-warehouse (feature 5.4) ────────────────────────────────────────────
+
+export interface Warehouse {
+  id: string
+  name: string
+  is_default: boolean
+  demand_share: number | null
+}
+
+export interface TransferSuggestion {
+  from_warehouse: string
+  qty: number
+  donor_coverage_days_after: number
+}
+
+/** One row of the network-aware per-(SKU, warehouse) semáforo. */
+export interface WarehouseStatusItem {
+  sku: string
+  warehouse: string
+  display_name: string | null
+  supplier: string | null
+  current_stock: number | null
+  lead_time_days: number
+  lead_time_source: 'learned' | 'configured'
+  moq: number
+  daily_demand: number | null
+  coverage_days: number | null
+  reorder_point: number | null
+  signal: InventorySignal
+  recommended_qty: number | null
+  recommended_action: 'order' | 'transfer' | null
+  transfer_suggestion: TransferSuggestion | null
+  unit_cost: number | null
+}
+
+export interface WarehouseStatusResponse {
+  items: WarehouseStatusItem[]
+  summary: {
+    total_rows: number
+    order_now: number
+    order_soon: number
+    transfers_suggested: number
+  }
+}
+
+export interface TransferItem {
+  id: string
+  sku: string
+  qty_sent: number
+  qty_received: number
+}
+
+export interface Transfer {
+  id: string
+  from_warehouse: string
+  to_warehouse: string
+  status: 'in_transit' | 'partial' | 'received' | 'cancelled'
+  notes: string | null
+  created_by: string
+  created_at: string
+  received_at: string | null
+  items: TransferItem[]
+}
+
 export interface InventoryStatusItem extends InventoryStock {
   has_forecast:         boolean
   has_stock:            boolean

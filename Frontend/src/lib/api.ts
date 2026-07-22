@@ -10,6 +10,7 @@ import type {
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
   ShrinkageReason, ShrinkageRecord,
+  Warehouse, WarehouseStatusResponse, Transfer,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -735,6 +736,27 @@ export const deleteInventoryEvent  = (id: string) =>
     method: 'DELETE',
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
+
+// ── Multi-warehouse (feature 5.4) ────────────────────────────────────────────
+export const listWarehouses = () =>
+  request<Warehouse[]>('GET', '/inventory/warehouses')
+export const patchWarehouse = (name: string, demandShare: number | null) =>
+  request<Warehouse>('PATCH', `/inventory/warehouses/${encodeURIComponent(name)}`,
+    { demand_share: demandShare })
+export const getStatusByWarehouse = (sessionId: string) =>
+  request<WarehouseStatusResponse>(
+    'GET', `/inventory/status?session_id=${sessionId}&by_warehouse=true`)
+export const listTransfers = (status?: string) =>
+  request<Transfer[]>('GET', `/inventory/transfers${status ? `?status=${status}` : ''}`)
+export const createTransfer = (fromWarehouse: string, toWarehouse: string,
+                               items: { sku: string; qty: number }[], notes?: string) =>
+  request<Transfer>('POST', '/inventory/transfers',
+    { from_warehouse: fromWarehouse, to_warehouse: toWarehouse, items, notes: notes ?? null })
+export const receiveTransfer = (transferId: string,
+                                lines: { sku: string; received_qty: number }[] | null) =>
+  request<Transfer>('POST', `/inventory/transfers/${transferId}/receive`, { lines })
+export const cancelTransfer = (transferId: string) =>
+  request<Transfer>('POST', `/inventory/transfers/${transferId}/cancel`)
 
 // ── PDF export ────────────────────────────────────────────────────────────────
 export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) => {
