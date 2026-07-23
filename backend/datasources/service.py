@@ -447,6 +447,27 @@ def get_preview(tenant_id: str, source_id: str, rows: int = 100, sheet: Optional
 
 # ── In-app editor ────────────────────────────────────────────────────────────
 
+def _safe_cell(value):
+    """CSV formula-injection guard for editor cells that preserves numbers.
+
+    A genuine number — including negatives like ``-5`` and signed/scientific
+    forms — is never a spreadsheet formula, so it must NOT be quote-prefixed:
+    doing so (``-5`` -> ``'-5``) would turn the value into text on re-read and
+    corrupt the column. Numeric values pass through unchanged; only non-numeric
+    text goes through the formula guard (``csv_safe``)."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):   # bool is an int subclass; harmless here
+        return value
+    text = str(value)
+    try:
+        float(text)
+        return text                        # numeric string ("-5", "+3", "1e3")
+    except ValueError:
+        from backend.utils.csv_safe import csv_safe
+        return csv_safe(value)
+
+
 def load_editable_table(tenant_id: str, source_id: str) -> dict:
     """Load a file dataset's full table for in-browser editing. Enforces the
     size guard from the STORED row_count/size_bytes before touching the file, so
@@ -506,7 +527,7 @@ def save_edited_as_new(
 
     safe_columns = [csv_safe(c) for c in columns]
     safe_rows = [
-        {safe_columns[i]: csv_safe(row.get(columns[i])) for i in range(len(columns))}
+        {safe_columns[i]: _safe_cell(row.get(columns[i])) for i in range(len(columns))}
         for row in rows
     ]
 

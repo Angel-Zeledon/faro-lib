@@ -160,6 +160,34 @@ def test_csv_injection_sanitized(client, analyst_headers):
     assert "\n=cmd" not in written and ",=cmd" not in written
 
 
+def test_negative_numbers_preserved_not_quoted(client, analyst_headers):
+    """A negative number is not a formula: it must round-trip as a number, not
+    get quote-prefixed into text. Only genuine formula text is neutralized."""
+    src = _upload_csv(client, analyst_headers, SMALL_CSV)
+    body = {
+        "name": "signs",
+        "columns": ["sku", "adjustment", "payload"],
+        "rows": [
+            {"sku": "A", "adjustment": -5, "payload": "-5"},        # int + numeric string
+            {"sku": "B", "adjustment": -12.5, "payload": "=SUM(A1)"},  # float + formula text
+        ],
+    }
+    resp = client.post(f"/api/v1/data-sources/{src['id']}/save-as-new", json=body, headers=analyst_headers)
+    assert resp.status_code == 200, resp.text
+    new_path = query_one("SELECT file_path FROM datasets WHERE id=%s", (resp.json()["data"]["id"],))["file_path"]
+    written = Path(new_path).read_text(encoding="utf-8")
+    # Negatives are intact (never "'-5"); the formula IS quoted.
+    assert "'-5" not in written and "'-12.5" not in written
+    assert "-5" in written and "-12.5" in written
+    assert "'=SUM(A1)" in written
+
+    # And they re-read as real numbers, not strings.
+    from backend.dataframes.io import read_table
+    back = read_table(new_path)
+    adj = [r["adjustment"] for r in back["rows"]]
+    assert adj == [-5, -12.5]
+
+
 def test_sql_source_rejected(client, analyst_headers):
     # Insert a SQL-typed dataset row directly (the editor rejects the type
     # outright — no live connection or the file-only create path is involved).
