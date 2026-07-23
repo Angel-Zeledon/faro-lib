@@ -13,7 +13,7 @@ import {
 import type {
  InventoryStatusItem, InventorySignal,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
- EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry,
+ EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry, CoverageUnit,
  EventMultiplier,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
@@ -29,6 +29,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
+import { coverageUnitShort } from '@/lib/period'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
@@ -914,13 +915,14 @@ function rowToEdit(item: InventoryStatusItem): EditState {
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
 // ── Provider group ────────────────────────────────────────────────────────────
-function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEditedQty, setEditingQtySku, effectiveQty }: {
+function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEditedQty, setEditingQtySku, effectiveQty, coverageUnit }: {
  name: string; items: InventoryStatusItem[]; onEdit: (item: InventoryStatusItem) => void
  editedQty: Record<string, number>
  editingQtySku: string | null
  setEditedQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
  setEditingQtySku: React.Dispatch<React.SetStateAction<string | null>>
  effectiveQty: (item: InventoryStatusItem) => number
+ coverageUnit?: CoverageUnit
 }) {
  const { t } = useLanguage()
  const [open, setOpen] = useState(true)
@@ -939,7 +941,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '160px 100px 90px 90px 80px 60px auto', gap: 12, padding: '10px 16px', alignItems: 'center', fontSize: 12, background: idx % 2 === 0 ? C.surface : C.card, borderBottom: idx < items.length - 1 ? `1px solid ${C.border}` : 'none' }}>
  <div><div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{item.sku}</div>{item.display_name && <div style={{ color: C.dim, fontSize: 10 }}>{item.display_name}</div>}</div>
  <SignalBadge s={item.signal} />
- <span style={{ color: signalColor(item.signal), fontWeight: 600 }}>{item.coverage_days != null ? `${item.coverage_days.toFixed(0)}d` : '—'}</span>
+ <span style={{ color: signalColor(item.signal), fontWeight: 600 }}>{item.coverage_days != null ? `${item.coverage_days.toFixed(0)} ${coverageUnitShort(coverageUnit, t)}` : '—'}</span>
  <span>
  {item.recommended_qty != null && item.recommended_qty > 0 ? (
  editingQtySku === item.sku ? (
@@ -1125,7 +1127,7 @@ export default function InventoryPage() {
  const { advancedMode } = useBusinessProfile()
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
- const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[] } | null>(null)
+ const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[]; coverage_unit?: CoverageUnit } | null>(null)
  const [loading, setLoading] = useState(false)
  // Raw error, so ErrorState can classify by kind instead of showing a
  // pre-flattened string.
@@ -1641,7 +1643,7 @@ export default function InventoryPage() {
  )}
  </div>
  ) : viewMode === 'provider' ? (
- <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} />)}</div>
+ <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} coverageUnit={data?.coverage_unit} />)}</div>
 
  ) : viewMode === 'update' ? (
  /* ── Vista actualización rápida ───────────────────────────── */
@@ -2035,7 +2037,7 @@ export default function InventoryPage() {
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  {item.coverage_days != null ? (
  <span style={{ fontWeight: 600, color: signalColor(item.signal) }}>
- {fmt(item.coverage_days, 0)}d
+ {fmt(item.coverage_days, 0)} {coverageUnitShort(data?.coverage_unit, t)}
  </span>
  ) : '—'}
  </td>

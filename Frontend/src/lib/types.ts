@@ -661,6 +661,8 @@ export interface WarehouseStatusItem {
 
 export interface WarehouseStatusResponse {
   items: WarehouseStatusItem[]
+  period?:        PlanningPeriod
+  coverage_unit?: CoverageUnit
   summary: {
     total_rows: number
     order_now: number
@@ -827,9 +829,15 @@ export interface OptimizationResponse {
   transfers:     OptimizationTransfer[]
 }
 
+export type CoverageUnit = 'day' | 'week' | 'month'
+
 export interface InventoryStatusResponse {
   items: InventoryStatusItem[]
   excluded_skus?: ExcludedSku[]
+  // Active planning period (multi-period Phase C). Coverage values in `items`
+  // are expressed in `coverage_unit`; the UI labels them accordingly.
+  period?:        PlanningPeriod
+  coverage_unit?: CoverageUnit
   summary: {
     total_skus:               number
     order_now:                 number

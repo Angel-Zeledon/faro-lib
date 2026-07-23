@@ -4,10 +4,11 @@
 // TRANSFER suggestions produced by the backend's network pass.
 import { useCallback, useEffect, useState } from 'react'
 import { getStatusByWarehouse, createTransfer } from '@/lib/api'
-import type { WarehouseStatusItem } from '@/lib/types'
+import type { WarehouseStatusItem, CoverageUnit } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
 import SignalBadge from '@/components/ui/SignalBadge'
+import { coverageUnitShort } from '@/lib/period'
 import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
@@ -22,6 +23,7 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
 }) {
   const { t } = useLanguage()
   const [items, setItems] = useState<WarehouseStatusItem[] | null>(null)
+  const [coverageUnit, setCoverageUnit] = useState<CoverageUnit>('day')
   const [error, setError] = useState<unknown>(null)
   const [sendingSku, setSendingSku] = useState<string | null>(null)
   const [sentSkus, setSentSkus] = useState<Set<string>>(new Set())
@@ -29,7 +31,7 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
   const load = useCallback(() => {
     setError(null)
     getStatusByWarehouse(sessionId)
-      .then(r => setItems(r.items))
+      .then(r => { setItems(r.items); setCoverageUnit(r.coverage_unit ?? 'day') })
       .catch(e => setError(e))
   }, [sessionId])
 
@@ -84,7 +86,7 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                 <td style={td}>{row.display_name || row.sku}</td>
                 <td style={td}>{row.current_stock ?? '—'}</td>
                 <td style={td}>{row.coverage_days != null
-                  ? `${row.coverage_days} ${t('inventory.wh_days')}` : '—'}</td>
+                  ? `${row.coverage_days} ${coverageUnitShort(coverageUnit, t)}` : '—'}</td>
                 <td style={td}>
                   {/* Shared badge: icon + translated label + WCAG palette —
                       never a raw colored enum (see SignalBadge header). */}
