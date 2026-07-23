@@ -9,6 +9,7 @@ import { useActiveSession } from '@/contexts/ActiveSessionContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import Badge from '@/components/ui/Badge'
+import PlanningControl from './PlanningControl'
 
 interface Notif {
   id:    string
@@ -156,6 +157,9 @@ export default function TopBar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Active planning period + horizon (multi-period, Phase B) */}
+        <PlanningControl />
+
         {/* Global SKU search (Ctrl/Cmd-K) */}
         <button
           onClick={openSkuSearch}

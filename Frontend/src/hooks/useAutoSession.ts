@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getSessions } from '@/lib/api'
+import { getSessions, getPlanning } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 
 export interface AutoSessionResult {
@@ -33,14 +33,21 @@ export function useAutoSession(): AutoSessionResult {
     setLoading(true)
     setError(null)
     getSessions()
-      .then(list => {
+      .then(async list => {
         setSessions(list)
-        const completed = list
-          .filter(s => s.status === 'COMPLETED')
-          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-        if (completed.length && !sessionIdRef.current) {
-          setSessionId(completed[0].session_id)
+        if (sessionIdRef.current) return
+        // Prefer the resolver's active-period session (multi-period Phase B);
+        // fall back to latest-completed — identical for family-less tenants,
+        // whose resolver returns exactly that session.
+        let preferred = ''
+        try { preferred = (await getPlanning()).active_session_id ?? '' } catch { /* fall back */ }
+        if (!preferred) {
+          const completed = list
+            .filter(s => s.status === 'COMPLETED')
+            .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+          preferred = completed.length ? completed[0].session_id : ''
         }
+        if (preferred && !sessionIdRef.current) setSessionId(preferred)
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'No se pudo cargar la lista de sesiones. Verifica tu conexión e intenta de nuevo.')
