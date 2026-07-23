@@ -104,3 +104,52 @@ class TestResolveActiveSession:
 
     def test_none_when_no_completed_session(self, client, test_tenant):
         assert plan.resolve_active_session(test_tenant["id"]) is None
+
+
+class TestPlanningApi:
+    def test_get_planning_default(self, client, auth_headers):
+        r = client.get("/api/v1/planning", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["period"] == "daily" and data["horizon"] == 14
+        assert data["available_periods"] == ["daily"]
+        assert "active_session_id" in data
+
+    def test_put_planning_admin_succeeds(self, client, auth_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
+        r = client.put("/api/v1/planning", headers=auth_headers,
+                       json={"period": "weekly", "horizon": 6})
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["period"] == "weekly"
+        assert plan.get_planning(tid)["period"] == "weekly"
+
+    def test_put_planning_analyst_forbidden(self, client, analyst_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
+        r = client.put("/api/v1/planning", headers=analyst_headers,
+                       json={"period": "weekly", "horizon": 6})
+        assert r.status_code == 403, r.text
+        assert plan.get_planning(tid)["period"] == "daily"
+
+    def test_put_planning_viewer_forbidden(self, client, viewer_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
+        r = client.put("/api/v1/planning", headers=viewer_headers,
+                       json={"period": "weekly", "horizon": 6})
+        assert r.status_code == 403, r.text
+        assert plan.get_planning(tid)["period"] == "daily"
+
+    def test_put_planning_invalid_period_422(self, client, auth_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily"], family_id="fam1")
+        r = client.put("/api/v1/planning", headers=auth_headers,
+                       json={"period": "weekly", "horizon": 4})
+        assert r.status_code == 422, r.text
+
+    def test_put_planning_over_reach_422(self, client, auth_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
+        r = client.put("/api/v1/planning", headers=auth_headers,
+                       json={"period": "weekly", "horizon": 99})
+        assert r.status_code == 422, r.text

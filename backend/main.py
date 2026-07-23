@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.v1 import auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router
+from backend.api.v1 import auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
 from backend.middleware.request_logger import RequestLoggerMiddleware
@@ -164,6 +164,7 @@ app.include_router(datasets.router,      prefix=_PREFIX)
 app.include_router(datasources.router,   prefix=_PREFIX)
 app.include_router(configuration.router, prefix=_PREFIX)
 app.include_router(training.router,      prefix=_PREFIX)
+app.include_router(planning_router.router, prefix=_PREFIX)
 app.include_router(forecasts.router,     prefix=_PREFIX)
 app.include_router(artifacts.router,     prefix=_PREFIX)
 app.include_router(reports.router,       prefix=_PREFIX)
