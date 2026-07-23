@@ -594,16 +594,18 @@ class TestConfigurationWizard:
 
 class TestTraining:
     def test_start_training_queues_job(self, oc, tokens):
+        # Training now fans out into a session family; this offline endpoint
+        # test mocks the fan-out (the family logic itself is covered against a
+        # real DB in test_session_family) and asserts only the endpoint contract.
         with mock.patch("backend.sessions.service.get_session",              return_value=MOCK_CONFIGURED_SESSION), \
              mock.patch("backend.db.session_store.get_field",                return_value={"some": "cfg"}), \
              mock.patch("backend.training.job_service.count_active_jobs_for_tenant", return_value=0), \
-             mock.patch("backend.training.job_service.create_job",           return_value=MOCK_QUEUED_JOB), \
-             mock.patch("backend.sessions.service.set_last_job"), \
-             mock.patch("backend.sessions.service.transition",               return_value=MOCK_CONFIGURED_SESSION):
+             mock.patch("backend.sessions.family_service.launch_training_family",
+                        return_value={"family_id": SESSION_ID, "base_job_id": "job_offline", "sessions": []}):
             r = oc.post(f"/api/v1/sessions/{SESSION_ID}/train", headers=tokens["admin"])
         assert r.status_code == 202
         data = r.json()["data"]
-        assert "job_id" in data
+        assert data["job_id"] == "job_offline"
         assert data["status"] == "QUEUED"
 
     def test_start_training_on_running_session_returns_409(self, oc, tokens):
