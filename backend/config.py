@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # Upload
     max_upload_size_mb: int = 200
 
+    # In-app dataset editor size guard — checked from stored row_count/size_bytes
+    # BEFORE reading the file, so a huge file is never loaded into memory.
+    dataset_editor_max_rows: int = 50_000
+    dataset_editor_max_mb: int = 10
+
     # ── Testing mode ────────────────────────────────────────────────────────
     # When True, ALL commercial/business restrictions are bypassed: plan quotas,
     # rate limits, concurrent-job caps, upload-size caps and length caps. Intended
