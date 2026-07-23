@@ -365,6 +365,7 @@ export interface DataSource {
   uploaded_by:       string | null
   uploaded_at:       string
   updated_at:        string | null
+  parent_id:         string | null
 }
 
 export interface DataPreview {
@@ -374,6 +375,11 @@ export interface DataPreview {
   sheets:       string[] | null
   active_sheet: string | null
   truncated:    boolean
+}
+
+export interface EditableTable {
+  columns: string[]
+  rows:    Record<string, unknown>[]
 }
 
 export interface SqlQueryResult {
