@@ -5,7 +5,7 @@ from typing import Optional
 
 import psycopg2
 
-from backend.db.connection import query_one, execute
+from backend.db.connection import query_one, execute, _json
 from backend.utils.ids import generate_id
 from backend.config import settings
 
@@ -70,3 +70,20 @@ def check_session_quota(tenant_id: str) -> bool:
     if max_sessions is None:
         return True  # unlimited (e.g. enterprise plan)
     return session_svc.count_sessions(tenant_id) < max_sessions
+
+
+def get_settings(tenant_id: str) -> dict:
+    """The tenant's `settings` JSONB, already parsed (RealDictCursor). Empty
+    dict when the tenant is missing or has no settings yet."""
+    row = query_one("SELECT settings FROM tenants WHERE id = %s", (tenant_id,))
+    if not row or not row.get("settings"):
+        return {}
+    return dict(row["settings"])
+
+
+def update_settings(tenant_id: str, patch: dict) -> dict:
+    """Shallow-merge `patch` into the tenant's settings and persist. Returns the
+    merged dict. Other top-level keys are preserved (never clobbered)."""
+    merged = {**get_settings(tenant_id), **patch}
+    execute("UPDATE tenants SET settings = %s WHERE id = %s", (_json(merged), tenant_id))
+    return merged
