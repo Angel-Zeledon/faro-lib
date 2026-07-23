@@ -2138,14 +2138,17 @@ def run_daily_inventory_alerts() -> None:
     log.info("inventory_alert: checking %d tenants", len(tenants))
 
     from backend.db import session_store
+    from backend.sessions.planning_service import resolve_active_session
 
     for tenant in tenants:
         tid = tenant["tenant_id"]
         try:
-            session = get_latest_completed_session(tid)
-            if not session:
+            # Alert on the same session the app shows: the newest family's
+            # active-period session (falls back to latest-completed for
+            # family-less tenants — identical to the old behavior for them).
+            sid = resolve_active_session(tid)
+            if not sid:
                 continue
-            sid = session["session_id"]
 
             # Fetch the shared inputs ONCE per tenant: the aggregated status
             # and (for multi-warehouse tenants) the per-warehouse status both
@@ -2241,21 +2244,23 @@ def run_monthly_overstock_snapshot() -> None:
     tenants = get_tenants_with_active_sessions()
     log.info("overstock_snapshot: checking %d tenants", len(tenants))
 
+    from backend.sessions.planning_service import resolve_active_session
+
     for tenant in tenants:
         tid = tenant["tenant_id"]
         try:
-            session = get_latest_completed_session(tid)
-            if not session:
+            sid = resolve_active_session(tid)
+            if not sid:
                 continue
 
-            items = get_inventory_status(tid, session["session_id"])
+            items = get_inventory_status(tid, sid)
             overstock_value = _sum_overstock_value(items)
 
             execute(
                 """INSERT INTO inventory_overstock_snapshots
                        (tenant_id, session_id, overstock_value)
                    VALUES (%s, %s, %s)""",
-                (tid, session["session_id"], overstock_value),
+                (tid, sid, overstock_value),
             )
         except Exception as e:
             log.error("overstock_snapshot: tenant=%s error=%s", tid, e)

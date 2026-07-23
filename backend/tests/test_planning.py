@@ -153,3 +153,27 @@ class TestPlanningApi:
         r = client.put("/api/v1/planning", headers=auth_headers,
                        json={"period": "weekly", "horizon": 99})
         assert r.status_code == 422, r.text
+
+
+class TestAlertLoopUsesResolver:
+    def test_alert_loop_resolves_active_period_session(self, client, test_tenant, registered_user, monkeypatch):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
+        plan.set_planning(tid, "weekly", 4)
+
+        seen = {}
+        import backend.inventory.service as inv
+        from backend.db import session_store as ss
+
+        def spy(tenant_id, session_id):
+            if tenant_id == tid:
+                seen["sid"] = session_id
+            return {}
+        monkeypatch.setattr(ss, "get_forecasts", spy)
+
+        inv.run_daily_inventory_alerts()
+
+        weekly = query_one(
+            "SELECT id FROM sessions WHERE tenant_id=%s AND family_id='fam1' "
+            "AND granularity='weekly'", (tid,))
+        assert seen.get("sid") == weekly["id"]
