@@ -445,6 +445,108 @@ def get_preview(tenant_id: str, source_id: str, rows: int = 100, sheet: Optional
     }
 
 
+# ── In-app editor ────────────────────────────────────────────────────────────
+
+def load_editable_table(tenant_id: str, source_id: str) -> dict:
+    """Load a file dataset's full table for in-browser editing. Enforces the
+    size guard from the STORED row_count/size_bytes before touching the file, so
+    an over-threshold dataset is never read into memory. SQL sources rejected."""
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise ValueError(f"Data source {source_id} not found")
+    if src.get("source_type") == "sql":
+        raise ValueError("Only file datasets are editable")
+
+    max_rows = settings.dataset_editor_max_rows
+    max_bytes = settings.dataset_editor_max_mb * 1024 * 1024
+    row_count = src.get("row_count")
+    size_bytes = src.get("size_bytes")
+    if row_count is not None and row_count > max_rows:
+        raise ValueError(
+            f"Dataset too large to edit online ({row_count} rows exceeds the "
+            f"{max_rows}-row limit). Edit it offline and re-upload."
+        )
+    if size_bytes is not None and size_bytes > max_bytes:
+        raise ValueError(
+            f"Dataset too large to edit online "
+            f"({size_bytes / 1024 / 1024:.1f} MB exceeds the "
+            f"{settings.dataset_editor_max_mb} MB limit). Edit it offline and re-upload."
+        )
+
+    file_path = src.get("file_path")
+    if not file_path or not Path(file_path).exists():
+        raise ValueError("File not found on disk. Please re-upload.")
+
+    from backend.dataframes.io import read_table
+    return read_table(file_path)
+
+
+def save_edited_as_new(
+    tenant_id: str,
+    user_id: str,
+    source_id: str,
+    name: Optional[str],
+    columns: list[str],
+    rows: list[dict],
+) -> dict:
+    """Write the edited table as a NEW CSV dataset with `parent_id` = source id.
+    The original dataset row and file are never touched. Every cell (and header)
+    is passed through the CSV formula-injection guard before it is written."""
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise ValueError(f"Data source {source_id} not found")
+    if src.get("source_type") == "sql":
+        raise ValueError("Only file datasets are editable")
+    if not columns or not isinstance(columns, list):
+        raise ValueError("At least one column is required")
+
+    from backend.utils.csv_safe import csv_safe
+    from backend.dataframes.io import write_rows
+    from backend.storage import paths
+
+    safe_columns = [csv_safe(c) for c in columns]
+    safe_rows = [
+        {safe_columns[i]: csv_safe(row.get(columns[i])) for i in range(len(columns))}
+        for row in rows
+    ]
+
+    new_id = generate_id("ds")
+    dst_dir = paths.dataset_dir(tenant_id, new_id)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    # Atomic write: write to .tmp, verify, then swap — a partial write never
+    # leaves a corrupt dataset (mirrors replace_file_source).
+    file_path = dst_dir / "data.csv"
+    tmp_path = dst_dir / "data.csv.tmp"
+    try:
+        write_rows(str(tmp_path), safe_columns, safe_rows, fmt="csv")
+        if not tmp_path.exists() or tmp_path.stat().st_size == 0:
+            raise ValueError("File write verification failed.")
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    tmp_path.replace(file_path)
+
+    size_bytes = file_path.stat().st_size
+    row_count = len(rows)
+    col_count = len(columns)
+    display_name = name.strip() if (name and name.strip()) else f"{src.get('name')} (editado)"
+
+    execute(
+        """INSERT INTO datasets
+           (id, tenant_id, name, description, original_filename, file_type, file_path,
+            size_bytes, row_count, column_count, source_type, connection_status,
+            parent_id, uploaded_by, uploaded_at, updated_at)
+           VALUES (%s,%s,%s,%s,%s,'csv',%s,%s,%s,%s,'file','connected',%s,%s,NOW(),NOW())""",
+        (
+            new_id, tenant_id, display_name, src.get("description"),
+            f"{display_name}.csv", str(file_path),
+            size_bytes, row_count, col_count, source_id, user_id,
+        ),
+    )
+    return _public(get_source(tenant_id, new_id))
+
+
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 def get_source(tenant_id: str, source_id: str) -> Optional[dict]:

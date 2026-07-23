@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasources import service as svc
 from backend.datasources.service import SQL_ENGINES
 from backend.schemas.common import ok
@@ -81,6 +81,19 @@ class RenameSourceRequest(BaseModel):
     def _not_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("name cannot be empty")
+        return v
+
+
+class SaveAsNewRequest(BaseModel):
+    name:    Optional[str] = None
+    columns: list[str]
+    rows:    list[dict]
+
+    @field_validator("columns")
+    @classmethod
+    def _cols_not_empty(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("At least one column is required")
         return v
 
 
@@ -251,6 +264,37 @@ def get_preview(
     try:
         result = svc.get_preview(user.tenant_id, source_id, rows=rows, sheet=sheet)
         return ok(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── In-app editor ────────────────────────────────────────────────────────────
+
+@router.get("/{source_id}/edit-table")
+def edit_table(
+    source_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    _ds_or_404(user.tenant_id, source_id)
+    try:
+        result = svc.load_editable_table(user.tenant_id, source_id)
+        return ok(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{source_id}/save-as-new")
+def save_as_new(
+    source_id: str,
+    body: SaveAsNewRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    _ds_or_404(user.tenant_id, source_id)
+    try:
+        new_ds = svc.save_edited_as_new(
+            user.tenant_id, user.user_id, source_id, body.name, body.columns, body.rows
+        )
+        return ok(new_ds)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

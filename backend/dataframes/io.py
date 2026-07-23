@@ -146,3 +146,35 @@ def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
         "active_sheet": sheet or (sheets[0] if sheets else None),
         "total_rows": total_rows,
     }
+
+
+def read_table(path: str, sheet: Optional[str] = None) -> dict:
+    """Full-table load for the in-app editor: all columns + all rows as plain
+    Python. Columns are preserved even when there are zero data rows."""
+    fmt = _fmt_from_path(path)
+    if fmt == "excel":
+        target = sheet or (pd.ExcelFile(path).sheet_names[0])
+        df = pd.read_excel(path, sheet_name=target)
+    elif fmt == "json":
+        df = pd.read_json(path)
+    elif fmt == "parquet":
+        df = pd.read_parquet(path)
+    else:
+        df = pd.read_csv(path)
+    return {"columns": list(df.columns), "rows": _to_records(df)}
+
+
+def write_rows(path: str, columns: list[str], rows: list[dict],
+               fmt: str = "csv") -> None:
+    """Write an edited table to disk — the ONE place edits get persisted.
+    Column order follows `columns`; a header is written even with zero rows.
+    Cells are written verbatim (callers sanitize before passing them in)."""
+    df = pd.DataFrame([{c: r.get(c) for c in columns} for r in rows], columns=columns)
+    if fmt == "excel":
+        df.to_excel(path, index=False)
+    elif fmt == "json":
+        df.to_json(path, orient="records")
+    elif fmt == "parquet":
+        df.to_parquet(path, index=False)
+    else:
+        df.to_csv(path, index=False)

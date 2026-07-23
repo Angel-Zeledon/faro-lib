@@ -887,6 +887,10 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS granularity TEXT"),
     ("create_sessions_family_idx",
      "CREATE INDEX IF NOT EXISTS sessions_family_idx ON sessions (tenant_id, family_id)"),
+    # In-app dataset editor: a save-as-new dataset links to the source dataset it
+    # was edited from. Nullable — uploads and SQL sources keep NULL.
+    ("add_datasets_parent_id",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS parent_id TEXT"),
 ]
 
 

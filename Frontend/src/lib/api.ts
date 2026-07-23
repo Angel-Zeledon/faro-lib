@@ -4,7 +4,7 @@ import type {
   JobResponse, MetricsResponse, InventoryResponse, RoutingPlan,
   ForecastSeries, DataHealthReport,
   Chat, ChatMessage, MessagesPage, ChatSourceType,
-  DataSource, DataPreview, SqlQueryResult, SqlEngine,
+  DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
@@ -450,6 +450,13 @@ export const saveSqlQuery = (id: string, sql: string) =>
 
 export const getDataSourcePreview = (id: string, rows = 100, sheet?: string) =>
   request<DataPreview>('GET', `/data-sources/${id}/preview?rows=${rows}${sheet ? `&sheet=${encodeURIComponent(sheet)}` : ''}`)
+
+export const getEditableTable = (id: string) =>
+  request<EditableTable>('GET', `/data-sources/${id}/edit-table`)
+
+export const saveDatasetAsNew = (id: string, body: {
+  name?: string; columns: string[]; rows: Record<string, unknown>[]
+}) => request<DataSource>('POST', `/data-sources/${id}/save-as-new`, body)
 
 export const renameDataSource = (id: string, name: string, description?: string) =>
   request<DataSource>('PATCH', `/data-sources/${id}`, { name, description })
