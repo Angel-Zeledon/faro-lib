@@ -4,10 +4,10 @@ import {
  listDataSources, createFileSource, createSqlSource, replaceFileSource,
  updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery,
  getDataSourcePreview, getDataSource, renameDataSource, deleteDataSource,
- analyzeDataSource, analyzeSkuDetail,
+ analyzeDataSource, analyzeSkuDetail, getEditableTable, saveDatasetAsNew,
 } from '@/lib/api'
 import type {
- DataSource, DataPreview, SqlQueryResult, SqlEngine,
+ DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
  AnalysisResult, AnalysisSummaryRow, SkuDetailResult, OutlierPoint,
 } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
@@ -988,6 +988,152 @@ function AnalysisTab({ source, columns, activeSheet }: {
  )
 }
 
+// ── Dataset editor (edit as spreadsheet, save as new) ─────────────────────────
+function DatasetEditorPanel({ source, onCreated }: {
+ source: DataSource; onCreated: (s: DataSource) => void
+}) {
+ const { t } = useLanguage()
+ const { addToast } = useToast()
+ const [loading, setLoading] = useState(true)
+ const [loadErr, setLoadErr] = useState<string | null>(null)
+ const [columns, setColumns] = useState<string[]>([])
+ const [rows, setRows] = useState<Record<string, unknown>[]>([])
+ const [name, setName] = useState(`${source.name} (editado)`)
+ const [saving, setSaving] = useState(false)
+
+ useEffect(() => {
+  let alive = true
+  setLoading(true); setLoadErr(null)
+  getEditableTable(source.id)
+   .then((tbl: EditableTable) => { if (alive) { setColumns(tbl.columns); setRows(tbl.rows) } })
+   .catch((e: any) => { if (alive) setLoadErr(e.message || t('data.editor_too_large')) })
+   .finally(() => { if (alive) setLoading(false) })
+  return () => { alive = false }
+ }, [source.id]) // eslint-disable-line
+
+ const setCell = (ri: number, col: string, val: string) =>
+  setRows(rs => rs.map((r, i) => i === ri ? { ...r, [col]: val } : r))
+ const addRow = () =>
+  setRows(rs => [...rs, Object.fromEntries(columns.map(c => [c, '']))])
+ const deleteRow = (ri: number) =>
+  setRows(rs => rs.filter((_, i) => i !== ri))
+ const dropColumn = (col: string) => {
+  setColumns(cs => cs.filter(c => c !== col))
+  setRows(rs => rs.map(r => { const { [col]: _drop, ...rest } = r; return rest }))
+ }
+ const renameColumn = (col: string) => {
+  const next = window.prompt(t('data.editor_rename_column'), col)
+  if (!next || next === col || columns.includes(next)) return
+  setColumns(cs => cs.map(c => c === col ? next : c))
+  setRows(rs => rs.map(r => { const { [col]: v, ...rest } = r; return { ...rest, [next]: v } }))
+ }
+ const addColumn = () => {
+  const nm = window.prompt(t('data.editor_new_column'), '')
+  if (!nm || columns.includes(nm)) return
+  setColumns(cs => [...cs, nm])
+  setRows(rs => rs.map(r => ({ ...r, [nm]: '' })))
+ }
+
+ const save = async () => {
+  setSaving(true)
+  try {
+   const created = await saveDatasetAsNew(source.id, { name: name.trim() || undefined, columns, rows })
+   addToast(t('data.editor_saved'), created.name, 'success')
+   onCreated(created)
+  } catch (e: any) {
+   addToast(t('data.editor_save_failed'), e.message, 'error')
+  } finally { setSaving(false) }
+ }
+
+ if (loading) return (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '40px 0', justifyContent: 'center' }}>
+   <Spinner size={20} /> <span style={{ color: C.muted }}>{t('data.editor_loading')}</span>
+  </div>
+ )
+ if (loadErr) return (
+  <div style={{ background: C.redDim, border: `1px solid ${C.red}30`, borderRadius: 8,
+   padding: '14px 16px', color: C.red, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+   <AlertTriangle size={14} /> {loadErr}
+  </div>
+ )
+
+ return (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+    <input value={name} onChange={e => setName(e.target.value)}
+     placeholder={t('data.editor_new_name')}
+     style={{ flex: 1, minWidth: 200, background: C.surface, border: `1px solid ${C.border2}`,
+      borderRadius: 8, padding: '8px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
+    <button onClick={addRow}
+     style={{ padding: '8px 14px', borderRadius: 8, background: 'transparent',
+      border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+     <Plus size={12} /> {t('data.editor_add_row')}
+    </button>
+    <button onClick={addColumn}
+     style={{ padding: '8px 14px', borderRadius: 8, background: 'transparent',
+      border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+     <Plus size={12} /> {t('data.editor_new_column')}
+    </button>
+    <button onClick={save} disabled={saving || !columns.length}
+     style={{ padding: '8px 18px', borderRadius: 8, background: C.green, border: 'none',
+      color: '#fff', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+      opacity: saving || !columns.length ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+     {saving ? <Spinner size={12} /> : <Save size={12} />} {saving ? t('data.editor_saving') : t('data.editor_save_as_new')}
+    </button>
+   </div>
+   <div style={{ color: C.muted, fontSize: 12 }}>{rows.length} {t('data.editor_rows_count')}</div>
+   <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, borderRadius: 8, border: `1px solid ${C.border}` }}>
+    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+     <thead>
+      <tr>
+       <th style={{ padding: '6px 8px', background: 'var(--surface-2)', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0 }} />
+       {columns.map(c => (
+        <th key={c} style={{ padding: '6px 10px', textAlign: 'left', whiteSpace: 'nowrap',
+         background: 'var(--surface-2)', color: C.muted, fontWeight: 600, fontSize: 11,
+         borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0 }}>
+         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {c}
+          <button onClick={() => renameColumn(c)} title={t('data.editor_rename_column')}
+           style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 0 }}>
+           <Edit2 size={11} />
+          </button>
+          <button onClick={() => dropColumn(c)} title={t('data.editor_drop_column')}
+           style={{ background: 'transparent', border: 'none', color: C.red, cursor: 'pointer', padding: 0 }}>
+           <X size={11} />
+          </button>
+         </span>
+        </th>
+       ))}
+      </tr>
+     </thead>
+     <tbody>
+      {rows.map((row, ri) => (
+       <tr key={ri} style={{ background: ri % 2 === 0 ? C.card : C.surface }}>
+        <td style={{ padding: '2px 6px', borderBottom: `1px solid ${C.border}` }}>
+         <button onClick={() => deleteRow(ri)} title={t('data.editor_delete_row')}
+          style={{ background: 'transparent', border: 'none', color: C.red, cursor: 'pointer', padding: 2 }}>
+          <Trash2 size={12} />
+         </button>
+        </td>
+        {columns.map(c => (
+         <td key={c} style={{ padding: 0, borderBottom: `1px solid ${C.border}` }}>
+          <input value={row[c] == null ? '' : String(row[c])}
+           onChange={e => setCell(ri, c, e.target.value)}
+           style={{ width: '100%', minWidth: 90, background: 'transparent', border: 'none',
+            padding: '6px 10px', color: C.text, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+         </td>
+        ))}
+       </tr>
+      ))}
+     </tbody>
+    </table>
+   </div>
+  </div>
+ )
+}
+
 // ── Right panel: detail for a selected source ─────────────────────────────────
 function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  { source: DataSource; onUpdated: (s: DataSource) => void; onDeleted: () => void; onBack?: () => void }
@@ -995,7 +1141,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  const { t } = useLanguage()
  const confirm = useConfirm()
  const { addToast } = useToast()
- const [tab, setTab] = useState<'preview' | 'analysis' | 'sql-editor' | 'connection'>('preview')
+ const [tab, setTab] = useState<'preview' | 'analysis' | 'edit' | 'sql-editor' | 'connection'>('preview')
  const [preview, setPreview] = useState<DataPreview | null>(null)
  const [loadingPreview, setLoadingPreview] = useState(false)
  const [previewErr, setPreviewErr] = useState<string | null>(null)
@@ -1081,7 +1227,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
 
  const tabs = isSql
  ? [{ id: 'sql-editor', label: t('data.tab_query_editor') }, { id: 'connection', label: t('data.tab_connection') }]
- : [{ id: 'preview', label: t('data.tab_data_preview') }, { id: 'analysis', label: t('data.tab_analysis') }, { id: 'connection', label: t('data.tab_replace_file') }]
+ : [{ id: 'preview', label: t('data.tab_data_preview') }, { id: 'edit', label: t('data.tab_edit') }, { id: 'analysis', label: t('data.tab_analysis') }, { id: 'connection', label: t('data.tab_replace_file') }]
 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -1277,6 +1423,14 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  activeSheet={activeSheet}
  />
  )
+ )}
+
+ {/* Edit tab */}
+ {tab === 'edit' && !isSql && (
+ <DatasetEditorPanel
+ source={source}
+ onCreated={(created) => { onUpdated(created) }}
+ />
  )}
 
  {/* SQL editor tab */}
