@@ -482,6 +482,37 @@ def _avg_forecast_curve(model_forecasts: dict, max_steps: int = 90) -> list[dict
     return curve
 
 
+# ── Period-aware planning (multi-period Phase C) ──────────────────────────────
+# A period-trained session (Phase A) forecasts PER-PERIOD demand: a weekly
+# session's forecast values are units/week, a monthly session's are units/month.
+# Coverage therefore comes out in periods, and the signal must be judged against
+# the lead time expressed in that SAME period. This map is the only conversion
+# factor; every helper below is plain arithmetic (no pandas).
+_DAYS_PER_PERIOD = {"daily": 1, "weekly": 7, "monthly": 30}
+
+
+def _days_per_period(period: Optional[str]) -> int:
+    """Calendar days in one bucket of `period`. Unknown/legacy -> 1 (daily), so
+    a bad value degrades to today's day-based math rather than raising."""
+    return _DAYS_PER_PERIOD.get(period or "daily", 1)
+
+
+def _lead_time_in_periods(lead_time_days: float, period: str) -> float:
+    """Lead time expressed in the active period's units. Kept float so the
+    signal thresholds stay precise (a 15-day lead time is 2.14 weeks). For
+    `daily` this is exactly float(lead_time_days) — the identity that keeps the
+    daily semáforo byte-identical to before Phase C."""
+    return float(lead_time_days) / _days_per_period(period)
+
+
+def _steps_for_lead_time(lead_time_days: float, period: str) -> int:
+    """How many forecast buckets to average when estimating per-period demand:
+    the lead time rounded UP to whole periods, at least one (a sub-period lead
+    time still needs one bucket to average). For `daily` this equals
+    int(lead_time_days) for any positive integer lead time."""
+    return max(1, math.ceil(float(lead_time_days) / _days_per_period(period)))
+
+
 def _calc_signal(coverage_days: float, lead_time: int) -> str:
     if coverage_days < lead_time * 0.5:
         return "PEDIR_YA"
