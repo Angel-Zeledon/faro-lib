@@ -891,6 +891,32 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # was edited from. Nullable — uploads and SQL sources keep NULL.
     ("add_datasets_parent_id",
      "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS parent_id TEXT"),
+    # ── Conversational WhatsApp bot (spec 2026-07-23) ────────────────────────
+    # A pre-registered number identifies the sender; it is only usable once
+    # verified. whatsapp_number itself already exists (add_users_whatsapp_number).
+    ("add_users_whatsapp_verified_at",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_verified_at TIMESTAMPTZ"),
+    # One number links to at most one user. Partial so many users may keep NULL.
+    ("create_users_whatsapp_number_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS users_whatsapp_number_uniq
+        ON users (whatsapp_number) WHERE whatsapp_number IS NOT NULL"""),
+    # Recent turns + one pending write action, one row per (tenant, user).
+    # last_message_sid is the idempotency anchor (Twilio retries resend the
+    # same MessageSid). Rows older than the 24h window are pruned on read.
+    ("create_whatsapp_conversations",
+     """CREATE TABLE IF NOT EXISTS whatsapp_conversations (
+         id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id        TEXT NOT NULL,
+         user_id          TEXT NOT NULL,
+         phone            TEXT NOT NULL,
+         history          JSONB NOT NULL DEFAULT '[]',
+         pending_action   JSONB,
+         last_message_sid TEXT,
+         updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_whatsapp_conversations_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_conversations_tenant_user_uniq
+        ON whatsapp_conversations (tenant_id, user_id)"""),
 ]
 
 
