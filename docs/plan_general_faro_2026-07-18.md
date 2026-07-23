@@ -121,7 +121,7 @@ Movida deliberadamente al final del período: necesaria para lanzar, pero no mej
 
 Ordenada por riesgo real (los ítems de diseño/UX que estaban aquí se movieron a la Fase 2, que ahora es su lugar natural):
 
-1. Sacar pandas de `backend/api/v1/` y `backend/inventory/service.py` hacia ForecastingCore o un módulo de transformación dedicado — hoy viola la separación de capas que CLAUDE.md declara.
+1. ~~Sacar pandas de `backend/api/v1/` y `backend/inventory/service.py` hacia ForecastingCore o un módulo de transformación dedicado — hoy viola la separación de capas que CLAUDE.md declara.~~ **HECHO** (refactor `refactor/pandas-boundary`): pandas/numpy quedan confinados a `backend/dataframes/` (boundary io/series/analysis/stock), `utils/temporal_agg.py` y `workers/runner.py`; `api/v1/` y `inventory/service.py` ya no importan pandas. Enforzado por `backend/tests/test_no_pandas_in_backend.py`.
 2. Worker de entrenamiento como proceso separado (la cola en DB ya existe) — cada deploy mata jobs.
 3. DB o pooler en región cercana a LatAm (hoy us-west-2, ~3s handshake).
 4. Tests: pares de permisos y cross-tenant en los endpoints nuevos (send-PO ya los tiene; optimizer/warehouses/simulator hay que auditarlos).

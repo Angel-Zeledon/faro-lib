@@ -17,7 +17,7 @@ backend/                            FastAPI multi-tenant SaaS API — pure orche
 Frontend/                           Next.js 14 (pages under src/app/, API client in src/lib/api.ts)
 ```
 
-Do not put ML logic in `backend/` or business logic in `Frontend/`.
+Do not put ML logic in `backend/` or business logic in `Frontend/`. pandas/numpy live only in `backend/dataframes/`, `backend/utils/temporal_agg.py`, and `backend/workers/runner.py`; no other backend module imports them (enforced by `backend/tests/test_no_pandas_in_backend.py`). Every tabular read/analysis in the API/service layer routes through the `backend/dataframes/` boundary, which returns plain Python (a DataFrame only ever crosses out via the explicit ForecastingCore-bridge helpers).
 
 ## Running
 
