@@ -19,7 +19,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
@@ -166,23 +165,25 @@ def inspect_dataset(
 
     except ImportError:
         raise HTTPException(status_code=503, detail="ML library not available")
-    except pd.errors.EmptyDataError:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"The file for session '{s['name']}' is empty or has no columns. "
-                "Upload a CSV file with at least a header row and data."
-            ),
-        )
-    except pd.errors.ParserError as e:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"Could not read the file for session '{s['name']}': invalid CSV format ({e}). "
-                "Make sure the file is not corrupted and try again."
-            ),
-        )
     except Exception as e:
+        from backend.dataframes.analysis import read_error_message
+        kind = read_error_message(e)
+        if kind == "empty":
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"The file for session '{s['name']}' is empty or has no columns. "
+                    "Upload a CSV file with at least a header row and data."
+                ),
+            )
+        if kind == "parser":
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Could not read the file for session '{s['name']}': invalid CSV format ({e}). "
+                    "Make sure the file is not corrupted and try again."
+                ),
+            )
         raise HTTPException(status_code=500, detail=f"Inspection failed: {e}")
 
 
@@ -541,9 +542,9 @@ def get_data_health(
         raise HTTPException(404, "Dataset file not found on disk")
 
     try:
-        import pandas as pd
+        from backend.dataframes.io import read_dataframe
         fp = ds_meta["file_path"]
-        df = pd.read_csv(fp) if str(fp).endswith(".csv") else pd.read_excel(fp)
+        df = read_dataframe(fp)
     except Exception as exc:
         raise HTTPException(500, f"Could not load dataset: {exc}")
 
@@ -648,29 +649,6 @@ def _get_dataset_analysis_impl(session_id: str, user):
     if not os.path.exists(fp):
         raise HTTPException(404, "Dataset file not found on disk")
 
-    try:
-        import numpy as np
-        import pandas as pd
-        df = pd.read_csv(fp) if str(fp).endswith(".csv") else pd.read_excel(fp)
-    except Exception as exc:
-        raise HTTPException(500, f"Could not load dataset: {exc}")
-
-    # Column-level analysis
-    col_analysis = []
-    for col in df.columns:
-        s_col = df[col]
-        role = "numeric" if pd.api.types.is_numeric_dtype(s_col) else "categorical"
-        col_analysis.append({
-            "name":     col,
-            "dtype":    str(s_col.dtype),
-            "role":     role,
-            "null_pct": round(float(s_col.isna().mean() * 100), 1),
-            "n_unique": int(s_col.nunique()),
-        })
-
-    n_duplicates = int(df.duplicated().sum())
-    memory_mb    = round(float(df.memory_usage(deep=True).sum() / 1024 / 1024), 2)
-    
     col_cfg    = session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {}
     recommended = inspection.get("profile", {}).get("recommended", {})
 
@@ -678,85 +656,17 @@ def _get_dataset_analysis_impl(session_id: str, user):
     target_col = col_cfg.get("target_column") or recommended.get("target")
     group_col  = col_cfg.get("sku_column")    or recommended.get("group")
 
-    # Temporal analysis
-    profile      = inspection.get("profile", {})
-    recommended  = profile.get("recommended", {})
-    
-
-    temporal: dict = {}
-    if dt_col and dt_col in df.columns:
-        try:
-            dates = pd.to_datetime(df[dt_col], errors="coerce").dropna().sort_values()
-            diffs = dates.diff().dropna()
-            if len(diffs) > 0:
-                med_td     = diffs.median()
-                freq_days  = int(round(med_td.total_seconds() / 86400))
-                gap_thresh = med_td * 2.5
-                gap_count  = int((diffs > gap_thresh).sum())
-            else:
-                freq_days = gap_count = 0
-            temporal = {
-                "date_min":   str(dates.min().date()),
-                "date_max":   str(dates.max().date()),
-                "n_periods":  int(dates.nunique()),
-                "freq_days":  freq_days,
-                "gap_count":  gap_count,
-                "freq_label": recommended.get("freq", "unknown"),
-            }
-        except Exception:
-            pass
-
-    # Aggregate seasonality on target
-    seasonality_info: Optional[dict] = None
-    if target_col and target_col in df.columns and dt_col and dt_col in df.columns:
-        try:
-            import numpy as np
-            ts   = df.groupby(dt_col)[target_col].sum().sort_index()
-            vals = ts.values.astype(float)
-            vals = vals[~np.isnan(vals)]
-            if len(vals) >= 12:
-                from forecasting_core.analysis.seasonality import detect_seasonality
-                res = detect_seasonality(vals)
-                dp = res.get("dominant_period")
-                seasonality_info = {
-                    "dominant_period":   int(dp) if dp is not None else None,
-                    "top_periods":       [int(p) for p in res.get("top_periods", [])],
-                    "seasonal_strength": round(float(res.get("seasonal_strength", 0)), 3),
-                    "classification":    str(res.get("classification", "none")),
-                }
-        except Exception:
-            pass
-
-    # SKU-level stats
-    sku_stats: dict = {}
-    if group_col and group_col in df.columns and target_col and target_col in df.columns:
-        try:
-            import numpy as np
-            grp            = df.groupby(group_col)
-            sizes          = grp.size()
-            zero_pcts      = grp[target_col].apply(lambda s: float((s == 0).mean()) * 100)
-            sku_stats = {
-                "n_skus":             int(df[group_col].nunique()),
-                "intermittent_count": int((zero_pcts > 30).sum()),
-                "short_series_count": int((sizes < 20).sum()),
-                "avg_zero_pct":       round(float(zero_pcts.mean()), 1),
-                "min_series_len":     int(sizes.min()),
-                "max_series_len":     int(sizes.max()),
-            }
-        except Exception:
-            pass
-    
-    result = {
-        "columns":     col_analysis,
-        "n_rows":      int(len(df)),
-        "n_cols":      int(len(df.columns)),
-        "n_duplicates": n_duplicates,
-        "memory_mb":   memory_mb,
-        "temporal":    temporal,
-        "seasonality": seasonality_info,
-        "sku_stats":   sku_stats,
-        "analyzed_at": _now(),
-    }
+    from backend.dataframes.analysis import analyze_dataset
+    try:
+        result = {
+            **analyze_dataset(
+                fp, dt_col, target_col, group_col,
+                freq_label=recommended.get("freq", "unknown"),
+            ),
+            "analyzed_at": _now(),
+        }
+    except Exception as exc:
+        raise HTTPException(500, f"Could not load dataset: {exc}")
 
     try:
         session_store.set_field(user.tenant_id, session_id, "inspection", {**inspection, "analysis": result})

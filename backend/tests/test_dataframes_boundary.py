@@ -119,6 +119,51 @@ class TestSeriesBridge:
         assert out[0]["date"] == "2026-01-07"
 
 
+class TestAnalysis:
+    def test_analyze_dataset_basic(self, tmp_path):
+        from backend.dataframes.analysis import analyze_dataset
+        p = tmp_path / "a.csv"
+        # 40 daily-ish rows -> columns classified; temporal key present.
+        rows = ["sku,fecha,ventas"]
+        for i in range(40):
+            rows.append(f"A,2026-01-{(i % 28) + 1:02d},{i}")
+        p.write_text("\n".join(rows))
+        out = analyze_dataset(str(p))
+        assert "columns" in out and "temporal" in out
+        names = {c["name"] for c in out["columns"]}
+        assert {"sku", "fecha", "ventas"} <= names
+        # ventas is numeric, sku categorical
+        role = {c["name"]: c["role"] for c in out["columns"]}
+        assert role["ventas"] == "numeric" and role["sku"] == "categorical"
+
+    def test_analyze_dataset_temporal_with_date_col(self, tmp_path):
+        from backend.dataframes.analysis import analyze_dataset
+        p = tmp_path / "a.csv"
+        rows = ["sku,fecha,ventas"]
+        for i in range(40):
+            rows.append(f"A,2026-01-{(i % 28) + 1:02d},{i}")
+        p.write_text("\n".join(rows))
+        out = analyze_dataset(str(p), dt_col="fecha", target_col="ventas",
+                              group_col="sku", freq_label="daily")
+        assert out["temporal"]["freq_label"] == "daily"
+        assert out["temporal"]["date_min"] <= out["temporal"]["date_max"]
+
+    def test_accuracy_actuals(self, tmp_path):
+        from backend.dataframes.analysis import accuracy_actuals
+        p = tmp_path / "b.csv"
+        p.write_text("fecha,ventas\n2026-01-01,5\n2026-01-02,\n")
+        out = accuracy_actuals(str(p), "fecha", "ventas")
+        assert out[0] == {"date": "2026-01-01", "value": 5.0}
+        assert out[1]["value"] is None
+
+    def test_read_error_message_classifies(self):
+        import pandas as pd
+        from backend.dataframes.analysis import read_error_message
+        assert read_error_message(pd.errors.EmptyDataError("x")) == "empty"
+        assert read_error_message(pd.errors.ParserError("x")) == "parser"
+        assert read_error_message(ValueError("x")) is None
+
+
 class TestDataframeIO:
     def test_read_dataframe_returns_dataframe(self, tmp_path):
         import pandas as pd
