@@ -48,15 +48,9 @@ def start_training(
                 detail=f"Too many active training jobs ({active}). Wait for a job to finish before queuing another.",
             )
 
-    job = job_service.create_job(user.tenant_id, session_id, user.user_id)
-    session_svc.set_last_job(user.tenant_id, session_id, job["id"])
-
-    try:
-        session_svc.transition(user.tenant_id, session_id, "QUEUED", "training")
-    except ValueError:
-        pass
-
-    return ok({"job_id": job["id"], "status": "QUEUED"})
+    from backend.sessions import family_service as fam
+    family = fam.launch_training_family(user.tenant_id, session_id, user.user_id)
+    return ok({"job_id": family["base_job_id"], "status": "QUEUED", "family": family})
 
 
 @router.get("/sessions/{session_id}/jobs")

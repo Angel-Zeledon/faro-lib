@@ -131,19 +131,17 @@ def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
             inv_svc.upsert_stock(user.tenant_id, sku, stock)
             seeded.append(sku)
 
-    # 4. Train — same path as POST /sessions/{id}/train
-    job = job_service.create_job(user.tenant_id, session_id, user.user_id)
-    session_svc.set_last_job(user.tenant_id, session_id, job["id"])
-    try:
-        session_svc.transition(user.tenant_id, session_id, "QUEUED", "training")
-    except ValueError:
-        pass
+    # 4. Train — fan out into the granularity family (same path the wizard and
+    # the integrations sync now use).
+    from backend.sessions import family_service as fam
+    family = fam.launch_training_family(user.tenant_id, session_id, user.user_id)
+    job_id = family["base_job_id"]
 
     log.info("[demo] tenant=%s session=%s job=%s stock_seeded=%s",
-             user.tenant_id, session_id, job["id"], seeded)
+             user.tenant_id, session_id, job_id, seeded)
     return ok({
         "session_id": session_id,
-        "job_id": job["id"],
+        "job_id": job_id,
         "dataset_id": dataset_id,
         "stock_seeded": seeded,
     })

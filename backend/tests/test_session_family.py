@@ -108,3 +108,15 @@ class TestLaunchFamily:
         rows = query("SELECT granularity FROM sessions WHERE family_id=%s", (sid,))
         assert [r["granularity"] for r in rows] == ["daily"]
         assert result["base_job_id"]
+
+
+class TestEntryPoints:
+    def test_demo_quickstart_creates_a_family(self, client, auth_headers, test_tenant):
+        r = client.post("/api/v1/demo/quickstart", headers=auth_headers)
+        assert r.status_code == 202, r.text
+        sid = r.json()["data"]["session_id"]
+        rows = query(
+            "SELECT granularity FROM sessions WHERE tenant_id=%s AND family_id=%s",
+            (test_tenant["id"], sid))
+        assert len(rows) >= 1
+        assert all(row["granularity"] for row in rows)  # every family member tagged

@@ -167,22 +167,19 @@ def sync_connection(connection_id: str) -> dict:
             session_store.set_field(tenant_id, session_id, field, cfg)
         session_svc.force_status(tenant_id, session_id, "MODELS_CONFIGURED")
 
-        job = job_service.create_job(tenant_id, session_id, _SYSTEM_USER_ID)
-        session_svc.set_last_job(tenant_id, session_id, job["id"])
-        try:
-            session_svc.transition(tenant_id, session_id, "QUEUED", "training")
-        except ValueError:
-            pass
+        from backend.sessions import family_service as fam
+        family = fam.launch_training_family(tenant_id, session_id, _SYSTEM_USER_ID)
+        job_id = family["base_job_id"]
 
         store.mark_synced(connection_id)
         log.info(
             "[sync] tenant=%s connection=%s provider=%s session=%s job=%s stock=%d sales_rows=%d",
-            tenant_id, connection_id, conn_row["provider"], session_id, job["id"],
+            tenant_id, connection_id, conn_row["provider"], session_id, job_id,
             len(merged), len(sales),
         )
         return {
             "session_id": session_id,
-            "job_id": job["id"],
+            "job_id": job_id,
             "dataset_id": dataset_id,
             "stock_synced": list(merged.keys()),
         }
