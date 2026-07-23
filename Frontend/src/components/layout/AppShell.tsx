@@ -10,6 +10,7 @@ import { BusinessProfileProvider } from '@/contexts/BusinessProfileContext'
 import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import { WarehousesProvider } from '@/components/inventory/WarehouseControls'
+import { PlanningProvider } from '@/contexts/PlanningContext'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
 import { EntitlementsProvider } from '@/lib/entitlements'
@@ -21,6 +22,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <EntitlementsProvider>
       <BusinessProfileProvider>
       <WarehousesProvider>
+      <PlanningProvider>
         <ToastProvider>
           <ConfirmProvider>
           <SidebarProvider>
@@ -44,6 +46,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </SidebarProvider>
           </ConfirmProvider>
         </ToastProvider>
+      </PlanningProvider>
       </WarehousesProvider>
       </BusinessProfileProvider>
       </EntitlementsProvider>

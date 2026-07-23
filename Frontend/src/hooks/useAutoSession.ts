@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getSessions, getPlanning } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
+import { usePlanning } from '@/contexts/PlanningContext'
 
 export interface AutoSessionResult {
   sessionId:         string
@@ -28,6 +29,25 @@ export function useAutoSession(): AutoSessionResult {
   // the closure's `!sessionId` check would always see the original ''.
   const sessionIdRef = useRef(sessionId)
   useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+
+  // Follow the active-period session (multi-period). When the admin changes the
+  // period/horizon, the shared planning context re-resolves active_session_id;
+  // switch to it UNLESS the user has manually picked a specific session since
+  // the last auto-applied one (then respect their choice, but track the new
+  // baseline so a later period change is still detected). Fixes QA Bug 1:
+  // the semáforo used to keep the old period until a manual reload.
+  const planningCtx = usePlanning()
+  const activeFromPlanning = planningCtx?.planning?.active_session_id ?? ''
+  const lastAppliedActiveRef = useRef('')
+  useEffect(() => {
+    if (!activeFromPlanning) return
+    if (!sessionIdRef.current || sessionIdRef.current === lastAppliedActiveRef.current) {
+      lastAppliedActiveRef.current = activeFromPlanning
+      setSessionId(activeFromPlanning)
+    } else {
+      lastAppliedActiveRef.current = activeFromPlanning
+    }
+  }, [activeFromPlanning])
 
   const load = useCallback(() => {
     setLoading(true)

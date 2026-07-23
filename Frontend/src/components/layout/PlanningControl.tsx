@@ -1,10 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { getPlanning, setPlanning, isApiError } from '@/lib/api'
-import type { PlanningState, PlanningPeriod } from '@/lib/types'
+import { useState } from 'react'
+import { isApiError } from '@/lib/api'
+import type { PlanningPeriod } from '@/lib/types'
 import { getUser } from '@/lib/auth'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
+import { usePlanning } from '@/contexts/PlanningContext'
 
 const PERIOD_KEY: Record<PlanningPeriod, string> = {
   daily: 'planning.daily', weekly: 'planning.weekly', monthly: 'planning.monthly',
@@ -16,11 +17,10 @@ const UNIT_KEY: Record<PlanningPeriod, string> = {
 export default function PlanningControl() {
   const { t } = useLanguage()
   const { addToast } = useToast()
-  const [state, setState] = useState<PlanningState | null>(null)
+  const planningCtx = usePlanning()
+  const state = planningCtx?.planning ?? null
   const [busy,  setBusy]  = useState(false)
   const isAdmin = getUser()?.role === 'admin'
-
-  useEffect(() => { getPlanning().then(setState).catch(() => setState(null)) }, [])
 
   // Mono-period (family of one) or not loaded → render nothing.
   if (!state || state.available_periods.length <= 1) return null
@@ -28,12 +28,13 @@ export default function PlanningControl() {
   const disabled = !isAdmin || busy
 
   async function apply(period: PlanningPeriod, horizon: number) {
-    if (!state) return
+    if (!state || !planningCtx) return
     const capped = Math.max(1, Math.min(horizon, state.max_horizon))
     setBusy(true)
     try {
-      const next = await setPlanning(period, capped)
-      setState(next)
+      // Shared context: persists AND re-resolves the active session, so the
+      // inventory/hoy screens re-fetch in the new period without a reload.
+      await planningCtx.apply(period, capped)
       addToast(t('planning.saved'), '', 'success')
     } catch (e) {
       addToast(t('planning.save_error'), isApiError(e) ? e.detail : '', 'error')
