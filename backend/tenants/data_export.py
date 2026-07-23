@@ -29,7 +29,7 @@ import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from backend.config import settings
 from backend.db.connection import get_conn, query, query_one

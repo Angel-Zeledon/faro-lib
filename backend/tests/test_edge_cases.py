@@ -4,7 +4,6 @@ Covers: invalid inputs, authorization boundaries, quota enforcement,
 token lifecycle, malformed requests, and schema validation.
 """
 
-import pytest
 from uuid import uuid4
 
 
@@ -37,7 +36,6 @@ class TestAuthEdgeCases:
         assert resp.status_code == 401
 
     def test_expired_token_returns_401(self, client, registered_user):
-        from backend.auth.jwt_handler import create_access_token
         from datetime import datetime, timedelta, timezone
         import jwt
         from backend.config import settings

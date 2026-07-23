@@ -12,7 +12,7 @@ import threading
 from contextlib import contextmanager
 from typing import Optional
 
-from forecasting_core.business.optimizer import OptimizationInput, OptimizationResult
+from forecasting_core.business.optimizer import OptimizationInput
 
 import math as _math
 

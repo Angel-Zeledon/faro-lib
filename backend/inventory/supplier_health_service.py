@@ -22,7 +22,7 @@ import logging
 import statistics
 from typing import Optional
 
-from backend.db.connection import query, query_one
+from backend.db.connection import query
 
 log = logging.getLogger(__name__)
 

@@ -1,6 +1,5 @@
 """Per-period coverage/semáforo + horizon windowing (multi-period Phase C)."""
 
-import math
 
 from backend.inventory.service import (
     _DAYS_PER_PERIOD,

@@ -6,7 +6,6 @@ and later marked INDEXED with a nonsensical page_count=1/chunk_count=0,
 giving the user no indication the file had no indexable content.
 """
 
-import pytest
 
 
 class TestUploadValidation:

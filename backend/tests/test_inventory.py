@@ -6,7 +6,6 @@ All tests use isolated test_tenant + auth_headers fixtures.
 
 import csv
 import io
-import math
 import pytest
 from uuid import uuid4
 

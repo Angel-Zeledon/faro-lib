@@ -283,7 +283,6 @@ class TestUniqueConstraints:
             create_user(test_tenant["id"], email, "AnotherPass123!", "viewer")
 
     def test_duplicate_tenant_slug_raises(self):
-        from backend.tenants.service import create_tenant
         from backend.db.connection import execute
         # Create tenant with specific slug via raw SQL to force constraint check
         from backend.utils.ids import generate_id

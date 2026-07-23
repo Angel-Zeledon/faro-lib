@@ -4,7 +4,6 @@ Covers: auth flow, sessions CRUD, datasets CRUD, configuration wizard, users.
 All tests use the shared `client` (session-scoped) and isolated `test_tenant`.
 """
 
-import pytest
 from uuid import uuid4
 
 

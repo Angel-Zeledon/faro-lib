@@ -113,10 +113,8 @@ class TestSyntheticCSVGenerators:
 class TestDBSeeding:
     def test_seed_completed_session_stores_result(self, test_tenant, test_session):
         from backend.db import session_store
-        from backend.sessions.service import force_status
 
         # Transition session to MODELS_CONFIGURED so it can be force-set to COMPLETED
-        from backend.sessions.service import get_session
         tid = test_tenant["id"]
         sid = test_session["id"]
 

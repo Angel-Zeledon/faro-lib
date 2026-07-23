@@ -9,7 +9,6 @@ instead of a bundled CSV.
 import csv
 import io
 import logging
-from typing import Any
 
 from backend.db.connection import execute, query, transaction
 from backend.entitlements.service import enforce_limit
@@ -20,7 +19,6 @@ from backend.db import session_store
 from backend.sessions import service as session_svc
 from backend.sessions.defaults import default_quickstart_configs
 from backend.storage import paths
-from backend.training import job_service
 from backend.utils.ids import generate_id
 
 log = logging.getLogger(__name__)

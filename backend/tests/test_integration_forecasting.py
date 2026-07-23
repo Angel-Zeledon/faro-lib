@@ -7,7 +7,6 @@ Tests that the runner stores results correctly and endpoints serve them.
 
 import pytest
 from unittest import mock
-from uuid import uuid4
 from datetime import date, timedelta
 
 
@@ -23,7 +22,6 @@ def _make_mock_engine(n_skus: int = 3, horizon: int = 14):
     fc_start = date(2023, 4, 1)
 
     # Minimal historical DataFrame stub
-    import types
     mock_df = mock.MagicMock()
     mock_df.empty = False
     mock_df.__bool__ = lambda self: True

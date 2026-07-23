@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import csv
 import io
-import sys
 from unittest import mock
 
 import pytest
