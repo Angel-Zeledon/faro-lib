@@ -243,34 +243,20 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
     control what /inventory shows, instead of /inventory silently falling back
     to whatever was entered manually in a previous session.
     """
-    import pandas as pd
     from fastapi import HTTPException
+    from backend.dataframes.stock import last_row_per_group
 
-    if df is None or df.empty:
-        return 0
+    # Pandas extraction lives at the boundary: latest row per SKU with raw
+    # (unfloored) values, NaN cells dropped. Empty / no-recognized-columns
+    # datasets come back as [].
+    raw_entries = last_row_per_group(df, group_col, date_col, _DATASET_STOCK_COLS)
 
-    present = [c for c in df.columns if c in _DATASET_STOCK_COLS]
-    if not present:
-        return 0
-
-    work = df.copy()
-    if date_col in work.columns:
-        work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
-        work = work.sort_values(date_col)
-
-    groups = work.groupby(group_col) if group_col and group_col in work.columns else [("__all__", work)]
-
-    # Resolve the per-SKU payload up front (instead of inside the write loop)
-    # so the max_skus check below can see the FULL set of rows this sync would
-    # add before writing anything.
+    # Resolve the per-SKU payload with the numeric floors up front (before the
+    # max_skus check), exactly as before — only the pandas extraction moved out.
     entries: list[tuple[str, dict]] = []
-    for sku, g in groups:
-        last = g.iloc[-1]
+    for sku, raw in raw_entries:
         data: dict = {}
-        for col in present:
-            val = last[col]
-            if pd.isna(val):
-                continue
+        for col, val in raw.items():
             if col in _DATASET_STOCK_FLOAT_COLS:
                 parsed_float = float(val)
                 floor = _DATASET_STOCK_MIN.get(col)
@@ -287,7 +273,7 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
                 data[col] = str(val)
         if not data:
             continue
-        entries.append((str(sku), data))
+        entries.append((sku, data))
 
     if not entries:
         return 0

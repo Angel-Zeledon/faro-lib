@@ -119,6 +119,26 @@ class TestSeriesBridge:
         assert out[0]["date"] == "2026-01-07"
 
 
+class TestStockExtract:
+    def test_last_row_per_group(self):
+        import pandas as pd
+        from backend.dataframes.stock import last_row_per_group
+        df = pd.DataFrame({
+            "sku":   ["A", "A", "B"],
+            "fecha": ["2026-01-01", "2026-01-03", "2026-01-02"],
+            "current_stock": [5, 9, 7],
+            "moq": [1, 1, None],
+        })
+        out = dict(last_row_per_group(df, "sku", "fecha", ["current_stock", "moq"]))
+        assert out["A"] == {"current_stock": 9, "moq": 1}   # latest A row
+        assert out["B"] == {"current_stock": 7}             # NaN moq dropped
+
+    def test_last_row_per_group_empty(self):
+        import pandas as pd
+        from backend.dataframes.stock import last_row_per_group
+        assert last_row_per_group(pd.DataFrame(), "sku", "fecha", ["current_stock"]) == []
+
+
 class TestAnalysis:
     def test_analyze_dataset_basic(self, tmp_path):
         from backend.dataframes.analysis import analyze_dataset
