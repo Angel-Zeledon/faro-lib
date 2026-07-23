@@ -45,3 +45,110 @@ def plan_family(dates: list[str]) -> list[dict]:
             "is_base": g == base_freq,
         })
     return specs
+
+
+def _read_dataset_dates(tenant_id: str, session_id: str) -> list[str]:
+    """Read just the date column of the session's dataset. pandas here is a
+    bounded exception to the no-pandas-in-backend rule (same as forecasts.py's
+    dataset read): we need the real dates to gate granularities before enqueue.
+    """
+    from backend.datasets.service import get_dataset
+    from backend.db import session_store
+    from backend.sessions import service as session_svc
+
+    s = session_svc.get_session(tenant_id, session_id)
+    ds = get_dataset(tenant_id, s["dataset_id"]) if s and s.get("dataset_id") else None
+    if not ds or not ds.get("file_path"):
+        return []
+    cols = session_store.get_field(tenant_id, session_id, "columns_cfg") or {}
+    if cols.get("schema_version") == "canonical_v1":
+        date_col = (cols.get("canonical_mapping") or {}).get("date")
+    else:
+        date_col = cols.get("date_column") or cols.get("date")
+    if not date_col:
+        return []
+    import pandas as pd
+    path = ds["file_path"]
+    try:
+        df = pd.read_csv(path, usecols=[date_col]) if str(path).endswith(".csv") \
+            else pd.read_excel(path, usecols=[date_col])
+        return [str(v)[:10] for v in df[date_col].dropna().tolist()]
+    except Exception as e:
+        log.warning("family: could not read dates for session=%s: %s", session_id, e)
+        return []
+
+
+def _enqueue(tenant_id: str, session_id: str, user_id: str) -> str:
+    """create_job + set_last_job + transition to QUEUED; returns job_id."""
+    from backend.training import job_service
+    from backend.sessions import service as session_svc
+
+    job = job_service.create_job(tenant_id, session_id, user_id)
+    session_svc.set_last_job(tenant_id, session_id, job["id"])
+    try:
+        session_svc.transition(tenant_id, session_id, "QUEUED", "training")
+    except ValueError:
+        pass
+    return job["id"]
+
+
+def launch_training_family(tenant_id: str, base_session_id: str, user_id: str) -> dict:
+    """Fan a ready-to-train base session out into its granularity family and
+    enqueue every member. The base session must already be validated and in a
+    pre-train state (callers guarantee this). Returns the family descriptor.
+    """
+    from backend.db.connection import execute
+    from backend.db import session_store
+    from backend.sessions import service as session_svc
+
+    dates = _read_dataset_dates(tenant_id, base_session_id)
+    specs = plan_family(dates)  # always >= 1 (the base)
+    base_spec = specs[0]
+    family_id = base_session_id
+
+    # Tag + finalize the base session.
+    execute(
+        "UPDATE sessions SET family_id=%s, granularity=%s, updated_at=NOW() "
+        "WHERE id=%s AND tenant_id=%s",
+        (family_id, base_spec["granularity"], base_session_id, tenant_id))
+    base_fcfg = dict(session_store.get_field(tenant_id, base_session_id, "forecast_cfg") or {})
+    base_fcfg["horizon"] = base_spec["horizon"]
+    session_store.set_field(tenant_id, base_session_id, "forecast_cfg", base_fcfg)
+
+    base_session = session_svc.get_session(tenant_id, base_session_id)
+    dataset_id = base_session.get("dataset_id")
+
+    members = [{"session_id": base_session_id, "granularity": base_spec["granularity"]}]
+
+    # Coarser siblings: clone configs, override granularity + horizon, enqueue.
+    for spec in specs[1:]:
+        sib = session_svc.create_session(
+            tenant_id, user_id, f"{base_session['name']} · {spec['granularity']}")
+        sib_id = sib["id"]
+        if dataset_id:
+            session_svc.attach_dataset(tenant_id, sib_id, dataset_id)
+        for field in ("columns_cfg", "features_cfg", "models_cfg",
+                      "validation_cfg", "business_cfg", "forecast_cfg"):
+            val = session_store.get_field(tenant_id, base_session_id, field)
+            if val is not None:
+                if field == "forecast_cfg":
+                    val = {**dict(val), "horizon": spec["horizon"]}
+                session_store.set_field(tenant_id, sib_id, field, val)
+        session_store.set_field(tenant_id, sib_id, "granularity_cfg",
+                                {"strategy": "aggregate", "target_freq": spec["target_freq"]})
+        execute(
+            "UPDATE sessions SET family_id=%s, granularity=%s, updated_at=NOW() "
+            "WHERE id=%s AND tenant_id=%s",
+            (family_id, spec["granularity"], sib_id, tenant_id))
+        session_svc.force_status(tenant_id, sib_id, "MODELS_CONFIGURED")
+        members.append({"session_id": sib_id, "granularity": spec["granularity"]})
+
+    # Enqueue base FIRST (finest grain -> semaforo usable soonest), then siblings.
+    base_job_id = _enqueue(tenant_id, base_session_id, user_id)
+    members[0]["job_id"] = base_job_id
+    for m in members[1:]:
+        m["job_id"] = _enqueue(tenant_id, m["session_id"], user_id)
+
+    log.info("[family] tenant=%s family=%s members=%d",
+             tenant_id, family_id, len(members))
+    return {"family_id": family_id, "base_job_id": base_job_id, "sessions": members}
