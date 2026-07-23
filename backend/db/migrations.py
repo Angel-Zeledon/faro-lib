@@ -862,6 +862,22 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
              ADD CONSTRAINT inventory_stock_current_stock_nonneg CHECK (current_stock >= 0);
          END IF;
        END $$"""),
+    # Repair the over-receipt residue left by the uncapped reception paths
+    # (fixed in reception_service): received_qty could exceed final_qty, an
+    # impossible ledger state that corrupts supplier fill-rate. Clamp to
+    # final_qty — the most that could legitimately have been ordered on the
+    # line. Idempotent (a second run matches no rows). We intentionally do NOT
+    # add a CHECK(received_qty <= final_qty) constraint: a supplier genuinely
+    # shipping extra is a real-world case the product may later choose to
+    # record, so the invariant lives in the service layer, not the schema.
+    ("clamp_po_items_over_receipt",
+     "UPDATE inventory_po_items SET received_qty = final_qty "
+     "WHERE received_qty > final_qty"),
+    # Same class of residue on transfers: qty_received > qty_sent from the
+    # pre-fix receive race. Clamp to qty_sent.
+    ("clamp_transfer_items_over_receipt",
+     "UPDATE inventory_transfer_items SET qty_received = qty_sent "
+     "WHERE qty_received > qty_sent"),
 ]
 
 
