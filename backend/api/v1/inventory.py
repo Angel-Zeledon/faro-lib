@@ -1893,15 +1893,11 @@ def export_po(
 
 @router.get("/optimize", dependencies=[Depends(require_feature(Feature.MILP_OPTIMIZER))])
 def optimize_inventory(
-    session_id:   str = Query(...),
-    # 30 (the max allowed) rather than a shorter default: the optimizer's own
-    # lead-time gating (ForecastingCore business/optimizer.py build_problem)
-    # blocks EVERY order bucket for a SKU whenever its lead_time_buckets >=
-    # horizon_days, and optimizer_service's fallback lead time when a SKU has
-    # no lead_time_days data is 15 days — a shorter default horizon would put
-    # any under-configured SKU in a total lockout (real shortage, zero
-    # possible recommendation) rather than just a smaller ordering window.
-    horizon_days: int = Query(default=30, ge=1, le=30),
+    session_id:   Optional[str] = Query(default=None),
+    # Cap raised from 30 to 360 (multi-period Phase C): a monthly horizon of 12
+    # buckets is 12*30 = 360 days. When omitted, horizon_days is derived from
+    # the tenant's active (period, horizon): horizon * days_per_period.
+    horizon_days: Optional[int] = Query(default=None, ge=1, le=360),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -1912,6 +1908,16 @@ def optimize_inventory(
     """
     from forecasting_core.business.optimizer import optimize
 
+    plan = planning_service.get_planning(user.tenant_id)
+    period = plan.get("period", "daily")
+    if not session_id:
+        session_id = planning_service.resolve_active_session(user.tenant_id)
+        if not session_id:
+            raise HTTPException(status_code=400, detail="No completed session for this tenant yet")
+    if horizon_days is None:
+        horizon_days = int(plan.get("horizon", 14)) * svc._days_per_period(period)
+        horizon_days = max(1, min(horizon_days, 360))
+
     # Read the inventory snapshot once and thread it through both build and
     # serialize — the endpoint used to call list_stock twice (once inside
     # build_optimization_input, once here), doubling this path's pooled-
@@ -1919,7 +1925,7 @@ def optimize_inventory(
     try:
         stock_rows = svc.list_stock(user.tenant_id)
         inp = opt_svc.build_optimization_input(
-            user.tenant_id, session_id, horizon_days, stock_rows=stock_rows,
+            user.tenant_id, session_id, horizon_days, stock_rows=stock_rows, period=period,
         )
     except PoolError:
         # The DB pool (ThreadedConnectionPool, max=10) raises rather than

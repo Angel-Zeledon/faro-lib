@@ -208,3 +208,53 @@ class TestStatusEndpointPeriod:
                             lambda t: None)
         r = client.get("/api/v1/inventory/status", headers=auth_headers)
         assert r.status_code == 400
+
+
+class TestOptimizerHorizonConversion:
+    def test_endpoint_converts_active_horizon_to_days(
+        self, client, auth_headers, test_tenant, test_session, monkeypatch
+    ):
+        import backend.api.v1.inventory as inv_api
+        captured = {}
+
+        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None, period="daily"):
+            captured["horizon_days"] = horizon_days
+            captured["period"] = period
+            return None
+
+        monkeypatch.setattr(inv_api.opt_svc, "build_optimization_input", _fake_build)
+        monkeypatch.setattr(inv_api.planning_service, "get_planning",
+                            lambda t: {"period": "monthly", "horizon": 4,
+                                       "available_periods": ["daily", "monthly"],
+                                       "max_horizon": 12})
+        r = client.get(f"/api/v1/inventory/optimize?session_id={test_session['id']}",
+                       headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert captured["horizon_days"] == 120
+        assert captured["period"] == "monthly"
+
+    def test_endpoint_accepts_horizon_beyond_old_cap(
+        self, client, auth_headers, test_session, monkeypatch
+    ):
+        import backend.api.v1.inventory as inv_api
+        monkeypatch.setattr(inv_api.planning_service, "get_planning",
+                            lambda t: {"period": "monthly", "horizon": 12,
+                                       "available_periods": ["monthly"], "max_horizon": 12})
+        r = client.get(f"/api/v1/inventory/optimize?session_id={test_session['id']}",
+                       headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+
+class TestOptimizerLeadTimeBuckets:
+    def test_lead_time_periodized(self, client, auth_headers, test_tenant):
+        from backend.inventory import optimizer_service as opt
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "opt-lead")["id"]
+        _put_stock(client, auth_headers, "OPTL", current_stock=5, lead_time_days=30,
+                   moq=1, warehouse="principal")
+        session_store.set_forecasts(tid, sid, {"OPTL": _forecast(10.0, 0.0)})
+        inp = opt.build_optimization_input(tid, sid, horizon_days=4, period="monthly")
+        assert inp is not None
+        assert inp.lead_time_buckets["OPTL"] == 1
+        inp_d = opt.build_optimization_input(tid, sid, horizon_days=30)
+        assert inp_d.lead_time_buckets["OPTL"] == 30

@@ -136,7 +136,7 @@ class TestOptimizeEndpoint:
         import backend.inventory.optimizer_service as opt_svc
         from forecasting_core.business.optimizer import OptimizationInput
 
-        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None):
+        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None, period="daily"):
             return OptimizationInput(
                 skus=["XFER-SKU"], warehouses=["Norte", "Sur"], horizon=horizon_days,
                 demand={("XFER-SKU", "Norte"): [0.0] * horizon_days,

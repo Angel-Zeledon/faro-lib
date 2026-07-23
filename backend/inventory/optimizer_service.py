@@ -14,8 +14,10 @@ from typing import Optional
 
 from forecasting_core.business.optimizer import OptimizationInput, OptimizationResult
 
+import math as _math
+
 from backend.db import session_store
-from backend.inventory.service import list_stock, _avg_forecast_curve
+from backend.inventory.service import list_stock, _avg_forecast_curve, _days_per_period
 
 _DEFAULT_UNIT_COST = 1.0
 _DEFAULT_TRANSFER_COST_PER_UNIT = 0.5
@@ -53,6 +55,7 @@ def build_optimization_input(
     session_id: str,
     horizon_days: int = 14,
     stock_rows: Optional[list[dict]] = None,
+    period: str = "daily",
 ) -> Optional[OptimizationInput]:
     """
     `stock_rows` lets the caller pass an already-fetched inventory snapshot so
@@ -113,7 +116,13 @@ def build_optimization_input(
             demand[(sku, w)] = [v * share for v in daily_total]
 
         lead_times = [int(row["lead_time_days"]) for row in sku_rows.values() if row.get("lead_time_days") is not None]
-        lead_time_buckets[sku] = max(lead_times) if lead_times else _DEFAULT_LEAD_TIME_DAYS
+        raw_lead = max(lead_times) if lead_times else _DEFAULT_LEAD_TIME_DAYS
+        # Lead time in the horizon's own buckets: for daily this is the day
+        # count (unchanged); for weekly/monthly it is the lead time rounded up
+        # to whole periods, staying commensurable with horizon_days (which the
+        # endpoint expresses in that period's buckets when a coarser period is
+        # active).
+        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / _days_per_period(period)))
 
         costs = [float(row["unit_cost"]) for row in sku_rows.values() if row.get("unit_cost") is not None]
         unit_cost = max(costs) if costs else _DEFAULT_UNIT_COST
