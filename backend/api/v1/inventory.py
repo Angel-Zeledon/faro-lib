@@ -1640,15 +1640,24 @@ def send_alert_now(
 
 @router.get("/morning-briefing")
 def morning_briefing(
-    session_id: str = Query(...),
+    session_id: Optional[str] = Query(
+        default=None,
+        description="Completed forecast session; defaults to the tenant's active-period session"),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
     Daily operations briefing: risks, recommendations, demand changes, KPIs.
-    Designed to be the first thing a manager opens every morning.
+    Designed to be the first thing a manager opens every morning. Reflects the
+    tenant's ACTIVE planning period — coverage and the signal in that unit —
+    so /hoy agrees with /inventory (a weekly session must be read as weekly).
     """
-    data = svc.get_morning_briefing(user.tenant_id, session_id, service_level)
+    if not session_id:
+        session_id = planning_service.resolve_active_session(user.tenant_id)
+        if not session_id:
+            raise HTTPException(status_code=400, detail="No completed session for this tenant yet")
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    data = svc.get_morning_briefing(user.tenant_id, session_id, service_level, period)
     return ok(data)
 
 

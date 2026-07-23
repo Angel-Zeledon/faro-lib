@@ -258,3 +258,31 @@ class TestOptimizerLeadTimeBuckets:
         assert inp.lead_time_buckets["OPTL"] == 1
         inp_d = opt.build_optimization_input(tid, sid, horizon_days=30)
         assert inp_d.lead_time_buckets["OPTL"] == 30
+
+
+class TestBriefingPeriodAware:
+    def test_briefing_uses_active_period_not_daily(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        """QA Bug 2: /hoy morning-briefing must read the session in the active
+        period. A weekly session's per-period demand read as daily flags
+        everything PEDIR_YA; period-aware, it agrees with /inventory."""
+        import backend.api.v1.inventory as inv_api
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "brief-weekly")["id"]
+        # 10 units/week, 40 stock, lead 14d -> 4 weeks coverage vs 2-week lead
+        # -> OK weekly. Read as DAILY it would be 4 "days" vs 14 -> PEDIR_YA.
+        _put_stock(client, auth_headers, "BRF", current_stock=40, lead_time_days=14, moq=1)
+        session_store.set_forecasts(tid, sid, {"BRF": _forecast(10.0, 0.0)})
+        monkeypatch.setattr(inv_api.planning_service, "resolve_active_session",
+                            lambda t: sid)
+        monkeypatch.setattr(inv_api.planning_service, "get_planning",
+                            lambda t: {"period": "weekly", "horizon": 4,
+                                       "available_periods": ["daily", "weekly"],
+                                       "max_horizon": 26})
+        r = client.get("/api/v1/inventory/morning-briefing", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        # Weekly-aware: BRF is OK, not a risk -> risks empty of BRF.
+        risk_skus = {i["sku"] for i in data["risks"]}
+        assert "BRF" not in risk_skus

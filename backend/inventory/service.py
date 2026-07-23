@@ -2006,7 +2006,8 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
     return list(seen.values())[:20]  # top 20 recommendations
 
 
-def get_morning_briefing(tenant_id: str, session_id: str, service_level: float = 0.95) -> dict:
+def get_morning_briefing(tenant_id: str, session_id: str, service_level: float = 0.95,
+                         period: str = "daily") -> dict:
     """
     Returns everything needed for the daily operations briefing:
     - risks: SKUs with PEDIR_YA signal
@@ -2015,8 +2016,13 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     - demand_changes: SKUs with significant demand trend
     - recommendations: plain-language action items
     - kpis: summary metrics
+
+    `period` (multi-period Phase C): the active planning period the session was
+    trained at. Coverage and the signal are judged in that unit — `/hoy` must
+    pass it or a weekly/monthly session's per-period demand is misread as daily
+    and everything flags PEDIR_YA. Default "daily" is byte-identical to before.
     """
-    items = get_inventory_status(tenant_id, session_id, service_level)
+    items = get_inventory_status(tenant_id, session_id, service_level, period)
 
     # Compute demand trend for each item that has forecast + stock data
     for item in items:
@@ -2064,7 +2070,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         from backend.inventory import warehouse_service as wh_svc
         if wh_svc.count_warehouses(tenant_id) >= 2:
             wh_items = get_inventory_status_by_warehouse(
-                tenant_id, session_id, service_level,
+                tenant_id, session_id, service_level, period,
                 forecasts=briefing_forecasts,
             )
             transfer_suggestions = [
