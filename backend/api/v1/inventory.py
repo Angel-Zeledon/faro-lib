@@ -809,9 +809,9 @@ class POLineItem(BaseModel):
     display_name:         Optional[str]   = None
     supplier:            Optional[str]   = None
     signal:               Optional[str]   = None
-    recommended_qty: float           = Field(default=0, ge=0)
-    final_qty:       float           = Field(default=0, ge=0)
-    unit_cost:       Optional[float] = Field(default=None, ge=0)
+    recommended_qty: float           = Field(default=0, ge=0, le=_MAX_QTY)
+    final_qty:       float           = Field(default=0, ge=0, le=_MAX_QTY)
+    unit_cost:       Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
     status:               str             = "approved"
     warehouse:               Optional[str]   = None
 
@@ -1448,7 +1448,7 @@ class TransferCreate(BaseModel):
     from_warehouse: str
     to_warehouse: str
     items: list[TransferItemIn]
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class TransferReceive(BaseModel):
@@ -1923,6 +1923,15 @@ def optimize_inventory(
     # optimize() never raises on structurally-valid-but-degenerate input
     # (infeasible/unbounded/oversized LP all degrade to a "fallback" result),
     # so a genuine 500 here would only come from an unexpected programming
-    # error, which should stay a 500 rather than be masked.
-    result = optimize(inp)
+    # error, which should stay a 500 rather than be masked. The solve runs
+    # inside a bounded concurrency gate so a request burst can't occupy every
+    # thread-pool worker and wedge the server — excess requests get a fast 503.
+    try:
+        with opt_svc.solve_slot():
+            result = optimize(inp)
+    except opt_svc.OptimizerBusy:
+        raise HTTPException(
+            status_code=503,
+            detail="Optimizer busy (too many concurrent requests); please retry.",
+        )
     return ok(opt_svc.serialize_optimization_result(inp, result, stock_rows))

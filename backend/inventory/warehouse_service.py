@@ -35,18 +35,35 @@ def name_precedence_key(name: str | None) -> tuple:
     return (name != DEFAULT_WAREHOUSE, (name or "").casefold())
 
 
+# Zero-width and bidirectional-control code points. They are invisible or
+# reorder surrounding text (U+202E flips it right-to-left), so a warehouse
+# name carrying them is a display-spoofing vector wherever it renders. Listed
+# by code point (not literal) so the source stays reviewable. Stripped at the
+# write boundary rather than stored.
+_INVISIBLE_CHARS = dict.fromkeys([
+    0x200B, 0x200C, 0x200D, 0xFEFF,          # zero-width space / joiners / BOM
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embeddings / override / pop
+    0x2066, 0x2067, 0x2068, 0x2069,          # bidi isolates
+])
+
+
+def _strip_invisible(text: str) -> str:
+    return text.translate(_INVISIBLE_CHARS)
+
+
 def resolve_canonical_name(tenant_id: str, name: str | None) -> str:
     """Normalize a warehouse name at a WRITE boundary (normalize-at-write).
 
-    Strips whitespace and, when the tenant already has a warehouse under a
-    different casing, returns THAT existing spelling — so 'norte' lands on the
-    existing 'Norte' warehouse/stock rows instead of creating a case-variant
-    duplicate (every other query in the codebase matches names exactly).
-    An unknown name is returned stripped and becomes the canonical spelling on
-    first use. Empty/missing names fall back to DEFAULT_WAREHOUSE, matching
-    upsert_stock's historical default. Read paths are NOT normalized.
+    Strips whitespace and invisible/bidi control characters, and — when the
+    tenant already has a warehouse under a different casing — returns THAT
+    existing spelling, so 'norte' lands on the existing 'Norte' warehouse/stock
+    rows instead of creating a case-variant duplicate (every other query in the
+    codebase matches names exactly). An unknown name is returned cleaned and
+    becomes the canonical spelling on first use. Empty/missing names fall back
+    to DEFAULT_WAREHOUSE, matching upsert_stock's historical default. Read
+    paths are NOT normalized.
     """
-    stripped = (name or "").strip()
+    stripped = _strip_invisible(name or "").strip()
     if not stripped:
         return DEFAULT_WAREHOUSE
     row = query_one(

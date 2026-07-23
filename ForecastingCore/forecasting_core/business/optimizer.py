@@ -186,7 +186,19 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
     return MilpProblem(c=c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, integrality=integrality, index=idx)
 
 
-def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> OptimizationResult:
+# Hard ceiling on a single HiGHS solve. A pathological instance can otherwise
+# spin a core for minutes; under a request burst that starves the server's
+# thread pool and wedges the whole process. On timeout HiGHS returns a
+# non-success status, so we degrade to the greedy fallback like any other
+# unsolved case — a fast approximate answer beats an unbounded solve.
+_SOLVE_TIME_LIMIT_S = 10.0
+
+
+def optimize(
+    inp: OptimizationInput,
+    max_vars_before_fallback: int = 5000,
+    time_limit_s: float = _SOLVE_TIME_LIMIT_S,
+) -> OptimizationResult:
     """
     Does not raise on structurally-valid-but-incomplete input: an oversized
     problem, missing dict keys, or short/mismatched demand lists all degrade
@@ -195,6 +207,9 @@ def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> Op
     violations (e.g. a None where OptimizationInput's dataclass declares a
     List/Dict) — those aren't a real path since callers build this from DB
     rows, and are left to raise rather than silently masked.
+
+    A solver time limit (time_limit_s) bounds a single solve; a timed-out
+    solve returns a non-success status and degrades to the fallback.
     """
     try:
         idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
@@ -214,6 +229,7 @@ def optimize(inp: OptimizationInput, max_vars_before_fallback: int = 5000) -> Op
             integrality=problem.integrality,
             bounds=problem.bounds,
             constraints=[constraint],
+            options={"time_limit": time_limit_s},
         )
     except Exception:
         return _fallback_recommend(inp, idx)

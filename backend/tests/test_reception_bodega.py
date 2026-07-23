@@ -113,6 +113,36 @@ class TestReceptionOverReceiptCap:
             "WHERE tenant_id=%s AND sku=%s AND warehouse='principal'", (tid, sku))
         assert float(row["current_stock"]) == 0.0
 
+    def test_partial_then_receive_complete_books_only_outstanding(self, client, test_tenant):
+        """QA NEW-1: after a partial reception, 'Llegó todo completo' (lines=None)
+        must book only the remaining units, never re-book the full final_qty."""
+        from backend.inventory import service as inv_svc
+        from backend.inventory import roi_service
+        from backend.inventory import reception_service as rec_svc
+        from backend.db.connection import query_one
+
+        tid = test_tenant["id"]
+        sku = _sku()
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 0, "warehouse": "principal"})
+        po = roi_service.log_po_generation(tid, "sess-test", [
+            {"sku": sku, "final_qty": 300, "status": "approved", "supplier": "Prov A"},
+        ])
+        # First shipment: 100 of 300.
+        rec_svc.receive_po(tid, po["id"], user_id="u1",
+                           lines=[{"sku": sku, "received_qty": 100}])
+        # "Everything arrived complete" — must book only the outstanding 200.
+        rec_svc.receive_po(tid, po["id"], user_id="u1", lines=None)
+
+        item = query_one(
+            "SELECT received_qty, final_qty FROM inventory_po_items "
+            "WHERE po_log_id=%s AND sku=%s", (po["id"], sku))
+        assert float(item["received_qty"]) == 300.0  # not 400
+        assert float(item["received_qty"]) <= float(item["final_qty"])
+        stock = query_one(
+            "SELECT current_stock FROM inventory_stock "
+            "WHERE tenant_id=%s AND sku=%s AND warehouse='principal'", (tid, sku))
+        assert float(stock["current_stock"]) == 300.0  # 100 + 200, not 100 + 300
+
     def test_partial_then_over_remaining_is_rejected(self, client, test_tenant):
         from backend.inventory import service as inv_svc
         from backend.inventory import roi_service

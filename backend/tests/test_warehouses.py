@@ -98,6 +98,19 @@ class TestWarehouseNameNormalization:
         )
         assert [r["name"] for r in wh_rows] == ["Norte"]
 
+    def test_invisible_and_bidi_chars_stripped_from_name(self, client, test_tenant):
+        """QA NEW-3: zero-width and bidi-override chars are a display-spoofing
+        vector; they must be stripped at the write boundary, and a name that
+        differs from an existing one only by such chars must resolve to it."""
+        from backend.inventory import warehouse_service as wh_svc
+        tid = test_tenant["id"]
+        zwsp, rlo = chr(0x200B), chr(0x202E)  # zero-width space, RTL override
+        resolved = wh_svc.resolve_canonical_name(tid, f"{zwsp}Nor{rlo}te")
+        assert resolved == "Norte"
+        wh_svc.create_warehouse(tid, "Norte")
+        # A later name carrying invisibles collapses onto the clean existing one.
+        assert wh_svc.resolve_canonical_name(tid, f"Norte{zwsp}") == "Norte"
+
     def test_upsert_stock_strips_and_case_resolves_to_principal(self, client, auth_headers, test_tenant):
         """warehouse=' PRINCIPAL ' resolves to the existing 'principal'
         row-space (stripped + case-insensitive match on the auto-created

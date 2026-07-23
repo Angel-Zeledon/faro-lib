@@ -53,6 +53,43 @@ class TestOptimizeEndpoint:
         )
         assert resp.status_code == 503
 
+    def test_concurrency_gate_returns_503_when_full(
+        self, client, auth_headers, test_tenant, test_session,
+    ):
+        """QA NEW-2: a MILP solve is CPU-bound; an unthrottled burst can occupy
+        every thread-pool worker and wedge the server. The bounded gate rejects
+        excess requests fast with 503 instead of piling onto the pool."""
+        from backend.inventory import optimizer_service as opt_svc
+        from backend.inventory import service as inv_svc
+        from backend.db import session_store
+
+        tid, sid = test_tenant["id"], test_session["id"]
+        sku = _sku()
+        # Seed real stock + forecast so the request reaches the solve (an empty
+        # input returns early, before the gate — that path is cheap by design).
+        inv_svc.upsert_stock(tid, sku, {
+            "current_stock": 0, "lead_time_days": 3, "unit_cost": 5.0,
+            "warehouse": "principal",
+        })
+        session_store.set_forecasts(tid, sid, {
+            sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
+        })
+
+        # Fill every solve slot, then a request must be turned away with 503.
+        acquired = []
+        while opt_svc._solve_gate.acquire(blocking=False):
+            acquired.append(True)
+        try:
+            resp = client.get(
+                "/api/v1/inventory/optimize",
+                params={"session_id": sid, "horizon_days": 7},
+                headers=auth_headers,
+            )
+            assert resp.status_code == 503
+        finally:
+            for _ in acquired:
+                opt_svc._solve_gate.release()
+
     def test_returns_real_order_recommendation_for_understocked_sku(
         self, client, auth_headers, test_tenant, test_session,
     ):

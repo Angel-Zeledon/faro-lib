@@ -124,7 +124,16 @@ def receive_po(
     # a PO can carry the same SKU on separate lines for different warehouses,
     # and each line has its own final_qty/warehouse).
     if lines is None:
-        received_by_item = {i["id"]: float(i["final_qty"] or 0) for i in ordered}
+        # "Everything arrived complete" books only what is still OUTSTANDING
+        # per line (ordered minus already received), not the full final_qty.
+        # After a partial reception, re-booking final_qty would double-count
+        # the units already received and push received_qty > final_qty (the
+        # over-receipt QA reproduced via "Llegó todo completo"). Mirrors the
+        # cap the explicit-lines branch already applies.
+        received_by_item = {
+            i["id"]: max(0.0, float(i["final_qty"] or 0) - float(i.get("received_qty") or 0))
+            for i in ordered
+        }
     else:
         received_by_item = {}
         sku_to_items: dict[str, list[dict]] = {}

@@ -8,6 +8,8 @@ see docs/superpowers/specs/2026-07-12-multi-warehouse-milp-design.md,
 
 from __future__ import annotations
 
+import threading
+from contextlib import contextmanager
 from typing import Optional
 
 from forecasting_core.business.optimizer import OptimizationInput, OptimizationResult
@@ -18,6 +20,32 @@ from backend.inventory.service import list_stock, _avg_forecast_curve
 _DEFAULT_UNIT_COST = 1.0
 _DEFAULT_TRANSFER_COST_PER_UNIT = 0.5
 _DEFAULT_LEAD_TIME_DAYS = 15
+
+# A MILP solve is CPU-bound and can take tens of seconds. FastAPI runs sync
+# endpoints on a bounded thread pool, so an unthrottled burst of /optimize
+# requests can occupy every worker thread at once and wedge the whole process
+# (QA drove /health to time out for 8+ minutes). This bounded gate caps how
+# many solves run concurrently; requests beyond the cap are rejected fast
+# (OptimizerBusy -> 503 retry) instead of piling onto the thread pool.
+_MAX_CONCURRENT_SOLVES = 2
+_solve_gate = threading.BoundedSemaphore(_MAX_CONCURRENT_SOLVES)
+
+
+class OptimizerBusy(Exception):
+    """Raised when all concurrent-solve slots are taken; caller should 503."""
+
+
+@contextmanager
+def solve_slot():
+    """Non-blocking concurrency gate around a MILP solve. Raises OptimizerBusy
+    immediately if every slot is in use — never queues, so a burst can't tie
+    up threads waiting."""
+    if not _solve_gate.acquire(blocking=False):
+        raise OptimizerBusy()
+    try:
+        yield
+    finally:
+        _solve_gate.release()
 
 
 def build_optimization_input(
