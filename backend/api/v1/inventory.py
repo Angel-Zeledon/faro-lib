@@ -26,6 +26,7 @@ from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
 from backend.entitlements.service import has_feature
 from backend.tenants.service import get_tenant
+from backend.sessions import planning_service
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
@@ -339,9 +340,14 @@ def _strip_abc_xyz_unless_entitled(
     return items
 
 
+_COVERAGE_UNIT = {"daily": "day", "weekly": "week", "monthly": "month"}
+
+
 @router.get("/status")
 def inventory_status(
-    session_id: str = Query(..., description="Completed forecast session to base recommendations on"),
+    session_id: Optional[str] = Query(
+        default=None,
+        description="Completed forecast session; defaults to the tenant's active-period session"),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signal: Optional[str] = Query(default=None, description="Filter by signal: PEDIR_YA, PEDIR_PRONTO, OK, SOBRESTOCK, SIN_DATOS"),
     supplier: Optional[str] = Query(default=None),
@@ -349,19 +355,26 @@ def inventory_status(
     user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Returns per-SKU inventory status:
-    - days of coverage
+    Returns per-SKU inventory status in the tenant's ACTIVE planning period:
+    - coverage (in the active period's units — see `coverage_unit`)
     - traffic-light signal (PEDIR_YA / PEDIR_PRONTO / OK / SOBRESTOCK / SIN_DATOS)
     - recommended order quantity
     - inventory value
     """
+    if not session_id:
+        session_id = planning_service.resolve_active_session(user.tenant_id)
+        if not session_id:
+            raise HTTPException(status_code=400, detail="No completed session for this tenant yet")
+
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+
     # Both views share the source-then-filter shape; only the response
     # envelope differs. abc/xyz stripping applies to the aggregated view only
     # — per-warehouse rows never carry classification fields.
     if by_warehouse:
-        items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level)
+        items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level, period)
     else:
-        items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
+        items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
         items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
 
     if signal:
@@ -373,6 +386,8 @@ def inventory_status(
 
     if by_warehouse:
         return ok({
+            "period": period,
+            "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
             "items": items,
             "summary": {
                 "total_rows": len(items),
@@ -388,6 +403,8 @@ def inventory_status(
     warning     = sum(1 for i in items if i["signal"] == "PEDIR_PRONTO")
 
     return ok({
+        "period": period,
+        "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
         "items": items,
         "excluded_skus": svc.get_excluded_skus(user.tenant_id, session_id),
         "summary": {

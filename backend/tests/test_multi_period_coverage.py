@@ -156,3 +156,55 @@ class TestByWarehousePeriod:
                         if r["sku"] == sku)
         assert default == explicit
         assert default["signal"] == "PEDIR_YA"
+
+
+class TestStatusEndpointPeriod:
+    def test_status_envelope_carries_active_period(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        import backend.api.v1.inventory as inv_api
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "ep-weekly")["id"]
+        _put_stock(client, auth_headers, "EP", current_stock=40, lead_time_days=14, moq=1)
+        session_store.set_forecasts(tid, sid, {"EP": _forecast(10.0, 0.0)})
+
+        monkeypatch.setattr(
+            inv_api.planning_service, "get_planning",
+            lambda t: {"period": "weekly", "horizon": 4,
+                       "available_periods": ["daily", "weekly"], "max_horizon": 26})
+
+        r = client.get(f"/api/v1/inventory/status?session_id={sid}", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["period"] == "weekly"
+        assert data["coverage_unit"] == "week"
+        it = next(i for i in data["items"] if i["sku"] == "EP")
+        assert it["coverage_days"] == 4.0   # 4 weeks
+        assert it["signal"] == "OK"
+
+    def test_status_defaults_session_to_active_resolver(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        import backend.api.v1.inventory as inv_api
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "ep-default")["id"]
+        _put_stock(client, auth_headers, "EPD", current_stock=1, lead_time_days=10, moq=1)
+        session_store.set_forecasts(tid, sid, {"EPD": _forecast(100.0, 0.0, n=14)})
+        monkeypatch.setattr(inv_api.planning_service, "resolve_active_session",
+                            lambda t: sid)
+        monkeypatch.setattr(inv_api.planning_service, "get_planning",
+                            lambda t: {"period": "daily", "horizon": 14,
+                                       "available_periods": ["daily"], "max_horizon": 90})
+        r = client.get("/api/v1/inventory/status", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        skus = {i["sku"] for i in r.json()["data"]["items"]}
+        assert "EPD" in skus
+
+    def test_status_no_session_and_no_active_returns_400(
+        self, client, auth_headers, monkeypatch
+    ):
+        import backend.api.v1.inventory as inv_api
+        monkeypatch.setattr(inv_api.planning_service, "resolve_active_session",
+                            lambda t: None)
+        r = client.get("/api/v1/inventory/status", headers=auth_headers)
+        assert r.status_code == 400

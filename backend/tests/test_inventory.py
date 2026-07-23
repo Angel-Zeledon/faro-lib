@@ -660,9 +660,15 @@ class TestSignalCalculation:
 
 class TestInventoryStatus:
 
-    def test_status_missing_session_id_returns_422(self, client, auth_headers):
+    def test_status_missing_session_id_resolves_or_400(self, client, auth_headers, monkeypatch):
+        # Phase C: session_id is optional — a missing id resolves the tenant's
+        # active-period session, or 400 when there is no completed session yet
+        # (was 422 when the param was required; deliberate contract change).
+        import backend.api.v1.inventory as inv_api
+        monkeypatch.setattr(inv_api.planning_service, "resolve_active_session",
+                            lambda t: None)
         resp = client.get("/api/v1/inventory/status", headers=auth_headers)
-        assert resp.status_code == 422
+        assert resp.status_code == 400
 
     def test_status_unknown_session_returns_sin_datos(self, client, auth_headers):
         """If session has no forecast data, all SKUs with stock return SIN_DATOS."""
