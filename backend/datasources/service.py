@@ -123,6 +123,10 @@ async def create_file_source(
         import io as _io
         if suffix == ".csv":
             row_count = max(0, content.count(b"\n") - 1)
+            import csv as _csv
+            header = content.split(b"\n", 1)[0].decode("utf-8", "replace")
+            if header.strip():
+                col_count = len(next(_csv.reader([header])))
         elif suffix in (".xlsx", ".xls"):
             import openpyxl
             wb = openpyxl.load_workbook(_io.BytesIO(content), read_only=True, data_only=True)
@@ -210,6 +214,10 @@ async def replace_file_source(
         import io as _io
         if suffix == ".csv":
             row_count = max(0, content.count(b"\n") - 1)
+            import csv as _csv
+            header = content.split(b"\n", 1)[0].decode("utf-8", "replace")
+            if header.strip():
+                col_count = len(next(_csv.reader([header])))
         elif suffix in (".xlsx", ".xls"):
             import openpyxl
             wb = openpyxl.load_workbook(_io.BytesIO(content), read_only=True, data_only=True)
@@ -423,17 +431,23 @@ def get_preview(tenant_id: str, source_id: str, rows: int = 100, sheet: Optional
 
     # Update stats if not set — the preview already read the full row count for
     # Excel/JSON/Parquet; CSV counts lines without loading the whole file.
-    if not src.get("row_count"):
+    # Also backfill column_count when missing (older CSV uploads stored only a
+    # row count, so the metadata card showed "COLUMNAS —" despite the preview
+    # rendering all columns).
+    if not src.get("row_count") or not src.get("column_count"):
         try:
             if total_rows is None:
-                with open(file_path, "r", encoding="utf-8", errors="replace") as _f:
-                    total_rows = sum(1 for _ in _f) - 1
+                if src.get("row_count"):
+                    total_rows = src["row_count"]
+                else:
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as _f:
+                        total_rows = sum(1 for _ in _f) - 1
             execute(
                 "UPDATE datasets SET row_count=%s, column_count=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
                 (total_rows, len(columns), source_id, tenant_id),
             )
         except Exception as _e:
-            log.warning("[preview] failed to update row count for source=%s: %s", source_id, _e)
+            log.warning("[preview] failed to update stats for source=%s: %s", source_id, _e)
 
     return {
         "columns": columns,

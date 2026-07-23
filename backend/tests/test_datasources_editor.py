@@ -160,6 +160,14 @@ def test_csv_injection_sanitized(client, analyst_headers):
     assert "\n=cmd" not in written and ",=cmd" not in written
 
 
+def test_csv_upload_populates_column_count(client, analyst_headers):
+    """A CSV upload must record column_count (from the header), so the metadata
+    card doesn't show "COLUMNAS —" while the preview renders all columns."""
+    src = _upload_csv(client, analyst_headers, SMALL_CSV)  # sku,qty,note -> 3 cols
+    row = query_one("SELECT column_count FROM datasets WHERE id=%s", (src["id"],))
+    assert row["column_count"] == 3
+
+
 def test_negative_numbers_preserved_not_quoted(client, analyst_headers):
     """A negative number is not a formula: it must round-trip as a number, not
     get quote-prefixed into text. Only genuine formula text is neutralized."""
