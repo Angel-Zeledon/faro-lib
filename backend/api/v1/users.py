@@ -91,6 +91,47 @@ def update_me(body: ProfileUpdate, user: CurrentUser = Depends(get_current_user)
     return ok(user_svc._public(u))
 
 
+class WhatsAppLinkRequest(BaseModel):
+    whatsapp_number: str
+
+
+class WhatsAppConfirmRequest(BaseModel):
+    code: str
+
+
+@router.post("/me/whatsapp/link")
+def link_whatsapp(body: WhatsAppLinkRequest, user: CurrentUser = Depends(get_current_user)):
+    """Start linking a WhatsApp number: stores it unverified and issues a code."""
+    from backend.whatsapp import identity
+    try:
+        code = identity.start_verification(user.tenant_id, user.user_id, body.whatsapp_number)
+    except ValueError as e:
+        # Bad format -> 422; already-linked -> 409.
+        status = 409 if "already linked" in str(e) else 422
+        raise HTTPException(status_code=status, detail=str(e))
+
+    payload = {"sent": True}
+    # Outside production we surface the code so the in-app "type the code" flow
+    # (and tests) can complete without a live WhatsApp round-trip. The daily
+    # alert transport is a logged no-op without TWILIO_* anyway.
+    if settings.environment.strip().lower() not in ("production", "prod"):
+        payload["debug_code"] = code
+    else:
+        from backend.notifications.whatsapp import send_whatsapp
+        send_whatsapp(body.whatsapp_number.strip(),
+                      f"Tu código de verificación de Faro es: {code}")
+    return ok(payload)
+
+
+@router.post("/me/whatsapp/confirm")
+def confirm_whatsapp(body: WhatsAppConfirmRequest, user: CurrentUser = Depends(get_current_user)):
+    """Confirm the code and mark the number verified."""
+    from backend.whatsapp import identity
+    if not identity.confirm_verification(user.tenant_id, user.user_id, body.code.strip()):
+        raise HTTPException(status_code=400, detail="Código inválido o expirado")
+    return ok({"verified": True})
+
+
 @router.get("")
 def list_users(
     user: CurrentUser = Depends(require_admin),
