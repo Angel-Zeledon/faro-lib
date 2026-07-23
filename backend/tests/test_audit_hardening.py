@@ -13,7 +13,7 @@ import uuid
 import pytest
 
 from backend.config import settings
-from backend.db.connection import execute, query, query_one
+from backend.db.connection import execute, query_one
 
 
 def _unique_email() -> str:

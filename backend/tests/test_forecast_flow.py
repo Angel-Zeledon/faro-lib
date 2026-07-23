@@ -4,9 +4,7 @@ Tests the complete wizard → train → results → forecast series flow.
 Training is NOT executed — results are seeded directly via seed_completed_session().
 """
 
-import pytest
 from unittest import mock
-from uuid import uuid4
 
 
 class TestTrainingEndpoints:

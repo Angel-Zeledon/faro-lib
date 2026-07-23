@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import csv
 import io
-import math
 import threading
 from uuid import uuid4
 
@@ -622,7 +621,6 @@ class TestBOMEdgeCases:
         )
 
         # explode_requirements should still complete (no infinite loop)
-        import signal as _signal
 
         completed = threading.Event()
         result_holder: dict = {}
@@ -1447,7 +1445,6 @@ class TestAINarrativeEdgeCases:
         )
         assert resp.status_code == 200
 
-        import json
         import math as _math
         raw = resp.text
 

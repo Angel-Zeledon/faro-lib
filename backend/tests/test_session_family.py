@@ -44,7 +44,6 @@ class TestPlanFamily:
         assert specs[0]["is_base"] is True
 
 
-import datetime
 
 from backend.db.connection import execute
 from backend.db import session_store
