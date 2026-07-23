@@ -878,6 +878,15 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("clamp_transfer_items_over_receipt",
      "UPDATE inventory_transfer_items SET qty_received = qty_sent "
      "WHERE qty_received > qty_sent"),
+    # Multi-period planning (Phase A): a training launch fans out into a
+    # "family" of sessions, one per supported granularity, sharing a family_id.
+    # Nullable — pre-feature sessions keep NULL and behave as a lone family.
+    ("add_sessions_family_id",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS family_id TEXT"),
+    ("add_sessions_granularity",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS granularity TEXT"),
+    ("create_sessions_family_idx",
+     "CREATE INDEX IF NOT EXISTS sessions_family_idx ON sessions (tenant_id, family_id)"),
 ]
 
 
