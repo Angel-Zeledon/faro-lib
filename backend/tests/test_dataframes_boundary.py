@@ -36,3 +36,16 @@ class TestReadRows:
         rows = read_columns(str(p), ["fecha"])
         assert rows[0] == {"fecha": "2026-01-01"}
         assert "sku" not in rows[0]
+
+
+class TestDatasetPreview:
+    def test_preview_csv(self, tmp_path):
+        from backend.dataframes.io import dataset_preview
+        p = tmp_path / "d.csv"
+        p.write_bytes(b"sku,cantidad\nA,5\nB,7\nC,9\n")
+        out = dataset_preview(str(p), rows=2)
+        assert out["columns"] == ["sku", "cantidad"]
+        assert len(out["rows"]) == 2               # limited to `rows`
+        assert out["rows"][0] == {"sku": "A", "cantidad": 5}
+        assert out["sheets"] is None
+        assert out["total_rows"] == 3              # full count, not the preview slice

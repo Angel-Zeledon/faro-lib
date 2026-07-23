@@ -48,10 +48,8 @@ def plan_family(dates: list[str]) -> list[dict]:
 
 
 def _read_dataset_dates(tenant_id: str, session_id: str) -> list[str]:
-    """Read just the date column of the session's dataset. pandas here is a
-    bounded exception to the no-pandas-in-backend rule (same as forecasts.py's
-    dataset read): we need the real dates to gate granularities before enqueue.
-    """
+    """Read just the date column of the session's dataset (via the dataframes
+    boundary) so granularities can be gated before enqueue."""
     from backend.datasets.service import get_dataset
     from backend.db import session_store
     from backend.sessions import service as session_svc
@@ -67,12 +65,10 @@ def _read_dataset_dates(tenant_id: str, session_id: str) -> list[str]:
         date_col = cols.get("date_column") or cols.get("date")
     if not date_col:
         return []
-    import pandas as pd
-    path = ds["file_path"]
+    from backend.dataframes.io import read_columns
     try:
-        df = pd.read_csv(path, usecols=[date_col]) if str(path).endswith(".csv") \
-            else pd.read_excel(path, usecols=[date_col])
-        return [str(v)[:10] for v in df[date_col].dropna().tolist()]
+        rows = read_columns(ds["file_path"], [date_col])
+        return [str(r[date_col])[:10] for r in rows if r.get(date_col) is not None]
     except Exception as e:
         log.warning("family: could not read dates for session=%s: %s", session_id, e)
         return []

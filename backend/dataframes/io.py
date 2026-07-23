@@ -67,3 +67,47 @@ def read_columns(path: str, cols: list[str]) -> list[dict]:
     else:
         df = pd.read_csv(path, usecols=cols)
     return _to_records(df)
+
+
+def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
+    """Preview shape for the datasources UI: first `rows` rows + column names,
+    plus Excel sheet names and the full row count (for the caller's DB update).
+    Returns plain Python; the DB write stays in the caller."""
+    fmt = _fmt_from_path(path)
+    sheets: Optional[list] = None
+    total_rows: Optional[int] = None
+
+    if fmt == "excel":
+        xf = pd.ExcelFile(path)
+        sheets = list(xf.sheet_names)
+        target = sheet or (sheets[0] if sheets else None)
+        full = pd.read_excel(path, sheet_name=target)
+        total_rows = len(full)
+        df = full.head(rows)
+    elif fmt == "json":
+        full = pd.read_json(path)
+        total_rows = len(full)
+        df = full.head(rows)
+    elif fmt == "parquet":
+        try:
+            import pyarrow.parquet as pq
+            total_rows = pq.read_metadata(path).num_rows
+        except Exception:
+            total_rows = None
+        df = pd.read_parquet(path).head(rows)
+    else:
+        df = pd.read_csv(path, nrows=rows)
+        # Full row count without loading the whole file into memory.
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as _f:
+                total_rows = sum(1 for _ in _f) - 1
+        except Exception:
+            total_rows = None
+
+    return {
+        "columns": list(df.columns),
+        "rows": _to_records(df),
+        "sheets": sheets,
+        "active_sheet": sheet or (sheets[0] if sheets else None),
+        "total_rows": total_rows,
+    }

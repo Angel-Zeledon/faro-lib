@@ -410,52 +410,27 @@ def get_preview(tenant_id: str, source_id: str, rows: int = 100, sheet: Optional
     if not file_path or not Path(file_path).exists():
         raise ValueError("File not found on disk. Please re-upload.")
 
-    import pandas as pd
     suffix = Path(file_path).suffix.lower()
-    sheets = None
-    total_rows: Optional[int] = None
-
     if suffix in (".xlsx", ".xls"):
         _check_file_size(file_path)
-        xf = pd.ExcelFile(file_path)
-        sheets = xf.sheet_names
-        target_sheet = sheet or sheets[0]
-        full_df = pd.read_excel(file_path, sheet_name=target_sheet)
-        total_rows = len(full_df)
-        df = full_df.head(rows)
-    elif suffix == ".json":
-        full_df = pd.read_json(file_path)
-        total_rows = len(full_df)
-        df = full_df.head(rows)
-    elif suffix == ".parquet":
-        try:
-            import pyarrow.parquet as pq
-            total_rows = pq.read_metadata(file_path).num_rows
-        except Exception:
-            pass
-        df = pd.read_parquet(file_path).head(rows)
-    else:  # CSV
-        df = pd.read_csv(file_path, nrows=rows)
 
-    df = df.where(pd.notna(df), None)
-    columns = list(df.columns)
-    data_rows = df.to_dict(orient="records")
-    # Convert non-serializable types
-    for row in data_rows:
-        for k, v in row.items():
-            if hasattr(v, "item"):
-                row[k] = v.item()
+    from backend.dataframes.io import dataset_preview
+    preview = dataset_preview(file_path, rows, sheet=sheet)
+    columns = preview["columns"]
+    data_rows = preview["rows"]
+    sheets = preview["sheets"]
+    total_rows = preview["total_rows"]
 
-    # Update stats if not set — single read already done above for Excel/JSON/Parquet
+    # Update stats if not set — the preview already read the full row count for
+    # Excel/JSON/Parquet; CSV counts lines without loading the whole file.
     if not src.get("row_count"):
         try:
             if total_rows is None:
-                # CSV: count lines without loading entire file into memory
                 with open(file_path, "r", encoding="utf-8", errors="replace") as _f:
                     total_rows = sum(1 for _ in _f) - 1
             execute(
                 "UPDATE datasets SET row_count=%s, column_count=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
-                (total_rows, len(df.columns), source_id, tenant_id),
+                (total_rows, len(columns), source_id, tenant_id),
             )
         except Exception as _e:
             log.warning("[preview] failed to update row count for source=%s: %s", source_id, _e)
