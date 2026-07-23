@@ -1,0 +1,125 @@
+# Continuous Integration for Faro.
+#
+# Three independent jobs, one per layer of the repo:
+#   1. backend         — FastAPI multi-tenant API (needs Postgres)
+#   2. frontend        — Next.js typecheck (no runtime, no DB)
+#   3. forecasting-core — pure-Python ML engine (no DB)
+#
+# This is the CI half of plan item 4.1 only — it builds and tests; it does NOT deploy.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# The dev machine runs Python 3.12; the ML engine targets >=3.9 but we pin CI to
+# a single version matching local dev so results are reproducible.
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  # ── Backend: FastAPI API + pytest against a real Postgres ───────────────────
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+
+    # The app self-bootstraps every table at startup via backend/db/migrations.py
+    # run_all() (invoked from the FastAPI lifespan the TestClient starts), so no
+    # manual migration step is needed — the suite only needs Postgres reachable.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Wait until the container answers before the job starts.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # backend/config.py Settings has exactly three fields without defaults:
+      # secret_key, database_url, frontend_url. pydantic-settings reads them from
+      # the OS environment (case-insensitive), so no .env file is needed in CI.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      SECRET_KEY: ci-secret-not-used-in-production
+      FRONTEND_URL: http://localhost:3000
+      # Bypass quotas / rate limits / upload caps. Allowed here because
+      # ENVIRONMENT defaults to "development" (the app only refuses to boot with
+      # TESTING_MODE=true when ENVIRONMENT=production).
+      TESTING_MODE: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        # requirements.txt already pins pytest + pytest-asyncio, so no separate
+        # dev-requirements file is needed. forecasting_core is deliberately NOT
+        # installed — the backend carries no ML/pandas code, and conftest.py
+        # injects lightweight mocks for it when the package is absent.
+        run: pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: python -m pytest tests/ -q
+
+  # ── Frontend: Next.js typecheck ─────────────────────────────────────────────
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: Frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: Frontend
+        run: node ./node_modules/typescript/bin/tsc --noEmit
+
+  # ── ForecastingCore: pure-Python ML engine tests (no DB) ────────────────────
+  forecasting-core:
+    name: ForecastingCore tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: ForecastingCore/pyproject.toml
+
+      - name: Install ForecastingCore
+        working-directory: ForecastingCore
+        # The [dev] extra provides pytest (a plain `pip install -e .` would not
+        # install a test runner).
+        run: pip install -e ".[dev]"
+
+      - name: Run ForecastingCore tests
+        working-directory: ForecastingCore
+        run: python -m pytest tests/ -q
