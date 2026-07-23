@@ -49,3 +49,90 @@ class TestDatasetPreview:
         assert out["rows"][0] == {"sku": "A", "cantidad": 5}
         assert out["sheets"] is None
         assert out["total_rows"] == 3              # full count, not the preview slice
+
+
+class TestSeries:
+    def _write(self, tmp_path):
+        p = tmp_path / "s.csv"
+        p.write_bytes(
+            b"sku,fecha,ventas\n"
+            b"A,2026-01-02,5\nA,2026-01-01,3\nB,2026-01-01,9\n")
+        return str(p)
+
+    def test_historical_series_sorted_and_filtered(self, tmp_path):
+        from backend.dataframes.series import historical_series
+        out = historical_series(self._write(tmp_path), "fecha", "ventas", "sku", sku="A")
+        assert out == [{"date": "2026-01-01", "value": 3.0},
+                       {"date": "2026-01-02", "value": 5.0}]
+
+    def test_historical_series_all_skus_when_none(self, tmp_path):
+        from backend.dataframes.series import historical_series
+        out = historical_series(self._write(tmp_path), "fecha", "ventas", "sku", sku=None)
+        assert len(out) == 3
+
+    def test_filter_rows_by_date_inclusive(self):
+        from backend.dataframes.series import filter_rows_by_date
+        rows = [{"d": "2026-01-01"}, {"d": "2026-01-05"}, {"d": "bad"}]
+        out = filter_rows_by_date(rows, "d", "2026-01-02", None)
+        assert out == [{"d": "2026-01-05"}]   # in-range kept, unparseable dropped
+
+
+class TestSeriesBridge:
+    """DataFrame-bridge helpers for the ForecastingCore analysis path."""
+
+    def test_normalize_date_column(self):
+        from backend.dataframes.series import normalize_date_column
+        rows = [{"fecha": "2026-01-01", "v": 1},
+                {"fecha": "bad", "v": 2},
+                {"fecha": "2026-01-02T10:00:00", "v": 3}]
+        out = normalize_date_column(rows, "fecha")
+        assert out == [{"fecha": "2026-01-01", "v": 1},
+                       {"fecha": "2026-01-02", "v": 3}]  # unparseable dropped, normalized
+
+    def test_filter_dataframe_by_date_returns_dataframe(self):
+        import pandas as pd
+        from backend.dataframes.series import filter_dataframe_by_date
+        df = pd.DataFrame({"fecha": ["2026-01-01", "2026-01-05", "bad"],
+                           "v": [1, 2, 3]})
+        out = filter_dataframe_by_date(df, "fecha", "2026-01-02", None)
+        assert isinstance(out, pd.DataFrame)
+        assert list(out["v"]) == [2]                       # in-range kept, NaT dropped
+        assert str(out["fecha"].dtype).startswith("datetime")
+
+    def test_dataframe_series_filtered_and_sorted(self):
+        import pandas as pd
+        from backend.dataframes.series import dataframe_series
+        df = pd.DataFrame({"sku": ["A", "A", "B"],
+                           "fecha": ["2026-01-02", "2026-01-01", "2026-01-01"],
+                           "ventas": [5.0, 3.0, None]})
+        out = dataframe_series(df, "fecha", "ventas", "sku", "A")
+        assert out == [{"date": "2026-01-01", "value": 3.0},
+                       {"date": "2026-01-02", "value": 5.0}]
+
+    def test_detect_outliers_tukey(self):
+        from backend.dataframes.series import detect_outliers
+        series = [{"date": f"2026-01-{i:02d}", "value": float(v)}
+                  for i, v in enumerate([10, 11, 9, 10, 12, 11, 500], start=1)]
+        out = detect_outliers(series)
+        assert len(out) == 1
+        assert out[0]["value"] == 500.0
+        assert out[0]["date"] == "2026-01-07"
+
+
+class TestDataframeIO:
+    def test_read_dataframe_returns_dataframe(self, tmp_path):
+        import pandas as pd
+        from backend.dataframes.io import read_dataframe
+        p = tmp_path / "d.csv"
+        p.write_bytes(b"sku,ventas\nA,5\nB,7\n")
+        df = read_dataframe(str(p))
+        assert isinstance(df, pd.DataFrame)
+        assert list(df["sku"]) == ["A", "B"]
+
+    def test_dataframe_from_records(self):
+        import pandas as pd
+        from backend.dataframes.io import dataframe_from_records
+        df = dataframe_from_records([("A", 5), ("B", 7)], ["sku", "ventas"])
+        assert isinstance(df, pd.DataFrame)
+        assert list(df.columns) == ["sku", "ventas"]
+        assert list(df["ventas"]) == [5, 7]

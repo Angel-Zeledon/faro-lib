@@ -2,7 +2,6 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-import pandas as pd
 from pydantic import BaseModel, field_validator
 
 from backend.auth.guards import CurrentUser, get_current_user
@@ -232,25 +231,26 @@ async def reconcile_actuals(
     """Upload a CSV of actual values to compare against the stored forecast."""
     _require_completed(user.tenant_id, session_id)
     content = await file.read()
+    from backend.dataframes.io import read_rows
+    from backend.dataframes.series import normalize_date_column
     try:
-        import io
-        actual_df = pd.read_csv(io.BytesIO(content))
+        actual_rows = read_rows(content, fmt="csv")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {e}")
 
+    columns = list(actual_rows[0].keys()) if actual_rows else []
     for col in [date_col, target_col]:
-        if col not in actual_df.columns:
+        if actual_rows and col not in columns:
             raise HTTPException(status_code=400, detail=f"Column '{col}' not found in uploaded file")
 
-    actual_df[date_col] = pd.to_datetime(actual_df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
-    actual_df = actual_df.dropna(subset=[date_col])
+    actual_rows = normalize_date_column(actual_rows, date_col)
 
     forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
     inserted = 0
-    for _, row in actual_df.iterrows():
+    for row in actual_rows:
         date = str(row[date_col])[:10]
-        sku  = str(row[sku_col]) if sku_col and sku_col in actual_df.columns else "__all__"
-        actual_val = float(row[target_col]) if pd.notna(row[target_col]) else None
+        sku  = str(row[sku_col]) if sku_col and sku_col in columns else "__all__"
+        actual_val = float(row[target_col]) if row[target_col] is not None else None
         if actual_val is None:
             continue
 
@@ -351,17 +351,14 @@ def get_forecast_series(
             data_path = ds_meta.get("file_path") if ds_meta else None
             if data_path:
                 try:
-                    df = pd.read_csv(data_path) if data_path.endswith(".csv") else pd.read_excel(data_path)
+                    from backend.dataframes.series import historical_series
                     dt_col = col_info.get("date_column") or col_info.get("date")
                     target_col = col_info.get("target_column") or col_info.get("target")
                     sku_col = col_info.get("sku_column") or col_info.get("sku") or col_info.get("group")
                     if dt_col and target_col and sku_col:
-                        mask = df[sku_col].astype(str) == str(sku)
-                        sub = df[mask].sort_values(dt_col)
                         historical_raw = [
-                            {"date": str(row[dt_col])[:10], "value": float(row[target_col])}
-                            for _, row in sub.iterrows()
-                            if pd.notna(row[target_col])
+                            pt for pt in historical_series(data_path, dt_col, target_col, sku_col, sku=sku)
+                            if pt["value"] is not None
                         ]
                 except Exception as e:
                     log.warning("Could not build historical series for %s: %s", sku, e)
@@ -424,16 +421,14 @@ def get_sku_intelligence(
             data_path = ds_meta.get("file_path") if ds_meta else None
             if data_path:
                 try:
-                    df = pd.read_csv(data_path) if str(data_path).endswith(".csv") else pd.read_excel(data_path)
+                    from backend.dataframes.series import historical_series
                     dt_col     = col_info.get("date_column")   or col_info.get("date")
                     target_col = col_info.get("target_column") or col_info.get("target")
                     sku_col    = col_info.get("sku_column")    or col_info.get("sku") or col_info.get("group")
                     if dt_col and target_col and sku_col:
-                        sub = df[df[sku_col].astype(str) == str(sku)].sort_values(dt_col)
                         historical_raw = [
-                            {"date": str(row[dt_col])[:10], "value": float(row[target_col])}
-                            for _, row in sub.iterrows()
-                            if pd.notna(row[target_col])
+                            pt for pt in historical_series(data_path, dt_col, target_col, sku_col, sku=sku)
+                            if pt["value"] is not None
                         ]
                 except Exception as exc:
                     log.warning("Could not load historical for %s: %s", sku, exc)
@@ -598,18 +593,16 @@ async def detect_drift(
     target_col = col_info.get("target_column") or col_info.get("target", "")
     group_col = col_info.get("sku_column") or col_info.get("sku") or col_info.get("group", "")
 
+    from backend.dataframes.io import read_dataframe
     try:
-        ref_df = pd.read_csv(ref_path) if str(ref_path).endswith(".csv") else pd.read_excel(ref_path)
+        ref_df = read_dataframe(ref_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not load reference dataset: {e}")
 
     try:
         content = await file.read()
-        import io
-        if file.filename and file.filename.endswith((".xlsx", ".xls")):
-            cur_df = pd.read_excel(io.BytesIO(content))
-        else:
-            cur_df = pd.read_csv(io.BytesIO(content))
+        cur_fmt = "excel" if (file.filename and file.filename.endswith((".xlsx", ".xls"))) else "csv"
+        cur_df = read_dataframe(content, fmt=cur_fmt)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not parse uploaded file: {e}")
 

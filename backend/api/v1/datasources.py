@@ -318,12 +318,8 @@ def analyze_source(
     if sc and sc not in df.columns:
         sc = None
 
-    import pandas as pd
-    df[dc] = pd.to_datetime(df[dc], errors="coerce")
-    if date_from:
-        df = df[df[dc] >= pd.Timestamp(date_from)]
-    if date_to:
-        df = df[df[dc] <= pd.Timestamp(date_to)]
+    from backend.dataframes.series import filter_dataframe_by_date
+    df = filter_dataframe_by_date(df, dc, date_from, date_to)
 
     try:
         from forecasting_core.analysis.analyzer import TimeSeriesAnalyzer
@@ -372,12 +368,8 @@ def analyze_sku(
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        import pandas as pd
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        if date_from:
-            df = df[df[date_col] >= pd.Timestamp(date_from)]
-        if date_to:
-            df = df[df[date_col] <= pd.Timestamp(date_to)]
+        from backend.dataframes.series import filter_dataframe_by_date
+        df = filter_dataframe_by_date(df, date_col, date_from, date_to)
         from forecasting_core.analysis.analyzer import TimeSeriesAnalyzer
         analyzer = TimeSeriesAnalyzer(df, date_col=date_col, target_col=target_col, group_col=sku_col or None)
         sku_arg = sku_id if sku_col else None
@@ -385,47 +377,11 @@ def analyze_sku(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
-    if sku_col and sku_col in df.columns:
-        sub = df[df[sku_col].astype(str) == sku_id].sort_values(date_col)
-    else:
-        sub = df.sort_values(date_col)
-
-    import pandas as pd
-    series = [
-        {"date": str(d)[:10], "value": float(v) if pd.notna(v) else None}
-        for d, v in zip(sub[date_col], sub[target_col])
-    ]
+    from backend.dataframes.series import dataframe_series, detect_outliers
+    series = dataframe_series(df, date_col, target_col, sku_col, sku_id)
 
     # Detect outliers via Tukey IQR fences (Q1 − 1.5×IQR … Q3 + 1.5×IQR)
-    import numpy as np
-    _vals = [pt["value"] for pt in series if pt["value"] is not None]
-    outliers: list[dict] = []
-    if len(_vals) >= 4:
-        _arr = np.array(_vals, dtype=float)
-        _q1, _q3 = float(np.percentile(_arr, 25)), float(np.percentile(_arr, 75))
-        _iqr = _q3 - _q1
-        _lo = _q1 - 1.5 * _iqr
-        _hi = _q3 + 1.5 * _iqr
-        _mean = float(_arr.mean())
-        _std = float(_arr.std()) if float(_arr.std()) > 0 else 1.0
-        for pt in series:
-            v = pt["value"]
-            if v is None:
-                continue
-            fv = float(v)
-            if fv < _lo or fv > _hi:
-                outliers.append({
-                    "date": pt["date"],
-                    "value": fv,
-                    "z_score": round((fv - _mean) / _std, 2),
-                    "lower_bound": round(_lo, 4),
-                    "upper_bound": round(_hi, 4),
-                    "reason": (
-                        f"Exceeds upper fence {_hi:.2f} (Q3 + 1.5×IQR)"
-                        if fv > _hi
-                        else f"Below lower fence {_lo:.2f} (Q1 − 1.5×IQR)"
-                    ),
-                })
+    outliers = detect_outliers(series)
 
     import math
 

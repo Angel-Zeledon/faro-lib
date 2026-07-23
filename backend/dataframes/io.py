@@ -59,6 +59,41 @@ def read_rows(source: _Source, fmt: Optional[str] = None,
     return _to_records(_read_df(source, fmt, nrows))
 
 
+def read_dataframe(source: _Source, fmt: Optional[str] = None,
+                   nrows: Optional[int] = None, sheet: Optional[str] = None):
+    """ForecastingCore bridge: return a raw pandas DataFrame for components that
+    require one (TimeSeriesAnalyzer, DriftDetector). One of the few boundary
+    functions that returns a DataFrame — callers pass it straight to
+    ForecastingCore and never call pandas themselves. For Excel, ``sheet``
+    defaults to the first sheet."""
+    if isinstance(source, bytes):
+        if fmt is None:
+            raise ValueError("fmt is required when reading from bytes")
+        buf: object = _io.BytesIO(source)
+    else:
+        fmt = fmt or _fmt_from_path(source)
+        buf = source
+    if fmt == "excel":
+        if sheet is None and not isinstance(source, bytes):
+            sheet = pd.ExcelFile(source).sheet_names[0]
+        if sheet is not None:
+            return pd.read_excel(buf, sheet_name=sheet, nrows=nrows)
+        return pd.read_excel(buf, nrows=nrows)
+    if fmt == "json":
+        df = pd.read_json(buf)
+        return df.head(nrows) if nrows is not None else df
+    if fmt == "parquet":
+        df = pd.read_parquet(buf)
+        return df.head(nrows) if nrows is not None else df
+    return pd.read_csv(buf, nrows=nrows)
+
+
+def dataframe_from_records(rows, columns: list[str]):
+    """ForecastingCore bridge: build a DataFrame from row records + column names
+    (used for SQL result sets fed to the analysis path)."""
+    return pd.DataFrame(rows, columns=columns)
+
+
 def read_columns(path: str, cols: list[str]) -> list[dict]:
     """Read only `cols` from a CSV/Excel file into plain row dicts."""
     fmt = _fmt_from_path(path)

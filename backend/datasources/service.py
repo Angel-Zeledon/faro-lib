@@ -493,7 +493,7 @@ def rename_source(tenant_id: str, source_id: str, name: str, description: Option
 
 def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, max_rows: int = 50_000):
     """Load DataFrame for analysis, capped at max_rows to bound memory usage."""
-    import pandas as pd
+    from backend.dataframes.io import read_dataframe, dataframe_from_records
 
     src = get_source(tenant_id, source_id)
     if not src:
@@ -510,7 +510,7 @@ def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, 
             result = conn.execute(sqlalchemy.text(saved_q))
             rows = result.fetchmany(max_rows)
             cols = list(result.keys())
-        return pd.DataFrame(rows, columns=cols)
+        return dataframe_from_records(rows, cols)
 
     file_path = src.get("file_path")
     if not file_path or not Path(file_path).exists():
@@ -519,19 +519,15 @@ def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, 
     suffix = Path(file_path).suffix.lower()
     if suffix in (".xlsx", ".xls"):
         _check_file_size(file_path)
-        xf = pd.ExcelFile(file_path)
-        target_sheet = sheet or xf.sheet_names[0]
-        return pd.read_excel(file_path, sheet_name=target_sheet, nrows=max_rows)
+        return read_dataframe(file_path, sheet=sheet, nrows=max_rows)
     elif suffix == ".json":
-        return pd.read_json(file_path).head(max_rows)
+        return read_dataframe(file_path, nrows=max_rows)
     else:
-        return pd.read_csv(file_path, nrows=max_rows)
+        return read_dataframe(file_path, nrows=max_rows)
 
 
 def detect_columns(df) -> dict:
     """Heuristic auto-detection of date, target, and group columns."""
-    import pandas as pd
-
     cols = list(df.columns)
     lower = {c.lower(): c for c in cols}
 
@@ -549,7 +545,7 @@ def detect_columns(df) -> dict:
     date_col = find(date_hints)
     if not date_col:
         for c in cols:
-            if pd.api.types.is_datetime64_any_dtype(df[c]):
+            if str(df[c].dtype).startswith("datetime"):
                 date_col = c
                 break
 
