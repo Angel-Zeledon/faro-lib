@@ -703,16 +703,23 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
 
 # ── Main status calculation ───────────────────────────────────────────────────
 
-def get_inventory_status(tenant_id: str, session_id: str, service_level: float = 0.95) -> list[dict]:
+def get_inventory_status(tenant_id: str, session_id: str, service_level: float = 0.95,
+                         period: str = "daily") -> list[dict]:
     """
     Merges inventory_stock with session forecast.
     Includes ABC-XYZ classification, stock trend, and order recommendation.
 
-    Thin public wrapper (signature is frozen — API + alert/snapshot callers):
-    the actual work, including the option to reuse already-fetched data, lives
-    in _compute_inventory_status below.
+    `period` (multi-period Phase C): the active planning grain. The session's
+    forecast values are per-period demand at that grain, so coverage comes out
+    in periods and the signal is judged against the lead time in periods. The
+    default "daily" reproduces today's output byte-for-byte (the period helpers
+    are the identity for daily).
+
+    Thin public wrapper (positional signature frozen — API + alert/snapshot
+    callers): the actual work, including preloaded-data reuse, lives in
+    _compute_inventory_status below.
     """
-    return _compute_inventory_status(tenant_id, session_id, service_level)
+    return _compute_inventory_status(tenant_id, session_id, service_level, period=period)
 
 
 def _compute_inventory_status(
@@ -721,6 +728,7 @@ def _compute_inventory_status(
     forecasts: Optional[dict] = None,
     stock_rows: Optional[list] = None,
     learned_lead_times: Optional[dict] = None,
+    period: str = "daily",
 ) -> list[dict]:
     """
     Implementation of get_inventory_status. The keyword-only args accept
@@ -788,19 +796,25 @@ def _compute_inventory_status(
         if has_forecast and has_stock:
             sku_service_level = float(stock.get("service_level") or service_level) if stock else service_level
             z = _Z.get(sku_service_level, 1.645)
-            avg_daily, avg_std = _avg_daily_forecast(model_forecasts, lead_time)
+            # Per-period demand: average over as many forecast buckets as the
+            # lead time spans in periods, and judge the signal against the lead
+            # time expressed in the same period. For daily all three helpers are
+            # the identity, so this path is byte-identical to before Phase C.
+            lt_periods = _lead_time_in_periods(lead_time, period)
+            steps = _steps_for_lead_time(lead_time, period)
+            avg_daily, avg_std = _avg_daily_forecast(model_forecasts, steps)
             coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
-            signal = _calc_signal(coverage_days, lead_time)
+            signal = _calc_signal(coverage_days, lt_periods)
             recommended = _calc_recommended(
-                current_stock, avg_daily, avg_std, lead_time, moq, sku_service_level
+                current_stock, avg_daily, avg_std, lt_periods, moq, sku_service_level
             )
             recommended = _gate_recommended_by_signal(signal, recommended)
             inventory_value = (
                 round(current_stock * float(stock["unit_cost"]), 2)
                 if stock.get("unit_cost") is not None else None
             )
-            _demand_lt  = round(avg_daily * lead_time, 2)
-            _safety      = round(z * avg_std * math.sqrt(lead_time), 2)
+            _demand_lt  = round(avg_daily * lt_periods, 2)
+            _safety      = round(z * avg_std * math.sqrt(lt_periods), 2)
             _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
             calc_explanation = {
                 "daily_demand":    round(avg_daily, 2),
