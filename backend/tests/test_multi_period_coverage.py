@@ -123,3 +123,36 @@ class TestDailyRegression:
         assert it["coverage_days"] == 4.0
         assert it["daily_demand"] == 10.0
         assert it["signal"] == "PEDIR_YA"
+
+
+class TestByWarehousePeriod:
+    def test_weekly_by_warehouse_coverage_in_weeks(
+        self, client, auth_headers, test_tenant
+    ):
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "wh-weekly")["id"]
+        sku = "WHWK"
+        _put_stock(client, auth_headers, sku, current_stock=40, lead_time_days=14,
+                   moq=1, warehouse="principal")
+        session_store.set_forecasts(tid, sid, {sku: _forecast(10.0, 0.0)})
+
+        rows = svc.get_inventory_status_by_warehouse(tid, sid, period="weekly")
+        row = next(r for r in rows if r["sku"] == sku)
+        assert row["coverage_days"] == 4.0     # weeks
+        assert row["signal"] == "OK"
+
+    def test_by_warehouse_daily_default_unchanged(
+        self, client, auth_headers, test_tenant
+    ):
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "wh-daily")["id"]
+        sku = "WHDL"
+        _put_stock(client, auth_headers, sku, current_stock=40, lead_time_days=10,
+                   moq=1, warehouse="principal")
+        session_store.set_forecasts(tid, sid, {sku: _forecast(10.0, 0.0, n=14)})
+        default = next(r for r in svc.get_inventory_status_by_warehouse(tid, sid)
+                       if r["sku"] == sku)
+        explicit = next(r for r in svc.get_inventory_status_by_warehouse(tid, sid, period="daily")
+                        if r["sku"] == sku)
+        assert default == explicit
+        assert default["signal"] == "PEDIR_YA"

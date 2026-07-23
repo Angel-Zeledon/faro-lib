@@ -934,7 +934,7 @@ TRANSFER_MIN_DONOR_COVERAGE_DAYS = 30.0
 
 
 def get_inventory_status_by_warehouse(
-    tenant_id: str, session_id: str, service_level: float = 0.95,
+    tenant_id: str, session_id: str, service_level: float = 0.95, period: str = "daily",
     *,
     forecasts: Optional[dict] = None,
     stock_rows: Optional[list] = None,
@@ -1022,18 +1022,21 @@ def get_inventory_status_by_warehouse(
                     float(stock.get("service_level") or service_level)
                     if stock else service_level)
                 z = _Z.get(sku_service_level, 1.645)
-                avg_daily, avg_std = _avg_daily_forecast(model_forecasts, lead_time)
+                # Per-period demand + period lead time (identity for daily).
+                lt_periods = _lead_time_in_periods(lead_time, period)
+                steps = _steps_for_lead_time(lead_time, period)
+                avg_daily, avg_std = _avg_daily_forecast(model_forecasts, steps)
                 avg_daily *= share
                 avg_std *= share
                 coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
-                signal = _calc_signal(coverage_days, lead_time)
+                signal = _calc_signal(coverage_days, lt_periods)
                 recommended = _calc_recommended(
-                    current_stock, avg_daily, avg_std, lead_time, moq,
+                    current_stock, avg_daily, avg_std, lt_periods, moq,
                     sku_service_level)
                 recommended = _gate_recommended_by_signal(signal, recommended)
                 reorder_point = round(
-                    avg_daily * lead_time
-                    + z * avg_std * math.sqrt(lead_time), 2)
+                    avg_daily * lt_periods
+                    + z * avg_std * math.sqrt(lt_periods), 2)
             else:
                 avg_daily = avg_std = None
                 coverage_days = None
