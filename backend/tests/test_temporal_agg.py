@@ -479,3 +479,40 @@ class TestEdgeCases:
         original = [{"date": "2024-01-01", "value": 5.0}]
         aggregate_historical(pts, "monthly")
         assert pts == original
+
+
+# ── bucket_count + planning_granularities (multi-period gate) ──────────────────
+from utils.temporal_agg import bucket_count, planning_granularities  # noqa: E402
+
+
+def _daily_dates(n):
+    import datetime
+    d0 = datetime.date(2025, 1, 1)
+    return [(d0 + datetime.timedelta(days=i)).isoformat() for i in range(n)]
+
+
+class TestBucketGate:
+    def test_bucket_count_daily_weekly_monthly(self):
+        dates = _daily_dates(70)  # 70 days
+        assert bucket_count(dates, "daily") == 70
+        assert 10 <= bucket_count(dates, "weekly") <= 11   # ~10 weeks
+        assert bucket_count(dates, "monthly") == 3         # Jan, Feb, Mar
+
+    def test_bucket_count_empty(self):
+        assert bucket_count([], "weekly") == 0
+
+    def test_planning_gates_monthly_out_on_short_history(self):
+        # 70 daily points: daily(70) and weekly(~10) clear a floor of 8,
+        # monthly(3) does not.
+        got = planning_granularities("daily", _daily_dates(70), min_buckets=8)
+        assert got == ["daily", "weekly"]
+
+    def test_planning_always_includes_base_even_if_short(self):
+        got = planning_granularities("daily", _daily_dates(5), min_buckets=20)
+        assert got == ["daily"]
+
+    def test_planning_from_weekly_base_never_offers_daily(self):
+        weekly_dates = [d for i, d in enumerate(_daily_dates(700)) if i % 7 == 0]
+        got = planning_granularities("weekly", weekly_dates, min_buckets=8)
+        assert "daily" not in got
+        assert got[0] == "weekly"

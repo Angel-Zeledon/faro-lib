@@ -15,6 +15,11 @@ FREQ_RULES: Dict[str, str] = {
 
 _FREQ_ORDER = ["daily", "weekly", "monthly", "quarterly", "yearly"]
 
+# User-facing PLANNING periods (multi-period feature). Distinct from the chart
+# chip's _FREQ_ORDER, which also offers quarterly/yearly: planning only re-plans
+# at day/week/month grains.
+_PLANNING_ORDER = ["daily", "weekly", "monthly"]
+
 
 def detect_frequency(dates: List[str]) -> str:
     if len(dates) < 2:
@@ -36,10 +41,54 @@ def detect_frequency(dates: List[str]) -> str:
 
 
 def available_granularities(base_freq: str, n_points: int = 0) -> List[str]:
-    """Return valid coarser granularities (always includes base_freq itself)."""
+    """Return valid coarser granularities (always includes base_freq itself).
+
+    Used by the /skus chart chip (offers all coarser grains, incl.
+    quarterly/yearly). Planning uses `planning_granularities` instead, which
+    gates by real bucket counts and is restricted to day/week/month.
+    """
     base_idx = _FREQ_ORDER.index(base_freq) if base_freq in _FREQ_ORDER else 0
     result = list(_FREQ_ORDER[base_idx:])
     return result
+
+
+def _period_alias(rule: str) -> str:
+    """pandas Period alias for each resample rule."""
+    return {"D": "D", "W-MON": "W", "MS": "M", "QS": "Q", "YS": "Y"}.get(rule, "D")
+
+
+def bucket_count(dates: List[str], granularity: str) -> int:
+    """Number of distinct period-buckets the dates span at `granularity`."""
+    if not dates:
+        return 0
+    rule = FREQ_RULES.get(granularity, "D")
+    try:
+        idx = pd.to_datetime(pd.Series(dates)).dropna()
+        if idx.empty:
+            return 0
+        return int(idx.dt.to_period(_period_alias(rule)).nunique())
+    except Exception:
+        return 0
+
+
+def planning_granularities(
+    base_freq: str, dates: List[str], min_buckets: int = 20
+) -> List[str]:
+    """Planning grains (base_freq and coarser, within day/week/month) that the
+    data can actually train at.
+
+    A grain qualifies iff the history spans >= min_buckets buckets at it.
+    base_freq is always included (you can plan at your native grain even with
+    thin data); coarser grains are gated by the bucket count.
+    """
+    if base_freq not in _PLANNING_ORDER:
+        base_freq = "daily"
+    start = _PLANNING_ORDER.index(base_freq)
+    out: List[str] = []
+    for g in _PLANNING_ORDER[start:]:
+        if g == base_freq or bucket_count(dates, g) >= min_buckets:
+            out.append(g)
+    return out
 
 
 def _safe_float(v: Any) -> Optional[float]:
