@@ -188,11 +188,15 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
         if qty > 0:
             transfer_totals[(sku, a, b)] = transfer_totals.get((sku, a, b), 0.0) + qty
 
+    # Quantities are whole units: you cannot order or move a fraction of a unit.
+    # In daily mode the solve already lands on integers, so ceil is a no-op there;
+    # coarser periods (weekly/monthly) carry larger per-bucket demand and can
+    # produce fractional totals, which must round up so we never under-order.
     orders = []
     for (sku, w) in sorted(order_totals):
         row = row_by_sku_warehouse.get((sku, w), {})
         orders.append({
-            "sku": sku, "warehouse": w, "qty": round(order_totals[(sku, w)], 2),
+            "sku": sku, "warehouse": w, "qty": int(_math.ceil(order_totals[(sku, w)])),
             "unit_cost": row.get("unit_cost"),
             "supplier": row.get("supplier"),
         })
@@ -201,7 +205,7 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
     for (sku, a, b) in sorted(transfer_totals):
         transfers.append({
             "sku": sku, "from_warehouse": a, "to_warehouse": b,
-            "qty": round(transfer_totals[(sku, a, b)], 2),
+            "qty": int(_math.ceil(transfer_totals[(sku, a, b)])),
         })
 
     return {

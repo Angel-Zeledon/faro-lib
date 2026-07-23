@@ -1907,7 +1907,7 @@ export default function InventoryPage() {
  <ThTip label={t('inventory.col_sku_name')} tip={t('inventory.tip_sku_name')} />
  <ThTip label={t('inventory.col_stock')} tip={t('inventory.tip_stock')} />
  <ThTip label={t('inventory.col_trend')} tip={t('inventory.tip_trend')} />
- <ThTip label={t('inventory.col_days_coverage')} tip={t('inventory.tip_days_coverage')} />
+ <ThTip label={`${t('inventory.wh_col_coverage')} (${coverageUnitShort(data?.coverage_unit, t)})`} tip={t('inventory.tip_days_coverage')} />
  <ThTip label={t('inventory.col_demand_lt')} tip={t('inventory.tip_demand_lt')} />
  <ThTip label={t('inventory.col_qty_to_order')} tip={t('inventory.tip_qty_to_order')} />
  <ThTip label={t('inventory.col_lead_time')} tip={t('inventory.tip_lead_time')} />

@@ -164,3 +164,37 @@ class TestSerializeOptimizationResult:
         assert out["transfers"] == [
             {"sku": "SKU1", "from_warehouse": "Sur", "to_warehouse": "Norte", "qty": 4.0},
         ]
+
+    def test_fractional_quantities_round_up_to_whole_units(self):
+        """Coarser periods (weekly/monthly) can produce fractional solve totals;
+        you cannot order or move a fraction of a unit, so quantities must be
+        whole numbers rounded up (never under-order)."""
+        from forecasting_core.business.optimizer import OptimizationInput, OptimizationResult
+        from backend.inventory.optimizer_service import serialize_optimization_result
+
+        inp = OptimizationInput(
+            skus=["SKU1"], warehouses=["Norte", "Sur"], horizon=1,
+            demand={("SKU1", "Norte"): [0.0], ("SKU1", "Sur"): [0.0]},
+            stock0={("SKU1", "Norte"): 0.0, ("SKU1", "Sur"): 0.0},
+            lead_time_buckets={"SKU1": 0},
+            holding_cost={"SKU1": 1.0}, stockout_cost={"SKU1": 10.0}, order_cost={"SKU1": 2.0},
+            transfer_cost=0.5,
+        )
+        result = OptimizationResult(
+            orders={("SKU1", "Norte", 1): 3692.67},
+            transfers={("SKU1", "Sur", "Norte", 1): 0.01},
+            inventory={}, shortages={},
+            total_cost=1.0, status="optimal",
+        )
+        stock_rows = [
+            {"sku": "SKU1", "warehouse": "Norte", "unit_cost": 2.0, "supplier": "ACME"},
+            {"sku": "SKU1", "warehouse": "Sur", "unit_cost": 2.0, "supplier": "ACME"},
+        ]
+
+        out = serialize_optimization_result(inp, result, stock_rows)
+
+        assert out["orders"][0]["qty"] == 3693
+        assert isinstance(out["orders"][0]["qty"], int)
+        # 0.01 units still rounds up to a whole unit (it passed the qty>0 filter).
+        assert out["transfers"][0]["qty"] == 1
+        assert isinstance(out["transfers"][0]["qty"], int)
