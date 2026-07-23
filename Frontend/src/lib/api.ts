@@ -11,6 +11,7 @@ import type {
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer,
+  PlanningState, PlanningPeriod,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -1153,3 +1154,9 @@ export const syncIntegration = (id: string) =>
 
 export const deleteIntegration = (id: string) =>
   request<{ deleted: string }>('DELETE', `/integrations/${encodeURIComponent(id)}`)
+
+// ── Multi-period planning (Phase B) ──────────────────────────────────────────
+export const getPlanning = () =>
+  request<PlanningState>('GET', '/planning')
+export const setPlanning = (period: PlanningPeriod, horizon: number) =>
+  request<PlanningState>('PUT', '/planning', { period, horizon })

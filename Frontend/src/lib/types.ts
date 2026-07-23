@@ -1365,3 +1365,14 @@ export interface DeadStockResponse {
   sku_count:                    number
   min_days_static:              number
 }
+
+// Multi-period planning (Phase B): the tenant's active view granularity.
+export type PlanningPeriod = 'daily' | 'weekly' | 'monthly'
+
+export interface PlanningState {
+  period:            PlanningPeriod
+  horizon:           number
+  available_periods: PlanningPeriod[]
+  max_horizon:       number
+  active_session_id: string | null
+}
