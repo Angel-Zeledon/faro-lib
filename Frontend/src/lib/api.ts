@@ -339,12 +339,27 @@ export const getConfigSummary = (id: string) =>
   request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`)
 
 // ── Training ──────────────────────────────────────────────────────────────────
+// A training launch fans out into a granularity family (daily/weekly/monthly),
+// one session + job per grain. `sessions` is finest-first; `sessions[0]` is the
+// base (finest) grain and its `job_id` equals `base_job_id`. May be absent/empty
+// for family-less responses, in which case the caller polls just `job_id`.
+export interface TrainingFamilyMember {
+  session_id:  string
+  granularity: string
+  job_id:      string
+}
+export interface TrainingFamily {
+  family_id:   string
+  base_job_id: string
+  sessions:    TrainingFamilyMember[]
+}
+
 export const startTraining = (id: string) =>
-  request<{ job_id: string; status: string }>('POST', `/sessions/${id}/train`)
+  request<{ job_id: string; status: string; family?: TrainingFamily }>('POST', `/sessions/${id}/train`)
 
 // One-click demo: seeds dataset + configs + stock and queues training
 export const startDemoQuickstart = () =>
-  request<{ session_id: string; job_id: string; dataset_id: string; stock_seeded: string[] }>(
+  request<{ session_id: string; job_id: string; dataset_id: string; stock_seeded: string[]; family?: TrainingFamily }>(
     'POST', '/demo/quickstart',
   )
 

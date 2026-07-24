@@ -7,6 +7,7 @@ import {
  setForecastConfig, setBusinessConfig, startTraining, getJob,
  startDemoQuickstart,
 } from '@/lib/api'
+import type { TrainingFamily } from '@/lib/api'
 import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
@@ -166,7 +167,7 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
 }
 
 
-function TrainingLoader({ message, pct }: { message: string; pct: number | null }) {
+function TrainingLoader({ message, pct, multiPeriod }: { message: string; pct: number | null; multiPeriod: boolean }) {
  const { t } = useLanguage()
  return (
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, paddingTop: 20 }}>
@@ -209,6 +210,11 @@ function TrainingLoader({ message, pct }: { message: string; pct: number | null 
  {t('qs.may_take')}
  <br />{t('qs.dont_close')}
  </div>
+ {multiPeriod && (
+ <div style={{ fontSize: 12, color: 'var(--dim)', textAlign: 'center', maxWidth: 340, opacity: 0.85 }}>
+ {t('qs.family_note')}
+ </div>
+ )}
  </div>
  )
 }
@@ -256,6 +262,10 @@ function QuickStartPageContent() {
  // Training progress
  const [trainMsg, setTrainMsg] = useState('')
  const [trainPct, setTrainPct] = useState<number | null>(null)
+ // True when the launch fanned out into >1 planning period (daily + weekly/…):
+ // drives the "we're preparing several views, you'll land as soon as the daily
+ // one is ready" note so the aggregated bar isn't mistaken for a stall.
+ const [multiPeriod, setMultiPeriod] = useState(false)
  const msgIdxRef = useRef(0)
 
  // Non-fatal pre-upload observations (row counts, ignored rows, short history)
@@ -274,7 +284,7 @@ function QuickStartPageContent() {
  try {
  const demo = await startDemoQuickstart()
  setSessionId(demo.session_id)
- await pollJob(demo.job_id, demo.session_id)
+ await pollFamily(demo.job_id, demo.family)
  } catch (e: unknown) {
  setError(e instanceof Error ? e.message : t('qs.err_demo'))
  setBusy(false)
@@ -410,11 +420,11 @@ function QuickStartPageContent() {
  stockout_cost_multiplier: 3.0,
  })
 
- // Start training
- const { job_id } = await startTraining(sessionId)
+ // Start training — fans out into a granularity family (daily/weekly/…)
+ const res = await startTraining(sessionId)
 
- // Poll job
- await pollJob(job_id, sessionId)
+ // Poll the whole family
+ await pollFamily(res.job_id, res.family)
  } catch (e: unknown) {
  const msg = e instanceof Error ? e.message : t('qs.err_config')
  setError(msg)
@@ -423,7 +433,23 @@ function QuickStartPageContent() {
  }
 
  // ── Polling ──────────────────────────────────────────────────────────────────
- const pollJob = async (jobId: string, sid: string) => {
+ // A training launch fans out into a granularity family: a base (finest-grain)
+ // session plus coarser siblings, each its own job trained on the shared worker.
+ // The progress bar must reflect ALL members — polling only the base made it look
+ // stuck (a single job's 40% "training" plateau) while siblings were still queued.
+ // We therefore average every member's percent (100% only when all finish), but
+ // redirect as soon as the BASE session's results are ready: the semáforo runs off
+ // the finest grain, and coarser periods keep computing in the background. The
+ // destination resolves the active session itself (planning resolver), matching
+ // every other screen — no session id needs to be threaded through the URL.
+ const pollFamily = async (baseJobId: string, family?: TrainingFamily) => {
+ // Member job ids to poll for progress. Fall back to the base job alone when
+ // no family came back (family-less/legacy response, or an empty sessions list).
+ const memberJobIds = family?.sessions?.length
+ ? family.sessions.map(m => m.job_id)
+ : [baseJobId]
+ setMultiPeriod(memberJobIds.length > 1)
+
  // Cap polling so a job stuck in RUNNING (dead/orphaned worker) can't spin
  // this tab forever. 3s/poll × 600 ≈ 30 min, well above normal training.
  const MAX_POLLS = 600
@@ -431,28 +457,39 @@ function QuickStartPageContent() {
 
  const poll = async (): Promise<void> => {
  try {
- const job = await getJob(jobId)
+ const jobs = await Promise.all(memberJobIds.map(id => getJob(id)))
+ const baseJob = jobs.find(j => j.id === baseJobId) ?? jobs[0]
 
- // Show the worker's REAL progress (percent + step message) instead of
- // a fake cycling animation — the backend emits this on every stage.
- if (job.progress) {
- if (typeof job.progress.percent === 'number') setTrainPct(job.progress.percent)
+ // Aggregate progress across the family — a settled (done/failed/cancelled)
+ // member counts as 100 so a fast sibling finishing pulls the bar forward
+ // instead of leaving it pinned to the slowest member's plateau.
+ const pcts = jobs.map(j => {
+ if (j.status === 'COMPLETED' || j.status === 'FAILED' || j.status === 'CANCELLED') return 100
+ return typeof j.progress?.percent === 'number' ? j.progress.percent : 0
+ })
+ setTrainPct(Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length))
+
+ // The step message tracks the BASE job (finest grain — what the user lands on).
  // The worker emits its message in English (backend code is English-only).
  // `step` is the stable key, so the Spanish copy lives here; the raw message
  // is the fallback for any stage this map does not know yet.
- const stepKey = job.progress.step ? `qs.stage_${job.progress.step}` : null
+ if (baseJob?.progress) {
+ const stepKey = baseJob.progress.step ? `qs.stage_${baseJob.progress.step}` : null
  const translated = stepKey ? t(stepKey as never) : null
  if (translated && translated !== stepKey) setTrainMsg(translated)
- else if (job.progress.message) setTrainMsg(job.progress.message)
+ else if (baseJob.progress.message) setTrainMsg(baseJob.progress.message)
  }
 
- if (job.status === 'COMPLETED') {
+ // Redirect the moment the base session's results are ready — don't wait on
+ // coarser siblings. If ONLY the base failed, surface it; a sibling failing
+ // is non-fatal to onboarding (the daily semáforo still works).
+ if (baseJob?.status === 'COMPLETED') {
  setTrainPct(100)
- router.push(`/inventory?session=${sid}`)
+ router.push('/hoy')
  return
  }
- if (job.status === 'FAILED') {
- setError(`${t('qs.err_failed')} ${job.error ?? t('qs.err_unknown')}`)
+ if (baseJob?.status === 'FAILED') {
+ setError(`${t('qs.err_failed')} ${baseJob.error ?? t('qs.err_unknown')}`)
  setBusy(false)
  return
  }
@@ -484,6 +521,7 @@ function QuickStartPageContent() {
  setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
  setTrainMsg('')
  setTrainPct(null)
+ setMultiPeriod(false)
  msgIdxRef.current = 0
  }
 
@@ -773,7 +811,7 @@ function QuickStartPageContent() {
  {t('qs.learning_desc2')}
  </p>
 
- {!error && <TrainingLoader message={trainMsg} pct={trainPct} />}
+ {!error && <TrainingLoader message={trainMsg} pct={trainPct} multiPeriod={multiPeriod} />}
 
  {error && (
  <div style={{ marginTop: 20 }}>

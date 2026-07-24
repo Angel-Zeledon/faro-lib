@@ -58,6 +58,48 @@ class TestDemoQuickstart:
         )
         assert row["n"] >= 5
 
+    def test_demo_returns_full_training_family(self, client, auth_headers, test_tenant):
+        """The onboarding progress polls every family member, so the demo must
+        return the whole granularity family (not just the base job). The bundled
+        demo dataset spans ~15 months of daily data, so it fans out into at
+        least the daily base + a weekly sibling."""
+        resp = client.post("/api/v1/demo/quickstart", headers=auth_headers)
+        assert resp.status_code == 202, resp.text
+        data = resp.json()["data"]
+        tid = test_tenant["id"]
+
+        family = data.get("family")
+        assert family is not None, "demo response must carry the training family"
+        # The polled base job is the family's base job (finest grain).
+        assert family["base_job_id"] == data["job_id"]
+
+        members = family["sessions"]
+        assert len(members) >= 2, "demo dataset should fan out into >= 2 grains"
+        # Finest-first: the first member is the base, and its job is base_job_id.
+        assert members[0]["job_id"] == family["base_job_id"]
+        assert members[0]["session_id"] == data["session_id"]
+
+        # Every member is a real, tagged, queued family session with its own job.
+        seen_grains = set()
+        for m in members:
+            seen_grains.add(m["granularity"])
+            sess = query_one(
+                "SELECT family_id, granularity, status FROM sessions "
+                "WHERE id = %s AND tenant_id = %s",
+                (m["session_id"], tid),
+            )
+            assert sess is not None
+            assert sess["family_id"] == family["family_id"]
+            assert sess["granularity"] == m["granularity"]
+            assert sess["status"] in ("QUEUED", "RUNNING", "COMPLETED")
+            job = query_one(
+                "SELECT status FROM jobs WHERE id = %s AND tenant_id = %s",
+                (m["job_id"], tid),
+            )
+            assert job is not None
+            assert job["status"] in ("QUEUED", "RUNNING", "COMPLETED")
+        assert "daily" in seen_grains and "weekly" in seen_grains
+
     def test_demo_does_not_overwrite_existing_stock(self, client, auth_headers, test_tenant):
         # Pre-set a stock value the demo would otherwise change
         put = client.put(
