@@ -285,3 +285,95 @@ class TestBriefingPeriodAware:
         # Weekly-aware: BRF is OK, not a risk -> risks empty of BRF.
         risk_skus = {i["sku"] for i in data["risks"]}
         assert "BRF" not in risk_skus
+
+
+class TestNarrativeKpiConsistency:
+    """Polish #4: the /hoy executive summary (AI narrative) and the KPI tile must
+    agree in EVERY planning period. Both read get_morning_briefing; the narrative
+    endpoint previously omitted the active period and defaulted to daily, so a
+    weekly session's per-period demand was misread as daily and the narrative
+    claimed immediate-risk products the KPI tile ('Riesgo hoy 0') denied — a
+    self-contradiction on the same screen."""
+
+    def _immediate_risk_from_narrative(self, narrative: dict) -> int:
+        """The narrative's own count of immediate-risk products, read from the
+        structured key_points the endpoint returns. Both the fallback builder and
+        the LLM path derive these from the same briefing kpis['order_now']."""
+        import re
+        for kp in narrative.get("key_points", []):
+            m = re.match(r"\s*(\d+)\s+producto", kp)
+            if m and "riesgo inmediato" in kp:
+                return int(m.group(1))
+        return 0
+
+    def _force_rule_based_fallback(self, monkeypatch):
+        """Pin the deterministic, network-free rule-based narrative so the test
+        asserts on stable output (populated key_points + prose) and never waits on
+        the forced-Ollama client's timeout. The period-resolution under test is
+        upstream of the LLM, so the fallback exercises it identically."""
+        import backend.ai.narrative_service as ns
+        monkeypatch.setattr(ns, "_get_client", lambda: None)
+
+    def test_weekly_narrative_agrees_with_kpi_tile(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        import backend.sessions.planning_service as ps
+        self._force_rule_based_fallback(monkeypatch)
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "narr-weekly")["id"]
+        # 10 units/week, 40 stock, lead 14d -> 4 weeks coverage vs 2-week lead
+        # -> OK weekly (order_now=0). Read as DAILY it is 4 "days" vs 14 ->
+        # PEDIR_YA (order_now>=1) — the exact mismatch the bug produced.
+        _put_stock(client, auth_headers, "BRF", current_stock=40, lead_time_days=14, moq=1)
+        session_store.set_forecasts(tid, sid, {"BRF": _forecast(10.0, 0.0)})
+        monkeypatch.setattr(ps, "get_planning",
+                            lambda t: {"period": "weekly", "horizon": 4,
+                                       "available_periods": ["daily", "weekly"],
+                                       "max_horizon": 26})
+
+        brief = client.get(f"/api/v1/inventory/morning-briefing?session_id={sid}",
+                           headers=auth_headers)
+        assert brief.status_code == 200, brief.text
+        kpi_order_now = brief.json()["data"]["kpis"]["order_now"]
+        assert kpi_order_now == 0   # weekly-aware: BRF is OK
+
+        narr = client.post("/api/v1/ai/narrative/morning",
+                           json={"session_id": sid, "profile": "distributor"},
+                           headers=auth_headers)
+        assert narr.status_code == 200, narr.text
+        n = narr.json()["data"]
+        # The summary must reflect the SAME immediate-risk count as the KPI tile.
+        assert self._immediate_risk_from_narrative(n) == kpi_order_now
+        assert n["urgency"] == "ok"   # not 'critical'
+        # The prose must not claim immediate-risk products the KPI denies.
+        assert "riesgo inmediato" not in n["narrative"]
+
+    def test_daily_narrative_agrees_with_kpi_tile(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        """Same consistency must hold in daily mode (where it already worked):
+        when the KPI counts a risk, the narrative counts the same one."""
+        import backend.sessions.planning_service as ps
+        self._force_rule_based_fallback(monkeypatch)
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "narr-daily")["id"]
+        _put_stock(client, auth_headers, "DRF", current_stock=4, lead_time_days=14, moq=1)
+        session_store.set_forecasts(tid, sid, {"DRF": _forecast(10.0, 0.0, n=14)})
+        monkeypatch.setattr(ps, "get_planning",
+                            lambda t: {"period": "daily", "horizon": 14,
+                                       "available_periods": ["daily"], "max_horizon": 90})
+
+        brief = client.get(f"/api/v1/inventory/morning-briefing?session_id={sid}",
+                           headers=auth_headers)
+        assert brief.status_code == 200, brief.text
+        kpi_order_now = brief.json()["data"]["kpis"]["order_now"]
+        assert kpi_order_now == 1   # daily: DRF is PEDIR_YA
+
+        narr = client.post("/api/v1/ai/narrative/morning",
+                           json={"session_id": sid, "profile": "distributor"},
+                           headers=auth_headers)
+        assert narr.status_code == 200, narr.text
+        n = narr.json()["data"]
+        assert self._immediate_risk_from_narrative(n) == kpi_order_now
+        assert n["urgency"] == "critical"
+        assert "riesgo inmediato" in n["narrative"]

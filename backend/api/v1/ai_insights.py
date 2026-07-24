@@ -12,6 +12,7 @@ from backend.auth.guards import CurrentUser, get_current_user
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
+from backend.sessions import planning_service
 
 router = APIRouter(
     prefix="/ai", tags=["ai-insights"],
@@ -59,7 +60,12 @@ def morning_narrative(
     from backend.ai.narrative_service import generate_morning_narrative
 
     try:
-        briefing = get_morning_briefing(user.tenant_id, body.session_id)
+        # Read the briefing in the tenant's ACTIVE planning period — the same
+        # resolution /inventory/morning-briefing uses for the KPI tile. Without
+        # it, a weekly/monthly session's per-period demand is misread as daily
+        # and the narrative's risk count contradicts the KPIs on the same screen.
+        period   = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        briefing = get_morning_briefing(user.tenant_id, body.session_id, period=period)
         result   = generate_morning_narrative(briefing, body.profile)
         return ok(result)
     except Exception as e:
@@ -79,7 +85,8 @@ def inventory_insight(
     from backend.ai.narrative_service import generate_inventory_insight
 
     try:
-        items  = get_inventory_status(user.tenant_id, body.session_id)
+        period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        items  = get_inventory_status(user.tenant_id, body.session_id, period=period)
         result = generate_inventory_insight(items, body.profile)
         return ok(result)
     except Exception as e:
@@ -99,7 +106,8 @@ def forecast_explanation(
     from backend.ai.narrative_service import generate_forecast_explanation
 
     try:
-        items    = get_inventory_status(user.tenant_id, body.session_id)
+        period   = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        items    = get_inventory_status(user.tenant_id, body.session_id, period=period)
         sku_data = next((i for i in items if i['sku'] == body.sku), None)
         if not sku_data:
             raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in inventory status")
