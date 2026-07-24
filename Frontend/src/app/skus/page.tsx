@@ -3,22 +3,25 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import {
   getSessions, getMetrics, getInventory, getQuality,
-  getSkuIntelligence,
+  getSkuIntelligence, getInventoryStatus,
 } from '@/lib/api'
 import type {
   SessionInfo, MetricRow, InventoryRecommendation, QualityReport,
   SkuIntelligenceData, ForecastPoint, InventorySignal,
+  InventoryStatusItem, CoverageUnit,
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
-import SignalBadge from '@/components/ui/SignalBadge'
+import SignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
 import {
   EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
 import Button from '@/components/ui/Button'
 import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
+import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { coverageUnitShort } from '@/lib/period'
 import { formatMoney } from '@/lib/currency'
 import {
   Search, Package, ChevronDown, RefreshCw,
@@ -40,23 +43,13 @@ const SERIES_COLOR: Record<string, string> = {
   unknown:      '#64748b',
 }
 
-const ACTION_VARIANT: Record<string, 'danger' | 'warning' | 'success'> = {
-  REORDER:   'danger',
-  OVERSTOCK: 'warning',
-  OK:        'success',
-}
-
-// The inventory action used to render its raw value
-// ("REORDER") with colour as the only cue. It now maps to the shared
-// signal component, which carries icon + label (feature 2.8).
+// Maps the training-time inventory action to the shared semáforo signal, used
+// as a fallback when a SKU has no live inventory_stock row. Live stock reports
+// its signal directly (feature 2.8 / #7).
 const ACTION_SIGNAL: Record<string, InventorySignal> = {
   REORDER:   'PEDIR_YA',
   OVERSTOCK: 'SOBRESTOCK',
   OK:        'OK',
-}
-
-function ActionBadge({ action, size }: { action: string; size?: 'sm' | 'md' }) {
-  return <SignalBadge signal={ACTION_SIGNAL[action] ?? 'SIN_DATOS'} size={size} />
 }
 
 const GRANULARITY_LABELS: Record<string, string> = {
@@ -238,11 +231,12 @@ function SessionSelector({ sessions, selected, onSelect }: {
 
 // ── SKU card ──────────────────────────────────────────────────────────────────
 
-function SkuCard({ sku, quality, metrics, inventory, selected, onClick }: {
+function SkuCard({ sku, quality, metrics, signal, selected, onClick }: {
   sku: string
   quality?: QualityReport[string]
   metrics: MetricRow[]
-  inventory?: InventoryRecommendation
+  // Live semáforo (from inventory_stock), not the training-time recommendation.
+  signal?: InventorySignal
   selected: boolean
   onClick: () => void
 }) {
@@ -275,7 +269,7 @@ function SkuCard({ sku, quality, metrics, inventory, selected, onClick }: {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {sparkVals.length > 0 && <Sparkline values={sparkVals} color={color} width={50} height={22} />}
-          {inventory && <ActionBadge action={inventory.action} />}
+          {signal && <SignalBadge signal={signal} />}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
@@ -1355,17 +1349,61 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
 
 // ── Inventory panel ───────────────────────────────────────────────────────────
 
-function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
+// Stock and coverage come from LIVE inventory_stock (`live`, from
+// /inventory/status) — the same source the /inventory page uses — so the tab
+// reflects post-reception stock, not the training-time snapshot. Forecast-derived
+// figures (reorder point, safety stock, stockout risk) stay from the training
+// recommendation `inv`, which does not change when stock moves.
+function InventoryPanel({ inv, live, coverageUnit }: {
+  inv: InventoryRecommendation
+  live?: InventoryStatusItem
+  coverageUnit?: CoverageUnit
+}) {
   const { t } = useLanguage()
   const fmtNum = (n: number | null | undefined, d = 0) => n != null ? n.toFixed(d) : '—'
-  const cards = [
-    { label: t('skus.inv_reorder_point'), value: fmtNum(inv.reorder_point),  color: '#818cf8' },
-    { label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),   color: '#06b6d4' },
-    { label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),      color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' },
-    inv.holding_cost != null
-      ? { label: t('skus.inv_holding_cost'),  value: formatMoney(inv.holding_cost), color: '#f59e0b' }
-      : { label: t('skus.inv_days_coverage'), value: fmtNum(inv.days_coverage),         color: '#f59e0b' },
-  ]
+
+  // Prefer the live semáforo; fall back to the training-time action only when
+  // no live stock row exists for this SKU.
+  const signal: InventorySignal = live?.signal ?? ACTION_SIGNAL[inv.action] ?? 'SIN_DATOS'
+
+  const cards: { label: string; value: string; color: string }[] = []
+  if (live) {
+    cards.push({ label: t('skus.inv_current_stock'), value: fmtNum(live.current_stock), color: 'var(--accent)' })
+    cards.push({
+      label: t('skus.inv_days_coverage'),
+      value: live.coverage_days != null ? `${fmtNum(live.coverage_days)} ${coverageUnitShort(coverageUnit, t)}` : '—',
+      color: signalColor(signal),
+    })
+  }
+  cards.push({ label: t('skus.inv_reorder_point'), value: fmtNum(inv.reorder_point), color: '#818cf8' })
+  cards.push({ label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),  color: '#06b6d4' })
+  cards.push({ label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),    color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' })
+  if (inv.holding_cost != null) {
+    cards.push({ label: t('skus.inv_holding_cost'), value: formatMoney(inv.holding_cost), color: '#f59e0b' })
+  } else if (!live) {
+    // No live stock row — keep the training-time coverage as the last resort.
+    cards.push({ label: t('skus.inv_days_coverage'), value: fmtNum(inv.days_coverage), color: '#f59e0b' })
+  }
+
+  const variant: 'danger' | 'warning' | 'success' | 'neutral' =
+      signal === 'PEDIR_YA'                                ? 'danger'
+    : signal === 'PEDIR_PRONTO' || signal === 'SOBRESTOCK' ? 'warning'
+    : signal === 'OK'                                       ? 'success'
+    :                                                         'neutral'
+  const bannerBg = variant === 'danger'  ? 'rgba(239,68,68,0.08)'
+                 : variant === 'warning' ? 'rgba(245,158,11,0.08)'
+                 : variant === 'success' ? 'rgba(34,197,94,0.08)'
+                 :                         'rgba(100,116,139,0.08)'
+  const bannerBorder = variant === 'danger'  ? 'rgba(239,68,68,0.2)'
+                     : variant === 'warning' ? 'rgba(245,158,11,0.2)'
+                     : variant === 'success' ? 'rgba(34,197,94,0.2)'
+                     :                         'rgba(100,116,139,0.2)'
+  const message = signal === 'PEDIR_YA'     ? t('skus.action_reorder_msg')
+                : signal === 'PEDIR_PRONTO' ? t('skus.action_order_soon_msg')
+                : signal === 'SOBRESTOCK'   ? t('skus.action_overstock_msg')
+                : signal === 'OK'           ? t('skus.action_ok_msg')
+                :                             t('skus.action_sin_datos_msg')
+
   return (
     <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
@@ -1378,22 +1416,12 @@ function InventoryPanel({ inv }: { inv: InventoryRecommendation }) {
       </div>
       <div style={{
         padding: '10px 14px', borderRadius: 8,
-        background: ACTION_VARIANT[inv.action] === 'danger'  ? 'rgba(239,68,68,0.08)'
-                  : ACTION_VARIANT[inv.action] === 'warning' ? 'rgba(245,158,11,0.08)'
-                  : 'rgba(34,197,94,0.08)',
-        border: `1px solid ${
-          ACTION_VARIANT[inv.action] === 'danger'  ? 'rgba(239,68,68,0.2)'
-          : ACTION_VARIANT[inv.action] === 'warning' ? 'rgba(245,158,11,0.2)'
-          : 'rgba(34,197,94,0.2)'
-        }`,
+        background: bannerBg,
+        border: `1px solid ${bannerBorder}`,
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <ActionBadge action={inv.action} size="md" />
-        <span style={{ fontSize: 12 }}>
-          {inv.action === 'REORDER'   && t('skus.action_reorder_msg')}
-          {inv.action === 'OVERSTOCK' && t('skus.action_overstock_msg')}
-          {inv.action === 'OK'        && t('skus.action_ok_msg')}
-        </span>
+        <SignalBadge signal={signal} size="md" />
+        <span style={{ fontSize: 12 }}>{message}</span>
       </div>
     </div>
   )
@@ -1439,10 +1467,18 @@ function TabBar({ tabs, active, onChange, labelFor }: { tabs: string[]; active: 
 export default function SkusPage() {
   const { t } = useLanguage()
   const { advancedMode } = useBusinessProfile()
+  // Shared active-period session (multi-period) — same resolver /hoy and
+  // /inventory follow. Drives the default-select on load (#6).
+  const planningCtx = usePlanning()
+  const activeSessionId = planningCtx?.planning?.active_session_id ?? ''
   const [sessions,       setSessions]       = useState<SessionInfo[]>([])
   const [sessionId,      setSessionId]      = useState<string | null>(null)
   const [metrics,        setMetrics]        = useState<MetricRow[]>([])
   const [inventory,      setInventory]      = useState<InventoryRecommendation[]>([])
+  // Live inventory status (from inventory_stock via /inventory/status) —
+  // reflects post-reception stock, unlike the training-time `inventory`.
+  const [invStatus,      setInvStatus]      = useState<InventoryStatusItem[]>([])
+  const [coverageUnit,   setCoverageUnit]   = useState<CoverageUnit | undefined>(undefined)
   const [quality,        setQuality]        = useState<QualityReport>({})
   const [loading,        setLoading]        = useState(false)
   const [search,         setSearch]         = useState('')
@@ -1489,17 +1525,37 @@ export default function SkusPage() {
 
   useEffect(() => { reloadSessions() }, [reloadSessions])
 
-  // When exactly one trained session is available, select it automatically so
-  // the user lands on data instead of an empty state that needs a manual pick.
-  // With several sessions the explicit selector is kept — the choice is real.
+  // Default-select the active session on load (#6) so the user lands on data
+  // instead of an empty state that needs a manual pick. Reuses the shared
+  // active-period resolution (PlanningContext) — the same one /hoy and
+  // /inventory follow — and falls back to the latest-completed session for
+  // tenants without a resolved active period.
+  //
+  // `sessions` and the planning state load in parallel, so we may land on
+  // latest-completed before the active session resolves. `lastAutoRef` tracks
+  // the session WE auto-applied: once planning resolves an active session and
+  // the user hasn't switched since, we upgrade to it. A manual pick (which
+  // never touches `lastAutoRef`) always wins and is never overridden.
+  const lastAutoRef = useRef('')
   useEffect(() => {
-    if (sessionId) return
-    const trained = sessions.filter(s => s.status === 'COMPLETED')
-    if (trained.length === 1) {
-      setSessionId(trained[0].session_id)
+    const trained = sessions
+      .filter(s => s.status === 'COMPLETED')
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    if (!trained.length) return
+    const active = activeSessionId
+      ? trained.find(s => s.session_id === activeSessionId)?.session_id
+      : undefined
+    if (!sessionId) {
+      const pick = active ?? trained[0].session_id
+      lastAutoRef.current = pick
+      setSessionId(pick)
       setTab('Forecast')
+    } else if (active && sessionId === lastAutoRef.current && sessionId !== active) {
+      // Planning resolved later — upgrade our auto-pick to the active session.
+      lastAutoRef.current = active
+      setSessionId(active)
     }
-  }, [sessions, sessionId])
+  }, [sessions, sessionId, activeSessionId])
 
   useEffect(() => {
     if (!sessionId) return
@@ -1511,9 +1567,14 @@ export default function SkusPage() {
       getMetrics(sessionId).catch(() => { failedParts.push(t('skus.part_metrics')); return { rows: [], by_model: {} } }),
       getInventory(sessionId).catch(() => { failedParts.push(t('skus.part_inventory')); return { recommendations: [] } }),
       getQuality(sessionId).catch(() => { failedParts.push(t('skus.part_data_quality')); return {} }),
-    ]).then(([m, inv, q]) => {
+      // Live stock/coverage/signal. Failing soft — the panels fall back to the
+      // training recommendation if this is unavailable, so no error is surfaced.
+      getInventoryStatus(sessionId, 0.95, { silent: true }).catch(() => ({ items: [], coverage_unit: undefined })),
+    ]).then(([m, inv, q, status]) => {
       setMetrics(m.rows)
       setInventory(inv.recommendations)
+      setInvStatus(status.items ?? [])
+      setCoverageUnit(status.coverage_unit)
       setQuality(q as QualityReport)
       const skus = Array.from(new Set(m.rows.map(r => r.sku).filter(Boolean) as string[]))
       if (skus.length) setSelectedSku(skus[0])
@@ -1535,6 +1596,16 @@ export default function SkusPage() {
   const skuMetrics   = useMemo(() => metrics.filter(r => r.sku === selectedSku), [metrics, selectedSku])
   const skuInventory = useMemo(() => inventory.find(r => r.sku === selectedSku), [inventory, selectedSku])
   const skuQuality   = useMemo(() => selectedSku ? quality[selectedSku] : undefined, [quality, selectedSku])
+  const statusBySku  = useMemo(() => new Map(invStatus.map(i => [i.sku, i])), [invStatus])
+  const skuStatus    = useMemo(() => selectedSku ? statusBySku.get(selectedSku) : undefined, [statusBySku, selectedSku])
+  // Resolve the semáforo for a SKU: prefer the live inventory_stock signal,
+  // fall back to the training-time recommendation when no live row exists.
+  const signalForSku = useCallback((sku: string): InventorySignal | undefined => {
+    const live = statusBySku.get(sku)
+    if (live) return live.signal
+    const rec = inventory.find(r => r.sku === sku)
+    return rec ? ACTION_SIGNAL[rec.action] : undefined
+  }, [statusBySku, inventory])
   const seriesType   = skuQuality?.series_type ?? 'unknown'
   const skuColor     = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
 
@@ -1763,7 +1834,7 @@ export default function SkusPage() {
                   sku={sku}
                   quality={quality[sku]}
                   metrics={metrics.filter(r => r.sku === sku)}
-                  inventory={inventory.find(r => r.sku === sku)}
+                  signal={signalForSku(sku)}
                   selected={sku === selectedSku}
                   onClick={() => { setSelectedSku(sku); setTab('Forecast') }}
                 />
@@ -1808,8 +1879,8 @@ export default function SkusPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {skuInventory && (
-                    <ActionBadge action={skuInventory.action} size="md" />
+                  {selectedSku && signalForSku(selectedSku) && (
+                    <SignalBadge signal={signalForSku(selectedSku)!} size="md" />
                   )}
                 </div>
               </div>
@@ -2007,7 +2078,7 @@ export default function SkusPage() {
                 )}
                 {tab === 'Inventory' && (
                   skuInventory
-                    ? <InventoryPanel inv={skuInventory} />
+                    ? <InventoryPanel inv={skuInventory} live={skuStatus} coverageUnit={coverageUnit} />
                     : <div style={{ padding: 20, color: 'var(--dim)', fontSize: 13 }}>
                         {t('skus.no_inventory_recommendations')}
                       </div>
