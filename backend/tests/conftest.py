@@ -151,6 +151,16 @@ def _force_local_llm_in_tests():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _default_whatsapp_bot_mode():
+    """The dev .env may enable WHATSAPP_BOT_GENERIC_MODE (a stopgap while no
+    hosted LLM is funded). Tests exercise the real smart bot, so force it off
+    per test; the generic-mode tests opt in explicitly."""
+    from backend.config import settings
+    settings.whatsapp_bot_generic_mode = False
+    yield
+
+
 # ── Database helpers ──────────────────────────────────────────────────────────
 
 @pytest.fixture

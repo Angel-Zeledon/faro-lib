@@ -35,6 +35,12 @@ _HELP = ("Puedo ayudarte con tu inventario: pregúntame por el semáforo "
          "(qué pedir), tus órdenes pendientes o el pronóstico de un SKU. "
          "También puedo aprobar una orden o registrar una recepción.")
 
+# Honest reply used while the bot runs without a hosted LLM (generic mode): it
+# does not promise Q&A it cannot answer, but confirmations still work.
+_BASIC_MODE = ("Recibí tu mensaje. Por ahora estoy en modo básico: puedo "
+               "confirmar una acción pendiente si respondes \"sí\". Muy pronto "
+               "podré responder tus consultas de inventario por aquí.")
+
 _APOLOGY = "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?"
 
 
@@ -129,6 +135,12 @@ def _handle(ctx, incoming_text, history, pending):
                 return _APOLOGY, None
         # Non-confirming: discard and treat as a fresh intent below.
         pending = None
+
+    # Generic mode: no hosted LLM available — reply fast and honest instead of
+    # hanging on a slow local model. Confirmations above already executed.
+    from backend.config import settings
+    if settings.whatsapp_bot_generic_mode:
+        return _BASIC_MODE, None
 
     # 2. Fresh intent routing (one LLM completion).
     try:

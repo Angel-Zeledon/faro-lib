@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     # would always 403. When set, this is the authoritative base for rebuilding
     # the signed url; empty falls back to X-Forwarded-* headers, then request.url.
     whatsapp_webhook_base_url: str = ""
+    # Temporary stopgap: when true, the conversational bot skips the LLM and
+    # replies with a fast, honest generic message (confirmations still execute
+    # deterministically). Set while no hosted LLM is funded — the local model is
+    # too slow for a real-time WhatsApp turn. Flip back to false once
+    # ANTHROPIC_API_KEY has credit and the smart bot returns automatically.
+    whatsapp_bot_generic_mode: bool = False
 
     # External APIs
     # When set, backend/ai/local_llm.py::get_local_llm_client() returns a real
