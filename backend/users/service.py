@@ -88,11 +88,22 @@ def update_profile(
             (full_name.strip(), user_id, tenant_id),
         )
     if whatsapp_number is not None:
-        # Empty string clears the number (opt out of WhatsApp alerts)
-        execute(
-            "UPDATE users SET whatsapp_number = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
-            (whatsapp_number.strip() or None, user_id, tenant_id),
-        )
+        normalized = whatsapp_number.strip() or None
+        if normalized is None:
+            # Empty string clears the number (opt out of WhatsApp alerts).
+            # Clearing it must also drop whatsapp_verified_at — a verified
+            # timestamp for a number that no longer exists is stale, dangling
+            # state that would make a later, unrelated number look pre-verified.
+            execute(
+                "UPDATE users SET whatsapp_number = NULL, whatsapp_verified_at = NULL, "
+                "updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+                (user_id, tenant_id),
+            )
+        else:
+            execute(
+                "UPDATE users SET whatsapp_number = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+                (normalized, user_id, tenant_id),
+            )
     return _public(get_user(tenant_id, user_id))
 
 
