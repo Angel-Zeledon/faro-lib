@@ -1,5 +1,5 @@
 'use client'
-// 🔁 transfer suggestion cards for /hoy (feature 5.4): stock exists in the
+// Transfer suggestion cards for /hoy (feature 5.4): stock exists in the
 // network, just in the wrong place — approving creates the transfer
 // (in_transit) instead of adding a purchase to the cart.
 //

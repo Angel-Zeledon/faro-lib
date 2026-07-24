@@ -450,12 +450,12 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  {result.summary.total_order_value > 0 && <> (≈ {formatMoney(result.summary.total_order_value)})</>}.
  {result.summary.any_order_late && (
  <div style={{ color: C.red, fontWeight: 600, marginTop: 6 }}>
- ⚠ Para algunos productos ya es tarde: si pides hoy, la orden llegaría con el evento en curso.
+ Para algunos productos ya es tarde: si pides hoy, la orden llegaría con el evento en curso.
  </div>
  )}
  </>
  ) : (
- <>✓ Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% de demanda) sin pedidos adicionales.</>
+ <>Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% de demanda) sin pedidos adicionales.</>
  )}
  </div>
 
@@ -488,7 +488,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  {r.stock_al_inicio != null ? r.stock_al_inicio.toLocaleString() : '—'}
  </td>
  <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.en_risk ? C.red : C.green }}>
- {r.deficit != null ? (r.deficit > 0 ? r.deficit.toLocaleString() : '✓') : '—'}
+ {r.deficit != null ? (r.deficit > 0 ? r.deficit.toLocaleString() : <CheckCircle2 size={13} aria-hidden="true" />) : '—'}
  </td>
  <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, color: r.qty_to_order ? C.text : C.dim }}>
  {r.qty_to_order ? r.qty_to_order.toLocaleString() : '—'}
@@ -981,7 +981,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  </span>
  <span style={{ color: C.dim }}>{item.current_stock?.toFixed(0) ?? '—'}</span>
  <AbcXyzBadge value={item.abc_xyz} />
- <button onClick={() => onEdit(item)} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = C.indigo)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}><Edit2 size={12} /></button>
+ <button onClick={() => onEdit(item)} aria-label={t('inventory.title_edit')} title={t('inventory.title_edit')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = C.indigo)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}><Edit2 size={12} aria-hidden="true" /></button>
  </div>
  ))}
  </div>
@@ -1399,7 +1399,7 @@ export default function InventoryPage() {
  {/* Header */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
- <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg, #22c55e, #16a34a)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+ <div style={{ width: 36, height: 36, borderRadius: 9, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
  <ShoppingCart size={17} color="#fff" strokeWidth={2.5} />
  </div>
  <div>
@@ -1582,7 +1582,7 @@ export default function InventoryPage() {
  {/* Toolbar */}
  <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
  <input type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none' }} />
- {search && <button onClick={() => setSearch('')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex' }}><X size={13} /></button>}
+ {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex' }}><X size={13} aria-hidden="true" /></button>}
  <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }}>{items.length} SKU{items.length !== 1 ? 's' : ''}</span>
  </div>
 

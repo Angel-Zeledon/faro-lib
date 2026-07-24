@@ -188,7 +188,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
                   cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
                 }}
               >
-                {saving ? t('common.saving') : `✓ ${t('po.reception_btn_all_arrived')}`}
+                {saving ? t('common.saving') : t('po.reception_btn_all_arrived')}
               </button>
             </div>
           </>

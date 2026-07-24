@@ -205,8 +205,9 @@ function Sparkline({ values, color = '#818cf8', width = 80, height = 28 }: {
 
 // ── Session selector ──────────────────────────────────────────────────────────
 
-function SessionSelector({ sessions, selected, onSelect }: {
+function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-session-select', name = 'skus_session' }: {
   sessions: SessionInfo[]; selected: string | null; onSelect: (id: string) => void
+  selectId?: string; name?: string
 }) {
   const { t } = useLanguage()
   const trained = sessions.filter(s => s.status === 'COMPLETED')
@@ -215,6 +216,9 @@ function SessionSelector({ sessions, selected, onSelect }: {
       <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('skus.session_label')}</span>
       <div style={{ position: 'relative' }}>
         <select
+          id={selectId}
+          name={name}
+          aria-label={t('skus.session_label')}
           className="form-select"
           value={selected ?? ''}
           onChange={e => onSelect(e.target.value)}
@@ -1370,7 +1374,7 @@ function InventoryPanel({ inv, live, coverageUnit }: {
   if (live) {
     cards.push({ label: t('skus.inv_current_stock'), value: fmtNum(live.current_stock), color: 'var(--accent)' })
     cards.push({
-      label: t('skus.inv_days_coverage'),
+      label: `${t('skus.inv_coverage')} (${coverageUnitShort(coverageUnit, t)})`,
       value: live.coverage_days != null ? `${fmtNum(live.coverage_days)} ${coverageUnitShort(coverageUnit, t)}` : '—',
       color: signalColor(signal),
     })
@@ -1748,6 +1752,8 @@ export default function SkusPage() {
             sessions={sessions}
             selected={cmpSessionId}
             onSelect={id => { setCmpSessionId(id); setCmpSku(null) }}
+            selectId="skus-compare-session-select"
+            name="skus_compare_session"
           />
           {cmpSkus.length > 0 && (
             <>
@@ -1768,7 +1774,7 @@ export default function SkusPage() {
           )}
           {cmpLoading && <Spinner size={12} />}
           {cmpError && (
-            <span style={{ fontSize: 11, color: '#f87171' }}>⚠ {cmpError}</span>
+            <span style={{ fontSize: 11, color: '#f87171' }}>{cmpError}</span>
           )}
         </div>
       )}
