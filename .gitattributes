@@ -1,0 +1,5 @@
+# Keep shell scripts as LF — CRLF breaks the bash shebang in Git Bash on Windows.
+*.sh    text eol=lf
+# Windows batch/cmd scripts stay CRLF.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
