@@ -11,7 +11,7 @@ import type {
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer,
-  PlanningState, PlanningPeriod,
+  PlanningState, PlanningPeriod, MeUser,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -509,7 +509,7 @@ export const getDataSourceTypes = () =>
 
 // ── User Profile ─────────────────────────────────────────────────────────────
 export const getMe = () =>
-  request<Record<string, unknown>>('GET', '/users/me')
+  request<MeUser>('GET', '/users/me')
 
 export const updateMe = (body: { full_name?: string; whatsapp_number?: string }) =>
   request<Record<string, unknown>>('PATCH', '/users/me', body)
@@ -519,6 +519,18 @@ export const requestPasswordChange = (new_password: string) =>
 
 export const confirmPasswordChange = (code: string, new_password: string) =>
   request<{ message: string }>('POST', '/users/me/change-password/confirm', { code, new_password })
+
+// Start linking a WhatsApp number: stores it unverified and issues a 6-digit
+// code. Outside production the backend returns the code as `debug_code` so the
+// in-app "type the code" flow works without a live WhatsApp round-trip.
+export const linkWhatsappNumber = (whatsapp_number: string) =>
+  request<{ sent: boolean; debug_code?: string }>(
+    'POST', '/users/me/whatsapp/link', { whatsapp_number },
+  )
+
+// Confirm the 6-digit code and mark the number verified.
+export const confirmWhatsappNumber = (code: string) =>
+  request<{ verified: boolean }>('POST', '/users/me/whatsapp/confirm', { code })
 
 // ── Admin User Management ─────────────────────────────────────────────────────
 export interface AdminUser {

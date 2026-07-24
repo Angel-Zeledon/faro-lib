@@ -412,6 +412,24 @@ export interface UserPreferences {
   advanced_mode?:   boolean
 }
 
+// ── Authenticated user (GET /users/me) ────────────────────────────────────────
+// The backend returns the full user row minus the password hash. A WhatsApp
+// number is only usable once `whatsapp_verified_at` is set.
+export interface MeUser {
+  id:                    string
+  tenant_id:             string
+  email:                 string
+  full_name:             string | null
+  role:                  string
+  status:                string
+  email_verified?:       boolean
+  whatsapp_number:       string | null
+  whatsapp_verified_at:  string | null
+  last_login_at?:        string | null
+  created_at?:           string
+  updated_at?:           string
+}
+
 // ── Activity Logs ─────────────────────────────────────────────────────────────
 export interface ActivityLog {
   id:         string
