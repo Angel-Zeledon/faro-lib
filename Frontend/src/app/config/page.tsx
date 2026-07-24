@@ -989,10 +989,12 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             </div>
           )}
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
+            <label htmlFor="wa-code" style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
               {t('config.wa_code_label')}
             </label>
             <input
+              id="wa-code"
+              name="whatsapp_code"
               type="text"
               inputMode="numeric"
               maxLength={6}
