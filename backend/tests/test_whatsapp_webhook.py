@@ -43,6 +43,16 @@ def _post(client, params, token=AUTH_TOKEN, sign=True):
                        headers={"X-Twilio-Signature": sig})
 
 
+def _post_signed_over(client, params, sign_url, token=AUTH_TOKEN, extra_headers=None):
+    """POST signing X-Twilio-Signature over `sign_url` (the url Twilio would sign),
+    which can differ from the test client's own request.url (http://testserver/...)."""
+    sig = wh.compute_twilio_signature(sign_url, params, token)
+    headers = {"X-Twilio-Signature": sig}
+    if extra_headers:
+        headers.update(extra_headers)
+    return client.post("/api/v1/whatsapp/inbound", data=params, headers=headers)
+
+
 def _seed_po(tid, *, sku="SKU1", warehouse="bodega norte", qty=200):
     row = query_one(
         """INSERT INTO inventory_po_log
@@ -156,6 +166,62 @@ def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, mo
     assert last.status_code == 200
     # The blocked requests must NOT reach the LLM: exactly RATE_LIMIT_MAX allowed.
     assert fake.calls == wh.RATE_LIMIT_MAX
+
+
+# --- Signature reconstruction behind a proxy (whatsapp_webhook_base_url / X-Forwarded-*) ---
+# The test client's own request.url is always http://testserver/api/v1/whatsapp/inbound.
+# An unknown sender yields a polite 200 once the signature passes, so 200-vs-403 cleanly
+# isolates whether signature validation used the right (public) url.
+
+PUBLIC_BASE = "https://app.faro.com"
+PUBLIC_URL = "https://app.faro.com/api/v1/whatsapp/inbound"
+_UNKNOWN = {"From": "whatsapp:+59999999999", "Body": "hola", "MessageSid": "SM-proxy"}
+
+
+def test_configured_base_public_signature_accepted(client, twilio_token, monkeypatch):
+    # With the public base configured, a signature over the PUBLIC url validates,
+    # even though the test client's request.url is the internal http://testserver/...
+    monkeypatch.setattr(settings, "whatsapp_webhook_base_url", PUBLIC_BASE)
+    resp = _post_signed_over(client, _UNKNOWN, PUBLIC_URL)
+    assert resp.status_code == 200
+
+
+def test_configured_base_internal_signature_rejected(client, twilio_token, monkeypatch):
+    # With the public base configured, the internal request.url is NO LONGER
+    # authoritative: a signature computed over it is rejected. Proves the public
+    # url — not request.url — is what we verify against.
+    monkeypatch.setattr(settings, "whatsapp_webhook_base_url", PUBLIC_BASE)
+    resp = _post_signed_over(client, _UNKNOWN, INBOUND_URL)  # signed over internal url
+    assert resp.status_code == 403
+
+
+def test_forwarded_headers_public_signature_accepted(client, twilio_token, monkeypatch):
+    # No configured base, but the proxy forwards the public scheme+host: a
+    # signature over the reconstructed forwarded url validates.
+    monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
+    resp = _post_signed_over(
+        client, _UNKNOWN, PUBLIC_URL,
+        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.faro.com"},
+    )
+    assert resp.status_code == 200
+
+
+def test_forwarded_headers_internal_signature_rejected(client, twilio_token, monkeypatch):
+    # Same forwarded headers, but signed over the internal url → rejected.
+    monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
+    resp = _post_signed_over(
+        client, _UNKNOWN, INBOUND_URL,
+        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.faro.com"},
+    )
+    assert resp.status_code == 403
+
+
+def test_no_base_no_forwarded_uses_request_url(client, twilio_token, monkeypatch):
+    # Regression: with neither the config nor forwarded headers set, validation
+    # falls back to request.url (http://testserver/...) — existing behavior.
+    monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
+    resp = _post_signed_over(client, _UNKNOWN, INBOUND_URL)  # == request.url
+    assert resp.status_code == 200
 
 
 def test_viewer_denied_over_http(client, twilio_token, registered_user):
