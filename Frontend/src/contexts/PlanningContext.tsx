@@ -19,11 +19,22 @@ const PlanningContext = createContext<PlanningValue | null>(null)
 export function PlanningProvider({ children }: { children: React.ReactNode }) {
   const [planning, setPlanningState] = useState<PlanningState | null>(null)
 
-  const reload = useCallback(() => {
-    getPlanning().then(setPlanningState).catch(() => setPlanningState(null))
+  // Load the active planning view. A transient failure (e.g. a /planning 401
+  // that races the silent token refresh right after the quick-start redirect)
+  // must NOT blank the top-bar period control: retry a few times, and never
+  // clobber an already-good state to null on error. Only the very first load,
+  // which starts from null, stays null if every attempt genuinely fails.
+  const load = useCallback((retriesLeft: number) => {
+    getPlanning()
+      .then(setPlanningState)
+      .catch(() => {
+        if (retriesLeft > 0) setTimeout(() => load(retriesLeft - 1), 600)
+      })
   }, [])
 
-  useEffect(() => { reload() }, [reload])
+  const reload = useCallback(() => load(1), [load])
+
+  useEffect(() => { load(2) }, [load])
 
   const apply = useCallback(async (period: PlanningPeriod, horizon: number) => {
     await setPlanning(period, horizon)
