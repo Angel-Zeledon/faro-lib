@@ -23,64 +23,6 @@ const T = {
  amberBd: '#fde68a',
 }
 
-// ── Forecast SVG chart ────────────────────────────────────────────────────────
-function ForecastChart() {
- const W = 680, H = 200
- const P = { t: 16, b: 36, l: 44, r: 16 }
- const CW = W - P.l - P.r, CH = H - P.t - P.b
- const hist = [88, 102, 95, 118, 124, 109, 132, 148, 137, 155, 182, 168]
- const fc = [174, 188, 202, 216, 228, 220]
- const fcUp = [192, 212, 232, 252, 270, 265]
- const fcLo = [156, 164, 172, 180, 186, 175]
- const allVals = [...hist, ...fcUp, ...fcLo]
- const minV = Math.min(...allVals) - 10
- const maxV = Math.max(...allVals) + 10
- const rng = maxV - minV
- const total = hist.length + fc.length - 1
- const X = (i: number) => P.l + (i / total) * CW
- const Y = (v: number) => P.t + CH - ((v - minV) / rng) * CH
- const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic','Ene','Feb','Mar','Abr','May','Jun']
- const histPts = hist.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
- const fcPts = [hist[hist.length - 1], ...fc].map((v, i) => `${X(hist.length-1+i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
- const bandPts = [
- [hist[hist.length-1], ...fcUp].map((v, i) => `${X(hist.length-1+i).toFixed(1)},${Y(v).toFixed(1)}`).join(' '),
- [hist[hist.length-1], ...fcLo].map((v, i) => `${X(hist.length-1+i).toFixed(1)},${Y(v).toFixed(1)}`).reverse().join(' '),
- ].join(' ')
- const areaHist = `${X(0)},${P.t+CH} ${histPts} ${X(hist.length-1)},${P.t+CH}`
- const splitX = X(hist.length - 1).toFixed(1)
- const yTicks = [0, 0.33, 0.67, 1].map(f => ({ y: P.t + CH * (1 - f), v: Math.round(minV + rng * f) }))
- return (
- <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', overflow: 'visible' }}>
- <defs>
- <linearGradient id="lgHist" x1="0" y1="0" x2="0" y2="1">
- <stop offset="0%" stopColor={T.accent} stopOpacity={0.15} />
- <stop offset="100%" stopColor={T.accent} stopOpacity={0.01} />
- </linearGradient>
- </defs>
- {yTicks.map(t => (
- <g key={t.v}>
- <line x1={P.l} y1={t.y} x2={W-P.r} y2={t.y} stroke={T.border} strokeWidth={1} />
- <text x={P.l-6} y={t.y+4} textAnchor="end" fontSize={9} fill={T.dim}>{t.v}</text>
- </g>
- ))}
- {[0,2,4,6,8,10,12,14,16].map(i => (
- <text key={i} x={X(i)} y={H-6} textAnchor="middle" fontSize={9} fill={T.dim}>{months[i]}</text>
- ))}
- <rect x={parseFloat(splitX)} y={P.t} width={CW-(parseFloat(splitX)-P.l)} height={CH} fill="#05966908" />
- <polygon points={bandPts} fill="#05966918" />
- <polygon points={areaHist} fill="url(#lgHist)" />
- <polyline points={histPts} fill="none" stroke={T.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
- <polyline points={fcPts} fill="none" stroke={T.green} strokeWidth={2} strokeDasharray="6 3" strokeLinecap="round" strokeLinejoin="round" />
- <line x1={splitX} y1={P.t} x2={splitX} y2={P.t+CH} stroke={T.border} strokeWidth={1.5} strokeDasharray="4 2" />
- <rect x={P.l+4} y={P.t+4} width={68} height={17} rx={4} fill={T.accentBg} />
- <text x={P.l+8} y={P.t+16} fontSize={9} fill={T.accent} fontWeight={700}>HISTÓRICO</text>
- <rect x={parseFloat(splitX)+8} y={P.t+4} width={72} height={17} rx={4} fill={T.greenBg} />
- <text x={parseFloat(splitX)+12} y={P.t+16} fontSize={9} fill={T.green} fontWeight={700}>PRONÓSTICO</text>
- <circle cx={splitX} cy={Y(hist[hist.length-1]).toFixed(1)} r={4} fill={T.accent} stroke="#fff" strokeWidth={2} />
- </svg>
- )
-}
-
 // ── Nav ───────────────────────────────────────────────────────────────────────
 function Nav() {
  return (
@@ -101,7 +43,7 @@ function Nav() {
  ['#solucion', 'Cómo funciona'],
  ['#casos', 'Industrias'],
  ['#prices', 'Precios'],
- ['#contacto', 'Contacto'],
+ ['mailto:hola@usefaro.io', 'Contacto'],
  ].map(([href, label]) => (
  <a key={href} href={href} style={{ fontSize: 13, color: T.muted, textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
@@ -159,22 +101,6 @@ function Check() {
 export default function LandingPage() {
  const [activeCase, setActiveCase] = useState(0)
  const [openFaq, setOpenFaq] = useState<number | null>(null)
- const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', message: '' })
- const [formState, setFormState] = useState<'idle' | 'sending' | 'sent'>('idle')
-
- function handleForm(e: React.FormEvent) {
- e.preventDefault()
- setFormState('sending')
- setTimeout(() => setFormState('sent'), 1200)
- }
-
- const inp: React.CSSProperties = {
- width: '100%', boxSizing: 'border-box',
- padding: '10px 13px', borderRadius: 7,
- border: `1px solid ${T.border}`, background: T.bg,
- fontSize: 14, color: T.text, outline: 'none',
- transition: 'border-color 0.15s, box-shadow 0.15s',
- }
 
  const PROBLEMS = [
  { title: 'Ruptura de stock en temporadas clave', desc: 'En retail y distribución, un quiebre durante temporada alta no es solo una venta perdida — el cliente va a la competencia y no regresa. La demanda no espera al próximo ciclo de reposición.' },
@@ -271,26 +197,38 @@ export default function LandingPage() {
  const PLANS = [
  {
  name: 'Starter',
+ price: 99 as number | null,
+ priceLabel: null as string | null,
+ priceHint: null as string | null,
  desc: 'Para operaciones pequeñas que quieren reemplazar sus modelos en Excel.',
- skus: 'Hasta 500 SKUs',
+ skus: 'Hasta 500 SKUs · 2 usuarios · 1 ubicación',
  features: ['Pronóstico mensual por SKU', 'Alertas de quiebre de stock', 'Exportación a Excel y PDF', 'Clasificación ABC-XYZ', 'Soporte por correo'],
- cta: 'Consultar precio',
+ cta: 'Empezar gratis',
+ ctaHref: '/signup?demo=1',
  highlight: false,
  },
  {
  name: 'Profesional',
+ price: 649 as number | null,
+ priceLabel: null as string | null,
+ priceHint: null as string | null,
  desc: 'Para empresas en crecimiento con múltiples categorías o puntos de venta.',
- skus: 'Hasta 5,000 SKUs',
+ skus: 'Hasta 5.000 SKUs · 10 usuarios · 5 ubicaciones',
  features: ['Todo lo del plan Starter', 'Pronóstico semanal y estacional', 'Recomendaciones de cantidad a pedir', 'Integración con sistemas ERP vía API', 'Detección de anomalías de demanda', 'Soporte prioritario'],
- cta: 'Consultar precio',
+ cta: 'Empezar gratis',
+ ctaHref: '/signup?demo=1',
  highlight: true,
  },
  {
  name: 'Empresarial',
+ price: null as number | null,
+ priceLabel: 'Personalizado',
+ priceHint: 'Desde $1.990/mes',
  desc: 'Para grandes operaciones con necesidades específicas de integración y escala.',
- skus: 'SKUs ilimitados',
+ skus: 'SKUs, usuarios y ubicaciones ilimitados',
  features: ['Todo lo del plan Profesional', 'Modelos personalizados por industria', 'Integración a medida (ERP, WMS, BI)', 'Onboarding con equipo técnico dedicado', 'SLA de disponibilidad garantizado', 'Gerente de cuenta asignado'],
  cta: 'Hablar con el equipo',
+ ctaHref: 'mailto:hola@usefaro.io?subject=Faro%20%E2%80%94%20activar%20plan%20Empresarial',
  highlight: false,
  },
  ]
@@ -369,37 +307,17 @@ export default function LandingPage() {
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 60 }}>
  <Link href="/signup?demo=1" className="btn-primary">Empezar gratis con datos de ejemplo</Link>
- <a href="#contacto" className="btn-ghost">Solicitar acceso</a>
  </div>
 
- <div id="demo" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 14, padding: '22px 26px 16px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
- <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
- <div>
- <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Pronóstico de demanda — SKU-042 Aceite 1L</div>
- <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>Últimos 12 meses + 6 meses de pronóstico con intervalo de confianza</div>
+ {/* Framed real product screenshot */}
+ <div id="demo" style={{ borderRadius: 14, border: `1px solid ${T.border}`, background: T.bg2, boxShadow: '0 24px 60px rgba(15,23,42,0.14)', overflow: 'hidden' }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 16px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+ <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#f87171' }} />
+ <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#fbbf24' }} />
+ <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#34d399' }} />
+ <span style={{ marginLeft: 12, fontSize: 11.5, color: T.dim, fontWeight: 500 }}>Faro · Panel de compras</span>
  </div>
- <div style={{ display: 'flex', gap: 16 }}>
- {[{ color: T.accent, label: 'Histórico', dashed: false }, { color: T.green, label: 'Pronóstico', dashed: true }].map(({ color, label, dashed }) => (
- <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color }}>
- <svg width={20} height={4}><line x1={0} y1={2} x2={20} y2={2} stroke={color} strokeWidth={dashed ? 1.5 : 2} strokeDasharray={dashed ? '5 2' : undefined} /></svg>
- {label}
- </span>
- ))}
- </div>
- </div>
- <ForecastChart />
- <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14 }}>
- {[
- { label: 'Precisión del modelo', value: '94.2%', color: T.green },
- { label: 'Pronóstico próx. 30 días', value: '1,890 unidades', color: T.accent },
- { label: 'Estado de inventario', value: 'Dentro del rango', color: T.muted },
- ].map(({ label, value, color }) => (
- <div key={label} style={{ background: T.bg, borderRadius: 8, padding: '10px 14px', border: `1px solid ${T.border}` }}>
- <div style={{ fontSize: 14, fontWeight: 700, color }}>{value}</div>
- <div style={{ fontSize: 11, color: T.dim, marginTop: 2 }}>{label}</div>
- </div>
- ))}
- </div>
+ <img src="/shot-panel.png" alt="Panel de compras de Faro con datos reales: KPIs de SKUs, riesgo, precisión y valor de inventario, resumen ejecutivo y productos urgentes." style={{ display: 'block', width: '100%', height: 'auto' }} />
  </div>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginTop: 36, paddingBottom: 72 }}>
@@ -462,6 +380,36 @@ export default function LandingPage() {
  </div>
  </div>
  ))}
+ </div>
+
+ {/* Plain app samples — simple framed screenshots, not a headlined feature */}
+ <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginTop: 32 }}>
+ {[
+ { img: '/shot-inventory.png', caption: 'Semáforo de inventario', alt: 'Tabla de inventario de Faro con semáforo de colores: estados PEDIR YA, OK y SOBRESTOCK por SKU y bodega.' },
+ { img: '/shot-forecast.png', caption: 'Pronóstico por SKU', alt: 'Gráfico de pronóstico por SKU de Faro: ventas históricas, pronóstico P50 y bandas de incertidumbre.' },
+ ].map(({ img, caption, alt }) => (
+ <figure key={img} style={{ margin: 0 }}>
+ <div style={{ borderRadius: 12, border: `1px solid ${T.border}`, overflow: 'hidden', boxShadow: '0 12px 32px rgba(15,23,42,0.10)' }}>
+ <img src={img} alt={alt} style={{ display: 'block', width: '100%', height: 'auto' }} />
+ </div>
+ <figcaption style={{ fontSize: 12, color: T.dim, marginTop: 8 }}>{caption}</figcaption>
+ </figure>
+ ))}
+ </div>
+ </Section>
+
+ {/* ── NOSOTROS ─────────────────────────────────────────────────────── */}
+ <Section id="nosotros">
+ {/* TODO: el dueño puede personalizar la historia/equipo real aquí */}
+ <div style={{ maxWidth: 760 }}>
+ <Tag>Nosotros</Tag>
+ <H2>Construido para quien decide las compras, no para científicos de datos.</H2>
+ <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
+ Faro nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría opera con Excel e intuición porque las herramientas de forecasting fueron hechas para grandes empresas con equipos de datos — no para una operación que maneja miles de SKUs con un equipo pequeño.
+ </p>
+ <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ Faro toma el historial de ventas que ya tienes (un CSV o Excel), lo convierte en pronósticos por producto y en decisiones concretas de compra, sin que necesites un analista dedicado. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.
+ </p>
  </div>
  </Section>
 
@@ -541,7 +489,7 @@ export default function LandingPage() {
  <H2>Planes que se adaptan al tamaño de tu operación.</H2>
  <Lead>Todos los planes incluyen acceso completo a las funciones de pronóstico. La diferencia está en la escala y en el nivel de soporte.</Lead>
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
- {PLANS.map(({ name, desc, skus, features, cta, highlight }) => (
+ {PLANS.map(({ name, price, priceLabel, priceHint, desc, skus, features, cta, ctaHref, highlight }) => (
  <div key={name} style={{
  borderRadius: 12, padding: '32px 28px',
  background: highlight ? T.text : T.bg,
@@ -555,6 +503,19 @@ export default function LandingPage() {
  )}
  <div style={{ fontSize: 20, fontWeight: 800, color: highlight ? '#fff' : T.text, marginBottom: 6 }}>{name}</div>
  <div style={{ fontSize: 13, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted, marginBottom: 16, lineHeight: 1.5 }}>{desc}</div>
+ {priceLabel ? (
+ <div style={{ marginBottom: 18 }}>
+ <div style={{ fontSize: 34, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{priceLabel}</div>
+ {priceHint && (
+ <div style={{ fontSize: 14, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted, marginTop: 4 }}>{priceHint}</div>
+ )}
+ </div>
+ ) : (
+ <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 18 }}>
+ <span style={{ fontSize: 40, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em' }}>${price}</span>
+ <span style={{ fontSize: 14, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted }}>/mes</span>
+ </div>
+ )}
  <div style={{ fontSize: 12, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.5)' : T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${highlight ? 'rgba(255,255,255,0.1)' : T.border}` }}>
  {skus}
  </div>
@@ -569,7 +530,7 @@ export default function LandingPage() {
  </div>
  ))}
  </div>
- <a href="#contacto" style={{
+ <a href={ctaHref} style={{
  display: 'block', textAlign: 'center', padding: '11px 20px', borderRadius: 8,
  fontSize: 13, fontWeight: 700, textDecoration: 'none',
  background: highlight ? '#fff' : T.text,
@@ -585,7 +546,7 @@ export default function LandingPage() {
  ))}
  </div>
  <p style={{ fontSize: 13, color: T.dim, marginTop: 24, textAlign: 'center' }}>
- Los precios varían según el volumen de SKUs y el tipo de integración requerida. Contáctanos para una cotización a medida.
+ Precios en USD por mes. Empieza gratis con datos de ejemplo o escríbenos a hola@usefaro.io para una cotización a medida.
  </p>
  </Section>
 
@@ -598,7 +559,7 @@ export default function LandingPage() {
  <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 24px' }}>
  Si tienes alguna pregunta que no está aquí, escríbenos directamente. Respondemos en menos de 24 horas.
  </p>
- <a href="#contacto" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
+ <a href="mailto:hola@usefaro.io" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
  Escribir al equipo →
  </a>
  </div>
@@ -618,94 +579,6 @@ export default function LandingPage() {
  )}
  </div>
  ))}
- </div>
- </div>
- </Section>
-
- {/* ── CONTACTO ─────────────────────────────────────────────────────── */}
- <Section id="contacto">
- <Tag>Contacto</Tag>
- <H2>Hablemos sobre tu operación.</H2>
- <Lead>Si tienes preguntas sobre Faro, quieres ver una demo con tus propios datos o necesitas una cotización, escríbenos. Respondemos en menos de 24 horas hábiles.</Lead>
-
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: 64, alignItems: 'start' }}>
-
- {/* Form */}
- <div style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '36px 32px' }}>
- {formState === 'sent' ? (
- <div style={{ textAlign: 'center', padding: '40px 0' }}>
- <div style={{ width: 48, height: 48, borderRadius: '50%', background: T.greenBg, border: `1px solid ${T.greenBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
- <svg width={20} height={20} viewBox="0 0 20 20">
- <path d="M4 10 L8 14 L16 6" stroke={T.green} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
- </svg>
- </div>
- <div style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 8 }}>Mensaje recibido</div>
- <div style={{ fontSize: 14, color: T.body, lineHeight: 1.6 }}>Nos pondremos en contacto contigo en menos de 24 horas hábiles.</div>
- </div>
- ) : (
- <form onSubmit={handleForm} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
- <div>
- <label htmlFor="contact-name" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Nombre completo *</label>
- <input id="contact-name" name="name" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Tu nombre" style={inp} />
- </div>
- <div>
- <label htmlFor="contact-company" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Empresa *</label>
- <input id="contact-company" name="company" required value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} placeholder="Nombre de tu empresa" style={inp} />
- </div>
- </div>
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
- <div>
- <label htmlFor="contact-email" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Correo electrónico *</label>
- <input id="contact-email" name="email" required type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="tu@empresa.com" style={inp} />
- </div>
- <div>
- <label htmlFor="contact-phone" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Teléfono</label>
- <input id="contact-phone" name="phone" type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+506 7186 2820" style={inp} />
- </div>
- </div>
- <div>
- <label htmlFor="contact-message" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>¿En qué te podemos ayudar? *</label>
- <textarea id="contact-message" name="message" required value={form.message} onChange={e => setForm(f => ({ ...f, message: e.target.value }))} placeholder="Cuéntanos sobre tu operación: qué industria, cuántos productos manejas, cuál es el principal problema con tu inventario actual..." rows={5} style={{ ...inp, resize: 'vertical', lineHeight: 1.6, fontFamily: 'inherit' }} />
- </div>
- <button type="submit" disabled={formState === 'sending'} style={{ padding: '11px 24px', borderRadius: 8, border: 'none', background: formState === 'sending' ? T.muted : T.text, color: '#fff', fontSize: 14, fontWeight: 700, cursor: formState === 'sending' ? 'not-allowed' : 'pointer', transition: 'background 0.15s' }}>
- {formState === 'sending' ? 'Enviando…' : 'Enviar mensaje'}
- </button>
- </form>
- )}
- </div>
-
- {/* Contact info */}
- <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
- <div>
- <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 6 }}>Correo electrónico</div>
- <a href="mailto:angel.zeledon.fernandez@gmail.com" style={{ fontSize: 15, color: T.accent, textDecoration: 'none', fontWeight: 500 }}>
- angel.zeledon.fernandez@gmail.com
- </a>
- <div style={{ fontSize: 12, color: T.dim, marginTop: 4 }}>Respondemos en menos de 24 horas hábiles</div>
- </div>
- <div style={{ width: '100%', height: 1, background: T.border }} />
- <div>
- <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 6 }}>Teléfono / WhatsApp</div>
- <a href="tel:+50671862820" style={{ fontSize: 15, color: T.accent, textDecoration: 'none', fontWeight: 500 }}>
- +506 7186 2820
- </a>
- <div style={{ fontSize: 12, color: T.dim, marginTop: 4 }}>Disponible de lunes a viernes, 8am – 6pm (hora Costa Rica)</div>
- </div>
- <div style={{ width: '100%', height: 1, background: T.border }} />
- <div>
- <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10 }}>¿Qué sucede después de contactarnos?</div>
- {[
- { n: '1', text: 'Revisamos tu mensaje y entendemos el contexto de tu operación.' },
- { n: '2', text: 'Coordinamos una llamada de 30 minutos para entender tus necesidades en detalle.' },
- { n: '3', text: 'Te enviamos una propuesta adaptada a tu volumen de SKUs y tipo de negocio.' },
- ].map(({ n, text }) => (
- <div key={n} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
- <div style={{ width: 24, height: 24, borderRadius: '50%', background: T.accentBg, border: `1px solid ${T.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: T.accent, flexShrink: 0 }}>{n}</div>
- <span style={{ fontSize: 13, color: T.body, lineHeight: 1.55, paddingTop: 3 }}>{text}</span>
- </div>
- ))}
- </div>
  </div>
  </div>
  </Section>
@@ -734,7 +607,7 @@ export default function LandingPage() {
  </div>
  <div>
  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Empresa</div>
- {[['#problema','El problema'],['#contacto','Contacto']].map(([href, label]) => (
+ {[['#problema','El problema'],['#nosotros','Nosotros'],['mailto:hola@usefaro.io','Contacto']].map(([href, label]) => (
  <a key={label} href={href} style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}

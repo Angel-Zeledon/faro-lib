@@ -14,6 +14,7 @@ type PlanId = 'starter' | 'professional' | 'enterprise'
 interface PlanRow {
   id: PlanId
   price: number
+  custom?: boolean
   skus: string
   users: string
   locations: string
@@ -21,9 +22,9 @@ interface PlanRow {
 }
 
 const PLANS: PlanRow[] = [
-  { id: 'starter',      price: 99,  skus: '500',   users: '2',  locations: '1', taglineKey: 'planes.starter_tagline' },
-  { id: 'professional', price: 299, skus: '5.000', users: '10', locations: '5', taglineKey: 'planes.pro_tagline' },
-  { id: 'enterprise',   price: 799, skus: '∞',     users: '∞',  locations: '∞', taglineKey: 'planes.ent_tagline' },
+  { id: 'starter',      price: 99,   skus: '500',   users: '2',  locations: '1', taglineKey: 'planes.starter_tagline' },
+  { id: 'professional', price: 649,  skus: '5.000', users: '10', locations: '5', taglineKey: 'planes.pro_tagline' },
+  { id: 'enterprise',   price: 1990, custom: true, skus: '∞',     users: '∞',  locations: '∞', taglineKey: 'planes.ent_tagline' },
 ]
 
 const RANK: Record<PlanId, number> = { starter: 0, professional: 1, enterprise: 2 }
@@ -90,12 +91,23 @@ export default function PlanesPage() {
                 {PLAN_LABEL[p.id]}
               </h2>
 
-              <div style={{ margin: '10px 0 4px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                <span style={{ fontSize: 30, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
-                  ${p.price}
-                </span>
-                <span style={{ fontSize: 13, color: 'var(--dim)' }}>{t('planes.per_month')}</span>
-              </div>
+              {p.custom ? (
+                <div style={{ margin: '10px 0 4px' }}>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                    Personalizado
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--dim)', marginTop: 3 }}>
+                    Desde ${p.price.toLocaleString('es-CR')}{t('planes.per_month')}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ margin: '10px 0 4px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                  <span style={{ fontSize: 30, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                    ${p.price}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--dim)' }}>{t('planes.per_month')}</span>
+                </div>
+              )}
 
               <p style={{ margin: '10px 0 18px', fontSize: 13, lineHeight: 1.6, color: 'var(--dim)', minHeight: 62 }}>
                 {t(p.taglineKey)}
