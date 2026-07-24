@@ -1314,12 +1314,12 @@ export default function HoyPage() {
            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sendResult.sent.map(s => (
              <div key={s.supplier} style={{ fontSize: 12, color: C.green }}>
-              ✓ {s.supplier}{s.email ? ' · email' : ''}{s.whatsapp ? ' · WhatsApp' : ''}
+              {s.supplier}{s.email ? ' · email' : ''}{s.whatsapp ? ' · WhatsApp' : ''}
              </div>
             ))}
             {sendResult.skipped.map((s, idx) => (
              <div key={`${s.supplier}-${idx}`} style={{ fontSize: 12, color: C.amber }}>
-              ⚠ {s.supplier || '—'}: {s.reason}
+              {s.supplier || '—'}: {s.reason}
              </div>
             ))}
            </div>
