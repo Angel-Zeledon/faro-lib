@@ -192,13 +192,18 @@ def _register_dataset(tenant_id: str, user_id: str, csv_path: Path) -> str:
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / "data.csv"
     dst.write_bytes(csv_path.read_bytes())
+    # Row/column counts so the /data source card shows real metadata rather
+    # than "—" (the normal upload path fills these; a direct INSERT must too).
+    with dst.open("r", encoding="utf-8") as f:
+        line_count = sum(1 for _ in f)
+    row_count = max(0, line_count - 1)  # minus the header
     execute(
         """INSERT INTO datasets
            (id, tenant_id, name, original_filename, file_type, file_path,
-            size_bytes, uploaded_by, uploaded_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+            size_bytes, row_count, column_count, uploaded_by, uploaded_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
         (dataset_id, tenant_id, "Ventas Demo Faro", "ventas_demo.csv", "csv",
-         str(dst), dst.stat().st_size, user_id),
+         str(dst), dst.stat().st_size, row_count, 4, user_id),
     )
     return dataset_id
 
