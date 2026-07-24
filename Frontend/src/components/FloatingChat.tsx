@@ -108,10 +108,10 @@ export default function FloatingChat() {
         style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
           width: 52, height: 52, borderRadius: '50%', border: 'none',
-          background: open ? '#4338ca' : 'linear-gradient(135deg, #818cf8, #6366f1)',
+          background: open ? '#4338ca' : '#6366f1',
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 20px rgba(99,102,241,0.50)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.20)',
           transition: 'background 0.2s, transform 0.15s',
         }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)' }}
@@ -129,7 +129,7 @@ export default function FloatingChat() {
           border: '1px solid var(--border)',
           borderRadius: 16,
           display: 'flex', flexDirection: 'column',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.50)',
+          boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
           overflow: 'hidden',
         }}>
 

@@ -137,7 +137,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
         {/* Avatar */}
         <div style={{
           width: 64, height: 64, borderRadius: 16, flexShrink: 0,
-          background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+          background: '#6366f1',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 22, fontWeight: 700, color: '#fff',
         }}>
@@ -935,10 +935,12 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('config.wa_intro')}</div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+            <label htmlFor="wa-number" style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
               {t('config.wa_number_label')}
             </label>
             <input
+              id="wa-number"
+              name="whatsapp_number"
               type="tel"
               inputMode="tel"
               className="form-input"
@@ -1121,7 +1123,7 @@ export default function ConfigPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 9,
-          background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
+          background: '#6366f1',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
         }}>
@@ -1131,9 +1133,6 @@ export default function ConfigPage() {
           <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
             {t('configuration')}
           </h1>
-          <p style={{ fontSize: 11, color: 'var(--dim)', margin: 0, marginTop: 1 }}>
-            Faro — {t('user_profile')}, {t('app_settings')}, {t('available_models')}
-          </p>
         </div>
       </div>
 

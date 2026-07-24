@@ -68,6 +68,8 @@ export default function PlanningControl() {
         <button
           disabled={disabled || state.horizon <= 1}
           onClick={() => apply(state.period, state.horizon - 1)}
+          title={t('planning.horizon_decrease')}
+          aria-label={t('planning.horizon_decrease')}
           style={stepBtn(disabled || state.horizon <= 1)}
         >−</button>
         <span style={{ minWidth: 62, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
@@ -76,6 +78,8 @@ export default function PlanningControl() {
         <button
           disabled={disabled || state.horizon >= state.max_horizon}
           onClick={() => apply(state.period, state.horizon + 1)}
+          title={t('planning.horizon_increase')}
+          aria-label={t('planning.horizon_increase')}
           style={stepBtn(disabled || state.horizon >= state.max_horizon)}
         >+</button>
       </div>

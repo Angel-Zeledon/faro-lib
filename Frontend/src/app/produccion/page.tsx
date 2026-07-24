@@ -266,8 +266,8 @@ function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  <button onClick={handleAdd} disabled={saving || !newChild || !newQty} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '7px 14px', borderRadius: 7, background: C.green, color: '#fff', fontSize: 12, fontWeight: 600, opacity: saving || !newChild ? 0.6 : 1 }}>
  {saving ? <Spinner size={11} /> : <Save size={11} />} {t('produccion.btn_save')}
  </button>
- <button onClick={() => { setAddMode(false); setError(null) }} style={{ all: 'unset', cursor: 'pointer', padding: '7px 10px', borderRadius: 7, border: `1px solid ${C.border}`, color: C.dim }}>
- <X size={12} />
+ <button onClick={() => { setAddMode(false); setError(null) }} title={t('common.cancel')} aria-label={t('common.cancel')} style={{ all: 'unset', cursor: 'pointer', padding: '7px 10px', borderRadius: 7, border: `1px solid ${C.border}`, color: C.dim }}>
+ <X size={12} aria-hidden="true" />
  </button>
  </div>
  </div>
@@ -297,8 +297,8 @@ function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  <td style={{ padding: '10px 12px', color: C.text }}>{fmt(item.quantity)}{item.unit ? ` ${item.unit}` : ` ${t('produccion.unit_fallback')}`}</td>
  <td style={{ padding: '10px 12px', color: C.muted }}>{fmt(item.child_stock, 0)}</td>
  <td style={{ padding: '10px 12px' }}>
- <button onClick={() => handleDelete(item.child_sku)} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex' }} onMouseEnter={e => (e.currentTarget.style.color = C.red)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}>
- <Trash2 size={13} />
+ <button onClick={() => handleDelete(item.child_sku)} title={`${t('common.delete')}: ${item.child_sku}`} aria-label={`${t('common.delete')}: ${item.child_sku}`} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex' }} onMouseEnter={e => (e.currentTarget.style.color = C.red)} onMouseLeave={e => (e.currentTarget.style.color = C.dim)}>
+ <Trash2 size={13} aria-hidden="true" />
  </button>
  </td>
  </tr>
@@ -363,7 +363,7 @@ export default function ProduccionPage() {
  {/* Header */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
- <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg, #f97316, #ea580c)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+ <div style={{ width: 36, height: 36, borderRadius: 9, background: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
  <Cog size={18} color="#fff" strokeWidth={2.5} />
  </div>
  <div>
@@ -389,8 +389,8 @@ export default function ProduccionPage() {
  <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: C.dim }} />
  </div>
 
- <button onClick={() => sessionId && loadPlan(sessionId, horizonDays)} disabled={loading} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '7px 10px', border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, opacity: loading ? 0.5 : 1 }}>
- <RefreshCw size={13} />
+ <button onClick={() => sessionId && loadPlan(sessionId, horizonDays)} disabled={loading} title={t('common.refresh')} aria-label={t('common.refresh')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '7px 10px', border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, opacity: loading ? 0.5 : 1 }}>
+ <RefreshCw size={13} aria-hidden="true" />
  </button>
  </div>
  </div>
@@ -399,7 +399,7 @@ export default function ProduccionPage() {
  {error && (
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 13, color: C.red }}>
  <AlertTriangle size={13} />{error}
- <button onClick={() => setError(null)} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={13} /></button>
+ <button onClick={() => setError(null)} title={t('common.close')} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={13} aria-hidden="true" /></button>
  </div>
  )}
 
