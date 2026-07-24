@@ -83,6 +83,7 @@ export function CashFitPanel({
         </label>
         <input
           id="cash-budget"
+          name="cash_budget"
           value={budgetInput}
           onChange={e => setBudgetInput(e.target.value)}
           onBlur={e => submitBudget(e.target.value)}

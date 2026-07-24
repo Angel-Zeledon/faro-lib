@@ -146,6 +146,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
                     <td style={{ padding: '8px' }}>
                       <input
                         type="number" min={0}
+                        name={`reception-qty-${i.sku}`} aria-label={t('po.reception_col_arriving')}
                         value={qty[i.sku] ?? ''}
                         onChange={e => setQty(prev => ({ ...prev, [i.sku]: e.target.value }))}
                         style={{

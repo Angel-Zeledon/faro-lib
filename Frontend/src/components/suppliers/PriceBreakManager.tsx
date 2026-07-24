@@ -166,25 +166,25 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_sku_label')}
           </label>
-          <input style={inputS} placeholder={t('suppliers.pb_form_sku_placeholder')} value={sku} onChange={e => setSku(e.target.value)} />
+          <input style={inputS} name="pricebreak_sku" aria-label={t('suppliers.pb_form_sku_label')} placeholder={t('suppliers.pb_form_sku_placeholder')} value={sku} onChange={e => setSku(e.target.value)} />
         </div>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_min_qty_label')}
           </label>
-          <input style={inputS} type="number" min={0} step="any" value={minQty} onChange={e => setMinQty(e.target.value)} aria-label={t('suppliers.pb_form_min_qty_label')} />
+          <input style={inputS} name="pricebreak_min_qty" type="number" min={0} step="any" value={minQty} onChange={e => setMinQty(e.target.value)} aria-label={t('suppliers.pb_form_min_qty_label')} />
         </div>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_unit_price_label')}
           </label>
-          <input style={inputS} type="number" min={0} step="any" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} aria-label={t('suppliers.pb_form_unit_price_label')} />
+          <input style={inputS} name="pricebreak_unit_price" type="number" min={0} step="any" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} aria-label={t('suppliers.pb_form_unit_price_label')} />
         </div>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_notes_label')}
           </label>
-          <input style={inputS} placeholder={t('suppliers.pb_form_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
+          <input style={inputS} name="pricebreak_notes" aria-label={t('suppliers.pb_form_notes_label')} placeholder={t('suppliers.pb_form_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
         <button
           onClick={handleAdd}

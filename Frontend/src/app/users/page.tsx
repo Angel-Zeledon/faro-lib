@@ -196,10 +196,11 @@ function UserFormModal({
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
-          <label style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
+          <label htmlFor="user-full-name" style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
             {t('users.full_name_optional')}
           </label>
           <input
+            id="user-full-name" name="full_name"
             value={fullName} onChange={e => setFullName(e.target.value)}
             placeholder={t('users.full_name_placeholder')} style={inputStyle}
             onFocus={e => (e.target.style.borderColor = '#818cf8')}
@@ -207,10 +208,11 @@ function UserFormModal({
           />
         </div>
         <div>
-          <label style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
+          <label htmlFor="user-email" style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
             {t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}
           </label>
           <input
+            id="user-email" name="email"
             type="email" required value={email} onChange={e => setEmail(e.target.value)}
             placeholder={t('users.email_placeholder')} style={inputStyle}
             onFocus={e => (e.target.style.borderColor = '#818cf8')}
@@ -223,10 +225,11 @@ function UserFormModal({
           )}
         </div>
         <div>
-          <label style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
+          <label htmlFor="user-role" style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
             {t('users.role')}
           </label>
           <select
+            id="user-role" name="role"
             value={role} onChange={e => setRole(e.target.value)}
             style={{ ...inputStyle, cursor: 'pointer' }}
             onFocus={e => (e.target.style.borderColor = '#818cf8')}
@@ -425,6 +428,7 @@ function PermissionsModal({
                     <label key={perm} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
                       <input
                         type="checkbox"
+                        name={`perm-${perm}`}
                         checked={perms.includes(perm)}
                         onChange={() => toggle(perm)}
                         style={{ accentColor: '#818cf8', width: 14, height: 14, cursor: 'pointer' }}
@@ -696,6 +700,7 @@ export default function UsersPage() {
         <div style={{ position: 'relative', flex: 1 }}>
           <Search size={13} color="#64748b" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
           <input
+            type="search" name="user_search"
             value={search} onChange={e => { setSearch(e.target.value); setOffset(0) }}
             placeholder={t('users.search_placeholder')}
             aria-label={t('users.search_placeholder')}
@@ -707,6 +712,7 @@ export default function UsersPage() {
           />
         </div>
         <select
+          name="filter_status"
           value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setOffset(0) }}
           aria-label={t('users.col_status')}
           style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
@@ -715,6 +721,7 @@ export default function UsersPage() {
           {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{t(v.labelKey)}</option>)}
         </select>
         <select
+          name="filter_role"
           value={filterRole} onChange={e => { setFilterRole(e.target.value); setOffset(0) }}
           aria-label={t('users.col_role')}
           style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}

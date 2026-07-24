@@ -121,6 +121,7 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <input autoFocus value={name}
+             name="warehouse_name" aria-label={t('inventory.wh_add_placeholder')}
              placeholder={t('inventory.wh_add_placeholder')}
              onChange={e => setName(e.target.value)}
              onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setAdding(false) }}
@@ -231,6 +232,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
               {w.name}
               <input
                 type="number" min={0} max={100}
+                name={`demand-share-${w.name}`}
                 defaultValue={w.demand_share ?? ''}
                 onChange={e => setDraft(d => ({ ...d, [w.name]: e.target.value }))}
                 style={{ width: 56, background: 'transparent', border: `1px solid ${C.border}`,

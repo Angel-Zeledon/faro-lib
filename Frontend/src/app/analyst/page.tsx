@@ -675,6 +675,8 @@ export default function AnalystPage() {
                 position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)',
               }} />
               <input
+                type="search" name="chat_search"
+                aria-label={t('analyst.search_chats_placeholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder={t('analyst.search_chats_placeholder')}
@@ -782,6 +784,8 @@ export default function AnalystPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('analyst.session_label')}</span>
                     <select
+                      name="chat_session"
+                      aria-label={t('analyst.session_label')}
                       value={activeChat?.session_id ?? ''}
                       onChange={async e => {
                         const sid = e.target.value || null
@@ -951,6 +955,8 @@ export default function AnalystPage() {
 
                   <textarea
                     ref={inputRef}
+                    name="analyst_message"
+                    aria-label={t('analyst.input_placeholder')}
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKeyDown}
