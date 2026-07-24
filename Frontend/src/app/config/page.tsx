@@ -4,6 +4,7 @@ import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
+  MessageCircle, Unlink,
 } from 'lucide-react'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -15,6 +16,8 @@ import {
   getPlatformModels,
   getActivityLogs, getActivityActionTypes,
   requestPasswordChange, confirmPasswordChange,
+  linkWhatsappNumber, confirmWhatsappNumber,
+  isApiError,
 } from '@/lib/api'
 import type { PlatformModel, ActivityLog } from '@/lib/types'
 
@@ -109,33 +112,6 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
   const [name,     setName]     = useState(me?.full_name || '')
   const [saving,   setSaving]   = useState(false)
   const [feedback, setFeedback] = useState<'saved' | null>(null)
-
-  // WhatsApp opt-in for daily inventory alerts (stored server-side)
-  const [wa,         setWa]         = useState('')
-  const [waSaving,   setWaSaving]   = useState(false)
-  const [waFeedback, setWaFeedback] = useState<'saved' | 'error' | null>(null)
-  const [waError,    setWaError]    = useState('')
-
-  useEffect(() => {
-    getMe()
-      .then(u => setWa((u as { whatsapp_number?: string | null }).whatsapp_number || ''))
-      .catch(() => {})
-  }, [])
-
-  async function handleSaveWa() {
-    setWaSaving(true)
-    setWaFeedback(null)
-    try {
-      await updateMe({ whatsapp_number: wa.trim() })
-      setWaFeedback('saved')
-      setTimeout(() => setWaFeedback(null), 2500)
-    } catch (e: unknown) {
-      setWaError(e instanceof Error ? e.message : 'Error')
-      setWaFeedback('error')
-    } finally {
-      setWaSaving(false)
-    }
-  }
 
   async function handleSave() {
     if (!name.trim()) return
@@ -241,46 +217,6 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               {t('email')}
             </label>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{me?.email}</div>
-          </div>
-
-          {/* WhatsApp for daily inventory alerts */}
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              {t('config.whatsapp_label')}
-            </label>
-            <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center' }}>
-              <input
-                className="form-input"
-                placeholder="+50688888888"
-                value={wa}
-                onChange={e => setWa(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSaveWa()}
-                style={{ fontSize: 13, maxWidth: 220 }}
-              />
-              <button
-                onClick={handleSaveWa}
-                disabled={waSaving}
-                style={{
-                  all: 'unset', cursor: 'pointer',
-                  padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                  background: 'var(--accent)', color: '#fff',
-                  opacity: waSaving ? 0.6 : 1,
-                }}
-              >
-                {waSaving ? t('saving') : t('save_changes')}
-              </button>
-              {waFeedback === 'saved' && (
-                <span style={{ fontSize: 11, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle2 size={11} /> {t('saved')}
-                </span>
-              )}
-              {waFeedback === 'error' && (
-                <span style={{ fontSize: 11, color: '#ef4444' }}>{waError}</span>
-              )}
-            </div>
-            <p style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 0' }}>
-              {t('config.whatsapp_hint')}
-            </p>
           </div>
 
           {/* Role + Status */}
@@ -905,6 +841,263 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
   )
 }
 
+// ── Section: Link WhatsApp number ────────────────────────────────────────────
+
+type WaStep = 'loading' | 'form' | 'code' | 'verified'
+
+const isE164 = (s: string) => /^\+[1-9]\d{7,14}$/.test(s.trim())
+const IS_DEV = process.env.NODE_ENV !== 'production'
+
+function WhatsAppSection({ t }: { t: (k: string) => string }) {
+  const [step,           setStep]           = useState<WaStep>('loading')
+  const [number,         setNumber]         = useState('')
+  const [pendingNumber,  setPendingNumber]  = useState('')
+  const [verifiedNumber, setVerifiedNumber] = useState('')
+  const [code,           setCode]           = useState('')
+  const [debugCode,      setDebugCode]      = useState<string | null>(null)
+  const [loading,        setLoading]        = useState(false)
+  const [unlinking,      setUnlinking]      = useState(false)
+  const [error,          setError]          = useState<string | null>(null)
+
+  useEffect(() => {
+    getMe()
+      .then(u => {
+        if (u.whatsapp_verified_at) {
+          setVerifiedNumber(u.whatsapp_number || '')
+          setStep('verified')
+        } else {
+          setNumber(u.whatsapp_number || '')
+          setStep('form')
+        }
+      })
+      .catch(() => setStep('form'))
+  }, [])
+
+  async function handleSendCode() {
+    if (!isE164(number)) { setError(t('config.wa_hint')); return }
+    setLoading(true); setError(null)
+    try {
+      const res = await linkWhatsappNumber(number.trim())
+      setPendingNumber(number.trim())
+      setDebugCode(res.debug_code ?? null)
+      setCode('')
+      setStep('code')
+    } catch (e: unknown) {
+      if (isApiError(e) && e.status === 409) setError(t('config.wa_err_taken'))
+      else setError(t('config.wa_err_send'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleConfirm() {
+    if (code.length !== 6) return
+    setLoading(true); setError(null)
+    try {
+      await confirmWhatsappNumber(code)
+      setVerifiedNumber(pendingNumber)
+      setDebugCode(null)
+      setStep('verified')
+    } catch {
+      setError(t('config.wa_err_confirm'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleUnlink() {
+    setUnlinking(true); setError(null)
+    try {
+      await updateMe({ whatsapp_number: '' })
+      setVerifiedNumber(''); setNumber(''); setCode(''); setPendingNumber('')
+      setStep('form')
+    } catch {
+      setError(t('config.wa_err_unlink'))
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  function handleChangeNumber() {
+    setNumber(verifiedNumber)
+    setCode(''); setError(null); setStep('form')
+  }
+
+  return (
+    <Card>
+      <SectionTitle icon={MessageCircle} color="#22c55e" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
+
+      {step === 'loading' && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner size={18} /></div>
+      )}
+
+      {step === 'form' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('config.wa_intro')}</div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+              {t('config.wa_number_label')}
+            </label>
+            <input
+              type="tel"
+              inputMode="tel"
+              className="form-input"
+              placeholder="+50688888888"
+              value={number}
+              onChange={e => { setNumber(e.target.value); if (error) setError(null) }}
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleSendCode()}
+              style={{ fontSize: 13, maxWidth: 240 }}
+            />
+            <p style={{ fontSize: 11, color: 'var(--dim)', margin: '6px 0 0' }}>{t('config.wa_hint')}</p>
+          </div>
+          {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
+          <div>
+            <button
+              onClick={handleSendCode}
+              disabled={loading || !number.trim()}
+              style={{
+                all: 'unset', cursor: loading || !number.trim() ? 'default' : 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+                padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: 'var(--accent)', color: '#fff',
+                opacity: loading || !number.trim() ? 0.55 : 1, transition: 'opacity 0.15s',
+              }}
+            >
+              {loading ? <Spinner size={12} /> : <MessageCircle size={12} />}
+              {t('config.wa_send_code')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'code' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '10px 14px',
+            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
+            borderRadius: 8, fontSize: 12, color: '#22c55e',
+          }}>
+            <MessageCircle size={13} />
+            {t('config.wa_code_sent_to')} <strong>{pendingNumber}</strong>
+          </div>
+          {IS_DEV && debugCode && (
+            <div style={{ fontSize: 11, color: 'var(--dim)' }}>
+              {t('config.wa_dev_code')} <code style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>{debugCode}</code>
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
+              {t('config.wa_code_label')}
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (error) setError(null) }}
+              placeholder="000000"
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleConfirm()}
+              style={{
+                width: 160, background: 'var(--surface-2)',
+                border: `1px solid ${code.length === 6 ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 8, padding: '10px 14px',
+                fontSize: 22, fontWeight: 700, letterSpacing: 8,
+                color: 'var(--text)', outline: 'none', fontFamily: 'monospace',
+                textAlign: 'center', transition: 'border-color 0.15s',
+              }}
+            />
+          </div>
+          {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleConfirm}
+              disabled={loading || code.length !== 6}
+              style={{
+                all: 'unset', cursor: loading || code.length !== 6 ? 'default' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 7,
+                padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: 'var(--accent)', color: '#fff',
+                opacity: loading || code.length !== 6 ? 0.55 : 1, transition: 'opacity 0.15s',
+              }}
+            >
+              {loading ? <Spinner size={12} /> : <CheckCircle2 size={12} />}
+              {t('config.wa_confirm')}
+            </button>
+            <button
+              onClick={() => { setStep('form'); setCode(''); setError(null) }}
+              style={{
+                all: 'unset', cursor: 'pointer',
+                padding: '8px 14px', borderRadius: 8, fontSize: 12,
+                border: '1px solid var(--border)', color: 'var(--dim)',
+              }}
+            >
+              {t('go_back')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'verified' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '12px 16px',
+            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
+            borderRadius: 8,
+          }}>
+            <CheckCircle2 size={16} color="#22c55e" />
+            <div>
+              <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>
+                {t('config.wa_verified_title')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                {t('config.wa_linked_number')}: <strong style={{ fontFamily: 'monospace', color: 'var(--text)' }}>{verifiedNumber}</strong>
+              </div>
+            </div>
+            <span style={{
+              marginLeft: 'auto', fontSize: 10, fontWeight: 700,
+              padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em',
+              background: 'rgba(34,197,94,0.14)', color: '#22c55e',
+            }}>
+              {t('config.wa_verified_badge')}
+            </span>
+          </div>
+          {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleChangeNumber}
+              style={{
+                all: 'unset', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                border: '1px solid var(--border)', color: 'var(--muted)', background: 'var(--surface-2)',
+              }}
+            >
+              <Edit2 size={12} /> {t('config.wa_change')}
+            </button>
+            <button
+              onClick={handleUnlink}
+              disabled={unlinking}
+              style={{
+                all: 'unset', cursor: unlinking ? 'default' : 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                border: '1px solid var(--border)', color: 'var(--danger)',
+                opacity: unlinking ? 0.6 : 1,
+              }}
+            >
+              {unlinking ? <Spinner size={12} /> : <Unlink size={12} />}
+              {unlinking ? t('config.wa_unlinking') : t('config.wa_unlink')}
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
@@ -949,6 +1142,7 @@ export default function ConfigPage() {
         <ProfileSection t={t} lang={lang} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <AppConfigSection t={t} />
+          <WhatsAppSection t={t} />
           <SecuritySection t={t} />
         </div>
       </div>
