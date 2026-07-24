@@ -144,4 +144,8 @@ def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
         "job_id": job_id,
         "dataset_id": dataset_id,
         "stock_seeded": seeded,
+        # Full granularity family so the onboarding progress can reflect every
+        # member (not just the base job) and redirect once the base is ready —
+        # symmetric with POST /sessions/{id}/train.
+        "family": family,
     })
