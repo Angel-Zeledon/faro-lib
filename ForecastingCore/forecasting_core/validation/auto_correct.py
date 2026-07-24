@@ -148,6 +148,16 @@ def auto_correct_data(
             lo, hi = q1 - 3 * iqr, q3 + 3 * iqr
             clipped = ((s < lo) | (s > hi)).sum()
             if clipped > 0:
+                # Clip bounds come from quantiles and are almost always
+                # fractional. When the target column is integer-typed (integer
+                # demand is the common case for real uploads), assigning those
+                # fractional values back into an int64 column raises
+                # LossySetitemError on pandas >= 2.1 and aborts training. Demand
+                # is modeled as a continuous quantity downstream anyway (the
+                # Trainer casts the target to float), so promote the column to
+                # float64 before writing the corrected values.
+                if not pd.api.types.is_float_dtype(df[target_col].dtype):
+                    df[target_col] = df[target_col].astype("float64")
                 df.loc[idx, target_col] = s.clip(lower=lo, upper=hi)
                 clipped_skus.append(str(sku))
         if clipped_skus:

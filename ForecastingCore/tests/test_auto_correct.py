@@ -244,3 +244,20 @@ class TestAutoCorrectData:
         df = _make_df(n=60, nan_ratio=0.1, add_outlier=True)
         df_out, _ = auto_correct_data(df, _cfg())
         assert df_out.shape == df.shape
+
+    def test_clip_outliers_on_integer_target_does_not_raise(self):
+        """Regression: integer-typed demand (the common case for real uploads,
+        and what weekly/monthly resampling produces by summing integer days)
+        must not crash the outlier clip. Clip bounds come from quantiles and
+        are fractional, so writing them back into an int64 column raised
+        LossySetitemError on pandas >= 2.1 and aborted training."""
+        df = _make_df(n=60, add_outlier=True)
+        df["sales"] = df["sales"].round().astype("int64")
+        assert df["sales"].dtype == np.int64  # precondition: integer target
+
+        df_out, log = auto_correct_data(df, _cfg(), clip_outliers=True)
+
+        # The clip ran (no crash) and actually clipped the injected outlier.
+        actions = [c.action for c in log.corrections]
+        assert "clip_outliers" in actions
+        assert df_out["sales"].max() < 99999.0
