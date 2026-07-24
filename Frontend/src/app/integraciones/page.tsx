@@ -166,7 +166,7 @@ function ProviderCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 34, height: 34, borderRadius: 9,
-            background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+            background: '#6366f1',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <Plug size={16} color="#fff" strokeWidth={2.5} aria-hidden="true" />
@@ -377,7 +377,7 @@ export default function IntegrationsPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 9,
-          background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+          background: '#6366f1',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Plug size={17} color="#fff" strokeWidth={2.5} aria-hidden="true" />

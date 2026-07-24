@@ -195,6 +195,8 @@ export default function TopBar() {
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => showPanel ? setShowPanel(false) : openPanel()}
+            title={t('topbar.notifications')}
+            aria-label={t('topbar.notifications')}
             style={{
               position: 'relative', padding: 6, borderRadius: 7,
               background: 'transparent',

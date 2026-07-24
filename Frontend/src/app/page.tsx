@@ -585,7 +585,7 @@ export default function LandingPage() {
  ))}
  </div>
  <p style={{ fontSize: 13, color: T.dim, marginTop: 24, textAlign: 'center' }}>
- Los prices varían según el volumen de SKUs y el tipo de integración requerida. Contáctanos para una cotización a medida.
+ Los precios varían según el volumen de SKUs y el tipo de integración requerida. Contáctanos para una cotización a medida.
  </p>
  </Section>
 
@@ -639,7 +639,7 @@ export default function LandingPage() {
  <path d="M4 10 L8 14 L16 6" stroke={T.green} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
  </svg>
  </div>
- <div style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 8 }}>Mensaje received</div>
+ <div style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 8 }}>Mensaje recibido</div>
  <div style={{ fontSize: 14, color: T.body, lineHeight: 1.6 }}>Nos pondremos en contacto contigo en menos de 24 horas hábiles.</div>
  </div>
  ) : (
