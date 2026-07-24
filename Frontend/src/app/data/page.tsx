@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import {
  listDataSources, createFileSource, createSqlSource, replaceFileSource,
  updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery,
@@ -232,7 +232,7 @@ function DropZone({ onFile, compact }: { onFile: (f: File) => void; compact?: bo
  background: drag ? C.greenDim : 'transparent',
  }}
  >
- <input ref={ref} type="file" accept=".csv,.xlsx,.xls,.parquet,.json"
+ <input ref={ref} type="file" name="dataset_file" aria-label={t('data.drag_or_browse')} accept=".csv,.xlsx,.xls,.parquet,.json"
  style={{ display: 'none' }}
  onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }} />
  <Upload size={compact ? 24 : 32} color={drag ? C.green : C.muted} style={{ margin: '0 auto 8px' }} />
@@ -261,6 +261,8 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  { initial?: Partial<SqlFormData>; onSave: (d: SqlFormData) => void; onCancel?: () => void; saving?: boolean; isEdit?: boolean }
 ) {
  const { t } = useLanguage()
+ const uid = useId()
+ const fid = (k: keyof SqlFormData) => `sql-${k}-${uid}`
  const [form, setForm] = useState<SqlFormData>({ ...SQL_DEFAULTS, ...initial })
  const set = (k: keyof SqlFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
  setForm(f => ({ ...f, [k]: e.target.value }))
@@ -276,19 +278,19 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  {!isEdit && (
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
  <div>
- <label style={labelStyle}>{t('data.field_source_name')} *</label>
- <input style={inputStyle} value={form.name} onChange={set('name')} placeholder={t('data.field_source_name_ph')} />
+ <label htmlFor={fid('name')} style={labelStyle}>{t('data.field_source_name')} *</label>
+ <input id={fid('name')} name="name" style={inputStyle} value={form.name} onChange={set('name')} placeholder={t('data.field_source_name_ph')} />
  </div>
  <div>
- <label style={labelStyle}>{t('data.field_description')}</label>
- <input style={inputStyle} value={form.description} onChange={set('description')} placeholder={t('data.field_optional_ph')} />
+ <label htmlFor={fid('description')} style={labelStyle}>{t('data.field_description')}</label>
+ <input id={fid('description')} name="description" style={inputStyle} value={form.description} onChange={set('description')} placeholder={t('data.field_optional_ph')} />
  </div>
  </div>
  )}
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
  <div>
- <label style={labelStyle}>{t('data.field_engine')} *</label>
- <select style={inputStyle} value={form.engine} onChange={e => {
+ <label htmlFor={fid('engine')} style={labelStyle}>{t('data.field_engine')} *</label>
+ <select id={fid('engine')} name="engine" style={inputStyle} value={form.engine} onChange={e => {
  const eng = e.target.value as SqlEngine
  setForm(f => ({ ...f, engine: eng, port: ENGINE_PORTS[eng] || f.port }))
  }}>
@@ -298,26 +300,26 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  </select>
  </div>
  <div>
- <label style={labelStyle}>{t('data.field_host')} *</label>
- <input style={inputStyle} value={form.host} onChange={set('host')} placeholder="localhost" />
+ <label htmlFor={fid('host')} style={labelStyle}>{t('data.field_host')} *</label>
+ <input id={fid('host')} name="host" style={inputStyle} value={form.host} onChange={set('host')} placeholder="localhost" />
  </div>
  <div>
- <label style={labelStyle}>{t('data.field_port')} *</label>
- <input style={inputStyle} value={form.port} onChange={set('port')} type="number" />
+ <label htmlFor={fid('port')} style={labelStyle}>{t('data.field_port')} *</label>
+ <input id={fid('port')} name="port" style={inputStyle} value={form.port} onChange={set('port')} type="number" />
  </div>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
  <div>
- <label style={labelStyle}>{t('data.field_database')} *</label>
- <input style={inputStyle} value={form.database} onChange={set('database')} placeholder={t('data.field_database_ph')} />
+ <label htmlFor={fid('database')} style={labelStyle}>{t('data.field_database')} *</label>
+ <input id={fid('database')} name="database" style={inputStyle} value={form.database} onChange={set('database')} placeholder={t('data.field_database_ph')} />
  </div>
  <div>
- <label style={labelStyle}>{t('data.field_username')} *</label>
- <input style={inputStyle} value={form.username} onChange={set('username')} placeholder={t('data.field_username_ph')} />
+ <label htmlFor={fid('username')} style={labelStyle}>{t('data.field_username')} *</label>
+ <input id={fid('username')} name="username" style={inputStyle} value={form.username} onChange={set('username')} placeholder={t('data.field_username_ph')} />
  </div>
  <div>
- <label style={labelStyle}>{t('data.field_password')} {isEdit && <span style={{ fontWeight: 400 }}>{t('data.field_password_keep')}</span>}</label>
- <input style={inputStyle} type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
+ <label htmlFor={fid('password')} style={labelStyle}>{t('data.field_password')} {isEdit && <span style={{ fontWeight: 400 }}>{t('data.field_password_keep')}</span>}</label>
+ <input id={fid('password')} name="password" style={inputStyle} type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
  </div>
  </div>
  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -389,6 +391,8 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  </div>
  </div>
  <textarea
+ name="sql_query"
+ aria-label={t('data.sql_editor_label')}
  value={sql}
  onChange={e => setSql(e.target.value)}
  onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run() } }}
@@ -890,22 +894,22 @@ function AnalysisTab({ source, columns, activeSheet }: {
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
  <div>
- <label style={lblStyle}>{t('data.field_date_column')} *</label>
- <select style={selStyle} value={dateCol} onChange={e => setDateCol(e.target.value)}>
+ <label htmlFor="analysis-date-col" style={lblStyle}>{t('data.field_date_column')} *</label>
+ <select id="analysis-date-col" name="date_column" style={selStyle} value={dateCol} onChange={e => setDateCol(e.target.value)}>
  <option value="">{t('data.select_placeholder')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
  </div>
  <div>
- <label style={lblStyle}>{t('data.field_target_column')} *</label>
- <select style={selStyle} value={targetCol} onChange={e => setTargetCol(e.target.value)}>
+ <label htmlFor="analysis-target-col" style={lblStyle}>{t('data.field_target_column')} *</label>
+ <select id="analysis-target-col" name="target_column" style={selStyle} value={targetCol} onChange={e => setTargetCol(e.target.value)}>
  <option value="">{t('data.select_placeholder')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
  </div>
  <div>
- <label style={lblStyle}>{t('data.field_group_sku_column')}</label>
- <select style={selStyle} value={skuCol} onChange={e => setSkuCol(e.target.value)}>
+ <label htmlFor="analysis-sku-col" style={lblStyle}>{t('data.field_group_sku_column')}</label>
+ <select id="analysis-sku-col" name="sku_column" style={selStyle} value={skuCol} onChange={e => setSkuCol(e.target.value)}>
  <option value="">{t('data.option_none_single_series')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
@@ -913,13 +917,13 @@ function AnalysisTab({ source, columns, activeSheet }: {
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
  <div>
- <label style={lblStyle}>{t('data.field_date_from')}</label>
- <input type="date" style={selStyle} value={dateFrom}
+ <label htmlFor="analysis-date-from" style={lblStyle}>{t('data.field_date_from')}</label>
+ <input id="analysis-date-from" name="date_from" type="date" style={selStyle} value={dateFrom}
  onChange={e => setDateFrom(e.target.value)} />
  </div>
  <div>
- <label style={lblStyle}>{t('data.field_date_to')}</label>
- <input type="date" style={selStyle} value={dateTo}
+ <label htmlFor="analysis-date-to" style={lblStyle}>{t('data.field_date_to')}</label>
+ <input id="analysis-date-to" name="date_to" type="date" style={selStyle} value={dateTo}
  onChange={e => setDateTo(e.target.value)} />
  </div>
  <button onClick={runAnalysis} disabled={loading || !dateCol || !targetCol}
@@ -1061,6 +1065,7 @@ function DatasetEditorPanel({ source, onCreated }: {
   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
     <input value={name} onChange={e => setName(e.target.value)}
+     name="dataset_new_name" aria-label={t('data.editor_new_name')}
      placeholder={t('data.editor_new_name')}
      style={{ flex: 1, minWidth: 200, background: C.surface, border: `1px solid ${C.border2}`,
       borderRadius: 8, padding: '8px 12px', color: C.text, fontSize: 13, outline: 'none' }} />
@@ -1120,6 +1125,7 @@ function DatasetEditorPanel({ source, onCreated }: {
         {columns.map(c => (
          <td key={c} style={{ padding: 0, borderBottom: `1px solid ${C.border}` }}>
           <input value={row[c] == null ? '' : String(row[c])}
+           name={`cell-${ri}-${c}`} aria-label={c}
            onChange={e => setCell(ri, c, e.target.value)}
            style={{ width: '100%', minWidth: 90, background: 'transparent', border: 'none',
             padding: '6px 10px', color: C.text, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
@@ -1245,6 +1251,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  {editName ? (
  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
  <input value={newName} onChange={e => setNewName(e.target.value)}
+ name="source_name" aria-label={t('data.field_source_name')}
  onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditName(false) }}
  autoFocus
  style={{ background: C.surface, border: `1px solid ${C.green}`,
@@ -1579,20 +1586,20 @@ function NewSourcePanel({ onCreated, onCancel }:
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
  <div>
- <label style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+ <label htmlFor="upload-source-name" style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
  {t('data.field_name_optional')}
  </label>
- <input value={name} onChange={e => setName(e.target.value)}
+ <input id="upload-source-name" name="name" value={name} onChange={e => setName(e.target.value)}
  placeholder={file.name.replace(/\.[^.]+$/, '')}
  style={{ width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
  borderRadius: 8, padding: '9px 12px', color: C.text, fontSize: 13,
  outline: 'none', boxSizing: 'border-box' }} />
  </div>
  <div>
- <label style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+ <label htmlFor="upload-source-description" style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
  {t('data.field_description_optional')}
  </label>
- <input value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('data.desc_example_ph')}
+ <input id="upload-source-description" name="description" value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('data.desc_example_ph')}
  style={{ width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
  borderRadius: 8, padding: '9px 12px', color: C.text, fontSize: 13,
  outline: 'none', boxSizing: 'border-box' }} />
@@ -1741,6 +1748,9 @@ export default function DataPage() {
  </button>
  </div>
  <input
+ type="search"
+ name="source_search"
+ aria-label={t('data.search_sources_ph')}
  value={search}
  onChange={e => setSearch(e.target.value)}
  placeholder={t('data.search_sources_ph')}

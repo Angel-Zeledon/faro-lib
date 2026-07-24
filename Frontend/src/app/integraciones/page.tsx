@@ -104,10 +104,12 @@ function ConnectForm({
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(info.fields.length, 3)}, 1fr)`, gap: 12 }}>
         {info.fields.map(field => (
           <div key={field}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
+            <label htmlFor={`integration-${field}`} style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
               {fieldLabel(t, field)}
             </label>
             <input
+              id={`integration-${field}`}
+              name={field}
               style={inputS}
               type={/token|key|password|secret/i.test(field) ? 'password' : 'text'}
               autoComplete="off"

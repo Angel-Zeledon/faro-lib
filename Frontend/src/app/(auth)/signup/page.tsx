@@ -184,10 +184,11 @@ function SignupPageContent() {
                   animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.14s both',
                 }}>
                   <div className="auth-field">
-                    <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                    <label htmlFor="signup-full-name" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
                       {t('auth.full_name_label')}
                     </label>
                     <input
+                      id="signup-full-name" name="full_name"
                       type="text" value={form.full_name}
                       onChange={e => set('full_name', e.target.value)}
                       placeholder="Jane Smith"
@@ -195,10 +196,11 @@ function SignupPageContent() {
                     />
                   </div>
                   <div className="auth-field">
-                    <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                    <label htmlFor="signup-company" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
                       {t('auth.company_label')} <span style={{ color: '#dc2626' }}>*</span>
                     </label>
                     <input
+                      id="signup-company" name="tenant_name"
                       type="text" value={form.tenant_name} required
                       onChange={e => set('tenant_name', e.target.value)}
                       placeholder="Acme Corp"
@@ -208,10 +210,11 @@ function SignupPageContent() {
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.19s both' }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                  <label htmlFor="signup-email" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
                     {t('auth.email_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
+                    id="signup-email" name="email"
                     type="email" value={form.email} required
                     onChange={e => set('email', e.target.value)}
                     placeholder="you@company.com"
@@ -220,11 +223,12 @@ function SignupPageContent() {
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.24s both' }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                  <label htmlFor="signup-password" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
                     {t('auth.password_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <div style={{ position: 'relative' }}>
                     <input
+                      id="signup-password" name="password"
                       type={showPw ? 'text' : 'password'} value={form.password} required
                       onChange={e => set('password', e.target.value)}
                       placeholder={t('auth.password_placeholder')}

@@ -306,6 +306,9 @@ export default function SkuSearchOverlay() {
           <Search size={15} style={{ color: 'var(--dim)', flexShrink: 0 }} />
           <input
             ref={inputRef}
+            type="search"
+            name="sku_search"
+            aria-label={t('search.placeholder')}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onInputKeyDown}

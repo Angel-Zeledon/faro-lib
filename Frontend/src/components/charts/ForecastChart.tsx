@@ -128,6 +128,7 @@ export default function ForecastChart({ series, height = 280, isDark = true }: F
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--dim)', cursor: 'pointer' }}>
             <input
               type="checkbox"
+              name="show_uncertainty_bands"
               checked={showBands}
               onChange={e => setShowBands(e.target.checked)}
               style={{ accentColor: 'var(--accent)' }}

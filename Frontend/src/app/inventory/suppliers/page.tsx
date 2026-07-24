@@ -125,7 +125,7 @@ function SupplierFormPanel({
         <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
           {t('suppliers.form_name_label')} *
         </label>
-        <input style={inputS} placeholder={t('suppliers.form_name_placeholder')} value={form.name} onChange={set('name')} autoFocus />
+        <input style={inputS} name="supplier_name" aria-label={t('suppliers.form_name_label')} placeholder={t('suppliers.form_name_placeholder')} value={form.name} onChange={set('name')} autoFocus />
       </div>
 
       {/* Email + Phone */}
@@ -134,13 +134,13 @@ function SupplierFormPanel({
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
             {t('suppliers.form_email_label')}
           </label>
-          <input style={inputS} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
+          <input style={inputS} name="supplier_email" aria-label={t('suppliers.form_email_label')} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
             {t('suppliers.form_phone_label')}
           </label>
-          <input style={inputS} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
+          <input style={inputS} name="supplier_phone" aria-label={t('suppliers.form_phone_label')} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
         </div>
       </div>
 
@@ -150,14 +150,14 @@ function SupplierFormPanel({
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
             {t('suppliers.form_whatsapp_label')}
           </label>
-          <input style={inputS} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
+          <input style={inputS} name="supplier_whatsapp" aria-label={t('suppliers.form_whatsapp_label')} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
             {t('suppliers.form_payment_terms_label')}
           </label>
           <div style={{ position: 'relative' }}>
-            <select style={{ ...inputS, paddingRight: 28, appearance: 'none' as const }} value={form.payment_terms} onChange={set('payment_terms')} aria-label={t('suppliers.form_payment_terms_label')}>
+            <select style={{ ...inputS, paddingRight: 28, appearance: 'none' as const }} name="supplier_payment_terms" value={form.payment_terms} onChange={set('payment_terms')} aria-label={t('suppliers.form_payment_terms_label')}>
               <option value="">{t('suppliers.form_select_placeholder')}</option>
               {PAYMENT_TERMS.map(term => <option key={term} value={term}>{term}</option>)}
             </select>
@@ -175,7 +175,7 @@ function SupplierFormPanel({
               <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
           </label>
-          <input style={inputS} type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
+          <input style={inputS} name="supplier_lead_time_days" type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
@@ -184,7 +184,7 @@ function SupplierFormPanel({
               <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
           </label>
-          <input style={inputS} type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} aria-label={t('suppliers.form_variability_label')} />
+          <input style={inputS} name="supplier_lead_time_std" type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} aria-label={t('suppliers.form_variability_label')} />
         </div>
       </div>
 
@@ -195,6 +195,7 @@ function SupplierFormPanel({
         </label>
         <textarea
           style={{ ...inputS, resize: 'vertical', minHeight: 64 }}
+          name="supplier_notes"
           placeholder={t('suppliers.form_notes_placeholder')}
           value={form.notes}
           onChange={set('notes')}

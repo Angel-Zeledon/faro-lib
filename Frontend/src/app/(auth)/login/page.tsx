@@ -122,10 +122,11 @@ function LoginPageContent() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.10s both' }}>
-              <label style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: '#52525b' }}>
+              <label htmlFor="login-email" style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: '#52525b' }}>
                 {t('auth.email_label')}
               </label>
               <input
+                id="login-email" name="email"
                 type="email" value={email} required autoComplete="email"
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@company.com"
@@ -135,13 +136,14 @@ function LoginPageContent() {
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>{t('auth.password_label')}</label>
+                <label htmlFor="login-password" style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>{t('auth.password_label')}</label>
                 <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: '#71717a', textDecoration: 'none' }}>
                   {t('auth.forgot_password')}
                 </Link>
               </div>
               <div style={{ position: 'relative' }}>
                 <input
+                  id="login-password" name="password"
                   type={showPw ? 'text' : 'password'} value={password} required autoComplete="current-password"
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"

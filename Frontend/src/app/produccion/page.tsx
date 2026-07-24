@@ -201,11 +201,11 @@ function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
  {/* Parent selector */}
  <div>
- <label style={{ fontSize: 11, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>
+ <label htmlFor="bom-parent-sku" style={{ fontSize: 11, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.07em', display: 'block', marginBottom: 6 }}>
  {t('produccion.label_parent_select')}
  </label>
  <div style={{ position: 'relative', maxWidth: 380 }}>
- <select value={parentSku} onChange={e => setParentSku(e.target.value)} style={{ ...inputS, width: '100%', paddingRight: 28, appearance: 'none' as const }}>
+ <select id="bom-parent-sku" name="parent_sku" value={parentSku} onChange={e => setParentSku(e.target.value)} style={{ ...inputS, width: '100%', paddingRight: 28, appearance: 'none' as const }}>
  <option value="">{t('produccion.option_select_product')}</option>
  {parents.map(s => (
  <option key={s.sku} value={s.sku}>{s.sku}{s.display_name ? ` — ${s.display_name}` : ''}</option>
@@ -247,7 +247,7 @@ function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  <div style={{ padding: '12px 16px', background: 'rgba(129,140,248,0.04)', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
  <div style={{ flex: 2, minWidth: 200 }}>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 4 }}>{t('produccion.field_material_component')}</div>
- <select value={newChild} onChange={e => setNewChild(e.target.value)} style={{ ...inputS, width: '100%' }}>
+ <select name="bom_child_sku" aria-label={t('produccion.field_material_component')} value={newChild} onChange={e => setNewChild(e.target.value)} style={{ ...inputS, width: '100%' }}>
  <option value="">{t('produccion.option_select')}</option>
  {allSkus.filter(s => s.sku !== parentSku).map(s => (
  <option key={s.sku} value={s.sku}>{s.sku}{s.display_name ? ` — ${s.display_name}` : ''}</option>
@@ -256,11 +256,11 @@ function BomEditor({ allSkus }: { allSkus: InventoryStock[] }) {
  </div>
  <div style={{ width: 90 }}>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 4 }}>{t('produccion.field_quantity')}</div>
- <input type="number" min={0.001} step={0.001} value={newQty} onChange={e => setNewQty(e.target.value)} style={{ ...inputS, width: '100%' }} />
+ <input type="number" min={0.001} step={0.001} name="bom_quantity" aria-label={t('produccion.field_quantity')} value={newQty} onChange={e => setNewQty(e.target.value)} style={{ ...inputS, width: '100%' }} />
  </div>
  <div style={{ width: 100 }}>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 4 }}>{t('produccion.field_unit')}</div>
- <input type="text" placeholder={t('produccion.placeholder_unit')} value={newUnit} onChange={e => setNewUnit(e.target.value)} style={{ ...inputS, width: '100%' }} />
+ <input type="text" name="bom_unit" aria-label={t('produccion.field_unit')} placeholder={t('produccion.placeholder_unit')} value={newUnit} onChange={e => setNewUnit(e.target.value)} style={{ ...inputS, width: '100%' }} />
  </div>
  <div style={{ display: 'flex', gap: 6 }}>
  <button onClick={handleAdd} disabled={saving || !newChild || !newQty} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '7px 14px', borderRadius: 7, background: C.green, color: '#fff', fontSize: 12, fontWeight: 600, opacity: saving || !newChild ? 0.6 : 1 }}>
@@ -383,7 +383,7 @@ export default function ProduccionPage() {
 
  {/* Horizon */}
  <div style={{ position: 'relative' }}>
- <select value={horizonDays} onChange={e => setHorizonDays(Number(e.target.value))} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12, padding: '7px 28px 7px 10px', outline: 'none', appearance: 'none' as const }}>
+ <select value={horizonDays} name="horizon_days" aria-label={t('produccion.label_horizon')} onChange={e => setHorizonDays(Number(e.target.value))} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12, padding: '7px 28px 7px 10px', outline: 'none', appearance: 'none' as const }}>
  {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>{d} {t('produccion.unit_days')}</option>)}
  </select>
  <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: C.dim }} />

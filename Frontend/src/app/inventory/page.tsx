@@ -357,6 +357,7 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
 
      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <select
+       name="demand_mult_scope"
        value={form.scope}
        onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'sku' | 'category' }))}
        aria-label={t('inventory.mult_scope_label')}
@@ -366,6 +367,7 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
        <option value="sku">{t('inventory.mult_origin_sku')}</option>
       </select>
       <input
+       name="demand_mult_value"
        value={form.value}
        onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
        placeholder={form.scope === 'sku' ? t('inventory.mult_ph_sku') : t('inventory.mult_ph_category')}
@@ -373,6 +375,7 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
        style={{ ...inputS3, flex: 1, minWidth: 130 }}
       />
       <input
+       name="demand_mult_multiplier"
        type="number" step="0.1" min="0.1" max="10"
        value={form.mult}
        onChange={e => setForm(f => ({ ...f, mult: e.target.value }))}
@@ -564,6 +567,9 @@ function ShrinkageModal({ items, onClose, onSaved }: {
      <div>
       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_sku')}</div>
       <input
+       id="shrinkage-sku"
+       name="shrinkage_sku"
+       aria-label={t('inventory.shrinkage_field_sku')}
        list="shrinkage-sku-options"
        style={inputM}
        placeholder={t('inventory.shrinkage_sku_placeholder')}
@@ -586,11 +592,11 @@ function ShrinkageModal({ items, onClose, onSaved }: {
      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       <div>
        <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_quantity')}</div>
-       <input type="number" min={0} step="any" style={inputM} value={quantity} onChange={e => setQuantity(e.target.value)} />
+       <input id="shrinkage-quantity" name="shrinkage_quantity" aria-label={t('inventory.shrinkage_field_quantity')} type="number" min={0} step="any" style={inputM} value={quantity} onChange={e => setQuantity(e.target.value)} />
       </div>
       <div>
        <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_reason')}</div>
-       <select style={inputM} value={reason} onChange={e => setReason(e.target.value as ShrinkageReason)}>
+       <select id="shrinkage-reason" name="shrinkage_reason" aria-label={t('inventory.shrinkage_field_reason')} style={inputM} value={reason} onChange={e => setReason(e.target.value as ShrinkageReason)}>
         {SHRINKAGE_REASONS.map(r => <option key={r} value={r}>{t(`inventory.shrinkage_reason_${r}`)}</option>)}
        </select>
       </div>
@@ -598,7 +604,7 @@ function ShrinkageModal({ items, onClose, onSaved }: {
 
      <div>
       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>{t('inventory.shrinkage_field_notes')}</div>
-      <input style={inputM} placeholder={t('inventory.shrinkage_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
+      <input id="shrinkage-notes" name="shrinkage_notes" aria-label={t('inventory.shrinkage_field_notes')} style={inputM} placeholder={t('inventory.shrinkage_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
      </div>
 
      {estCost != null && (
@@ -864,19 +870,19 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  {/* Add form */}
  {adding ? (
  <div style={{ padding: '12px 14px', borderRadius: 8, background: C.card, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
- <input style={inputS2} placeholder={t('inventory.events_name_placeholder')} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus />
+ <input style={inputS2} name="event_name" aria-label={t('inventory.events_name_placeholder')} placeholder={t('inventory.events_name_placeholder')} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus />
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
  <div>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>{t('inventory.events_start_date')}</div>
- <input style={inputS2} type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+ <input style={inputS2} name="event_start_date" aria-label={t('inventory.events_start_date')} type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
  </div>
  <div>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>{t('inventory.events_end_date')}</div>
- <input style={inputS2} type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
+ <input style={inputS2} name="event_end_date" aria-label={t('inventory.events_end_date')} type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
  </div>
  <div>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>{t('inventory.events_multiplier')}</div>
- <select style={inputS2} value={form.multiplier} onChange={e => setForm(f => ({ ...f, multiplier: e.target.value }))}>
+ <select style={inputS2} name="event_multiplier" aria-label={t('inventory.events_multiplier')} value={form.multiplier} onChange={e => setForm(f => ({ ...f, multiplier: e.target.value }))}>
  <option value="1.2">×1.2 — {t('inventory.events_mult_mild')} (+20%)</option>
  <option value="1.5">×1.5 — {t('inventory.events_mult_moderate')} (+50%)</option>
  <option value="2.0">×2.0 — {t('inventory.events_mult_high')} (+100%)</option>
@@ -885,7 +891,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  </select>
  </div>
  </div>
- <input style={inputS2} placeholder={t('inventory.events_notes_placeholder')} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+ <input style={inputS2} name="event_notes" aria-label={t('inventory.events_notes_placeholder')} placeholder={t('inventory.events_notes_placeholder')} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
  <button onClick={() => setAdding(false)} style={{ all: 'unset', cursor: 'pointer', padding: '6px 12px', borderRadius: 6, border: `1px solid ${C.border}`, color: C.dim, fontSize: 12 }}>{t('common.cancel')}</button>
  <button onClick={handleAdd} disabled={!form.name || !form.start_date || !form.end_date} style={{ all: 'unset', cursor: 'pointer', padding: '6px 14px', borderRadius: 6, background: C.indigo, color: '#fff', fontSize: 12, fontWeight: 600, opacity: !form.name || !form.start_date || !form.end_date ? 0.5 : 1 }}>{t('inventory.events_btn_save')}</button>
@@ -947,6 +953,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  editingQtySku === item.sku ? (
  <input
  type="number" min={1} autoFocus
+ name={`order-qty-${item.sku}`} aria-label={t('inventory.edit_qty_title')}
  defaultValue={effectiveQty(item)}
  onClick={e => e.stopPropagation()}
  onBlur={e => {
@@ -1049,6 +1056,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
       </span>
      </div>
      <input type="range" min={-10} max={30} value={ltDelta}
+      name="sim_lead_time" aria-label={t('inventory.sim_lead_time')}
       onChange={e => setLtDelta(Number(e.target.value))} style={sliderS} />
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
       <span>-10d</span><span>+30d</span>
@@ -1064,6 +1072,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
       </span>
      </div>
      <input type="range" min={50} max={200} step={5} value={demandMult}
+      name="sim_demand_variation" aria-label={t('inventory.sim_demand_variation')}
       onChange={e => setDemandMult(Number(e.target.value))} style={sliderS} />
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
       <span>-50%</span><span>+100%</span>
@@ -1081,6 +1090,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
      <input type="range" min={-(item.current_stock ?? 0)} max={(item.current_stock ?? 0) * 2}
       step={Math.max(1, Math.floor((item.current_stock ?? 50) / 10))}
       value={stockDelta}
+      name="sim_extra_stock" aria-label={t('inventory.sim_extra_stock')}
       onChange={e => setStockDelta(Number(e.target.value))} style={sliderS} />
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.dim }}>
       <span>-{item.current_stock ?? 0}</span><span>+{(item.current_stock ?? 0) * 2}</span>
@@ -1428,7 +1438,7 @@ export default function InventoryPage() {
  </div>
 
  <button onClick={() => sessionId && load(sessionId)} disabled={loading} title={t('inventory.btn_refresh')} style={{ all: 'unset', cursor: loading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', padding: '7px 10px', border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, opacity: loading ? 0.5 : 1 }}><RefreshCw size={13} /></button>
- <input ref={importRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+ <input ref={importRef} type="file" name="inventory_csv_import" aria-label={t('inventory.btn_import_csv_arrow')} accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
  <button onClick={() => importRef.current?.click()} disabled={importing} style={{ all: 'unset', cursor: importing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted, opacity: importing ? 0.6 : 1 }}>
  {importing ? <Spinner size={12} /> : <Upload size={12} />} CSV
  </button>
@@ -1571,7 +1581,7 @@ export default function InventoryPage() {
 
  {/* Toolbar */}
  <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
- <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none' }} />
+ <input type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none' }} />
  {search && <button onClick={() => setSearch('')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex' }}><X size={13} /></button>}
  <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }}>{items.length} SKU{items.length !== 1 ? 's' : ''}</span>
  </div>
@@ -1726,6 +1736,7 @@ export default function InventoryPage() {
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, minWidth: 110 }}>
  <input
  style={inputUpd}
+ name={`bulk-current-stock-${item.sku}`} aria-label={t('inventory.col_current_stock')}
  type="number" min={0}
  value={draft?.current_stock ?? ''}
  onChange={e => handleDraftChange(item.sku, 'current_stock', e.target.value)}
@@ -1745,6 +1756,7 @@ export default function InventoryPage() {
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, minWidth: 130 }}>
  <input
  style={inputUpd}
+ name={`bulk-lead-time-${item.sku}`} aria-label={t('inventory.col_lead_time_days')}
  type="number" min={1} max={365}
  value={draft?.lead_time_days ?? ''}
  onChange={e => handleDraftChange(item.sku, 'lead_time_days', e.target.value)}
@@ -1755,6 +1767,7 @@ export default function InventoryPage() {
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, minWidth: 150 }}>
  <input
  style={inputUpd}
+ name={`bulk-supplier-${item.sku}`} aria-label={t('inventory.col_provider')}
  type="text"
  value={draft?.supplier ?? ''}
  onChange={e => handleDraftChange(item.sku, 'supplier', e.target.value)}
@@ -1930,23 +1943,24 @@ export default function InventoryPage() {
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}><SignalBadge s={item.signal} /></td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ fontWeight: 600, fontFamily: 'monospace', marginBottom: 4, fontSize: 11 }}>{item.sku}</div>
- <input style={inputS} placeholder={t('inventory.edit_display_name_placeholder')} value={editState.display_name} onChange={e => setEditState(s => s ? { ...s, display_name: e.target.value } : s)} />
+ <input style={inputS} name={`edit-display-name-${item.sku}`} aria-label={t('inventory.edit_display_name_placeholder')} placeholder={t('inventory.edit_display_name_placeholder')} value={editState.display_name} onChange={e => setEditState(s => s ? { ...s, display_name: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_display_name_hint')}</div>
  <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
- <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_category')} value={editState.category} onChange={e => setEditState(s => s ? { ...s, category: e.target.value } : s)} />
- <input style={{ ...inputS, width: 90 }} placeholder={t('inventory.edit_brand')} value={editState.brand} onChange={e => setEditState(s => s ? { ...s, brand: e.target.value } : s)} />
- <input style={{ ...inputS, width: 70 }} placeholder={t('inventory.edit_unit')} value={editState.unit_of_measure} onChange={e => setEditState(s => s ? { ...s, unit_of_measure: e.target.value } : s)} />
- <input style={{ ...inputS, width: 120 }} placeholder={t('inventory.edit_barcode')} value={editState.barcode} onChange={e => setEditState(s => s ? { ...s, barcode: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 90 }} name={`edit-category-${item.sku}`} aria-label={t('inventory.edit_category')} placeholder={t('inventory.edit_category')} value={editState.category} onChange={e => setEditState(s => s ? { ...s, category: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 90 }} name={`edit-brand-${item.sku}`} aria-label={t('inventory.edit_brand')} placeholder={t('inventory.edit_brand')} value={editState.brand} onChange={e => setEditState(s => s ? { ...s, brand: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 70 }} name={`edit-unit-${item.sku}`} aria-label={t('inventory.edit_unit')} placeholder={t('inventory.edit_unit')} value={editState.unit_of_measure} onChange={e => setEditState(s => s ? { ...s, unit_of_measure: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 120 }} name={`edit-barcode-${item.sku}`} aria-label={t('inventory.edit_barcode')} placeholder={t('inventory.edit_barcode')} value={editState.barcode} onChange={e => setEditState(s => s ? { ...s, barcode: e.target.value } : s)} />
  </div>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
- <input style={{ ...inputS, width: 80 }} type="number" min={0} value={editState.current_stock} onChange={e => setEditState(s => s ? { ...s, current_stock: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 80 }} name={`edit-current-stock-${item.sku}`} aria-label={t('inventory.col_current_stock')} type="number" min={0} value={editState.current_stock} onChange={e => setEditState(s => s ? { ...s, current_stock: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_stock_hint')}</div>
  </td>
  <td colSpan={2} style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}`, color: C.dim, fontSize: 11 }}>{t('inventory.edit_recalculated_on_save')}</td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <select
  style={{ ...inputS, width: 160 }}
+ name={`edit-supplier-${item.sku}`} aria-label={t('inventory.col_provider')}
  value={editState.supplier}
  onChange={e => setEditState(s => s ? { ...s, supplier: e.target.value } : s)}
  >
@@ -1957,11 +1971,11 @@ export default function InventoryPage() {
  </select>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
- <input style={{ ...inputS, width: 60 }} type="number" min={1} max={365} value={editState.lead_time_days} onChange={e => setEditState(s => s ? { ...s, lead_time_days: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 60 }} name={`edit-lead-time-${item.sku}`} aria-label={t('inventory.col_lead_time_days')} type="number" min={1} max={365} value={editState.lead_time_days} onChange={e => setEditState(s => s ? { ...s, lead_time_days: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_provider_days_hint')}</div>
  </td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
- <input style={{ ...inputS, width: 70 }} type="number" min={0} value={editState.moq} onChange={e => setEditState(s => s ? { ...s, moq: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 70 }} name={`edit-moq-${item.sku}`} aria-label={t('inventory.edit_min_per_order')} type="number" min={0} value={editState.moq} onChange={e => setEditState(s => s ? { ...s, moq: e.target.value } : s)} />
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
  {t('inventory.edit_min_per_order')}
  <HelpTip text={t('inventory.help_moq')} width={240} />
@@ -1971,18 +1985,18 @@ export default function InventoryPage() {
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
  <span style={{ fontSize: 11, color: C.dim }}>$</span>
- <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder="0" value={editState.unit_cost} onChange={e => setEditState(s => s ? { ...s, unit_cost: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 80 }} name={`edit-unit-cost-${item.sku}`} aria-label={t('inventory.edit_provider_price_hint')} type="number" min={0} placeholder="0" value={editState.unit_cost} onChange={e => setEditState(s => s ? { ...s, unit_cost: e.target.value } : s)} />
  </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_provider_price_hint')}</div>
  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
  <span style={{ fontSize: 11, color: C.dim }}>$</span>
- <input style={{ ...inputS, width: 80 }} type="number" min={0} placeholder={t('inventory.edit_sale_price')} value={editState.sale_price} onChange={e => setEditState(s => s ? { ...s, sale_price: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 80 }} name={`edit-sale-price-${item.sku}`} aria-label={t('inventory.edit_sale_price')} type="number" min={0} placeholder={t('inventory.edit_sale_price')} value={editState.sale_price} onChange={e => setEditState(s => s ? { ...s, sale_price: e.target.value } : s)} />
  </div>
  <div style={{ fontSize: 10, color: C.dim, marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
  {t('inventory.edit_service_level_label')}
  <HelpTip text={t('inventory.help_service_level')} width={260} />
  </div>
- <select style={{ ...inputS, width: 90 }} value={editState.service_level}
+ <select style={{ ...inputS, width: 90 }} name={`edit-service-level-${item.sku}`} aria-label={t('inventory.edit_service_level_label')} value={editState.service_level}
  onChange={e => setEditState(s => s ? { ...s, service_level: e.target.value } : s)}>
  <option value="0.90">90% — {t('inventory.service_level_low')}</option>
  <option value="0.95">95% — {t('inventory.service_level_normal')}</option>
@@ -2047,6 +2061,7 @@ export default function InventoryPage() {
  editingQtySku === item.sku ? (
  <input
  type="number" min={1} autoFocus
+ name={`order-qty-${item.sku}`} aria-label={t('inventory.edit_qty_title')}
  defaultValue={effectiveQty(item)}
  onBlur={e => {
  const n = parseInt(e.target.value, 10)

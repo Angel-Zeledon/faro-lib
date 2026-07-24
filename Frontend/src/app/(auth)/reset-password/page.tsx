@@ -81,11 +81,12 @@ function ResetPasswordForm() {
             )}
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="reset-new-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
                   New password
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
+                    id="reset-new-password" name="new_password"
                     type={showPw ? 'text' : 'password'} required value={pw}
                     onChange={e => setPw(e.target.value)}
                     placeholder="Min. 8 characters"
@@ -102,10 +103,11 @@ function ResetPasswordForm() {
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="reset-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
                   Confirm password
                 </label>
                 <input
+                  id="reset-confirm-password" name="confirm_password"
                   type={showPw ? 'text' : 'password'} required value={pw2}
                   onChange={e => setPw2(e.target.value)}
                   placeholder="Repeat password"

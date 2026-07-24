@@ -646,27 +646,27 @@ export default function LandingPage() {
  <form onSubmit={handleForm} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
  <div>
- <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Nombre completo *</label>
- <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Tu nombre" style={inp} />
+ <label htmlFor="contact-name" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Nombre completo *</label>
+ <input id="contact-name" name="name" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Tu nombre" style={inp} />
  </div>
  <div>
- <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Empresa *</label>
- <input required value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} placeholder="Nombre de tu empresa" style={inp} />
+ <label htmlFor="contact-company" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Empresa *</label>
+ <input id="contact-company" name="company" required value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} placeholder="Nombre de tu empresa" style={inp} />
  </div>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
  <div>
- <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Correo electrónico *</label>
- <input required type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="tu@empresa.com" style={inp} />
+ <label htmlFor="contact-email" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Correo electrónico *</label>
+ <input id="contact-email" name="email" required type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="tu@empresa.com" style={inp} />
  </div>
  <div>
- <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Teléfono</label>
- <input type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+506 7186 2820" style={inp} />
+ <label htmlFor="contact-phone" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>Teléfono</label>
+ <input id="contact-phone" name="phone" type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+506 7186 2820" style={inp} />
  </div>
  </div>
  <div>
- <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>¿En qué te podemos ayudar? *</label>
- <textarea required value={form.message} onChange={e => setForm(f => ({ ...f, message: e.target.value }))} placeholder="Cuéntanos sobre tu operación: qué industria, cuántos productos manejas, cuál es el principal problema con tu inventario actual..." rows={5} style={{ ...inp, resize: 'vertical', lineHeight: 1.6, fontFamily: 'inherit' }} />
+ <label htmlFor="contact-message" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.body, marginBottom: 6 }}>¿En qué te podemos ayudar? *</label>
+ <textarea id="contact-message" name="message" required value={form.message} onChange={e => setForm(f => ({ ...f, message: e.target.value }))} placeholder="Cuéntanos sobre tu operación: qué industria, cuántos productos manejas, cuál es el principal problema con tu inventario actual..." rows={5} style={{ ...inp, resize: 'vertical', lineHeight: 1.6, fontFamily: 'inherit' }} />
  </div>
  <button type="submit" disabled={formState === 'sending'} style={{ padding: '11px 24px', borderRadius: 8, border: 'none', background: formState === 'sending' ? T.muted : T.text, color: '#fff', fontSize: 14, fontWeight: 700, cursor: formState === 'sending' ? 'not-allowed' : 'pointer', transition: 'background 0.15s' }}>
  {formState === 'sending' ? 'Enviando…' : 'Enviar mensaje'}

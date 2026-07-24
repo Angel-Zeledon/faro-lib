@@ -285,6 +285,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
       {editing ? (
        <input
         type="number" min={0} value={qtyInput}
+        name="order_qty" aria-label={t('hoy.label_order_qty')}
         onChange={e => setQtyInput(e.target.value)}
         onBlur={() => {
          const n = parseInt(qtyInput)
@@ -1237,6 +1238,7 @@ export default function HoyPage() {
            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--dim)' }}>
             {t('hoy.cart_destination')}
             <select
+             name="cart_destination"
              value={destWarehouse}
              onChange={e => setDestWarehouse(e.target.value)}
              style={{

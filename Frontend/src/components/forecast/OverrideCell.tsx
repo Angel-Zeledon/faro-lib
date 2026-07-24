@@ -33,6 +33,8 @@ export default function OverrideCell({ value, original, overridden, onSave }: Ov
       <input
         ref={inputRef}
         type="number"
+        name="forecast_override"
+        aria-label="Forecast override value"
         value={draft}
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}

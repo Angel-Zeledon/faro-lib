@@ -153,6 +153,8 @@ export default function FloatingChat() {
                 <div style={{ fontSize: 10, color: 'var(--dim)' }}>{t('chat.no_sessions')}</div>
               ) : (
                 <select
+                  name="chat_session"
+                  aria-label={t('chat.open_analyst')}
                   value={sessionId ?? ''}
                   onChange={e => { setSessionId(e.target.value || null); setChatId(null); setMessages([]) }}
                   style={{
@@ -273,6 +275,8 @@ export default function FloatingChat() {
           }}>
             <textarea
               ref={textRef}
+              name="chat_message"
+              aria-label={t('chat.input_placeholder')}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={onKey}

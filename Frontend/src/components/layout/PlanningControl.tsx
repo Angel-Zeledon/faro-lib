@@ -47,6 +47,8 @@ export default function PlanningControl() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
       <span style={{ color: 'var(--dim)' }}>{t('planning.period_label')}</span>
       <select
+        name="planning_period"
+        aria-label={t('planning.period_label')}
         value={state.period}
         disabled={disabled}
         onChange={e => apply(e.target.value as PlanningPeriod, state.horizon)}

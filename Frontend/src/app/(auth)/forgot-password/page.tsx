@@ -164,10 +164,11 @@ export default function ForgotPasswordPage() {
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="forgot-email" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
                   Email address
                 </label>
                 <input
+                  id="forgot-email" name="email"
                   type="email" required value={email} onChange={e => setEmail(e.target.value)}
                   placeholder="you@company.com" style={_input}
                   onFocus={e => (e.target.style.borderColor = '#818cf8')}
@@ -198,6 +199,7 @@ export default function ForgotPasswordPage() {
                   <input
                     key={i}
                     ref={el => { codeRefs.current[i] = el }}
+                    name={`reset-code-${i + 1}`} aria-label={`Verification code digit ${i + 1}`}
                     type="text" inputMode="numeric" maxLength={1}
                     value={digit}
                     onChange={e => handleCodeInput(i, e.target.value)}
@@ -237,10 +239,11 @@ export default function ForgotPasswordPage() {
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="forgot-new-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
                   New password
                 </label>
                 <input
+                  id="forgot-new-password" name="new_password"
                   type="password" required value={pw} onChange={e => setPw(e.target.value)}
                   placeholder="Min. 8 characters" style={_input}
                   onFocus={e => (e.target.style.borderColor = '#818cf8')}
@@ -248,10 +251,11 @@ export default function ForgotPasswordPage() {
                 />
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="forgot-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
                   Confirm password
                 </label>
                 <input
+                  id="forgot-confirm-password" name="confirm_password"
                   type="password" required value={pw2} onChange={e => setPw2(e.target.value)}
                   placeholder="Repeat password"
                   style={{ ..._input, borderColor: pw2 && pw !== pw2 ? '#ef4444' : '#1e2030' }}
