@@ -1330,6 +1330,11 @@ export interface MorningBriefing {
   excluded_skus?:   ExcludedSku[]
   recommendations:  BriefingRecommendation[]
   kpis:             MorningBriefingKPIs
+  /** Active planning grain + its coverage unit. Per-period coverage figures in
+   * the risks/warnings/overstock lists are in this unit (a weekly session's
+   * coverage_days of 3 means 3 weeks); the /hoy cards label them accordingly. */
+  period?:          PlanningPeriod
+  coverage_unit?:   CoverageUnit
 }
 
 // ── SKU Intelligence ──────────────────────────────────────────────────────────

@@ -1927,11 +1927,20 @@ def get_demand_spikes(
     return alerts[:8]
 
 
-def generate_recommendations(items: list[dict]) -> list[dict]:
+def generate_recommendations(items: list[dict], period: str = "daily") -> list[dict]:
     """
     Generates plain-language, actionable recommendations from inventory status items.
     Each recommendation has: priority (1=critical), sku, name, rec_type, text, action.
+
+    `period` (multi-period Phase C): the active planning grain. A period-trained
+    session reports coverage in that grain's unit (a weekly session's
+    coverage_days of 3 means 3 WEEKS), so the coverage figures are formatted in
+    that unit and the "óptimo" ceiling is compared in the same unit. Lead time
+    stays in real calendar days — a supplier takes N days regardless of the
+    planning grain. "daily" reproduces the prior output byte-for-byte.
     """
+    from backend.formatting import format_coverage
+    days_per_period = _days_per_period(period)
     recs: list[dict] = []
 
     for item in items:
@@ -1951,7 +1960,7 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 'priority': 1, 'sku': sku, 'name': name,
                 'rec_type': 'STOCKOUT_RISK',
                 'text': (
-                    f"Emite la orden de {name} HOY — tienes {_format_days(days)} de stock "
+                    f"Emite la orden de {name} HOY — tienes {format_coverage(days, period)} de stock "
                     f"y {prov} tarda {_format_days(lead)} en entregar. "
                     f"Si no actúas hoy, habrá quiebre antes de recibir el pedido."
                 ),
@@ -1964,7 +1973,7 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 'priority': 2, 'sku': sku, 'name': name,
                 'rec_type': 'REORDER_SOON',
                 'text': (
-                    f"{name} tiene {_format_days(days)} de cobertura frente a un lead time de {_format_days(lead)}. "
+                    f"{name} tiene {format_coverage(days, period)} de cobertura frente a un lead time de {_format_days(lead)}. "
                     f"Emite el pedido esta semana para mantener el colchón de seguridad."
                 ),
                 'action': f"Pedir {qty:.0f} unidades antes del viernes" if qty > 0 else "Planificar pedido",
@@ -1996,12 +2005,17 @@ def generate_recommendations(items: list[dict]) -> list[dict]:
                 })
 
         if signal == 'SOBRESTOCK' and abc in ('A', 'B') and days is not None and value:
-            excess_days = days - lead * 3
+            # `days` is coverage in the active period's unit; the "óptimo" ceiling
+            # is 3× the lead time expressed in that SAME unit, so the excess is a
+            # coherent period figure (mixing weeks against day-count lead was the
+            # weekly-mode bug that produced "-12 días más de lo óptimo").
+            lead_periods = lead / days_per_period
+            excess = days - lead_periods * 3
             recs.append({
                 'priority': 5, 'sku': sku, 'name': name,
                 'rec_type': 'OVERSTOCK',
                 'text': (
-                    f"{name} tiene {_format_days(days)} de cobertura ({_format_days(excess_days)} más de lo óptimo). "
+                    f"{name} tiene {format_coverage(days, period)} de cobertura ({format_coverage(excess, period)} más de lo óptimo). "
                     f"Pausar el próximo pedido liberaría {money(value)} en capital de trabajo."
                 ),
                 'action': "Pausar próximo pedido",
@@ -2091,7 +2105,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     except Exception as e:
         log.warning("briefing transfer suggestions failed session=%s: %s", session_id, e)
 
-    recs = generate_recommendations(items)
+    recs = generate_recommendations(items, period)
 
     # Pull session-level forecast accuracy if available
     avg_accuracy: Optional[float] = None
@@ -2123,6 +2137,11 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         'session_id':   session_id,
         'session_name': session_name,
         'has_data':     bool(items),
+        # Active planning grain + its coverage unit, so every consumer (the
+        # narrative, the /hoy cards) labels the per-period coverage figures in
+        # the right noun instead of a hardcoded "días".
+        'period':         period,
+        'coverage_unit':  _coverage_unit(period),
         'risks':        risks[:10],
         'warnings':     warnings[:10],
         'overstocked':  overstocked[:10],

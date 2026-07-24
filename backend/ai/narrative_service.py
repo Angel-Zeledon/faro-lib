@@ -12,7 +12,7 @@ All narratives are grounded in the data provided — never invented.
 import json
 import logging
 
-from backend.formatting import money, format_days
+from backend.formatting import money, format_days, format_coverage
 
 log = logging.getLogger(__name__)
 
@@ -91,9 +91,12 @@ def generate_morning_narrative(briefing: dict, profile: str = 'distributor') -> 
     demand_changes = briefing.get('demand_changes', [])
     overstocked = briefing.get('overstocked', [])
 
+    # Coverage figures are in the briefing's active period unit (weekly session ->
+    # weeks); label them with the matching noun, not a hardcoded "días".
+    _period = briefing.get('period', 'daily')
     risk_names = [
         f"{r.get('display_name') or r.get('sku')} "
-        f"({format_days(r['coverage_days']) if r.get('coverage_days') is not None else '? días'})"
+        f"({format_coverage(r['coverage_days'], _period) if r.get('coverage_days') is not None else '?'})"
         for r in risks[:5]
     ] if risks else []
     demand_up   = [f"{i.get('display_name') or i.get('sku')} (+{i.get('demand_trend_pct', 0):.0f}%)"

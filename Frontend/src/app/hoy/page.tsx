@@ -23,6 +23,7 @@ import {
 } from '@/components/suppliers/SupplierHealthBanners'
 import { TransferSuggestions } from '@/components/inventory/TransferSuggestions'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
+import { coverageUnitLabel } from '@/lib/period'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
@@ -413,11 +414,14 @@ function SpikeCard({ s }: { s: DemandSpike }) {
 // ── Build ActionItems from briefing ──────────────────────────────────────────
 function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionItem[] {
  const items: ActionItem[] = []
+ // Coverage figures are in the briefing's active period unit (weeks under a
+ // weekly session); lead time is always real calendar days.
+ const cu = b.coverage_unit
 
  for (const risk of (b.risks ?? [])) {
   const d = risk.coverage_days != null ? Math.round(risk.coverage_days) : null
   const reason = d != null
-   ? `${t('hoy.reason_stock_left_prefix')} ${d} ${dayUnit(d, t)} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_days} ${dayUnit(risk.lead_time_days, t)}`
+   ? `${t('hoy.reason_stock_left_prefix')} ${d} ${coverageUnitLabel(cu, d, t)} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_days} ${dayUnit(risk.lead_time_days, t)}`
    : `${t('hoy.reason_immediate_risk')} — ${t('hoy.reason_lead_time_label')} ${risk.lead_time_days} ${dayUnit(risk.lead_time_days, t)}`
   items.push({
    sku:            risk.sku,
@@ -460,7 +464,7 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    reorder_point:    w.reorder_point ?? null,
    explanation:      w.explanation ?? null,
    unit_margin:  w.unit_margin ?? null,
-   reason:      `${d != null ? d + ' ' + t('hoy.reason_days_coverage') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
+   reason:      `${d != null ? d + ' ' + coverageUnitLabel(cu, d, t) + ' ' + t('hoy.reason_coverage_suffix') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
   })
  }
@@ -1531,7 +1535,7 @@ export default function HoyPage() {
              <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
               {item.coverage_days != null && (
                <span style={{ fontSize: 12, color: C.dim }}>
-                {Math.round(item.coverage_days)} {t('hoy.reason_days_coverage')}
+                {Math.round(item.coverage_days)} {coverageUnitLabel(briefing?.coverage_unit, Math.round(item.coverage_days), t)} {t('hoy.reason_coverage_suffix')}
                </span>
               )}
               {item.inventory_value != null && (

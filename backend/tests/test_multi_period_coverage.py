@@ -1,12 +1,64 @@
 """Per-period coverage/semáforo + horizon windowing (multi-period Phase C)."""
 
 
+from backend.formatting import format_coverage, format_days
 from backend.inventory.service import (
     _DAYS_PER_PERIOD,
     _days_per_period,
     _lead_time_in_periods,
     _steps_for_lead_time,
+    generate_recommendations,
 )
+
+
+class TestRecommendationUnitLabels:
+    """Polish: /hoy recommendation text must label per-period coverage in the
+    active period's unit. A weekly session reports coverage_days IN WEEKS; the
+    generator used to print "32 días" for 32 weeks and even mixed units when
+    computing the overstock excess ("-12 días más de lo óptimo"). Lead time is a
+    real calendar duration and stays in days."""
+
+    def _items(self):
+        return [
+            {"sku": "YA", "display_name": "Aceite", "signal": "PEDIR_YA",
+             "coverage_days": 0.3, "lead_time_days": 10, "recommended_qty": 264,
+             "supplier": "Andina", "abc": "A", "inventory_value": 500},
+            {"sku": "OVER", "display_name": "Azucar", "signal": "SOBRESTOCK",
+             "coverage_days": 32.1, "lead_time_days": 7, "recommended_qty": 0,
+             "supplier": "Valle", "abc": "A", "inventory_value": 21600},
+        ]
+
+    def _text(self, recs, sku, rec_type):
+        return next(r["text"] for r in recs if r["sku"] == sku and r["rec_type"] == rec_type)
+
+    def test_weekly_coverage_labeled_in_weeks_not_days(self):
+        recs = generate_recommendations(self._items(), period="weekly")
+        ya = self._text(recs, "YA", "STOCKOUT_RISK")
+        over = self._text(recs, "OVER", "OVERSTOCK")
+        # Coverage reads in weeks; the supplier lead time stays in days.
+        assert "0 semanas de stock" in ya
+        assert "tarda 10 días en entregar" in ya
+        # 32.1 weeks coverage — NOT "32 días".
+        assert "32 semanas de cobertura" in over
+        assert "días de cobertura" not in over
+        # Excess vs the 3×lead ceiling is computed in the SAME unit (weeks):
+        # 32.1 − (7/7)*3 = 29.1 → "29 semanas", never a mixed-unit "11 días".
+        assert "29 semanas más de lo óptimo" in over
+
+    def test_daily_output_is_byte_identical_to_default(self):
+        items = self._items()
+        assert generate_recommendations(items, period="daily") == generate_recommendations(items)
+        over = self._text(generate_recommendations(items), "OVER", "OVERSTOCK")
+        # Daily keeps the "días" wording exactly as before.
+        assert "32 días de cobertura" in over
+
+    def test_format_coverage_daily_matches_format_days(self):
+        for n in (0, 1, 2, 5.4, 32.1, 144):
+            assert format_coverage(n, "daily") == format_days(n)
+        assert format_coverage(1, "weekly") == "1 semana"
+        assert format_coverage(3, "weekly") == "3 semanas"
+        assert format_coverage(1, "monthly") == "1 mes"
+        assert format_coverage(4, "monthly") == "4 meses"
 
 
 class TestPeriodMathHelpers:
