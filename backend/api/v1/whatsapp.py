@@ -48,6 +48,38 @@ def verify_twilio_signature(url: str, params: dict, signature: str, auth_token: 
     return hmac.compare_digest(expected, signature)
 
 
+def _signed_url(request: Request) -> str:
+    """Reconstruct the PUBLIC url Twilio signed X-Twilio-Signature over.
+
+    Twilio computes the signature against the exact url it POSTed to. Behind the
+    frontend proxy / TLS termination the backend's own ``request.url`` is an
+    internal address (e.g. ``http://internal-host:8010/...``) that will not match
+    the public ``https://.../api/v1/whatsapp/inbound`` Twilio signed, so the HMAC
+    would never match. Resolution order (first wins):
+
+      1. ``settings.whatsapp_webhook_base_url`` — authoritative external base.
+      2. ``X-Forwarded-Proto`` + ``X-Forwarded-Host`` set by the proxy.
+      3. ``request.url`` — today's behaviour (local/dev, no proxy).
+
+    Path and query always come from the actual request so any suffix/params are
+    preserved regardless of which base is chosen.
+    """
+    path_qs = request.url.path
+    if request.url.query:
+        path_qs = f"{path_qs}?{request.url.query}"
+
+    base = settings.whatsapp_webhook_base_url.strip()
+    if base:
+        return base.rstrip("/") + path_qs
+
+    proto = request.headers.get("X-Forwarded-Proto", "")
+    host = request.headers.get("X-Forwarded-Host", "")
+    if proto and host:
+        return f"{proto}://{host}{path_qs}"
+
+    return str(request.url)
+
+
 def _rate_limited(phone: str) -> bool:
     """True if `phone` exceeded the window; otherwise records this hit. Bypassed
     in testing_mode (matches the auth rate-limit convention)."""
@@ -74,7 +106,7 @@ async def inbound(request: Request):
     form = await request.form()
     params = {k: str(v) for k, v in form.items()}
     signature = request.headers.get("X-Twilio-Signature", "")
-    url = str(request.url)
+    url = _signed_url(request)
 
     # 1. Signature — invalid/missing → 403, no processing.
     if not verify_twilio_signature(url, params, signature, settings.twilio_auth_token):
