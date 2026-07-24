@@ -324,20 +324,6 @@ export const getConfigSchema = (id: string) =>
 export const getColumnsConfig     = (id: string) => request<Record<string, unknown>>('GET', `/sessions/${id}/configure/columns`)
 export const getFeaturesConfig    = (id: string) => request<Record<string, unknown>>('GET', `/sessions/${id}/configure/features`)
 export const getSavedModelsConfig = (id: string) => request<Record<string, unknown>>('GET', `/sessions/${id}/configure/models`)
-export const getSavedValidation   = (id: string) => request<Record<string, unknown>>('GET', `/sessions/${id}/configure/validation`)
-
-export const getAvailableModels = (id: string) =>
-  request<{ models: string[] }>('GET', `/sessions/${id}/available-models`)
-
-export const getDatasetAnalysis = (id: string) =>
-  request<import('./types').DatasetAnalysis>('GET', `/sessions/${id}/analysis`)
-
-export const getModelHyperparams = (id: string) =>
-  request<Record<string, import('./types').HyperparamDef[]>>('GET', `/sessions/${id}/models/hyperparams`)
-
-export const getConfigSummary = (id: string) =>
-  request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`)
-
 // ── Training ──────────────────────────────────────────────────────────────────
 // A training launch fans out into a granularity family (daily/weekly/monthly),
 // one session + job per grain. `sessions` is finest-first; `sessions[0]` is the
@@ -376,21 +362,6 @@ export const getMetrics = (id: string) =>
 export const getInventory = (id: string) =>
   request<InventoryResponse>('GET', `/sessions/${id}/inventory`)
 
-export const getResults = (id: string) =>
-  request<Record<string, unknown>>('GET', `/sessions/${id}/results`)
-
-export const getRoutingPlan = (id: string) =>
-  request<RoutingPlan>('GET', `/sessions/${id}/routing`)
-
-export const exportConfig = (id: string) =>
-  request<Record<string, unknown>>('GET', `/sessions/${id}/config-summary`)
-// ── Forecast Series (ECharts) ─────────────────────────────────────────────────
-export const getForecastSeries = (sessionId: string, sku: string, model?: string) =>
-  request<ForecastSeries>(
-    'GET',
-    `/sessions/${sessionId}/forecast-series/${encodeURIComponent(sku)}${model ? `?model=${model}` : ''}`,
-  )
-
 // ── AI Analyst ────────────────────────────────────────────────────────────────
 export const analystQuery = (
   sessionId: string,
@@ -402,33 +373,6 @@ export const analystQuery = (
     'POST', `/sessions/${sessionId}/analyst/query`, { question, sku, history },
   )
 
-export const narrateData = (
-  sessionId: string,
-  data: unknown,
-  context: string,
-  question?: string,
-  history?: { role: 'user' | 'assistant'; content: string }[],
-) =>
-  request<{ narrative: string; source: string; tokens_used: number | null; question: string | null }>(
-    'POST', `/sessions/${sessionId}/analyst/narrate`, { data, context, question, history },
-  )
-
-// ── Reports ───────────────────────────────────────────────────────────────────
-export const generateReport = (sessionId: string, type = 'operational', formats = ['excel', 'pdf']) =>
-  request<{ message: string; type: string; formats: string[] }>(
-    'POST', `/sessions/${sessionId}/reports/generate`, { type, formats },
-  )
-
-export const downloadReportBlob = (sessionId: string, format: 'excel' | 'pdf') =>
-  downloadBlob(
-    `/sessions/${sessionId}/reports/${format}`,
-    `report_${sessionId.slice(0, 8)}.${format === 'excel' ? 'xlsx' : 'pdf'}`,
-  )
-
-export const getRagStatus = (sessionId: string) =>
-  request<{ indexed: boolean; vector_count: number }>(
-    'GET', `/sessions/${sessionId}/analyst/rag-status`,
-  )
 
 // ── Data Sources ──────────────────────────────────────────────────────────────
 export const listDataSources = (skip = 0, limit = 50) =>
@@ -478,19 +422,6 @@ export const renameDataSource = (id: string, name: string, description?: string)
 
 export const deleteDataSource = (id: string) =>
   request<{ deleted: string }>('DELETE', `/data-sources/${id}`)
-
-// ── Drift Monitoring ──────────────────────────────────────────────────────────
-export interface DriftReport {
-  session_id:    string
-  target_col:    string
-  feature_drift: Record<string, { psi: number; psi_level: string; ks_p_value: number; drift: boolean }>
-  alerts:        string[]
-  has_drift:     boolean
-  ref_rows:      number
-  cur_rows:      number
-}
-export const detectDrift = (sessionId: string, fd: FormData) =>
-  request<DriftReport>('POST', `/sessions/${sessionId}/drift`, fd)
 
 // ── AI Analyst Persistent Chats ───────────────────────────────────────────────
 export const listChats   = (search?: string) =>
@@ -584,16 +515,6 @@ export const deleteAdminUser = (id: string) =>
 
 export const setUserStatus = (id: string, status: string) =>
   request<AdminUser>('PATCH', `/users/${id}/status`, { status })
-
-// ── Forecast Overrides ────────────────────────────────────────────────────────
-export const saveForecastOverrides = (
-  sessionId: string,
-  overrides: import('./types').ForecastOverride[],
-) =>
-  request<{ saved: number }>('PATCH', `/sessions/${sessionId}/overrides`, overrides)
-
-export const getForecastOverrides = (sessionId: string) =>
-  request<import('./types').ForecastOverride[]>('GET', `/sessions/${sessionId}/overrides`)
 
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>
@@ -1129,15 +1050,6 @@ export const getMorningNarrative = (sessionId: string, profile = 'distributor') 
     'POST', '/ai/narrative/morning', { session_id: sessionId, profile }
   )
 
-export const getInventoryInsight = (sessionId: string, profile = 'distributor') =>
-  request<import('./types').InventoryInsight>(
-    'POST', '/ai/narrative/inventory', { session_id: sessionId, profile }
-  )
-
-export const getForecastExplanation = (sku: string, sessionId: string, profile = 'distributor') =>
-  request<import('./types').ForecastExplanation>(
-    'POST', '/ai/narrative/forecast-explanation', { sku, session_id: sessionId, profile }
-  )
 
 export const getSuggestedQuestions = (profile = 'distributor', hasInventory = true, hasProduction = false) =>
   request<import('./types').SuggestedQuestion[]>(

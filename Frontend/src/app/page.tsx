@@ -734,7 +734,7 @@ export default function LandingPage() {
  </div>
  <div>
  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Empresa</div>
- {[['#problema','El problema'],['#contacto','Contacto'],['#','Política de privacidad'],['#','Términos de uso']].map(([href, label]) => (
+ {[['#problema','El problema'],['#contacto','Contacto']].map(([href, label]) => (
  <a key={label} href={href} style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
