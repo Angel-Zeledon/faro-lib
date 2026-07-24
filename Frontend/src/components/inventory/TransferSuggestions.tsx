@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { createTransfer } from '@/lib/api'
 import type { WarehouseStatusItem } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { coverageUnitLabel } from '@/lib/period'
 import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
@@ -66,7 +67,9 @@ export function TransferSuggestions({ suggestions }: {
                 {(ts.donor_coverage_days_after == null
                   ? t('hoy.transfers_line_ample')
                   : t('hoy.transfers_line')
-                      .replace('{days}', String(ts.donor_coverage_days_after)))
+                      .replace('{days}', String(ts.donor_coverage_days_after))
+                      .replace('{unit}', coverageUnitLabel(
+                        ts.coverage_unit, ts.donor_coverage_days_after, t)))
                   .replace('{qty}', String(ts.qty))
                   .replace(/\{from\}/g, ts.from_warehouse)
                   .replace('{to}', row.warehouse)}

@@ -476,11 +476,22 @@ def _avg_forecast_curve(model_forecasts: dict, max_steps: int = 90) -> list[dict
 # factor; every helper below is plain arithmetic (no pandas).
 _DAYS_PER_PERIOD = {"daily": 1, "weekly": 7, "monthly": 30}
 
+# The coverage unit the API exposes for each period, mirroring _COVERAGE_UNIT in
+# backend/api/v1/inventory.py. Kept here (not imported) so the service layer
+# never depends on the API layer.
+_COVERAGE_UNIT = {"daily": "day", "weekly": "week", "monthly": "month"}
+
 
 def _days_per_period(period: Optional[str]) -> int:
     """Calendar days in one bucket of `period`. Unknown/legacy -> 1 (daily), so
     a bad value degrades to today's day-based math rather than raising."""
     return _DAYS_PER_PERIOD.get(period or "daily", 1)
+
+
+def _coverage_unit(period: Optional[str]) -> str:
+    """The active period's coverage unit (day/week/month). Unknown/legacy ->
+    'day', matching how _days_per_period degrades to daily."""
+    return _COVERAGE_UNIT.get(period or "daily", "day")
 
 
 def _lead_time_in_periods(lead_time_days: float, period: str) -> float:
@@ -1052,23 +1063,35 @@ def get_inventory_status_by_warehouse(
                               if stock and stock.get("unit_cost") is not None else None),
             })
 
-    _network_transfer_pass(items)
+    _network_transfer_pass(items, period)
     items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5),
                               x["coverage_days"] or 9999))
     return items
 
 
-def _network_transfer_pass(items: list[dict]) -> None:
+def _network_transfer_pass(items: list[dict], period: str = "daily") -> None:
     """
     Convert purchase recommendations into transfer suggestions where another
     warehouse of the same SKU can donate (spec 5.4 §2). Mutates items in place.
 
     A donor qualifies iff after donating qty = min(need, surplus):
       - its stock stays >= its own reorder point, and
-      - its remaining coverage stays >= TRANSFER_MIN_DONOR_COVERAGE_DAYS.
+      - its remaining coverage stays >= the post-donation floor.
     Best donor = highest post-donation coverage. The transfer replaces the
     order when it covers >= 80% of the need; below that the purchase stands.
+
+    `period` (multi-period Phase C): items carry per-period demand
+    (`daily_demand`) and thus period-unit coverage, exactly like the rest of the
+    status path. The TRANSFER_MIN_DONOR_COVERAGE_DAYS floor is a *day* threshold,
+    so it is converted into the active period here (30 days -> ~4.3 weeks) to
+    keep the "don't strand the donor" guard physically equivalent across
+    periods. For daily _days_per_period is 1, so `min_cov` == 30.0 and this path
+    is byte-identical to before. The exposed `coverage_unit` lets the UI label
+    the value in the active period's unit instead of hardcoding "days".
     """
+    min_cov = TRANSFER_MIN_DONOR_COVERAGE_DAYS / _days_per_period(period)
+    unit = _coverage_unit(period)
+
     by_sku: dict[str, list[dict]] = {}
     for it in items:
         by_sku.setdefault(it["sku"], []).append(it)
@@ -1090,13 +1113,12 @@ def _network_transfer_pass(items: list[dict]) -> None:
                 if daily > 0:
                     donatable = min(
                         donatable,
-                        float(d["current_stock"])
-                        - daily * TRANSFER_MIN_DONOR_COVERAGE_DAYS)
+                        float(d["current_stock"]) - daily * min_cov)
                 if donatable <= 0:
                     continue
                 after = float(d["current_stock"]) - donatable
                 cov_after = after / daily if daily > 0 else 9999.0
-                if cov_after < TRANSFER_MIN_DONOR_COVERAGE_DAYS:
+                if cov_after < min_cov:
                     continue
                 if best is None or cov_after > best["cov_after"]:
                     best = {"donor": d, "qty": donatable, "cov_after": cov_after}
@@ -1112,6 +1134,10 @@ def _network_transfer_pass(items: list[dict]) -> None:
                         round(best["cov_after"], 1)
                         if best["cov_after"] < 9990 else None
                     ),
+                    # The unit the value above is expressed in (day/week/month),
+                    # mirroring the status envelope's `coverage_unit` so the UI
+                    # renders "N semanas" under a weekly horizon, not "N días".
+                    "coverage_unit": unit,
                 }
 
 

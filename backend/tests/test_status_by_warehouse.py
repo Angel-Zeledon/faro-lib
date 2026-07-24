@@ -99,6 +99,52 @@ class TestNetworkPass:
         assert "recommended_action" not in row
 
 
+class TestNetworkPassPeriodAware:
+    """Polish #5: the donor coverage-after must read in the ACTIVE period's unit,
+    and the 30-day 'don't strand the donor' floor must convert into that period
+    so the physical guard stays equivalent. Daily stays byte-identical."""
+
+    def _seed(self, tid, sid, per_period_demand):
+        # Same layout as TestNetworkPass but demand is stated at the active
+        # grain (units/PERIOD): needy Norte has 0.x periods of cover; the donor
+        # principal has 600 units.
+        session_store.set_forecasts(tid, sid, {
+            f"A{SERIES_SEPARATOR}Norte": _forecast_entry(per_period_demand),
+            f"A{SERIES_SEPARATOR}principal": _forecast_entry(per_period_demand),
+        })
+        _seed_stock(tid, "A", "Norte", 5)
+        _seed_stock(tid, "A", "principal", 600)
+
+    def test_daily_value_and_unit_unchanged(self, test_tenant, completed_session):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        self._seed(tid, sid, 10.0)  # 10 units/day
+        items = inv_svc.get_inventory_status_by_warehouse(tid, sid, period="daily")
+        needy = next(i for i in items
+                     if i["warehouse"] == "Norte" and i["sku"] == "A")
+        ts = needy["transfer_suggestion"]
+        # Donor donates 45, keeps 555 units at 10/day = 55.5 DAYS — the exact
+        # value produced before the polish (daily path is untouched).
+        assert ts is not None
+        assert ts["donor_coverage_days_after"] == 55.5
+        assert ts["coverage_unit"] == "day"
+
+    def test_weekly_same_situation_reads_in_weeks(self, test_tenant, completed_session):
+        tid, sid = test_tenant["id"], completed_session["id"]
+        # Same physical rate (10 units/day) expressed at the weekly grain: 70/wk.
+        # Under the OLD code the floor was 30 *weeks* of demand (70*30 = 2100 >
+        # 600 stock), so nothing was donatable and the transfer never fired.
+        self._seed(tid, sid, 70.0)
+        items = inv_svc.get_inventory_status_by_warehouse(tid, sid, period="weekly")
+        needy = next(i for i in items
+                     if i["warehouse"] == "Norte" and i["sku"] == "A")
+        ts = needy["transfer_suggestion"]
+        assert ts is not None, "transfer must still fire under a weekly horizon"
+        assert ts["coverage_unit"] == "week"
+        # 555 units / 70 per-week = 7.9 WEEKS == the daily 55.5 days / 7.
+        assert ts["donor_coverage_days_after"] == 7.9
+        assert ts["donor_coverage_days_after"] == pytest.approx(55.5 / 7, abs=0.05)
+
+
 class TestPreloadedData:
     """The daily alert loop fetches forecasts/stock/lead-times once per tenant
     and shares them with both status computations — preloaded inputs must be
