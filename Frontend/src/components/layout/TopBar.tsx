@@ -26,6 +26,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/analyst':   'topbar.title_analyst',
   '/config':    'topbar.title_config',
   '/users':     'topbar.title_users',
+  '/settings':  'topbar.title_settings',
   '/skus':      'skus.page_title',
   '/pedidos':   'orders.page_title',
 }

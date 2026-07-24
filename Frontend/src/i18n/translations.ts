@@ -107,6 +107,7 @@ export const translations = {
     'nav.users':          'Usuarios',
     'nav.integrations':   'Integraciones',
     'nav.config':         'Configuración',
+    'nav.settings':       'API y Webhooks',
 
     // ── Página Pedidos ──
     'orders.page_title':        'Pedidos',
@@ -142,6 +143,7 @@ export const translations = {
     'topbar.title_data':                'Mis Archivos',
     'topbar.title_analyst':             'Asistente IA',
     'topbar.title_config':              'Configuración',
+    'topbar.title_settings':            'API y Webhooks',
     'topbar.title_users':               'Usuarios',
     'topbar.notif_complete_title':      'Entrenamiento completado',
     'topbar.notif_complete_body':       'terminó correctamente',
@@ -1732,7 +1734,7 @@ export const translations = {
     'planes.current_badge':            'Tu plan actual',
     'planes.starter_tagline':          'Lo esencial para no quedarte sin stock: semáforo de compra, órdenes, recepción, proveedores y alertas por correo.',
     'planes.pro_tagline':              'Todo lo de Starter, más inteligencia: análisis ABC-XYZ, alertas por WhatsApp, asistente IA, simulador de eventos y multi-ubicación.',
-    'planes.ent_tagline':              'Todo lo de Professional, más escala: producción (BOM), acceso a la API, webhooks y SLA.',
+    'planes.ent_tagline':              'Todo lo de Professional, más escala: acceso a la API, webhooks y SLA.',
     'planes.limit_users':              'usuarios',
     'planes.limit_user':               'usuario',
     'planes.limit_locations':          'ubicaciones',
@@ -1838,6 +1840,7 @@ export const translations = {
     'nav.users':          'Users',
     'nav.integrations':   'Integrations',
     'nav.config':         'Settings',
+    'nav.settings':       'API & Webhooks',
 
     // ── Orders page ──
     'orders.page_title':        'Orders',
@@ -1873,6 +1876,7 @@ export const translations = {
     'topbar.title_data':                'Data Workspace',
     'topbar.title_analyst':             'AI Analyst',
     'topbar.title_config':              'System Configuration',
+    'topbar.title_settings':            'API & Webhooks',
     'topbar.title_users':               'User Management',
     'topbar.notif_complete_title':      'Training complete',
     'topbar.notif_complete_body':       'finished successfully',
@@ -3458,7 +3462,7 @@ export const translations = {
     'planes.current_badge':            'Your current plan',
     'planes.starter_tagline':          'The essentials to never run out of stock: purchasing signal, orders, receiving, suppliers and email alerts.',
     'planes.pro_tagline':              'Everything in Starter, plus intelligence: ABC-XYZ analysis, WhatsApp alerts, AI assistant, event simulator and multi-location.',
-    'planes.ent_tagline':              'Everything in Professional, plus scale: manufacturing (BOM), API access, webhooks and SLA.',
+    'planes.ent_tagline':              'Everything in Professional, plus scale: API access, webhooks and SLA.',
     'planes.limit_users':              'users',
     'planes.limit_user':               'user',
     'planes.limit_locations':          'locations',

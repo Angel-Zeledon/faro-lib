@@ -7,9 +7,8 @@ import { useLanguage } from '@/contexts/LanguageContext'
 const STALE_DAYS = 14
 
 /**
- * Non-technical replacement for SessionBar: shows how fresh the sales data is
- * and a shortcut to upload new sales, instead of ML jargon ("forecast session").
- * The lightweight header indicator for how fresh the sales data is.
+ * Lightweight header indicator for how fresh the sales data is, with a shortcut
+ * to upload new sales — instead of ML jargon ("forecast session").
  */
 export default function DataFreshness({ currentSession, loading }: {
   currentSession?: SessionInfo
