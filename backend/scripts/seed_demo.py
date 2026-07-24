@@ -51,9 +51,11 @@ DEMO_FULL_NAME = "Demo Faro"
 DEMO_WHATSAPP = "+50688887777"
 
 WAREHOUSES = [
-    {"name": "principal", "is_default": True, "share": 0.60},
-    {"name": "Norte", "is_default": False, "share": 0.25},
-    {"name": "Sur", "is_default": False, "share": 0.15},
+    {"name": "principal", "is_default": True, "share": 0.40},
+    {"name": "Norte", "is_default": False, "share": 0.20},
+    {"name": "Sur", "is_default": False, "share": 0.18},
+    {"name": "Este", "is_default": False, "share": 0.12},
+    {"name": "Oeste", "is_default": False, "share": 0.10},
 ]
 
 SUPPLIERS = [
@@ -63,6 +65,24 @@ SUPPLIERS = [
      "email": "pedidos@granosdelvalle.co", "whatsapp": "+573004445566", "payment_terms": "quincenal"},
     {"name": "ImportMax LatAm", "lead_time_days": 21, "lead_time_std": 5,
      "email": "orders@importmax.com", "whatsapp": "+573007778899", "payment_terms": "contra entrega"},
+    {"name": "Comercial El Sol", "lead_time_days": 5, "lead_time_std": 1,
+     "email": "ventas@elsol.co", "whatsapp": "+573010001001", "payment_terms": "contado"},
+    {"name": "Mayorista Central", "lead_time_days": 9, "lead_time_std": 2,
+     "email": "pedidos@central.co", "whatsapp": "+573010002002", "payment_terms": "quincenal"},
+    {"name": "Abarrotes del Pacífico", "lead_time_days": 14, "lead_time_std": 4,
+     "email": "orders@pacifico.co", "whatsapp": "+573010003003", "payment_terms": "contra entrega"},
+    {"name": "Distribuciones Norte", "lead_time_days": 6, "lead_time_std": 2,
+     "email": "ventas@disnorte.co", "whatsapp": "+573010004004", "payment_terms": "contado"},
+    {"name": "Proveedora Global", "lead_time_days": 18, "lead_time_std": 5,
+     "email": "orders@global.com", "whatsapp": "+573010005005", "payment_terms": "quincenal"},
+    {"name": "Surtidora Andes", "lead_time_days": 8, "lead_time_std": 2,
+     "email": "ventas@andes.co", "whatsapp": "+573010006006", "payment_terms": "contado"},
+    {"name": "La Bodega Mayor", "lead_time_days": 11, "lead_time_std": 3,
+     "email": "pedidos@bodegamayor.co", "whatsapp": "+573010007007", "payment_terms": "quincenal"},
+    {"name": "Insumos Express", "lead_time_days": 4, "lead_time_std": 1,
+     "email": "ventas@express.co", "whatsapp": "+573010008008", "payment_terms": "contado"},
+    {"name": "Comercializadora Sur", "lead_time_days": 16, "lead_time_std": 4,
+     "email": "orders@comsur.co", "whatsapp": "+573010009009", "payment_terms": "contra entrega"},
 ]
 
 # SKU catalog. `target` is the semáforo band we want the demo to show for this
@@ -88,6 +108,30 @@ SKUS = [
     ("SKU-013", "Gaseosa Cola 2L",       "Bebidas",     64,  1.30, 0.10, 24,  1.40,  2.30, 0, "OK"),
     ("SKU-014", "Galletas Surtidas 400g","Snacks",      31,  1.18, 0.14, 12,  1.70,  2.90, 2, "PEDIR_PRONTO"),
 ]
+
+# Heavy demo: generate extra SKUs so the operational screens show real volume
+# (40 SKUs x 5 warehouses = 200 stock rows). Deterministic, no RNG dependency.
+_HEAVY_NAMES = [
+    ("Aceites", "Aceite Vegetal 900ml"), ("Granos", "Lenteja 1kg"),
+    ("Lácteos", "Yogurt 1L"), ("Bebidas", "Jugo Naranja 1L"),
+    ("Snacks", "Papas Fritas 200g"), ("Limpieza", "Cloro 1L"),
+    ("Higiene", "Jabón de Baño 3un"), ("Enlatados", "Maíz Dulce 300g"),
+    ("Condimentos", "Pimienta 100g"), ("Pastas", "Macarrones 500g"),
+    ("Harinas", "Harina de Maíz 1kg"), ("Congelados", "Verduras Mix 1kg"),
+]
+_HEAVY_BANDS = ["OK", "OK", "PEDIR_PRONTO", "SOBRESTOCK", "PEDIR_YA",
+                "OK", "SOBRESTOCK", "OK", "PEDIR_PRONTO", "OK"]
+for _i in range(15, 41):  # SKU-015 .. SKU-040 -> 40 SKUs total
+    _cat, _nm = _HEAVY_NAMES[_i % len(_HEAVY_NAMES)]
+    _band = _HEAVY_BANDS[_i % len(_HEAVY_BANDS)]
+    _base = 15 + (_i * 13) % 110
+    _cost = round(0.8 + (_i % 11) * 0.6, 2)
+    SKUS.append((
+        f"SKU-{_i:03d}", f"{_nm} #{_i}", _cat, _base,
+        1.05 + (_i % 5) * 0.05, round((_i % 7) * 0.04, 2),
+        12 if _i % 2 else 24, _cost, round(_cost * 1.5, 2),
+        _i % len(SUPPLIERS), _band,
+    ))
 
 # Coverage multiple of the lead time we aim for per band (mid-band so small
 # forecast noise doesn't tip it into a neighbour).
