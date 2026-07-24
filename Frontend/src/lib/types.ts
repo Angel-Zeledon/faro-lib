@@ -641,8 +641,14 @@ export interface TransferSuggestion {
   from_warehouse: string
   qty: number
   /** null = donor has no measurable demand (ample coverage) — same null
-   * convention as coverage_days; the backend never ships a 9999 sentinel. */
+   * convention as coverage_days; the backend never ships a 9999 sentinel.
+   * The value is expressed in `coverage_unit` (day/week/month), matching the
+   * active planning period — NOT always days. */
   donor_coverage_days_after: number | null
+  /** Unit the value above is in, mirroring the status envelope's coverage_unit
+   * so the UI labels it "N semanas" under a weekly horizon, not "N días".
+   * Absent on legacy payloads -> the UI falls back to 'day'. */
+  coverage_unit?: CoverageUnit
 }
 
 /** One row of the network-aware per-(SKU, warehouse) semáforo. */

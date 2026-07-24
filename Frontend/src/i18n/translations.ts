@@ -725,7 +725,7 @@ export const translations = {
     // Inter-warehouse transfer suggestions (feature 5.4)
     'hoy.transfers_title': '{n} se resuelven moviendo stock, sin comprar',
     'hoy.transfers_sub': 'Otra bodega tiene excedente de estos productos — transferir evita la compra.',
-    'hoy.transfers_line': 'Mover {qty} desde {from} a {to} — {from} queda con {days} días de cobertura.',
+    'hoy.transfers_line': 'Mover {qty} desde {from} a {to} — {from} queda con {days} {unit} de cobertura.',
     'hoy.transfers_line_ample': 'Mover {qty} desde {from} a {to} — a {from} le queda cobertura de sobra.',
     'hoy.transfers_approve': 'Crear transferencia',
     'hoy.transfers_done': 'En tránsito ✓',
@@ -2425,7 +2425,7 @@ export const translations = {
     // Inter-warehouse transfer suggestions (feature 5.4)
     'hoy.transfers_title': '{n} can be solved by moving stock, no purchase needed',
     'hoy.transfers_sub': 'Another warehouse holds surplus of these products — transferring avoids the purchase.',
-    'hoy.transfers_line': 'Move {qty} from {from} to {to} — {from} keeps {days} days of coverage.',
+    'hoy.transfers_line': 'Move {qty} from {from} to {to} — {from} keeps {days} {unit} of coverage.',
     'hoy.transfers_line_ample': 'Move {qty} from {from} to {to} — {from} keeps ample coverage.',
     'hoy.transfers_approve': 'Create transfer',
     'hoy.transfers_done': 'In transit ✓',
