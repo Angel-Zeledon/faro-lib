@@ -54,7 +54,6 @@ def detect_seasonality(series: np.ndarray, max_period: int = None) -> dict:
 
     top_periods: list[int] = []
     if len(cand_periods) > 0:
-        max_power = float(cand_power.max()) or 1.0
         order = np.argsort(cand_power)[::-1]
         seen: set[int] = set()
         for idx in order:

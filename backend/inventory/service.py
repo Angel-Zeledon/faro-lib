@@ -1585,7 +1585,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
     )
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
 
     items = get_inventory_status(tenant_id, session_id, service_level)
@@ -1597,7 +1597,6 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     BLUE   = colors.HexColor("#3b82f6")
     INDIGO = colors.HexColor("#6366f1")
     DARK   = colors.HexColor("#0f172a")
-    LIGHT  = colors.HexColor("#f8fafc")
     BORDER = colors.HexColor("#e2e8f0")
 
     SIGNAL_COLORS = {
@@ -1616,14 +1615,11 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         leftMargin=1.8*cm, rightMargin=1.8*cm,
     )
 
-    styles = getSampleStyleSheet()
     H1 = ParagraphStyle("H1", fontSize=18, fontName="Helvetica-Bold",
                         textColor=DARK, spaceAfter=2)
     H2 = ParagraphStyle("H2", fontSize=10, fontName="Helvetica-Bold",
                         textColor=INDIGO, spaceAfter=6, spaceBefore=12,
                         textTransform="uppercase")
-    BODY = ParagraphStyle("BODY", fontSize=9, fontName="Helvetica", textColor=DARK,
-                          leading=14)
     SMALL = ParagraphStyle("SMALL", fontSize=8, fontName="Helvetica",
                            textColor=colors.HexColor("#64748b"))
     CELL  = ParagraphStyle("CELL", fontSize=8, fontName="Helvetica", textColor=DARK)
@@ -1653,28 +1649,6 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     over    = sum(1 for i in items if i["signal"] == "SOBRESTOCK")
     value   = sum(i["inventory_value"] for i in items if i.get("inventory_value") or 0)
 
-    def _kpi_cell(number, label, color):
-        return [
-            Paragraph(f"<font color='#{color}'><b>{number}</b></font>",
-                      ParagraphStyle("kpi", fontSize=22, fontName="Helvetica-Bold",
-                                     alignment=TA_CENTER, textColor=colors.HexColor(f"#{color}"))),
-            Paragraph(label, ParagraphStyle("kpi_lbl", fontSize=8, fontName="Helvetica",
-                                            alignment=TA_CENTER, textColor=colors.HexColor("#64748b"))),
-        ]
-
-    kpi_data = [[
-        _kpi_cell(total,   "Total SKUs",     "6366f1"),
-        _kpi_cell(urgent,  "Pedir YA 🔴",   "ef4444"),
-        _kpi_cell(warning, "Pedir pronto 🟡","f59e0b"),
-        _kpi_cell(ok,      "OK 🟢",          "22c55e"),
-        _kpi_cell(over,    "Sobrestock 🔵",  "3b82f6"),
-        _kpi_cell(
-            money(value) if value else "—",
-            "Valor inventario", "6366f1",
-        ),
-    ]]
-    # Flatten for table row
-    flat_kpi = [[cell for sublist in kpi_data[0] for cell in (sublist if isinstance(sublist, list) else [sublist])]]
     kpi_table_data = [[
         [Paragraph(f"<b><font color='#{c}'>{n}</font></b>",
                    ParagraphStyle("kn", fontSize=20, fontName="Helvetica-Bold", alignment=TA_CENTER)),

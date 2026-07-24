@@ -437,7 +437,6 @@ class DataProfiler:
                     freq_days = md
                     break
 
-        warned_dupe = dupe_count > 0  # already warned globally
         for g in groups[:50]:  # cap for performance
             sub = df if g is None else df[df[group_col] == g]
             sku_dates = sub[date_col].dropna().sort_values().drop_duplicates()

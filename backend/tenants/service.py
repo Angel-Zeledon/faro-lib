@@ -32,7 +32,6 @@ def create_tenant(name: str) -> dict:
     base = _slugify(name)
     trial_ends = datetime.now(timezone.utc) + timedelta(days=_TRIAL_DAYS)
     candidates = [base] + [f"{base}-{secrets.token_hex(2)}" for _ in range(4)]
-    last_exc: Optional[Exception] = None
     for slug in candidates:
         try:
             execute(
@@ -41,8 +40,8 @@ def create_tenant(name: str) -> dict:
                 (tenant_id, name, slug, trial_ends),
             )
             return get_tenant(tenant_id)
-        except psycopg2.errors.UniqueViolation as exc:
-            last_exc = exc  # slug taken — try the next candidate
+        except psycopg2.errors.UniqueViolation:
+            pass  # slug taken — try the next candidate
     # Extremely unlikely: fall back to a guaranteed-unique slug from the id.
     execute(
         """INSERT INTO tenants (id, name, slug, plan, status, quota, settings, trial_ends_at, created_at)

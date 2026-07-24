@@ -28,8 +28,6 @@ def detect_leakage(
 
     dt_col     = config.get("dt")
     target_col = config.get("target")
-    group_col  = config.get("group_id")
-    train_ratio = float(config.get("train_ratio", 0.8))
 
     # 1. Temporal leakage: data not sorted, or train/test bleed
     if dt_col and dt_col in df.columns:

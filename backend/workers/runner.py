@@ -182,7 +182,6 @@ def _apply_gap_fill(df: "pd.DataFrame", date_col: str, target_col: str,
 
     # Detect native frequency (median gap in days)
     try:
-        ref = df if not group_col else df.groupby(group_col).first().reset_index()
         sample_dates = df[date_col].dropna().sort_values().drop_duplicates()
         freq_days = int(sample_dates.diff().dropna().dt.days.median())
         if freq_days < 1:
@@ -577,7 +576,6 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         _emit(tenant_id, session_id, job_id, 85, "results", "Collecting metrics...")
         metrics = engine.get_metrics()
         inventory = engine.get_inventory_report()
-        report = engine.generate_report()
 
         _emit(tenant_id, session_id, job_id, 90, "saving", "Saving results...")
         result_payload = {

@@ -108,9 +108,7 @@ def auto_correct_data(
     df = df.copy()
 
     target_col = config.get("target")
-    dt_col     = config.get("dt")
     group_col  = config.get("group_id")
-    freq       = config.get("freq")
 
     if not target_col or target_col not in df.columns:
         return df, log
