@@ -19,7 +19,6 @@ import type {
 import { useAutoSession } from '@/hooks/useAutoSession'
 import { useWarehouses, WarehouseSelector } from '@/components/inventory/WarehouseControls'
 import { WarehouseStatusTable } from '@/components/inventory/WarehouseStatusTable'
-import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonCards, SkeletonTable } from '@/components/ui/States'
@@ -27,7 +26,6 @@ import HelpTip from '@/components/ui/HelpTip'
 import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import { coverageUnitShort } from '@/lib/period'
 import {
@@ -1134,7 +1132,6 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
 export default function InventoryPage() {
  const { t } = useLanguage()
  const { addToast } = useToast()
- const { advancedMode } = useBusinessProfile()
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[]; coverage_unit?: CoverageUnit } | null>(null)
@@ -1409,18 +1406,8 @@ export default function InventoryPage() {
  </div>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
- {/* Session */}
- {advancedMode ? (
- <SessionBar
- currentSession={currentSession}
- completedSessions={completedSessions}
- sessionId={sessionId}
- onSelect={id => { setSessionId(id); load(id) }}
- onRefresh={() => sessionId ? load(sessionId) : undefined}
- />
- ) : (
+ {/* Session freshness */}
  <DataFreshness currentSession={currentSession} />
- )}
 
  {/* View toggle */}
  <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>

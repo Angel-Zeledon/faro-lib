@@ -5,14 +5,13 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   Database, TrendingUp, Package,
   BrainCircuit, Settings, LogOut, User, Users,
-  ChevronLeft, ChevronRight, FlaskConical,
+  ChevronLeft, ChevronRight,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock, Plug,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
-import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useEntitlements } from '@/lib/entitlements'
 import UpsellModal from './UpsellModal'
@@ -55,7 +54,6 @@ export default function Sidebar() {
   const router  = useRouter()
   const user    = getUser()
   const { collapsed, toggle } = useSidebar()
-  const { advancedMode, setAdvancedMode } = useBusinessProfile()
   const { t, lang, setLang } = useLanguage()
   const { has } = useEntitlements()
   const [lockedFeature, setLockedFeature] = useState<string | null>(null)
@@ -181,47 +179,6 @@ export default function Sidebar() {
             </div>
           )
         })}
-
-        {/* Advanced mode toggle */}
-        {!collapsed && (
-          <div style={{ marginTop: 8, padding: '0 10px' }}>
-            <button
-              onClick={() => setAdvancedMode(!advancedMode)}
-              style={{
-                all: 'unset', cursor: 'pointer', width: '100%',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '6px 8px', borderRadius: 7, fontSize: 11,
-                color: advancedMode ? 'var(--accent)' : 'var(--dim)',
-                background: advancedMode ? 'var(--accent-dim)' : 'transparent',
-                border: `1px solid ${advancedMode ? 'rgba(129,140,248,0.3)' : 'var(--border)'}`,
-                transition: 'all 0.15s',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <FlaskConical size={11} />
-                <span style={{ fontWeight: 600 }}>{t('sidebar.advanced_mode')}</span>
-              </div>
-              <div style={{
-                width: 28, height: 14, borderRadius: 7,
-                background: advancedMode ? 'var(--accent)' : 'var(--border)',
-                position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-              }}>
-                <span style={{
-                  position: 'absolute', top: 2,
-                  left: advancedMode ? 16 : 2,
-                  width: 10, height: 10, borderRadius: '50%',
-                  background: '#fff', transition: 'left 0.2s',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-                }} />
-              </div>
-            </button>
-            {advancedMode && (
-              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 4, padding: '0 2px', lineHeight: 1.4 }}>
-                {t('sidebar.advanced_desc')}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Collapse toggle */}
         <button

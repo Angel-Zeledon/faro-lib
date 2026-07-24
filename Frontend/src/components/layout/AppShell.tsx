@@ -6,7 +6,6 @@ import SkuSearchOverlay from './SkuSearchOverlay'
 import { SidebarProvider } from '@/contexts/SidebarContext'
 import { ActiveSessionProvider } from '@/contexts/ActiveSessionContext'
 import { ToastProvider } from '@/contexts/ToastContext'
-import { BusinessProfileProvider } from '@/contexts/BusinessProfileContext'
 import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import { WarehousesProvider } from '@/components/inventory/WarehouseControls'
@@ -20,7 +19,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
       <EntitlementsProvider>
-      <BusinessProfileProvider>
       <WarehousesProvider>
       <PlanningProvider>
         <ToastProvider>
@@ -48,7 +46,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </ToastProvider>
       </PlanningProvider>
       </WarehousesProvider>
-      </BusinessProfileProvider>
       </EntitlementsProvider>
     </AuthGuard>
   )

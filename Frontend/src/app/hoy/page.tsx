@@ -27,7 +27,6 @@ import { coverageUnitLabel } from '@/lib/period'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
-import SessionBar from '@/components/ui/SessionBar'
 import DataFreshness from '@/components/ui/DataFreshness'
 import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
@@ -38,7 +37,6 @@ import {
 import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
 import { ReceptionModal } from '@/components/po/POHistory'
-import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -578,7 +576,6 @@ export default function HoyPage() {
  const [sendResult, setSendResult]     = useState<SendPOResult | null>(null)
 
  const user    = getUser()
- const { advancedMode } = useBusinessProfile()
  const { addToast } = useToast()
 
  // Load briefing when session changes
@@ -946,19 +943,7 @@ export default function HoyPage() {
      )}
     </div>
 
-    {/* Session selector (advanced) or data freshness (normal) */}
-    {advancedMode ? (
-     <SessionBar
-      currentSession={currentSession}
-      completedSessions={completedSessions}
-      sessionId={sessionId}
-      onSelect={setSessionId}
-      loading={sessionsLoading}
-      onRefresh={() => load(sessionId)}
-     />
-    ) : (
-     <DataFreshness currentSession={currentSession} loading={sessionsLoading} />
-    )}
+    <DataFreshness currentSession={currentSession} loading={sessionsLoading} />
    </div>
 
    {/* ── Loading state: shaped like the briefing it replaces ── */}

@@ -9,7 +9,7 @@ const STALE_DAYS = 14
 /**
  * Non-technical replacement for SessionBar: shows how fresh the sales data is
  * and a shortcut to upload new sales, instead of ML jargon ("forecast session").
- * Shown when advanced mode is OFF; SessionBar remains for advanced users.
+ * The lightweight header indicator for how fresh the sales data is.
  */
 export default function DataFreshness({ currentSession, loading }: {
   currentSession?: SessionInfo

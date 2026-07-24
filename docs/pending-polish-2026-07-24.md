@@ -97,3 +97,43 @@ No SQL-source editing, CSV-only output, no undo/redo. All deliberate v1 scope.
 - **#1** Profile UI to link WhatsApp number.
 - **#2** Twilio signature behind a proxy.
 - **#4** Weekly-mode `/hoy` summary vs KPI contradiction.
+
+---
+
+## Update 2026-07-24 (evening) — after the real-browser QA pass
+
+**Done & merged (all 7 polish items + the two feature specs):** #1, #2, #4, #5,
+plus #6/#7 (/skus), #8 (quick-start), #9 (a11y). Full suite green each step.
+
+**QA found & fixed 2 real bugs (real DB-verified, committed to main):**
+- BUG A (`814af57`) — weekly mode printed per-period coverage with a hardcoded
+  "días" in the recommendation generator, AI narrative, and `/hoy` cards (value
+  was right, unit label wrong, and the "excess" mixed units). Now labeled in the
+  active period unit; daily byte-identical.
+- BUG B (`a89f9bc`) — unlinking a WhatsApp number left a dangling
+  `whatsapp_verified_at`; now clears both columns. Also added the 409
+  already-verified-by-another-user test.
+
+**WhatsApp bot — live status (real, verified):** outbound send DELIVERED to a
+real phone via the Twilio sandbox. Anthropic key authenticates but the account
+has **no credit**, and the local Ollama models are too slow (23s / timeouts) for
+a real-time turn — so the bot runs in **generic mode** (`WHATSAPP_BOT_GENERIC_MODE`,
+`fa50b9e`): fast honest canned reply + deterministic confirmations. Smart mode
+returns automatically once ANTHROPIC_API_KEY has credit. Inbound still needs a
+public tunnel (ngrok) for Twilio to reach the webhook.
+
+**Test-suite false-positive audit (QA):** all new tests assert real DB/disk
+state and would fail if the feature broke — none weak.
+
+**Still open (minor, from QA):**
+- `/skus` Inventario coverage tile: correct value, label still "Días de
+  Cobertura" (same class as BUG A). → folded into the /skus cleanup agent.
+- `/config` WhatsApp phone input + `/skus` session `<select>` lack id/name. →
+  folded into the cleanup agents.
+- **PlanningControl 401 race:** after the quick-start→`/hoy` auto-redirect, the
+  period toggle can briefly vanish because `PlanningContext` caches `null` on a
+  `/planning` 401 with no retry. Self-heals on any navigation. Worth a real fix
+  (don't cache null on 401; retry once) — not yet done.
+
+**In flight now:** two frontend visual-noise cleanup agents (emojis/decoration,
+density, unclear buttons) in worktrees.

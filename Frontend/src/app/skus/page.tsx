@@ -18,7 +18,6 @@ import {
   EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
 import Button from '@/components/ui/Button'
-import { useBusinessProfile } from '@/contexts/BusinessProfileContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { coverageUnitShort } from '@/lib/period'
@@ -1470,7 +1469,6 @@ function TabBar({ tabs, active, onChange, labelFor }: { tabs: string[]; active: 
 
 export default function SkusPage() {
   const { t } = useLanguage()
-  const { advancedMode } = useBusinessProfile()
   // Shared active-period session (multi-period) — same resolver /hoy and
   // /inventory follow. Drives the default-select on load (#6).
   const planningCtx = usePlanning()
@@ -2059,22 +2057,20 @@ export default function SkusPage() {
                       </div>
                       {/* Toggle for full statistical detail */}
                       <div style={{ padding: '0 20px 16px' }}>
-                        {!advancedMode && (
-                          <button
-                            onClick={() => setShowSkuStats(v => !v)}
-                            style={{
-                              all: 'unset', cursor: 'pointer',
-                              display: 'flex', alignItems: 'center', gap: 6,
-                              fontSize: 12, color: 'var(--dim)', padding: '8px 0',
-                              borderTop: '1px solid var(--border)', width: '100%',
-                            }}
-                          >
-                            <span style={{ fontSize: 10 }}>{showSkuStats ? '▲' : '▼'}</span>
-                            {showSkuStats ? t('skus.btn_hide') : t('skus.btn_view')} {t('skus.detailed_stat_analysis')}
-                          </button>
-                        )}
-                        {(advancedMode || showSkuStats) && (
-                          <div style={{ marginTop: advancedMode ? 0 : 4 }}>
+                        <button
+                          onClick={() => setShowSkuStats(v => !v)}
+                          style={{
+                            all: 'unset', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            fontSize: 12, color: 'var(--dim)', padding: '8px 0',
+                            borderTop: '1px solid var(--border)', width: '100%',
+                          }}
+                        >
+                          <span style={{ fontSize: 10 }}>{showSkuStats ? '▲' : '▼'}</span>
+                          {showSkuStats ? t('skus.btn_hide') : t('skus.btn_view')} {t('skus.detailed_stat_analysis')}
+                        </button>
+                        {showSkuStats && (
+                          <div style={{ marginTop: 4 }}>
                             <QualityPanel q={skuQuality} />
                           </div>
                         )}

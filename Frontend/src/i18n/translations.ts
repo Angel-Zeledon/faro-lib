@@ -184,8 +184,6 @@ export const translations = {
 
     // ── Sidebar chrome ──
     'sidebar.tagline':         'Planificación de compras',
-    'sidebar.advanced_mode':   'Modo avanzado',
-    'sidebar.advanced_desc':   'Wizard completo, métricas técnicas y configuración ML activados.',
     'sidebar.collapse':        'Colapsar',
     'sidebar.expand':          'Expandir',
     'sidebar.logout':          'Cerrar sesión',
@@ -1917,8 +1915,6 @@ export const translations = {
 
     // ── Sidebar chrome ──
     'sidebar.tagline':         'Purchase planning',
-    'sidebar.advanced_mode':   'Advanced mode',
-    'sidebar.advanced_desc':   'Full wizard, technical metrics and ML configuration enabled.',
     'sidebar.collapse':        'Collapse',
     'sidebar.expand':          'Expand',
     'sidebar.logout':          'Log out',

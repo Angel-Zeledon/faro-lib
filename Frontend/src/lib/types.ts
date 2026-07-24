@@ -409,7 +409,6 @@ export interface ForecastSeries {
 export interface UserPreferences {
   language:         'es' | 'en'
   theme:            'dark' | 'light'
-  advanced_mode?:   boolean
 }
 
 // ── Authenticated user (GET /users/me) ────────────────────────────────────────
