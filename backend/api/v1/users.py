@@ -14,6 +14,7 @@ from backend.auth.guards import CurrentUser, get_current_user, require_admin
 from backend.auth.password import validate_strength
 from backend.config import settings
 from backend.db.connection import execute, query_one
+from backend.errors import AppError
 from backend.schemas.auth import (
     CreateUserRequest, UpdateUserRequest,
     UpdateUserStatusRequest, UpdatePermissionsRequest,
@@ -128,7 +129,9 @@ def confirm_whatsapp(body: WhatsAppConfirmRequest, user: CurrentUser = Depends(g
     """Confirm the code and mark the number verified."""
     from backend.whatsapp import identity
     if not identity.confirm_verification(user.tenant_id, user.user_id, body.code.strip()):
-        raise HTTPException(status_code=400, detail="Código inválido o expirado")
+        raise AppError(
+            "whatsapp_code_invalid", "Invalid or expired code", status_code=400,
+        )
     return ok({"verified": True})
 
 

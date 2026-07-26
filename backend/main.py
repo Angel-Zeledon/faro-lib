@@ -15,10 +15,12 @@ Swagger docs:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.api.v1 import auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router
+from backend.errors import AppError
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
 from backend.middleware.request_logger import RequestLoggerMiddleware
@@ -152,6 +154,25 @@ app.add_middleware(
 )
 app.add_middleware(TenantContextMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
+
+# ── Error envelope ─────────────────────────────────────────────────────────
+# A user-facing AppError becomes a JSON error response that keeps the existing
+# `detail` contract (the English fallback message, so old clients and FastAPI's
+# own error shape are unaffected) and ADDS `error_code` + `error_params`. The
+# frontend renders `errors.<error_code>` (localized, interpolating params) when
+# present and falls back to `detail` otherwise. See backend/errors.py.
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.message,
+            "error_code": exc.code,
+            "error_params": exc.params,
+        },
+    )
 
 # ── Routers ────────────────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@ import Link from 'next/link'
 import { RefreshCw, AlertTriangle, Lock, SearchX, WifiOff, ServerCrash } from 'lucide-react'
 import { isApiError, type ApiErrorKind } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
-import type { TranslationKey } from '@/i18n/translations'
+import { translations, type TranslationKey } from '@/i18n/translations'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -51,16 +51,37 @@ const ERROR_COPY: Record<ApiErrorKind | 'unknown', {
 }
 
 /**
+ * The human, localized reason for an error. When the backend sent a stable
+ * `error_code`, render `errors.<code>` (interpolating the `params` it sent) so
+ * the user reads Spanish while the backend stayed English. Falls back to the
+ * backend's English `detail` when there is no code, or the code has no i18n
+ * mapping yet (e.g. a backend deployed ahead of the frontend). Non-ApiError
+ * values fall back to their message. Single source of truth for the toast
+ * bridge and the ErrorState/InlineError components.
+ */
+export function useErrorDetail() {
+  const { t } = useLanguage()
+  return (err: unknown): string => {
+    if (isApiError(err) && err.code) {
+      const key = `errors.${err.code}`
+      if (key in translations.es) return t(key, err.params)
+    }
+    return isApiError(err) ? err.detail : err instanceof Error ? err.message : ''
+  }
+}
+
+/**
  * Standard toast payload for an error. Shared by the api interceptor bridge and
  * by screens that want to toast an error they caught themselves.
  */
 export function useErrorCopy() {
   const { t } = useLanguage()
+  const errorDetail = useErrorDetail()
   return (err: unknown): { title: string; body: string; detail: string } => {
     const copy = ERROR_COPY[errorKindOf(err)]
     // The backend's own reason is more useful than our generic sentence when it
     // exists — a 422 naming the field that failed beats "check the fields".
-    const detail = isApiError(err) ? err.detail : err instanceof Error ? err.message : ''
+    const detail = errorDetail(err)
     return { title: t(copy.title), body: t(copy.body), detail }
   }
 }
@@ -225,9 +246,10 @@ export function ErrorState({ error, onRetry, compact }: {
   compact?: boolean
 }) {
   const { t } = useLanguage()
+  const errorDetail = useErrorDetail()
   const kind = errorKindOf(error)
   const copy = ERROR_COPY[kind]
-  const detail = isApiError(error) ? error.detail : error instanceof Error ? error.message : ''
+  const detail = errorDetail(error)
   const showRetry = Boolean(onRetry) && copy.retryable
 
   return (
@@ -286,9 +308,10 @@ export function InlineError({ error, onRetry, onDismiss }: {
   onDismiss?: () => void
 }) {
   const { t } = useLanguage()
+  const errorDetail = useErrorDetail()
   const kind = errorKindOf(error)
   const copy = ERROR_COPY[kind]
-  const detail = isApiError(error) ? error.detail : error instanceof Error ? error.message : ''
+  const detail = errorDetail(error)
 
   return (
     <div role="alert" style={{

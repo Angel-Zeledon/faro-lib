@@ -39,10 +39,20 @@ export type ApiErrorKind =
 export class ApiError extends Error {
   readonly kind:   ApiErrorKind
   readonly status: number     // 0 when the request never reached the server
-  readonly detail: string     // backend-provided reason, '' when there is none
+  readonly detail: string     // backend-provided reason (English fallback), '' when none
   readonly path:   string
+  // Stable machine error code from the backend's error envelope (`error_code`),
+  // '' when the backend didn't send one. The UI maps it to a localized
+  // (Spanish/English) `errors.<code>` string, interpolating `params`, and only
+  // falls back to `detail` when the code is absent or unmapped. This is what
+  // keeps backend errors English while the user still reads Spanish.
+  readonly code:   string
+  readonly params: Record<string, unknown>
 
-  constructor(kind: ApiErrorKind, status: number, detail: string, path: string) {
+  constructor(
+    kind: ApiErrorKind, status: number, detail: string, path: string,
+    code = '', params: Record<string, unknown> = {},
+  ) {
     // `message` stays the most specific text available so existing
     // `e.message` call sites (and console traces) keep working.
     super(detail || `HTTP ${status}`)
@@ -51,6 +61,8 @@ export class ApiError extends Error {
     this.status = status
     this.detail = detail
     this.path   = path
+    this.code   = code
+    this.params = params
   }
 }
 
@@ -109,6 +121,21 @@ function extractErrorMessage(err: unknown): string | undefined {
       .join('; ')
   }
   return (err as { error?: { message?: string } })?.error?.message
+}
+
+// The backend's AppError envelope adds `error_code` (a stable machine code) and
+// `error_params` (the dynamic values) alongside `detail`. Pull them out so the
+// UI can render the localized `errors.<code>` string instead of the English
+// `detail`. Absent on plain FastAPI errors — the code stays '' and the UI
+// simply falls back to `detail`.
+function extractErrorCode(err: unknown): string {
+  const code = (err as { error_code?: unknown })?.error_code
+  return typeof code === 'string' ? code : ''
+}
+
+function extractErrorParams(err: unknown): Record<string, unknown> {
+  const params = (err as { error_params?: unknown })?.error_params
+  return params && typeof params === 'object' ? (params as Record<string, unknown>) : {}
 }
 
 function _doFetch(method: string, path: string, body?: unknown): Promise<Response> {
@@ -176,6 +203,7 @@ async function request<T = unknown>(
     const payload = await res.json().catch(() => ({ detail: res.statusText }))
     const err = new ApiError(
       kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+      extractErrorCode(payload), extractErrorParams(payload),
     )
     notify(err, silent)
     throw err
@@ -207,6 +235,7 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
     const payload = await res.json().catch(() => ({ detail: res.statusText }))
     const err = new ApiError(
       kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+      extractErrorCode(payload), extractErrorParams(payload),
     )
     notify(err, false)
     throw err
