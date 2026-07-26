@@ -53,14 +53,14 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 
 **All code is English. No exceptions.** Comments, docstrings, variable/function/class names, DB column names, API field names, test names, assertion messages and commit messages — English.
 
-The only Spanish in this repo is **end-user copy**: the `es` string values in `Frontend/src/i18n/translations.ts`, and user-facing text the backend produces for the UI (explanation sentences, email/WhatsApp bodies). Those are product content, not code. Translation *keys* are English.
+The only Spanish is **end-user copy**, and it lives in dedicated locale layers — **never hardcoded as a Spanish string literal in backend logic**. Frontend: the `es` values in `Frontend/src/i18n/translations.ts` (keys are English). Backend user-facing output — API error messages, explanation sentences, email/WhatsApp/PDF bodies, anything the user reads — must NOT be a Spanish string in code: the backend returns **English text or a structured error code + params**, and the **frontend renders the Spanish via i18n**. For backend-only channels the frontend never sees (email/WhatsApp/PDF), Spanish lives in a **backend locale catalog keyed by English identifiers** — the code references the key, not the Spanish. LLM prompts are written in English (they may instruct the model to *answer* in Spanish).
 
 The dedicated sweep has run: identifiers, DB columns and API fields are English throughout. Four categories are deliberately still Spanish, and renaming them is **out of scope, not an oversight**:
 
 - **App routes** — `/hoy`, `/pedidos`, `/skus`. Users may have shared these URLs.
 - **Persisted signal values** — `PEDIR_YA`, `PEDIR_PRONTO`, `OK`, `SOBRESTOCK`, stored on stock rows and in PO history. Renaming needs a data migration, not a code change.
 - **Spanish vocabulary that matches user data** — CSV header aliases (`fecha`, `ventas`, `categoria` in the canonical-column detectors), free-text payment terms (`contado`, `contra entrega`, `quincenal`), and calendar catalog keys (`co_quincena_15`). These are values the product reads from real user input.
-- **End-user copy** — the `es` values in `translations.ts`, Spanish marketing copy in `page.tsx`, the explanation sentences, LLM prompts and email/WhatsApp bodies the backend produces.
+- **Frontend end-user copy** — the `es` values in `translations.ts` and the Spanish marketing copy in the landing `page.tsx`. (Backend user-facing copy is **no longer** allowed as hardcoded Spanish — it moves to English + frontend i18n, or a backend locale catalog for email/WhatsApp/PDF. See above.)
 
 ## Testing Standards (mandatory)
 
