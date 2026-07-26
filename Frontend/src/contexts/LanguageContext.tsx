@@ -4,7 +4,10 @@ import { translations, type Lang } from '@/i18n/translations'
 
 interface LangCtx {
   lang: Lang
-  t:    (k: string) => string
+  /** `params` interpolates `{name}` placeholders in the resolved string —
+   * used by the error i18n layer to fill in a backend error's dynamic values
+   * (sku, qty, …) it sends as `error_params`. */
+  t:    (k: string, params?: Record<string, unknown>) => string
   setLang: (l: Lang) => void
 }
 
@@ -25,9 +28,15 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   // Falls back to the Spanish value, then to the raw key, so a missing
   // translation degrades gracefully instead of showing an empty string.
-  const t = useCallback((k: string) => {
+  const t = useCallback((k: string, params?: Record<string, unknown>) => {
     const dict = translations[lang] as Record<string, string>
-    return dict[k] ?? (translations.es as Record<string, string>)[k] ?? k
+    let str = dict[k] ?? (translations.es as Record<string, string>)[k] ?? k
+    if (params) {
+      for (const [pk, pv] of Object.entries(params)) {
+        str = str.replace(new RegExp(`\\{${pk}\\}`, 'g'), String(pv))
+      }
+    }
+    return str
   }, [lang])
 
   return <Ctx.Provider value={{ lang, t, setLang }}>{children}</Ctx.Provider>

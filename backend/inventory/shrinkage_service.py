@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from backend.db.connection import execute, query, query_one
+from backend.errors import AppError
 
 log = logging.getLogger(__name__)
 
@@ -49,24 +50,39 @@ def record_shrinkage(
 ) -> dict:
     """
     Records a shrinkage event and decrements stock accordingly.
-    Raises ValueError with a user-facing message on invalid state/input.
+    Raises AppError (code + params + English fallback) on invalid state/input.
     """
     if quantity is None or quantity <= 0:
-        raise ValueError("La cantidad debe ser mayor que 0")
+        raise AppError(
+            "shrinkage_qty_must_be_positive",
+            "Quantity must be greater than 0",
+        )
     if reason not in REASONS:
-        raise ValueError(f"Razón inválida. Opciones: {', '.join(REASONS)}")
+        options = ", ".join(REASONS)
+        raise AppError(
+            "shrinkage_invalid_reason",
+            f"Invalid reason. Options: {options}",
+            params={"options": options},
+        )
 
     from backend.inventory import service as inv_svc
 
     warehouse = warehouse or "principal"
     existing = inv_svc.get_stock(tenant_id, sku, warehouse=warehouse)
     if not existing:
-        raise ValueError(f"SKU '{sku}' no encontrado en inventario (bodega '{warehouse}')")
+        raise AppError(
+            "shrinkage_sku_not_found",
+            f"SKU '{sku}' not found in inventory (warehouse '{warehouse}')",
+            status_code=404,
+            params={"sku": sku, "warehouse": warehouse},
+        )
 
     current = float(existing["current_stock"] or 0)
     if quantity > current:
-        raise ValueError(
-            f"La cantidad ({quantity}) excede el stock actual ({current}) de '{sku}'"
+        raise AppError(
+            "shrinkage_qty_exceeds_stock",
+            f"Quantity ({quantity}) exceeds current stock ({current}) of '{sku}'",
+            params={"quantity": quantity, "current": current, "sku": sku},
         )
 
     unit_cost = existing.get("unit_cost")
@@ -89,9 +105,11 @@ def record_shrinkage(
         (quantity, tenant_id, sku, warehouse, quantity),
     )
     if updated is None:
-        raise ValueError(
-            f"La cantidad ({quantity}) excede el stock actual de '{sku}' "
-            "(pudo haber cambiado por otra operación concurrente)"
+        raise AppError(
+            "shrinkage_qty_exceeds_stock_concurrent",
+            f"Quantity ({quantity}) exceeds current stock of '{sku}' "
+            "(it may have changed from another concurrent operation)",
+            params={"quantity": quantity, "sku": sku},
         )
 
     # 2. Point-in-time snapshot, same as every other stock-affecting event —

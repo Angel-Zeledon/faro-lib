@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from backend.db.connection import execute, query, query_one, transaction
+from backend.errors import AppError
 
 log = logging.getLogger(__name__)
 
@@ -94,20 +95,27 @@ def receive_po(
            "everything arrived complete" (each ordered line receives its
            final_qty). Lines not mentioned receive 0 for this event.
 
-    Raises ValueError with a user-facing message on invalid state/input.
+    Raises AppError (code + params + English fallback) on invalid state/input.
     """
     po = get_po(tenant_id, po_log_id)
     if not po:
-        raise ValueError("Orden de compra no encontrada")
+        raise AppError("po_not_found", "Purchase order not found", status_code=404)
     if po.get("reception_status") not in RECEIVABLE_STATES:
-        raise ValueError(
-            f"Esta orden ya fue recibida (estado: {po.get('reception_status')})"
+        status = po.get("reception_status")
+        raise AppError(
+            "reception_already_received",
+            f"This order was already received (status: {status})",
+            status_code=409,
+            params={"status": status},
         )
 
     items = get_po_items(tenant_id, po_log_id)
     ordered = [i for i in items if i["status"] in _ORDERED]
     if not ordered:
-        raise ValueError("Esta orden no tiene líneas pedidas que recibir")
+        raise AppError(
+            "reception_no_ordered_lines",
+            "This order has no ordered lines to receive",
+        )
 
     received_at = received_at or datetime.now(timezone.utc)
     if received_at.tzinfo is None:
@@ -118,7 +126,10 @@ def receive_po(
     # Compare by calendar day: a date-only reception (midnight) on the same day
     # the PO was generated is valid even if the PO has a later timestamp.
     if received_at.date() < generated_at.date():
-        raise ValueError("La fecha de recepción no puede ser anterior a la fecha de la orden")
+        raise AppError(
+            "reception_date_before_order",
+            "The reception date cannot be earlier than the order date",
+        )
 
     # Resolve received qty per ordered PO LINE (keyed by item id, not sku —
     # a PO can carry the same SKU on separate lines for different warehouses,
@@ -143,17 +154,27 @@ def receive_po(
             sku = str(ln.get("sku") or "")
             matches = sku_to_items.get(sku)
             if not matches:
-                raise ValueError(f"El SKU '{sku}' no está en esta orden")
+                raise AppError(
+                    "reception_sku_not_in_order",
+                    f"SKU '{sku}' is not in this order",
+                    params={"sku": sku},
+                )
             if len(matches) > 1:
                 # The {sku, received_qty} line shape can't disambiguate
                 # which warehouse's line the quantity belongs to.
-                raise ValueError(
-                    f"El SKU '{sku}' aparece en más de una bodega en esta orden; "
-                    "no se puede recibir por SKU, indique la recepción completa"
+                raise AppError(
+                    "reception_sku_multiple_warehouses",
+                    f"SKU '{sku}' appears in more than one warehouse on this order; "
+                    "it cannot be received by SKU, record the full reception instead",
+                    params={"sku": sku},
                 )
             qty = float(ln.get("received_qty") or 0)
             if qty < 0:
-                raise ValueError(f"Cantidad recibida negativa para '{sku}'")
+                raise AppError(
+                    "reception_negative_qty",
+                    f"Negative received quantity for '{sku}'",
+                    params={"sku": sku},
+                )
             # Cap at what is still outstanding on this line (ordered minus
             # already received). Without this, a reception could book more
             # units than were ordered and inflate stock arbitrarily — QA
@@ -162,9 +183,11 @@ def receive_po(
             item = matches[0]
             outstanding = float(item["final_qty"] or 0) - float(item.get("received_qty") or 0)
             if qty > outstanding:
-                raise ValueError(
-                    f"La cantidad recibida de '{sku}' ({qty:g}) excede lo pendiente "
-                    f"de esta orden ({outstanding:g})"
+                raise AppError(
+                    "reception_over_pending",
+                    f"Received quantity of '{sku}' ({qty:g}) exceeds the amount "
+                    f"pending on this order ({outstanding:g})",
+                    params={"sku": sku, "qty": qty, "pending": outstanding},
                 )
             received_by_item[item["id"]] = qty
         for i in ordered:

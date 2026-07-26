@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.config import settings
+from backend.errors import AppError
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
 from backend.entitlements.service import has_feature
@@ -450,17 +451,19 @@ def create_shrinkage(
         try:
             occurred_at = _dt.fromisoformat(body.occurred_at)
         except ValueError:
-            raise HTTPException(status_code=422, detail="occurred_at debe ser fecha ISO (YYYY-MM-DD)")
+            raise AppError(
+                "date_invalid_iso",
+                "occurred_at must be an ISO date (YYYY-MM-DD)",
+                params={"field": "occurred_at"},
+            )
 
-    try:
-        row = shrinkage_svc.record_shrinkage(
-            user.tenant_id, body.sku, body.quantity, body.reason,
-            user_id=user.user_id, warehouse=body.warehouse, notes=body.notes,
-            occurred_at=occurred_at,
-        )
-    except ValueError as e:
-        status = 404 if "no encontrado" in str(e) else 422
-        raise HTTPException(status_code=status, detail=str(e))
+    # record_shrinkage raises AppError (own status_code + code + params) on bad
+    # state/input; it propagates to the AppError handler in backend/main.py.
+    row = shrinkage_svc.record_shrinkage(
+        user.tenant_id, body.sku, body.quantity, body.reason,
+        user_id=user.user_id, warehouse=body.warehouse, notes=body.notes,
+        occurred_at=occurred_at,
+    )
     return ok(row)
 
 
@@ -586,21 +589,21 @@ class SimulateEventRequest(BaseModel):
 @router.post("/events/simulate", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_current_user)):
     """
-    "¿Qué pasa si…?" — project a promo/season's impact per SKU: extra demand,
+    What-if simulator — project a promo/season's impact per SKU: extra demand,
     stock survival, quantity to order and the latest order date. Read-only.
     """
     if body.event_id:
         ev = svc.get_event(user.tenant_id, body.event_id)
         if not ev:
-            raise HTTPException(status_code=404, detail="Evento no encontrado")
+            raise AppError("event_not_found", "Event not found", status_code=404)
         start, end = str(ev["start_date"]), str(ev["end_date"])
         mult = float(body.multiplier or ev.get("multiplier") or 1.0)
         name = body.name or ev.get("name")
     else:
         if not (body.start_date and body.end_date and body.multiplier):
-            raise HTTPException(
-                status_code=422,
-                detail="Sin event_id se requieren start_date, end_date y multiplier",
+            raise AppError(
+                "event_simulate_missing_fields",
+                "start_date, end_date and multiplier are required without an event_id",
             )
         start, end, mult, name = body.start_date, body.end_date, body.multiplier, body.name
 
@@ -626,7 +629,7 @@ class EventMultiplierUpsert(BaseModel):
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
     """Per-SKU or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
-        raise HTTPException(status_code=404, detail="Evento no encontrado")
+        raise AppError("event_not_found", "Event not found", status_code=404)
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
 
 
@@ -641,7 +644,7 @@ def upsert_event_multiplier(
     On Black Friday electronics do not behave like milk.
     """
     if not svc.get_event(user.tenant_id, event_id):
-        raise HTTPException(status_code=404, detail="Evento no encontrado")
+        raise AppError("event_not_found", "Event not found", status_code=404)
     try:
         row = svc.set_event_multiplier(
             user.tenant_id, event_id, body.scope, body.scope_value, body.multiplier,
@@ -662,7 +665,9 @@ def remove_event_multiplier(
 ):
     """Drop the override: the product falls back to the event multiplier."""
     if not svc.delete_event_multiplier(user.tenant_id, override_id):
-        raise HTTPException(status_code=404, detail="Override no encontrado")
+        raise AppError(
+            "event_multiplier_override_not_found", "Override not found", status_code=404,
+        )
 
 
 @router.get("/events", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
@@ -741,9 +746,11 @@ def get_event_catalog(
 
     country = country.upper()
     if country not in cat.SUPPORTED_COUNTRIES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"País '{country}' sin catálogo. Disponibles: {', '.join(cat.SUPPORTED_COUNTRIES)}",
+        available = ", ".join(cat.SUPPORTED_COUNTRIES)
+        raise AppError(
+            "calendar_country_unsupported",
+            f"No catalog for country '{country}'. Available: {available}",
+            params={"country": country, "available": available},
         )
 
     seeded = svc.get_catalog_state(user.tenant_id, country)
@@ -792,7 +799,9 @@ def toggle_catalog_entry(
     """
     updated = svc.set_catalog_group_active(user.tenant_id, catalog_key, body.active)
     if updated == 0:
-        raise HTTPException(status_code=404, detail="Evento del catálogo no encontrado")
+        raise AppError(
+            "calendar_event_not_found", "Catalog event not found", status_code=404,
+        )
     return ok({"catalog_key": catalog_key, "active": body.active, "updated": updated})
 
 
@@ -938,7 +947,7 @@ def po_items(po_log_id: str, user: CurrentUser = Depends(get_current_user)):
     from backend.inventory import reception_service as rec_svc
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
-        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+        raise AppError("po_not_found", "Purchase order not found", status_code=404)
     return ok({
         "po_log_id": po_log_id,
         "reception_status": po.get("reception_status", "pending"),
@@ -967,17 +976,20 @@ def receive_po(
         try:
             received_at = _dt.fromisoformat(body.received_at)
         except ValueError:
-            raise HTTPException(status_code=422, detail="received_at debe ser fecha ISO (YYYY-MM-DD)")
+            raise AppError(
+                "date_invalid_iso",
+                "received_at must be an ISO date (YYYY-MM-DD)",
+                params={"field": "received_at"},
+            )
 
     lines = [l.model_dump() for l in body.lines] if (body and body.lines is not None) else None
-    try:
-        result = rec_svc.receive_po(
-            user.tenant_id, po_log_id, user.user_id,
-            lines=lines, received_at=received_at,
-        )
-    except ValueError as e:
-        status = 404 if "no encontrada" in str(e) else 409 if "ya fue recibida" in str(e) else 422
-        raise HTTPException(status_code=status, detail=str(e))
+    # receive_po raises AppError (own status_code: 404 not found / 409 already
+    # received / 422 invalid input) which propagates to the AppError handler in
+    # backend/main.py, carrying error_code + error_params to the client.
+    result = rec_svc.receive_po(
+        user.tenant_id, po_log_id, user.user_id,
+        lines=lines, received_at=received_at,
+    )
     return ok(result)
 
 
@@ -1077,7 +1089,7 @@ def send_po_to_suppliers(
 
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
-        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+        raise AppError("po_not_found", "Purchase order not found", status_code=404)
 
     items = rec_svc.get_po_items(user.tenant_id, po_log_id)
     ordered = [i for i in items if i["status"] in ("approved", "modified")]
@@ -1169,7 +1181,7 @@ def upsert_price_break(
 ):
     supplier = sup_svc.get_supplier(user.tenant_id, supplier_id)
     if not supplier:
-        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
     row = pb_svc.upsert_price_break(
         user.tenant_id, supplier_id, body.sku,
         body.min_qty, body.unit_price, body.notes,
@@ -1184,7 +1196,7 @@ def delete_price_break(
 ):
     existing = pb_svc.get_price_break(user.tenant_id, price_break_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="Escala de precio no encontrada")
+        raise AppError("price_break_not_found", "Price break not found", status_code=404)
     pb_svc.delete_price_break(user.tenant_id, price_break_id)
 
 
