@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
 import type { POLogEntry, POItemLine } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
+import { useErrorDetail } from '@/components/ui/States'
 import { Truck, X, Send } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
@@ -40,6 +41,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   onSaved: () => void
 }) {
   const { t } = useLanguage()
+  const errorDetail = useErrorDetail()
   const [items,   setItems]   = useState<POItemLine[] | null>(null)
   const [qty,     setQty]     = useState<Record<string, string>>({})
   const [saving,  setSaving]  = useState(false)
@@ -56,7 +58,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
           String(Math.max(0, (i.final_qty || 0) - (i.received_qty || 0))),
         ])))
       })
-      .catch(e => setError(e instanceof Error ? e.message : t('common.error')))
+      .catch(e => setError(errorDetail(e) || t('common.error')))
   }, [poId])
 
   const save = useCallback(async (complete: boolean) => {
@@ -76,7 +78,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       }
       onSaved()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t('po.reception_err_save'))
+      setError(errorDetail(e) || t('po.reception_err_save'))
       setSaving(false)
     }
   }, [items, poId, qty, onSaved])
@@ -209,6 +211,7 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
 }) {
   const { t } = useLanguage()
   const confirm = useConfirm()
+  const errorDetail = useErrorDetail()
   const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
 
@@ -249,7 +252,7 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
       setResult({ ok: anySent, message })
       setState('done')
     } catch (e: unknown) {
-      setResult({ ok: false, message: e instanceof Error ? e.message : t('roi.send_po_error') })
+      setResult({ ok: false, message: errorDetail(e) || t('roi.send_po_error') })
       setState('done')
     }
   }
