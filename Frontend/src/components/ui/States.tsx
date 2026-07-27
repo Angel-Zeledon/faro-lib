@@ -17,7 +17,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { RefreshCw, AlertTriangle, Lock, SearchX, WifiOff, ServerCrash } from 'lucide-react'
-import { isApiError, type ApiErrorKind } from '@/lib/api'
+import { isApiError, type ApiErrorKind, type FieldError } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { translations, type TranslationKey } from '@/i18n/translations'
 
@@ -66,8 +66,41 @@ export function useErrorDetail() {
       const key = `errors.${err.code}`
       if (key in translations.es) return t(key, err.params)
     }
+    // A 422 arrives as Pydantic's own English ("qty: Input should be less than
+    // or equal to 1000000000"). Rebuild it from the machine-readable
+    // type + ctx so the user reads their own language.
+    if (isApiError(err) && err.fieldErrors.length) {
+      const sentences = err.fieldErrors.map(fe => fieldErrorText(fe, t))
+      if (sentences.some(Boolean)) return sentences.filter(Boolean).join(' ')
+    }
     return isApiError(err) ? err.detail : err instanceof Error ? err.message : ''
   }
+}
+
+/**
+ * One Pydantic field failure as a sentence in the active language.
+ *
+ * `errors.validation.<pydantic_type>` holds the rule copy (interpolating the
+ * bounds Pydantic ships in `ctx`), and `errors.field.<name>` gives the field a
+ * human name. Either lookup may miss — a new Pydantic rule or a field nobody
+ * has named yet — and the fallbacks degrade to the backend's English rather
+ * than to silence, because a rough message beats no message.
+ */
+function fieldErrorText(
+  fe: FieldError, t: (k: string, p?: Record<string, unknown>) => string,
+): string {
+  const ruleKey = `errors.validation.${fe.type}`
+  if (!(ruleKey in translations.es)) return fe.field ? `${fe.field}: ${fe.msg}` : fe.msg
+
+  const fieldKey = `errors.field.${fe.field}`
+  const named = fe.field ? fieldKey in translations.es : false
+  const fieldName = named ? t(fieldKey) : fe.field
+  const rule = t(ruleKey, fe.ctx)
+  if (!fieldName) return rule
+  // Named fields read as a sentence ("El multiplicador no puede ser mayor que
+  // 10."); a raw API field name still needs the colon to look deliberate
+  // ("some_flag: no es válido.").
+  return named ? `${fieldName} ${rule}` : `${fieldName}: ${rule}`
 }
 
 /**

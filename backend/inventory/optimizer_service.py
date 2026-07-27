@@ -17,10 +17,10 @@ from forecasting_core.business.optimizer import OptimizationInput
 import math as _math
 
 from backend.db import session_store
+from backend.inventory import transfer_lane_service as lane_svc
 from backend.inventory.service import list_stock, _avg_forecast_curve, _days_per_period
 
 _DEFAULT_UNIT_COST = 1.0
-_DEFAULT_TRANSFER_COST_PER_UNIT = 0.5
 _DEFAULT_LEAD_TIME_DAYS = 15
 
 # A MILP solve is CPU-bound and can take tens of seconds. FastAPI runs sync
@@ -56,8 +56,15 @@ def build_optimization_input(
     horizon_days: int = 14,
     stock_rows: Optional[list[dict]] = None,
     period: str = "daily",
+    lanes: Optional[dict] = None,
 ) -> Optional[OptimizationInput]:
     """
+    `lanes`: preloaded transfer_lane_service.lane_map ({(from,to): lane}); when
+    omitted it is fetched here. Lanes are what give a transfer a price and a
+    transit time in the MILP — the engine stays DB-free, so this function
+    resolves them and hands over plain dicts. Pairs with no configured lane fall
+    back to transfer_lane_service's documented default (1 day, free).
+
     `stock_rows` lets the caller pass an already-fetched inventory snapshot so
     the optimize path reads inventory_stock once instead of twice (build here +
     serialize at the endpoint). Fewer pooled-connection checkouts per request
@@ -149,6 +156,28 @@ def build_optimization_input(
         # cheaper transfer over a new order) before locking this in.
         stockout_cost[sku] = order_cost[sku] * stockout_cost_multiplier
 
+    # Per-lane money and time. The old model priced EVERY move at a single
+    # hardcoded 0.5/unit and let it teleport within the bucket; now each
+    # ordered pair carries its own cost and its transit time in buckets, so a
+    # slow lane can no longer beat a purchase for free.
+    # KNOWN LIMITATION: a lane's `fixed_cost` is NOT modeled here — charging it
+    # once per lane used needs a binary "lane active" variable, which the
+    # current pure-continuous/integer formulation has no room for. The
+    # per-unit cost and the transit time are modeled; the fixed cost is applied
+    # only by the heuristic recommendation (_evaluate_transfer_lane).
+    if lanes is None:
+        lanes = lane_svc.lane_map(tenant_id)
+    transfer_cost_by_lane: dict[tuple[str, str], float] = {}
+    transfer_lead_buckets: dict[tuple[str, str], int] = {}
+    for a in warehouses:
+        for b in warehouses:
+            if a == b:
+                continue
+            lane = lane_svc.lane_for(lanes, a, b)
+            transfer_cost_by_lane[(a, b)] = float(lane["cost_per_unit"])
+            transfer_lead_buckets[(a, b)] = int(
+                _math.ceil(int(lane["lead_time_days"]) / _days_per_period(period)))
+
     return OptimizationInput(
         skus=skus,
         warehouses=warehouses,
@@ -159,7 +188,10 @@ def build_optimization_input(
         holding_cost=holding_cost,
         stockout_cost=stockout_cost,
         order_cost=order_cost,
-        transfer_cost=_DEFAULT_TRANSFER_COST_PER_UNIT,
+        # Global fallback only: every real pair is in transfer_cost_by_lane.
+        transfer_cost=lane_svc.DEFAULT_LANE_COST_PER_UNIT,
+        transfer_cost_by_lane=transfer_cost_by_lane,
+        transfer_lead_buckets=transfer_lead_buckets,
     )
 
 

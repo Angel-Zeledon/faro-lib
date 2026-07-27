@@ -4,16 +4,29 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
  createSession, uploadDataset, attachDataset, inspectSession,
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
- setForecastConfig, setBusinessConfig, startTraining, getJob,
- startDemoQuickstart,
+ setBusinessConfig, startTraining, getJob,
+ startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
-import type { InspectionResult, CanonicalMapping } from '@/lib/types'
+import type {
+ InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary,
+} from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import { useLanguage } from '@/contexts/LanguageContext'
+
+// The worker reports data problems as a stable code (see runner.py's
+// TrainingDataError) so the user reads an actionable sentence instead of a raw
+// Python error — "El entrenamiento falló: 'model'" was a real thing users saw.
+// Anything unrecognized is shown as-is: hiding an unexpected error is worse.
+function trainingErrorText(raw: string | null | undefined, t: (k: string) => string): string {
+ if (!raw) return t('qs.err_unknown')
+ const key = `errors.training.${raw.trim()}`
+ const localized = t(key)
+ return localized === key ? raw : localized
+}
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
 function StepBubble({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
@@ -167,6 +180,122 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
 }
 
 
+// ── Existing-dataset picker (step 1, reuse tab) ────────────────────────────────
+function formatBytes(bytes: number): string {
+ if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+ return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+// ── Previous-session picker (step 1, clone tab) ────────────────────────────────
+// Cloning goes one step further than reusing a dataset: it also carries over the
+// column mapping, so a repeat run needs no confirmation step at all.
+function SessionClonePicker({ sessions, onPick, busy }: {
+ sessions: SessionSummary[]; onPick: (s: SessionSummary) => void; busy: boolean
+}) {
+ const { t } = useLanguage()
+ if (sessions.length === 0) {
+ return <p style={{ fontSize: 13, color: 'var(--dim)', margin: 0 }}>{t('qs.clone_empty')}</p>
+ }
+ return (
+ <div>
+ <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 12px' }}>
+ {t('qs.clone_desc')}
+ </p>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
+ {sessions.map(s => (
+ <div key={s.session_id} style={{
+ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+ padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 10,
+ background: 'var(--surface-2, #f8fafc)',
+ }}>
+ <div style={{ minWidth: 0 }}>
+ <div style={{
+  fontSize: 13, fontWeight: 600, color: 'var(--text)',
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+ }}>
+  {s.name}
+ </div>
+ <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+  {new Date(s.created_at).toLocaleDateString()}
+  {s.dataset_filename && <>{' · '}{s.dataset_filename}</>}
+  {s.sku_count != null && <>{' · '}{s.sku_count} SKUs</>}
+ </div>
+ </div>
+ <button
+ type="button"
+ onClick={() => onPick(s)}
+ disabled={busy}
+ style={{
+  padding: '7px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+  border: '1px solid var(--accent)', background: 'transparent',
+  color: 'var(--accent)', flexShrink: 0,
+  cursor: busy ? 'not-allowed' : 'pointer',
+  opacity: busy ? 0.6 : 1,
+ }}
+ >
+ {t('qs.clone_use_btn')}
+ </button>
+ </div>
+ ))}
+ </div>
+ </div>
+ )
+}
+
+
+function DatasetPicker({ datasets, onPick, busy }: {
+ datasets: DatasetMeta[]; onPick: (id: string) => void; busy: boolean
+}) {
+ const { t } = useLanguage()
+ if (datasets.length === 0) {
+ return <p style={{ fontSize: 13, color: 'var(--dim)', margin: 0 }}>{t('qs.reuse_empty')}</p>
+ }
+ return (
+ <div>
+ <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 12px' }}>
+ {t('qs.reuse_desc')}
+ </p>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
+ {datasets.map(d => (
+ <div key={d.id} style={{
+ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+ padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 10,
+ background: 'var(--surface-2, #f8fafc)',
+ }}>
+ <div style={{ minWidth: 0 }}>
+ <div style={{
+  fontSize: 13, fontWeight: 600, color: 'var(--text)',
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+ }}>
+  {d.original_filename}
+ </div>
+ <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+  {t('qs.reuse_uploaded_prefix')} {new Date(d.uploaded_at).toLocaleDateString()}
+  {' · '}{formatBytes(d.size_bytes)}
+  {d.row_count != null && <>{' · '}{d.row_count.toLocaleString()} {t('qs.reuse_rows')}</>}
+ </div>
+ </div>
+ <button
+ type="button"
+ onClick={() => onPick(d.id)}
+ disabled={busy}
+ style={{
+  padding: '7px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+  border: '1px solid var(--accent)', background: 'transparent',
+  color: 'var(--accent)', flexShrink: 0,
+  cursor: busy ? 'not-allowed' : 'pointer',
+  opacity: busy ? 0.6 : 1,
+ }}
+ >
+ {t('qs.reuse_use_btn')}
+ </button>
+ </div>
+ ))}
+ </div>
+ </div>
+ )
+}
+
 function TrainingLoader({ message, pct, multiPeriod }: { message: string; pct: number | null; multiPeriod: boolean }) {
  const { t } = useLanguage()
  return (
@@ -237,6 +366,111 @@ const CANONICAL_FIELDS = [
  { name: 'discount',      label: 'Descuento',          required: false, default: '0%' },
 ] as const
 
+// ── Plan settings (name + horizon + granularity, step 1) ───────────────────────
+type Granularity = 'auto' | 'daily' | 'weekly' | 'monthly'
+
+// Horizon presets in calendar days; the backend converts to per-grain steps.
+const HORIZON_PRESETS = [
+ { days: 28,  labelKey: 'qs.plan_horizon_4w' },
+ { days: 56,  labelKey: 'qs.plan_horizon_8w' },
+ { days: 180, labelKey: 'qs.plan_horizon_6m' },
+] as const
+
+const GRANULARITY_OPTIONS: { value: Granularity; labelKey: string }[] = [
+ { value: 'auto',    labelKey: 'qs.plan_granularity_auto' },
+ { value: 'daily',   labelKey: 'qs.plan_granularity_daily' },
+ { value: 'weekly',  labelKey: 'qs.plan_granularity_weekly' },
+ { value: 'monthly', labelKey: 'qs.plan_granularity_monthly' },
+]
+
+function Chip({ label, selected, disabled, onClick }: {
+ label: string; selected: boolean; disabled: boolean; onClick: () => void
+}) {
+ return (
+ <button
+ type="button"
+ onClick={onClick}
+ disabled={disabled}
+ aria-pressed={selected}
+ style={{
+ padding: '6px 14px', borderRadius: 999, fontSize: 13,
+ fontWeight: selected ? 700 : 400,
+ border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+ background: selected ? 'var(--accent-dim, #eef2ff)' : 'var(--surface)',
+ color: selected ? 'var(--accent)' : 'var(--text)',
+ cursor: disabled ? 'not-allowed' : 'pointer',
+ opacity: disabled ? 0.6 : 1,
+ transition: 'all 0.15s',
+ }}
+ >
+ {label}
+ </button>
+ )
+}
+
+function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, onGranularity, busy }: {
+ name: string; onName: (v: string) => void
+ horizonDays: number; onHorizonDays: (v: number) => void
+ granularity: Granularity; onGranularity: (v: Granularity) => void
+ busy: boolean
+}) {
+ const { t } = useLanguage()
+ const labelStyle: React.CSSProperties = {
+ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6,
+ }
+ return (
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
+ <div>
+ <label htmlFor="qs-session-name" style={labelStyle}>
+ {t('qs.plan_name_label')}
+ </label>
+ <input
+ id="qs-session-name"
+ type="text"
+ value={name}
+ disabled={busy}
+ maxLength={200}
+ placeholder={t('qs.plan_name_placeholder')}
+ onChange={e => onName(e.target.value)}
+ style={{
+ width: '100%', padding: '9px 12px', borderRadius: 8,
+ border: '1px solid var(--border)', background: 'var(--surface)',
+ color: 'var(--text)', fontSize: 13,
+ }}
+ />
+ </div>
+ <div>
+ <span style={labelStyle}>{t('qs.plan_horizon_label')}</span>
+ <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+ {HORIZON_PRESETS.map(p => (
+ <Chip
+  key={p.days}
+  label={t(p.labelKey)}
+  selected={horizonDays === p.days}
+  disabled={busy}
+  onClick={() => onHorizonDays(p.days)}
+ />
+ ))}
+ </div>
+ </div>
+ <div>
+ <span style={labelStyle}>{t('qs.plan_granularity_label')}</span>
+ <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+ {GRANULARITY_OPTIONS.map(o => (
+ <Chip
+  key={o.value}
+  label={t(o.labelKey)}
+  selected={granularity === o.value}
+  disabled={busy}
+  onClick={() => onGranularity(o.value)}
+ />
+ ))}
+ </div>
+ </div>
+ </div>
+ )
+}
+
 // ── Quick-start page ───────────────────────────────────────────────────────────
 function QuickStartPageContent() {
  const router = useRouter()
@@ -250,6 +484,32 @@ function QuickStartPageContent() {
 
  // Session / dataset IDs
  const [sessionId, setSessionId] = useState<string | null>(null)
+
+ // Uploaded/selected dataset id. Kept across retries: the file already lives
+ // on the server, so a failed run must never force a re-upload.
+ const [datasetId, setDatasetId] = useState<string | null>(null)
+
+ // Previously uploaded datasets (reuse tab). Loaded once on mount; the tab
+ // only renders when at least one exists.
+ const [datasets, setDatasets] = useState<DatasetMeta[]>([])
+ // Completed sessions available to clone (dataset + column mapping reused).
+ const [clonableSessions, setClonableSessions] = useState<SessionSummary[]>([])
+ const [source, setSource] = useState<'upload' | 'existing' | 'clone'>('upload')
+
+ // True once training launched for the current session — decides whether a
+ // retry can keep the session (config-stage failure: still configurable) or
+ // needs a fresh one (QUEUED/RUNNING/FAILED can't re-enter the wizard).
+ const trainLaunchedRef = useRef(false)
+
+ // Shown on the mapping step after a retry that skipped the re-upload.
+ const [retryNote, setRetryNote] = useState(false)
+
+ // Plan settings (step 1): optional session name, forecast horizon in calendar
+ // days and planning grain. The backend derives each grain's horizon from the
+ // days value — no hardcoded forecast_cfg horizon is posted anymore.
+ const [sessionName, setSessionName] = useState('')
+ const [horizonDays, setHorizonDays] = useState<number>(28)
+ const [granularity, setGranularity] = useState<Granularity>('auto')
 
  // Inspection result
  const [inspection, setInspection] = useState<InspectionResult | null>(null)
@@ -282,8 +542,13 @@ function QuickStartPageContent() {
  setBusy(true)
  setStep(3)
  try {
- const demo = await startDemoQuickstart()
+ const demo = await startDemoQuickstart({
+ name: sessionName.trim() || undefined,
+ user_horizon_days: horizonDays,
+ user_granularity: granularity,
+ })
  setSessionId(demo.session_id)
+ trainLaunchedRef.current = true
  await pollFamily(demo.job_id, demo.family)
  } catch (e: unknown) {
  setError(e instanceof Error ? e.message : t('qs.err_demo'))
@@ -303,6 +568,127 @@ function QuickStartPageContent() {
  handleDemo()
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [searchParams])
+
+ // Load previously uploaded datasets once — a failure just keeps the reuse
+ // tab hidden, the upload path is unaffected.
+ useEffect(() => {
+ listDatasets(0, 50)
+ .then(r => setDatasets(r.items ?? []))
+ .catch(() => { /* reuse tab simply stays hidden */ })
+ // Only completed sessions that still have their dataset can be cloned.
+ getSessionSummaries(0, 50)
+ .then(r => setClonableSessions(
+ (r.items ?? []).filter(s => s.status === 'COMPLETED' && s.dataset_id),
+ ))
+ .catch(() => { /* clone tab simply stays hidden */ })
+ }, [])
+
+ // ── Step 1: session over an already-stored dataset ──────────────────────────
+ // Create a fresh session, attach the dataset, inspect it and enter the
+ // column-mapping step. Shared by the upload path (right after the file
+ // upload), the "use an existing dataset" tab and retry-after-failure.
+ // A fresh session is created every time: POST /sessions/{id}/dataset attaches
+ // in any state, but once a training launch happened the session sits in
+ // QUEUED/RUNNING/FAILED where /train rejects (409) until the state machine
+ // reaches MODELS_CONFIGURED again — a clean DRAFT session avoids all of that.
+ const startFromDataset = async (dsId: string, keepMapping = false) => {
+ setError(null)
+ setBusy(true)
+ trainLaunchedRef.current = false
+ try {
+ const session = await createSession(sessionName.trim() || undefined)
+ setSessionId(session.session_id)
+
+ await attachDataset(session.session_id, dsId)
+
+ const insp = await inspectSession(session.session_id)
+ setInspection(insp)
+ setDatasetId(dsId)
+
+ if (!keepMapping) {
+  // Pre-select from canonical suggestions
+  const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
+  const next: Record<string, string | null> =
+   Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null]))
+  for (const field of CANONICAL_FIELDS) {
+   const sug = suggestions[field.name]
+   if (sug?.top && sug.confidence >= 0.7) next[field.name] = sug.top
+  }
+  setMapping(next)
+ }
+
+ setStep(2)
+ } catch (e: unknown) {
+ setError(e instanceof Error ? e.message : t('qs.reuse_err_attach'))
+ setStep(1)
+ } finally {
+ setBusy(false)
+ }
+ }
+
+ // Reuse tab: pick a previously uploaded dataset and jump to column mapping.
+ const handlePickExisting = (dsId: string) => {
+ if (busy) return
+ setFileName(null)
+ setCsvWarnings([])
+ setCsvIssues([])
+ setRetryNote(false)
+ void startFromDataset(dsId)
+ }
+
+ // Clone tab: same dataset AND the same column mapping as a previous run, so
+ // re-forecasting the same file at a different horizon/grain needs no
+ // re-mapping. Falls back to the normal mapping step if the old configuration
+ // can't be read or doesn't fit this dataset.
+ const handleCloneSession = async (src: SessionSummary) => {
+ if (busy || !src.dataset_id) return
+ setFileName(null)
+ setCsvWarnings([])
+ setCsvIssues([])
+ setRetryNote(false)
+ setError(null)
+ setBusy(true)
+ trainLaunchedRef.current = false
+ try {
+ const previous = await getColumnsConfig(src.session_id)
+ const previousMapping =
+ (previous?.canonical_mapping ?? null) as Record<string, string | null> | null
+
+ const session = await createSession(
+ sessionName.trim() || `${src.name} (copia)`,
+ )
+ setSessionId(session.session_id)
+ await attachDataset(session.session_id, src.dataset_id)
+ const insp = await inspectSession(session.session_id)
+ setInspection(insp)
+ setDatasetId(src.dataset_id)
+
+ // Only keep columns the cloned dataset actually still has.
+ const available = new Set(insp.profile.columns.map(c => c.name))
+ const next: Record<string, string | null> =
+ Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null]))
+ let reused = 0
+ for (const field of CANONICAL_FIELDS) {
+ const col = previousMapping?.[field.name]
+ if (col && available.has(col)) { next[field.name] = col; reused++ }
+ }
+ if (reused === 0) {
+ // Nothing survived — behave exactly like a fresh reuse.
+ const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
+ for (const field of CANONICAL_FIELDS) {
+  const sug = suggestions[field.name]
+  if (sug?.top && sug.confidence >= 0.7) next[field.name] = sug.top
+ }
+ }
+ setMapping(next)
+ setStep(2)
+ } catch (e: unknown) {
+ setError(e instanceof Error ? e.message : t('qs.clone_err'))
+ setStep(1)
+ } finally {
+ setBusy(false)
+ }
+ }
 
  // ── Step 1: Upload ───────────────────────────────────────────────────────────
  const handleFile = async (file: File) => {
@@ -332,41 +718,22 @@ function QuickStartPageContent() {
  }
 
  try {
- // 1. Create session
- const session = await createSession()
- setSessionId(session.session_id)
-
- // 2. Upload dataset
+ // Upload the file, then hand off to the shared session/attach/inspect
+ // path (it owns busy/error handling from here on).
  const fd = new FormData()
  fd.append('file', file)
  const dataset = await uploadDataset(fd)
 
- // 3. Attach dataset to session
- await attachDataset(session.session_id, dataset.id)
+ // Keep the reuse tab in sync without a refetch
+ setDatasets(prev => [dataset, ...prev.filter(d => d.id !== dataset.id)])
+ setRetryNote(false)
 
- // 4. Inspect session to get column candidates
- const insp = await inspectSession(session.session_id)
- setInspection(insp)
-
- // Pre-select from canonical suggestions
- const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
- setMapping(prev => {
-  const next = { ...prev }
-  for (const field of CANONICAL_FIELDS) {
-   const sug = suggestions[field.name]
-   if (sug?.top && sug.confidence >= 0.7) {
-    next[field.name] = sug.top
-   }
-  }
-  return next
- })
-
- setStep(2)
+ await startFromDataset(dataset.id)
  } catch (e: unknown) {
+ // Only the upload itself can throw here — startFromDataset handles its own.
  const msg = e instanceof Error ? e.message : t('qs.err_upload')
  setError(msg)
  setFileName(null)
- } finally {
  setBusy(false)
  }
  }
@@ -407,10 +774,8 @@ function QuickStartPageContent() {
  seasonal_period: 7,
  })
 
- // POST forecast config. Horizon must exceed the lead time (15d) so the
- // forecast can "see" past the reorder point — otherwise proactive peak
- // alerts can never give a future order-by date. 30 = lead_time + ~2 weeks.
- await setForecastConfig(sessionId, { horizon: 30 })
+ // Forecast horizon is NOT posted here: the backend derives each grain's
+ // horizon from user_horizon_days at launch (see startTraining below).
 
  // POST business config
  await setBusinessConfig(sessionId, {
@@ -420,8 +785,13 @@ function QuickStartPageContent() {
  stockout_cost_multiplier: 3.0,
  })
 
- // Start training — fans out into a granularity family (daily/weekly/…)
- const res = await startTraining(sessionId)
+ // Start training — fans out into a granularity family (daily/weekly/…),
+ // narrowed and sized by the user's step-1 plan settings.
+ const res = await startTraining(sessionId, {
+ user_horizon_days: horizonDays,
+ user_granularity: granularity,
+ })
+ trainLaunchedRef.current = true
 
  // Poll the whole family
  await pollFamily(res.job_id, res.family)
@@ -489,7 +859,7 @@ function QuickStartPageContent() {
  return
  }
  if (baseJob?.status === 'FAILED') {
- setError(`${t('qs.err_failed')} ${baseJob.error ?? t('qs.err_unknown')}`)
+ setError(`${t('qs.err_failed')} ${trainingErrorText(baseJob.error, t)}`)
  setBusy(false)
  return
  }
@@ -512,17 +882,40 @@ function QuickStartPageContent() {
  }
 
  const handleRetry = () => {
- setStep(1)
  setError(null)
- setBusy(false)
- setFileName(null)
- setSessionId(null)
- setInspection(null)
- setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
  setTrainMsg('')
  setTrainPct(null)
  setMultiPeriod(false)
  msgIdxRef.current = 0
+
+ if (datasetId) {
+ // The file already lives on the server — never force a re-upload.
+ setRetryNote(true)
+ if (!trainLaunchedRef.current && sessionId && inspection) {
+  // The failure happened while posting configs, before any training
+  // launch: the session is still in a configurable state (the configure
+  // endpoints are re-callable there), so just return to the mapping step
+  // with the user's column choices intact.
+  setBusy(false)
+  setStep(2)
+  return
+ }
+ // Training already launched: the old session is QUEUED/RUNNING/FAILED and
+ // /train would reject it (409) mid-run — attach the same dataset to a
+ // fresh session and re-enter mapping keeping the user's column choices.
+ setStep(1)
+ void startFromDataset(datasetId, true)
+ return
+ }
+
+ // No reusable dataset (demo path or nothing uploaded yet): full reset.
+ setStep(1)
+ setBusy(false)
+ setFileName(null)
+ setSessionId(null)
+ setInspection(null)
+ setRetryNote(false)
+ setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
  }
 
  // ── Preview table (first 3 rows sample) ─────────────────────────────────────
@@ -633,6 +1026,58 @@ function QuickStartPageContent() {
  {' '}<strong style={{ color: 'var(--text)' }}>{t('qs.upload_desc_bold')}</strong>
  </p>
 
+ {/* Plan settings: name + horizon + granularity. Applied to both the
+ file-upload path and the one-click demo below. */}
+ <PlanSettings
+ name={sessionName} onName={setSessionName}
+ horizonDays={horizonDays} onHorizonDays={setHorizonDays}
+ granularity={granularity} onGranularity={setGranularity}
+ busy={busy}
+ />
+
+ {/* Source selector: upload a new file vs reuse a previously uploaded
+ dataset. The reuse tab only exists once the tenant has datasets. */}
+ {(datasets.length > 0 || clonableSessions.length > 0) && (
+ <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+ {([
+ { value: 'upload',   labelKey: 'qs.reuse_tab_upload' },
+ ...(datasets.length > 0
+ ? [{ value: 'existing' as const, labelKey: 'qs.reuse_tab_existing' }] : []),
+ ...(clonableSessions.length > 0
+ ? [{ value: 'clone' as const, labelKey: 'qs.clone_tab' }] : []),
+ ] as const).map(tab => (
+ <button
+  key={tab.value}
+  type="button"
+  onClick={() => setSource(tab.value)}
+  disabled={busy}
+  aria-pressed={source === tab.value}
+  style={{
+  flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 13,
+  fontWeight: source === tab.value ? 700 : 400,
+  border: `1px solid ${source === tab.value ? 'var(--accent)' : 'var(--border)'}`,
+  background: source === tab.value ? 'var(--accent-dim, #eef2ff)' : 'var(--surface)',
+  color: source === tab.value ? 'var(--accent)' : 'var(--text)',
+  cursor: busy ? 'not-allowed' : 'pointer',
+  transition: 'all 0.15s',
+  }}
+ >
+  {t(tab.labelKey)}
+ </button>
+ ))}
+ </div>
+ )}
+
+ {source === 'clone' && clonableSessions.length > 0 ? (
+ <SessionClonePicker
+ sessions={clonableSessions}
+ onPick={s => void handleCloneSession(s)}
+ busy={busy}
+ />
+ ) : source === 'existing' && datasets.length > 0 ? (
+ <DatasetPicker datasets={datasets} onPick={handlePickExisting} busy={busy} />
+ ) : (
+ <>
  <DropZone onFile={handleFile} busy={busy} />
 
  {fileName && !error && (
@@ -645,7 +1090,11 @@ function QuickStartPageContent() {
  ✓ {t('qs.file_selected')} {fileName}
  </div>
  )}
+ </>
+ )}
 
+ {/* Shared between both tabs: upload errors AND attach/inspect errors
+ from the reuse path land here. */}
  {error && (
  <div style={{
  marginTop: 12, padding: '10px 14px',
@@ -657,7 +1106,7 @@ function QuickStartPageContent() {
  </div>
  )}
 
- {csvWarnings.length > 0 && (
+ {source !== 'existing' && csvWarnings.length > 0 && (
  <div style={{
  marginTop: 12, padding: '10px 14px',
  background: '#fef3c7', borderRadius: 8,
@@ -667,6 +1116,8 @@ function QuickStartPageContent() {
  {csvWarnings.join('\n')}
  </div>
  )}
+
+ {source !== 'existing' && <>
 
  {/* Row-level findings: "fila 214: fecha inválida — se esperaba AAAA-MM-DD" */}
  <CsvIssueReport groups={csvIssues} fileName={fileName} />
@@ -707,6 +1158,7 @@ function QuickStartPageContent() {
  </div>
 
  <CsvExample />
+ </>}
  </div>
  )}
 
@@ -719,6 +1171,18 @@ function QuickStartPageContent() {
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
  {t('qs.confirm_desc')}
  </p>
+
+ {/* After a retry the dataset is reused server-side — tell the user
+ no re-upload happened so the jump back here isn't confusing. */}
+ {retryNote && (
+ <div style={{
+ marginBottom: 16, padding: '8px 14px',
+ background: 'var(--accent-dim, #eef2ff)', borderRadius: 8,
+ fontSize: 13, color: 'var(--accent)',
+ }}>
+ {t('qs.reuse_retry_note')}
+ </div>
+ )}
 
  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
  {CANONICAL_FIELDS.map(field => {

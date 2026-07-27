@@ -12,6 +12,7 @@ import { createTransfer } from '@/lib/api'
 import type { WarehouseStatusItem } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { coverageUnitLabel } from '@/lib/period'
+import { transferReasonText } from '@/lib/transferReason'
 import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
@@ -51,6 +52,11 @@ export function TransferSuggestions({ suggestions }: {
         const ts = row.transfer_suggestion!
         const key = `${row.sku}|${row.warehouse}`
         const isDone = done.has(key)
+        // Plain-text recommendation, deliberately NOT an alert: the lane makes
+        // this a "here's the better option" line, not a warning.
+        const reason = ts.reason_code
+          ? transferReasonText({ reason_code: ts.reason_code, params: ts.params! }, t)
+          : null
         return (
           <div key={key} style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
@@ -74,6 +80,11 @@ export function TransferSuggestions({ suggestions }: {
                   .replace(/\{from\}/g, ts.from_warehouse)
                   .replace('{to}', row.warehouse)}
               </div>
+              {reason && (
+                <div style={{ fontSize: 11.5, color: C.text, marginTop: 2 }}>
+                  {reason}
+                </div>
+              )}
             </div>
             {isDone ? (
               <span style={{ fontSize: 12, fontWeight: 700, color: C.green }}>

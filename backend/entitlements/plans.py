@@ -59,7 +59,7 @@ _ENT_EXTRA = frozenset({Feature.BOM, Feature.API_ACCESS, Feature.WEBHOOKS, Featu
 
 PLAN_CATALOG: dict[str, PlanDef] = {
     "starter": PlanDef(
-        max_skus=500, max_users=2, max_locations=1,
+        max_skus=1000, max_users=2, max_locations=1,
         max_sessions=20, max_concurrent_jobs=2, max_dataset_size_mb=200,
         features=_CORE,
     ),

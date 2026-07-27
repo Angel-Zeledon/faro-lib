@@ -209,11 +209,19 @@ class TestContactHealthMatchesSendBehaviour:
 
         send = client.post(f"/api/v1/inventory/po/{po_id}/send", headers=auth_headers)
         assert send.status_code == 200, send.text
-        skipped = {s["supplier"] for s in send.json()["data"]["skipped"]}
+        data = send.json()["data"]
+        skipped    = {s["supplier"] for s in data["skipped"]}
+        unresolved = {u["supplier"] for u in data["unresolved"]}
 
-        assert skipped == {no_contact, no_ficha}
-        assert flagged == skipped, (
-            f"health endpoint promised {flagged} would be skipped, send skipped {skipped}"
+        # The send now separates the two ways an order fails to reach someone:
+        # a known supplier with no channel on file (skipped) vs a name that
+        # matches no supplier record at all (unresolved, previously dropped in
+        # silence). Contact health flags both, and must keep matching their union.
+        assert skipped == {no_contact}
+        assert unresolved == {no_ficha}
+        assert flagged == skipped | unresolved, (
+            f"health endpoint promised {flagged} would not be reached, "
+            f"send reported skipped={skipped} unresolved={unresolved}"
         )
 
 

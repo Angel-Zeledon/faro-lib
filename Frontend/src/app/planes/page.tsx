@@ -22,7 +22,7 @@ interface PlanRow {
 }
 
 const PLANS: PlanRow[] = [
-  { id: 'starter',      price: 99,   skus: '500',   users: '2',  locations: '1', taglineKey: 'planes.starter_tagline' },
+  { id: 'starter',      price: 99,   skus: '1.000', users: '2',  locations: '1', taglineKey: 'planes.starter_tagline' },
   { id: 'professional', price: 649,  skus: '5.000', users: '10', locations: '5', taglineKey: 'planes.pro_tagline' },
   { id: 'enterprise',   price: 1990, custom: true, skus: '∞',     users: '∞',  locations: '∞', taglineKey: 'planes.ent_tagline' },
 ]

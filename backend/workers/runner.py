@@ -25,6 +25,17 @@ from backend.api.v1.webhooks import fire_webhooks
 log = logging.getLogger(__name__)
 
 
+class TrainingDataError(RuntimeError):
+    """Training failed because of the DATA, not a defect.
+
+    `str(exc)` is a stable machine code (never a sentence): the job row stores
+    it verbatim and the frontend renders the localized copy from
+    `errors.training.<code>`, falling back to the raw text for anything it does
+    not recognize. Keeps CLAUDE.md's "no Spanish in backend logic" intact while
+    still giving the user an actionable message.
+    """
+
+
 def _training_max_workers() -> int:
     """
     Cap forecasting_core's per-SKU training parallelism to this machine's
@@ -575,6 +586,15 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
 
         _emit(tenant_id, session_id, job_id, 85, "results", "Collecting metrics...")
         metrics = engine.get_metrics()
+
+        # Not one SKU-model pair survived. That is a DATA problem (series too
+        # short, all-zero demand, one row per SKU), not an engine crash, so it
+        # must fail with something the user can act on — this used to escape as
+        # a raw KeyError('model') rendered verbatim as "El entrenamiento falló:
+        # 'model'".
+        if not metrics.get("rows"):
+            raise TrainingDataError("no_models_trained")
+
         inventory = engine.get_inventory_report()
 
         _emit(tenant_id, session_id, job_id, 90, "saving", "Saving results...")

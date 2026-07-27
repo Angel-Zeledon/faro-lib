@@ -9,12 +9,12 @@ import {
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
  getOverduePOs, sendPOToSuppliers, getSupplierContactHealth, getSupplierLeadTimeAlerts,
- evaluatePriceBreaks, getCashCalendar, checkCashFit,
+ evaluatePriceBreaks, getCashCalendar, checkCashFit, listSuppliers,
 } from '@/lib/api'
 import type {
  MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
  OptimizationResponse, OptimizationOrder, POLineDecision, OverdueReception, SendPOResult,
- SupplierContactHealthRow, SupplierLeadTimeAlert,
+ SupplierContactHealthRow, SupplierLeadTimeAlert, Supplier,
  PriceBreakEvaluation, CashCalendar, CashFitResult,
 } from '@/lib/types'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
@@ -37,6 +37,7 @@ import {
 import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
 import { ReceptionModal } from '@/components/po/POHistory'
+import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -80,6 +81,15 @@ function dayUnit(n: number, t: (k: string) => string) {
  return Math.round(n) === 1 ? t('hoy.reason_day_unit_singular') : t('hoy.reason_days_unit')
 }
 
+// The backend reports why a supplier was skipped as a stable code (English
+// keys, localized here). Anything unrecognized — e.g. a transport error
+// message — is shown as-is rather than swallowed.
+function sendReason(reason: string, t: (k: string) => string) {
+ const key = `roi.send_po_reason_${reason}`
+ const label = t(key)
+ return label === key ? reason : label
+}
+
 function formatDateES(isoDate: string, lang: string) {
  const d = new Date(isoDate + 'T12:00:00')
  return d.toLocaleDateString(lang, {
@@ -106,6 +116,9 @@ interface ActionItem {
  sku:            string
  name:           string
  supplier:      string | null
+ // Set when the supplier came from the SKU's configured primary, or when the
+ // buyer picked one in the cart. Free-text names from the SKU card have none.
+ supplier_id:   string | null
  qty:            number
  recommended:    number   // original quantity Faro suggested (immutable)
  unit_cost:      number | null
@@ -125,11 +138,13 @@ interface ActionItem {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onChangeQty }: {
+function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier }: {
  item:        ActionItem
  onApprove:   () => void
  onReject:    () => void
  onChangeQty: (qty: number) => void
+ suppliers:   Supplier[]
+ onChangeSupplier: (supplierId: string) => void
 }) {
  const { t } = useLanguage()
  const [editing, setEditing] = useState(false)
@@ -183,9 +198,28 @@ function ActionCard({ item, onApprove, onReject, onChangeQty }: {
       )}
      </div>
      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3 }}>{item.reason}</div>
-     {item.supplier && (
+     {/* Supplier is a decision, not a label: the buyer can send this line to
+         whoever they want before the order is generated. */}
+     {suppliers.length > 0 ? (
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('hoy.cart_supplier_label')}</span>
+       <select
+        value={item.supplier_id ?? (suppliers.find(s => s.name === item.supplier)?.id ?? '')}
+        onChange={e => onChangeSupplier(e.target.value)}
+        aria-label={t('hoy.cart_supplier_label')}
+        style={{
+         fontSize: 11, padding: '2px 6px', borderRadius: 6,
+         border: '1px solid var(--border)', background: 'var(--surface-2)',
+         color: 'var(--text)', maxWidth: 200,
+        }}
+       >
+        <option value="">{t('hoy.cart_supplier_none')}</option>
+        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+       </select>
+      </label>
+     ) : item.supplier ? (
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{item.supplier}</div>
-     )}
+     ) : null}
     </div>
     {hasWhyData && (
      <button
@@ -425,6 +459,7 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    sku:            risk.sku,
    name:           risk.display_name || risk.sku,
    supplier:      risk.supplier || null,
+   supplier_id:   risk.supplier_id ?? null,
    qty:            risk.recommended_qty ?? 0,
    recommended:    risk.recommended_qty ?? 0,
    unit_cost:      risk.unit_cost ?? null,
@@ -449,6 +484,7 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    sku:            w.sku,
    name:           w.display_name || w.sku,
    supplier:      w.supplier || null,
+   supplier_id:   w.supplier_id ?? null,
    qty:            w.recommended_qty ?? 0,
    recommended:    w.recommended_qty ?? 0,
    unit_cost:      w.unit_cost ?? null,
@@ -536,6 +572,9 @@ export default function HoyPage() {
  // Suppliers the PO-send path would skip (feature 2.5) and suppliers drifting
  // off their historical lead time (feature 3.3) — both computed server-side.
  const [contactHealth, setContactHealth] = useState<SupplierContactHealthRow[]>([])
+ // Loaded once so every cart line can offer the same supplier picker without
+ // one request per line.
+ const [suppliers, setSuppliers] = useState<Supplier[]>([])
  const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
 
  // Price-break opportunities for the current cart (feature 3.5) and the cash
@@ -669,6 +708,7 @@ export default function HoyPage() {
  useEffect(() => {
   getSupplierContactHealth().then(setContactHealth).catch(() => {})
   getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
+  listSuppliers().then(setSuppliers).catch(() => {})
  }, [])
 
  const loadOverdue = useCallback(() => {
@@ -695,6 +735,20 @@ export default function HoyPage() {
 
  function changeQty(sku: string, qty: number) {
   setCart(prev => prev.map(i => i.sku === sku ? { ...i, qty, status: 'modified' as ActionStatus } : i))
+ }
+
+ // Re-pointing a line at a different supplier is a buyer decision, so the line
+ // counts as modified for adoption tracking just like a quantity change.
+ function changeSupplier(sku: string, supplierId: string) {
+  const picked = suppliers.find(s => s.id === supplierId) || null
+  setCart(prev => prev.map(i => i.sku === sku
+   ? {
+     ...i,
+     supplier_id: picked?.id ?? null,
+     supplier:    picked?.name ?? null,
+     status: (i.status === 'pending' ? 'modified' : i.status) as ActionStatus,
+    }
+   : i))
  }
 
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
@@ -795,6 +849,7 @@ export default function HoyPage() {
     sku:                  i.sku,
     display_name:         i.name,
     supplier:            i.supplier,
+    supplier_id:         i.supplier_id,
     signal:               i.signal,
     recommended_qty: i.recommended,
     final_qty:       i.status === 'rejected' ? 0 : i.qty,
@@ -1097,6 +1152,8 @@ export default function HoyPage() {
             onApprove={() => approveItem(item.sku)}
             onReject={() => rejectItem(item.sku)}
             onChangeQty={qty => changeQty(item.sku, qty)}
+            suppliers={suppliers}
+            onChangeSupplier={id => changeSupplier(item.sku, id)}
            />
           ))}
          </div>
@@ -1120,6 +1177,8 @@ export default function HoyPage() {
             onApprove={() => approveItem(item.sku)}
             onReject={() => rejectItem(item.sku)}
             onChangeQty={qty => changeQty(item.sku, qty)}
+            suppliers={suppliers}
+            onChangeSupplier={id => changeSupplier(item.sku, id)}
            />
           ))}
          </div>
@@ -1304,9 +1363,15 @@ export default function HoyPage() {
             ))}
             {sendResult.skipped.map((s, idx) => (
              <div key={`${s.supplier}-${idx}`} style={{ fontSize: 12, color: C.amber }}>
-              {s.supplier || '—'}: {s.reason}
+              {s.supplier || '—'}: {sendReason(s.reason, t)}
              </div>
             ))}
+            {(sendResult.unresolved ?? []).length > 0 && (
+             <div style={{ fontSize: 12, color: C.amber }}>
+              {t('roi.send_po_unresolved')}{' '}
+              {(sendResult.unresolved ?? []).map(u => u.sku).join(', ')}
+             </div>
+            )}
            </div>
           ) : (
            <div style={{ display: 'flex', gap: 10 }}>
@@ -1331,6 +1396,14 @@ export default function HoyPage() {
             </Link>
            </div>
           )}
+
+          {/* Forward-it-yourself path: no Faro↔supplier integration needed. */}
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+           <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 8px' }}>
+            {t('po.forward_hint')}
+           </p>
+           <ForwardPOActions poLogId={generatedPO.id} />
+          </div>
          </div>
         )}
        </div>

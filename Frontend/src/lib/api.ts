@@ -10,7 +10,7 @@ import type {
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
   Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
   ShrinkageReason, ShrinkageRecord,
-  Warehouse, WarehouseStatusResponse, Transfer,
+  Warehouse, WarehouseStatusResponse, Transfer, TransferLane,
   PlanningState, PlanningPeriod, MeUser,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
@@ -36,11 +36,26 @@ export type ApiErrorKind =
   | 'server'      // 5xx — the backend broke
   | 'network'     // fetch never completed: offline, DNS, CORS, backend down
 
+/**
+ * One failed field from a FastAPI/Pydantic 422. `type` is Pydantic's stable
+ * machine name for the rule that failed ('greater_than', 'missing', …) and
+ * `ctx` carries its bounds — together they let the UI build a Spanish sentence
+ * instead of showing Pydantic's English `msg` verbatim.
+ */
+export interface FieldError {
+  field: string
+  type:  string
+  ctx:   Record<string, unknown>
+  msg:   string          // English original, used as a last-resort fallback
+}
+
 export class ApiError extends Error {
   readonly kind:   ApiErrorKind
   readonly status: number     // 0 when the request never reached the server
   readonly detail: string     // backend-provided reason (English fallback), '' when none
   readonly path:   string
+  /** Per-field validation failures on a 422; empty for every other error. */
+  readonly fieldErrors: FieldError[]
   // Stable machine error code from the backend's error envelope (`error_code`),
   // '' when the backend didn't send one. The UI maps it to a localized
   // (Spanish/English) `errors.<code>` string, interpolating `params`, and only
@@ -52,6 +67,7 @@ export class ApiError extends Error {
   constructor(
     kind: ApiErrorKind, status: number, detail: string, path: string,
     code = '', params: Record<string, unknown> = {},
+    fieldErrors: FieldError[] = [],
   ) {
     // `message` stays the most specific text available so existing
     // `e.message` call sites (and console traces) keep working.
@@ -63,6 +79,7 @@ export class ApiError extends Error {
     this.path   = path
     this.code   = code
     this.params = params
+    this.fieldErrors = fieldErrors
   }
 }
 
@@ -128,6 +145,29 @@ function extractErrorMessage(err: unknown): string | undefined {
 // UI can render the localized `errors.<code>` string instead of the English
 // `detail`. Absent on plain FastAPI errors — the code stays '' and the UI
 // simply falls back to `detail`.
+/**
+ * Pull the structured field failures out of a FastAPI 422 body. Keeping
+ * Pydantic's `type` + `ctx` (instead of only its English `msg`) is what lets
+ * `useErrorDetail` render "La cantidad no puede ser mayor que 1.000.000.000"
+ * rather than "qty: Input should be less than or equal to 1000000000".
+ */
+function extractFieldErrors(err: unknown): FieldError[] {
+  const detail = (err as { detail?: unknown })?.detail
+  if (!Array.isArray(detail)) return []
+  return detail.flatMap((e: { loc?: unknown[]; msg?: string; type?: string; ctx?: unknown }) => {
+    if (typeof e?.type !== 'string') return []
+    // loc looks like ['body', 'lines', 0, 'qty'] — the last string is the field.
+    const parts = Array.isArray(e.loc) ? e.loc.filter(p => typeof p === 'string') : []
+    const field = parts.length ? String(parts[parts.length - 1]) : ''
+    return [{
+      field,
+      type: e.type,
+      ctx: (e.ctx && typeof e.ctx === 'object' ? e.ctx : {}) as Record<string, unknown>,
+      msg: typeof e.msg === 'string' ? e.msg : '',
+    }]
+  })
+}
+
 function extractErrorCode(err: unknown): string {
   const code = (err as { error_code?: unknown })?.error_code
   return typeof code === 'string' ? code : ''
@@ -204,10 +244,15 @@ async function request<T = unknown>(
     const err = new ApiError(
       kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
       extractErrorCode(payload), extractErrorParams(payload),
+      extractFieldErrors(payload),
     )
     notify(err, silent)
     throw err
   }
+
+  // 204 No Content has no body at all: res.json() would reject with a parse
+  // error and surface as a fake failure to callers of DELETE endpoints.
+  if (res.status === 204) return undefined as T
 
   // Backend wraps responses as { success, data, meta } — unwrap automatically
   const json = await res.json()
@@ -236,6 +281,7 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
     const err = new ApiError(
       kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
       extractErrorCode(payload), extractErrorParams(payload),
+      extractFieldErrors(payload),
     )
     notify(err, false)
     throw err
@@ -250,6 +296,8 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authSignup = (body: {
   email: string; password: string; full_name?: string; tenant_name: string
+  /** E.164, required — purchase orders are delivered here for forwarding. */
+  whatsapp_number: string
 }) =>
   request<{ user: Record<string, unknown>; tenant: Record<string, unknown> }>(
     'POST', '/auth/signup', body,
@@ -283,6 +331,11 @@ export const authLogout = () =>
 export const getSessions   = () =>
   request<{ items: SessionInfo[]; total: number }>('GET', '/sessions')
     .then(r => (Array.isArray(r) ? r : r.items) ?? [])
+// Enriched history list: dataset name, horizon, SKU count, granularity.
+export const getSessionSummaries = (skip = 0, limit = 100) =>
+  request<{ items: import('./types').SessionSummary[]; total: number }>(
+    'GET', `/sessions/summary?skip=${skip}&limit=${limit}`,
+  )
 export const getSession    = (id: string)    => request<SessionInfo>('GET', `/sessions/${id}`)
 export const createSession = (name?: string) =>
   request<SessionInfo>('POST', '/sessions', {
@@ -299,6 +352,11 @@ export const deleteSession = (id: string) =>
 // ── Datasets ──────────────────────────────────────────────────────────────────
 export const uploadDataset = (fd: FormData) =>
   request<DatasetMeta>('POST', '/datasets', fd)
+
+// Newest-first metadata of the tenant's uploaded datasets — powers the
+// quick-start "use an existing dataset" tab.
+export const listDatasets = (skip = 0, limit = 50) =>
+  request<{ items: DatasetMeta[]; total: number }>('GET', `/datasets?skip=${skip}&limit=${limit}`)
 
 export const attachDataset = (sessionId: string, dataset_id: string) =>
   request<SessionInfo>('POST', `/sessions/${sessionId}/dataset`, { dataset_id })
@@ -369,13 +427,20 @@ export interface TrainingFamily {
   sessions:    TrainingFamilyMember[]
 }
 
-export const startTraining = (id: string) =>
-  request<{ job_id: string; status: string; family?: TrainingFamily }>('POST', `/sessions/${id}/train`)
+// Launch preferences from the Quick Start wizard: horizon in calendar days and
+// the planning grain ('auto' = backend fans out into every viable grain).
+export interface TrainLaunchOptions {
+  user_horizon_days?: number
+  user_granularity?: 'auto' | 'daily' | 'weekly' | 'monthly'
+}
+
+export const startTraining = (id: string, opts?: TrainLaunchOptions) =>
+  request<{ job_id: string; status: string; family?: TrainingFamily }>('POST', `/sessions/${id}/train`, opts)
 
 // One-click demo: seeds dataset + configs + stock and queues training
-export const startDemoQuickstart = () =>
+export const startDemoQuickstart = (opts?: TrainLaunchOptions & { name?: string }) =>
   request<{ session_id: string; job_id: string; dataset_id: string; stock_seeded: string[]; family?: TrainingFamily }>(
-    'POST', '/demo/quickstart',
+    'POST', '/demo/quickstart', opts,
   )
 
 export const getJob = (job_id: string) =>
@@ -496,8 +561,11 @@ export const confirmPasswordChange = (code: string, new_password: string) =>
   request<{ message: string }>('POST', '/users/me/change-password/confirm', { code, new_password })
 
 // Start linking a WhatsApp number: stores it unverified and issues a 6-digit
-// code. Outside production the backend returns the code as `debug_code` so the
-// in-app "type the code" flow works without a live WhatsApp round-trip.
+// code. The backend delivers it over WhatsApp when Twilio is configured;
+// otherwise (non-production only) it returns the code as `debug_code` so the
+// in-app "type the code" flow works without a live round-trip. Re-calling acts
+// as "resend" and is rate-limited (429 `whatsapp_code_resend_cooldown` with a
+// `retry_after` param).
 export const linkWhatsappNumber = (whatsapp_number: string) =>
   request<{ sent: boolean; debug_code?: string }>(
     'POST', '/users/me/whatsapp/link', { whatsapp_number },
@@ -697,7 +765,7 @@ export const updateInventoryEvent  = (id: string, body: Partial<InventoryEvent>)
 export const listEventMultipliers = (eventId: string) =>
   request<EventMultiplier[]>('GET', `/inventory/events/${eventId}/multipliers`)
 export const setEventMultiplier = (
-  eventId: string, scope: 'sku' | 'category', scopeValue: string, multiplier: number,
+  eventId: string, scope: 'sku' | 'family' | 'category', scopeValue: string, multiplier: number,
 ) =>
   request<EventMultiplier>('PUT', `/inventory/events/${eventId}/multipliers`,
     { scope, scope_value: scopeValue, multiplier })
@@ -746,6 +814,19 @@ export const closeTransfer = (transferId: string) =>
   request<Transfer>('POST', `/inventory/transfers/${transferId}/close`)
 export const createWarehouse = (name: string) =>
   request<Warehouse>('POST', '/inventory/warehouses', { name })
+
+// Transfer lanes: how long a move between two warehouses takes and what it
+// costs (PENDIENTES #2). Unconfigured pairs fall back to the backend default.
+export const listTransferLanes = () =>
+  request<TransferLane[]>('GET', '/inventory/warehouses/lanes')
+export const upsertTransferLane = (lane: {
+  from_warehouse: string; to_warehouse: string
+  lead_time_days: number; cost_per_unit: number; fixed_cost: number
+}) => request<TransferLane>('PUT', '/inventory/warehouses/lanes', lane)
+export const deleteTransferLane = (fromWarehouse: string, toWarehouse: string) =>
+  request<void>('DELETE', '/inventory/warehouses/lanes'
+    + `?from_warehouse=${encodeURIComponent(fromWarehouse)}`
+    + `&to_warehouse=${encodeURIComponent(toWarehouse)}`)
 
 // ── PDF export ────────────────────────────────────────────────────────────────
 export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) => {
@@ -1048,6 +1129,20 @@ export const deleteSupplier   = (id: string) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
 
+/** Manual purchase order — supplier chosen explicitly, no forecast session. */
+/** Deliver a PO to the buyer's own WhatsApp; always returns text + wa.me link. */
+export const sendPOToSelf = (poLogId: string) =>
+  request<{ sent: boolean; has_number: boolean; message_text: string; wa_me_url: string }>(
+    'POST', `/inventory/po/${poLogId}/send-to-me`,
+  )
+
+export const createManualPO = (body: {
+  supplier_id: string
+  lines: { sku: string; qty: number; unit_cost?: number; display_name?: string }[]
+  destination_warehouse?: string
+}) =>
+  request<POLogEntry>('POST', '/inventory/po', body)
+
 export const getSkuSuppliers  = (sku: string) =>
   request<SkuSupplier[]>('GET', `/inventory/stock/${encodeURIComponent(sku)}/suppliers`)
 
@@ -1135,3 +1230,39 @@ export const getPlanning = () =>
   request<PlanningState>('GET', '/planning')
 export const setPlanning = (period: PlanningPeriod, horizon: number) =>
   request<PlanningState>('PUT', '/planning', { period, horizon })
+
+// ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────
+// `previewScenario` runs inline rules without saving them (the builder's live
+// comparison); `runScenario` replays a saved one. Both are pure reads.
+export const listScenarios = (sessionId: string, opts?: RequestOpts) =>
+  request<import('./types').Scenario[]>(
+    'GET', `/sessions/${encodeURIComponent(sessionId)}/scenarios`, undefined, opts,
+  )
+
+export const createScenario = (
+  sessionId: string,
+  name: string,
+  rules: import('./types').ScenarioRule[],
+) =>
+  request<import('./types').Scenario>(
+    'POST', `/sessions/${encodeURIComponent(sessionId)}/scenarios`, { name, rules },
+  )
+
+export const deleteScenario = (scenarioId: string) =>
+  request<{ deleted: string }>('DELETE', `/scenarios/${encodeURIComponent(scenarioId)}`)
+
+export const previewScenario = (
+  sessionId: string,
+  rules: import('./types').ScenarioRule[],
+  opts?: RequestOpts,
+) =>
+  request<import('./types').ScenarioRunResult>(
+    'POST', `/sessions/${encodeURIComponent(sessionId)}/scenarios/preview`, { rules }, opts,
+  )
+
+export const runScenario = (sessionId: string, scenarioId: string, opts?: RequestOpts) =>
+  request<import('./types').ScenarioRunResult>(
+    'POST',
+    `/sessions/${encodeURIComponent(sessionId)}/scenarios/${encodeURIComponent(scenarioId)}/run`,
+    undefined, opts,
+  )

@@ -35,7 +35,7 @@ def upsert_stock(tenant_id: str, sku: str, data: dict, conn: Optional[Any] = Non
         "display_name", "current_stock", "min_stock",
         "lead_time_days", "unit_cost", "moq", "supplier", "notes",
         "service_level",
-        "sale_price", "category", "brand", "unit_of_measure", "barcode",
+        "sale_price", "category", "family", "brand", "unit_of_measure", "barcode",
         "warehouse",
     }
 
@@ -213,7 +213,7 @@ def delete_stock(tenant_id: str, sku: str) -> None:
 # Dataset columns we recognize as inventory data when present in an uploaded file.
 _DATASET_STOCK_FLOAT_COLS = {"current_stock", "min_stock", "unit_cost", "moq", "service_level", "sale_price"}
 _DATASET_STOCK_INT_COLS   = {"lead_time_days"}
-_DATASET_STOCK_STR_COLS   = {"supplier", "notes", "display_name", "category", "brand", "unit_of_measure", "barcode"}
+_DATASET_STOCK_STR_COLS   = {"supplier", "notes", "display_name", "category", "family", "brand", "unit_of_measure", "barcode"}
 _DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DATASET_STOCK_STR_COLS
 
 # Minimum valid value per numeric dataset column, mirroring the ge=0/ge=1
@@ -773,13 +773,26 @@ def _compute_inventory_status(
     if learned_lead_times is None:
         learned_lead_times = get_learned_lead_times(tenant_id)
 
+    # Per-SKU primary supplier (sku_suppliers), one query for the whole tenant.
+    # The stock row's free-text supplier still wins when set — it is what the
+    # buyer typed on the SKU card — but a SKU with no name there now inherits
+    # its configured primary instead of showing "sin proveedor".
+    from backend.inventory import supplier_service as _sup_svc
+    try:
+        primary_suppliers = _sup_svc.get_primary_suppliers_map(tenant_id)
+    except Exception as e:
+        log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
+        primary_suppliers = {}
+
     items: list[dict] = []
 
     for sku in all_skus:
         stock = stock_map.get(sku)
         model_forecasts = forecasts.get(sku, {})
 
-        supplier          = stock.get("supplier") if stock else None
+        primary           = primary_suppliers.get(sku) or {}
+        supplier          = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
+        supplier_id       = primary.get("supplier_id") if supplier == primary.get("supplier_name") else None
         lead_time_config   = int(stock["lead_time_days"]) if stock else 15
         lead_time, lead_time_source, lead_time_learned = resolve_lead_time(
             lead_time_config, supplier, learned_lead_times,
@@ -894,7 +907,12 @@ def _compute_inventory_status(
                 float(stock["sale_price"]) if stock and stock.get("sale_price") is not None else None,
                 float(stock["unit_cost"]) if stock and stock.get("unit_cost") is not None else None,
             ),
+            # Set only when the supplier came from the SKU's configured primary;
+            # a free-text name on the stock row has no id to resolve to.
+            "supplier_id":       supplier_id,
             "category":          stock.get("category") if stock else None,
+            # Grouping between category and SKU; event multipliers can target it.
+            "family":             stock.get("family") if stock else None,
             "brand":              stock.get("brand") if stock else None,
             "unit_of_measure":      stock.get("unit_of_measure") if stock else None,
             "barcode":      stock.get("barcode") if stock else None,
@@ -936,6 +954,7 @@ def get_inventory_status_by_warehouse(
     forecasts: Optional[dict] = None,
     stock_rows: Optional[list] = None,
     learned_lead_times: Optional[dict] = None,
+    lanes: Optional[dict] = None,
 ) -> list[dict]:
     """
     Per-(sku, warehouse) semaphore rows (feature 5.4).
@@ -949,9 +968,10 @@ def get_inventory_status_by_warehouse(
     status, then _network_transfer_pass() converts purchases into transfer
     suggestions where another warehouse can donate.
 
-    `forecasts` / `stock_rows` / `learned_lead_times`: optional preloaded
-    data (raw get_forecasts blob, list_stock rows, get_learned_lead_times
-    map). When provided, the corresponding fetch is skipped — the daily alert
+    `forecasts` / `stock_rows` / `learned_lead_times` / `lanes`: optional
+    preloaded data (raw get_forecasts blob, list_stock rows,
+    get_learned_lead_times map, transfer_lane_service.lane_map).
+    When provided, the corresponding fetch is skipped — the daily alert
     loop computes the aggregated AND per-warehouse status for the same
     tenant/session back-to-back, and without this the forecasts blob (can be
     MBs) plus both DB reads were fetched twice per tenant. Inputs are never
@@ -1059,26 +1079,95 @@ def get_inventory_status_by_warehouse(
                 "recommended_qty": recommended,
                 "recommended_action": None,
                 "transfer_suggestion": None,
+                # Why a possible transfer LOST against buying (structured
+                # {reason_code, params}; the frontend renders the sentence).
+                "transfer_rejected_reason": None,
                 "unit_cost": (float(stock["unit_cost"])
                               if stock and stock.get("unit_cost") is not None else None),
             })
 
-    _network_transfer_pass(items, period)
+    if lanes is None:
+        from backend.inventory import transfer_lane_service as lane_svc
+        lanes = lane_svc.lane_map(tenant_id)
+    _network_transfer_pass(items, period, lanes=lanes)
     items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5),
                               x["coverage_days"] or 9999))
     return items
 
 
-def _network_transfer_pass(items: list[dict], period: str = "daily") -> None:
+def _evaluate_transfer_lane(
+    lane: dict, qty: float, needy: dict, donor: dict,
+) -> tuple[bool, str, dict]:
+    """
+    Time- and money-aware verdict for ONE candidate transfer (PENDIENTES #2).
+    Returns (accepted, reason_code, params) — never a rendered sentence: the
+    frontend turns the structured reason into Spanish via i18n.
+
+    A transfer only wins when it beats BUYING on both axes:
+      1. Time — the lane must arrive strictly sooner than the supplier would
+         (`lane_days < purchase_days`). A move that takes as long as (or longer
+         than) the purchase solves nothing: reason `transfer_too_slow`.
+      2. Money — total lane cost (qty * cost_per_unit + fixed_cost) must be
+         strictly below what buying the same qty costs. Only checked when a
+         positive unit cost is known (the needy row's, else the donor's);
+         with no cost on file the money test is skipped rather than guessed.
+         Reason when it loses: `transfer_more_expensive`.
+
+    `saving` is None when no unit cost is known — the transfer is then accepted
+    on the time argument alone and the UI must not claim a figure it doesn't
+    have.
+    """
+    lane_days = int(lane["lead_time_days"])
+    purchase_days = int(needy.get("lead_time_days") or 0)
+    params: dict = {
+        "from_warehouse": donor["warehouse"],
+        "qty": round(qty, 2),
+        "lane_days": lane_days,
+        "purchase_days": purchase_days,
+    }
+    if lane_days >= purchase_days:
+        return False, "transfer_too_slow", params
+
+    transfer_cost = qty * float(lane["cost_per_unit"]) + float(lane["fixed_cost"])
+    unit_cost = needy.get("unit_cost")
+    if unit_cost is None:
+        unit_cost = donor.get("unit_cost")
+    saving = None
+    if unit_cost is not None and float(unit_cost) > 0:
+        purchase_cost = qty * float(unit_cost)
+        if transfer_cost >= purchase_cost:
+            return False, "transfer_more_expensive", {
+                **params,
+                "transfer_cost": round(transfer_cost, 2),
+                "purchase_cost": round(purchase_cost, 2),
+            }
+        saving = round(purchase_cost - transfer_cost, 2)
+    return True, "transfer_faster_and_cheaper", {**params, "saving": saving}
+
+
+def _network_transfer_pass(
+    items: list[dict], period: str = "daily",
+    lanes: Optional[dict] = None,
+) -> None:
     """
     Convert purchase recommendations into transfer suggestions where another
     warehouse of the same SKU can donate (spec 5.4 §2). Mutates items in place.
 
     A donor qualifies iff after donating qty = min(need, surplus):
-      - its stock stays >= its own reorder point, and
-      - its remaining coverage stays >= the post-donation floor.
-    Best donor = highest post-donation coverage. The transfer replaces the
-    order when it covers >= 80% of the need; below that the purchase stands.
+      - its stock stays >= its own reorder point,
+      - its remaining coverage stays >= the post-donation floor, and
+      - it can cover >= 80% of the need (below that the purchase stands).
+    Donors are then tried best-coverage-first against the LANE rules
+    (_evaluate_transfer_lane): the first one whose lane arrives sooner than the
+    supplier and costs less than buying wins. When every candidate loses, the
+    row stays an "order" and carries `transfer_rejected_reason`
+    ({reason_code, params}) explaining why — the losing verdict of the
+    best-coverage candidate.
+
+    `lanes`: preloaded transfer_lane_service.lane_map ({(from,to): lane}).
+    Pairs absent from it resolve to the documented default lane (1 day, free),
+    which is what keeps tenants that never configured a lane on exactly the
+    pre-feature behavior.
 
     `period` (multi-period Phase C): items carry per-period demand
     (`daily_demand`) and thus period-unit coverage, exactly like the rest of the
@@ -1088,7 +1177,12 @@ def _network_transfer_pass(items: list[dict], period: str = "daily") -> None:
     periods. For daily _days_per_period is 1, so `min_cov` == 30.0 and this path
     is byte-identical to before. The exposed `coverage_unit` lets the UI label
     the value in the active period's unit instead of hardcoding "days".
+    Lane lead times stay in DAYS on purpose: they are compared against the
+    SKU's purchase lead time, which is also a day count on these rows.
     """
+    from backend.inventory.transfer_lane_service import lane_for
+
+    lanes = lanes or {}
     min_cov = TRANSFER_MIN_DONOR_COVERAGE_DAYS / _days_per_period(period)
     unit = _coverage_unit(period)
 
@@ -1103,7 +1197,7 @@ def _network_transfer_pass(items: list[dict], period: str = "daily") -> None:
         for r in needy:
             r["recommended_action"] = "order"
             need = float(r["recommended_qty"])
-            best = None
+            candidates: list[dict] = []
             for d in rows:
                 if d is r or not d.get("current_stock"):
                     continue
@@ -1120,32 +1214,59 @@ def _network_transfer_pass(items: list[dict], period: str = "daily") -> None:
                 cov_after = after / daily if daily > 0 else 9999.0
                 if cov_after < min_cov:
                     continue
-                if best is None or cov_after > best["cov_after"]:
-                    best = {"donor": d, "qty": donatable, "cov_after": cov_after}
-            if best and best["qty"] >= 0.8 * need:
+                # A donation that doesn't materially cover the need never
+                # replaced the order (pre-feature rule, unchanged).
+                if donatable < 0.8 * need:
+                    continue
+                candidates.append({"donor": d, "qty": donatable, "cov_after": cov_after})
+
+            # Best post-donation coverage first: the donor least hurt by the
+            # move gets the first shot at the lane rules.
+            candidates.sort(key=lambda c: -c["cov_after"])
+            rejection: Optional[dict] = None
+            for c in candidates:
+                lane = lane_for(lanes, c["donor"]["warehouse"], r["warehouse"])
+                accepted, reason_code, params = _evaluate_transfer_lane(
+                    lane, c["qty"], r, c["donor"])
+                if not accepted:
+                    if rejection is None:
+                        rejection = {"reason_code": reason_code, "params": params}
+                    continue
                 r["recommended_action"] = "transfer"
                 r["transfer_suggestion"] = {
-                    "from_warehouse": best["donor"]["warehouse"],
-                    "qty": round(best["qty"], 2),
+                    "from_warehouse": c["donor"]["warehouse"],
+                    "qty": round(c["qty"], 2),
                     # None = donor has no measurable demand ("ample coverage"),
                     # matching how coverage_days is nulled at this boundary —
                     # the 9999 sentinel must never cross the API.
                     "donor_coverage_days_after": (
-                        round(best["cov_after"], 1)
-                        if best["cov_after"] < 9990 else None
+                        round(c["cov_after"], 1)
+                        if c["cov_after"] < 9990 else None
                     ),
                     # The unit the value above is expressed in (day/week/month),
                     # mirroring the status envelope's `coverage_unit` so the UI
                     # renders "N semanas" under a weekly horizon, not "N días".
                     "coverage_unit": unit,
+                    # Structured explanation ({reason_code, params}); the
+                    # frontend renders the Spanish sentence.
+                    "reason_code": reason_code,
+                    "params": params,
+                    "lane_days": lane["lead_time_days"],
                 }
+                rejection = None
+                break
+            if rejection is not None:
+                r["transfer_rejected_reason"] = rejection
 
 
 # ── Per-product event multipliers ────────────────────────────────────────────
 # A single multiplier per event is a false simplification: on Black
 # Friday electronics spike and milk does not move. These overrides
-# allow tuning per SKU or per category; resolution order is
-# sku > category > the event's multiplier.
+# allow tuning per SKU, per product family or per category; resolution order
+# is sku > family > category > the event's multiplier — narrowest wins.
+
+_MULTIPLIER_SCOPES = ("sku", "family", "category")
+
 
 def get_event_multipliers(tenant_id: str, event_id: str) -> list[dict]:
     return query(
@@ -1159,21 +1280,21 @@ def get_event_multipliers(tenant_id: str, event_id: str) -> list[dict]:
 def set_event_multiplier(
     tenant_id: str, event_id: str, scope: str, scope_value: str, multiplier: float,
 ) -> dict:
-    """Upsert one override. `scope` is either 'sku' or 'category'."""
-    if scope not in ("sku", "category"):
-        raise ValueError("scope debe ser 'sku' o 'category'")
+    """Upsert one override. `scope` is one of 'sku', 'family' or 'category'."""
+    if scope not in _MULTIPLIER_SCOPES:
+        raise ValueError(f"scope must be one of {sorted(_MULTIPLIER_SCOPES)}")
     if multiplier <= 0:
-        raise ValueError("multiplier debe ser mayor que 0")
+        raise ValueError("multiplier must be greater than 0")
     value = (scope_value or "").strip()
-    # Categories are deliberately stored lower-cased. The unique index is
-    # case-sensitive but `_index_overrides` compares in lower case: without this,
-    # "Lacteos" and "lacteos" create TWO rows that collide on read and one is
-    # silently lost (which one depends on the Postgres collation). Normalising on
-    # write is what makes the ON CONFLICT genuinely idempotent.
-    if scope == "category":
+    # Categories and families are deliberately stored lower-cased. The unique
+    # index is case-sensitive but `_index_overrides` compares in lower case:
+    # without this, "Lacteos" and "lacteos" create TWO rows that collide on read
+    # and one is silently lost (which one depends on the Postgres collation).
+    # Normalising on write is what makes the ON CONFLICT genuinely idempotent.
+    if scope in ("category", "family"):
         value = value.lower()
     if not value:
-        raise ValueError("scope_value no puede estar vacío")
+        raise ValueError("scope_value cannot be empty")
 
     mid = f"em_{__import__('uuid').uuid4().hex[:12]}"
     execute(
@@ -1206,23 +1327,32 @@ def delete_event_multiplier(tenant_id: str, override_id: str) -> bool:
 
 
 def _index_overrides(rows: list[dict]) -> dict:
-    """Overrides indexed for O(1) resolution. Category is case-insensitive."""
-    idx = {"sku": {}, "category": {}}
+    """Overrides indexed for O(1) resolution. Family/category are
+    case-insensitive; unknown scopes are ignored rather than crashing a whole
+    event because one legacy row carries a retired scope."""
+    idx: dict = {s: {} for s in _MULTIPLIER_SCOPES}
     for r in rows:
+        scope = r["scope"]
+        if scope not in idx:
+            continue
         key = r["scope_value"]
-        if r["scope"] == "category":
+        if scope in ("category", "family"):
             key = key.strip().lower()
-        idx[r["scope"]][key] = float(r["multiplier"])
+        idx[scope][key] = float(r["multiplier"])
     return idx
 
 
 def _resolve_multiplier(item: dict, base: float, idx: dict) -> tuple[float, str]:
-    """Returns (multiplier, source) — source is one of 'sku', 'category', 'event'."""
+    """Returns (multiplier, source): the narrowest override that matches wins,
+    sku > family > category, falling back to the event's own multiplier."""
     sku = item.get("sku")
-    if sku is not None and sku in idx["sku"]:
+    if sku is not None and sku in idx.get("sku", {}):
         return idx["sku"][sku], "sku"
+    fam = (item.get("family") or "").strip().lower()
+    if fam and fam in idx.get("family", {}):
+        return idx["family"][fam], "family"
     cat = (item.get("category") or "").strip().lower()
-    if cat and cat in idx["category"]:
+    if cat and cat in idx.get("category", {}):
         return idx["category"][cat], "category"
     return base, "event"
 
@@ -1245,6 +1375,7 @@ def build_multiplier_explanation(event: Optional[dict], base: float,
         "es_estimacion": from_catalog,
         "overrides_activos": len(overrides),
         "overrides_por_sku": sum(1 for o in overrides if o["scope"] == "sku"),
+        "overrides_by_family": sum(1 for o in overrides if o["scope"] == "family"),
         "overrides_by_category": sum(1 for o in overrides if o["scope"] == "category"),
     }
 
@@ -2006,6 +2137,43 @@ def generate_recommendations(items: list[dict], period: str = "daily") -> list[d
     return list(seen.values())[:20]  # top 20 recommendations
 
 
+def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[float]:
+    """Session-level accuracy: 1 - WAPE of each SKU's best real model.
+
+    Baseline rows (naive & friends) are scored for reference only and must not
+    drag the headline number down. The aggregate is weighted by each SKU's
+    daily demand so low-volume SKUs don't dominate; falls back to a plain mean
+    when no demand weights are available. Clamped at 0 (WAPE can exceed 1).
+    """
+    best_wape: dict[str, float] = {}
+    for r in rows:
+        if r.get('type') == 'baseline':
+            continue
+        wape = r.get('wape')
+        if wape is None:
+            continue
+        sku = str(r.get('sku'))
+        if sku not in best_wape or wape < best_wape[sku]:
+            best_wape[sku] = wape
+    if not best_wape:
+        return None
+    weights = {str(i.get('sku')): float(i.get('daily_demand') or 0.0) for i in items}
+    total_weight = sum(weights.get(s, 0.0) for s in best_wape)
+    if total_weight > 0:
+        avg_wape = sum(w * weights.get(s, 0.0) for s, w in best_wape.items()) / total_weight
+    elif items and all(i.get('daily_demand') is not None for i in items):
+        # Demand is known for every SKU and it is zero everywhere. WAPE divides
+        # by total real demand, so it collapses to 0 and this would report a
+        # triumphant 100% over a catalog that never sold anything — there is no
+        # scale to be accurate against. Only claimed when the information is
+        # COMPLETE: a single unknown (None) means we cannot rule out real sales,
+        # so those fall through to the plain mean instead of hiding a number.
+        return None
+    else:
+        avg_wape = sum(best_wape.values()) / len(best_wape)
+    return round(max(0.0, 1.0 - avg_wape), 4)
+
+
 def get_morning_briefing(tenant_id: str, session_id: str, service_level: float = 0.95,
                          period: str = "daily") -> dict:
     """
@@ -2086,11 +2254,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     try:
         result = session_store.get_training_result(tenant_id, session_id) or {}
         metrics = result.get('metrics', {})
-        rows = metrics.get('rows', [])
-        if rows:
-            wapes = [r['wape'] for r in rows if r.get('wape') is not None]
-            if wapes:
-                avg_accuracy = round(1 - (sum(wapes) / len(wapes)), 4)
+        avg_accuracy = compute_session_accuracy(metrics.get('rows', []), items)
     except Exception as e:
         log.debug("session accuracy lookup failed session=%s: %s", session_id, e)
 

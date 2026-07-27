@@ -52,7 +52,7 @@ def get_po_items(tenant_id: str, po_log_id: str, conn: Optional[Any] = None) -> 
     received_qty updates back through this function inside its transaction.
     """
     return query(
-        """SELECT id, sku, display_name, supplier, signal, status,
+        """SELECT id, sku, display_name, supplier, supplier_id, signal, status,
                   recommended_qty, final_qty, received_qty, unit_cost,
                   warehouse
            FROM inventory_po_items

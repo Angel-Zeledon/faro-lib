@@ -3,10 +3,13 @@
 // Self-contained: pages mount it and only receive the selected warehouse.
 // Renders nothing for mono-warehouse tenants (spec: zero visual change).
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { listWarehouses, patchWarehouse, createWarehouse } from '@/lib/api'
-import type { Warehouse } from '@/lib/types'
+import {
+  listWarehouses, patchWarehouse, createWarehouse,
+  listTransferLanes, upsertTransferLane, deleteTransferLane,
+} from '@/lib/api'
+import type { Warehouse, TransferLane } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { Warehouse as WarehouseIcon, Percent, Plus, X } from 'lucide-react'
+import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -139,6 +142,133 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
   )
 }
 
+function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
+  // Transfer lanes (PENDIENTES #2): a lane gives a move between two warehouses
+  // a lead time and a cost, which is what lets Faro decide whether moving
+  // stock actually beats buying it. Unconfigured pairs use the backend default
+  // (1 day, free) — the empty state says so instead of pretending it's broken.
+  const { t } = useLanguage()
+  const [lanes, setLanes] = useState<TransferLane[] | null>(null)
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [days, setDays] = useState('1')
+  const [costPerUnit, setCostPerUnit] = useState('0')
+  const [fixedCost, setFixedCost] = useState('0')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    listTransferLanes().then(setLanes).catch(() => setLanes([]))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const names = warehouses.map(w => w.name)
+  const effectiveFrom = from || names[0] || ''
+  const effectiveTo = to || names.find(n => n !== effectiveFrom) || ''
+
+  async function save() {
+    if (!effectiveFrom || !effectiveTo || effectiveFrom === effectiveTo) return
+    setSaving(true)
+    try {
+      await upsertTransferLane({
+        from_warehouse: effectiveFrom, to_warehouse: effectiveTo,
+        lead_time_days: Math.max(0, Number(days) || 0),
+        cost_per_unit: Math.max(0, Number(costPerUnit) || 0),
+        fixed_cost: Math.max(0, Number(fixedCost) || 0),
+      })
+      load()
+    } catch {
+      // The api.ts interceptor toasts the failure (e.g. a viewer's 403);
+      // swallow so the rejection isn't uncaught and the form stays open.
+    } finally { setSaving(false) }
+  }
+
+  async function remove(lane: TransferLane) {
+    try {
+      await deleteTransferLane(lane.from_warehouse, lane.to_warehouse)
+      load()
+    } catch { /* interceptor toasts it */ }
+  }
+
+  const field: React.CSSProperties = {
+    background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6,
+    color: C.text, fontSize: 12, padding: '3px 6px',
+  }
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 8,
+      padding: '8px 12px', borderRadius: 8,
+      background: C.surface, border: `1px solid ${C.border}`,
+    }}>
+      <span style={{ fontSize: 11, color: C.dim }}>{t('transfers.lanes_label')}</span>
+
+      {lanes !== null && lanes.length === 0 && (
+        <span style={{ fontSize: 11, color: C.dim }}>{t('transfers.lanes_empty')}</span>
+      )}
+      {(lanes ?? []).map(lane => (
+        <div key={lane.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                                    fontSize: 12, color: C.text }}>
+          <span>
+            {t('transfers.lanes_row')
+              .replace('{from}', lane.from_warehouse)
+              .replace('{to}', lane.to_warehouse)
+              .replace('{days}', String(lane.lead_time_days))
+              .replace('{cost}', String(lane.cost_per_unit))
+              .replace('{fixed}', String(lane.fixed_cost))}
+          </span>
+          <button onClick={() => remove(lane)}
+                  aria-label={`${t('transfers.lanes_delete')} ${lane.from_warehouse} ${lane.to_warehouse}`}
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
+            <X size={12} color={C.dim} />
+          </button>
+        </div>
+      ))}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 11, color: C.dim }}>
+          {t('transfers.lanes_from')}{' '}
+          <select name="lane_from" value={effectiveFrom}
+                  onChange={e => setFrom(e.target.value)} style={field}>
+            {names.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: 11, color: C.dim }}>
+          {t('transfers.lanes_to')}{' '}
+          <select name="lane_to" value={effectiveTo}
+                  onChange={e => setTo(e.target.value)} style={field}>
+            {names.filter(n => n !== effectiveFrom)
+                  .map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: 11, color: C.dim }}>
+          {t('transfers.lanes_days')}{' '}
+          <input type="number" min={0} name="lane_days" value={days}
+                 onChange={e => setDays(e.target.value)}
+                 style={{ ...field, width: 56 }} />
+        </label>
+        <label style={{ fontSize: 11, color: C.dim }}>
+          {t('transfers.lanes_cost_per_unit')}{' '}
+          <input type="number" min={0} step="0.01" name="lane_cost_per_unit"
+                 value={costPerUnit} onChange={e => setCostPerUnit(e.target.value)}
+                 style={{ ...field, width: 72 }} />
+        </label>
+        <label style={{ fontSize: 11, color: C.dim }}>
+          {t('transfers.lanes_fixed_cost')}{' '}
+          <input type="number" min={0} step="0.01" name="lane_fixed_cost"
+                 value={fixedCost} onChange={e => setFixedCost(e.target.value)}
+                 style={{ ...field, width: 72 }} />
+        </label>
+        <button onClick={save} disabled={saving || effectiveFrom === effectiveTo}
+                style={{ all: 'unset', cursor: 'pointer', fontSize: 12,
+                         fontWeight: 600, color: C.indigo }}>
+          {saving ? t('common.saving') : t('transfers.lanes_add')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+
 export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged, onCreated }: {
   value: string | null
   onChange: (name: string | null) => void
@@ -151,6 +281,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   // callbacks are for page-specific side effects (e.g. reloading status).
   const { reload } = useWarehouses()
   const [editingShares, setEditingShares] = useState(false)
+  const [editingLanes, setEditingLanes] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
@@ -211,8 +342,15 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
                 style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
           <Percent size={12} /> {t('inventory.wh_shares_btn')}
         </button>
+        <button onClick={() => setEditingLanes(v => !v)}
+                aria-label={t('transfers.lanes_edit_aria')}
+                style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
+          <ArrowLeftRight size={12} /> {t('transfers.lanes_btn')}
+        </button>
         <AddWarehouse onCreated={() => { reload(); onCreated?.() }} />
       </div>
+
+      {editingLanes && <TransferLanesEditor warehouses={warehouses} />}
 
       {noShares && !editingShares && (
         <div style={{ fontSize: 11, color: C.dim }}>

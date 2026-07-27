@@ -17,10 +17,10 @@ from backend.db.connection import query, query_one
 from backend.inventory import service as inv_svc
 
 
-def _item(sku, daily, stock, category=None, lead_time=10, moq=1, cost=2.0):
+def _item(sku, daily, stock, category=None, lead_time=10, moq=1, cost=2.0, family=None):
     return {
         "sku": sku, "display_name": f"Prod {sku}", "supplier": "Prov A",
-        "category": category,
+        "category": category, "family": family,
         "daily_demand": daily, "current_stock": stock,
         "lead_time_days": lead_time, "moq": moq, "unit_cost": cost,
     }
@@ -70,6 +70,70 @@ class TestResolution:
 
 
 # ── El caso que motiva la feature ────────────────────────────────────────────
+
+class TestFamilyScope:
+    """PENDIENTES #6: a family sits between category and SKU — a Christmas
+    multiplier is rarely uniform across a whole category."""
+
+    @pytest.mark.offline
+    def test_family_beats_category(self):
+        idx = inv_svc._index_overrides([
+            {"scope": "family", "scope_value": "gaseosas", "multiplier": 3.0},
+            {"scope": "category", "scope_value": "bebidas", "multiplier": 1.2},
+        ])
+        item = _item("COCA-1L", 10, 100, category="Bebidas", family="Gaseosas")
+        assert inv_svc._resolve_multiplier(item, 1.0, idx) == (3.0, "family")
+
+    @pytest.mark.offline
+    def test_sku_still_beats_family(self):
+        idx = inv_svc._index_overrides([
+            {"scope": "sku", "scope_value": "COCA-1L", "multiplier": 5.0},
+            {"scope": "family", "scope_value": "gaseosas", "multiplier": 3.0},
+        ])
+        item = _item("COCA-1L", 10, 100, category="Bebidas", family="Gaseosas")
+        assert inv_svc._resolve_multiplier(item, 1.0, idx) == (5.0, "sku")
+
+    @pytest.mark.offline
+    def test_family_match_is_case_insensitive(self):
+        idx = inv_svc._index_overrides([
+            {"scope": "family", "scope_value": "  GASEOSAS ", "multiplier": 2.0},
+        ])
+        item = _item("COCA-1L", 10, 100, family="Gaseosas")
+        assert inv_svc._resolve_multiplier(item, 1.0, idx) == (2.0, "family")
+
+    @pytest.mark.offline
+    def test_item_without_family_falls_through_to_category(self):
+        idx = inv_svc._index_overrides([
+            {"scope": "family", "scope_value": "gaseosas", "multiplier": 3.0},
+            {"scope": "category", "scope_value": "bebidas", "multiplier": 1.2},
+        ])
+        item = _item("AGUA-1L", 10, 100, category="Bebidas")
+        assert inv_svc._resolve_multiplier(item, 1.0, idx) == (1.2, "category")
+
+    @pytest.mark.offline
+    def test_unknown_legacy_scope_is_ignored_not_fatal(self):
+        idx = inv_svc._index_overrides([
+            {"scope": "retired_scope", "scope_value": "x", "multiplier": 9.0},
+            {"scope": "family", "scope_value": "gaseosas", "multiplier": 3.0},
+        ])
+        item = _item("COCA-1L", 10, 100, family="Gaseosas")
+        assert inv_svc._resolve_multiplier(item, 1.0, idx) == (3.0, "family")
+
+    @pytest.mark.offline
+    def test_christmas_hits_families_differently_inside_one_category(self):
+        """Rompope x4 and rice x1.4 both live under 'abarrotes'."""
+        idx = inv_svc._index_overrides([
+            {"scope": "family", "scope_value": "licores navidenos", "multiplier": 4.0},
+            {"scope": "family", "scope_value": "granos", "multiplier": 1.4},
+            {"scope": "category", "scope_value": "abarrotes", "multiplier": 1.1},
+        ])
+        rompope = _item("ROM-1", 5, 50, category="Abarrotes", family="Licores Navidenos")
+        arroz   = _item("ARR-5", 5, 50, category="Abarrotes", family="Granos")
+        otro    = _item("OTR-1", 5, 50, category="Abarrotes")
+        assert inv_svc._resolve_multiplier(rompope, 1.0, idx) == (4.0, "family")
+        assert inv_svc._resolve_multiplier(arroz, 1.0, idx) == (1.4, "family")
+        assert inv_svc._resolve_multiplier(otro, 1.0, idx) == (1.1, "category")
+
 
 class TestBlackFridayIsNotUniform:
     @pytest.mark.offline
@@ -209,6 +273,47 @@ class TestMultiplierEndpoints:
         assert row["scope"] == "category"
         assert row["scope_value"] == "electronica"  # categorías normalizadas al save
         assert row["multiplier"] == 4.0
+
+    def test_analyst_sets_family_multiplier_persisted_normalized(
+        self, client, analyst_headers, saved_event, test_tenant
+    ):
+        resp = client.put(
+            f"/api/v1/inventory/events/{saved_event}/multipliers",
+            json={"scope": "family", "scope_value": "  Licores Navidenos ", "multiplier": 4.0},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        row = query_one(
+            "SELECT scope, scope_value, multiplier FROM inventory_event_multipliers "
+            "WHERE tenant_id = %s AND event_id = %s AND scope = 'family'",
+            (test_tenant["id"], saved_event),
+        )
+        assert row["scope_value"] == "licores navidenos"
+        assert row["multiplier"] == 4.0
+
+    def test_viewer_cannot_set_family_multiplier_and_db_unchanged(
+        self, client, viewer_headers, saved_event, test_tenant
+    ):
+        before = len(_overrides(test_tenant["id"], saved_event))
+        resp = client.put(
+            f"/api/v1/inventory/events/{saved_event}/multipliers",
+            json={"scope": "family", "scope_value": "gaseosas", "multiplier": 3.0},
+            headers=viewer_headers,
+        )
+        assert resp.status_code == 403, resp.text
+        assert len(_overrides(test_tenant["id"], saved_event)) == before
+
+    def test_unknown_scope_is_rejected(
+        self, client, analyst_headers, saved_event, test_tenant
+    ):
+        before = len(_overrides(test_tenant["id"], saved_event))
+        resp = client.put(
+            f"/api/v1/inventory/events/{saved_event}/multipliers",
+            json={"scope": "brand", "scope_value": "sony", "multiplier": 2.0},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 422, resp.text
+        assert len(_overrides(test_tenant["id"], saved_event)) == before
 
     def test_upsert_updates_instead_of_duplicating(
         self, client, analyst_headers, saved_event, test_tenant

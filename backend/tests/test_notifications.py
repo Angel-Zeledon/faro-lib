@@ -66,8 +66,9 @@ class TestSendWhatsAppMediaUrl:
         import httpx
         monkeypatch.setattr(httpx, "post", fake_post)
 
-        result = wa_mod.send_whatsapp("+15551234567", "Nueva orden de compra", media_url="https://example.com/po.pdf")
-        assert result is True
+        # Targets _transport_send: conftest patches the `_send` wrapper
+        # session-wide because the local .env holds real Twilio credentials.
+        wa_mod._transport_send("+15551234567", "Nueva orden de compra", "https://example.com/po.pdf")
         assert captured["data"]["MediaUrl"] == "https://example.com/po.pdf"
 
     def test_omits_media_url_key_when_not_provided(self, monkeypatch):
@@ -89,7 +90,7 @@ class TestSendWhatsAppMediaUrl:
         import httpx
         monkeypatch.setattr(httpx, "post", fake_post)
 
-        wa_mod.send_whatsapp("+15551234567", "hello")
+        wa_mod._transport_send("+15551234567", "hello", None)
         assert "MediaUrl" not in captured["data"]
 
 

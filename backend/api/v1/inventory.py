@@ -13,7 +13,7 @@ import csv
 import io
 import logging
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
@@ -35,6 +35,7 @@ from backend.inventory import warehouse_service as wh_svc
 from backend.inventory import optimizer_service as opt_svc
 from backend.inventory import po_pdf
 from backend.inventory import transfer_service as tr_svc
+from backend.inventory import transfer_lane_service as lane_svc
 from backend.inventory import price_break_service as pb_svc
 from backend.inventory import cash_service
 from backend.schemas.common import ok
@@ -67,6 +68,9 @@ class StockUpsert(BaseModel):
     notes:          Optional[str]   = None
     sale_price:   Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
     category:      Optional[str]   = None
+    # Grouping between category and SKU ("Bebidas" > "Gaseosas" > "Coca 1L");
+    # event multipliers can target it (PENDIENTES #6).
+    family:         Optional[str]   = None
     brand:          Optional[str]   = None
     unit_of_measure:  Optional[str]   = None
     barcode:  Optional[str]   = None
@@ -84,6 +88,7 @@ class StockPatch(BaseModel):
     notes:          Optional[str]   = None
     sale_price:   Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
     category:      Optional[str]   = None
+    family:         Optional[str]   = None
     brand:          Optional[str]   = None
     unit_of_measure:  Optional[str]   = None
     barcode:  Optional[str]   = None
@@ -620,14 +625,15 @@ def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_c
 # ── Per-product event multipliers ────────────────────────────────────────────
 
 class EventMultiplierUpsert(BaseModel):
-    scope:       str    # 'sku' | 'category'
+    # Narrowest match wins: sku > family > category > the event's own multiplier.
+    scope:       Literal["sku", "family", "category"]
     scope_value: str
     multiplier:  float = Field(ge=0.1, le=10.0)
 
 
 @router.get("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
-    """Per-SKU or per-category multiplier overrides for this event."""
+    """Per-SKU, per-family or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
         raise AppError("event_not_found", "Event not found", status_code=404)
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
@@ -834,6 +840,9 @@ class POLineItem(BaseModel):
     sku:                  str
     display_name:         Optional[str]   = None
     supplier:            Optional[str]   = None
+    # Set when the buyer picked the supplier explicitly in the cart; the name
+    # above is kept for display and for historical rows that have no id.
+    supplier_id:         Optional[str]   = None
     signal:               Optional[str]   = None
     recommended_qty: float           = Field(default=0, ge=0, le=_MAX_QTY)
     final_qty:       float           = Field(default=0, ge=0, le=_MAX_QTY)
@@ -880,6 +889,43 @@ def log_po(
     record = log_po_generation(
         user.tenant_id, session_id, po_items,
         destination_warehouse=body.destination_warehouse if body else None,
+    )
+    return ok(record)
+
+
+class ManualPOLine(BaseModel):
+    sku:          str
+    qty:          float = Field(gt=0, le=_MAX_QTY)
+    unit_cost:    Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
+    display_name: Optional[str] = None
+
+
+class ManualPORequest(BaseModel):
+    supplier_id: str
+    lines: list[ManualPOLine] = Field(min_length=1)
+    destination_warehouse: Optional[str] = None
+
+
+@router.post("/po", status_code=201)
+def create_manual_po(
+    body: ManualPORequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    A purchase order the buyer writes from scratch — supplier chosen
+    explicitly, lines typed in, no forecast session behind it. Persisted with
+    source='manual' so adoption metrics stay clean.
+    """
+    from backend.inventory.roi_service import create_manual_po as create_po_svc
+
+    supplier = sup_svc.get_supplier(user.tenant_id, body.supplier_id)
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    record = create_po_svc(
+        user.tenant_id, supplier,
+        [l.model_dump() for l in body.lines],
+        destination_warehouse=body.destination_warehouse,
     )
     return ok(record)
 
@@ -1095,9 +1141,14 @@ def send_po_to_suppliers(
     ordered = [i for i in items if i["status"] in ("approved", "modified")]
 
     by_supplier: dict[str, list[dict]] = {}
+    # Lines nobody can be reached for. These used to be dropped in silence, so
+    # a typo on a SKU's supplier meant the order simply never went out with no
+    # trace in the response.
+    unresolved: list[dict] = []
     for i in ordered:
         name = (i.get("supplier") or "").strip()
         if not name:
+            unresolved.append({"sku": i.get("sku"), "supplier": None})
             continue
         by_supplier.setdefault(name, []).append(i)
 
@@ -1109,9 +1160,19 @@ def send_po_to_suppliers(
     }
 
     for supplier_name, supplier_items in by_supplier.items():
-        supplier = sup_svc.get_supplier_by_name(user.tenant_id, supplier_name)
-        if not supplier or not (supplier.get("email") or supplier.get("whatsapp")):
-            skipped.append({"supplier": supplier_name, "reason": "Sin datos de contacto en la ficha del proveedor"})
+        # The buyer's explicit pick wins over the free-text name on the line.
+        picked_id = next(
+            (i.get("supplier_id") for i in supplier_items if i.get("supplier_id")), None)
+        supplier = (
+            sup_svc.get_supplier(user.tenant_id, picked_id) if picked_id else None
+        ) or sup_svc.get_supplier_by_name(user.tenant_id, supplier_name)
+
+        if not supplier:
+            unresolved.extend(
+                {"sku": i.get("sku"), "supplier": supplier_name} for i in supplier_items)
+            continue
+        if not (supplier.get("email") or supplier.get("whatsapp")):
+            skipped.append({"supplier": supplier_name, "reason": "no_contact_details"})
             continue
 
         pdf_path = po_pdf.generate_po_pdf(user.tenant_id, po_log_id, supplier_name, supplier_items, po_meta)
@@ -1142,7 +1203,56 @@ def send_po_to_suppliers(
     if any(s["email"] or s["whatsapp"] for s in sent):
         rec_svc.mark_po_sent(user.tenant_id, po_log_id)
 
-    return ok({"sent": sent, "skipped": skipped})
+    return ok({"sent": sent, "skipped": skipped, "unresolved": unresolved})
+
+
+@router.post("/po/{po_log_id}/send-to-me", status_code=200)
+def send_po_to_self(
+    po_log_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Deliver the order to the BUYER's own WhatsApp so they forward it to their
+    supplier (PENDIENTES #1) — no Faro↔supplier integration required.
+
+    Always returns the rendered text plus a wa.me deep link, so the flow works
+    end to end even with no Twilio configured and no number on file: the UI can
+    still offer "open in WhatsApp" and "copy message".
+    """
+    from urllib.parse import quote
+
+    from backend.inventory import reception_service as rec_svc
+    from backend.inventory.roi_service import format_po_number
+    from backend.notifications import whatsapp as wa_mod
+    from backend.users import service as user_svc
+
+    po = rec_svc.get_po(user.tenant_id, po_log_id)
+    if not po:
+        raise AppError("po_not_found", "Purchase order not found", status_code=404)
+
+    items = rec_svc.get_po_items(user.tenant_id, po_log_id)
+    ordered = [i for i in items if i["status"] in ("approved", "modified")]
+
+    by_supplier: dict[str, list[dict]] = {}
+    for i in ordered:
+        by_supplier.setdefault((i.get("supplier") or "").strip() or "—", []).append(i)
+    groups = [{"supplier": name, "items": rows} for name, rows in by_supplier.items()]
+
+    reference = format_po_number(po.get("po_number"), po_log_id)
+    text = wa_mod.build_po_forward_text(reference, groups)
+
+    # Outbound to the user's own number: an unverified number is still their
+    # own contact detail, so verification is not required to receive it.
+    me = user_svc.get_user(user.tenant_id, user.user_id) or {}
+    number = (me.get("whatsapp_number") or "").strip()
+    sent = wa_mod.send_whatsapp(number, text) if number else False
+
+    return ok({
+        "sent": sent,
+        "has_number": bool(number),
+        "message_text": text,
+        "wa_me_url": f"https://wa.me/?text={quote(text)}",
+    })
 
 
 # ── Supplier price breaks (feature 3.5) ──────────────────────────────────────
@@ -1459,6 +1569,59 @@ def patch_warehouse(
     except ValueError as e:
         raise _svc_error(e)
     return ok(row)
+
+
+# ── Transfer lanes: time + money per (from, to) pair (PENDIENTES #2) ─────────
+
+class TransferLaneUpsert(BaseModel):
+    from_warehouse: str = Field(min_length=1)
+    to_warehouse:   str = Field(min_length=1)
+    lead_time_days: int = Field(ge=0, le=365)
+    cost_per_unit:  float = Field(default=0.0, ge=0)
+    fixed_cost:     float = Field(default=0.0, ge=0)
+
+
+@router.get(
+    "/warehouses/lanes",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def list_transfer_lanes(user: CurrentUser = Depends(get_current_user)):
+    """Configured lanes only. A pair with no row falls back to the documented
+    default (lead_time_days=1, cost_per_unit=0, fixed_cost=0) everywhere it is
+    consumed — see backend/inventory/transfer_lane_service.py."""
+    return ok(lane_svc.list_lanes(user.tenant_id))
+
+
+@router.put(
+    "/warehouses/lanes",
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def upsert_transfer_lane(
+    body: TransferLaneUpsert,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    try:
+        row = lane_svc.upsert_lane(
+            user.tenant_id, body.from_warehouse, body.to_warehouse,
+            body.lead_time_days, body.cost_per_unit, body.fixed_cost)
+    except ValueError as e:
+        raise _svc_error(e)
+    return ok(row)
+
+
+@router.delete(
+    "/warehouses/lanes", status_code=204,
+    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
+)
+def delete_transfer_lane(
+    from_warehouse: str = Query(min_length=1),
+    to_warehouse: str = Query(min_length=1),
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Names travel as query params, not path segments: a warehouse name may
+    contain a slash and would break path matching once encoded."""
+    if not lane_svc.delete_lane(user.tenant_id, from_warehouse, to_warehouse):
+        raise HTTPException(status_code=404, detail="Transfer lane not found")
 
 
 @router.get("/stock/{sku}/suppliers")

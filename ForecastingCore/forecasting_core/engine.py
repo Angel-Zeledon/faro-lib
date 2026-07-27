@@ -789,11 +789,20 @@ class ForecastEngine:
         self._require_trained()
         df = self._metrics_df
         rows = df.to_dict(orient="records")
-        by_model = (df.groupby("model")
-                    .agg(avg_mae=("mae", "mean"), avg_rmse=("rmse", "mean"),
-                         avg_wape=("wape", "mean"), avg_bias=("bias", "mean"),
-                         avg_mape=("mape", "mean"), avg_smape=("smape", "mean"))
-                    .round(4).to_dict(orient="index"))
+        # Every SKU-model pair can legitimately fail (series too short, all
+        # zeros, one row per SKU): the pipeline skips those individually and
+        # leaves an EMPTY frame with no columns at all. Grouping it raised
+        # KeyError('model'), which surfaced to the user as "El entrenamiento
+        # falló: 'model'". An empty run is a real outcome, not a crash — the
+        # caller decides what to tell the user.
+        if df.empty or "model" not in df.columns:
+            by_model: dict = {}
+        else:
+            by_model = (df.groupby("model")
+                        .agg(avg_mae=("mae", "mean"), avg_rmse=("rmse", "mean"),
+                             avg_wape=("wape", "mean"), avg_bias=("bias", "mean"),
+                             avg_mape=("mape", "mean"), avg_smape=("smape", "mean"))
+                        .round(4).to_dict(orient="index"))
 
         # Extract SHAP importance per SKU per model from fitted ML models
         shap: dict = {}

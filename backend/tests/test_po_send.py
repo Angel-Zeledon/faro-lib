@@ -52,9 +52,12 @@ class TestSendPOEndpoint:
         assert len(email_calls) == 1
         assert len(wa_calls) == 1
 
-    def test_skips_supplier_with_no_contact_info_on_file(
+    def test_supplier_that_is_not_a_record_is_reported_as_unresolved(
         self, client, auth_headers, test_tenant,
     ):
+        """A name that matches no supplier record cannot be contacted at all —
+        it is reported per line under `unresolved` rather than silently
+        dropped. `skipped` now means "we know them but have no contact info"."""
         from backend.inventory import roi_service
 
         tid = test_tenant["id"]
@@ -68,8 +71,33 @@ class TestSendPOEndpoint:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["sent"] == []
+        assert data["skipped"] == []
+        assert len(data["unresolved"]) == 1
+        assert data["unresolved"][0]["supplier"] == unknown_supplier
+        assert data["unresolved"][0]["sku"] == sku
+
+    def test_skips_known_supplier_with_no_contact_info_on_file(
+        self, client, auth_headers, test_tenant,
+    ):
+        from backend.inventory import roi_service, supplier_service as sup_svc
+
+        tid = test_tenant["id"]
+        sku = _sku()
+        supplier_name = f"Sin Contacto {uuid4().hex[:6]}"
+        sup_svc.create_supplier(tid, {"name": supplier_name})
+        po = roi_service.log_po_generation(tid, "sess-test", [{
+            "sku": sku, "final_qty": 5, "status": "approved", "supplier": supplier_name,
+        }])
+
+        resp = client.post(f"/api/v1/inventory/po/{po['id']}/send", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["sent"] == []
+        assert data["unresolved"] == []
         assert len(data["skipped"]) == 1
-        assert data["skipped"][0]["supplier"] == unknown_supplier
+        assert data["skipped"][0]["supplier"] == supplier_name
+        # A stable code, not a Spanish sentence from the API (CLAUDE.md).
+        assert data["skipped"][0]["reason"] == "no_contact_details"
 
     def test_pdf_endpoint_is_reachable_without_auth(self, client, auth_headers, test_tenant, monkeypatch):
         from backend.inventory import roi_service, supplier_service as sup_svc

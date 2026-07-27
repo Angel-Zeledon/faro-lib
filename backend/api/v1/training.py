@@ -1,4 +1,7 @@
+from typing import Literal, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.config import settings
@@ -11,9 +14,17 @@ from backend.training import job_service
 router = APIRouter(tags=["training"])
 
 
+class TrainRequest(BaseModel):
+    """Optional launch preferences from the Quick Start wizard. Both are
+    persisted into the base session's forecast_cfg for auditability."""
+    user_horizon_days: Optional[int] = Field(default=None, ge=1, le=365)
+    user_granularity: Literal["auto", "daily", "weekly", "monthly"] = "auto"
+
+
 @router.post("/sessions/{session_id}/train", status_code=202)
 def start_training(
     session_id: str,
+    body: Optional[TrainRequest] = None,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     s = session_svc.get_session(user.tenant_id, session_id)
@@ -49,7 +60,11 @@ def start_training(
             )
 
     from backend.sessions import family_service as fam
-    family = fam.launch_training_family(user.tenant_id, session_id, user.user_id)
+    family = fam.launch_training_family(
+        user.tenant_id, session_id, user.user_id,
+        user_horizon_days=body.user_horizon_days if body else None,
+        user_granularity=body.user_granularity if body else "auto",
+    )
     return ok({"job_id": family["base_job_id"], "status": "QUEUED", "family": family})
 
 

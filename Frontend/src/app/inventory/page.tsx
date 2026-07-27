@@ -229,6 +229,7 @@ function KPICard({ label, value, color, sub, onClick, active }: {
 function MultiplierChip({ value, origin }: { value: number; origin: string }) {
  const { t } = useLanguage()
  const label = origin === 'sku' ? t('inventory.mult_origin_sku')
+  : origin === 'family' ? t('inventory.mult_origin_family')
   : origin === 'category' ? t('inventory.mult_origin_category')
   : t('inventory.mult_origin_event')
  const custom = origin !== 'event'
@@ -257,7 +258,7 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
  const { t } = useLanguage()
  const [open, setOpen] = useState(false)
  const [rows, setRows] = useState<EventMultiplier[] | null>(null)
- const [form, setForm] = useState({ scope: 'category' as 'sku' | 'category', value: '', mult: '2.0' })
+ const [form, setForm] = useState({ scope: 'category' as 'sku' | 'family' | 'category', value: '', mult: '2.0' })
  const [busy, setBusy] = useState(false)
  const [err, setErr] = useState('')
  const exp = result.explanation
@@ -357,18 +358,23 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
       <select
        name="demand_mult_scope"
        value={form.scope}
-       onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'sku' | 'category' }))}
+       onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'sku' | 'family' | 'category' }))}
        aria-label={t('inventory.mult_scope_label')}
        style={{ ...inputS3, width: 110 }}
       >
        <option value="category">{t('inventory.mult_origin_category')}</option>
+       <option value="family">{t('inventory.mult_origin_family')}</option>
        <option value="sku">{t('inventory.mult_origin_sku')}</option>
       </select>
       <input
        name="demand_mult_value"
        value={form.value}
        onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
-       placeholder={form.scope === 'sku' ? t('inventory.mult_ph_sku') : t('inventory.mult_ph_category')}
+       placeholder={
+        form.scope === 'sku'    ? t('inventory.mult_ph_sku')
+        : form.scope === 'family' ? t('inventory.mult_ph_family')
+        : t('inventory.mult_ph_category')
+       }
        aria-label={t('inventory.mult_value_label')}
        style={{ ...inputS3, flex: 1, minWidth: 130 }}
       />
@@ -912,9 +918,9 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
 }
 
 // ── Inline edit state ─────────────────────────────────────────────────────────
-interface EditState { current_stock: string; lead_time_days: string; unit_cost: string; moq: string; supplier: string; display_name: string; service_level: string; sale_price: string; category: string; brand: string; unit_of_measure: string; barcode: string }
+interface EditState { current_stock: string; lead_time_days: string; unit_cost: string; moq: string; supplier: string; display_name: string; service_level: string; sale_price: string; category: string; family: string; brand: string; unit_of_measure: string; barcode: string }
 function rowToEdit(item: InventoryStatusItem): EditState {
- return { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? 15), unit_cost: String(item.unit_cost ?? ''), moq: String(item.moq ?? 1), supplier: item.supplier ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95), sale_price: String(item.sale_price ?? ''), category: item.category ?? '', brand: item.brand ?? '', unit_of_measure: item.unit_of_measure ?? '', barcode: item.barcode ?? '' }
+ return { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? 15), unit_cost: String(item.unit_cost ?? ''), moq: String(item.moq ?? 1), supplier: item.supplier ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95), sale_price: String(item.sale_price ?? ''), category: item.category ?? '', family: item.family ?? '', brand: item.brand ?? '', unit_of_measure: item.unit_of_measure ?? '', barcode: item.barcode ?? '' }
 }
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
@@ -1302,7 +1308,7 @@ export default function InventoryPage() {
  if (!editState || savingRef.current) return
  savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: parseInt(editState.lead_time_days) || 15, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || 1, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || 0.95, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: parseInt(editState.lead_time_days) || 15, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || 1, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || 0.95, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_saving')) }
  finally { savingRef.current = false; setSaving(false) }
@@ -1934,6 +1940,7 @@ export default function InventoryPage() {
  <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{t('inventory.edit_display_name_hint')}</div>
  <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
  <input style={{ ...inputS, width: 90 }} name={`edit-category-${item.sku}`} aria-label={t('inventory.edit_category')} placeholder={t('inventory.edit_category')} value={editState.category} onChange={e => setEditState(s => s ? { ...s, category: e.target.value } : s)} />
+ <input style={{ ...inputS, width: 90 }} name={`edit-family-${item.sku}`} aria-label={t('inventory.edit_family')} placeholder={t('inventory.edit_family')} value={editState.family} onChange={e => setEditState(s => s ? { ...s, family: e.target.value } : s)} />
  <input style={{ ...inputS, width: 90 }} name={`edit-brand-${item.sku}`} aria-label={t('inventory.edit_brand')} placeholder={t('inventory.edit_brand')} value={editState.brand} onChange={e => setEditState(s => s ? { ...s, brand: e.target.value } : s)} />
  <input style={{ ...inputS, width: 70 }} name={`edit-unit-${item.sku}`} aria-label={t('inventory.edit_unit')} placeholder={t('inventory.edit_unit')} value={editState.unit_of_measure} onChange={e => setEditState(s => s ? { ...s, unit_of_measure: e.target.value } : s)} />
  <input style={{ ...inputS, width: 120 }} name={`edit-barcode-${item.sku}`} aria-label={t('inventory.edit_barcode')} placeholder={t('inventory.edit_barcode')} value={editState.barcode} onChange={e => setEditState(s => s ? { ...s, barcode: e.target.value } : s)} />

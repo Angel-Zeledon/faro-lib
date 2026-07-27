@@ -21,6 +21,36 @@ def _fmt_from_path(path: str) -> str:
     return "csv"
 
 
+def sniff_separator(sample: str) -> str:
+    """Guess a CSV's column separator from its header line.
+
+    Excel in Spanish locales exports with ';' (and tabs show up in
+    copy-pasted exports), so assuming ',' silently collapsed those files into
+    a single unusable column named "sku;fecha;cantidad". Picks whichever
+    candidate splits the header into the most fields; ties fall back to ','.
+    """
+    header = (sample or "").lstrip("﻿").splitlines()[0] if sample.strip() else ""
+    best, best_count = ",", 1
+    for candidate in (",", ";", "\t", "|"):
+        count = len(header.split(candidate))
+        if count > best_count:
+            best, best_count = candidate, count
+    return best
+
+
+def _csv_sep(source: _Source) -> str:
+    """Separator for a CSV path or in-memory bytes."""
+    try:
+        if isinstance(source, bytes):
+            sample = source[:8192].decode("utf-8", errors="replace")
+        else:
+            with open(source, "r", encoding="utf-8-sig", errors="replace") as fh:
+                sample = fh.read(8192)
+    except Exception:
+        return ","
+    return sniff_separator(sample)
+
+
 def _to_records(df: pd.DataFrame) -> list[dict]:
     """DataFrame -> list[dict] with NaN -> None and numpy scalars -> Python."""
     df = df.where(pd.notna(df), None)
@@ -50,7 +80,7 @@ def _read_df(source: _Source, fmt: Optional[str], nrows: Optional[int]) -> pd.Da
     if fmt == "parquet":
         df = pd.read_parquet(buf)
         return df.head(nrows) if nrows is not None else df
-    return pd.read_csv(buf, nrows=nrows)
+    return pd.read_csv(buf, nrows=nrows, sep=_csv_sep(source), encoding="utf-8-sig")
 
 
 def read_rows(source: _Source, fmt: Optional[str] = None,
@@ -85,7 +115,7 @@ def read_dataframe(source: _Source, fmt: Optional[str] = None,
     if fmt == "parquet":
         df = pd.read_parquet(buf)
         return df.head(nrows) if nrows is not None else df
-    return pd.read_csv(buf, nrows=nrows)
+    return pd.read_csv(buf, nrows=nrows, sep=_csv_sep(source), encoding="utf-8-sig")
 
 
 def dataframe_from_records(rows, columns: list[str]):
@@ -100,7 +130,7 @@ def read_columns(path: str, cols: list[str]) -> list[dict]:
     if fmt == "excel":
         df = pd.read_excel(path, usecols=cols)
     else:
-        df = pd.read_csv(path, usecols=cols)
+        df = pd.read_csv(path, usecols=cols, sep=_csv_sep(path), encoding="utf-8-sig")
     return _to_records(df)
 
 
@@ -131,7 +161,7 @@ def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
             total_rows = None
         df = pd.read_parquet(path).head(rows)
     else:
-        df = pd.read_csv(path, nrows=rows)
+        df = pd.read_csv(path, nrows=rows, sep=_csv_sep(path), encoding="utf-8-sig")
         # Full row count without loading the whole file into memory.
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as _f:
@@ -160,7 +190,7 @@ def read_table(path: str, sheet: Optional[str] = None) -> dict:
     elif fmt == "parquet":
         df = pd.read_parquet(path)
     else:
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, sep=_csv_sep(path), encoding="utf-8-sig")
     return {"columns": list(df.columns), "rows": _to_records(df)}
 
 

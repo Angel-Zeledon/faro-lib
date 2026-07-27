@@ -127,8 +127,16 @@ def app():
 
 @pytest.fixture(scope="session")
 def client(app):
-    """Single TestClient shared across the test session."""
-    with mock.patch("backend.notifications.email._send"):
+    """Single TestClient shared across the test session.
+
+    Both outbound transports are patched here because the local .env carries
+    REAL provider credentials (Resend, Twilio sandbox) — an unpatched test
+    would bill/send for real. WhatsApp tests that assert delivery behavior
+    monkeypatch `whatsapp._send` (or `send_whatsapp`) on top; transport tests
+    target `whatsapp._transport_send`, mirroring the email convention.
+    """
+    with mock.patch("backend.notifications.email._send"), \
+         mock.patch("backend.notifications.whatsapp._send"):
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c
 

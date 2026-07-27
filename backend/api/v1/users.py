@@ -100,28 +100,75 @@ class WhatsAppConfirmRequest(BaseModel):
     code: str
 
 
+# /whatsapp/link doubles as "resend": a fresh unused code younger than this
+# blocks issuing a new one (429 + retry_after).
+_WHATSAPP_RESEND_COOLDOWN_SECS = 60
+
+
 @router.post("/me/whatsapp/link")
 def link_whatsapp(body: WhatsAppLinkRequest, user: CurrentUser = Depends(get_current_user)):
     """Start linking a WhatsApp number: stores it unverified and issues a code."""
+    from backend.notifications import whatsapp as wa_notify
     from backend.whatsapp import identity
+
+    is_production = settings.environment.strip().lower() in ("production", "prod")
+    twilio_configured = wa_notify.is_configured()
+
+    # In production the code MUST reach the user's phone. Without a transport we
+    # fail loudly up front (before touching any state) instead of pretending
+    # the code was sent.
+    if is_production and not twilio_configured:
+        raise AppError(
+            "whatsapp_delivery_unavailable",
+            "WhatsApp delivery is not configured on this server",
+            status_code=503,
+        )
+
+    # Resend cooldown. Bypassed in testing_mode (matches the auth rate-limit
+    # convention); tests exercising it monkeypatch testing_mode = False.
+    if not settings.testing_mode:
+        row = query_one(
+            """SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) AS age_secs
+               FROM pw_change_codes
+               WHERE user_id = %s AND purpose = 'whatsapp' AND used = FALSE
+               ORDER BY created_at DESC LIMIT 1""",
+            (user.user_id,),
+        )
+        if row and row["age_secs"] is not None and float(row["age_secs"]) < _WHATSAPP_RESEND_COOLDOWN_SECS:
+            retry_after = max(1, int(_WHATSAPP_RESEND_COOLDOWN_SECS - float(row["age_secs"])))
+            raise AppError(
+                "whatsapp_code_resend_cooldown",
+                f"A code was just sent. Retry in {retry_after}s",
+                status_code=429,
+                params={"retry_after": retry_after},
+            )
+
     try:
         code = identity.start_verification(user.tenant_id, user.user_id, body.whatsapp_number)
     except ValueError as e:
-        # Bad format -> 422; already-linked -> 409.
-        status = 409 if "already linked" in str(e) else 422
-        raise HTTPException(status_code=status, detail=str(e))
+        # Already-linked -> 409 with a stable code; bad format -> 422.
+        if "already linked" in str(e):
+            raise AppError("whatsapp_number_taken", str(e), status_code=409)
+        raise HTTPException(status_code=422, detail=str(e))
 
-    payload = {"sent": True}
-    # Outside production we surface the code so the in-app "type the code" flow
-    # (and tests) can complete without a live WhatsApp round-trip. The daily
-    # alert transport is a logged no-op without TWILIO_* anyway.
-    if settings.environment.strip().lower() not in ("production", "prod"):
-        payload["debug_code"] = code
-    else:
-        from backend.notifications.whatsapp import send_whatsapp
-        send_whatsapp(body.whatsapp_number.strip(),
-                      f"Tu código de verificación de Faro es: {code}")
-    return ok(payload)
+    # Real delivery whenever Twilio is configured, regardless of environment.
+    if twilio_configured:
+        from backend.notifications.locale import render_es
+        delivered = wa_notify.send_whatsapp(
+            identity.normalize_phone(body.whatsapp_number),
+            render_es("whatsapp_verification_code", code=code),
+        )
+        if not delivered:
+            raise AppError(
+                "whatsapp_delivery_failed",
+                "WhatsApp delivery failed. Try again later.",
+                status_code=503,
+            )
+        return ok({"sent": True})
+
+    # No transport and not production: surface the code so the in-app
+    # "type the code" flow (and tests) can complete without a live round-trip.
+    return ok({"sent": False, "debug_code": code})
 
 
 @router.post("/me/whatsapp/confirm")

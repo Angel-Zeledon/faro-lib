@@ -25,8 +25,9 @@ import { formatMoney } from '@/lib/currency'
 import {
   Search, Package, ChevronDown, RefreshCw,
   AlertTriangle, CheckCircle2, TrendingUp, BarChart2,
-  LineChart as LineChartIcon, Activity, Layers, Eye, EyeOff, Download, RotateCcw,
+  LineChart as LineChartIcon, Eye, EyeOff, Download,
   GitCompare, TableProperties, Grid3x3, FileSpreadsheet, Loader2,
+  Maximize2, X,
 } from 'lucide-react'
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false })
@@ -76,12 +77,15 @@ interface CIBand {
   opacity: number
 }
 
-const CI_BANDS: CIBand[] = [
-  { key: 'p5p95',  lower: 'q5',  upper: 'q95', label: 'P5–P95',  color: '#818cf8', opacity: 0.07 },
-  { key: 'p10p90', lower: 'q10', upper: 'q90', label: 'P10–P90', color: '#818cf8', opacity: 0.11 },
-  { key: 'p20p80', lower: 'q20', upper: 'q80', label: 'P20–P80', color: '#22c55e', opacity: 0.14 },
-  { key: 'p25p75', lower: 'q25', upper: 'q75', label: 'P25–P75', color: '#22c55e', opacity: 0.20 },
-]
+// The single confidence band shown on the chart (one on/off toggle in the
+// toolbar). Only rendered when exactly one model is selected.
+const CI_BAND: CIBand = { key: 'p10p90', lower: 'q10', upper: 'q90', label: 'P10–P90', color: '#818cf8', opacity: 0.11 }
+
+// Primary (first selected) model keeps the classic forecast green; additional
+// overlaid models get a stable color from this palette, indexed by the model's
+// position in available_models so colors don't shift as selection changes.
+const PRIMARY_FORECAST_COLOR = '#22c55e'
+const OVERLAY_COLORS = ['#f59e0b', '#06b6d4', '#f472b6', '#a78bfa', '#f97316', '#84cc16', '#e879f9', '#fbbf24']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -372,39 +376,34 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
   )
 }
 
-// ── CI Band toggles ───────────────────────────────────────────────────────────
+// ── Confidence band toggle ────────────────────────────────────────────────────
 
-function BandToggles({ active, onChange, hasQuantiles }: {
-  active: Set<string>
-  onChange: (key: string) => void
+function BandToggle({ active, onToggle, hasQuantiles }: {
+  active: boolean
+  onToggle: () => void
   hasQuantiles: boolean
 }) {
   const { t } = useLanguage()
+  const on = active && hasQuantiles
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <span style={{ fontSize: 11, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
-        {t('skus.uncertainty_label')}
-      </span>
-      {CI_BANDS.map(b => (
-        <button
-          key={b.key}
-          title={hasQuantiles ? `${t('skus.toggle_band_prefix')} ${b.label} ${t('skus.toggle_band_suffix')}` : t('skus.no_quantile_data_title')}
-          onClick={() => hasQuantiles && onChange(b.key)}
-          style={{
-            all: 'unset', cursor: hasQuantiles ? 'pointer' : 'default',
-            display: 'flex', alignItems: 'center', gap: 3,
-            padding: '3px 7px', borderRadius: 6, fontSize: 10, fontWeight: 500,
-            border: `1px solid ${active.has(b.key) && hasQuantiles ? b.color : 'var(--border)'}`,
-            background: active.has(b.key) && hasQuantiles ? b.color + '22' : 'transparent',
-            color: active.has(b.key) && hasQuantiles ? b.color : 'var(--dim)',
-            opacity: hasQuantiles ? 1 : 0.45,
-            transition: 'all 0.12s',
-          }}
-        >
-          {active.has(b.key) && hasQuantiles ? <Eye size={9} /> : <EyeOff size={9} />}
-          {b.label}
-        </button>
-      ))}
+      <button
+        title={hasQuantiles ? t('skus.band_confidence') : t('skus.no_quantile_data_title')}
+        onClick={() => hasQuantiles && onToggle()}
+        style={{
+          all: 'unset', cursor: hasQuantiles ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+          border: `1px solid ${on ? CI_BAND.color : 'var(--border)'}`,
+          background: on ? CI_BAND.color + '22' : 'transparent',
+          color: on ? CI_BAND.color : 'var(--dim)',
+          opacity: hasQuantiles ? 1 : 0.45,
+          transition: 'all 0.12s',
+        }}
+      >
+        {on ? <Eye size={10} /> : <EyeOff size={10} />}
+        {t('skus.band_confidence')}
+      </button>
       {!hasQuantiles && (
         <span style={{ fontSize: 10, color: 'var(--dim)', opacity: 0.5 }}>
           {t('skus.no_quantile_data')}
@@ -416,17 +415,45 @@ function BandToggles({ active, onChange, hasQuantiles }: {
 
 // ── Forecast chart ────────────────────────────────────────────────────────────
 
-type ChartType = 'line' | 'area' | 'bar'
+type ChartType = 'line' | 'bar'
+
+// An extra model's forecast overlaid on the primary chart (multi-model compare).
+interface ModelOverlay {
+  model:    string
+  color:    string
+  forecast: ForecastPoint[]
+}
+
+// Shortens ISO date labels on the x-axis by series granularity so they don't
+// overlap: daily/weekly show month-day (year only when it changes), monthly
+// shows year-month, quarterly shows the quarter, yearly just the year.
+// Falls back to the raw value for non-ISO dates. The tooltip keeps full dates.
+function makeAxisDateFormatter(granularity: string, dates: string[]) {
+  const parse = (d: string) => /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(d)
+  return (value: string, index: number) => {
+    const m = parse(value)
+    if (!m) return value
+    const [, year, month, day] = m
+    const prev = index > 0 ? parse(dates[index - 1]) : null
+    const yearChanged = !prev || prev[1] !== year
+    switch (granularity) {
+      case 'yearly':    return year
+      case 'quarterly': return `${yearChanged ? year + ' ' : ''}Q${Math.ceil(Number(month) / 3)}`
+      case 'monthly':   return `${year}-${month}`
+      default:          return yearChanged ? `${year}-${month}-${day ?? '01'}` : `${month}-${day ?? '01'}`
+    }
+  }
+}
 
 function buildChartOption(
   data: SkuIntelligenceData,
   chartType: ChartType,
-  activeBands: Set<string>,
-  showLegend: boolean,
+  showBand: boolean,
   isDark: boolean,
   gaps: { start: string; end: string }[],
   outlierIndices: number[] = [],
   t: (key: string) => string = (k) => k,
+  overlays: ModelOverlay[] = [],
 ) {
   const { historical, forecast } = data
 
@@ -442,7 +469,12 @@ function buildChartOption(
   const tooltipBdr  = isDark ? '#1e2030' : '#e2e8f0'
   const tooltipText = isDark ? '#e2e8f0' : '#1e293b'
   const histColor   = '#818cf8'
-  const fcastColor  = '#22c55e'
+  const fcastColor  = PRIMARY_FORECAST_COLOR
+  // When several models are overlaid, name the primary series by its model so
+  // the legend/tooltip distinguish it from the overlays.
+  const primaryName = overlays.length > 0 && data.model
+    ? data.model
+    : t('skus.series_forecast_p50')
 
   // Retrieve a quantile value from a forecast point.
   // Falls back to lower/upper for backends that don't return full quantile sets.
@@ -459,11 +491,11 @@ function buildChartOption(
 
   const series: object[] = []
 
-  // ── CI bands (rendered first so the P50 line sits on top) ──────────────────
+  // ── Confidence band (rendered first so the P50 line sits on top) ───────────
   const renderedBandLabels: string[] = []
 
-  for (const band of CI_BANDS) {
-    if (!activeBands.has(band.key)) continue
+  if (showBand) {
+    const band = CI_BAND
 
     // Build aligned data arrays (null for historical dates = band only in forecast zone)
     const lowerVals: (number | null)[] = [
@@ -477,35 +509,36 @@ function buildChartOption(
       return Math.max(0, hi - lo)
     })
 
-    if (!fillVals.some(v => v !== null)) continue   // no data for this band — skip
-    renderedBandLabels.push(band.label)
+    if (fillVals.some(v => v !== null)) {
+      renderedBandLabels.push(band.label)
 
-    // Invisible base at lower bound (stacked area anchoring technique)
-    series.push({
-      name:            `${band.key}_base`,
-      type:            'line',
-      data:            lowerVals,
-      lineStyle:       { opacity: 0 },
-      areaStyle:       { opacity: 0 },
-      stack:           band.key,
-      symbol:          'none',
-      silent:          true,
-      legendHoverLink: false,
-      tooltip:         { show: false },
-    })
+      // Invisible base at lower bound (stacked area anchoring technique)
+      series.push({
+        name:            `${band.key}_base`,
+        type:            'line',
+        data:            lowerVals,
+        lineStyle:       { opacity: 0 },
+        areaStyle:       { opacity: 0 },
+        stack:           band.key,
+        symbol:          'none',
+        silent:          true,
+        legendHoverLink: false,
+        tooltip:         { show: false },
+      })
 
-    // Visible fill = (upper − lower) stacked on the invisible base
-    series.push({
-      name:            band.label,
-      type:            'line',
-      data:            fillVals,
-      lineStyle:       { opacity: 0 },
-      areaStyle:       { color: band.color, opacity: band.opacity + 0.04 },
-      stack:           band.key,
-      symbol:          'none',
-      legendHoverLink: true,
-      tooltip:         { show: false },
-    })
+      // Visible fill = (upper − lower) stacked on the invisible base
+      series.push({
+        name:            band.label,
+        type:            'line',
+        data:            fillVals,
+        lineStyle:       { opacity: 0 },
+        areaStyle:       { color: band.color, opacity: band.opacity + 0.04 },
+        stack:           band.key,
+        symbol:          'none',
+        legendHoverLink: true,
+        tooltip:         { show: false },
+      })
+    }
   }
 
   // ── Historical series ──────────────────────────────────────────────────────
@@ -527,7 +560,6 @@ function buildChartOption(
     delete histSeries['lineStyle']; delete histSeries['symbol']; delete histSeries['smooth']; delete histSeries['z']
   } else {
     histSeries['type'] = 'line'
-    if (chartType === 'area') histSeries['areaStyle'] = { color: histColor, opacity: 0.07 }
   }
   if (outlierIndices.length > 0) {
     histSeries['markPoint'] = {
@@ -568,7 +600,7 @@ function buildChartOption(
     fcastData[historical.length - 1] = historical[historical.length - 1].value
   }
   const fcastSeries: Record<string, unknown> = {
-    name:       t('skus.series_forecast_p50'),
+    name:       primaryName,
     data:       fcastData,
     lineStyle:  { color: fcastColor, width: 2.5, type: 'dashed' },
     itemStyle:  { color: fcastColor },
@@ -583,9 +615,38 @@ function buildChartOption(
     delete fcastSeries['lineStyle']; delete fcastSeries['symbol']; delete fcastSeries['smooth']; delete fcastSeries['z']
   } else {
     fcastSeries['type'] = 'line'
-    if (chartType === 'area') fcastSeries['areaStyle'] = { color: fcastColor, opacity: 0.06 }
   }
   series.push(fcastSeries)
+
+  // ── Overlay forecasts for additionally selected models ─────────────────────
+  const overlayByDate = overlays.map(ov => ({
+    name:   ov.model,
+    color:  ov.color,
+    byDate: new Map(ov.forecast.map(p => [p.date, p.value])),
+  }))
+  for (const ov of overlayByDate) {
+    const vals: (number | null)[] = allDates.map((d, i) =>
+      i < historical.length ? null : ov.byDate.get(d) ?? null)
+    // Connect the overlay line to the last historical point (same visual
+    // continuity trick as the primary forecast); skip for bars.
+    if (chartType !== 'bar' && historical.length > 0 && vals.some(v => v !== null)) {
+      vals[historical.length - 1] = historical[historical.length - 1].value
+    }
+    const s: Record<string, unknown> = { name: ov.name, data: vals }
+    if (chartType === 'bar') {
+      s['type'] = 'bar'; s['barMaxWidth'] = 12
+      s['itemStyle'] = { color: ov.color, opacity: 0.85 }
+    } else {
+      s['type'] = 'line'
+      s['lineStyle']  = { color: ov.color, width: 2, type: 'dashed' }
+      s['itemStyle']  = { color: ov.color }
+      s['symbol']     = 'circle'
+      s['symbolSize'] = 3
+      s['smooth']     = true
+      s['z']          = 9
+    }
+    series.push(s)
+  }
 
   // ── Tooltip — shows actual percentile values via date lookup ──────────────
   const tooltipFormatter = (params: { axisValue: string }[]) => {
@@ -611,16 +672,20 @@ function buildChartOption(
       lines.push(row(dot(histColor), t('skus.series_historical'), hp.value.toFixed(2)))
 
     if (fp) {
-      lines.push(row(dot(fcastColor), t('skus.series_forecast_p50'), fp.value.toFixed(2)))
-      for (const band of CI_BANDS) {
-        if (!activeBands.has(band.key)) continue
-        const lo = getQ(fp, band.lower)
-        const hi = getQ(fp, band.upper)
-        if (lo === null && hi === null) continue
-        const bandDot = `<span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${band.color};opacity:0.7;flex-shrink:0"></span>`
-        const loStr = lo !== null ? lo.toFixed(2) : '—'
-        const hiStr = hi !== null ? hi.toFixed(2) : '—'
-        lines.push(row(bandDot, band.label, `${loStr} – ${hiStr}`))
+      lines.push(row(dot(fcastColor), primaryName, fp.value.toFixed(2)))
+      if (showBand) {
+        const lo = getQ(fp, CI_BAND.lower)
+        const hi = getQ(fp, CI_BAND.upper)
+        if (lo !== null || hi !== null) {
+          const bandDot = `<span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${CI_BAND.color};opacity:0.7;flex-shrink:0"></span>`
+          const loStr = lo !== null ? lo.toFixed(2) : '—'
+          const hiStr = hi !== null ? hi.toFixed(2) : '—'
+          lines.push(row(bandDot, CI_BAND.label, `${loStr} – ${hiStr}`))
+        }
+      }
+      for (const ov of overlayByDate) {
+        const v = ov.byDate.get(date)
+        if (typeof v === 'number') lines.push(row(dot(ov.color), ov.name, v.toFixed(2)))
       }
     }
 
@@ -630,7 +695,12 @@ function buildChartOption(
     </div>`
   }
 
-  const legendData = [t('skus.series_historical'), t('skus.series_forecast_p50'), ...renderedBandLabels]
+  const legendData = [
+    t('skus.series_historical'),
+    primaryName,
+    ...overlayByDate.map(o => o.name),
+    ...renderedBandLabels,
+  ]
 
   return {
     backgroundColor: 'transparent',
@@ -645,40 +715,30 @@ function buildChartOption(
       extraCssText: 'padding:10px 12px;border-radius:8px;',
       formatter:    tooltipFormatter,
     },
-    legend: showLegend ? {
+    legend: {
       data:      legendData,
       textStyle: { color: dim, fontSize: 11 },
       top:       6,
-      right:     80,
+      right:     16,
       itemWidth: 16,
       itemHeight: 8,
-    } : { show: false },
-    toolbox: {
-      right:    16,
-      top:      showLegend ? 4 : 2,
-      itemSize: 14,
-      itemGap:  8,
-      feature: {
-        dataZoom: {
-          yAxisIndex: 0,
-          title:      { zoom: t('skus.toolbox_zoom_area'), back: t('skus.toolbox_undo_zoom') },
-          iconStyle:  { color: dim, borderColor: 'transparent' },
-          emphasis:   { iconStyle: { color: '#818cf8', borderColor: 'transparent' } },
-        },
-        restore: {
-          title:    t('skus.toolbox_reset_zoom'),
-          iconStyle: { color: dim, borderColor: 'transparent' },
-          emphasis:  { iconStyle: { color: '#22c55e', borderColor: 'transparent' } },
-        },
-      },
     },
-    grid: { top: showLegend ? 40 : 24, bottom: 56, left: 60, right: 20, containLabel: false },
+    // containLabel keeps y-axis labels from clipping; bottom leaves room for
+    // the x-axis labels (zoom/pan is gesture-only via the inside dataZoom).
+    grid: { top: 40, bottom: 28, left: 12, right: 20, containLabel: true },
     xAxis: {
       type:      'category',
       data:      allDates,
       axisLine:  { lineStyle: { color: gridLine } },
       axisTick:  { show: false },
-      axisLabel: { color: dim, fontSize: 10, hideOverlap: true },
+      axisLabel: {
+        color:       dim,
+        fontSize:    10,
+        hideOverlap: true,
+        interval:    'auto',
+        margin:      10,
+        formatter:   makeAxisDateFormatter(data.applied_granularity, allDates),
+      },
       splitLine: { show: false },
     },
     yAxis: {
@@ -688,22 +748,12 @@ function buildChartOption(
       axisLabel: { color: dim, fontSize: 10, formatter: (v: number) => fmtK(v) },
       splitLine: { lineStyle: { color: gridLine, type: 'dashed' } },
     },
+    // Zoom/pan stays gesture-only: wheel/pinch to zoom, drag to pan. The
+    // slider was removed together with the toolbox — it duplicated the same
+    // gestures while eating ~30px of chart height (worst on mobile, where it
+    // competed with pinch-zoom).
     dataZoom: [
       { type: 'inside', xAxisIndex: 0, start: 0, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true },
-      { type: 'inside', yAxisIndex: 0, start: 0, end: 100, zoomOnMouseWheel: false, moveOnMouseMove: false, zoomLock: false },
-      {
-        type:            'slider',
-        xAxisIndex:      0,
-        start: 0, end:   100,
-        height:          22,
-        bottom:          4,
-        handleStyle:     { color: '#818cf8' },
-        textStyle:       { color: dim, fontSize: 9 },
-        fillerColor:     'rgba(129,140,248,0.08)',
-        borderColor:     gridLine,
-        backgroundColor: 'transparent',
-        dataBackground:  { lineStyle: { color: gridLine }, areaStyle: { color: 'transparent' } },
-      },
     ],
     series,
   }
@@ -722,20 +772,24 @@ function ChartPanel({ sessionId, sku, isDark }: {
   const [error,       setError]       = useState<unknown>(null)
   const [chartType,   setChartType]   = useState<ChartType>('line')
   const [granularity, setGranularity] = useState<string | null>(null)
-  const [selModel,    setSelModel]    = useState<string | undefined>(undefined)
-  const [aggMethod,   setAggMethod]   = useState<'sum' | 'mean'>('sum')
-  const [activeBands, setActiveBands] = useState<Set<string>>(new Set(['p10p90', 'p25p75']))
-  const [showLegend,     setShowLegend]     = useState(true)
+  // Selected models for the multi-model overlay. The first entry is the
+  // "primary" model (drives axes/stats/band); the rest are overlaid series.
+  const [selModels,   setSelModels]   = useState<string[]>([])
+  const [overlays,    setOverlays]    = useState<Record<string, SkuIntelligenceData>>({})
+  const [showBand,    setShowBand]    = useState(true)
+  const [fullscreen,  setFullscreen]  = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const echartsRef = useRef<any>(null)
 
-  // Cache results by (sku|gran|model|agg) to avoid redundant API calls
+  // Cache results by (sku|gran|model) to avoid redundant API calls.
+  // Aggregation is fixed to 'sum' — the backend default (forecasts.py
+  // `agg: str = Query("sum")`) — since the Sum/Avg toggle was removed.
   const cache = useRef<Map<string, SkuIntelligenceData>>(new Map())
-  const cacheKey = (gran: string | null, model: string | undefined, agg: string) =>
-    `${sku}|${gran ?? ''}|${model ?? ''}|${agg}`
+  const cacheKey = (gran: string | null, model: string | undefined) =>
+    `${sku}|${gran ?? ''}|${model ?? ''}`
 
   const fetchData = useCallback((gran?: string, model?: string, isInitial = false) => {
-    const key = cacheKey(gran ?? null, model, aggMethod)
+    const key = cacheKey(gran ?? null, model)
     const hit = cache.current.get(key)
     if (hit) {
       setData(hit)
@@ -750,38 +804,87 @@ function ChartPanel({ sessionId, sku, isDark }: {
     getSkuIntelligence(sessionId, sku, {
       model:       model,
       granularity: gran ?? undefined,
-      agg:         aggMethod,
+      agg:         'sum',
     }, { silent: true })
       .then(d => {
         cache.current.set(key, d)
         // Pre-cache under applied granularity so the follow-up effect is a cache hit
-        cache.current.set(cacheKey(d.applied_granularity, model, aggMethod), d)
+        cache.current.set(cacheKey(d.applied_granularity, model), d)
+        // Also under the resolved model name, so defaulting the selection to
+        // the best model (selModels = [d.model]) doesn't refetch.
+        if (d.model) cache.current.set(cacheKey(d.applied_granularity, d.model), d)
         setData(d)
         if (!gran) setGranularity(d.applied_granularity)
       })
       .catch((e: unknown) => setError(e))
       .finally(() => { setLoading(false); setFetching(false) })
-  }, [sessionId, sku, aggMethod])
+  }, [sessionId, sku])
 
   useEffect(() => {
     setData(null)
     setLoading(true)
     setGranularity(null)
-    setSelModel(undefined)
+    setSelModels([])
+    setOverlays({})
     cache.current.clear()
     fetchData(undefined, undefined, true)
   }, [sessionId, sku])
 
+  // Default the selection to the model the API chose (the best model) once the
+  // first response lands.
+  useEffect(() => {
+    if (data && selModels.length === 0 && data.model) setSelModels([data.model])
+  }, [data, selModels.length])
+
   useEffect(() => {
     if (granularity !== null && data) {
-      fetchData(granularity, selModel)
+      fetchData(granularity, selModels[0])
     }
-  }, [granularity, selModel, aggMethod])
+  }, [granularity, selModels])
+
+  // Fetch overlay datasets for the additionally selected models. Only their
+  // forecast series is used; axes/stats stay driven by the primary dataset.
+  useEffect(() => {
+    const extra = selModels.slice(1)
+    if (!extra.length) { setOverlays({}); return }
+    if (granularity === null) return
+    let cancelled = false
+    Promise.all(extra.map(m => {
+      const key = cacheKey(granularity, m)
+      const hit = cache.current.get(key)
+      const p = hit
+        ? Promise.resolve(hit)
+        : getSkuIntelligence(sessionId, sku, { model: m, granularity, agg: 'sum' }, { silent: true })
+            .then(d => { cache.current.set(key, d); return d })
+      return p.then(d => [m, d] as const).catch(() => null)
+    })).then(results => {
+      if (cancelled) return
+      const next: Record<string, SkuIntelligenceData> = {}
+      for (const r of results) if (r) next[r[0]] = r[1]
+      setOverlays(next)
+    })
+    return () => { cancelled = true }
+  }, [selModels, granularity, sessionId, sku])
+
+  // Fullscreen: Escape closes; force an ECharts resize after the container
+  // swaps between inline and fixed-overlay layout (echarts-for-react also
+  // auto-resizes via its size sensor — this is a belt-and-braces nudge).
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => echartsRef.current?.resize?.(), 60)
+    return () => window.clearTimeout(id)
+  }, [fullscreen])
 
   const exportPNG = useCallback(() => {
     if (!echartsRef.current) return
     const instance = echartsRef.current
-    const url = instance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: isDark ? '#0f1015' : '#ffffff', excludeComponents: ['toolbox'] })
+    const url = instance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: isDark ? '#0f1015' : '#ffffff' })
     const a = document.createElement('a')
     a.href = url; a.download = `forecast_${sku}.png`; a.click()
     setShowExportMenu(false)
@@ -790,7 +893,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
   const exportPDF = useCallback(() => {
     if (!echartsRef.current || !data) return
     const instance = echartsRef.current
-    const imgData = instance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: isDark ? '#0f1015' : '#ffffff', excludeComponents: ['toolbox'] })
+    const imgData = instance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: isDark ? '#0f1015' : '#ffffff' })
     const imgW = instance.getWidth()
     const imgH = instance.getHeight()
     import('jspdf').then(({ jsPDF }) => {
@@ -906,14 +1009,18 @@ function ChartPanel({ sessionId, sku, isDark }: {
     ]).then(() => setShowExportMenu(false))
   }, [sku, data])
 
-  const toggleBand = (key: string) => {
-    setActiveBands(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  const toggleModel = (m: string) => {
+    setSelModels(prev => prev.includes(m)
+      ? (prev.length > 1 ? prev.filter(x => x !== m) : prev)   // keep at least one selected
+      : [...prev, m])
   }
+
+  // Stable per-model overlay color, indexed by the model's position in
+  // available_models so it doesn't shift as the selection changes.
+  const overlayColor = useCallback((m: string) => {
+    const idx = data?.available_models.indexOf(m) ?? -1
+    return OVERLAY_COLORS[(idx >= 0 ? idx : 0) % OVERLAY_COLORS.length]
+  }, [data])
 
   const hasQuantiles = useMemo(() => {
     if (!data?.forecast.length) return false
@@ -933,10 +1040,20 @@ function ChartPanel({ sessionId, sku, isDark }: {
     return detectOutliers(data.historical)
   }, [data])
 
+  const overlayList = useMemo<ModelOverlay[]>(() =>
+    selModels.slice(1)
+      .map(m => ({ model: m, color: overlayColor(m), forecast: overlays[m]?.forecast ?? [] }))
+      .filter(o => o.forecast.length > 0)
+  , [selModels, overlays, overlayColor])
+
+  // The confidence band only applies when exactly one model is shown —
+  // otherwise it would be ambiguous which model it belongs to.
+  const singleModel = selModels.length <= 1
+
   const option = useMemo(() => {
     if (!data) return {}
-    return buildChartOption(data, chartType, activeBands, showLegend, isDark, gaps, outliers, t)
-  }, [data, chartType, activeBands, showLegend, isDark, gaps, outliers, t])
+    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList)
+  }, [data, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList])
 
   if (loading && !data) return (
     <div style={{ flex: 1, padding: '16px', minHeight: 360 }} role="status" aria-busy="true">
@@ -953,7 +1070,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
   )
   if (error != null && !data) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 240, padding: 24 }}>
-      <ErrorState error={error} onRetry={() => fetchData(granularity ?? undefined, selModel, true)} />
+      <ErrorState error={error} onRetry={() => fetchData(granularity ?? undefined, selModels[0], true)} />
     </div>
   )
   if (!data) return null
@@ -961,7 +1078,11 @@ function ChartPanel({ sessionId, sku, isDark }: {
   const validGranularities = data.available_granularities
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div style={fullscreen
+      // Fullscreen: fixed-inset overlay; the ECharts container resizes with it
+      // (echarts-for-react size sensor + the resize nudge effect above).
+      ? { position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column', background: 'var(--surface)' }
+      : { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
@@ -988,66 +1109,52 @@ function ChartPanel({ sessionId, sku, isDark }: {
           onChange={setChartType}
           options={[
             { value: 'line', label: t('skus.chart_type_line'), icon: <LineChartIcon size={10} /> },
-            { value: 'area', label: t('skus.chart_type_area'), icon: <Activity size={10} /> },
             { value: 'bar',  label: t('skus.chart_type_bar'),  icon: <BarChart2 size={10} /> },
           ]}
         />
 
         <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
 
-        {/* Aggregation */}
-        <ChipGroup
-          label={t('skus.chip_agg')}
-          value={aggMethod}
-          onChange={setAggMethod}
-          options={[
-            { value: 'sum',  label: t('skus.agg_sum') },
-            { value: 'mean', label: t('skus.agg_avg') },
-          ]}
-        />
-
-        <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
-
-        {/* Model selector */}
+        {/* Model selection — multi-select chips; each selected model renders
+            its own colored series on the same axis. */}
         {data.available_models.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('skus.model_label')}</span>
-            <div style={{ position: 'relative' }}>
-              <select
-                className="form-select"
-                value={selModel ?? data.model ?? ''}
-                onChange={e => setSelModel(e.target.value)}
-                style={{ fontSize: 11, padding: '3px 24px 3px 7px', height: 26 }}
-              >
-                {data.available_models.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <ChevronDown size={10} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--dim)' }} />
+            <div style={{ display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 8, padding: 3, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              {data.available_models.map(m => {
+                const sel = selModels.includes(m)
+                const color = m === selModels[0] ? PRIMARY_FORECAST_COLOR : overlayColor(m)
+                return (
+                  <button
+                    key={m}
+                    onClick={() => toggleModel(m)}
+                    style={{
+                      all: 'unset', cursor: 'pointer',
+                      padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      background: sel ? 'var(--surface)' : 'transparent',
+                      border: `1px solid ${sel ? color : 'transparent'}`,
+                      color: sel ? 'var(--fg)' : 'var(--dim)',
+                      transition: 'all 0.12s',
+                    }}
+                  >
+                    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: sel ? color : 'var(--border)', flexShrink: 0 }} />
+                    {m}
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
 
-        {/* CI bands */}
-        <BandToggles active={activeBands} onChange={toggleBand} hasQuantiles={hasQuantiles} />
+        {/* Confidence band — only meaningful with a single model selected */}
+        {singleModel && (
+          <BandToggle active={showBand} onToggle={() => setShowBand(v => !v)} hasQuantiles={hasQuantiles} />
+        )}
 
         {/* Right side controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
           {fetching && <Spinner size={13} />}
-
-          {/* Reset zoom */}
-          <button
-            title={t('skus.reset_zoom_title')}
-            onClick={() => echartsRef.current?.dispatchAction({ type: 'restore' })}
-            style={{
-              all: 'unset', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 4,
-              fontSize: 11, color: 'var(--dim)',
-              padding: '3px 8px', borderRadius: 6,
-              border: '1px solid var(--border)',
-            }}
-          >
-            <RotateCcw size={11} />
-            {t('skus.btn_reset')}
-          </button>
 
           {/* Export dropdown */}
           <div style={{ position: 'relative' }}>
@@ -1106,17 +1213,19 @@ function ChartPanel({ sessionId, sku, isDark }: {
             )}
           </div>
 
+          {/* Fullscreen toggle (Escape also exits) */}
           <button
-            title={t('skus.toggle_legend_title')}
-            onClick={() => setShowLegend(v => !v)}
+            title={fullscreen ? t('skus.exit_fullscreen_title') : t('skus.fullscreen_title')}
+            onClick={() => setFullscreen(v => !v)}
             style={{
               all: 'unset', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 4,
-              fontSize: 11, color: showLegend ? 'var(--accent)' : 'var(--dim)',
+              fontSize: 11, color: 'var(--dim)',
+              padding: '3px 8px', borderRadius: 6,
+              border: '1px solid var(--border)',
             }}
           >
-            <Layers size={12} />
-            {t('skus.legend_label')}
+            {fullscreen ? <X size={11} /> : <Maximize2 size={11} />}
           </button>
         </div>
       </div>
@@ -1539,7 +1648,20 @@ export default function SkusPage() {
   // the user hasn't switched since, we upgrade to it. A manual pick (which
   // never touches `lastAutoRef`) always wins and is never overridden.
   const lastAutoRef = useRef('')
+  // /sessions history deep-link (/skus?session=<id>): honored once on load,
+  // before the auto-pick. Treated like a manual pick, so the planning-resolved
+  // active session never overrides it.
+  const urlSessionConsumedRef = useRef(false)
   useEffect(() => {
+    if (!urlSessionConsumedRef.current && !sessionId && sessions.length) {
+      urlSessionConsumedRef.current = true
+      const wanted = new URLSearchParams(window.location.search).get('session')
+      if (wanted && sessions.some(s => s.session_id === wanted && s.status === 'COMPLETED')) {
+        setSessionId(wanted)
+        setTab('Forecast')
+        return
+      }
+    }
     const trained = sessions
       .filter(s => s.status === 'COMPLETED')
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
@@ -1610,6 +1732,20 @@ export default function SkusPage() {
   }, [statusBySku, inventory])
   const seriesType   = skuQuality?.series_type ?? 'unknown'
   const skuColor     = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
+  // Best non-baseline model accuracy (1 − WAPE) for the selected SKU — the
+  // single discreet accuracy figure shown next to the chart header.
+  const skuAccuracy  = useMemo(() => {
+    const best = skuMetrics
+      .filter(r => r.type !== 'baseline' && r.wape !== null)
+      .sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))[0]
+    if (best?.wape == null) return null
+    // WAPE divides by total real demand, so a SKU that never sold scores a
+    // meaningless 0 error and would proudly report "100%" over a flat line of
+    // zeros. Both errors landing on exactly 0 means there was no signal to be
+    // accurate about — show nothing rather than false confidence.
+    if (best.wape === 0 && (best.mae ?? 0) === 0) return null
+    return Math.round((1 - best.wape) * 100)
+  }, [skuMetrics])
 
   // Load compare session metrics
   useEffect(() => {
@@ -1882,101 +2018,17 @@ export default function SkusPage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {skuAccuracy != null && (
+                    <span style={{ fontSize: 11, color: 'var(--dim)' }}>
+                      {t('skus.accuracy_label')}: <strong style={{ color: 'var(--fg)' }}>{skuAccuracy}%</strong>
+                    </span>
+                  )}
                   {selectedSku && signalForSku(selectedSku) && (
                     <SignalBadge signal={signalForSku(selectedSku)!} size="md" />
                   )}
                 </div>
               </div>
-
-              {/* Business summary card */}
-              {skuQuality && (() => {
-                const demandTypeMap: Record<string, string> = {
-                  stable:       t('skus.demand_stable'),
-                  seasonal:     t('skus.demand_seasonal'),
-                  volatile:     t('skus.demand_volatile'),
-                  intermittent: t('skus.demand_intermittent'),
-                  short:        t('skus.demand_short_history'),
-                  unknown:      t('skus.demand_volatile'),
-                }
-                const demandType = demandTypeMap[seriesType] ?? t('skus.demand_volatile')
-                const qualityScore = skuQuality.quality_score
-                const predictability = qualityScore >= 0.7 ? t('skus.reliability_high') : qualityScore >= 0.45 ? t('skus.reliability_medium') : t('skus.reliability_low')
-                const predictabilityDots = predictability === t('skus.reliability_high') ? 4 : predictability === t('skus.reliability_medium') ? 2 : 1
-                const predictabilityColor = predictability === t('skus.reliability_high') ? '#22c55e' : predictability === t('skus.reliability_medium') ? '#f59e0b' : '#ef4444'
-                const confidenceMsg = qualityScore >= 0.7
-                  ? t('skus.confidence_msg_high')
-                  : qualityScore >= 0.45
-                  ? t('skus.confidence_msg_medium')
-                  : t('skus.confidence_msg_low')
-
-                const bestWapeMetric = [...skuMetrics]
-                  .filter(r => r.wape !== null)
-                  .sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))[0]
-                const wapeColor = bestWapeMetric?.wape != null
-                  ? (bestWapeMetric.wape < 0.2 ? '#22c55e' : bestWapeMetric.wape < 0.35 ? '#f59e0b' : '#ef4444')
-                  : skuColor
-
-                return (
-                  <div style={{
-                    margin: '12px 16px 0',
-                    padding: '14px 16px',
-                    borderRadius: 10,
-                    background: wapeColor + '08',
-                    border: `1px solid ${wapeColor}25`,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
-                          {demandType}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {t('skus.predictability_label')}
-                          <span style={{ color: predictabilityColor, fontWeight: 600 }}>{predictability}</span>
-                          <span>
-                            {[1, 2, 3, 4].map(i => (
-                              <span
-                                key={i}
-                                style={{
-                                  display: 'inline-block',
-                                  width: 7, height: 7,
-                                  borderRadius: '50%',
-                                  marginLeft: 2,
-                                  background: i <= predictabilityDots ? predictabilityColor : 'var(--border)',
-                                }}
-                              />
-                            ))}
-                          </span>
-                        </div>
-                      </div>
-                      {bestWapeMetric?.wape != null && (
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: wapeColor }}>
-                            {Math.round((1 - bestWapeMetric.wape) * 100)}%
-                          </div>
-                          <div style={{ fontSize: 9, color: 'var(--dim)', marginTop: 1 }}>{t('skus.accuracy_label')}</div>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{
-                      fontSize: 11, color: 'var(--muted)', lineHeight: 1.6,
-                      paddingTop: 10, borderTop: '1px solid var(--border)',
-                    }}>
-                      {confidenceMsg}
-                    </div>
-                    {skuQuality.n_outliers > 0 && (
-                      <div style={{
-                        marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)',
-                        fontSize: 11, color: '#f59e0b',
-                        display: 'flex', alignItems: 'center', gap: 6,
-                      }}>
-                        <AlertTriangle size={11} />
-                        {skuQuality.n_outliers} {skuQuality.n_outliers !== 1 ? t('skus.outliers_in_history_plural') : t('skus.outliers_in_history_singular')}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
 
               <TabBar
                 tabs={['Forecast', 'Metrics', 'Quality', 'Inventory']}

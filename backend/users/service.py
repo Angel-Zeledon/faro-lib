@@ -3,6 +3,7 @@ from typing import Optional
 
 from backend.auth.password import hash_password, verify_password
 from backend.db.connection import query_one, query, execute
+from backend.errors import AppError
 from backend.utils.ids import generate_id
 
 
@@ -15,14 +16,19 @@ def create_user(
     role: str = "analyst",
     full_name: Optional[str] = None,
     status: str = "active",
+    whatsapp_number: Optional[str] = None,
 ) -> dict:
+    """`whatsapp_number` is stored UNVERIFIED (whatsapp_verified_at stays NULL):
+    signup collects it so purchase orders can be sent to the buyer, while the
+    inbound bot still requires an explicit verification step."""
     user_id = generate_id("usr")
     execute(
         """INSERT INTO users
            (id, tenant_id, email, full_name, role, hashed_password,
-            email_verified, status, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, NOW(), NOW())""",
-        (user_id, tenant_id, email.lower().strip(), full_name, role, hash_password(password), status),
+            email_verified, status, whatsapp_number, created_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s, NOW(), NOW())""",
+        (user_id, tenant_id, email.lower().strip(), full_name, role,
+         hash_password(password), status, (whatsapp_number or "").strip() or None),
     )
     return _public(get_user(tenant_id, user_id))
 
@@ -100,10 +106,38 @@ def update_profile(
                 (user_id, tenant_id),
             )
         else:
-            execute(
-                "UPDATE users SET whatsapp_number = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
-                (normalized, user_id, tenant_id),
+            current = query_one(
+                "SELECT whatsapp_number FROM users WHERE id = %s AND tenant_id = %s",
+                (user_id, tenant_id),
             )
+            if current and current["whatsapp_number"] == normalized:
+                # Same number re-submitted: no-op, keeps verified status.
+                pass
+            else:
+                # Changing to a DIFFERENT number must go through verification
+                # again: the WhatsApp bot authenticates purely on
+                # number + whatsapp_verified_at (identity.resolve_sender), so
+                # carrying the timestamp over — or skipping the uniqueness
+                # check start_verification enforces — would let a user park
+                # someone else's verified number on their profile and
+                # impersonate them inbound.
+                clash = query_one(
+                    """SELECT id FROM users
+                       WHERE whatsapp_number = %s AND whatsapp_verified_at IS NOT NULL
+                         AND id <> %s""",
+                    (normalized, user_id),
+                )
+                if clash:
+                    raise AppError(
+                        "whatsapp_number_taken",
+                        "This WhatsApp number is already linked to another account",
+                        status_code=409,
+                    )
+                execute(
+                    "UPDATE users SET whatsapp_number = %s, whatsapp_verified_at = NULL, "
+                    "updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+                    (normalized, user_id, tenant_id),
+                )
     return _public(get_user(tenant_id, user_id))
 
 

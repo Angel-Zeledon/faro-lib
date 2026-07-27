@@ -182,6 +182,8 @@ class TestWhatsappTransport:
         with mock.patch.object(whatsapp.settings, "twilio_account_sid", ""):
             assert whatsapp.send_whatsapp("+573001234567", "hola") is False
 
+    # NOTE: this targets _transport_send, not _send — conftest patches _send
+    # session-wide (the .env carries real Twilio creds).
     @pytest.mark.offline
     def test_configured_posts_to_twilio(self):
         from backend.notifications import whatsapp
@@ -192,12 +194,24 @@ class TestWhatsappTransport:
              mock.patch.object(whatsapp.settings, "twilio_auth_token", "tok"), \
              mock.patch.object(whatsapp.settings, "twilio_whatsapp_from", "whatsapp:+14155238886"), \
              mock.patch("httpx.post", return_value=fake_resp) as post:
-            ok_sent = whatsapp.send_whatsapp("+573001234567", "hola")
-        assert ok_sent is True
+            whatsapp._transport_send("+573001234567", "hola", None)
         args, kwargs = post.call_args
         assert "AC123" in args[0]
         assert kwargs["data"]["To"] == "whatsapp:+573001234567"
         assert kwargs["data"]["Body"] == "hola"
+
+    @pytest.mark.offline
+    def test_send_whatsapp_reports_transport_success(self):
+        from backend.notifications import whatsapp
+
+        with mock.patch.object(whatsapp.settings, "twilio_account_sid", "AC123"), \
+             mock.patch.object(whatsapp.settings, "twilio_auth_token", "tok"), \
+             mock.patch.object(whatsapp.settings, "twilio_whatsapp_from", "whatsapp:+14155238886"), \
+             mock.patch.object(whatsapp, "_send") as transport:
+            assert whatsapp.send_whatsapp("+573001234567", "hola") is True
+            transport.assert_called_once_with("+573001234567", "hola", None)
+            transport.side_effect = RuntimeError("twilio down")
+            assert whatsapp.send_whatsapp("+573001234567", "hola") is False
 
     @pytest.mark.offline
     def test_alert_text_contains_items_and_url(self):

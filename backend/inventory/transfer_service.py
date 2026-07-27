@@ -118,7 +118,13 @@ def create_transfer(
     Create AND send a transfer: validates everything up front, then decrements
     the origin stock and writes header+items in one transaction.
     items: [{sku, qty}].
+
+    The lane's promised lead time is FROZEN on the header (lead_time_days) plus
+    the derived expected_arrival = now + lead_time_days, so editing the lane
+    afterwards never rewrites the ETA of a transfer already on the road. An
+    unconfigured lane resolves to transfer_lane_service's documented default.
     """
+    from backend.inventory import transfer_lane_service as lane_svc
     from backend.inventory import warehouse_service as wh_svc
 
     from_warehouse = (from_warehouse or "").strip()
@@ -157,13 +163,19 @@ def create_transfer(
                 f"Insufficient stock of '{sku}' in '{from_warehouse}' "
                 f"({available.get(sku, 0.0):g} available, {qty:g} requested)")
 
+    lane = lane_svc.resolve_lane(tenant_id, from_warehouse, to_warehouse)
+    lead_time_days = int(lane["lead_time_days"])
+
     with transaction() as conn:
         header = query_one(
             """INSERT INTO inventory_transfer_log
-                   (tenant_id, from_warehouse, to_warehouse, status, notes, created_by)
-               VALUES (%s, %s, %s, 'in_transit', %s, %s)
+                   (tenant_id, from_warehouse, to_warehouse, status, notes, created_by,
+                    lead_time_days, expected_arrival)
+               VALUES (%s, %s, %s, 'in_transit', %s, %s,
+                       %s, NOW() + (%s * INTERVAL '1 day'))
                RETURNING *""",
-            (tenant_id, from_warehouse, to_warehouse, notes, user_id),
+            (tenant_id, from_warehouse, to_warehouse, notes, user_id,
+             lead_time_days, lead_time_days),
             conn=conn)
         for sku, qty in sorted(qty_by_sku.items()):
             execute(

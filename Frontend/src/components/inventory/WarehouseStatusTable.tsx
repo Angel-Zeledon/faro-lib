@@ -9,6 +9,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
 import SignalBadge from '@/components/ui/SignalBadge'
 import { coverageUnitShort } from '@/lib/period'
+import { transferReasonText } from '@/lib/transferReason'
 import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
@@ -81,6 +82,7 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
             const ts = row.transfer_suggestion
             const key = `${row.sku}|${row.warehouse}`
             const sent = sentSkus.has(key)
+            const rejected = transferReasonText(row.transfer_rejected_reason, t)
             return (
               <tr key={key}>
                 <td style={td}>{row.display_name || row.sku}</td>
@@ -113,6 +115,11 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                   ) : row.recommended_action === 'order' && row.recommended_qty ? (
                     <span style={{ fontSize: 12, color: C.dim }}>
                       {t('inventory.wh_order_hint').replace('{qty}', String(row.recommended_qty))}
+                      {/* Why a possible transfer lost against buying — plain
+                          text, never an alert (it is a recommendation). */}
+                      {rejected && (
+                        <span style={{ display: 'block', marginTop: 2 }}>{rejected}</span>
+                      )}
                     </span>
                   ) : '—'}
                 </td>

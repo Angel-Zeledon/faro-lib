@@ -4,7 +4,14 @@ Covers: auth flow, sessions CRUD, datasets CRUD, configuration wizard, users.
 All tests use the shared `client` (session-scoped) and isolated `test_tenant`.
 """
 
+import random
 from uuid import uuid4
+
+
+def unique_phone() -> str:
+    """A fresh E.164 number — signup requires one and rejects numbers already
+    verified by another account (see TestSignupWhatsapp)."""
+    return f"+506{random.SystemRandom().randint(10_000_000, 99_999_999)}"
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -28,6 +35,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "full_name": "Test User",
+            "whatsapp_number": unique_phone(),
         })
         assert resp.status_code == 201
         data = resp.json()["data"]
@@ -42,6 +50,7 @@ class TestSignup:
             "email": registered_user["email"],
             "password": "StrongPass123!",
             "tenant_name": "other-tenant",
+            "whatsapp_number": unique_phone(),
         })
         assert resp.status_code == 409
 
@@ -50,6 +59,7 @@ class TestSignup:
             "email": f"weak-{uuid4().hex[:6]}@example.com",
             "password": "abc",
             "tenant_name": "weak-tenant",
+            "whatsapp_number": unique_phone(),
         })
         assert resp.status_code == 400
 
@@ -58,6 +68,7 @@ class TestSignup:
             "email": "not-an-email",
             "password": "StrongPass123!",
             "tenant_name": "tenant",
+            "whatsapp_number": unique_phone(),
         })
         assert resp.status_code == 422
 
@@ -75,10 +86,85 @@ class TestSignup:
             "email": email,
             "password": "Aa1" * 30,  # 90 bytes, all-ASCII, otherwise passes strength rules
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
+            "whatsapp_number": unique_phone(),
         })
         assert resp.status_code == 400, resp.text
 
         from backend.db.connection import query_one
+        assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
+
+
+class TestSignupWhatsapp:
+    """PENDIENTES #1: the buyer's number is collected at signup so purchase
+    orders can be delivered to them for forwarding."""
+
+    def test_number_is_persisted_unverified(self, client):
+        from backend.db.connection import execute, query_one
+
+        email = f"wa-{uuid4().hex[:8]}@example.com"
+        phone = unique_phone()
+        resp = client.post("/api/v1/auth/signup", json={
+            "email": email,
+            "password": "StrongPass123!",
+            "tenant_name": f"tenant-{uuid4().hex[:6]}",
+            "whatsapp_number": phone,
+        })
+        assert resp.status_code == 201, resp.text
+        row = query_one(
+            "SELECT whatsapp_number, whatsapp_verified_at FROM users WHERE email = %s",
+            (email,))
+        assert row["whatsapp_number"] == phone
+        # Collected, but the inbound bot still requires explicit verification.
+        assert row["whatsapp_verified_at"] is None
+        execute("DELETE FROM tenants WHERE id = %s", (resp.json()["data"]["tenant"]["id"],))
+
+    def test_missing_number_is_rejected_and_no_user_created(self, client):
+        from backend.db.connection import query_one
+
+        email = f"nophone-{uuid4().hex[:8]}@example.com"
+        resp = client.post("/api/v1/auth/signup", json={
+            "email": email,
+            "password": "StrongPass123!",
+            "tenant_name": f"tenant-{uuid4().hex[:6]}",
+        })
+        assert resp.status_code == 422
+        assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
+
+    def test_malformed_number_is_rejected(self, client):
+        resp = client.post("/api/v1/auth/signup", json={
+            "email": f"bad-{uuid4().hex[:8]}@example.com",
+            "password": "StrongPass123!",
+            "tenant_name": f"tenant-{uuid4().hex[:6]}",
+            "whatsapp_number": "88887777",  # no country code
+        })
+        assert resp.status_code == 422
+
+    def test_number_verified_by_another_account_is_rejected(self, client, test_tenant):
+        from backend.db.connection import execute, query_one
+
+        from backend.users import service as user_svc
+
+        phone = unique_phone()
+        # Somebody already proved ownership of this number.
+        owner = user_svc.create_user(
+            tenant_id=test_tenant["id"],
+            email=f"owner-{uuid4().hex[:8]}@example.com",
+            password="StrongPass123!",
+            whatsapp_number=phone,
+        )
+        execute(
+            "UPDATE users SET whatsapp_verified_at = NOW() WHERE id = %s",
+            (owner["id"],))
+
+        email = f"claim-{uuid4().hex[:8]}@example.com"
+        resp = client.post("/api/v1/auth/signup", json={
+            "email": email,
+            "password": "StrongPass123!",
+            "tenant_name": f"tenant-{uuid4().hex[:6]}",
+            "whatsapp_number": phone,
+        })
+        assert resp.status_code == 409, resp.text
+        assert resp.json().get("error_code") == "whatsapp_number_taken"
         assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
 
 

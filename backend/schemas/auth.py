@@ -1,5 +1,8 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
+
+# E.164 with country code, e.g. +50688887777 — same rule PATCH /users/me applies.
+E164_PATTERN = r"\+[1-9]\d{7,14}"
 
 
 class SignupRequest(BaseModel):
@@ -7,6 +10,9 @@ class SignupRequest(BaseModel):
     password: str
     tenant_name: str
     full_name: Optional[str] = None
+    # Required since PENDIENTES #1: purchase orders are delivered to the
+    # buyer's own WhatsApp for them to forward to their supplier.
+    whatsapp_number: str = Field(pattern=E164_PATTERN)
 
 
 class LoginRequest(BaseModel):

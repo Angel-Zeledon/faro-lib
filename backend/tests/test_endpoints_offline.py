@@ -240,6 +240,7 @@ class TestAuth:
                 "password": "Str0ng!Pass123",
                 "full_name": "New User",
                 "tenant_name": "Offline Co",
+                "whatsapp_number": "+50688887777",
             })
         assert r.status_code == 201
         data = r.json()["data"]
@@ -249,6 +250,7 @@ class TestAuth:
     def test_signup_weak_password_returns_400(self, oc):
         r = oc.post("/api/v1/auth/signup", json={
             "email": "x@x.com", "password": "weak", "tenant_name": "X",
+            "whatsapp_number": "+50688887777",
         })
         assert r.status_code == 400
 
@@ -258,7 +260,7 @@ class TestAuth:
                         return_value={"user_id": "existing", "tenant_id": TENANT_ID}):
             r = oc.post("/api/v1/auth/signup", json={
                 "email": "dup@example.com", "password": "Str0ng!Pass123",
-                "tenant_name": "Dup Co",
+                "tenant_name": "Dup Co", "whatsapp_number": "+50688887777",
             })
         assert r.status_code == 409
 

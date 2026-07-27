@@ -10,8 +10,10 @@ on the inventory semáforo ~2 minutes later without touching a CSV.
 import logging
 import shutil
 from pathlib import Path
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, require_analyst_or_above
 from backend.config import settings
@@ -53,8 +55,19 @@ _DEMO_STOCK = {
 _DEMO_CONFIGS = default_quickstart_configs()
 
 
+class DemoQuickstartRequest(BaseModel):
+    """Optional launch preferences from the Quick Start wizard (same knobs as
+    POST /sessions/{id}/train, plus the session name)."""
+    name: Optional[str] = Field(default=None, max_length=200)
+    user_horizon_days: Optional[int] = Field(default=None, ge=1, le=365)
+    user_granularity: Literal["auto", "daily", "weekly", "monthly"] = "auto"
+
+
 @router.post("/quickstart", status_code=202)
-def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
+def demo_quickstart(
+    body: Optional[DemoQuickstartRequest] = None,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
     """Seed a complete demo session and start training. Returns {session_id, job_id}."""
     if not _DEMO_CSV.exists():
         raise HTTPException(status_code=503, detail="Demo dataset not bundled on this server")
@@ -116,7 +129,8 @@ def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
     )
 
     # 2. Session with dataset attached and the quick-start configs pre-seeded
-    s = session_svc.create_session(user.tenant_id, user.user_id, "Demo Faro")
+    session_name = ((body.name if body else None) or "").strip() or "Demo Faro"
+    s = session_svc.create_session(user.tenant_id, user.user_id, session_name)
     session_id = s["session_id"] if "session_id" in s else s["id"]
     session_svc.attach_dataset(user.tenant_id, session_id, dataset_id)
     for field, cfg in _DEMO_CONFIGS.items():
@@ -134,7 +148,11 @@ def demo_quickstart(user: CurrentUser = Depends(require_analyst_or_above)):
     # 4. Train — fan out into the granularity family (same path the wizard and
     # the integrations sync now use).
     from backend.sessions import family_service as fam
-    family = fam.launch_training_family(user.tenant_id, session_id, user.user_id)
+    family = fam.launch_training_family(
+        user.tenant_id, session_id, user.user_id,
+        user_horizon_days=body.user_horizon_days if body else None,
+        user_granularity=body.user_granularity if body else "auto",
+    )
     job_id = family["base_job_id"]
 
     log.info("[demo] tenant=%s session=%s job=%s stock_seeded=%s",

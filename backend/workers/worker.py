@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from croniter import croniter
 
 from backend.config import settings
-from backend.db.connection import execute, query
+from backend.db.connection import execute, query, query_one
 from backend.training import queue as job_queue
 from backend.training.job_service import create_job, get_job, mark_running
 from backend.workers.runner import run_training_job
@@ -26,6 +26,31 @@ _executor = ThreadPoolExecutor(
 )
 _running_jobs: set[str] = set()
 _WORKER_ID = "worker-1"
+
+
+def _tenant_at_concurrent_job_limit(tenant_id: str) -> bool:
+    """True when the tenant already has as many RUNNING jobs as its plan (or
+    per-tenant quota override) allows — its next QUEUED job must wait, while
+    other tenants' jobs keep flowing. None means unlimited. Testing mode
+    disables the check, mirroring entitlements.service.enforce_limit. The
+    process-wide settings.max_concurrent_jobs cap still applies on top (the
+    dequeue loop only runs below it)."""
+    if settings.testing_mode:
+        return False
+    from backend.entitlements.service import tenant_limits
+    from backend.tenants.service import get_tenant
+    tenant = get_tenant(tenant_id)
+    if not tenant:
+        return False
+    max_jobs = tenant_limits(tenant)["max_concurrent_jobs"]
+    if max_jobs is None:
+        return False
+    row = query_one(
+        "SELECT COUNT(*) AS cnt FROM jobs WHERE tenant_id = %s AND status = 'RUNNING'",
+        (tenant_id,),
+    )
+    running = row["cnt"] if row else 0
+    return running >= max_jobs
 
 
 def _execute(tenant_id: str, session_id: str, job_id: str) -> None:
@@ -44,7 +69,7 @@ async def _loop() -> None:
     while True:
         try:
             if len(_running_jobs) < settings.max_concurrent_jobs:
-                item = job_queue.dequeue()
+                item = job_queue.dequeue(is_tenant_blocked=_tenant_at_concurrent_job_limit)
                 if item:
                     job_id = item["job_id"]
                     tenant_id = item["tenant_id"]

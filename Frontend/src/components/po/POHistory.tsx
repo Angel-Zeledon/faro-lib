@@ -9,6 +9,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatPoNumber } from '@/lib/poNumber'
+import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
 const C = {
@@ -390,6 +391,7 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                         </button>
                       )}
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
+                      <ForwardPOActions poLogId={entry.id} />
                     </span>
                   )
                 })()}

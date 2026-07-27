@@ -153,6 +153,21 @@ def remove_sku_supplier(tenant_id: str, sku: str, supplier_id: str) -> None:
     )
 
 
+def get_primary_suppliers_map(tenant_id: str) -> dict[str, dict]:
+    """{sku: {supplier_id, supplier_name}} for every SKU with a primary
+    supplier. Loaded in one query so the recommendation pass — which walks
+    every SKU — never degenerates into a per-SKU lookup."""
+    rows = query(
+        """SELECT ss.sku, ss.supplier_id, s.name AS supplier_name
+           FROM sku_suppliers ss
+           JOIN suppliers s ON s.id = ss.supplier_id
+           WHERE ss.tenant_id = %s AND ss.is_primary = TRUE AND s.active = TRUE""",
+        (tenant_id,),
+    )
+    return {r["sku"]: {"supplier_id": r["supplier_id"],
+                       "supplier_name": r["supplier_name"]} for r in rows}
+
+
 def get_primary_supplier(tenant_id: str, sku: str) -> Optional[dict]:
     """Returns the primary supplier for a SKU with effective lead_time_days."""
     return query_one(

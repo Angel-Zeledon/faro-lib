@@ -11,12 +11,15 @@ from typing import Optional
 
 import pandas as pd
 
+from backend.dataframes.io import _csv_sep
+
 
 def historical_series(path: str, date_col: str, target_col: str,
                       sku_col: Optional[str], sku: Optional[str] = None) -> list[dict]:
     """[{date: 'YYYY-MM-DD', value: float|None}] from a file, optionally for one
     SKU, sorted ascending by date."""
-    df = pd.read_csv(path) if str(path).endswith(".csv") else pd.read_excel(path)
+    df = (pd.read_csv(path, sep=_csv_sep(path), encoding="utf-8-sig")
+          if str(path).endswith(".csv") else pd.read_excel(path))
     if sku is not None and sku_col and sku_col in df.columns:
         df = df[df[sku_col].astype(str) == str(sku)]
     df = df.sort_values(date_col)

@@ -124,6 +124,11 @@ _SPANISH_SWEEP = (
         # The event-multiplier scope is a stored VALUE, not a column, so it needs
         # a data update. The CHECK constraint has to be dropped before the rows
         # can be rewritten, then re-added over the English vocabulary.
+        #
+        # The vocabulary listed here must stay in sync with the widening
+        # migration further down ('family', PENDIENTES #6): this block runs on
+        # EVERY startup and re-adds the constraint, so leaving 'family' out
+        # makes it fail on any database that already stores family-scoped rows.
         ("migrate_event_multiplier_scope_categoria",
          """DO $$ BEGIN
              IF EXISTS (SELECT 1 FROM information_schema.tables
@@ -134,7 +139,7 @@ _SPANISH_SWEEP = (
                     SET scope = 'category' WHERE scope = 'categoria';
                  ALTER TABLE inventory_event_multipliers
                    ADD CONSTRAINT inventory_event_multipliers_scope_check
-                   CHECK (scope IN ('sku', 'category'));
+                   CHECK (scope IN ('sku', 'family', 'category'));
              END IF;
            END $$"""),
     ]
@@ -917,6 +922,77 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("create_whatsapp_conversations_uniq",
      """CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_conversations_tenant_user_uniq
         ON whatsapp_conversations (tenant_id, user_id)"""),
+    # ── Manual purchase orders (PENDIENTES #1) ───────────────────────────────
+    # A PO no longer requires a forecast session: manual orders carry
+    # session_id NULL and source='manual'; forecast-driven ones keep their
+    # session and source='forecast' (backfilled by the DEFAULT).
+    ("drop_po_log_session_not_null",
+     "ALTER TABLE inventory_po_log ALTER COLUMN session_id DROP NOT NULL"),
+    ("add_po_log_source",
+     """ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS
+        source TEXT NOT NULL DEFAULT 'forecast'"""),
+    # The supplier the buyer actually PICKED for a line. Historical rows keep
+    # only the free-text name, so this stays nullable and the send path falls
+    # back to resolving by name.
+    ("add_po_items_supplier_id",
+     "ALTER TABLE inventory_po_items ADD COLUMN IF NOT EXISTS supplier_id TEXT"),
+    # ── Product family (PENDIENTES #6) ───────────────────────────────────────
+    # A grouping between category and SKU: "Bebidas" (category) > "Gaseosas"
+    # (family) > "Coca 1L" (sku). Events need it because a Christmas multiplier
+    # is rarely uniform across a whole category.
+    ("add_stock_family",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS family TEXT"),
+    ("widen_event_multiplier_scope_family",
+     """DO $$ BEGIN
+         IF EXISTS (SELECT 1 FROM information_schema.tables
+                     WHERE table_name = 'inventory_event_multipliers') THEN
+             ALTER TABLE inventory_event_multipliers
+               DROP CONSTRAINT IF EXISTS inventory_event_multipliers_scope_check;
+             ALTER TABLE inventory_event_multipliers
+               ADD CONSTRAINT inventory_event_multipliers_scope_check
+               CHECK (scope IN ('sku', 'family', 'category'));
+         END IF;
+       END $$"""),
+    # ── Transfer lanes: time + money for inter-warehouse moves (PENDIENTES #2) ─
+    # One row per ordered (from, to) pair. Missing lane = the documented
+    # fallback in transfer_lane_service (1 day, zero cost), so tenants that
+    # never configure lanes keep the pre-feature behavior.
+    ("create_transfer_lanes",
+     """CREATE TABLE IF NOT EXISTS transfer_lanes (
+         id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id      TEXT NOT NULL,
+         from_warehouse TEXT NOT NULL,
+         to_warehouse   TEXT NOT NULL,
+         lead_time_days INT NOT NULL DEFAULT 1,
+         cost_per_unit  FLOAT NOT NULL DEFAULT 0,
+         fixed_cost     FLOAT NOT NULL DEFAULT 0,
+         created_at     TIMESTAMPTZ DEFAULT NOW(),
+         UNIQUE (tenant_id, from_warehouse, to_warehouse)
+     )"""),
+    # What the lane promised when the transfer was sent, frozen on the row:
+    # editing the lane later must not rewrite history. Nullable — transfers
+    # created before this feature keep NULL.
+    ("add_transfer_log_lead_time_days",
+     "ALTER TABLE inventory_transfer_log ADD COLUMN IF NOT EXISTS lead_time_days INT"),
+    ("add_transfer_log_expected_arrival",
+     "ALTER TABLE inventory_transfer_log ADD COLUMN IF NOT EXISTS expected_arrival TIMESTAMPTZ"),
+    # ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────
+    # A named, reusable set of what-if rules bound to one forecast session.
+    # `rules` holds the typed rule list (demand_multiplier / promo /
+    # supplier_delay / safety_stock) exactly as the API validated it. Running a
+    # scenario is a pure read, so no result is persisted here.
+    ("create_scenarios",
+     """CREATE TABLE IF NOT EXISTS scenarios (
+         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         session_id  TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         rules       JSONB NOT NULL DEFAULT '[]'::jsonb,
+         created_by  TEXT,
+         created_at  TIMESTAMPTZ DEFAULT NOW()
+     )"""),
+    ("create_scenarios_idx",
+     "CREATE INDEX IF NOT EXISTS scenarios_tenant_session_idx ON scenarios (tenant_id, session_id)"),
 ]
 
 

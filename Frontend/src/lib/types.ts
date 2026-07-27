@@ -15,6 +15,25 @@ export interface SessionInfo {
   dataset_id?:  string | null
 }
 
+// Enriched row from GET /sessions/summary (session-history page).
+export interface SessionSummary {
+  id:               string
+  session_id:       string
+  name:             string
+  description:      string | null
+  status:           SessionStatus
+  pipeline_step:    string
+  created_at:       string
+  updated_at:       string
+  dataset_id:       string | null
+  dataset_name:     string | null
+  dataset_filename: string | null
+  horizon:          number | null
+  granularity:      string | null
+  sku_count:        number | null
+  tags:             string[]
+}
+
 // ── Dataset ───────────────────────────────────────────────────────────────────
 export interface DatasetMeta {
   id:                string
@@ -584,6 +603,8 @@ export interface InventoryStock {
   updated_at?:    string
   sale_price?:  number | null
   category?:     string | null
+  /** Grouping between category and SKU; event multipliers can target it. */
+  family?:        string | null
   brand?:         string | null
   unit_of_measure?: string | null
   barcode?: string | null
@@ -654,9 +675,32 @@ export interface Warehouse {
   demand_share: number | null
 }
 
+/** Structured explanation of a transfer-vs-buy decision (PENDIENTES #2).
+ * The backend NEVER ships a rendered sentence — the UI renders the Spanish
+ * from `transfers.reason_<reason_code>` with these params. */
+export interface TransferReason {
+  reason_code: 'transfer_faster_and_cheaper' | 'transfer_too_slow' | 'transfer_more_expensive'
+  params: {
+    from_warehouse: string
+    qty: number
+    lane_days: number
+    purchase_days: number
+    /** Money saved vs buying; null when no unit cost is on file. */
+    saving?: number | null
+    transfer_cost?: number
+    purchase_cost?: number
+  }
+}
+
 export interface TransferSuggestion {
   from_warehouse: string
   qty: number
+  /** Why the transfer won (always 'transfer_faster_and_cheaper' today).
+   * Absent on legacy payloads. */
+  reason_code?: TransferReason['reason_code']
+  params?: TransferReason['params']
+  /** Lane transit time in days, from the configured transfer lane. */
+  lane_days?: number
   /** null = donor has no measurable demand (ample coverage) — same null
    * convention as coverage_days; the backend never ships a 9999 sentinel.
    * The value is expressed in `coverage_unit` (day/week/month), matching the
@@ -685,7 +729,21 @@ export interface WarehouseStatusItem {
   recommended_qty: number | null
   recommended_action: 'order' | 'transfer' | null
   transfer_suggestion: TransferSuggestion | null
+  /** Set when a transfer was possible on coverage but LOST against buying
+   * (too slow / more expensive). Rendered as plain text, never as an alert. */
+  transfer_rejected_reason?: TransferReason | null
   unit_cost: number | null
+}
+
+/** Time + money for one ordered (from, to) warehouse pair (PENDIENTES #2).
+ * A pair with no lane on file falls back to the backend default: 1 day, free. */
+export interface TransferLane {
+  id: string
+  from_warehouse: string
+  to_warehouse: string
+  lead_time_days: number
+  cost_per_unit: number
+  fixed_cost: number
 }
 
 export interface WarehouseStatusResponse {
@@ -716,12 +774,19 @@ export interface Transfer {
   created_by: string
   created_at: string
   received_at: string | null
+  /** Lane lead time frozen at send time; null on pre-lane transfers. */
+  lead_time_days?: number | null
+  /** created_at + lead_time_days; null on pre-lane transfers. */
+  expected_arrival?: string | null
   items: TransferItem[]
 }
 
 export interface InventoryStatusItem extends InventoryStock {
   has_forecast:         boolean
   has_stock:            boolean
+  /** Set when the supplier came from the SKU's configured primary supplier
+   *  (sku_suppliers); a free-text name on the stock row has no id. */
+  supplier_id?:         string | null
   daily_demand:       number | null
   lead_time_demand:    number | null
   coverage_days:       number | null
@@ -934,7 +999,10 @@ export interface ROIMonthReport {
 export interface POLogEntry {
   id:                string
   po_number?:        number | null
-  session_id:        string
+  // NULL for manual orders (source === 'manual'), which have no forecast
+  // session behind them.
+  session_id:        string | null
+  source?:           'forecast' | 'manual'
   generated_at:      string
   sku_count:         number
   total_units:       number
@@ -984,7 +1052,12 @@ export interface ReceptionResult {
 
 export interface SendPOResult {
   sent:    { supplier: string; email: boolean; whatsapp: boolean }[]
+  /** `reason` is a stable code (e.g. 'no_contact_details') rendered via
+   *  `roi.send_po_reason_<code>`; unknown codes fall back to the raw string. */
   skipped: { supplier: string | null; reason: string }[]
+  /** Lines whose supplier could not be resolved to a supplier record at all —
+   *  previously dropped in silence. */
+  unresolved?: { sku: string; supplier: string | null }[]
 }
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
@@ -1006,7 +1079,7 @@ export interface EventMultiplier {
   id:          string
   tenant_id:   string
   event_id:    string
-  scope:       'sku' | 'category'
+  scope:       'sku' | 'family' | 'category'
   scope_value: string
   multiplier:  number
   created_at:  string
@@ -1018,7 +1091,7 @@ export interface EventSimulationRow {
   category:       string | null
   /** Multiplier applied to THIS product, and where it came from. */
   multiplier:        number
-  multiplier_source: 'sku' | 'category' | 'event'
+  multiplier_source: 'sku' | 'family' | 'category' | 'event'
   daily_demand:  number
   baseline_units:  number
   event_units:     number
@@ -1230,6 +1303,8 @@ export interface POLineDecision {
   sku:                   string
   display_name?:         string | null
   supplier?:            string | null
+  /** The supplier the buyer picked for this line, when they picked one. */
+  supplier_id?:         string | null
   signal?:               string | null
   recommended_qty:  number
   final_qty:        number
@@ -1417,4 +1492,90 @@ export interface PlanningState {
   available_periods: PlanningPeriod[]
   max_horizon:       number
   active_session_id: string | null
+}
+
+// ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────
+
+export type ScenarioRuleType =
+  | 'demand_multiplier'
+  | 'promo'
+  | 'supplier_delay'
+  | 'safety_stock'
+
+/** One typed what-if rule. Only the fields its `type` uses are ever sent. */
+export interface ScenarioRule {
+  type:           ScenarioRuleType
+  label?:         string
+  /** demand_multiplier / promo */
+  multiplier?:    number
+  sku?:           string
+  category?:      string
+  date_from?:     string
+  date_to?:       string
+  /** supplier_delay */
+  extra_days?:    number
+  supplier?:      string
+  /** safety_stock */
+  service_level?: number
+}
+
+export interface Scenario {
+  id:          string
+  session_id:  string
+  name:        string
+  rules:       ScenarioRule[]
+  created_by:  string | null
+  created_at:  string | null
+}
+
+/** Portfolio totals of one semáforo run (base or scenario). */
+export interface ScenarioTotals {
+  skus_evaluated:            number
+  skus_to_order:             number
+  total_units_to_order:      number
+  estimated_purchase_value:  number
+  order_now:                 number
+  order_soon:                number
+  ok:                        number
+  overstock:                 number
+  no_data:                   number
+}
+
+/** Same keys as ScenarioTotals minus skus_evaluated — scenario minus base. */
+export type ScenarioDelta = Omit<ScenarioTotals, 'skus_evaluated'>
+
+export interface ScenarioChangeRow {
+  sku:                      string
+  display_name:             string | null
+  supplier:                 string | null
+  category:                 string | null
+  current_stock:            number | null
+  base_signal:              string | null
+  scenario_signal:          string | null
+  base_qty:                 number
+  scenario_qty:             number
+  delta_qty:                number
+  delta_value:              number | null
+  base_daily_demand:        number | null
+  scenario_daily_demand:    number | null
+  base_lead_time_days:      number | null
+  scenario_lead_time_days:  number | null
+  base_coverage_days:       number | null
+  scenario_coverage_days:   number | null
+}
+
+export interface ScenarioRunResult {
+  scenario_id: string | null
+  name:        string | null
+  session_id:  string
+  rules:       ScenarioRule[]
+  base:        ScenarioTotals
+  scenario:    ScenarioTotals
+  delta:       ScenarioDelta
+  changes:     ScenarioChangeRow[]
+  applied: {
+    demand_rules:    number
+    series_adjusted: number
+    service_level:   number
+  }
 }

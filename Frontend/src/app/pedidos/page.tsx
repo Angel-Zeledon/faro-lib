@@ -3,14 +3,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { getPOHistory, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
 import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
+import { ManualPOModal } from '@/components/po/ManualPOModal'
 import { TransfersPanel } from '@/components/po/TransfersPanel'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
-import { ClipboardList, ShoppingCart } from 'lucide-react'
+import { ClipboardList, Plus, ShoppingCart } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { getUser } from '@/lib/auth'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -25,6 +27,8 @@ export default function OrdersPage() {
   // rendering a pre-flattened string.
   const [error,       setError]       = useState<unknown>(null)
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
+  const [creatingPO,  setCreatingPO]  = useState(false)
+  const canCreate = getUser()?.role !== 'viewer'
   const [contactHealth,  setContactHealth]  = useState<SupplierContactHealthRow[]>([])
   const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
   // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
@@ -78,14 +82,29 @@ export default function OrdersPage() {
             <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('orders.page_subtitle')}</p>
           </div>
         </div>
-        {pendingCount > 0 && (
-          <span style={{
-            fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
-            background: 'rgba(245,158,11,0.1)', color: C.amber,
-          }}>
-            {pendingCount} {t('orders.pending_suffix')}
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {pendingCount > 0 && (
+            <span style={{
+              fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
+              background: 'rgba(245,158,11,0.1)', color: C.amber,
+            }}>
+              {pendingCount} {t('orders.pending_suffix')}
+            </span>
+          )}
+          {canCreate && (
+            <button
+              onClick={() => setCreatingPO(true)}
+              style={{
+                all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+                gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                background: '#6366f1', color: '#fff',
+              }}
+            >
+              <Plus size={13} aria-hidden="true" />
+              {t('po.manual_new_order')}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Orders vs. transfers (feature 5.4) — tab bar only for multi-warehouse tenants */}
@@ -140,6 +159,13 @@ export default function OrdersPage() {
           poId={receivingPO}
           onClose={() => setReceivingPO(null)}
           onSaved={() => { setReceivingPO(null); load() }}
+        />
+      )}
+
+      {creatingPO && (
+        <ManualPOModal
+          onClose={() => setCreatingPO(false)}
+          onSaved={() => { setCreatingPO(false); load() }}
         />
       )}
       </>

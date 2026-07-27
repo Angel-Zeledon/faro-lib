@@ -134,6 +134,13 @@ export function TransfersPanel() {
                 <div style={{ fontSize: 11, color: C.dim }}>
                   {new Date(tr.created_at).toLocaleDateString(lang === 'es' ? 'es-CR' : 'en-US')}
                   {' · '}{tr.items.length} SKU{tr.items.length !== 1 ? 's' : ''}
+                  {/* ETA from the lane's lead time, frozen at send time.
+                      Absent on transfers created before lanes existed. */}
+                  {receivable && tr.expected_arrival && (
+                    <>{' · '}{t('transfers.eta')
+                      .replace('{date}', new Date(tr.expected_arrival)
+                        .toLocaleDateString(lang === 'es' ? 'es-CR' : 'en-US'))}</>
+                  )}
                 </div>
               </div>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: st.color }}>

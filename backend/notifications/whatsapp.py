@@ -11,6 +11,7 @@ Recipient numbers come from users.whatsapp_number (E.164, e.g. +573001234567).
 import logging
 
 from backend.config import settings
+from backend.notifications.locale import render_es
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +22,28 @@ def is_configured() -> bool:
         and settings.twilio_auth_token
         and settings.twilio_whatsapp_from
     )
+
+
+def _transport_send(to_number: str, body: str, media_url: str | None) -> None:
+    """Raw Twilio HTTP call. Raises on failure. Independently testable."""
+    import httpx
+
+    sid = settings.twilio_account_sid
+    data = {
+        "From": settings.twilio_whatsapp_from,
+        "To": f"whatsapp:{to_number}",
+        "Body": body,
+    }
+    if media_url:
+        data["MediaUrl"] = media_url
+
+    resp = httpx.post(
+        f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+        auth=(sid, settings.twilio_auth_token),
+        data=data,
+        timeout=15,
+    )
+    resp.raise_for_status()
 
 
 def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bool:
@@ -36,29 +59,19 @@ def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bo
         return False
 
     try:
-        import httpx
-
-        sid = settings.twilio_account_sid
-        data = {
-            "From": settings.twilio_whatsapp_from,
-            "To": f"whatsapp:{to_number}",
-            "Body": body,
-        }
-        if media_url:
-            data["MediaUrl"] = media_url
-
-        resp = httpx.post(
-            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-            auth=(sid, settings.twilio_auth_token),
-            data=data,
-            timeout=15,
-        )
-        resp.raise_for_status()
+        _send(to_number, body, media_url)
         log.info("WhatsApp sent → %s", to_number)
         return True
     except Exception as exc:
         log.error("WhatsApp send failed to %s: %s", to_number, exc)
         return False
+
+
+def _send(to_number: str, body: str, media_url: str | None) -> None:
+    # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
+    # while the dispatch logic in _transport_send stays independently testable —
+    # same convention as notifications/email.py.
+    _transport_send(to_number, body, media_url)
 
 
 def build_inventory_alert_text(
@@ -94,17 +107,44 @@ def build_inventory_alert_text(
     return "\n".join(lines)
 
 
+def _line_label(item: dict) -> str:
+    return str(item.get("display_name") or item.get("sku") or "")
+
+
 def build_po_supplier_text(supplier_name: str, po_log_id: str, items: list[dict]) -> str:
     """Short WhatsApp message accompanying a PO PDF sent to a supplier."""
     n = len(items)
     lines = [
-        f"📦 *Nueva orden de compra* para {supplier_name}",
-        f"{n} producto{'s' if n != 1 else ''}:",
+        render_es("po_supplier_header", supplier=supplier_name),
+        render_es("po_supplier_count", n=n, s="s" if n != 1 else ""),
     ]
     for i in items[:10]:
-        qty = i.get("final_qty") or 0
-        lines.append(f"  • {i.get('display_name') or i.get('sku')} — {qty:,.0f}")
+        lines.append(render_es(
+            "po_supplier_line",
+            name=_line_label(i), qty=f"{(i.get('final_qty') or 0):,.0f}",
+        ))
     if n > 10:
-        lines.append(f"  … y {n - 10} más")
-    lines.append(f"\nDetalle completo en el PDF adjunto. Referencia: {po_log_id}")
+        lines.append(render_es("po_supplier_more", n=n - 10))
+    lines.append(render_es("po_supplier_footer", reference=po_log_id))
+    return "\n".join(lines)
+
+
+def build_po_forward_text(reference: str, groups: list[dict]) -> str:
+    """
+    The message the BUYER receives on their own WhatsApp and forwards to each
+    supplier (PENDIENTES #1). `groups`: [{"supplier": name, "items": [...]}] —
+    one section per supplier so a mixed order can be forwarded piece by piece.
+    """
+    lines = [render_es("po_forward_header", reference=reference)]
+    for g in groups:
+        items = g.get("items") or []
+        lines.append(render_es("po_forward_supplier", supplier=g.get("supplier") or "—"))
+        for i in items[:15]:
+            lines.append(render_es(
+                "po_forward_line",
+                name=_line_label(i), qty=f"{(i.get('final_qty') or 0):,.0f}",
+            ))
+        if len(items) > 15:
+            lines.append(render_es("po_forward_more", n=len(items) - 15))
+    lines.append(render_es("po_forward_footer"))
     return "\n".join(lines)

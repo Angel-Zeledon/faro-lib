@@ -17,7 +17,6 @@ type Tab = 'api-keys' | 'webhooks' | 'schedules'
 const WEBHOOK_EVENTS = [
   { id: 'job.completed',     labelKey: 'settings.event_job_completed' },
   { id: 'job.failed',        labelKey: 'settings.event_job_failed' },
-  { id: 'accuracy.degraded', labelKey: 'settings.event_accuracy_degraded' },
 ]
 
 const CRON_OPTIONS = [
@@ -78,6 +77,10 @@ function ApiKeysTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: 'var(--text)' }}>
+        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1, color: '#f59e0b' }} aria-hidden="true" />
+        <span>{t('settings.api_keys_coming_soon')}</span>
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12, color: 'var(--dim)' }}>
           {t('settings.api_keys_desc')}

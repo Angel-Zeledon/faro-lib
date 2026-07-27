@@ -6,7 +6,8 @@ import {
   Database, TrendingUp, Package,
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight,
-  ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock, Plug,
+  ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock, Plug, History,
+  FlaskConical,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -40,12 +41,14 @@ const NAV: NavItem[] = [
   { href: '/inventory/suppliers', labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
 
   { href: '/inventory/roi',       labelKey: 'nav.roi',         Icon: TrendingUp,      group: 'analysis' },
+  { href: '/sessions',            labelKey: 'nav.sessions',    Icon: History,         group: 'analysis' },
   { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
+  { href: '/scenarios',           labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis', feature: 'event_simulator' },
 
   { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
   { href: '/integraciones',       labelKey: 'nav.integrations', Icon: Plug,           group: 'system',  feature: 'integrations' },
   { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
-  { href: '/settings',            labelKey: 'nav.settings',    Icon: KeyRound,        group: 'system',  adminOnly: true },
+  { href: '/settings',            labelKey: 'nav.settings',    Icon: KeyRound,        group: 'system',  adminOnly: true, feature: 'api_access' },
 ]
 
 const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']

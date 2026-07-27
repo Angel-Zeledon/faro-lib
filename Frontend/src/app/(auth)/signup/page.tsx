@@ -55,7 +55,9 @@ function SignupPageContent() {
   const wantsDemo = searchParams.get('demo') === '1'
   const loginHref = wantsDemo ? '/login?demo=1' : '/login'
 
-  const [form, setForm] = useState({ email: '', password: '', full_name: '', tenant_name: '' })
+  const [form, setForm] = useState({
+    email: '', password: '', full_name: '', tenant_name: '', whatsapp_number: '',
+  })
   const [showPw,  setShowPw]  = useState(false)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -68,13 +70,20 @@ function SignupPageContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    const phone = form.whatsapp_number.trim()
+    // Same E.164 rule the backend enforces — catch it before the round trip.
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
+      setError(t('auth.whatsapp_invalid'))
+      return
+    }
     setLoading(true)
     try {
       await authSignup({
-        email:       form.email,
-        password:    form.password,
-        full_name:   form.full_name || undefined,
-        tenant_name: form.tenant_name,
+        email:           form.email,
+        password:        form.password,
+        full_name:       form.full_name || undefined,
+        tenant_name:     form.tenant_name,
+        whatsapp_number: phone,
       })
       setDone(true)
     } catch (err: unknown) {
@@ -220,6 +229,22 @@ function SignupPageContent() {
                     placeholder="you@company.com"
                     style={inputStyle} onFocus={focusIn} onBlur={focusOut}
                   />
+                </div>
+
+                <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.215s both' }}>
+                  <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                    {t('auth.whatsapp_label')} <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <input
+                    id="signup-whatsapp" name="whatsapp_number"
+                    type="tel" value={form.whatsapp_number} required
+                    onChange={e => set('whatsapp_number', e.target.value)}
+                    placeholder="+50688887777"
+                    style={inputStyle} onFocus={focusIn} onBlur={focusOut}
+                  />
+                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#71717a', lineHeight: 1.45 }}>
+                    {t('auth.whatsapp_hint')}
+                  </p>
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.24s both' }}>

@@ -14,6 +14,26 @@ import os
 import pandas as pd
 
 
+def _sniff_separator(path: str) -> str:
+    """Guess a CSV's separator from its header line.
+
+    Spanish-locale Excel exports use ';', so assuming ',' collapsed the whole
+    file into one unusable column. Picks whichever candidate yields the most
+    header fields; anything ambiguous stays ','.
+    """
+    try:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
+            header = fh.readline()
+    except OSError:
+        return ","
+    best, best_count = ",", 1
+    for candidate in (",", ";", "\t", "|"):
+        count = len(header.split(candidate))
+        if count > best_count:
+            best, best_count = candidate, count
+    return best
+
+
 class LoadError(Exception):
     pass
 
@@ -48,7 +68,7 @@ class DataLoader:
             raise LoadError(f"Unsupported format '{ext}'. Supported: {self.SUPPORTED}")
 
         if ext == ".csv":
-            return pd.read_csv(path)
+            return pd.read_csv(path, sep=_sniff_separator(path), encoding="utf-8-sig")
         if ext in (".xlsx", ".xls"):
             return pd.read_excel(path)
         if ext == ".parquet":

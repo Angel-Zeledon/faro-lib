@@ -11,6 +11,7 @@ and forecast_cfg.horizon, which runner.py already consumes.
 from __future__ import annotations
 
 import logging
+import math
 
 from backend.utils.temporal_agg import detect_frequency, planning_granularities
 
@@ -23,25 +24,53 @@ GENEROUS_REACH = {"daily": 90, "weekly": 26, "monthly": 12}
 MIN_BUCKETS_FOR_GRANULARITY = 20
 # pandas resample rule each grain trains at; None = native (no aggregation).
 TARGET_FREQ = {"daily": None, "weekly": "W-MON", "monthly": "MS"}
+# Calendar days one bucket of each grain covers, for converting the user's
+# horizon-in-days (Quick Start wizard) into per-grain forecast steps.
+DAYS_PER_PERIOD = {"daily": 1, "weekly": 7, "monthly": 30}
+# Fewer than 2 forecast steps makes the forecast useless for reordering.
+MIN_HORIZON_STEPS = 2
+
+USER_GRANULARITIES = ("auto", "daily", "weekly", "monthly")
 
 
-def plan_family(dates: list[str]) -> list[dict]:
+def _horizon_steps(granularity: str, user_horizon_days: int | None) -> int:
+    """Forecast steps for a grain: the user's horizon-in-days converted into
+    that grain's buckets, capped by GENEROUS_REACH and floored at
+    MIN_HORIZON_STEPS. Without a user horizon, the generous reach itself."""
+    if not user_horizon_days:
+        return GENEROUS_REACH[granularity]
+    steps = math.ceil(user_horizon_days / DAYS_PER_PERIOD[granularity])
+    return max(MIN_HORIZON_STEPS, min(steps, GENEROUS_REACH[granularity]))
+
+
+def plan_family(
+    dates: list[str],
+    user_granularity: str = "auto",
+    user_horizon_days: int | None = None,
+) -> list[dict]:
     """Decide which granularities to train and with what config. Pure — no DB.
 
     Returns finest-first, one dict per available grain:
       {granularity, target_freq, horizon, is_base}.
     The base (finest detected) grain trains natively (target_freq None).
+
+    When the user picked an explicit granularity (Quick Start wizard) and the
+    data can support it, only that grain is planned. A non-viable pick (too few
+    buckets, or finer than the data's native grain) falls back to the auto
+    fan-out — never fails the run.
     """
     base_freq = detect_frequency(dates)
     if base_freq not in GENEROUS_REACH:
         base_freq = "daily"
     grains = planning_granularities(base_freq, dates, MIN_BUCKETS_FOR_GRANULARITY)
+    if user_granularity != "auto" and user_granularity in grains:
+        grains = [user_granularity]
     specs = []
     for g in grains:
         specs.append({
             "granularity": g,
             "target_freq": None if g == base_freq else TARGET_FREQ[g],
-            "horizon": GENEROUS_REACH[g],
+            "horizon": _horizon_steps(g, user_horizon_days),
             "is_base": g == base_freq,
         })
     return specs
@@ -88,17 +117,28 @@ def _enqueue(tenant_id: str, session_id: str, user_id: str) -> str:
     return job["id"]
 
 
-def launch_training_family(tenant_id: str, base_session_id: str, user_id: str) -> dict:
+def launch_training_family(
+    tenant_id: str,
+    base_session_id: str,
+    user_id: str,
+    user_horizon_days: int | None = None,
+    user_granularity: str = "auto",
+) -> dict:
     """Fan a ready-to-train base session out into its granularity family and
     enqueue every member. The base session must already be validated and in a
     pre-train state (callers guarantee this). Returns the family descriptor.
+
+    `user_horizon_days` / `user_granularity` come from the Quick Start wizard:
+    they narrow the fan-out (single explicit grain when viable) and size each
+    grain's horizon (see plan_family). Both are persisted into the base
+    session's forecast_cfg for auditability.
     """
     from backend.db.connection import execute
     from backend.db import session_store
     from backend.sessions import service as session_svc
 
     dates = _read_dataset_dates(tenant_id, base_session_id)
-    specs = plan_family(dates)  # always >= 1 (the base)
+    specs = plan_family(dates, user_granularity, user_horizon_days)  # always >= 1
     base_spec = specs[0]
     family_id = base_session_id
 
@@ -109,7 +149,19 @@ def launch_training_family(tenant_id: str, base_session_id: str, user_id: str) -
         (family_id, base_spec["granularity"], base_session_id, tenant_id))
     base_fcfg = dict(session_store.get_field(tenant_id, base_session_id, "forecast_cfg") or {})
     base_fcfg["horizon"] = base_spec["horizon"]
+    # Audit trail of what the user actually asked for in the wizard.
+    if user_horizon_days is not None:
+        base_fcfg["user_horizon_days"] = user_horizon_days
+    if user_granularity != "auto":
+        base_fcfg["user_granularity"] = user_granularity
     session_store.set_field(tenant_id, base_session_id, "forecast_cfg", base_fcfg)
+    # A user-picked grain coarser than the data's native grain means the base
+    # session itself must aggregate; set granularity_cfg explicitly either way
+    # so a re-launch never inherits a stale aggregation.
+    session_store.set_field(
+        tenant_id, base_session_id, "granularity_cfg",
+        {"strategy": "aggregate" if base_spec["target_freq"] else "native",
+         "target_freq": base_spec["target_freq"]})
 
     base_session = session_svc.get_session(tenant_id, base_session_id)
     dataset_id = base_session.get("dataset_id")

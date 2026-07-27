@@ -121,6 +121,23 @@ async def signup(body: SignupRequest):
     if _lookup_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    # A number already VERIFIED by someone else authenticates the inbound
+    # WhatsApp bot as that person — signup must not be able to claim it.
+    from backend.errors import AppError
+    from backend.whatsapp.identity import normalize_phone
+
+    phone = normalize_phone(body.whatsapp_number)
+    if query_one(
+        """SELECT id FROM users
+           WHERE whatsapp_number = %s AND whatsapp_verified_at IS NOT NULL""",
+        (phone,),
+    ):
+        raise AppError(
+            "whatsapp_number_taken",
+            "This WhatsApp number is already linked to another account",
+            status_code=409,
+        )
+
     tenant = create_tenant(body.tenant_name)
     user = user_svc.create_user(
         tenant_id=tenant["id"],
@@ -128,6 +145,7 @@ async def signup(body: SignupRequest):
         password=body.password,
         role="admin",
         full_name=body.full_name,
+        whatsapp_number=phone,
     )
 
     verify_token = create_signed_token(

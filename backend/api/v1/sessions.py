@@ -33,6 +33,21 @@ def create_session(
     return ok(session)
 
 
+# NOTE: declared before GET /{session_id} — FastAPI matches routes in order,
+# so "/summary" must not be swallowed by the path parameter.
+@router.get("/summary")
+def list_session_summaries(
+    user: CurrentUser = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Session history: enriched list (dataset name, horizon, SKU count,
+    granularity) in a single batched query — no per-session lookups."""
+    items = session_svc.list_session_summaries(user.tenant_id, skip=skip, limit=limit)
+    total = session_svc.count_sessions(user.tenant_id)
+    return ok({"items": items, "total": total, "skip": skip, "limit": limit})
+
+
 @router.get("/{session_id}")
 def get_session(session_id: str, user: CurrentUser = Depends(get_current_user)):
     s = session_svc.get_session(user.tenant_id, session_id)

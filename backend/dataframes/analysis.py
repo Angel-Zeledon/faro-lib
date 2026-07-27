@@ -5,9 +5,13 @@ from typing import Optional
 
 import pandas as pd
 
+from backend.dataframes.io import _csv_sep
+
 
 def _read(path: str) -> pd.DataFrame:
-    return pd.read_csv(path) if str(path).endswith(".csv") else pd.read_excel(path)
+    if str(path).endswith(".csv"):
+        return pd.read_csv(path, sep=_csv_sep(path), encoding="utf-8-sig")
+    return pd.read_excel(path)
 
 
 def read_error_message(exc: Exception) -> Optional[str]:

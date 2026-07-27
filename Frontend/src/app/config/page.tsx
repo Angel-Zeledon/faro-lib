@@ -858,6 +858,14 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
   const [loading,        setLoading]        = useState(false)
   const [unlinking,      setUnlinking]      = useState(false)
   const [error,          setError]          = useState<string | null>(null)
+  // Seconds until the resend button re-enables (mirrors the backend cooldown).
+  const [resendIn,       setResendIn]       = useState(0)
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const id = setTimeout(() => setResendIn(s => Math.max(0, s - 1)), 1000)
+    return () => clearTimeout(id)
+  }, [resendIn])
 
   useEffect(() => {
     getMe()
@@ -881,9 +889,16 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
       setPendingNumber(number.trim())
       setDebugCode(res.debug_code ?? null)
       setCode('')
+      setResendIn(60)
       setStep('code')
     } catch (e: unknown) {
-      if (isApiError(e) && e.status === 409) setError(t('config.wa_err_taken'))
+      if (isApiError(e) && e.status === 429) {
+        const ra = Number((e.params as { retry_after?: unknown }).retry_after) || 60
+        setResendIn(ra)
+        setError(t('config.wa_err_cooldown').replace('{s}', String(ra)))
+      }
+      else if (isApiError(e) && e.status === 409) setError(t('config.wa_err_taken'))
+      else if (isApiError(e) && e.status === 503) setError(t('config.wa_err_unavailable'))
       else setError(t('config.wa_err_send'))
     } finally {
       setLoading(false)
@@ -1028,6 +1043,21 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             >
               {loading ? <Spinner size={12} /> : <CheckCircle2 size={12} />}
               {t('config.wa_confirm')}
+            </button>
+            <button
+              onClick={handleSendCode}
+              disabled={loading || resendIn > 0}
+              style={{
+                all: 'unset', cursor: loading || resendIn > 0 ? 'default' : 'pointer',
+                padding: '8px 14px', borderRadius: 8, fontSize: 12,
+                border: '1px solid var(--border)',
+                color: resendIn > 0 ? 'var(--dim)' : 'var(--muted)',
+                opacity: loading || resendIn > 0 ? 0.6 : 1, transition: 'opacity 0.15s',
+              }}
+            >
+              {resendIn > 0
+                ? t('config.wa_resend_in').replace('{s}', String(resendIn))
+                : t('config.wa_resend')}
             </button>
             <button
               onClick={() => { setStep('form'); setCode(''); setError(null) }}

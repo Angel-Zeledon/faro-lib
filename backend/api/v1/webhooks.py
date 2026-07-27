@@ -21,7 +21,9 @@ router = APIRouter(
 )
 log = logging.getLogger(__name__)
 
-SUPPORTED_EVENTS = {"job.completed", "job.failed", "accuracy.degraded"}
+# accuracy.degraded was offered here once but no code path ever emitted it;
+# re-add only together with the emitter.
+SUPPORTED_EVENTS = {"job.completed", "job.failed"}
 
 
 class CreateWebhookRequest(BaseModel):

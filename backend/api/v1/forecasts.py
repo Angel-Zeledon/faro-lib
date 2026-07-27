@@ -448,6 +448,7 @@ def get_sku_intelligence(
             forecast_raw = raw
 
     from backend.utils.temporal_agg import (
+        _FREQ_ORDER,
         detect_frequency,
         available_granularities as _avail_gran,
         aggregate_historical,
@@ -456,12 +457,23 @@ def get_sku_intelligence(
     )
 
     dates     = [p["date"] for p in historical_raw if "date" in p]
-    orig_freq = detect_frequency(dates)
-    valid_gran = _avail_gran(orig_freq, len(historical_raw))
-    gran      = granularity if granularity in valid_gran else orig_freq
+    hist_freq = detect_frequency(dates)
 
-    historical_out = aggregate_historical(historical_raw, gran, agg=agg) if gran != orig_freq else historical_raw
-    forecast_out   = aggregate_forecast(forecast_raw, gran, agg=agg)     if gran != orig_freq else forecast_raw
+    # The floor is the FORECAST's own frequency, not the history's. A weekly
+    # session predicts weekly totals; served next to daily history they land on
+    # the same axis at ~7x the scale and read as an unexplained jump — the
+    # single most confidence-destroying artifact on this screen. A weekly
+    # forecast cannot be split back into days without inventing data, so the
+    # finer grains are simply not offered.
+    fc_dates  = [p["date"] for p in forecast_raw if isinstance(p, dict) and "date" in p]
+    fc_freq   = detect_frequency(fc_dates) if len(fc_dates) >= 2 else hist_freq
+    base_freq = fc_freq if _FREQ_ORDER.index(fc_freq) > _FREQ_ORDER.index(hist_freq) else hist_freq
+
+    valid_gran = _avail_gran(base_freq, len(historical_raw))
+    gran      = granularity if granularity in valid_gran else base_freq
+
+    historical_out = aggregate_historical(historical_raw, gran, agg=agg) if gran != hist_freq else historical_raw
+    forecast_out   = aggregate_forecast(forecast_raw, gran, agg=agg)     if gran != fc_freq else forecast_raw
 
     values  = [p["value"] for p in historical_out if isinstance(p.get("value"), (int, float))]
     stats   = compute_stats(values)
@@ -475,7 +487,7 @@ def get_sku_intelligence(
         "sku":                     sku,
         "model":                   chosen_model,
         "available_models":        available_models,
-        "original_freq":           orig_freq,
+        "original_freq":           base_freq,
         "applied_granularity":     gran,
         "available_granularities": valid_gran,
         "historical":              historical_out,

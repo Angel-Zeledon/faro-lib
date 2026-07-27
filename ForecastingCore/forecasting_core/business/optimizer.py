@@ -7,7 +7,8 @@ for the full model.
 
 Model (buckets t = 1..H, 1-indexed; t=0 is "now", a constant not a variable):
   order[i,w,t]:    int >= 0, units of SKU i arriving at warehouse w at t.
-  transfer[i,a,b,t]: int >= 0, units of SKU i moved a->b (a != b), at t.
+  transfer[i,a,b,t]: int >= 0, units of SKU i moved a->b (a != b), arriving at
+                     t (forced to 0 while t <= the lane's transit buckets).
   inv[i,w,t]:      float >= 0, ending inventory of SKU i at warehouse w at t.
   short[i,w,t]:    float >= 0, unmet demand of SKU i at warehouse w at t.
 
@@ -19,12 +20,14 @@ Balance (per i,w,t):
 
 Objective (minimize):
   sum holding_cost[i]*inv + stockout_cost[i]*short
-    + order_cost[i]*order + transfer_cost*transfer
+    + order_cost[i]*order + transfer_cost[a,b]*transfer
+  (transfer_cost[a,b] is the lane's cost per unit, falling back to the global
+   transfer_cost for pairs the caller left unconfigured.)
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -43,6 +46,16 @@ class OptimizationInput:
     stockout_cost: Dict[str, float]                   # sku -> penalty per unit short
     order_cost: Dict[str, float]                      # sku -> cost per unit purchased
     transfer_cost: float = 1.0                        # global cost per unit transferred
+    # Per-lane overrides of the global transfer_cost, keyed by (from_wh, to_wh).
+    # A pair absent here falls back to `transfer_cost`; the caller resolves what
+    # a lane costs (this module stays DB-free).
+    transfer_cost_by_lane: Dict[Tuple[str, str], float] = field(default_factory=dict)
+    # Per-lane transit time in BUCKETS, keyed by (from_wh, to_wh). A transfer
+    # dispatched at the start of the horizon cannot arrive before that many
+    # buckets have elapsed, exactly like an order's lead_time_buckets. A pair
+    # absent here is treated as arriving within the bucket (0), which is the
+    # pre-feature "transfers are instant" behavior.
+    transfer_lead_buckets: Dict[Tuple[str, str], int] = field(default_factory=dict)
 
 
 @dataclass
@@ -151,9 +164,16 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                 if t <= inp.lead_time_buckets.get(i, 0):
                     ub[idx.order_idx(i, w, t)] = 0
         for a, b in idx.transfer_pairs():
+            lane_cost = inp.transfer_cost_by_lane.get((a, b), inp.transfer_cost)
+            lane_lead = inp.transfer_lead_buckets.get((a, b), 0)
             for t in range(1, inp.horizon + 1):
-                c[idx.transfer_idx(i, a, b, t)] = inp.transfer_cost
+                c[idx.transfer_idx(i, a, b, t)] = lane_cost
                 integrality[idx.transfer_idx(i, a, b, t)] = 1
+                # A lane that takes N buckets cannot deliver into buckets
+                # 1..N — same gate as an order's lead time, so a slow lane
+                # stops being a free instant teleport.
+                if t <= lane_lead:
+                    ub[idx.transfer_idx(i, a, b, t)] = 0
 
     # Balance equality rows: one per (sku, warehouse, t).
     n_rows = len(inp.skus) * len(inp.warehouses) * inp.horizon

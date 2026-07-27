@@ -135,11 +135,12 @@ def log_po_generation(
                 execute(
                     """INSERT INTO inventory_po_items
                            (po_log_id, tenant_id, sku, display_name, supplier,
-                            signal, recommended_qty, final_qty,
+                            supplier_id, signal, recommended_qty, final_qty,
                             unit_cost, status, warehouse)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (po_log_id, tenant_id, str(i.get("sku") or ""),
-                     i.get("display_name"), i.get("supplier"), i.get("signal"),
+                     i.get("display_name"), i.get("supplier"),
+                     i.get("supplier_id"), i.get("signal"),
                      float(i.get("recommended_qty") or 0),
                      _ordered_qty(i) if i["status"] in _ORDERED else 0.0,
                      (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
@@ -167,6 +168,61 @@ def log_po_generation(
         "modified_count": modified_count,
         "rejected_count": rejected_count,
     }
+
+
+def create_manual_po(
+    tenant_id: str, supplier: dict, lines: list[dict],
+    destination_warehouse: str | None = None,
+) -> dict:
+    """
+    A purchase order the buyer wrote from scratch — no forecast session behind
+    it. Rows carry session_id NULL and source='manual'; adoption counters stay
+    at 0 so manual orders never inflate the recommendation-adoption metrics.
+
+    lines: [{sku, qty, unit_cost?, display_name?}], every qty > 0 (validated
+    at the API layer).
+    """
+    total_units = sum(float(l["qty"]) for l in lines)
+    value_parts = [
+        float(l["qty"]) * float(l["unit_cost"])
+        for l in lines if l.get("unit_cost") is not None
+    ]
+    total_value: float | None = sum(value_parts) if value_parts else None
+
+    def _insert() -> dict | None:
+        return query_one(
+            """INSERT INTO inventory_po_log
+                   (tenant_id, session_id, source, sku_count, total_units,
+                    total_value, destination_warehouse, po_number)
+               VALUES (%s, NULL, 'manual', %s, %s, %s, %s,
+                       (SELECT COALESCE(MAX(po_number), 0) + 1
+                          FROM inventory_po_log WHERE tenant_id = %s))
+               RETURNING *""",
+            (tenant_id, len(lines), total_units, total_value,
+             destination_warehouse, tenant_id),
+        )
+
+    try:
+        inserted = _insert()
+    except Exception as exc:
+        if getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
+            raise
+        inserted = _insert()
+
+    po_log_id = inserted["id"]
+    for l in lines:
+        execute(
+            """INSERT INTO inventory_po_items
+                   (po_log_id, tenant_id, sku, display_name, supplier,
+                    supplier_id, recommended_qty, final_qty, unit_cost,
+                    status, warehouse)
+               VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, 'approved', %s)""",
+            (po_log_id, tenant_id, str(l["sku"]), l.get("display_name"),
+             supplier["name"], supplier["id"], float(l["qty"]),
+             (float(l["unit_cost"]) if l.get("unit_cost") is not None else None),
+             destination_warehouse or _DEFAULT_WAREHOUSE),
+        )
+    return dict(inserted)
 
 
 def get_roi_summary(tenant_id: str) -> dict:
@@ -249,7 +305,7 @@ def get_roi_summary(tenant_id: str) -> dict:
 def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     """Returns recent PO generation events for the history panel."""
     rows = query(
-        """SELECT id, session_id, generated_at, sku_count, total_units,
+        """SELECT id, session_id, source, generated_at, sku_count, total_units,
                   total_value, skus_order_now, skus_order_soon,
                   reception_status, received_at, po_number
            FROM inventory_po_log

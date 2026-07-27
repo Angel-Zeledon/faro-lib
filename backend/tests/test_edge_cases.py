@@ -375,19 +375,23 @@ class TestInputValidation:
         resp = client.post("/api/v1/auth/signup", json={"email": "test@example.com"})
         assert resp.status_code == 422
 
-    def test_upload_oversized_file_returns_400(self, client, auth_headers, monkeypatch):
+    def test_upload_oversized_file_is_blocked_by_plan_limit(self, client, auth_headers, monkeypatch):
         # The size cap is bypassed under TESTING_MODE, so the test must turn it
         # off itself or it can never fail on a local .env with TESTING_MODE=true.
         from backend.config import settings
         monkeypatch.setattr(settings, "testing_mode", False)
-        # Create fake oversized content (>200MB limit)
-        fake_big = b"a" * (settings.max_upload_size_mb * 1024 * 1024 + 1)
+        # >200MB: over the Starter plan's max_dataset_size_mb, which is now the
+        # authoritative cap (403 PLAN_LIMIT_REACHED, not the old generic 400).
+        fake_big = b"a" * (200 * 1024 * 1024 + 1)
         resp = client.post(
             "/api/v1/datasets",
             files={"file": ("big.csv", fake_big, "text/csv")},
             headers=auth_headers,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert detail["code"] == "PLAN_LIMIT_REACHED"
+        assert detail["limit"] == "max_dataset_size_mb"
 
     def test_attach_dataset_with_empty_id_returns_422(self, client, auth_headers, test_session):
         sid = test_session["id"]

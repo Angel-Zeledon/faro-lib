@@ -39,7 +39,7 @@ def test_enterprise_only_features():
 
 @pytest.mark.offline
 def test_numeric_limits():
-    assert PLAN_CATALOG["starter"].max_skus == 500
+    assert PLAN_CATALOG["starter"].max_skus == 1000
     assert PLAN_CATALOG["professional"].max_skus == 5000
     assert PLAN_CATALOG["enterprise"].max_skus is None
     assert PLAN_CATALOG["starter"].max_users == 2
@@ -59,7 +59,7 @@ def test_has_feature_by_plan():
 
 @pytest.mark.offline
 def test_unknown_plan_falls_back_to_starter():
-    assert ent.get_plan_def("garbage").max_skus == 500
+    assert ent.get_plan_def("garbage").max_skus == 1000
 
 
 @pytest.mark.offline

@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -5,9 +6,33 @@ from fastapi import UploadFile
 
 from backend.config import settings
 from backend.db.connection import query_one, query, execute
+from backend.entitlements.service import enforce_limit, tenant_limits
+from backend.tenants.service import get_tenant
 from backend.utils.ids import generate_id
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".parquet", ".xls", ".json"}
+
+
+def _enforce_dataset_size(tenant_id: str, size_bytes: int) -> None:
+    """
+    The tenant's plan (or per-tenant quota override) max_dataset_size_mb is the
+    authoritative upload cap — an enterprise plan's 2000 MB must not be silently
+    truncated by the global settings.max_upload_size_mb (200 MB). The global
+    value only acts as an infra ceiling when the plan defines no limit (None).
+    """
+    size_mb = size_bytes / (1024 * 1024)
+    tenant = get_tenant(tenant_id)
+    plan_max_mb = tenant_limits(tenant)["max_dataset_size_mb"] if tenant else None
+    if plan_max_mb is not None:
+        # Raises 403 PLAN_LIMIT_REACHED; no-op in testing mode.
+        enforce_limit(
+            tenant_id, "max_dataset_size_mb", current=math.ceil(size_mb), adding=0
+        )
+    elif not settings.testing_mode and size_bytes > settings.max_upload_size_mb * 1024 * 1024:
+        raise ValueError(
+            f"File size {size_mb:.1f} MB exceeds "
+            f"limit of {settings.max_upload_size_mb} MB"
+        )
 
 
 async def upload_dataset(tenant_id: str, user_id: str, file: UploadFile) -> dict:
@@ -19,12 +44,7 @@ async def upload_dataset(tenant_id: str, user_id: str, file: UploadFile) -> dict
 
     content = await file.read()
     size_bytes = len(content)
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if not settings.testing_mode and size_bytes > max_bytes:
-        raise ValueError(
-            f"File size {size_bytes / 1024 / 1024:.1f} MB exceeds "
-            f"limit of {settings.max_upload_size_mb} MB"
-        )
+    _enforce_dataset_size(tenant_id, size_bytes)
 
     dataset_id = generate_id("ds")
 
