@@ -1826,11 +1826,14 @@ export default function DataPage() {
  ? `${src.sql_config?.engine} · ${src.sql_config?.host}`
  : fmt(src.size_bytes)}
  </span>
- {src.row_count && (
+ {/* `? :`, not `&&`: a row_count of 0 makes `count && …` evaluate to the
+     NUMBER 0, which React happily renders as a bare "0" next to the file
+     size. An empty file should show nothing, not a stray zero. */}
+ {src.row_count ? (
  <span style={{ color: C.muted, fontSize: 11 }}>
  {src.row_count.toLocaleString()} {src.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}
  </span>
- )}
+ ) : null}
  </div>
  </button>
  )
