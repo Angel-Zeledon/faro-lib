@@ -25,18 +25,30 @@ function tone(severity: string) {
 // A mixed-granularity file is its own issue kind: the profiler has always
 // detected it and the API has always returned it, but it never had a renderer.
 // Modelled as a synthetic issue so it sorts and reads with the rest.
-function granularityIssue(g: GranularityDetection | undefined): DataQualityIssue | null {
+//
+// `t` is threaded in because the buckets arrive as pandas frequency aliases
+// ("D", "MS"). Those are an implementation detail of the engine — a user told
+// to "use MS for everything" has no way to act on that — so they are rendered
+// as words.
+function granularityIssue(
+  g: GranularityDetection | undefined,
+  t: (key: string, params?: Record<string, unknown>) => string,
+): DataQualityIssue | null {
   if (!g || g.status !== 'conflict') return null
+  const freqLabel = (code: string) => {
+    const label = t(`freq.${code}`)
+    return label === `freq.${code}` ? code : label
+  }
   const perBucket = g.detected
-    .map(b => `${b}: ${(g.skus_by_frequency[b] || []).length}`)
+    .map(b => `${freqLabel(b)}: ${(g.skus_by_frequency[b] || []).length}`)
     .join(', ')
   return {
     type: 'granularity_conflict',
     severity: 'error',
     message: `Mixed reporting frequency (${perBucket})`,
-    detected: g.detected.join(', '),
+    detected: g.detected.map(freqLabel).join(', '),
     per_bucket: perBucket,
-    suggested: g.suggested_target ?? '',
+    suggested: g.suggested_target ? freqLabel(g.suggested_target) : '',
   }
 }
 
@@ -45,7 +57,7 @@ export default function DataIssuesPanel({ issues, granularity }: {
   granularity?: GranularityDetection
 }) {
   const { t } = useLanguage()
-  const conflict = granularityIssue(granularity)
+  const conflict = granularityIssue(granularity, t)
   const all = conflict ? [conflict, ...(issues || [])] : (issues || [])
   if (all.length === 0) return null
 

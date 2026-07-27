@@ -115,7 +115,14 @@ def generate_report(
     if not s:
         raise HTTPException(status_code=404, detail="Session not found")
     if s["status"] != "COMPLETED":
-        raise HTTPException(status_code=409, detail="Session must be COMPLETED before generating reports")
+        # Structured, not prose: this is the guard a real user trips (asking for
+        # a report on a session still training), so the frontend has to localize it.
+        raise AppError(
+            "session_not_completed",
+            "The session must finish training before a report can be generated.",
+            status_code=409,
+            params={"status": s["status"]},
+        )
 
     report_type = body.get("type", "operational")
     if report_type not in REPORT_TYPES:
@@ -208,9 +215,14 @@ def download_report(
             params={"format": format},
         )
 
-    raise HTTPException(
+    # Genuinely never attempted — here "generate one first" IS the right advice.
+    # Structured like the branches above so the frontend localizes all four the
+    # same way instead of falling back to this English for one of them.
+    raise AppError(
+        "report_not_generated",
+        f"No {format} report has been generated for this session yet.",
         status_code=404,
-        detail=f"No {format} report found. Generate one first via POST /reports/generate",
+        params={"format": format},
     )
 
 

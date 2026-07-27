@@ -121,9 +121,15 @@ export interface RunWarningGroup {
   samples:  RunWarningSample[]
 }
 
+export interface RunCorrection {
+  action:      string
+  description: string
+  n_skus:      number
+}
+
 export interface RunWarnings {
   validation:  RunWarningGroup[]
-  corrections: { action: string; description: string }[]
+  corrections: RunCorrection[]
 }
 
 export interface ColumnOptions {

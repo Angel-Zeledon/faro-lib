@@ -131,11 +131,30 @@ class TestCorrections:
     @pytest.mark.offline
     def test_auto_corrections_are_reported(self):
         out = _collect_run_warnings(_Engine(corrections=[
-            {"action": "fill_gaps", "description": "Filled 3 missing days"},
+            {
+                "action": "fill_gaps",
+                "description": "Filled 3 missing days",
+                "skus_affected": ["A", "B"],
+            },
         ]))
         assert out["corrections"] == [
-            {"action": "fill_gaps", "description": "Filled 3 missing days"},
+            {"action": "fill_gaps", "description": "Filled 3 missing days", "n_skus": 2},
         ]
+
+    @pytest.mark.offline
+    def test_sku_list_is_replaced_by_its_size(self):
+        """The UI needs the number to write a sentence, never the list itself —
+        `skus_affected` can run to thousands of entries."""
+        out = _collect_run_warnings(_Engine(corrections=[
+            {"action": "clip_outliers", "description": "x", "skus_affected": [f"S{i}" for i in range(500)]},
+        ]))
+        assert out["corrections"][0]["n_skus"] == 500
+        assert "skus_affected" not in out["corrections"][0]
+
+    @pytest.mark.offline
+    def test_a_correction_without_skus_reports_zero(self):
+        out = _collect_run_warnings(_Engine(corrections=[{"action": "clamp", "description": "x"}]))
+        assert out["corrections"][0]["n_skus"] == 0
 
     @pytest.mark.offline
     def test_corrections_are_capped(self):

@@ -167,11 +167,22 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
             listStyle: 'none', margin: '7px 0 0', padding: 0,
             display: 'flex', flexDirection: 'column', gap: 3,
           }}>
-            {corrections.map((c, i) => (
-              <li key={i} style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.55 }}>
-                {c.description}
-              </li>
-            ))}
+            {corrections.map((c, i) => {
+              // `action` is a stable code; `description` is the engine's own
+              // English and is only a fallback for a code with no copy yet.
+              //
+              // A leftover {placeholder} means this run predates the field the
+              // sentence needs — sessions trained before `n_skus` existed still
+              // have to read as prose, so they fall back too.
+              const key = `runcorr.${c.action}`
+              const text = t(key, c as unknown as Record<string, unknown>)
+              const usable = text !== key && !/\{[a-z_]+\}/i.test(text)
+              return (
+                <li key={i} style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.55 }}>
+                  {usable ? text : c.description}
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

@@ -655,8 +655,16 @@ def _collect_run_warnings(engine, prep_notes: "list | None" = None) -> dict:
                 "suggestions": (f.get("suggestions") or [])[:3],
             })
 
+    # `action` is the stable code the UI renders Spanish from; `description` is
+    # the engine's English and survives only as the fallback for an action with
+    # no copy yet. `n_skus` is what the sentence needs to name a number, and the
+    # SKU list itself is dropped — it can run to thousands.
     corrections = [
-        {"action": c.get("action") or "", "description": c.get("description") or ""}
+        {
+            "action": c.get("action") or "",
+            "description": c.get("description") or "",
+            "n_skus": len(c.get("skus_affected") or []),
+        }
         for c in (raw.get("corrections") or [])
     ][:MAX_WARNING_CODES]
 

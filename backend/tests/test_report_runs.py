@@ -160,12 +160,19 @@ class TestFailedGenerationIsRetrievable:
     def test_never_generated_still_returns_the_plain_404(
         self, client, analyst_headers, resultless_session,
     ):
-        """No attempt at all is a different situation and keeps its message."""
+        """No attempt at all is its own outcome, distinct from a failure.
+
+        It carries its own code rather than the English prose it used to: all
+        four download outcomes are structured, so the frontend localizes them
+        the same way instead of rendering English for this one.
+        """
         resp = client.get(
             f"/api/v1/sessions/{resultless_session['id']}/reports/pdf", headers=analyst_headers,
         )
         assert resp.status_code == 404
-        assert "Generate one first" in resp.json()["detail"]
+        body = resp.json()
+        assert body["error_code"] == "report_not_generated"
+        assert body["error_params"]["format"] == "pdf"
 
 
 class TestSuccessfulGeneration:
@@ -195,7 +202,7 @@ class TestSuccessfulGeneration:
         self, client, analyst_headers, result_session,
     ):
         """An excel-only run says nothing about pdf: the pdf download must fall
-        back to the plain 404, not claim a failure that never happened."""
+        back to "never generated", not claim a failure that never happened."""
         sid = result_session["id"]
         client.post(
             f"/api/v1/sessions/{sid}/reports/generate",
@@ -204,7 +211,7 @@ class TestSuccessfulGeneration:
         )
         resp = client.get(f"/api/v1/sessions/{sid}/reports/pdf", headers=analyst_headers)
         assert resp.status_code == 404
-        assert "Generate one first" in resp.json()["detail"]
+        assert resp.json()["error_code"] == "report_not_generated"
 
 
 class TestReportRunIsolation:

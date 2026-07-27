@@ -820,6 +820,37 @@ export const translations = {
     'dqissue.constant_target.fix': 'Casi siempre es un dato de relleno. Revisa la columna de ventas.',
     'dqissue.outliers':     'Hay {outlier_count} valores muy fuera de lo normal.',
     'dqissue.outliers.fix': 'Puede ser una venta mayorista real o un error de tecleo. Ajústalo en el paso de valores atípicos si no fue real.',
+    'dqissue.short_history':     'Historia insuficiente en {short_count} de tus productos (menos de 20 periodos).',
+    'dqissue.short_history.fix': 'Con tan poca historia no se puede pronosticar de forma confiable, así que esos productos usarán un método más simple. A partir de unos 6 meses la sugerencia mejora bastante.',
+    'dqissue.temporal_gaps':     'Faltan {gap_count} fechas en el historial.',
+    'dqissue.temporal_gaps.fix': 'Rellenamos los huecos antes de entrenar, pero si son muchos el pronóstico pierde precisión. Revisa si de verdad no hubo ventas esos días o si al archivo le faltan filas.',
+    'dqissue.unequal_history':     'La historia va de {min_len} a {max_len} periodos según el producto.',
+    'dqissue.unequal_history.fix': 'No es un error: los productos nuevos tienen menos historia. Solo ten en cuenta que su pronóstico es menos confiable que el de los que llevan más tiempo.',
+
+    // Reportes: el backend manda el código, la frase vive aquí.
+    'errors.session_not_completed':         'La sesión tiene que terminar de entrenar antes de generar un reporte.',
+    'errors.report_generation_in_progress': 'El reporte {format} todavía se está generando. Prueba de nuevo en un momento.',
+    'errors.report_generation_failed':      'La generación del reporte {format} falló ({reason}). Vuelve a generarlo.',
+    'errors.report_file_missing':           'El reporte {format} se generó, pero su archivo ya no está. Genéralo de nuevo.',
+    'errors.report_not_generated':          'Todavía no se ha generado un reporte {format} para esta sesión.',
+
+    // Auto-corrections the engine applied. Keys are its stable `action` codes.
+    'runcorr.fill_nan_target': 'Rellenamos las ventas que faltaban en {n_skus} producto(s), tomando el valor anterior y, si no había, el siguiente.',
+    'runcorr.clip_outliers':   'Recortamos los valores extremos de {n_skus} producto(s) para que un dato suelto no arrastre el pronóstico.',
+    'runcorr.drop_duplicate_timestamps': 'Juntamos las filas repetidas con la misma fecha y el mismo producto.',
+    'runcorr.cast_target_to_numeric':    'Convertimos a número la columna de ventas, que venía como texto.',
+
+    // Pandas frequency aliases as words — the engine speaks "D"/"MS", the user does not.
+    'freq.H':  'por hora',
+    'freq.D':  'diaria',
+    'freq.W':  'semanal',
+    'freq.M':  'mensual',
+    'freq.MS': 'mensual',
+    'freq.Q':  'trimestral',
+    'freq.QS': 'trimestral',
+    'freq.Y':  'anual',
+    'freq.YS': 'anual',
+    'freq.A':  'anual',
 
     // ── Run warnings (engine validation layers; keys are the English codes) ──
     'runwarn.title':        'Encontramos problemas en tus datos',
@@ -2948,6 +2979,37 @@ export const translations = {
     'dqissue.constant_target.fix': 'Almost always placeholder data. Check the sales column.',
     'dqissue.outliers':     '{outlier_count} values sit far outside the normal range.',
     'dqissue.outliers.fix': 'It may be a real wholesale order or a typo. Adjust it in the outlier step if it was not real.',
+    'dqissue.short_history':     'Not enough history on {short_count} of your products (under 20 periods).',
+    'dqissue.short_history.fix': 'That little history cannot support a reliable forecast, so those products fall back to a simpler method. From about 6 months on, the suggestion improves considerably.',
+    'dqissue.temporal_gaps':     '{gap_count} dates are missing from the history.',
+    'dqissue.temporal_gaps.fix': 'We fill the gaps before training, but too many of them cost accuracy. Check whether there really were no sales on those days or whether the file is missing rows.',
+    'dqissue.unequal_history':     'History ranges from {min_len} to {max_len} periods depending on the product.',
+    'dqissue.unequal_history.fix': 'Not an error: newer products have less history. Just bear in mind their forecast is less reliable than that of long-standing ones.',
+
+    // Reports: the backend sends the code, the sentence lives here.
+    'errors.session_not_completed':         'The session has to finish training before a report can be generated.',
+    'errors.report_generation_in_progress': 'The {format} report is still being generated. Try again in a moment.',
+    'errors.report_generation_failed':      'Generating the {format} report failed ({reason}). Try generating it again.',
+    'errors.report_file_missing':           'The {format} report was generated, but its file is gone. Generate it again.',
+    'errors.report_not_generated':          'No {format} report has been generated for this session yet.',
+
+    // Auto-corrections the engine applied. Keys are its stable `action` codes.
+    'runcorr.fill_nan_target': 'We filled the missing sales figures on {n_skus} product(s), carrying the previous value forward and, where there was none, the next one back.',
+    'runcorr.clip_outliers':   'We trimmed the extreme values on {n_skus} product(s) so one stray figure does not drag the forecast.',
+    'runcorr.drop_duplicate_timestamps': 'We merged the repeated rows sharing the same date and product.',
+    'runcorr.cast_target_to_numeric':    'We converted the sales column to numbers; it arrived as text.',
+
+    // Pandas frequency aliases as words — the engine speaks "D"/"MS", the user does not.
+    'freq.H':  'hourly',
+    'freq.D':  'daily',
+    'freq.W':  'weekly',
+    'freq.M':  'monthly',
+    'freq.MS': 'monthly',
+    'freq.Q':  'quarterly',
+    'freq.QS': 'quarterly',
+    'freq.Y':  'yearly',
+    'freq.YS': 'yearly',
+    'freq.A':  'yearly',
 
     // ── Run warnings (engine validation layers; keys are the English codes) ──
     'runwarn.title':        'We found problems in your data',
