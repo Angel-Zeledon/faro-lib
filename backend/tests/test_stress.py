@@ -8,8 +8,106 @@ These tests are slower — they use real DB writes under concurrency.
 
 import threading
 import time
+from contextlib import contextmanager
+
+import psycopg2
 import pytest
 from uuid import uuid4
+
+
+@contextmanager
+def _pooled_connection_wrapper(wrap):
+    """Hand every pooled connection to `wrap` before the caller sees it.
+
+    Lets a test inject a fault into the exact psycopg2 call it cares about
+    (`cursor()`, `commit()`, …) without touching backend.db internals that only
+    exist in one version of the code. `putconn` is unwrapped again because the
+    pool keys checked-out connections by `id(conn)`.
+    """
+    import backend.db.connection as db_conn
+
+    pool = db_conn._pool
+    real_getconn, real_putconn = pool.getconn, pool.putconn
+
+    def getconn(*args, **kwargs):
+        return wrap(real_getconn(*args, **kwargs))
+
+    def putconn(conn=None, *args, **kwargs):
+        return real_putconn(getattr(conn, "_inner", conn), *args, **kwargs)
+
+    pool.getconn, pool.putconn = getconn, putconn
+    try:
+        yield
+    finally:
+        pool.getconn, pool.putconn = real_getconn, real_putconn
+
+
+class _WrappedConn:
+    """Base for fault-injecting connection wrappers — forwards everything."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def _log_rows(job_id: str) -> list[dict]:
+    from backend.db.connection import query
+    return query(
+        "SELECT message FROM training_logs WHERE job_id = %s ORDER BY id",
+        (job_id,),
+    )
+
+
+@pytest.fixture
+def db_pool():
+    """Guarantees an initialized connection pool.
+
+    The tests below drive backend.db directly instead of going through the API,
+    so they must not depend on some earlier test having booted the FastAPI app
+    (whose lifespan is what normally calls init_pool). Same sizing as
+    backend/main.py, so pool behavior under concurrency is the real one.
+    """
+    import backend.db.connection as db_conn
+    from backend.config import settings
+
+    if db_conn._pool is None:
+        db_conn.init_pool(settings.database_url, min_conn=5, max_conn=20)
+    return db_conn._pool
+
+
+def _new_job(tenant_id: str, name: str) -> tuple[str, str]:
+    """A session + a job that no worker may claim.
+
+    `training_logs.job_id` has an FK to `jobs`, so a log test needs a real job —
+    but a job left in QUEUED is claimable by EVERY worker pointed at this
+    database, not just the one in this process. conftest patches
+    `backend.workers.worker.start`, which silences the in-process worker and
+    nothing else: a locally running dev server (`uvicorn backend.main:app`,
+    same DATABASE_URL) polls `jobs WHERE status = 'QUEUED'` across all tenants,
+    marks this job RUNNING and lets `workers/runner.py::_emit` append its own
+    lines under this exact job_id. That is measured, not hypothetical — it is
+    why `test_concurrent_log_appends` read 22 lines after writing 20: the two
+    extra lines were the runner's "[init] Building engine config..." and
+    "[load] Loading dataset..." before the job failed for want of a dataset.
+
+    Withdrawing the job from the queue up front makes the test own its log
+    exclusively, whatever else is running against this database.
+    """
+    from backend.sessions.service import create_session
+    from backend.training import queue as job_queue
+    from backend.training.job_service import create_job, get_job
+
+    session = create_session(tenant_id, "usr_test", name)
+    job = create_job(tenant_id, session["id"], "usr_test")
+    job_queue.remove(job["id"])
+    claimable = get_job(tenant_id, job["id"])["status"]
+    assert claimable == "CANCELLED", (
+        f"job left in status {claimable!r} — a foreign worker can still run it "
+        f"and write to this test's log"
+    )
+    return session["id"], job["id"]
 
 
 @pytest.mark.stress
@@ -226,7 +324,7 @@ class TestBulkOperations:
 @pytest.mark.stress
 @pytest.mark.slow
 class TestConcurrentDBWrites:
-    def test_concurrent_session_store_writes(self, test_tenant):
+    def test_concurrent_session_store_writes(self, db_pool, test_tenant):
         """Multiple threads writing different fields to the same session_configs row."""
         from backend.db import session_store
         from backend.sessions.service import create_session
@@ -262,17 +360,12 @@ class TestConcurrentDBWrites:
         assert cfg["columns_cfg"]["date_column"] == "date"
         assert cfg["features_cfg"]["lags"] == [1, 7]
 
-    def test_concurrent_log_appends(self, test_tenant):
+    def test_concurrent_log_appends(self, db_pool, test_tenant):
         """Multiple threads appending logs to the same job — no duplicates or losses."""
         from backend.db import session_store
-        from backend.sessions.service import create_session
-        from backend.training.job_service import create_job
 
-        s = create_session(test_tenant["id"], "usr_test", "concurrent-logs")
-        j = create_job(test_tenant["id"], s["id"], "usr_test")
         tid = test_tenant["id"]
-        sid = s["id"]
-        jid = j["id"]
+        sid, jid = _new_job(tid, "concurrent-logs")
         errors = []
 
         def append(msg: str):
@@ -292,7 +385,166 @@ class TestConcurrentDBWrites:
 
         assert not errors, f"Concurrent log errors: {errors}"
         lines = session_store.get_logs(tid, sid, jid)
-        assert len(lines) == 20
+        # Exact multiset, not just the count: a duplicated write and a lost one
+        # are opposite bugs, and `len(...) == 20` alone reports neither of them
+        # legibly (this test was seen returning 22).
+        assert sorted(lines) == sorted(f"log line {i}" for i in range(20)), (
+            f"Expected exactly the 20 written lines, got {len(lines)}: {sorted(lines)}"
+        )
+
+    def test_log_fixture_job_is_never_left_in_the_shared_queue(self, db_pool, test_tenant):
+        """A job a test creates must not be runnable by anybody else.
+
+        The job queue is the `jobs` table, so it is shared by every process
+        pointed at this database — not just this pytest process. conftest's
+        `mock.patch("backend.workers.worker.start")` only silences the worker
+        living inside pytest; a dev server started with the same DATABASE_URL
+        keeps polling `jobs WHERE status = 'QUEUED'` for all tenants and will
+        happily run a job a test just created, appending `runner._emit` lines
+        under that job_id while the test is still writing its own.
+
+        This asserts the exact precondition that made `test_concurrent_log_appends`
+        read 22 lines after writing 20: the job must be out of the queue before
+        the test uses its log.
+        """
+        from backend.training import queue as job_queue
+
+        tid = test_tenant["id"]
+        _sid, jid = _new_job(tid, "queue-isolation")
+
+        queued = {row["job_id"] for row in job_queue.peek()}
+        assert jid not in queued, (
+            "test job is sitting in the shared QUEUED queue — any worker "
+            "process on this database may run it and write to its training log"
+        )
+        claimed = job_queue.dequeue()
+        assert claimed is None or claimed["job_id"] != jid, (
+            "the worker's own dequeue() hands out this test's job"
+        )
+
+    def test_write_is_not_duplicated_when_the_commit_ack_is_lost(self, db_pool, test_tenant):
+        """A statement whose COMMIT reached the server must never be re-run.
+
+        db/connection.py retries a statement once when the pooled connection
+        turns out to be dead — Supabase's pooler drops them silently. That
+        retry used to fire on ANY OperationalError, including one raised by
+        `conn.commit()` itself, where the server may already have applied the
+        write and only the acknowledgement was lost. One `append_log` call then
+        wrote two rows; the same retry sits under every INSERT and every
+        non-idempotent UPDATE in the backend.
+
+        The fault injected here is exactly that: the commit lands, the
+        acknowledgement does not.
+        """
+        from backend.db import session_store
+
+        tid = test_tenant["id"]
+        sid, jid = _new_job(tid, "commit-ack-lost")
+        state = {"armed": True}
+
+        class AckLossConn(_WrappedConn):
+            def commit(self):
+                self._inner.commit()          # the server has applied it
+                if state["armed"]:
+                    state["armed"] = False
+                    raise psycopg2.OperationalError(
+                        "server closed the connection unexpectedly"
+                    )
+
+        raised = None
+        with _pooled_connection_wrapper(lambda c: AckLossConn(c) if state["armed"] else c):
+            try:
+                session_store.append_log(tid, sid, jid, "written once")
+            except psycopg2.OperationalError as exc:
+                raised = exc
+
+        assert not state["armed"], "fault was never triggered — test proves nothing"
+        rows = _log_rows(jid)
+        assert [r["message"] for r in rows] == ["written once"], (
+            f"one append_log call wrote {len(rows)} rows: "
+            f"{[r['message'] for r in rows]}"
+        )
+        assert raised is not None, (
+            "a write whose commit outcome is unknown was reported as successful"
+        )
+
+    def test_dead_pooled_connection_is_still_retried(self, db_pool, test_tenant):
+        """The narrow, safe half of the retry must survive the fix.
+
+        When the connection dies while the statement is in flight, no COMMIT
+        was ever sent, so nothing can have been applied — retrying once on a
+        fresh connection is correct and must still happen, exactly once.
+        """
+        from backend.db import session_store
+
+        tid = test_tenant["id"]
+        sid, jid = _new_job(tid, "dead-pooled-conn")
+        state = {"armed": True}
+
+        class DeadOnFirstUseConn(_WrappedConn):
+            def cursor(self, *args, **kwargs):
+                if state["armed"]:
+                    state["armed"] = False
+                    raise psycopg2.OperationalError(
+                        "server closed the connection unexpectedly"
+                    )
+                return self._inner.cursor(*args, **kwargs)
+
+        with _pooled_connection_wrapper(DeadOnFirstUseConn):
+            session_store.append_log(tid, sid, jid, "survived the retry")
+
+        assert not state["armed"], "fault was never triggered — test proves nothing"
+        rows = _log_rows(jid)
+        assert [r["message"] for r in rows] == ["survived the retry"], (
+            f"expected exactly one row after a safe retry, got {[r['message'] for r in rows]}"
+        )
+
+    def test_writes_beyond_pool_size_are_not_dropped(self, db_pool, test_tenant):
+        """More concurrent writers than pooled connections must not lose writes.
+
+        psycopg2's ThreadedConnectionPool refuses instead of queueing: the
+        moment every connection is checked out it raises
+        PoolError("connection pool exhausted"). With max_conn=20 in main.py,
+        a burst of concurrent writes lost rows outright even though each write
+        holds its connection for a millisecond.
+        """
+        import backend.db.connection as db_conn
+        from backend.config import settings
+        from backend.db import session_store
+
+        tid = test_tenant["id"]
+        sid, jid = _new_job(tid, "pool-exhaustion")
+        n_writers = 8
+        errors = []
+
+        def append(msg: str):
+            try:
+                session_store.append_log(tid, sid, jid, msg)
+            except Exception as e:
+                errors.append(f"{type(e).__name__}: {e}")
+
+        original_pool = db_conn._pool
+        db_conn.init_pool(settings.database_url, min_conn=1, max_conn=2)
+        small_pool = db_conn._pool
+        try:
+            threads = [
+                threading.Thread(target=append, args=(f"burst {i}",))
+                for i in range(n_writers)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=30)
+            assert all(not t.is_alive() for t in threads), "a writer never finished"
+        finally:
+            db_conn._pool = original_pool
+            small_pool.closeall()
+
+        assert not errors, f"writes failed while the pool was saturated: {errors}"
+        rows = _log_rows(jid)
+        assert sorted(r["message"] for r in rows) == sorted(
+            f"burst {i}" for i in range(n_writers)
+        ), f"expected {n_writers} rows, got {sorted(r['message'] for r in rows)}"
 
 
 @pytest.mark.stress

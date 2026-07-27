@@ -19,11 +19,11 @@ migration to Postgres exists to guarantee:
 import uuid
 
 import pytest
-from fastapi import HTTPException
 
 from backend.api.v1.auth import _check_rate
 from backend.config import settings
 from backend.db.connection import execute, query_one
+from backend.errors import AppError
 
 
 def _unique_key() -> str:
@@ -47,10 +47,13 @@ class TestPostgresRateLimit:
                 _check_rate(key, max_attempts=max_attempts, window_secs=300)
                 assert _count(key) == i + 1, "each allowed call must persist one row"
 
-            # The next call exceeds the window count and is blocked.
-            with pytest.raises(HTTPException) as exc:
+            # The next call exceeds the window count and is blocked. Pinned on
+            # the machine code, not the English: the guard now raises AppError
+            # so the frontend can render the Spanish from `errors.<code>`.
+            with pytest.raises(AppError) as exc:
                 _check_rate(key, max_attempts=max_attempts, window_secs=300)
             assert exc.value.status_code == 429
+            assert exc.value.code == "too_many_attempts"
 
             # The blocked call must NOT have added a row — still exactly N.
             assert _count(key) == max_attempts
@@ -92,9 +95,10 @@ class TestPostgresRateLimit:
             for _ in range(max_attempts):
                 execute("INSERT INTO auth_rate_events (key) VALUES (%s)", (key,))
 
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AppError) as exc:
                 _check_rate(key, max_attempts=max_attempts, window_secs=300)
             assert exc.value.status_code == 429
+            assert exc.value.code == "too_many_attempts"
             # Blocked call adds nothing.
             assert _count(key) == max_attempts
         finally:

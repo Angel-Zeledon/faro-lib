@@ -111,10 +111,13 @@ def append_log(tenant_id: str, session_id: str, job_id: str, message: str) -> No
 
 
 def get_logs(tenant_id: str, session_id: str, job_id: str, tail: int = 100) -> list[str]:
+    # Scoped by tenant and session as well as by job: every other read in this
+    # module is tenant-scoped, and a read that trusts an id on its own is one
+    # leaked or reused id away from returning another tenant's rows.
     rows = query(
         """SELECT message FROM training_logs
-           WHERE job_id = %s
+           WHERE job_id = %s AND tenant_id = %s AND session_id = %s
            ORDER BY logged_at DESC LIMIT %s""",
-        (job_id, tail),
+        (job_id, tenant_id, session_id, tail),
     )
     return [r["message"] for r in reversed(rows)]

@@ -184,11 +184,18 @@ class TestSessionStore:
         from backend.sessions.service import create_session
         from backend.training.job_service import create_job
 
+        from backend.training import queue as job_queue
+
         s = create_session(test_tenant["id"], "usr_test", "logs-test")
         tid = test_tenant["id"]
         # training_logs.job_id has a FK to jobs — logs only ever exist for a
         # real job, so the test must create one instead of inventing an id.
         job_id = create_job(tid, s["id"], "usr_test")["id"]
+        # ...and a QUEUED job is, by definition, in the shared queue: a worker
+        # in ANOTHER process (a dev server on this same database) will claim it
+        # and append its own lines under this job_id, so the count below reads
+        # 5 instead of 3. Withdraw it before writing.
+        job_queue.remove(job_id)
         session_store.append_log(tid, s["id"], job_id, "line 1")
         session_store.append_log(tid, s["id"], job_id, "line 2")
         session_store.append_log(tid, s["id"], job_id, "line 3")
@@ -203,9 +210,13 @@ class TestSessionStore:
 
         from backend.training.job_service import create_job
 
+        from backend.training import queue as job_queue
+
         s = create_session(test_tenant["id"], "usr_test", "logs-tail-test")
         tid = test_tenant["id"]
         job_id = create_job(tid, s["id"], "usr_test")["id"]
+        # Same exposure as above: keep an outside worker from writing into it.
+        job_queue.remove(job_id)
         for i in range(10):
             session_store.append_log(tid, s["id"], job_id, f"line {i}")
         lines = session_store.get_logs(tid, s["id"], job_id, tail=3)

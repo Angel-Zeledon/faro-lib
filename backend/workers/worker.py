@@ -15,7 +15,7 @@ from croniter import croniter
 from backend.config import settings
 from backend.db.connection import execute, query, query_one
 from backend.training import queue as job_queue
-from backend.training.job_service import create_job, get_job, mark_running
+from backend.training.job_service import create_job
 from backend.workers.runner import run_training_job
 
 log = logging.getLogger(__name__)
@@ -69,16 +69,16 @@ async def _loop() -> None:
     while True:
         try:
             if len(_running_jobs) < settings.max_concurrent_jobs:
-                item = job_queue.dequeue(is_tenant_blocked=_tenant_at_concurrent_job_limit)
+                # One statement takes the job and marks it RUNNING. The old
+                # dequeue -> get_job -> mark_running sequence let two workers
+                # both see the same QUEUED row and both dispatch it.
+                item = job_queue.claim(
+                    _WORKER_ID, is_tenant_blocked=_tenant_at_concurrent_job_limit)
                 if item:
                     job_id = item["job_id"]
-                    tenant_id = item["tenant_id"]
-                    job = get_job(tenant_id, job_id)
-                    if job and job["status"] == "QUEUED":
-                        mark_running(tenant_id, job_id, _WORKER_ID)
-                        session_id = job["session_id"]
-                        log.info(f"Dispatching job={job_id} session={session_id}")
-                        _executor.submit(_execute, tenant_id, session_id, job_id)
+                    session_id = item["session_id"]
+                    log.info(f"Dispatching job={job_id} session={session_id}")
+                    _executor.submit(_execute, item["tenant_id"], session_id, job_id)
             consecutive_errors = 0
         except Exception as e:
             consecutive_errors += 1

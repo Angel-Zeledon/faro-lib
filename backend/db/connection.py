@@ -6,6 +6,7 @@ All writes auto-commit on success, rollback on exception.
 """
 
 import math
+import time
 from contextlib import contextmanager
 from typing import Any, Optional
 
@@ -14,6 +15,16 @@ import psycopg2.extras
 import psycopg2.pool
 
 _pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+
+# psycopg2's ThreadedConnectionPool does not queue: the moment every connection
+# is checked out it raises PoolError("connection pool exhausted") instead of
+# waiting for one to come back. With max_conn=20 that turns any burst of >20
+# concurrent writes into failed writes, even though each of them only needs the
+# connection for a millisecond. Wait (bounded) for a free connection instead;
+# past the deadline the PoolError still surfaces, so real exhaustion is never
+# silently converted into an unbounded hang.
+_POOL_WAIT_SECONDS = 10.0
+_POOL_WAIT_POLL_SECONDS = 0.005
 
 
 def init_pool(database_url: str, min_conn: int = 1, max_conn: int = 10) -> None:
@@ -26,11 +37,37 @@ def init_pool(database_url: str, min_conn: int = 1, max_conn: int = 10) -> None:
     )
 
 
-@contextmanager
-def get_conn():
+class _NotSent(Exception):
+    """Internal marker: a failure that provably happened *before* the statement
+    could reach the server, so re-running it cannot apply anything twice.
+
+    Only failures carrying this marker are retried. Everything else — above all
+    a failure of the COMMIT itself — leaves the outcome unknown and must be
+    surfaced to the caller instead of being retried.
+    """
+
+    def __init__(self, cause: BaseException):
+        super().__init__(str(cause))
+        self.cause = cause
+
+
+def _acquire():
+    """Check out a pooled connection, waiting briefly if the pool is exhausted."""
     if _pool is None:
         raise RuntimeError("DB pool not initialized — check DATABASE_URL in .env")
-    conn = _pool.getconn()
+    deadline = time.monotonic() + _POOL_WAIT_SECONDS
+    while True:
+        try:
+            return _pool.getconn()
+        except psycopg2.pool.PoolError as exc:
+            if "exhausted" not in str(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(_POOL_WAIT_POLL_SECONDS)
+
+
+@contextmanager
+def get_conn():
+    conn = _acquire()
     broken = False
     try:
         yield conn
@@ -91,6 +128,58 @@ def transaction():
         yield conn
 
 
+def _run_pooled(sql: str, params: tuple, fetch_rows: bool) -> list[dict]:
+    """One attempt at `sql` on its own pooled connection.
+
+    Classifies every failure so the caller knows whether a retry is safe:
+    failures raised while checking out/opening the connection, and failures
+    raised while the statement itself was in flight, provably left the database
+    untouched (no COMMIT was ever sent, so the implicit transaction is gone) —
+    those are wrapped in `_NotSent`. A failure of the COMMIT is deliberately
+    NOT wrapped: the server may have applied the statement and only the
+    acknowledgement got lost, so re-running it would apply it twice.
+    """
+    rows: list[dict] = []
+    acquired = False
+    try:
+        with get_conn() as pooled_conn:
+            acquired = True
+            try:
+                with pooled_conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    if fetch_rows and cur.description:
+                        rows = [dict(row) for row in cur.fetchall()]
+            except psycopg2.OperationalError as exc:
+                raise _NotSent(exc) from exc
+    except psycopg2.OperationalError as exc:
+        if acquired:
+            # Raised by the COMMIT — outcome unknown, never retry.
+            raise
+        raise _NotSent(exc) from exc
+    return rows
+
+
+def _run_with_retry(sql: str, params: tuple, fetch_rows: bool) -> list[dict]:
+    """Run `sql`, retrying once — and only — when the first attempt provably
+    never reached the server.
+
+    The retry exists because a pooled connection can be dropped server-side
+    (Supabase's pooler does this silently); the pool only discovers it when the
+    connection is next used, and surfacing that as an error to the caller would
+    be a false failure. It must stay narrow: retrying a statement that may
+    already have committed silently duplicates every INSERT and re-applies
+    every non-idempotent UPDATE under load.
+    """
+    try:
+        return _run_pooled(sql, params, fetch_rows)
+    except _NotSent as exc:
+        first = exc.cause
+    try:
+        return _run_pooled(sql, params, fetch_rows)
+    except _NotSent as exc:
+        raise exc.cause from first
+
+
 def query(sql: str, params: tuple = (), conn: Optional[Any] = None) -> list[dict]:
     # `conn` provided: caller is inside a transaction() block — run on THAT
     # connection and let the block's own commit/rollback own the outcome.
@@ -104,21 +193,7 @@ def query(sql: str, params: tuple = (), conn: Optional[Any] = None) -> list[dict
                 return [dict(row) for row in cur.fetchall()]
             return []
 
-    # Retry once on a dead connection — Supabase's pooler can silently drop a
-    # pooled connection server-side; the pool only discovers this when the
-    # connection is next used, so a single retry against a fresh connection
-    # is needed instead of surfacing a transient error to the caller.
-    for attempt in range(2):
-        try:
-            with get_conn() as pooled_conn:
-                with pooled_conn.cursor() as cur:
-                    cur.execute(sql, params)
-                    if cur.description:
-                        return [dict(row) for row in cur.fetchall()]
-                    return []
-        except psycopg2.OperationalError:
-            if attempt == 1:
-                raise
+    return _run_with_retry(sql, params, fetch_rows=True)
 
 
 def query_one(sql: str, params: tuple = (), conn: Optional[Any] = None) -> Optional[dict]:
@@ -132,12 +207,4 @@ def execute(sql: str, params: tuple = (), conn: Optional[Any] = None) -> None:
             cur.execute(sql, params)
         return
 
-    for attempt in range(2):
-        try:
-            with get_conn() as pooled_conn:
-                with pooled_conn.cursor() as cur:
-                    cur.execute(sql, params)
-            return
-        except psycopg2.OperationalError:
-            if attempt == 1:
-                raise
+    _run_with_retry(sql, params, fetch_rows=False)
