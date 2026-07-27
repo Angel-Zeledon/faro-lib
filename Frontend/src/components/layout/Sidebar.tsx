@@ -16,7 +16,6 @@ import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useEntitlements } from '@/lib/entitlements'
-import UpsellModal from './UpsellModal'
 
 // ── Nav definition ────────────────────────────────────────────────────────────
 interface NavItem {
@@ -61,7 +60,6 @@ export default function Sidebar() {
   const { collapsed, toggle } = useSidebar()
   const { t, lang, setLang } = useLanguage()
   const { has } = useEntitlements()
-  const [lockedFeature, setLockedFeature] = useState<string | null>(null)
 
   function handleLogout() {
     authLogout().catch(() => {})
@@ -69,10 +67,20 @@ export default function Sidebar() {
     router.replace('/login')
   }
 
+  // Locked features are hidden, not shown padlocked. Four of the fourteen nav
+  // items were permanent locks, so the nav taught a new user more about what
+  // they do NOT have than about what they do. The upsell belongs where someone
+  // reaches for the feature, not as fixed furniture.
   const visibleNav = NAV.filter(item => {
     if (item.adminOnly && user?.role !== 'admin') return false
+    if (item.feature && !has(item.feature)) return false
     return true
   })
+
+  // ...but hiding every lock would orphan /planes, which today is only reached
+  // through the padlock's upsell (and through Integraciones, itself a lock). So
+  // the four padlocks collapse into one deliberate way in.
+  const hasLockedFeature = NAV.some(item => item.feature && !has(item.feature))
 
   return (
     <>
@@ -123,41 +131,9 @@ export default function Sidebar() {
                   {t(`group.${group}`)}
                 </div>
               )}
-              {items.map(({ href, labelKey, Icon, feature }) => {
+              {items.map(({ href, labelKey, Icon }) => {
                 const active = path === href || path.startsWith(`${href}/`)
                 const label = t(labelKey)
-                const locked = !!feature && !has(feature)
-
-                if (locked) {
-                  return (
-                    <div
-                      key={href}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setLockedFeature(feature!)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setLockedFeature(feature!) }}
-                      title={collapsed ? label : t('entitlements.locked_tooltip')}
-                      className="nav-item nav-item-idle"
-                      style={{
-                        display: 'flex', alignItems: 'center',
-                        justifyContent: collapsed ? 'center' : 'flex-start',
-                        gap: collapsed ? 0 : 10,
-                        padding: collapsed ? '8px 0' : '8px 10px',
-                        borderRadius: 7, marginBottom: 1,
-                        color: 'var(--dim)', fontWeight: 400, fontSize: 13,
-                        transition: 'all 0.15s', cursor: 'pointer',
-                      }}
-                    >
-                      <Icon size={15} strokeWidth={1.8} />
-                      {!collapsed && (
-                        <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          {label}
-                          <Lock size={11} style={{ flexShrink: 0, marginLeft: 6 }} />
-                        </span>
-                      )}
-                    </div>
-                  )
-                }
 
                 return (
                   <Link key={href} href={href} style={{ textDecoration: 'none' }} title={collapsed ? label : undefined}>
@@ -200,6 +176,23 @@ export default function Sidebar() {
         >
           {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>{t('sidebar.collapse')}</span></>}
         </button>
+
+        {/* The single remaining way to the plan comparison. */}
+        {!collapsed && hasLockedFeature && (
+          <div style={{ marginTop: 8, padding: '0 10px' }}>
+            <Link
+              href="/planes"
+              style={{
+                display: 'block', textAlign: 'center',
+                padding: '7px 0', borderRadius: 7,
+                border: '1px dashed var(--border)',
+                color: 'var(--dim)', fontSize: 11.5, fontWeight: 600,
+              }}
+            >
+              {t('sidebar.see_plans')}
+            </Link>
+          </div>
+        )}
 
         {/* Language switcher */}
         {!collapsed && (
@@ -266,9 +259,6 @@ export default function Sidebar() {
         )}
       </div>
     </aside>
-    {lockedFeature && (
-      <UpsellModal feature={lockedFeature} onClose={() => setLockedFeature(null)} />
-    )}
     </>
   )
 }

@@ -1028,6 +1028,8 @@ export const translations = {
     'errors.field.date':                    'fecha',
     'errors.field.target':                  'ventas',
 
+    'sidebar.see_plans': 'Ver planes',
+
     // Grano de planificación. Sacado del navbar: no es una vista, decide con
     // qué se calculan compras, inventario y las alertas diarias.
     'planning.section_title':    'Cada cuánto se calculan tus compras',
@@ -3408,6 +3410,8 @@ export const translations = {
     // Field names used by errors.column_required
     'errors.field.date':                    'date',
     'errors.field.target':                  'sales',
+
+    'sidebar.see_plans': 'See plans',
 
     // Planning grain. Moved out of the top bar: it is not a view, it decides
     // what purchases, inventory and the daily alerts are computed from.
