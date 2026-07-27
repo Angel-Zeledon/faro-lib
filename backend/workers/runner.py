@@ -250,6 +250,12 @@ def _collapse_duplicate_periods(df: "pd.DataFrame", date_col: str, target_col: s
 
 # ── Gap fill helper ───────────────────────────────────────────────────────
 
+# Most buckets one series may be reindexed to. ~55 years of daily history —
+# far beyond any real forecasting need, and low enough that a bad date cannot
+# turn one SKU into millions of rows.
+MAX_GAP_FILL_BUCKETS = 20_000
+
+
 def _apply_gap_fill(df: "pd.DataFrame", date_col: str, target_col: str,
                     group_col: str | None, strategy: str) -> "pd.DataFrame":
     """
@@ -284,7 +290,23 @@ def _apply_gap_fill(df: "pd.DataFrame", date_col: str, target_col: str,
             parts.append(sub)
             continue
 
-        full_idx = pd.date_range(sub[date_col].min(), sub[date_col].max(), freq=freq_str)
+        # A single absurd date (a 1900 typo, a 2099 future-dated row) stretches
+        # the span to tens of thousands of buckets PER SKU — filling them would
+        # materialize millions of rows and take the worker down. The series is
+        # left unfilled instead: forecasting on real-but-gappy history beats
+        # not finishing at all, and the profiler already flags both the gaps
+        # and the out-of-range dates.
+        span = pd.date_range(sub[date_col].min(), sub[date_col].max(), freq=freq_str)
+        if len(span) > MAX_GAP_FILL_BUCKETS:
+            log.warning(
+                "Skipped gap fill for group %r: %d buckets exceeds the %d cap — "
+                "the date range is implausible (check for typo'd or future dates).",
+                g, len(span), MAX_GAP_FILL_BUCKETS,
+            )
+            parts.append(sub)
+            continue
+
+        full_idx = span
         sub = sub.set_index(date_col).reindex(full_idx)
         sub.index.name = date_col
 
