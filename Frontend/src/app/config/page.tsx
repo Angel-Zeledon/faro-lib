@@ -4,11 +4,12 @@ import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
-  MessageCircle, Unlink,
+  MessageCircle, Unlink, CalendarClock,
 } from 'lucide-react'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { roleLabel, modelCategoryLabel, activityActionLabel, modelDescription } from '@/lib/enumLabels'
 import { getUser } from '@/lib/auth'
 import {
   getMe, updateMe,
@@ -17,9 +18,11 @@ import {
   getActivityLogs, getActivityActionTypes,
   requestPasswordChange, confirmPasswordChange,
   linkWhatsappNumber, confirmWhatsappNumber,
+  getPlanning, setPlanning,
   isApiError,
 } from '@/lib/api'
-import type { PlatformModel, ActivityLog } from '@/lib/types'
+import { useToast } from '@/contexts/ToastContext'
+import type { PlatformModel, ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -229,9 +232,8 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                 marginTop: 5, display: 'inline-block',
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                 background: 'rgba(129,140,248,0.12)', color: 'var(--accent)',
-                textTransform: 'capitalize',
               }}>
-                {me?.role || '—'}
+                {me?.role ? roleLabel(t, me.role) : '—'}
               </div>
             </div>
             <div>
@@ -360,6 +362,95 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
   )
 }
 
+// ── Section: Planning grain ───────────────────────────────────────────────────
+//
+// This used to be a bare "Ver por" dropdown in the top bar, which read as a
+// personal view toggle. It is nothing of the sort: it decides which trained
+// sibling feeds the purchasing panel, inventory AND the daily alert emails; it
+// is stored per tenant; and only an admin can change it. It belongs with the
+// other account settings, stating what the app chose and why.
+
+function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) => string }) {
+  const { addToast } = useToast()
+  const [state, setState] = useState<PlanningState | null>(null)
+  const [busy, setBusy]   = useState(false)
+  const isAdmin = getUser()?.role === 'admin'
+
+  useEffect(() => {
+    getPlanning().then(setState).catch(() => setState(null))
+  }, [])
+
+  // Nothing to say when the data affords a single grain: there is no decision.
+  if (!state || state.available_periods.length <= 1) return null
+
+  async function apply(period: PlanningPeriod) {
+    if (!state) return
+    setBusy(true)
+    try {
+      setState(await setPlanning(period, Math.max(1, Math.min(state.horizon, state.max_horizon))))
+      addToast(t('planning.saved'), '', 'success')
+    } catch (e) {
+      addToast(t('planning.save_error'), isApiError(e) ? e.detail : '', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const grain = t(`planning.${state.period}`)
+
+  return (
+    <Card>
+      <SectionTitle
+        icon={CalendarClock} color="#6366f1"
+        title={t('planning.section_title')}
+        subtitle={t('planning.section_subtitle')}
+      />
+
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+        {t(`planning.reason.${state.period_reason}`, {
+          grain,
+          requested: state.requested_period ? t(`planning.${state.requested_period}`) : '',
+        })}
+      </div>
+
+      <div style={{
+        fontSize: 12, color: 'var(--dim)', lineHeight: 1.55,
+        marginTop: 8, paddingLeft: 10, borderLeft: '2px solid var(--border)',
+      }}>
+        {t('planning.scope_warning')}
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 14, flexWrap: 'wrap' }}>
+        {state.available_periods.map(p => (
+          <button
+            key={p}
+            onClick={() => apply(p)}
+            disabled={!isAdmin || busy || p === state.period}
+            style={{
+              all: 'unset',
+              cursor: !isAdmin || busy || p === state.period ? 'default' : 'pointer',
+              padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+              border: `1px solid ${p === state.period ? '#6366f1' : 'var(--border)'}`,
+              background: p === state.period ? 'rgba(99,102,241,0.12)' : 'transparent',
+              color: p === state.period ? '#6366f1' : 'var(--muted)',
+              opacity: !isAdmin && p !== state.period ? 0.45 : 1,
+            }}
+          >
+            {t(`planning.${p}`)}
+          </button>
+        ))}
+      </div>
+
+      {!isAdmin && (
+        <div style={{ fontSize: 11.5, color: 'var(--dim)', marginTop: 10 }}>
+          {t('planning.admin_only')}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+
 // ── Section 3: Available Models ───────────────────────────────────────────────
 
 function ModelsSection({ t }: { t: (k: string) => string }) {
@@ -413,11 +504,11 @@ function ModelsSection({ t }: { t: (k: string) => string }) {
                     borderRadius: 5, padding: '2px 7px',
                     textTransform: 'uppercase', letterSpacing: '0.05em',
                   }}>
-                    {m.category}
+                    {modelCategoryLabel(t, m.category)}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.5 }}>
-                  {m.description}
+                  {modelDescription(t, m.name, m.description)}
                 </div>
               </div>
             )
@@ -502,7 +593,7 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
           >
             <Shield size={12} color={actionFilter ? 'var(--accent)' : undefined} />
             <span style={{ color: actionFilter ? 'var(--accent)' : undefined }}>
-              {actionFilter || t('all_actions')}
+              {actionFilter ? activityActionLabel(t, actionFilter) : t('all_actions')}
             </span>
             <ChevronDown size={11} />
           </button>
@@ -526,7 +617,7 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
                     borderBottom: '1px solid var(--border)',
                   }}
                 >
-                  {a || t('all_actions')}
+                  {a ? activityActionLabel(t, a) : t('all_actions')}
                 </button>
               ))}
             </div>
@@ -576,11 +667,11 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               <span style={{
-                color: 'var(--text)', fontFamily: 'monospace', fontSize: 11,
+                color: 'var(--text)', fontSize: 11,
                 background: 'var(--surface-2)', padding: '2px 8px',
                 borderRadius: 5, display: 'inline-block',
               }}>
-                {log.action}
+                {activityActionLabel(t, log.action)}
               </span>
               <span style={{ color: 'var(--muted)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {log.resource || '—'}
@@ -1173,6 +1264,7 @@ export default function ConfigPage() {
         <ProfileSection t={t} lang={lang} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <AppConfigSection t={t} />
+          <PlanningSection t={t} />
           <WhatsAppSection t={t} />
           <SecuritySection t={t} />
         </div>

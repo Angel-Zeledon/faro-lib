@@ -2,14 +2,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Bell, CheckCircle2, AlertTriangle, Clock, X, ChevronRight, Search } from 'lucide-react'
+import { Bell, CheckCircle2, AlertTriangle, Clock, X, ChevronRight } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { useSkuSearch } from '@/contexts/SkuSearchContext'
-import PlanningControl from './PlanningControl'
 
 interface Notif {
   id:    string
@@ -58,7 +56,6 @@ export default function TopBar() {
   // would have to be pushed from each page and could drift from the resolver;
   // reading the resolver's answer cannot.
   const planning = usePlanning()?.planning ?? null
-  const { open: openSkuSearch } = useSkuSearch()
 
   const [time,        setTime]        = useState('')
   const [notifs,      setNotifs]      = useState<Notif[]>([])
@@ -192,35 +189,16 @@ export default function TopBar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        {/* Active planning period + horizon (multi-period, Phase B) */}
-        <PlanningControl />
+        {/* The planning-period selector used to sit here, labelled "Ver por".
+            It reads as a view toggle and is nothing of the sort: it decides
+            which trained sibling feeds the purchasing panel, inventory AND the
+            daily alert emails, it is stored per TENANT, and only an admin may
+            change it. It now lives in Settings, where an account-wide setting
+            belongs, and the screens state which grain they are using.
 
-        {/* Global SKU search (Ctrl/Cmd-K) */}
-        <button
-          onClick={openSkuSearch}
-          title={t('topbar.sku_search_title')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '5px 10px', borderRadius: 7,
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            cursor: 'pointer',
-            color: 'var(--muted)',
-            fontSize: 12,
-            transition: 'all 0.15s',
-          }}
-        >
-          <Search size={13} />
-          <span>
-            {t('topbar.sku_search_placeholder')}
-          </span>
-          <span style={{
-            fontSize: 10, fontWeight: 600, color: 'var(--dim)',
-            border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px',
-          }}>
-            Ctrl K
-          </span>
-        </button>
+            The global SKU search left too: /skus and /inventory each have
+            their own search box, so this was a third way to do the same thing
+            from a bar that should only carry what is true everywhere. */}
 
         <span style={{ fontSize: 12, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
           {time}

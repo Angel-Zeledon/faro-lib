@@ -234,7 +234,47 @@ _DATASET_STOCK_MIN = {
 }
 
 
-def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_col: str) -> int:
+# Quick Start wizard field -> inventory_stock column. The wizard collects these
+# under CANONICAL_FIELDS names ("inventory", "lead_time", "cost", "price") while
+# inventory_stock stores them under its own. Nothing translated between the two,
+# so for every canonical_v1 session — i.e. the whole onboarding path — this sync
+# read the file looking for column names the wizard never produces and seeded
+# nothing. Verified on a completed training whose mapping had price mapped:
+# inventory_stock came out with 0 rows.
+_CANONICAL_TO_STOCK = {
+    "inventory": "current_stock",
+    "lead_time": "lead_time_days",
+    "cost":      "unit_cost",
+    "price":     "sale_price",
+}
+
+
+def _mapped_canonical_columns(canonical_mapping: Optional[dict]) -> dict:
+    """{canonical column -> stock column} for fields the user ACTUALLY mapped.
+
+    The filter is the whole point, not a nicety. `apply_canonical_defaults`
+    broadcasts a default into every unmapped canonical column — inventory 0,
+    lead_time 7 — so those columns are always present in the DataFrame. Reading
+    them unconditionally would write current_stock=0 across the entire catalogue
+    of every tenant and fire PEDIR_YA on all of it. A field counts only when the
+    mapping names a real source column for it.
+    """
+    if not canonical_mapping:
+        return {}
+    return {
+        field: stock_col
+        for field, stock_col in _CANONICAL_TO_STOCK.items()
+        if canonical_mapping.get(field)
+    }
+
+
+def sync_stock_from_dataset(
+    tenant_id: str,
+    df,
+    group_col: Optional[str],
+    date_col: str,
+    canonical_mapping: Optional[dict] = None,
+) -> int:
     """
     If the uploaded dataset contains recognized inventory columns (current_stock,
     lead_time_days, unit_cost, moq, supplier, notes, display_name,
@@ -249,14 +289,24 @@ def sync_stock_from_dataset(tenant_id: str, df, group_col: Optional[str], date_c
     # Pandas extraction lives at the boundary: latest row per SKU with raw
     # (unfloored) values, NaN cells dropped. Empty / no-recognized-columns
     # datasets come back as [].
-    raw_entries = last_row_per_group(df, group_col, date_col, _DATASET_STOCK_COLS)
+    canonical_cols = _mapped_canonical_columns(canonical_mapping)
+    # A file whose own header already says "current_stock" keeps winning: the
+    # canonical alias is only consulted for a field the native name did not
+    # supply, so this can add data but never override it.
+    wanted = set(_DATASET_STOCK_COLS) | set(canonical_cols)
+    raw_entries = last_row_per_group(df, group_col, date_col, wanted)
 
     # Resolve the per-SKU payload with the numeric floors up front (before the
     # max_skus check), exactly as before — only the pandas extraction moved out.
     entries: list[tuple[str, dict]] = []
     for sku, raw in raw_entries:
         data: dict = {}
-        for col, val in raw.items():
+        renamed = {
+            canonical_cols[k]: v for k, v in raw.items()
+            if k in canonical_cols and canonical_cols[k] not in raw
+        }
+        for col, val in {**renamed, **{k: v for k, v in raw.items()
+                                       if k in _DATASET_STOCK_COLS}}.items():
             if col in _DATASET_STOCK_FLOAT_COLS:
                 parsed_float = float(val)
                 floor = _DATASET_STOCK_MIN.get(col)

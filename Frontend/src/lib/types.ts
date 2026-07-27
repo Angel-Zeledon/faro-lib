@@ -1528,12 +1528,27 @@ export interface DeadStockResponse {
 // Multi-period planning (Phase B): the tenant's active view granularity.
 export type PlanningPeriod = 'daily' | 'weekly' | 'monthly'
 
+export type PlanningPeriodSource = 'auto' | 'manual'
+
+// Why the app is planning at this grain. The app always chose it, but until
+// this shipped it only offered a bare dropdown, so a tenant-wide setting that
+// also drives the daily alerts read like a personal view toggle.
+export type PlanningPeriodReason =
+  | 'natural_frequency'        // finest grain the data supports
+  | 'only_option'              // the history affords no other
+  | 'manual_choice'            // someone picked it in Settings
+  | 'chosen_grain_unavailable' // their pick no longer exists
+
 export interface PlanningState {
   period:            PlanningPeriod
   horizon:           number
   available_periods: PlanningPeriod[]
   max_horizon:       number
   active_session_id: string | null
+  period_source:     PlanningPeriodSource
+  period_reason:     PlanningPeriodReason
+  // Only set when an explicit pick could not be honored.
+  requested_period:  PlanningPeriod | null
 }
 
 // ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────

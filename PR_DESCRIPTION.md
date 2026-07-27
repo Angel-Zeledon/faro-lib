@@ -2,7 +2,7 @@
 
 Crear el PR en: https://github.com/Angel-Zeledon/faro-lib/pull/new/feat/pendientes-implementation
 
-Rama `feat/pendientes-implementation` → `main` · 4 commits · backend **1594 passed, 19 skipped** · ForecastingCore **740 passed, 1 skipped** · `tsc --noEmit` limpio
+Rama `feat/pendientes-implementation` → `main` · 5 commits · backend **1597 passed, 19 skipped** · ForecastingCore **740 passed, 1 skipped** · `tsc --noEmit` limpio
 
 > Los dos tests de `test_stress.py` (`test_login_responds_under_2s`, `test_concurrent_log_appends`) fallan de forma intermitente **bajo carga** y pasan 13/13 cuando el archivo corre solo. Ninguno toca código de esta rama: uno es una aserción de reloj de pared (2,77 s contra un techo de 2 s) y el otro cuenta 22 líneas de log en vez de 20 sobre `session_store.append_log`, que no se modificó aquí. Vale mirarlo aparte.
 
@@ -54,11 +54,24 @@ Casos donde la app reportaba éxito mientras no pasaba nada. Ninguno lanzaba un 
 7. **Un reentrenamiento programado que fallaba se veía igual que uno sano.** El error solo iba al log, así que un schedule roto hacía semanas era indistinguible de uno correcto. `scheduled_jobs` gana `last_error` / `last_error_at` (mismo contrato que `integration_connections.last_error`) y `GET /schedule` los expone. Además un disparo fallido dejaba `next_run` en el pasado, así que el loop lo reintentaba en cada vuelta; ahora avanza igual que en el camino feliz.
 8. **El costo fijo del MILP se apagaba solo en catálogos grandes.** El big-M que liga los envíos a su binario estaba sumado sobre **todo** el catálogo, así que lo dominaba el SKU más grande del tenant y la fila de linking quedaba satisfecha con un `ship` de (unidades movidas / M). Cuando ese cociente cae por debajo de la tolerancia de integralidad del solver (~1e-6), HiGHS acepta el binario como "0" y el envío viaja gratis. Verificado contra el solver real: con un SKU de 5e7 unidades en el mismo problema, un envío de 2 unidades en una ruta que cobra 1000 salía costando **0,00004**. El big-M pasa a ser por SKU, que además aprieta la relajación lineal.
 
+### Lo que solo apareció usando la app
+
+Los dos paneles nuevos se dibujaban bien, pero parte de lo que decían nunca pasó por i18n. Cada una de estas era una frase que el usuario lee:
+
+- El panel de datos **caía al mensaje crudo del motor** para los tipos sin copy: *"1 short-history series (< 20 periods)"*, *"205 missing dates across 1 series"*, *"History varies from 8 to 150 periods across SKUs"*.
+- El aviso de granularidad **le citaba pandas al usuario**: *"(D: 2, MS: 1)"* y *"usa la granularidad más gruesa (MS)"* — una instrucción sobre la que nadie fuera del motor puede actuar. Ahora se leen como palabras, vía claves `freq.*`.
+- Las correcciones automáticas salían en inglés (*"Clipped outliers (IQR×3) in 1 SKU(s)"*). Ya viajaban con `action`, un código estable, así que la frase sale de `runcorr.<action>` y la descripción inglesa queda solo de respaldo. El payload lleva ahora `n_skus` porque la frase necesita el número; la lista de SKUs no viaja, que puede tener miles.
+- En la descarga de reportes, **tres de los cuatro desenlaces ya eran código estructurado y el cuarto no**: el de "nunca se generó", y el 409 que bloquea generar sobre una sesión sin terminar de entrenar — justo el que pisa un usuario real. Los cinco códigos ganaron su copy `errors.<code>`, que ninguno tenía.
+
+Aviso para quien lo pruebe: `Frontend/.env.local` fija `BACKEND_URL` y **gana sobre la variable de shell**, así que el puerto documentado en CLAUDE.md no es necesariamente el que sirve la app. Un backend viejo todavía vivo hace que las rutas nuevas devuelvan `404 {"detail":"Not Found"}` y que los paneles simplemente no aparezcan, porque su `catch` los oculta por diseño.
+
 ---
 
 ## Verificación
 
 Recorrido en navegador como usuario real: registro, Quick Start completo, panel de compras, orden manual, envío por WhatsApp, predicciones, historial, configuración, escenarios, rutas de traslado, y los 18 datasets rotos.
+
+Segunda vuelta en navegador para lo de esta rama, con un archivo construido a propósito (dos SKUs diarios con huecos y un pico absurdo, uno mensual con 8 puntos): los dos paneles salen en español, el badge de sesión activa **se dibuja por primera vez** —era código muerto— en `/hoy` y correctamente no aparece en `/skus`, que tiene su propio selector.
 
 **Pendiente de verificar en vivo** (cubierto solo por tests): costo fijo del MILP y tope del relleno de huecos.
 

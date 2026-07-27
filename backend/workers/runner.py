@@ -196,6 +196,25 @@ def _note(notes: "list | None", code: str, severity: str = "warning", **context)
                   "message": "", "context": context, "suggestions": []})
 
 
+def _note_granularity_fallback(
+    requested: "str | None", trained: "str | None", notes: "list | None" = None,
+) -> None:
+    """The Quick Start granularity pick is advisory, and its rejection was mute.
+
+    `family_service.plan_family` drops a pick the data cannot support — fewer
+    than MIN_BUCKETS_FOR_GRANULARITY buckets of that grain, or a grain finer
+    than the data's native one — and fans out automatically instead so the run
+    never fails. Nothing told the user: they chose "Mensual", got a daily plan,
+    and the only trace was `forecast_cfg.user_granularity` disagreeing with
+    `sessions.granularity`. Monthly needs ~20 months of history, so this is the
+    common case for a young catalogue, not a corner.
+    """
+    if not requested or requested == "auto" or not trained or requested == trained:
+        return
+    _note(notes, "GRANULARITY_PICK_NOT_SUPPORTED", "warning",
+          requested=requested, trained=trained)
+
+
 def _neutralize_infinities(df: "pd.DataFrame", target_col: str,
                            notes: "list | None" = None) -> "pd.DataFrame":
     """Replace ±inf in the target with NaN, so the missing-data path handles it.
@@ -741,6 +760,15 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         # reports the count; the pipeline runs in WARNING mode and only logs,
         # so the data has to be made safe here.
         prep_notes: list = []
+        # Checked here, not in family_service: the fan-out decides the grain
+        # before any job exists, and this is the first point that both owns a
+        # findings channel and knows what this session actually trained at.
+        _note_granularity_fallback(
+            (session_store.get_field(tenant_id, session_id, "forecast_cfg") or {})
+            .get("user_granularity"),
+            (get_session(tenant_id, session_id) or {}).get("granularity"),
+            prep_notes,
+        )
         if engine._df is not None:
             engine._df = _neutralize_infinities(
                 engine._df, target_col=col_cfg["target"], notes=prep_notes,
@@ -787,6 +815,10 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                     tenant_id, engine._df,
                     group_col=_primary_group_col(col_cfg),
                     date_col=col_cfg["date"],
+                    # Without the mapping the sync cannot tell an inventory
+                    # column the user mapped from the 0 that
+                    # apply_canonical_defaults broadcasts into every session.
+                    canonical_mapping=canonical_mapping,
                 )
                 if n_synced:
                     log.info(f"Synced inventory stock for {n_synced} SKU(s) from uploaded dataset")

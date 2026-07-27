@@ -177,11 +177,65 @@ from backend.workers.runner import (  # noqa: E402
     _apply_outlier_treatment,
     _collapse_duplicate_periods,
     _neutralize_infinities,
+    _note_granularity_fallback,
 )
 
 
 def _codes(notes):
     return [n["error_id"] for n in notes]
+
+
+class TestGranularityPickIsHonoredOrReported:
+    """Quick Start lets you choose "Mensual"; the data may not support it.
+
+    `plan_family` silently drops a pick it cannot honor and fans out
+    automatically so the run never fails — and said nothing, so the user got a
+    daily plan believing it was monthly. Monthly needs ~20 months of history,
+    which makes this the normal case for a young catalogue.
+    """
+
+    @pytest.mark.offline
+    def test_a_dropped_pick_is_reported(self):
+        notes: list = []
+        _note_granularity_fallback("monthly", "daily", notes)
+        assert _codes(notes) == ["GRANULARITY_PICK_NOT_SUPPORTED"]
+        assert notes[0]["context"] == {"requested": "monthly", "trained": "daily"}
+
+    @pytest.mark.offline
+    def test_an_honored_pick_says_nothing(self):
+        notes: list = []
+        _note_granularity_fallback("weekly", "weekly", notes)
+        assert notes == []
+
+    @pytest.mark.offline
+    def test_auto_is_not_a_broken_promise(self):
+        """'auto' asked for nothing, so nothing was denied."""
+        notes: list = []
+        _note_granularity_fallback("auto", "weekly", notes)
+        assert notes == []
+
+    @pytest.mark.offline
+    def test_a_pick_finer_than_the_data_is_reported_too(self):
+        """Asking for daily on weekly-reported data is refused the same way."""
+        notes: list = []
+        _note_granularity_fallback("daily", "weekly", notes)
+        assert _codes(notes) == ["GRANULARITY_PICK_NOT_SUPPORTED"]
+
+    @pytest.mark.offline
+    def test_a_session_with_no_recorded_pick_is_silent(self):
+        notes: list = []
+        _note_granularity_fallback(None, "daily", notes)
+        _note_granularity_fallback("monthly", None, notes)
+        assert notes == []
+
+    @pytest.mark.offline
+    def test_the_note_reaches_the_payload(self):
+        """It has to survive grouping, or the panel never sees it."""
+        notes: list = []
+        _note_granularity_fallback("monthly", "daily", notes)
+        out = _collect_run_warnings(_Engine(), notes)
+        codes = [g["code"] for g in out["validation"]]
+        assert "GRANULARITY_PICK_NOT_SUPPORTED" in codes
 
 
 class TestPrepNotesAreRaised:

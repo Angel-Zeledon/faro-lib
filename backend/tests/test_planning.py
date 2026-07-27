@@ -43,7 +43,9 @@ class TestGetPlanning:
     def test_default_is_daily_14_for_fresh_tenant(self, client, test_tenant):
         got = plan.get_planning(test_tenant["id"])
         assert got == {"period": "daily", "horizon": 14,
-                       "available_periods": ["daily"], "max_horizon": 90}
+                       "available_periods": ["daily"], "max_horizon": 90,
+                       "period_source": "auto", "period_reason": "only_option",
+                       "requested_period": None}
 
     def test_available_periods_from_newest_family(self, client, test_tenant, registered_user):
         tid, uid = test_tenant["id"], registered_user["user"]["id"]
@@ -57,6 +59,84 @@ class TestGetPlanning:
         _make_family(tid, uid, ["daily"], family_id="old")
         _make_family(tid, uid, ["daily", "weekly"], family_id="new")
         assert plan.get_planning(tid)["available_periods"] == ["daily", "weekly"]
+
+
+class TestWhyThisGrain:
+    """The app has always picked the grain; it never said so.
+
+    A tenant-wide setting that also drives the daily alert loops was offered as
+    a bare dropdown in the top bar, which reads like a per-user view toggle.
+    These pin the reason travelling with the answer so the UI can state it.
+    """
+
+    def test_multi_grain_family_reports_the_automatic_choice(
+        self, client, test_tenant, registered_user,
+    ):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_auto")
+        got = plan.get_planning(tid)
+        assert got["period"] == "daily"
+        assert got["period_source"] == "auto"
+        assert got["period_reason"] == "natural_frequency"
+
+    def test_an_explicit_choice_is_reported_as_manual(
+        self, client, test_tenant, registered_user,
+    ):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_manual")
+        plan.set_planning(tid, "weekly", 4)
+        got = plan.get_planning(tid)
+        assert got["period"] == "weekly"
+        assert got["period_source"] == "manual"
+        assert got["period_reason"] == "manual_choice"
+
+    def test_a_period_stored_before_source_existed_stays_honored(
+        self, client, test_tenant, registered_user,
+    ):
+        """Legacy settings carry no `source`. Reading them as automatic would
+        silently revert the grain of every tenant who had already chosen one."""
+        from backend.tenants import service as tenant_svc
+
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_legacy")
+        tenant_svc.update_settings(tid, {"planning": {"period": "weekly", "horizon": 4}})
+        got = plan.get_planning(tid)
+        assert got["period"] == "weekly"
+        assert got["period_source"] == "manual"
+
+    def test_a_chosen_grain_the_new_data_cannot_support_says_so(
+        self, client, test_tenant, registered_user,
+    ):
+        """Their pick disappearing used to happen in silence, so the numbers
+        changed unit under them with nothing to point at."""
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_before")
+        plan.set_planning(tid, "weekly", 4)
+        _make_family(tid, uid, ["daily"], family_id="fam_after")
+        # The seconds stagger inside _make_family cannot order two families,
+        # and here the OLDER one has more members, so it would win on offset.
+        execute("UPDATE sessions SET created_at = NOW() + interval '1 hour' "
+                "WHERE tenant_id=%s AND family_id='fam_after'", (tid,))
+
+        got = plan.get_planning(tid)
+        assert got["period"] == "daily"
+        assert got["period_source"] == "auto"
+        assert got["period_reason"] == "chosen_grain_unavailable"
+        assert got["requested_period"] == "weekly"
+
+    def test_the_resolver_lands_on_the_same_grain_it_reports(
+        self, client, test_tenant, registered_user,
+    ):
+        """One function decides both, so the announced grain and the session
+        behind the numbers cannot drift apart."""
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_agree")
+        plan.set_planning(tid, "weekly", 4)
+
+        reported = plan.get_planning(tid)["period"]
+        sid = plan.resolve_active_session(tid)
+        row = query_one("SELECT granularity FROM sessions WHERE id = %s", (sid,))
+        assert row["granularity"] == reported == "weekly"
 
 
 class TestSetPlanning:
