@@ -993,6 +993,40 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      )"""),
     ("create_scenarios_idx",
      "CREATE INDEX IF NOT EXISTS scenarios_tenant_session_idx ON scenarios (tenant_id, session_id)"),
+    # ── Scheduled-job failure visibility ─────────────────────────────────────
+    # A weekly retrain whose trigger keeps failing used to look exactly like a
+    # healthy one: the error went to the log and nowhere else. Same shape as
+    # integration_connections.last_error / status, which the UI already shows.
+    # Nullable with no default, so every existing row reads as "never failed".
+    ("add_scheduled_jobs_last_error",
+     "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS last_error TEXT"),
+    ("add_scheduled_jobs_last_error_at",
+     "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ"),
+    # ── Report generation runs ───────────────────────────────────────────────
+    # Report building happens in a FastAPI background task, so a failure had no
+    # trace anywhere: the later download 404'd with "generate one first", i.e.
+    # it told the user to redo exactly what had just failed. One row per
+    # generation request makes the outcome durable and retrievable.
+    # `status` is plain TEXT on purpose — a CHECK constraint here would have to
+    # be re-added on every startup, and this repo has already been burned once
+    # by a re-added CHECK carrying a stale vocabulary.
+    ("create_report_runs",
+     """CREATE TABLE IF NOT EXISTS report_runs (
+         id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         session_id   TEXT NOT NULL,
+         report_type  TEXT NOT NULL,
+         formats      TEXT[] NOT NULL DEFAULT '{}',
+         status       TEXT NOT NULL DEFAULT 'running',
+         error_code   TEXT,
+         error_detail TEXT,
+         created_by   TEXT,
+         created_at   TIMESTAMPTZ DEFAULT NOW(),
+         finished_at  TIMESTAMPTZ
+     )"""),
+    ("create_report_runs_idx",
+     "CREATE INDEX IF NOT EXISTS report_runs_session_idx "
+     "ON report_runs (tenant_id, session_id, created_at DESC)"),
 ]
 
 

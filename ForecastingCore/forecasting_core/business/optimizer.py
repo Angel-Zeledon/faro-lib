@@ -20,10 +20,11 @@ Balance (per i,w,t):
     - short[i,w,t] = -demand[i,w,t]
   (inv[i,w,0] is the constant stock0[i,w], folded into the t=1 row's RHS.)
 
-Shipment linking (per fixed-cost lane a->b and bucket t):
-  sum_i transfer[i,a,b,t] - M[a,b] * ship[a,b,t] <= 0
+Shipment linking (per fixed-cost lane a->b, bucket t and SKU i):
+  transfer[i,a,b,t] - M[i] * ship[a,b,t] <= 0
   so a bucket carrying units on that lane must switch its binary on and pay
-  the lane's fixed cost once.
+  the lane's fixed cost once (the binary is shared by every SKU's row, so one
+  truck is charged once however many SKUs ride in it).
 
 Objective (minimize):
   sum holding_cost[i]*inv + stockout_cost[i]*short
@@ -211,26 +212,42 @@ def _lanes_with_fixed_cost(inp: OptimizationInput) -> List[Tuple[str, str]]:
     )
 
 
-def _shipment_big_m(inp: OptimizationInput) -> float:
+def _shipment_big_m(inp: OptimizationInput, sku: str) -> float:
     """
-    Upper bound on how many units one lane can carry in one bucket.
+    Upper bound on how many units of ONE SKU a lane can carry in one bucket.
 
     Derived from the problem's own numbers, not a magic constant: every unit
-    that can ever move is either already on hand somewhere (sum of stock0) or
-    was purchased, and with all costs non-negative there is always an optimal
-    plan that never buys more than the horizon's total demand. So the whole
-    system can never hold more than stock0 + demand units, and a single
-    lane-bucket shipment is a subset of that. Being a valid bound on SOME
-    optimal solution is what big-M needs; a tighter per-lane bound (donor
-    stock only) would be wrong, because a donor can also relay units it
-    received.
+    of SKU i that can ever move is either already on hand somewhere (its
+    stock0 across warehouses) or was purchased, and with all costs
+    non-negative there is always an optimal plan that never buys more than
+    that SKU's total demand over the horizon. So the system can never hold
+    more than stock0 + demand units OF THAT SKU, and a single lane-bucket
+    shipment of it is a subset of that. Being a valid bound on SOME optimal
+    solution is what big-M needs; a tighter per-lane bound (donor stock only)
+    would be wrong, because a donor can also relay units it received.
+
+    Scoped PER SKU rather than to the whole catalogue on purpose. A single M
+    summed over every SKU is dominated by the biggest SKU in the tenant, and
+    the linking row is then satisfied by a ship value of (units moved / M).
+    Once that ratio falls under the solver's integrality tolerance (~1e-6),
+    HiGHS accepts the binary as "0" and the shipment rides for free — a
+    catalogue holding a few million units silently switched the fixed cost
+    off for every OTHER SKU. Verified against the real solver: with a 5e7-unit
+    SKU in the same problem, a 2-unit shipment on a lane charging 1000 came
+    back costing 0.00004. Per-SKU M keeps each row's scale tied to the units
+    that row can actually carry, and disaggregating also tightens the LP
+    relaxation.
 
     Floored at 1.0 so a degenerate all-zero instance still yields a usable
     (non-vacuous) constraint instead of pinning every transfer to zero.
     """
-    total_stock = sum(float(v) for v in inp.stock0.values())
-    total_demand = sum(float(v) for series in inp.demand.values() for v in series)
-    return max(total_stock + total_demand, 1.0)
+    stock = sum(
+        float(qty) for (i, _w), qty in inp.stock0.items() if i == sku
+    )
+    demand = sum(
+        float(v) for (i, _w), series in inp.demand.items() if i == sku for v in series
+    )
+    return max(stock + demand, 1.0)
 
 
 def build_problem(inp: OptimizationInput) -> MilpProblem:
@@ -309,16 +326,20 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                     b_eq[row] = -demand_t
                 row += 1
 
-    # Shipment-linking inequality rows, one per (fixed-cost lane, bucket):
-    #   sum_i transfer[i,a,b,t] - M * ship[a,b,t] <= 0
+    # Shipment-linking inequality rows, one per (fixed-cost lane, bucket, SKU):
+    #   transfer[i,a,b,t] - M[i] * ship[a,b,t] <= 0
     # Nothing can ride the lane in that bucket unless its binary is on, and
     # because the binary costs money the solver only turns it on when it has
-    # to. Built only when at least one lane charges a fixed cost.
+    # to. Every SKU's row points at the SAME binary, so the fixed cost is still
+    # charged once per (lane, bucket) no matter how many SKUs share the truck —
+    # the rows are split only so each one's big-M stays scaled to the units it
+    # can carry (see _shipment_big_m). Built only when at least one lane
+    # charges a fixed cost.
     A_ub = None
     b_ub = None
     if idx.fixed_cost_lanes():
-        big_m = _shipment_big_m(inp)
-        n_ub_rows = len(idx.fixed_cost_lanes()) * inp.horizon
+        big_m = {i: _shipment_big_m(inp, i) for i in inp.skus}
+        n_ub_rows = len(idx.fixed_cost_lanes()) * inp.horizon * len(inp.skus)
         A_ub = np.zeros((n_ub_rows, n))
         b_ub = np.zeros(n_ub_rows)
         ub_row = 0
@@ -326,8 +347,8 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
             for t in range(1, inp.horizon + 1):
                 for i in inp.skus:
                     A_ub[ub_row, idx.transfer_idx(i, a, b, t)] = 1.0
-                A_ub[ub_row, idx.ship_idx(a, b, t)] = -big_m
-                ub_row += 1
+                    A_ub[ub_row, idx.ship_idx(a, b, t)] = -big_m[i]
+                    ub_row += 1
 
     bounds = Bounds(lb=lb, ub=ub)
     return MilpProblem(

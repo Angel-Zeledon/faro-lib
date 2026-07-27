@@ -4,8 +4,9 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.db import session_store
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 from backend.storage import paths
@@ -14,14 +15,101 @@ router = APIRouter(tags=["reports"])
 log = logging.getLogger(__name__)
 
 REPORT_TYPES = {"executive", "operational", "technical", "inventory"}
+FORMAT_EXTENSIONS = {"excel": ".xlsx", "pdf": ".pdf"}
 
+# report_runs.status vocabulary. Deliberately not a DB CHECK constraint — see
+# the create_report_runs migration.
+RUN_RUNNING   = "running"
+RUN_COMPLETED = "completed"
+RUN_FAILED    = "failed"
+
+_ERROR_DETAIL_MAX_CHARS = 500
+
+
+# ── report_runs store ────────────────────────────────────────────────────────
+# `execute` / `query_one` are imported inside each function on purpose: the
+# offline endpoint suite patches backend.db.connection.* globally, and a
+# module-level `from ... import` would bind the unpatched originals.
+
+def _start_report_run(
+    tenant_id: str, session_id: str, report_type: str, formats: list, created_by: str,
+) -> str | None:
+    """Insert the RUNNING row before the background task is scheduled, so a
+    status poll right after POST /generate already sees the attempt."""
+    from backend.db.connection import query_one
+    try:
+        row = query_one(
+            """INSERT INTO report_runs
+               (tenant_id, session_id, report_type, formats, status, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (tenant_id, session_id, report_type, list(formats), RUN_RUNNING, created_by),
+        )
+        return row["id"] if row else None
+    except Exception as e:
+        # Losing the status row must not block the report itself.
+        log.error("Could not open report run for session %s: %s", session_id, e, exc_info=True)
+        return None
+
+
+def _finish_report_run(
+    run_id: str | None, status: str, error_code: str | None = None, error_detail: str | None = None,
+) -> None:
+    if not run_id:
+        return
+    from backend.db.connection import execute
+    detail = error_detail[:_ERROR_DETAIL_MAX_CHARS] if error_detail else None
+    try:
+        execute(
+            """UPDATE report_runs
+               SET status = %s, error_code = %s, error_detail = %s, finished_at = NOW()
+               WHERE id = %s""",
+            (status, error_code, detail, run_id),
+        )
+    except Exception as e:
+        log.error("Could not close report run %s: %s", run_id, e, exc_info=True)
+
+
+def _latest_report_run(tenant_id: str, session_id: str, fmt: str) -> dict | None:
+    """Most recent generation attempt that was asked to produce `fmt`."""
+    from backend.db.connection import query_one
+    try:
+        return query_one(
+            """SELECT id, status, error_code, error_detail, report_type, created_at, finished_at
+               FROM report_runs
+               WHERE tenant_id = %s AND session_id = %s AND %s = ANY(formats)
+               ORDER BY created_at DESC LIMIT 1""",
+            (tenant_id, session_id, fmt),
+        )
+    except Exception as e:
+        log.error("Could not read report runs for session %s: %s", session_id, e, exc_info=True)
+        return None
+
+
+def _list_report_runs(tenant_id: str, session_id: str, limit: int = 10) -> list[dict]:
+    from backend.db.connection import query
+    try:
+        rows = query(
+            """SELECT id, report_type, formats, status, error_code, error_detail,
+                      created_at, finished_at
+               FROM report_runs
+               WHERE tenant_id = %s AND session_id = %s
+               ORDER BY created_at DESC LIMIT %s""",
+            (tenant_id, session_id, limit),
+        )
+        return [dict(r) for r in rows]
+    except Exception as e:
+        log.error("Could not list report runs for session %s: %s", session_id, e, exc_info=True)
+        return []
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("/sessions/{session_id}/reports/generate")
 def generate_report(
     session_id: str,
     body: dict,
     background_tasks: BackgroundTasks,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
@@ -34,10 +122,40 @@ def generate_report(
         raise HTTPException(status_code=400, detail=f"Invalid report type. Options: {sorted(REPORT_TYPES)}")
 
     formats = body.get("formats", ["excel"])
+    if not isinstance(formats, list) or not formats:
+        raise HTTPException(status_code=400, detail="formats must be a non-empty list")
+    unknown = [f for f in formats if f not in FORMAT_EXTENSIONS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown format(s) {unknown}. Use: {sorted(FORMAT_EXTENSIONS)}",
+        )
+
+    run_id = _start_report_run(user.tenant_id, session_id, report_type, formats, user.user_id)
     background_tasks.add_task(
-        _generate_background, user.tenant_id, session_id, report_type, formats
+        _generate_background, user.tenant_id, session_id, report_type, formats, run_id
     )
-    return ok({"message": "Report generation started", "type": report_type, "formats": formats})
+    return ok({
+        "message": "Report generation started",
+        "type": report_type,
+        "formats": formats,
+        "run_id": run_id,
+        "status": RUN_RUNNING,
+    })
+
+
+@router.get("/sessions/{session_id}/reports/status")
+def report_status(
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Outcome of the recent generation attempts for this session.
+
+    Registered before /reports/{format} so "status" is not parsed as a format.
+    """
+    if not session_svc.get_session(user.tenant_id, session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return ok({"runs": _list_report_runs(user.tenant_id, session_id)})
 
 
 @router.get("/sessions/{session_id}/reports/{format}")
@@ -50,8 +168,7 @@ def download_report(
     if not s:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    ext_map = {"excel": ".xlsx", "pdf": ".pdf"}
-    ext = ext_map.get(format)
+    ext = FORMAT_EXTENSIONS.get(format)
     if not ext:
         raise HTTPException(status_code=400, detail=f"Unknown format '{format}'. Use: excel, pdf")
 
@@ -59,17 +176,56 @@ def download_report(
     for f in report_dir.glob(f"*{ext}"):
         return FileResponse(f, filename=f.name)
 
+    # No file. Say what actually happened instead of "generate one first",
+    # which used to be the answer even right after a generation had failed.
+    run = _latest_report_run(user.tenant_id, session_id, format)
+    status = run["status"] if run else None
+
+    if status == RUN_RUNNING:
+        raise AppError(
+            "report_generation_in_progress",
+            f"The {format} report is still being generated. Try again in a moment.",
+            status_code=409,
+            params={"format": format},
+        )
+    if status == RUN_FAILED:
+        raise AppError(
+            "report_generation_failed",
+            f"Report generation failed ({run.get('error_code') or 'unknown_error'}).",
+            status_code=409,
+            params={
+                "format": format,
+                "reason": run.get("error_code") or "unknown_error",
+                "detail": run.get("error_detail") or "",
+            },
+        )
+    if status == RUN_COMPLETED:
+        raise AppError(
+            "report_file_missing",
+            f"The {format} report was generated but its file is no longer on disk. "
+            "Generate it again.",
+            status_code=404,
+            params={"format": format},
+        )
+
     raise HTTPException(
         status_code=404,
         detail=f"No {format} report found. Generate one first via POST /reports/generate",
     )
 
 
-def _generate_background(tenant_id: str, session_id: str, report_type: str, formats: list) -> None:
+def _generate_background(
+    tenant_id: str, session_id: str, report_type: str, formats: list,
+    run_id: str | None = None,
+) -> None:
     try:
         result = session_store.get_training_result(tenant_id, session_id)
         if not result:
             log.error("No training result found for session %s — cannot generate report", session_id)
+            _finish_report_run(
+                run_id, RUN_FAILED, "no_training_result",
+                "The session has no stored training result to build a report from.",
+            )
             return
 
         report_data = {
@@ -93,8 +249,10 @@ def _generate_background(tenant_id: str, session_id: str, report_type: str, form
             _export_pdf(report_data, report_dir / f"report_{session_id}.pdf")
 
         log.info(f"Report generated for session {session_id}")
+        _finish_report_run(run_id, RUN_COMPLETED)
     except Exception as e:
         log.error(f"Report generation failed for {session_id}: {e}", exc_info=True)
+        _finish_report_run(run_id, RUN_FAILED, "generation_error", str(e))
 
 
 def _export_excel(report_data: dict, path: Path) -> None:

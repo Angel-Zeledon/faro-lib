@@ -153,6 +153,7 @@ async def signup(body: SignupRequest):
         expires_minutes=60 * 24,
     )
     verify_url = f"{settings.frontend_url}/verify-email?token={verify_token}"
+    from backend.notifications import email as email_mod
     from backend.notifications.email import send_verification_email
     email_sent = send_verification_email(body.email, body.full_name or "", verify_url)
     log.info("[signup] user=%s email_sent=%s", user["id"], email_sent)
@@ -161,6 +162,10 @@ async def signup(body: SignupRequest):
         "user": user,
         "tenant": {"id": tenant["id"], "name": tenant["name"]},
         "email_sent": email_sent,
+        # Stable code, not prose: the UI renders the Spanish (CLAUDE.md). Without
+        # it a signup with no mail transport still told the user to go check
+        # their inbox for a link that was never generated a delivery attempt.
+        "email_error": None if email_sent else email_mod.failure_reason(),
         "message": (
             "Account created. Check your email to verify."
             if email_sent else
@@ -246,9 +251,12 @@ async def forgot_password(body: ForgotPasswordRequest):
     if entry:
         code = _issue_reset_otp(entry["user_id"], entry["tenant_id"])
         from backend.notifications.email import send_password_reset_otp
-        send_password_reset_otp(body.email, code)
-        log.info("[forgot-password] OTP issued for email=%s", body.email)
+        sent = send_password_reset_otp(body.email, code)
+        log.info("[forgot-password] OTP issued for email=%s sent=%s", body.email, sent)
 
+    # Deliberately never reports delivery: the response is identical for an
+    # unknown address, and leaking "sent/not sent" would turn this into an
+    # account-enumeration oracle. The outcome goes to the server log only.
     return ok({"message": "If the email exists, a verification code has been sent."})
 
 

@@ -249,9 +249,10 @@ class Pipeline:
 
         _progress(10, "Validating data", PipelineStatus.VALIDATING)
 
-        # 2. Validation layers (WARNING mode — issues logged, never abort)
+        # 2. Validation layers (WARNING mode — never abort, but the findings
+        # travel with the results so the UI can show them.)
         log.info("Pipeline: running validation layers...")
-        self._run_validation(df, val_cfg)
+        validation_findings = self._run_validation(df, val_cfg)
 
         # 2b. Auto-correct: fill NaN gaps, clip outliers per SKU
         df, correction_log = auto_correct_data(df, val_cfg, clip_outliers=True)
@@ -466,7 +467,13 @@ class Pipeline:
             quality_df=quality_df,
             run_id=run_id,
             config_hash=cfg.hash,
-            metadata={"n_skus": df[_primary_group(c)].nunique() if _primary_group(c) else 1},
+            metadata={
+                "n_skus": df[_primary_group(c)].nunique() if _primary_group(c) else 1,
+                # Carried out of the pipeline so the caller can surface them;
+                # see _run_validation for why logging alone was not enough.
+                "validation_findings": validation_findings,
+                "corrections": correction_log.to_list(),
+            },
             fitted_models=results_ml,
             stat_forecasts=results_stat,
         )
@@ -481,35 +488,36 @@ class Pipeline:
     # Validation
     # ------------------------------------------------------------------
 
-    def _run_validation(self, df: pd.DataFrame, val_cfg: dict):
-        """Run validation layers 2-4 in WARNING mode; log issues, never abort."""
+    def _run_validation(self, df: pd.DataFrame, val_cfg: dict) -> list[dict]:
+        """Run validation layers 2-4 in WARNING mode; never abort.
+
+        Returns the findings as plain dicts so the caller can SHOW them. They
+        used to be written to the server log only, which meant the user never
+        learned that their upload had duplicate rows, an unsorted date column,
+        or — worst of all — target leakage, the very thing that produces a
+        model with impossibly good accuracy and a nonsense forecast.
+        """
         from forecasting_core.validation import (
             validate_semantic, validate_data, detect_leakage,
             check_model_compatibility, ValidationMode,
         )
         mode = ValidationMode.WARNING
+        findings: list[dict] = []
 
-        sem = validate_semantic(val_cfg, df, mode)
-        for w in sem.warnings:
-            log.warning(f"[semantic] {w}")
-        for e in sem.errors:
-            log.warning(f"[semantic] {e}")
+        def collect(layer: str, result) -> None:
+            for severity, items in (("error", result.errors), ("warning", result.warnings)):
+                for item in items:
+                    log.warning(f"[{layer}] {item}")
+                    # Validation objects expose to_dict(); anything else is
+                    # stringified rather than dropped.
+                    payload = item.to_dict() if hasattr(item, "to_dict") else {"message": str(item)}
+                    findings.append({**payload, "layer": layer, "severity": severity})
 
-        dv = validate_data(df, val_cfg, mode)
-        for w in dv.warnings:
-            log.warning(f"[data] {w}")
-        for e in dv.errors:
-            log.warning(f"[data] {e}")
-
-        leak = detect_leakage(df, val_cfg, mode=mode)
-        for w in leak.warnings:
-            log.warning(f"[leakage] {w}")
-        for e in leak.errors:
-            log.warning(f"[leakage] {e}")
-
-        compat = check_model_compatibility(df, val_cfg, mode)
-        for w in compat.warnings:
-            log.warning(f"[compat] {w}")
+        collect("semantic", validate_semantic(val_cfg, df, mode))
+        collect("data", validate_data(df, val_cfg, mode))
+        collect("leakage", detect_leakage(df, val_cfg, mode=mode))
+        collect("compatibility", check_model_compatibility(df, val_cfg, mode))
+        return findings
 
     # ------------------------------------------------------------------
     # Forecast generation

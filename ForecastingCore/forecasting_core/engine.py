@@ -96,6 +96,7 @@ class ForecastEngine:
         self._run_id:    str = ""
         self._fitted_models:  dict = {}   # ML training results — kept for re-forecast
         self._stat_forecasts: dict = {}   # Stat forecast arrays — kept for re-forecast
+        self._run_metadata:   dict = {}   # Pipeline metadata (validation findings, corrections)
         self._transformer = None          # DataTransformer fitted at train() time
 
     # ------------------------------------------------------------------
@@ -746,6 +747,7 @@ class ForecastEngine:
         self._run_id         = results.run_id
         self._fitted_models  = results.fitted_models
         self._stat_forecasts = results.stat_forecasts
+        self._run_metadata   = results.metadata or {}
 
         # Apply hierarchical reconciliation if configured
         hierarchy_cfg = self._config.to_dict().get("hierarchy", {})
@@ -774,6 +776,28 @@ class ForecastEngine:
     # ------------------------------------------------------------------
     # Step 5: Read results
     # ------------------------------------------------------------------
+
+    def get_run_warnings(self) -> dict:
+        """
+        Findings the validation layers raised during the last train().
+
+        The layers run in WARNING mode — they never abort a run — so until this
+        existed the only trace was the server log. Target leakage in particular
+        produces a near-perfect score on a forecast that is worthless, which is
+        exactly the outcome a user cannot diagnose on their own.
+
+        Returns:
+            {"validation": [{layer, severity, code?, message, ...}],
+             "corrections": [{action, description, ...}]}
+
+        Used by:
+            - API: GET /sessions/{id}/results → shown above the results table
+        """
+        meta = self._run_metadata or {}
+        return {
+            "validation":  meta.get("validation_findings") or [],
+            "corrections": meta.get("corrections") or [],
+        }
 
     def get_metrics(self) -> dict:
         """

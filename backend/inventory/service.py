@@ -2348,6 +2348,51 @@ def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
     return [r["whatsapp_number"] for r in rows]
 
 
+def get_tenant_alert_recipients(tenant_id: str) -> list[dict]:
+    """
+    Admins/managers with the identity needed to attribute a delivery outcome.
+    The email/WhatsApp lists above return bare contact strings, which cannot be
+    written to activity_logs (user_id is NOT NULL) — this returns the user row.
+    """
+    return [
+        dict(r) for r in query(
+            """SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND role IN ('admin', 'manager')""",
+            (tenant_id,),
+        )
+    ]
+
+
+def record_notification_delivery(
+    tenant_id: str,
+    user_id: str,
+    action: str,
+    delivered: bool,
+    context: Optional[dict] = None,
+) -> None:
+    """
+    Write the outcome of one outbound alert to the recipient's activity log.
+
+    Chosen over a log-only warning because the failure mode is invisible by
+    construction: when SMTP credentials expire the alerts simply stop, and the
+    user reads "no alerts" as "no problems" — server logs are not something
+    they can see. activity_logs is already per-user, already queryable from
+    /me/activity, and already carries a `status` column, so a failed delivery
+    surfaces in a screen the user opens. Successes are recorded too: without
+    them the absence of a failed row is ambiguous (nothing wrong vs. loop never
+    ran). Never raises — an unwritable audit row must not abort the alert loop.
+    """
+    from backend.activity.service import log_action
+    try:
+        log_action(
+            tenant_id, user_id, action,
+            context=context or {},
+            status="success" if delivered else "failed",
+        )
+    except Exception as e:  # pragma: no cover - audit write must never break alerting
+        log.warning("notification activity log failed user=%s action=%s: %s", user_id, action, e)
+
+
 def run_daily_inventory_alerts() -> None:
     """
     Called once per day by the scheduler.
@@ -2412,17 +2457,32 @@ def run_daily_inventory_alerts() -> None:
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
             inventory_url = f"{app_url}/hoy"
 
-            emails = get_tenant_admin_emails(tid)
-            for email in emails:
-                try:
-                    send_inventory_alert_email(
-                        to=email,
-                        critical_items=critical[:10],
-                        warning_items=warning[:5],
-                        inventory_url=inventory_url,
-                    )
-                except Exception as e:
-                    log.warning("alert email failed to=%s: %s", email, e)
+            # Full lists on purpose: the notification layer trims the rendered
+            # rows itself, after counting, so the digest reports every SKU at
+            # risk instead of the ten it had room to list.
+            from backend.notifications import email as email_mod
+            recipients = get_tenant_alert_recipients(tid)
+            for r in recipients:
+                if not r.get("email"):
+                    continue
+                delivered = send_inventory_alert_email(
+                    to=r["email"],
+                    critical_items=critical,
+                    warning_items=warning,
+                    inventory_url=inventory_url,
+                )
+                if not delivered:
+                    log.warning("alert email not delivered to=%s", r["email"])
+                record_notification_delivery(
+                    tid, r["id"], "inventory_alert_email", delivered,
+                    context={
+                        "channel": "email",
+                        "recipient": r["email"],
+                        "critical": len(critical),
+                        "warning": len(warning),
+                        **({} if delivered else {"reason": email_mod.failure_reason()}),
+                    },
+                )
 
             # WhatsApp channel — highest open-rate in LatAm; opt-in per user
             # via users.whatsapp_number. No-op when Twilio isn't configured.
@@ -2435,15 +2495,29 @@ def run_daily_inventory_alerts() -> None:
             from backend.tenants.service import get_tenant
             full_tenant = get_tenant(tid) or {}
             if has_feature(full_tenant, Feature.WHATSAPP_ALERTS):
+                from backend.notifications import whatsapp as wa_mod
                 from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
-                numbers = get_tenant_admin_whatsapps(tid)
-                if numbers:
-                    text = build_inventory_alert_text(
-                        critical[:10], warning[:5], inventory_url,
-                        transfer_count=transfer_count,
+                text = build_inventory_alert_text(
+                    critical, warning, inventory_url,
+                    transfer_count=transfer_count,
+                )
+                for r in recipients:
+                    number = (r.get("whatsapp_number") or "").strip()
+                    if not number:
+                        continue
+                    delivered = send_whatsapp(number, text)
+                    if not delivered:
+                        log.warning("alert whatsapp not delivered to=%s", number)
+                    record_notification_delivery(
+                        tid, r["id"], "inventory_alert_whatsapp", delivered,
+                        context={
+                            "channel": "whatsapp",
+                            "recipient": number,
+                            "critical": len(critical),
+                            "warning": len(warning),
+                            **({} if delivered else {"reason": wa_mod.failure_reason()}),
+                        },
                     )
-                    for number in numbers:
-                        send_whatsapp(number, text)
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)

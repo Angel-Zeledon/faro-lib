@@ -1,14 +1,14 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { Bell, CheckCircle2, AlertTriangle, Clock, X, ChevronRight, Search } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import { useToast } from '@/contexts/ToastContext'
-import { useActiveSession } from '@/contexts/ActiveSessionContext'
+import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useSkuSearch } from '@/contexts/SkuSearchContext'
-import Badge from '@/components/ui/Badge'
 import PlanningControl from './PlanningControl'
 
 interface Notif {
@@ -32,26 +32,32 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/sessions':  'sessions.page_title',
 }
 
-const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'muted'> = {
-  COMPLETED:          'success',
-  RUNNING:            'info',
-  QUEUED:             'warning',
-  FAILED:             'danger',
-  CANCELLED:          'muted',
-  MODELS_CONFIGURED:  'muted',
-  FEATURES_CONFIGURED:'muted',
-  COLUMNS_CONFIGURED: 'muted',
-  INSPECTED:          'muted',
-  DATASET_LOADED:     'muted',
-  DRAFT:              'muted',
+// Granularity label of the active session, reusing the planning vocabulary.
+const GRAIN_KEY: Record<string, string> = {
+  daily: 'planning.daily', weekly: 'planning.weekly', monthly: 'planning.monthly',
 }
+
+// The page owns its session picker (deep links `/skus?session=<id>` and compare
+// mode can point at a session other than the tenant's active one), so a global
+// badge here would contradict what that page is actually showing.
+const PATHS_WITH_OWN_SESSION_PICKER = ['/skus']
 
 export default function TopBar() {
   const path    = usePathname()
   const { t }   = useLanguage()
   const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'Faro'
   const { addToast } = useToast()
-  const { activeSessionId } = useActiveSession()
+  // Active-session badge source of truth.
+  //
+  // This used to read a dedicated ActiveSessionContext, whose setter was never
+  // called anywhere — activeSessionId stayed null forever and the badge never
+  // rendered. That context has been deleted rather than wired up: PlanningContext
+  // already holds `active_session_id` straight from the server-side resolver
+  // (`planning_service.resolve_active_session`), which is the very session every
+  // screen loads its numbers from. A second client-side "active session" store
+  // would have to be pushed from each page and could drift from the resolver;
+  // reading the resolver's answer cannot.
+  const planning = usePlanning()?.planning ?? null
   const { open: openSkuSearch } = useSkuSearch()
 
   const [time,        setTime]        = useState('')
@@ -120,10 +126,25 @@ export default function TopBar() {
     setNotifs(prev => prev.map(n => ({ ...n, read: true })))
   }
 
-  // Active session lookup (used on /forecast page)
-  const activeSession = activeSessionId
-    ? sessions.find(s => s.session_id === activeSessionId) ?? null
+  // Resolve the badge against the list this bar already polls — no extra fetch.
+  // Stays null when the tenant has no completed session, when planning has not
+  // loaded yet, or when the id is not in the polled page, so the badge simply
+  // does not render instead of showing a placeholder.
+  const activeSession = planning?.active_session_id && !PATHS_WITH_OWN_SESSION_PICKER.includes(path)
+    ? sessions.find(s => s.session_id === planning.active_session_id) ?? null
     : null
+  // Granularity only matters when the tenant actually has siblings of the same
+  // upload (daily/weekly/monthly): "demo1" and "demo1 · weekly" are different
+  // plans whose coverage numbers are counted in different units.
+  const grain = (planning?.available_periods.length ?? 0) > 1 ? activeSession?.granularity : null
+  const grainLabel = grain ? t(GRAIN_KEY[grain] ?? '') : ''
+  // Coarser family siblings are created with the machine-appended English
+  // suffix " · <granularity>" (family_service). Drop it from the display name
+  // when the localized chip is already saying the same thing.
+  const suffix = grain ? ` · ${grain}` : ''
+  const sessionLabel = activeSession && grainLabel && suffix && activeSession.name.endsWith(suffix)
+    ? activeSession.name.slice(0, -suffix.length)
+    : activeSession?.name ?? ''
 
   return (
     <header style={{
@@ -143,17 +164,29 @@ export default function TopBar() {
         {activeSession && (
           <>
             <ChevronRight size={13} color="var(--border-strong)" />
-            <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {activeSession.name}
-            </span>
-            <Badge
-              variant={STATUS_VARIANT[activeSession.status] ?? 'muted'}
-              pulse={activeSession.status === 'RUNNING'}
-              dot={activeSession.status !== 'RUNNING'}
-              style={{ fontSize: 10 }}
+            {/* Status indicator, not a control: it links to the session history
+                so switching happens there instead of in a second switcher. */}
+            <Link
+              href="/sessions"
+              title={t('topbar.active_session_title')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                textDecoration: 'none', color: 'inherit',
+              }}
             >
-              {activeSession.status}
-            </Badge>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {sessionLabel}
+              </span>
+              {grainLabel && (
+                <span style={{
+                  fontSize: 10, fontWeight: 600, color: 'var(--dim)',
+                  border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {grainLabel}
+                </span>
+              )}
+            </Link>
           </>
         )}
       </div>

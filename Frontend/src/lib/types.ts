@@ -13,6 +13,9 @@ export interface SessionInfo {
   error:        string | null
   file_path:    string | null
   dataset_id?:  string | null
+  /** Granularity of a family run (daily/weekly/monthly); null for single-grain
+   * sessions trained before the family feature. */
+  granularity?: string | null
 }
 
 // Enriched row from GET /sessions/summary (session-history page).
@@ -102,6 +105,27 @@ export interface DataProfile {
   data_quality?: DataQuality
 }
 
+// ── Run warnings (validation layers, WARNING mode) ───────────────────────────
+// `code` is the engine's stable English error_id; the Spanish comes from i18n.
+export interface RunWarningSample {
+  message:     string
+  context:     Record<string, unknown>
+  suggestions: string[]
+}
+
+export interface RunWarningGroup {
+  code:     string
+  severity: 'error' | 'warning'
+  layer:    string
+  count:    number
+  samples:  RunWarningSample[]
+}
+
+export interface RunWarnings {
+  validation:  RunWarningGroup[]
+  corrections: { action: string; description: string }[]
+}
+
 export interface ColumnOptions {
   date_candidates:        string[]
   target_candidates:      string[]
@@ -138,11 +162,23 @@ export interface QualityReport {
 }
 
 // ── Inspection result (from GET /sessions/{id}/inspect) ───────────────────────
+// Per-SKU temporal granularity. `conflict` means some products are reported
+// daily and others monthly in the same file: they would all train on one time
+// axis, so a monthly-reported SKU gets modeled as a daily series and its
+// reorder quantity comes out roughly 30x off.
+export interface GranularityDetection {
+  status:            'homogeneous' | 'conflict' | 'unknown'
+  detected:          string[]
+  skus_by_frequency: Record<string, string[]>
+  suggested_target:  string | null
+}
+
 export interface InspectionResult {
   profile:                DataProfile
   column_options:         ColumnOptions
   canonical_suggestions?: CanonicalMapping   // NEW (also nested in column_options)
   config_schema:          ConfigSchema | null
+  granularity?:           GranularityDetection
   inspected_at:           string
 }
 

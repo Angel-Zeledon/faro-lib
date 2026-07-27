@@ -65,6 +65,25 @@ def get_training_results(
     return ok(result)
 
 
+@router.get("/sessions/{session_id}/warnings")
+def get_run_warnings(session_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Data problems the validation layers found while training this session.
+
+    They never abort a run, so without this the only trace was the server log —
+    and target leakage in particular yields a near-perfect score on a forecast
+    that is worthless. Codes are English; the frontend renders the Spanish.
+    """
+    _require_completed(user.tenant_id, session_id)
+    result = session_store.get_training_result(user.tenant_id, session_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="No results")
+    warnings = result.get("warnings") or {}
+    return ok({
+        "validation":  warnings.get("validation") or [],
+        "corrections": warnings.get("corrections") or [],
+    })
+
+
 @router.get("/sessions/{session_id}/metrics")
 def get_metrics(session_id: str, user: CurrentUser = Depends(get_current_user)):
     _require_completed(user.tenant_id, session_id)

@@ -177,7 +177,27 @@ def _primary_group_col(col_cfg: dict):
 
 # ── Corrupted-value guard ─────────────────────────────────────────────────
 
-def _neutralize_infinities(df: "pd.DataFrame", target_col: str) -> "pd.DataFrame":
+# ── Data-prep notes ────────────────────────────────────────────────────────
+#
+# The prep helpers below silently rewrite the user's data: transactions get
+# summed into daily totals, infinities become NaN, gap fill is abandoned for a
+# SKU with an implausible date range, a configured outlier strategy fails.
+# Every one of those is something only the USER can fix upstream, and every one
+# of them used to exist solely as a line in the server log.
+#
+# They append here instead. `code` is a stable English identifier; the Spanish
+# comes from the frontend's i18n, same contract as the engine's error_id.
+# Each helper takes `notes` optionally so it stays a pure function under test.
+
+def _note(notes: "list | None", code: str, severity: str = "warning", **context) -> None:
+    if notes is None:
+        return
+    notes.append({"error_id": code, "severity": severity, "layer": "data_prep",
+                  "message": "", "context": context, "suggestions": []})
+
+
+def _neutralize_infinities(df: "pd.DataFrame", target_col: str,
+                           notes: "list | None" = None) -> "pd.DataFrame":
     """Replace ±inf in the target with NaN, so the missing-data path handles it.
 
     An overflowing quantity is not a large sale — it is a broken cell. Left
@@ -203,13 +223,15 @@ def _neutralize_infinities(df: "pd.DataFrame", target_col: str) -> "pd.DataFrame
         "Neutralized %d infinite value(s) in target column '%s' — treated as missing.",
         n, target_col,
     )
+    _note(notes, "PREP_INFINITE_NEUTRALIZED", n_rows=n, column=target_col)
     out = df.copy()
     out.loc[mask.fillna(False), target_col] = np.nan
     return out
 
 
 def _collapse_duplicate_periods(df: "pd.DataFrame", date_col: str, target_col: str,
-                                group_col: str | None) -> "pd.DataFrame":
+                                group_col: str | None,
+                                notes: "list | None" = None) -> "pd.DataFrame":
     """Sum rows that share the same (date, SKU) into a single observation.
 
     ERPs commonly export one row per SALE, not per day. Left as-is those rows
@@ -245,6 +267,7 @@ def _collapse_duplicate_periods(df: "pd.DataFrame", date_col: str, target_col: s
         "quantities summed so demand is per period, not per transaction.",
         n_dupes, len(out),
     )
+    _note(notes, "PREP_DUPLICATES_COLLAPSED", n_rows=n_dupes, n_periods=len(out))
     return out[df.columns.tolist()]
 
 
@@ -257,7 +280,8 @@ MAX_GAP_FILL_BUCKETS = 20_000
 
 
 def _apply_gap_fill(df: "pd.DataFrame", date_col: str, target_col: str,
-                    group_col: str | None, strategy: str) -> "pd.DataFrame":
+                    group_col: str | None, strategy: str,
+                    notes: "list | None" = None) -> "pd.DataFrame":
     """
     Reindex a time series to fill missing dates using the chosen strategy.
     strategy: "zero" | "mean" | "forward" | "interpolate" | "leave"
@@ -303,6 +327,9 @@ def _apply_gap_fill(df: "pd.DataFrame", date_col: str, target_col: str,
                 "the date range is implausible (check for typo'd or future dates).",
                 g, len(span), MAX_GAP_FILL_BUCKETS,
             )
+            _note(notes, "PREP_GAP_FILL_SKIPPED", sku=str(g),
+                  date_min=str(sub[date_col].min().date()),
+                  date_max=str(sub[date_col].max().date()))
             parts.append(sub)
             continue
 
@@ -349,6 +376,7 @@ def _apply_outlier_treatment(
     target_col: str,
     group_col: str | None,
     outlier_cfg: dict,
+    notes: "list | None" = None,
 ) -> "pd.DataFrame":
     """
     Apply outlier treatment per SKU before training.
@@ -436,7 +464,11 @@ def _apply_outlier_treatment(
                 df.loc[mask, target_col] = np.log1p(clipped)
 
         except Exception as e:
+            # The user picked this strategy in the wizard and the config screen
+            # still says it is active — silence here means raw outliers reach
+            # the model while the UI claims they were handled.
             log.warning(f"Outlier treatment failed for SKU={g}: {e}")
+            _note(notes, "PREP_OUTLIER_TREATMENT_FAILED", sku=str(g), strategy=strategy)
 
     return df
 
@@ -569,6 +601,72 @@ def _compute_excluded_skus(df, group_col, forecasts: dict, min_history: int) -> 
     return excluded
 
 
+# ── Run warnings ───────────────────────────────────────────────────────────
+
+# One finding per SKU would put thousands of near-identical rows in the
+# payload. They are grouped by code, so the cap is on distinct codes.
+MAX_WARNING_CODES = 20
+MAX_WARNING_SAMPLES = 5
+
+
+def _collect_run_warnings(engine, prep_notes: "list | None" = None) -> dict:
+    """Group the validation layers' findings so the UI can show them.
+
+    The layers run in WARNING mode and never abort a run, so before this the
+    only trace was the server log. TARGET_FEATURE_LEAKAGE is the one that
+    matters most: it yields a near-perfect score on a forecast that is
+    worthless, which the user has no way to diagnose alone.
+
+    Codes stay English (`error_id`); the frontend renders the Spanish.
+    """
+    try:
+        raw = engine.get_run_warnings()
+    except Exception as exc:  # never let a reporting detail fail a good run
+        log.warning(f"Could not collect run warnings: {exc}")
+        raw = {"validation": [], "corrections": []}
+
+    # The prep helpers in this module rewrite the user's data before the engine
+    # ever sees it (transactions summed, infinities voided, gap fill abandoned),
+    # so their notes belong in the same list as the engine's own findings.
+    findings = list(raw.get("validation") or []) + list(prep_notes or [])
+
+    grouped: dict[str, dict] = {}
+    for f in findings:
+        code = f.get("error_id") or "UNKNOWN"
+        entry = grouped.get(code)
+        if entry is None:
+            if len(grouped) >= MAX_WARNING_CODES:
+                continue
+            entry = grouped[code] = {
+                "code": code,
+                "severity": f.get("severity") or "warning",
+                "layer": f.get("layer") or "",
+                "count": 0,
+                "samples": [],
+            }
+        entry["count"] += 1
+        # An error anywhere in the group outranks a warning.
+        if f.get("severity") == "error":
+            entry["severity"] = "error"
+        if len(entry["samples"]) < MAX_WARNING_SAMPLES:
+            entry["samples"].append({
+                "message": f.get("message") or "",
+                "context": f.get("context") or {},
+                "suggestions": (f.get("suggestions") or [])[:3],
+            })
+
+    corrections = [
+        {"action": c.get("action") or "", "description": c.get("description") or ""}
+        for c in (raw.get("corrections") or [])
+    ][:MAX_WARNING_CODES]
+
+    ordered = sorted(
+        grouped.values(),
+        key=lambda e: (0 if e["severity"] == "error" else 1, -e["count"]),
+    )
+    return {"validation": ordered, "corrections": corrections}
+
+
 # ── Progress helpers ───────────────────────────────────────────────────────
 
 def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str, message: str):
@@ -634,9 +732,10 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         # exists instead of inventing a second policy for it. The validator
         # reports the count; the pipeline runs in WARNING mode and only logs,
         # so the data has to be made safe here.
+        prep_notes: list = []
         if engine._df is not None:
             engine._df = _neutralize_infinities(
-                engine._df, target_col=col_cfg["target"],
+                engine._df, target_col=col_cfg["target"], notes=prep_notes,
             )
             # Then collapse per-transaction rows into per-period totals, before
             # gap fill reindexes dates and before the models see the series.
@@ -645,6 +744,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 date_col=col_cfg["date"],
                 target_col=col_cfg["target"],
                 group_col=_primary_group_col(col_cfg),
+                notes=prep_notes,
             )
 
         if gap_fill and gap_fill != "leave" and engine._df is not None:
@@ -656,6 +756,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 target_col=col_cfg["target"],
                 group_col=_primary_group_col(col_cfg),
                 strategy=gap_fill,
+                notes=prep_notes,
             )
 
         strategy = outlier_cfg.get("strategy", "leave") if isinstance(outlier_cfg, dict) else "leave"
@@ -668,6 +769,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 target_col=col_cfg["target"],
                 group_col=_primary_group_col(col_cfg),
                 outlier_cfg=outlier_cfg,
+                notes=prep_notes,
             )
 
         if engine._df is not None:
@@ -722,6 +824,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             "inventory": inventory,
             "routing": routing,
             "data_quality": dq_report,
+            "warnings": _collect_run_warnings(engine, prep_notes),
             "config": config,
         }
         session_store.set_training_result(tenant_id, session_id, result_payload)

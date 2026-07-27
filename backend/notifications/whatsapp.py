@@ -15,6 +15,9 @@ from backend.notifications.locale import render_es
 
 log = logging.getLogger(__name__)
 
+# Critical SKUs listed before the rest collapse into a "y N más" line.
+_ALERT_MAX_CRITICAL_LINES = 5
+
 
 def is_configured() -> bool:
     return bool(
@@ -22,6 +25,11 @@ def is_configured() -> bool:
         and settings.twilio_auth_token
         and settings.twilio_whatsapp_from
     )
+
+
+def failure_reason() -> str:
+    """Stable code for why a send failed — mirrors email.failure_reason()."""
+    return "transport_error" if is_configured() else "not_configured"
 
 
 def _transport_send(to_number: str, body: str, media_url: str | None) -> None:
@@ -80,19 +88,26 @@ def build_inventory_alert_text(
     inventory_url: str,
     transfer_count: int = 0,
 ) -> str:
-    """Compact daily-alert message: WhatsApp favours short, scannable text."""
+    """
+    Compact daily-alert message: WhatsApp favours short, scannable text.
+
+    Callers pass the FULL lists: the counts are taken before the message is
+    trimmed to _ALERT_MAX_CRITICAL_LINES, so "y N más" states how many SKUs are
+    really hidden. Passing a pre-sliced list made it say "y 5 más" while 37
+    products were about to run out.
+    """
     lines: list[str] = []
     n_crit = len(critical_items)
     if n_crit:
         lines.append(f"🔴 *Faro*: {n_crit} producto{'s' if n_crit != 1 else ''} se agota{'n' if n_crit != 1 else ''} antes de tu próximo pedido")
-        for i in critical_items[:5]:
+        for i in critical_items[:_ALERT_MAX_CRITICAL_LINES]:
             days = i.get("coverage_days")
             days_str = f"{days:.0f}d" if days is not None else "—"
             qty = i.get("recommended_qty")
             qty_str = f" · pedir {qty:,.0f}" if qty else ""
             lines.append(f"  • {i.get('display_name') or i.get('sku')} ({days_str}{qty_str})")
-        if n_crit > 5:
-            lines.append(f"  … y {n_crit - 5} más")
+        if n_crit > _ALERT_MAX_CRITICAL_LINES:
+            lines.append(render_es("alert_whatsapp_more", n=n_crit - _ALERT_MAX_CRITICAL_LINES))
     n_warn = len(warning_items)
     if n_warn:
         lines.append(f"🟡 {n_warn} por reabastecer esta semana")

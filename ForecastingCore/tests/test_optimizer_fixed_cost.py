@@ -1,7 +1,7 @@
 """
 Per-lane FIXED cost of a transfer: the charge you pay once per shipment, no
 matter how many units (or SKUs) ride along. Modeled with a binary per
-(lane, bucket) linked to the continuous transfer variables by a big-M row.
+(lane, bucket) linked to the transfer variables by one big-M row per SKU.
 """
 
 import numpy as np
@@ -118,27 +118,25 @@ class TestBinaryIsGenuinelyLinked:
         x[idx.ship_idx("W1", "W2", 1)] = 1.0  # indicator on -> feasible again
         assert (problem.A_ub @ x <= problem.b_ub + 1e-9).all()
 
-    def test_indicator_row_covers_every_sku_on_that_lane_and_bucket(self):
-        """The linking row sums ALL SKUs moving on that lane in that bucket,
-        so no SKU can slip across on a switched-off binary."""
-        inp = _split_vs_consolidate_input(50.0)
-        inp.skus = ["A", "B"]
-        inp.demand[("B", "W1")] = [0.0, 0.0, 0.0]
-        inp.demand[("B", "W2")] = [10.0, 10.0, 10.0]
-        inp.stock0[("B", "W1")] = 30.0
-        inp.stock0[("B", "W2")] = 0.0
-        inp.lead_time_buckets["B"] = 0
-        inp.holding_cost["B"] = 0.1
-        inp.stockout_cost["B"] = 100.0
-        inp.order_cost["B"] = 10.0
-
-        problem = build_problem(inp)
+    def test_every_sku_on_that_lane_and_bucket_gets_a_row_on_the_same_binary(self):
+        """Each SKU is linked to the (lane, bucket) binary by its own row — all
+        pointing at the SAME binary — so no SKU can slip across on a
+        switched-off binary and the truck is still charged once."""
+        problem = build_problem(_two_sku_consolidate_input(50.0))
         idx = problem.index
-        row = _linking_row_for(problem, idx.ship_idx("W1", "W2", 2))
-        assert problem.A_ub[row, idx.transfer_idx("A", "W1", "W2", 2)] == 1.0
-        assert problem.A_ub[row, idx.transfer_idx("B", "W1", "W2", 2)] == 1.0
+
+        rows = _linking_rows_for(problem, idx.ship_idx("W1", "W2", 2))
+        assert len(rows) == 2
+        moved = {
+            int(np.flatnonzero(problem.A_ub[r] > 0)[0]) for r in rows
+        }
+        assert moved == {
+            idx.transfer_idx("A", "W1", "W2", 2),
+            idx.transfer_idx("B", "W1", "W2", 2),
+        }
         # ...and only that bucket.
-        assert problem.A_ub[row, idx.transfer_idx("A", "W1", "W2", 1)] == 0.0
+        for r in rows:
+            assert problem.A_ub[r, idx.transfer_idx("A", "W1", "W2", 1)] == 0.0
 
     def test_big_m_comes_from_the_instance_not_a_constant(self):
         """M is stock0 + horizon demand (30 + 30 here); doubling the demand
@@ -153,6 +151,76 @@ class TestBinaryIsGenuinelyLinked:
         bigger = build_problem(inp)
         bigger_row = _linking_row_for(bigger, bigger.index.ship_idx("W1", "W2", 1))
         assert bigger.A_ub[bigger_row, bigger.index.ship_idx("W1", "W2", 1)] == -90.0
+
+    def test_each_rows_big_m_is_scaled_to_its_own_sku(self):
+        """A row's M must bound the units THAT SKU can carry, not the whole
+        catalogue's: sharing one catalogue-wide M is what let a big SKU shrink
+        every other SKU's indicator below the solver's integrality tolerance."""
+        inp = _two_sku_consolidate_input(50.0)
+        inp.stock0[("B", "W1")] = 30_000.0     # B is now a huge SKU
+        problem = build_problem(inp)
+        idx = problem.index
+
+        by_sku = {}
+        for r in _linking_rows_for(problem, idx.ship_idx("W1", "W2", 1)):
+            sku = "A" if problem.A_ub[r, idx.transfer_idx("A", "W1", "W2", 1)] else "B"
+            by_sku[sku] = problem.A_ub[r, idx.ship_idx("W1", "W2", 1)]
+
+        assert by_sku["A"] == -60.0        # A: 30 stock + 30 demand
+        assert by_sku["B"] == -30_030.0    # B: 30000 stock + 30 demand — B's size
+                                           # must not leak into A's row.
+
+
+class TestBigMDoesNotLeakAcrossSkus:
+    """Regression: found by running the solver on realistic magnitudes rather
+    than toy ones. With a single catalogue-wide M, one large SKU pushed the
+    ship indicator a shipment needs (units / M) below HiGHS's ~1e-6 integrality
+    tolerance, so the binary read as 0 and the lane's fixed cost was charged as
+    ~0 — every other SKU shipped for free."""
+
+    @staticmethod
+    def _small_sku_beside_a_giant(big_stock: float) -> OptimizationInput:
+        """SMALL wants 2 units moved A->B over the horizon; the lane charges
+        1000 per shipment and no order can arrive in time (lead 5 > horizon 2).
+        Shipping costs 1000, leaving the 2 units unmet costs 2 * 100 = 200, so
+        the honest optimum NEVER ships. BIG only exists to inflate the bound.
+        """
+        return OptimizationInput(
+            skus=["SMALL", "BIG"],
+            warehouses=["A", "B"],
+            horizon=2,
+            demand={("SMALL", "A"): [0.0, 0.0], ("SMALL", "B"): [1.0, 1.0],
+                    ("BIG", "A"): [0.0, 0.0], ("BIG", "B"): [0.0, 0.0]},
+            stock0={("SMALL", "A"): 10.0, ("SMALL", "B"): 0.0,
+                    ("BIG", "A"): big_stock, ("BIG", "B"): 0.0},
+            lead_time_buckets={"SMALL": 5, "BIG": 5},
+            holding_cost={"SMALL": 0.0, "BIG": 0.0},
+            stockout_cost={"SMALL": 100.0, "BIG": 0.0},
+            order_cost={"SMALL": 1.0, "BIG": 1.0},
+            transfer_cost=0.0,
+            transfer_cost_by_lane={("A", "B"): 0.0, ("B", "A"): 0.0},
+            transfer_lead_buckets={("A", "B"): 0, ("B", "A"): 0},
+            transfer_fixed_cost_by_lane={("A", "B"): 1000.0, ("B", "A"): 1000.0},
+        )
+
+    @pytest.mark.parametrize("big_stock", [0.0, 1e6, 5e7, 1e9])
+    def test_a_giant_sku_never_makes_another_skus_shipment_free(self, big_stock):
+        result = optimize(self._small_sku_beside_a_giant(big_stock))
+
+        assert result.status == "optimal"
+        assert all(qty == 0.0 for qty in result.transfers.values()), (
+            "shipped despite a fixed cost that costs more than the shortage — "
+            "the indicator was satisfied below the solver's integrality tolerance"
+        )
+        # 2 units of unmet demand at 100 each; no fixed cost, no orders.
+        assert result.total_cost == pytest.approx(200.0)
+
+    def test_the_bound_ignores_other_skus_units(self):
+        from forecasting_core.business.optimizer import _shipment_big_m
+
+        inp = self._small_sku_beside_a_giant(5e7)
+        assert _shipment_big_m(inp, "SMALL") == 12.0   # 10 on hand + 2 demanded
+        assert _shipment_big_m(inp, "BIG") == 5e7
 
 
 class TestZeroFixedCostChangesNothing:
@@ -208,9 +276,31 @@ class TestZeroFixedCostChangesNothing:
         assert idx.n_vars == VariableIndex(["A"], ["W1", "W2"], 2).n_vars
 
 
+def _two_sku_consolidate_input(fixed_cost: float) -> OptimizationInput:
+    """_split_vs_consolidate_input with a second, identical SKU riding along."""
+    inp = _split_vs_consolidate_input(fixed_cost)
+    inp.skus = ["A", "B"]
+    inp.demand[("B", "W1")] = [0.0, 0.0, 0.0]
+    inp.demand[("B", "W2")] = [10.0, 10.0, 10.0]
+    inp.stock0[("B", "W1")] = 30.0
+    inp.stock0[("B", "W2")] = 0.0
+    inp.lead_time_buckets["B"] = 0
+    inp.holding_cost["B"] = 0.1
+    inp.stockout_cost["B"] = 100.0
+    inp.order_cost["B"] = 10.0
+    return inp
+
+
+def _linking_rows_for(problem, ship_var_idx: int) -> list[int]:
+    """The shipment-linking rows for a (lane, bucket) are the A_ub rows with a
+    negative (big-M) coefficient on that binary's column — one per SKU."""
+    rows = np.flatnonzero(problem.A_ub[:, ship_var_idx] < 0).tolist()
+    assert rows, f"expected linking rows for ship col {ship_var_idx}"
+    return rows
+
+
 def _linking_row_for(problem, ship_var_idx: int) -> int:
-    """The shipment-linking row for a (lane, bucket) is the only A_ub row with
-    a negative (big-M) coefficient on that binary's column."""
-    rows = np.where(problem.A_ub[:, ship_var_idx] < 0)[0]
+    """The single linking row of a one-SKU problem."""
+    rows = _linking_rows_for(problem, ship_var_idx)
     assert len(rows) == 1, f"expected exactly one linking row for ship col {ship_var_idx}"
     return rows[0]

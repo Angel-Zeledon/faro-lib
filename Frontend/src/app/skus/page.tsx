@@ -14,6 +14,7 @@ import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
 import SignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
+import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
 import {
   EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
@@ -1925,6 +1926,11 @@ export default function SkusPage() {
           <InlineError error={new Error(loadError)} onDismiss={() => setLoadError(null)} />
         </div>
       )}
+
+      {/* Data problems the engine found while training. They never abort a run,
+          so this is the only place the user can learn the accuracy above is
+          inflated by leakage. */}
+      <RunWarningsPanel sessionId={sessionId} />
 
       {/* Body */}
       <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: 16, flex: 1, minHeight: 0 }}>

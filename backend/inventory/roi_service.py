@@ -550,8 +550,11 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
     from backend.config import settings
     from backend.inventory.service import (
         get_tenant_admin_emails,
+        get_tenant_alert_recipients,
         get_tenants_with_active_sessions,
+        record_notification_delivery,
     )
+    from backend.notifications import email as email_mod
     from backend.notifications.email import send_monthly_roi_email
 
     now = now or datetime.now(tz=timezone.utc)
@@ -583,13 +586,31 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
             if not emails:
                 continue
 
+            # Recipient → user id, so a failed recap lands in that user's own
+            # activity feed. An address with no user row (only reachable when
+            # the recipient list is stubbed) is still mailed, just unattributed.
+            user_id_by_email = {
+                r["email"]: r["id"] for r in get_tenant_alert_recipients(tid) if r.get("email")
+            }
+
             delivered = 0
             for email in emails:
-                try:
-                    if send_monthly_roi_email(to=email, report=report, roi_url=roi_url):
-                        delivered += 1
-                except Exception as e:
-                    log.warning("roi_email failed to=%s: %s", email, e)
+                ok_sent = send_monthly_roi_email(to=email, report=report, roi_url=roi_url)
+                if ok_sent:
+                    delivered += 1
+                else:
+                    log.warning("roi_email not delivered to=%s", email)
+                uid = user_id_by_email.get(email)
+                if uid:
+                    record_notification_delivery(
+                        tid, uid, "monthly_roi_email", ok_sent,
+                        context={
+                            "channel": "email",
+                            "recipient": email,
+                            "month": month_key,
+                            **({} if ok_sent else {"reason": email_mod.failure_reason()}),
+                        },
+                    )
 
             if delivered:
                 execute(

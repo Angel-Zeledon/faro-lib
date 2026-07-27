@@ -192,6 +192,7 @@ export const translations = {
     'topbar.notif_failed_title':        'Entrenamiento fallido',
     'topbar.notif_failed_body':         'encontró un error',
     'topbar.notifications':             'Notificaciones',
+    'topbar.active_session_title':      'Sesión activa — ver el historial de sesiones',
     'planning.period_label':   'Ver por',
     'planning.horizon_label':  'Horizonte',
     'planning.horizon_decrease': 'Reducir horizonte',
@@ -794,6 +795,107 @@ export const translations = {
     'csv.and_more_suffix':       'más',
     'csv.download_template':     'Descargar plantilla CSV',
     'csv.template_hint':         'Trae las columnas que Faro reconoce automáticamente, con filas de ejemplo.',
+
+    // ── Profiler findings on the uploaded file (keys are the English codes) ──
+    'dqissue.title':    'Revisa esto antes de entrenar',
+    'dqissue.subtitle': 'Puedes continuar igual, pero corregir el archivo ahora te ahorra un pronóstico equivocado.',
+
+    'dqissue.granularity_conflict':     'Tus productos no se reportan con la misma frecuencia ({per_bucket}).',
+    'dqissue.granularity_conflict.fix': 'Todos se entrenan en la misma línea de tiempo, así que un producto reportado por mes se modela como si vendiera todos los días y su sugerencia de compra sale muy por debajo. Separa el archivo por frecuencia, o usa la granularidad más gruesa ({suggested}) para todo.',
+    'dqissue.duplicates':     'Hay {dupe_count} filas con la misma fecha y el mismo producto.',
+    'dqissue.duplicates.fix': 'Si tu sistema exporta una fila por venta, las sumamos al total del día automáticamente. Si no era eso, revisa el archivo.',
+    'dqissue.invalid_dates':     'Hay filas con la fecha vacía o en un formato que no reconocemos.',
+    'dqissue.invalid_dates.fix': 'Esas filas quedan fuera del entrenamiento. Revisa que todas las fechas usen el mismo formato.',
+    'dqissue.future_dates':     'Hay filas con fecha futura.',
+    'dqissue.future_dates.fix': 'El historial debería tener solo ventas ya ocurridas; suele ser un error de tecleo en el año.',
+    'dqissue.null_target':     'El {null_pct}% de las filas no trae un número de ventas válido.',
+    'dqissue.null_target.fix': 'Revisa que la columna de ventas sea la correcta y que no traiga texto.',
+    'dqissue.negative_target':     'Hay {neg_count} filas con ventas negativas.',
+    'dqissue.negative_target.fix': 'Suelen ser devoluciones. Si es así, réstalas de la venta del día en vez de dejarlas como filas aparte.',
+    'dqissue.all_zeros':     'Todas las ventas del archivo son cero.',
+    'dqissue.all_zeros.fix': 'No hay nada que pronosticar. Revisa que la columna de ventas sea la correcta.',
+    'dqissue.intermittent':     'El {zero_pct}% de los días no tuvo ventas.',
+    'dqissue.intermittent.fix': 'Es demanda intermitente: Faro usa el modelo Croston, pensado para este caso.',
+    'dqissue.constant_target':     'Las ventas son siempre el mismo número.',
+    'dqissue.constant_target.fix': 'Casi siempre es un dato de relleno. Revisa la columna de ventas.',
+    'dqissue.outliers':     'Hay {outlier_count} valores muy fuera de lo normal.',
+    'dqissue.outliers.fix': 'Puede ser una venta mayorista real o un error de tecleo. Ajústalo en el paso de valores atípicos si no fue real.',
+
+    // ── Run warnings (engine validation layers; keys are the English codes) ──
+    'runwarn.title':        'Encontramos problemas en tus datos',
+    'runwarn.subtitle':     'El entrenamiento terminó, pero estos puntos afectan qué tan confiable es el pronóstico.',
+    'runwarn.how_to_fix':   'Cómo arreglarlo:',
+    'runwarn.show_detail':  'Ver detalle',
+    'runwarn.hide_detail':  'Ocultar detalle',
+    'runwarn.auto_corrected': 'Corregimos automáticamente',
+
+    'runwarn.TARGET_FEATURE_LEAKAGE.title': 'Una columna repite las ventas que queremos predecir',
+    'runwarn.TARGET_FEATURE_LEAKAGE.what':  'El modelo está viendo la respuesta entre las columnas de entrada. Por eso la precisión sale altísima, pero el pronóstico hacia adelante no sirve: en el futuro esa columna no existe.',
+    'runwarn.TARGET_FEATURE_LEAKAGE.fix':   'Quita esa columna del mapeo de columnas y vuelve a entrenar. Ignora el porcentaje de precisión de esta sesión.',
+
+    'runwarn.NEAR_PERFECT_CORRELATION.title': 'Una columna es casi idéntica a las ventas',
+    'runwarn.NEAR_PERFECT_CORRELATION.what':  'Suele ser la misma cifra en otra unidad (por ejemplo, monto vendido junto a unidades vendidas). El modelo se apoya en ella y aparenta acertar más de lo que realmente puede.',
+    'runwarn.NEAR_PERFECT_CORRELATION.fix':   'Deja solo una de las dos columnas y vuelve a entrenar.',
+
+    'runwarn.INSUFFICIENT_HISTORY.title': 'Hay productos con muy poco historial',
+    'runwarn.INSUFFICIENT_HISTORY.what':  'Con pocas semanas de ventas no se puede distinguir una tendencia real del ruido, así que esos productos quedan fuera o con un pronóstico muy incierto.',
+    'runwarn.INSUFFICIENT_HISTORY.fix':   'Sube más historial para esos productos, o revísalos manualmente hasta que acumulen ventas.',
+
+    'runwarn.CONSTANT_TARGET.title': 'Hay productos con ventas siempre iguales',
+    'runwarn.CONSTANT_TARGET.what':  'Si la cifra nunca cambia, normalmente es un dato de relleno y no ventas reales.',
+    'runwarn.CONSTANT_TARGET.fix':   'Verifica que la columna de ventas del archivo sea la correcta.',
+
+    'runwarn.ALL_NAN_TARGET.title': 'Hay productos sin ninguna venta registrada',
+    'runwarn.ALL_NAN_TARGET.what':  'La columna de ventas viene vacía para esos productos, así que no hay nada que aprender.',
+    'runwarn.ALL_NAN_TARGET.fix':   'Revisa si el archivo trae la columna correcta o si esos productos deberían estar en el catálogo.',
+
+    'runwarn.INFINITE_TARGET.title': 'Hay cantidades imposibles en las ventas',
+    'runwarn.INFINITE_TARGET.what':  'Algunas filas traen un número fuera de todo rango real (suele venir de una división por cero o de un error de exportación).',
+    'runwarn.INFINITE_TARGET.fix':   'Corrige esas filas en el archivo y vuelve a subirlo.',
+
+    'runwarn.OUT_OF_RANGE.title': 'Hay fechas fuera de rango',
+    'runwarn.OUT_OF_RANGE.what':  'Aparecen fechas muy antiguas o muy futuras, casi siempre por un error de tecleo en el año.',
+    'runwarn.OUT_OF_RANGE.fix':   'Corrige esas fechas en el archivo; mientras tanto deforman el historial del producto.',
+
+    'runwarn.UNSORTED_DATES.title': 'Las fechas no vienen en orden',
+    'runwarn.UNSORTED_DATES.what':  'Lo ordenamos nosotros, pero si el archivo mezcla formatos de fecha algunas filas pueden haber quedado en el mes equivocado.',
+    'runwarn.UNSORTED_DATES.fix':   'Confirma que todas las fechas usen el mismo formato.',
+
+    'runwarn.MODEL_INCOMPATIBLE.title': 'Un modelo no se pudo usar con estos datos',
+    'runwarn.MODEL_INCOMPATIBLE.what':  'El modelo que elegiste necesita más historial o una frecuencia distinta, así que el pronóstico salió de los otros modelos.',
+    'runwarn.MODEL_INCOMPATIBLE.fix':   'Puedes dejarlo así o entrenar de nuevo eligiendo otros modelos.',
+
+    'runwarn.HORIZON_TOO_LARGE.title': 'El horizonte es largo para el historial disponible',
+    'runwarn.HORIZON_TOO_LARGE.what':  'Estás pidiendo predecir más adelante de lo que el historial permite sostener, así que los últimos períodos son mucho menos confiables.',
+    'runwarn.HORIZON_TOO_LARGE.fix':   'Reduce el horizonte o sube más historial.',
+
+    'runwarn.LAGS_TOO_LARGE.title': 'La configuración pide más historial del que hay',
+    'runwarn.LAGS_TOO_LARGE.what':  'Las variables de retraso configuradas superan el largo de varias series, así que esas quedan sin esas señales.',
+    'runwarn.LAGS_TOO_LARGE.fix':   'Baja los retrasos en la configuración avanzada o sube más historial.',
+
+    'runwarn.SKU_DATA_WARNING.title': 'Algunos productos tienen datos con problemas',
+    'runwarn.SKU_DATA_WARNING.what':  'Se pudo entrenar, pero esas series traen huecos o valores raros que reducen la confianza del pronóstico.',
+    'runwarn.SKU_DATA_WARNING.fix':   'Abre el detalle para ver cuáles son y revisa esos productos en tu archivo.',
+
+    'runwarn.SKU_DATA_ERRORS.title': 'Algunos productos no se pudieron procesar',
+    'runwarn.SKU_DATA_ERRORS.what':  'Sus datos tienen errores que impiden entrenar, así que quedaron fuera del pronóstico.',
+    'runwarn.SKU_DATA_ERRORS.fix':   'Abre el detalle para ver cuáles son y corrige esas filas en tu archivo.',
+
+    'runwarn.PREP_DUPLICATES_COLLAPSED.title': 'Tu archivo trae una fila por venta, no por día',
+    'runwarn.PREP_DUPLICATES_COLLAPSED.what':  'Sumamos las ventas del mismo producto en el mismo día para que la demanda quede por período. Si no lo hiciéramos, tres ventas de 4+3+3 se leerían como tres días de ~3 unidades y comprarías un tercio de lo necesario.',
+    'runwarn.PREP_DUPLICATES_COLLAPSED.fix':   'No tienes que hacer nada. Si prefieres controlarlo tú, exporta el archivo ya totalizado por día.',
+
+    'runwarn.PREP_INFINITE_NEUTRALIZED.title': 'Había cantidades imposibles y las ignoramos',
+    'runwarn.PREP_INFINITE_NEUTRALIZED.what':  'Algunas celdas traían un número fuera de todo rango real (suele venir de una fórmula rota o una división por cero). Las tratamos como si estuvieran vacías.',
+    'runwarn.PREP_INFINITE_NEUTRALIZED.fix':   'Corrige esas celdas en el archivo original para no perder esas ventas.',
+
+    'runwarn.PREP_GAP_FILL_SKIPPED.title': 'Un producto tiene fechas imposibles',
+    'runwarn.PREP_GAP_FILL_SKIPPED.what':  'Su rango de fechas abarca décadas, casi siempre por un año mal tecleado. No pudimos rellenar los días faltantes de ese producto, así que se entrenó con su historial tal cual.',
+    'runwarn.PREP_GAP_FILL_SKIPPED.fix':   'Abre el detalle para ver el producto y sus fechas extremas, y corrígelas en el archivo.',
+
+    'runwarn.PREP_OUTLIER_TREATMENT_FAILED.title': 'El tratamiento de valores atípicos no se aplicó a todo',
+    'runwarn.PREP_OUTLIER_TREATMENT_FAILED.what':  'Elegiste una estrategia para los valores extremos, pero en algunos productos no se pudo aplicar y entraron al modelo sin tratar.',
+    'runwarn.PREP_OUTLIER_TREATMENT_FAILED.fix':   'Abre el detalle para ver cuáles y revisa esos productos, o prueba otra estrategia.',
 
     // ── Common (additions) ──
     'common.yes': 'Sí',
@@ -2220,6 +2322,7 @@ export const translations = {
     'topbar.notif_failed_title':        'Training failed',
     'topbar.notif_failed_body':         'encountered an error',
     'topbar.notifications':             'Notifications',
+    'topbar.active_session_title':      'Active session — open the session history',
     'planning.period_label':   'View by',
     'planning.horizon_label':  'Horizon',
     'planning.horizon_decrease': 'Decrease horizon',
@@ -2820,6 +2923,107 @@ export const translations = {
     'csv.and_more_suffix':       'more',
     'csv.download_template':     'Download CSV template',
     'csv.template_hint':         'Includes the columns Faro auto-detects, with sample rows.',
+
+    // ── Profiler findings on the uploaded file (keys are the English codes) ──
+    'dqissue.title':    'Check this before training',
+    'dqissue.subtitle': 'You can continue anyway, but fixing the file now saves you a wrong forecast.',
+
+    'dqissue.granularity_conflict':     'Your products are not reported at the same frequency ({per_bucket}).',
+    'dqissue.granularity_conflict.fix': 'They all train on the same time axis, so a product reported monthly is modeled as if it sold every day and its purchase suggestion comes out far too low. Split the file by frequency, or use the coarsest granularity ({suggested}) for everything.',
+    'dqissue.duplicates':     '{dupe_count} rows share the same date and the same product.',
+    'dqissue.duplicates.fix': 'If your system exports one row per sale, we add them into the day\'s total automatically. If that was not the case, review the file.',
+    'dqissue.invalid_dates':     'Some rows have an empty date or one in a format we do not recognize.',
+    'dqissue.invalid_dates.fix': 'Those rows are left out of training. Check that every date uses the same format.',
+    'dqissue.future_dates':     'Some rows carry a future date.',
+    'dqissue.future_dates.fix': 'History should only hold sales that already happened; usually a typo in the year.',
+    'dqissue.null_target':     '{null_pct}% of the rows carry no valid sales number.',
+    'dqissue.null_target.fix': 'Check that the sales column is the right one and does not contain text.',
+    'dqissue.negative_target':     '{neg_count} rows have negative sales.',
+    'dqissue.negative_target.fix': 'Usually returns. If so, subtract them from that day\'s sale instead of leaving them as separate rows.',
+    'dqissue.all_zeros':     'Every sales figure in the file is zero.',
+    'dqissue.all_zeros.fix': 'There is nothing to forecast. Check that the sales column is the right one.',
+    'dqissue.intermittent':     '{zero_pct}% of the days had no sales.',
+    'dqissue.intermittent.fix': 'That is intermittent demand: Faro uses the Croston model, built for this case.',
+    'dqissue.constant_target':     'Sales are always the same number.',
+    'dqissue.constant_target.fix': 'Almost always placeholder data. Check the sales column.',
+    'dqissue.outliers':     '{outlier_count} values sit far outside the normal range.',
+    'dqissue.outliers.fix': 'It may be a real wholesale order or a typo. Adjust it in the outlier step if it was not real.',
+
+    // ── Run warnings (engine validation layers; keys are the English codes) ──
+    'runwarn.title':        'We found problems in your data',
+    'runwarn.subtitle':     'Training finished, but these points affect how much you can trust the forecast.',
+    'runwarn.how_to_fix':   'How to fix it:',
+    'runwarn.show_detail':  'Show detail',
+    'runwarn.hide_detail':  'Hide detail',
+    'runwarn.auto_corrected': 'We corrected automatically',
+
+    'runwarn.TARGET_FEATURE_LEAKAGE.title': 'A column repeats the sales we are trying to predict',
+    'runwarn.TARGET_FEATURE_LEAKAGE.what':  'The model can see the answer among its input columns. That is why accuracy looks extremely high while the forward forecast is useless: that column does not exist in the future.',
+    'runwarn.TARGET_FEATURE_LEAKAGE.fix':   'Remove that column from the column mapping and train again. Ignore this session\'s accuracy figure.',
+
+    'runwarn.NEAR_PERFECT_CORRELATION.title': 'A column is almost identical to sales',
+    'runwarn.NEAR_PERFECT_CORRELATION.what':  'Usually the same figure in another unit (revenue next to units sold). The model leans on it and looks more accurate than it really is.',
+    'runwarn.NEAR_PERFECT_CORRELATION.fix':   'Keep only one of the two columns and train again.',
+
+    'runwarn.INSUFFICIENT_HISTORY.title': 'Some products have very little history',
+    'runwarn.INSUFFICIENT_HISTORY.what':  'With only a few weeks of sales a real trend cannot be told apart from noise, so those products are left out or forecast with wide uncertainty.',
+    'runwarn.INSUFFICIENT_HISTORY.fix':   'Upload more history for those products, or review them manually until they build up sales.',
+
+    'runwarn.CONSTANT_TARGET.title': 'Some products always show the same sales figure',
+    'runwarn.CONSTANT_TARGET.what':  'A number that never changes is usually placeholder data rather than real sales.',
+    'runwarn.CONSTANT_TARGET.fix':   'Check that the sales column in the file is the right one.',
+
+    'runwarn.ALL_NAN_TARGET.title': 'Some products have no sales recorded at all',
+    'runwarn.ALL_NAN_TARGET.what':  'The sales column is empty for those products, so there is nothing to learn from.',
+    'runwarn.ALL_NAN_TARGET.fix':   'Check whether the file carries the right column, or whether those products belong in the catalog.',
+
+    'runwarn.INFINITE_TARGET.title': 'There are impossible quantities in sales',
+    'runwarn.INFINITE_TARGET.what':  'Some rows carry a number outside any real range — usually a division by zero or an export error.',
+    'runwarn.INFINITE_TARGET.fix':   'Fix those rows in the file and upload it again.',
+
+    'runwarn.OUT_OF_RANGE.title': 'There are out-of-range dates',
+    'runwarn.OUT_OF_RANGE.what':  'Very old or very future dates appear, almost always a typo in the year.',
+    'runwarn.OUT_OF_RANGE.fix':   'Fix those dates in the file; meanwhile they distort the product\'s history.',
+
+    'runwarn.UNSORTED_DATES.title': 'Dates are not in order',
+    'runwarn.UNSORTED_DATES.what':  'We sorted them, but if the file mixes date formats some rows may have landed in the wrong month.',
+    'runwarn.UNSORTED_DATES.fix':   'Confirm every date uses the same format.',
+
+    'runwarn.MODEL_INCOMPATIBLE.title': 'A model could not be used with this data',
+    'runwarn.MODEL_INCOMPATIBLE.what':  'The model you picked needs more history or a different frequency, so the forecast came from the other models.',
+    'runwarn.MODEL_INCOMPATIBLE.fix':   'You can leave it as is, or train again picking other models.',
+
+    'runwarn.HORIZON_TOO_LARGE.title': 'The horizon is long for the history available',
+    'runwarn.HORIZON_TOO_LARGE.what':  'You are asking to predict further ahead than the history can support, so the last periods are far less reliable.',
+    'runwarn.HORIZON_TOO_LARGE.fix':   'Shorten the horizon or upload more history.',
+
+    'runwarn.LAGS_TOO_LARGE.title': 'The configuration asks for more history than exists',
+    'runwarn.LAGS_TOO_LARGE.what':  'The configured lag features are longer than several series, so those series lose those signals.',
+    'runwarn.LAGS_TOO_LARGE.fix':   'Lower the lags in advanced configuration or upload more history.',
+
+    'runwarn.SKU_DATA_WARNING.title': 'Some products have problematic data',
+    'runwarn.SKU_DATA_WARNING.what':  'Training worked, but those series carry gaps or odd values that reduce forecast confidence.',
+    'runwarn.SKU_DATA_WARNING.fix':   'Open the detail to see which ones, and review those products in your file.',
+
+    'runwarn.SKU_DATA_ERRORS.title': 'Some products could not be processed',
+    'runwarn.SKU_DATA_ERRORS.what':  'Their data has errors that prevent training, so they were left out of the forecast.',
+    'runwarn.SKU_DATA_ERRORS.fix':   'Open the detail to see which ones, and fix those rows in your file.',
+
+    'runwarn.PREP_DUPLICATES_COLLAPSED.title': 'Your file carries one row per sale, not per day',
+    'runwarn.PREP_DUPLICATES_COLLAPSED.what':  'We added up sales of the same product on the same day so demand is per period. Without that, three sales of 4+3+3 would read as three days of ~3 units and you would order a third of what you need.',
+    'runwarn.PREP_DUPLICATES_COLLAPSED.fix':   'Nothing to do. If you prefer to control it yourself, export the file already totalled per day.',
+
+    'runwarn.PREP_INFINITE_NEUTRALIZED.title': 'There were impossible quantities and we ignored them',
+    'runwarn.PREP_INFINITE_NEUTRALIZED.what':  'Some cells carried a number outside any real range — usually a broken formula or a division by zero. We treated them as empty.',
+    'runwarn.PREP_INFINITE_NEUTRALIZED.fix':   'Fix those cells in the original file so you do not lose those sales.',
+
+    'runwarn.PREP_GAP_FILL_SKIPPED.title': 'One product has impossible dates',
+    'runwarn.PREP_GAP_FILL_SKIPPED.what':  'Its date range spans decades, almost always a mistyped year. We could not fill that product\'s missing days, so it trained on its history as-is.',
+    'runwarn.PREP_GAP_FILL_SKIPPED.fix':   'Open the detail to see the product and its extreme dates, and fix them in the file.',
+
+    'runwarn.PREP_OUTLIER_TREATMENT_FAILED.title': 'Outlier treatment was not applied everywhere',
+    'runwarn.PREP_OUTLIER_TREATMENT_FAILED.what':  'You picked a strategy for extreme values, but it could not be applied to some products and they reached the model untreated.',
+    'runwarn.PREP_OUTLIER_TREATMENT_FAILED.fix':   'Open the detail to see which ones and review those products, or try another strategy.',
 
     // ── Common (additions) ──
     'common.yes': 'Yes',

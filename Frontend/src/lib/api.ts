@@ -1,6 +1,6 @@
 import type {
   SessionInfo, DatasetMeta, DataProfile, ColumnOptions, InspectionResult,
-  QualityReport, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
+  QualityReport, RunWarnings, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
   JobResponse, MetricsResponse, InventoryResponse, RoutingPlan,
   ForecastSeries, DataHealthReport,
   Chat, ChatMessage, MessagesPage, ChatSourceType,
@@ -365,6 +365,7 @@ export const inspectSession = (id: string) =>
   request<InspectionResult>('GET', `/sessions/${id}/inspect`)
 
 export const getQuality     = (id: string) => request<QualityReport>('GET', `/sessions/${id}/quality`)
+export const getRunWarnings = (id: string) => request<RunWarnings>('GET', `/sessions/${id}/warnings`)
 export const getDataHealth  = (id: string, refresh = false) =>
   request<DataHealthReport>('GET', `/sessions/${id}/health${refresh ? '?refresh=true' : ''}`)
 

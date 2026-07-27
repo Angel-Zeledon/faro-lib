@@ -11,6 +11,10 @@ from __future__ import annotations
 
 _ES: dict[str, str] = {
     "whatsapp_verification_code": "Tu código de verificación de Faro es: {code}",
+    # Daily stockout digest: the rows a channel could not fit are announced, so
+    # the listed rows are never mistaken for the full count.
+    "alert_email_more_row":  "… y {n} producto{s} más en la misma condición — velos en el tablero",
+    "alert_whatsapp_more":   "  … y {n} más",
     # Supplier-facing PO message (sent by Faro straight to the supplier).
     "po_supplier_header":    "📦 *Nueva orden de compra* para {supplier}",
     "po_supplier_count":     "{n} producto{s}:",

@@ -4,7 +4,6 @@ import TopBar from './TopBar'
 import AuthGuard from './AuthGuard'
 import SkuSearchOverlay from './SkuSearchOverlay'
 import { SidebarProvider } from '@/contexts/SidebarContext'
-import { ActiveSessionProvider } from '@/contexts/ActiveSessionContext'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
@@ -24,23 +23,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <ToastProvider>
           <ConfirmProvider>
           <SidebarProvider>
-            <ActiveSessionProvider>
-              <SkuSearchProvider>
-                <div className="app-shell">
-                  <Sidebar />
-                  <div className="main-content">
-                    <TopBar />
-                    <div className="page-content">
-                      <ReadOnlyBanner />
-                      {children}
-                    </div>
+            <SkuSearchProvider>
+              <div className="app-shell">
+                <Sidebar />
+                <div className="main-content">
+                  <TopBar />
+                  <div className="page-content">
+                    <ReadOnlyBanner />
+                    {children}
                   </div>
                 </div>
-                <ToastContainer />
-                <ApiErrorBridge />
-                <SkuSearchOverlay />
-              </SkuSearchProvider>
-            </ActiveSessionProvider>
+              </div>
+              <ToastContainer />
+              <ApiErrorBridge />
+              <SkuSearchOverlay />
+            </SkuSearchProvider>
           </SidebarProvider>
           </ConfirmProvider>
         </ToastProvider>

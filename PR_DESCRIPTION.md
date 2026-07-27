@@ -2,13 +2,15 @@
 
 Crear el PR en: https://github.com/Angel-Zeledon/faro-lib/pull/new/feat/pendientes-implementation
 
-Rama `feat/pendientes-implementation` → `main` · 3 commits · suite **1509 passed, 19 skipped**
+Rama `feat/pendientes-implementation` → `main` · 4 commits · backend **1594 passed, 19 skipped** · ForecastingCore **740 passed, 1 skipped** · `tsc --noEmit` limpio
+
+> Los dos tests de `test_stress.py` (`test_login_responds_under_2s`, `test_concurrent_log_appends`) fallan de forma intermitente **bajo carga** y pasan 13/13 cuando el archivo corre solo. Ninguno toca código de esta rama: uno es una aserción de reloj de pared (2,77 s contra un techo de 2 s) y el otro cuenta 22 líneas de log en vez de 20 sobre `session_store.append_log`, que no se modificó aquí. Vale mirarlo aparte.
 
 ---
 
 ## Qué incluye
 
-Los 11 puntos de `PENDIENTES.md`, más los defectos encontrados al someter la app a datos rotos desde la interfaz real.
+Los 11 puntos de `PENDIENTES.md`, más los defectos encontrados al someter la app a datos rotos desde la interfaz real, más una segunda pasada dedicada a los fallos que no se veían porque la app reportaba éxito.
 
 ### Las causas raíz no eran las esperadas
 
@@ -39,6 +41,19 @@ Los 11 puntos de `PENDIENTES.md`, más los defectos encontrados al someter la ap
 6. **Cantidades infinitas** (`1e309`) pasaban los tres filtros. Cubierto en cliente, validador y runner.
 7. **El relleno de huecos no tenía tope**: una fecha de 1900 junto a una de 2099 son ~73.000 filas por SKU.
 
+### Fallos silenciosos (segunda pasada de QA)
+
+Casos donde la app reportaba éxito mientras no pasaba nada. Ninguno lanzaba un error visible: por eso ninguno había aparecido antes.
+
+1. **Las validaciones no llegaban al usuario.** Corren en modo WARNING y nunca abortan un entrenamiento, pero sus hallazgos solo iban al log del servidor. `TARGET_FEATURE_LEAKAGE` es el caso que lo vuelve grave: produce una precisión casi perfecta sobre un pronóstico inservible, y no existía ningún canal para decir que ese 97% era falso. Ahora viajan con los resultados y se muestran en `/skus` (`RunWarningsPanel`).
+2. **Un reporte que fallaba no dejaba rastro.** La generación corre como background task; si fallaba —incluida la salida temprana cuando la sesión no tiene resultado de entrenamiento— no se escribía nada, y la descarga posterior respondía `404 "No pdf report found. Generate one first"`: le pedía al usuario repetir justo lo que acababa de fallar. Cada intento escribe ahora una fila en `report_runs` (running → completed/failed) y la descarga informa qué pasó de verdad, como `error_code` + params en inglés.
+3. **Los loops diarios del worker se caían a fin de mes.** El límite del siguiente disparo se calculaba con `next_run.replace(day=next_run.day + 1)`, que lanza *"day is out of range for month"* el día 31, el 28/29 de febrero y el último día de cada mes de 30. El `except Exception: time.sleep(3600)` de abajo se tragaba la excepción sin loguearla, así que esos días no salía la alerta de quiebre ni la de lead time de proveedor, no corría el sync de integraciones de las 6:00 UTC, y nada decía por qué.
+4. **Envíos que no salían se reportaban como enviados.** Sin transporte de email configurado, `_transport_send` retornaba en silencio y todos los `try: _send() ... return True` daban por mandada una invitación, un enlace de verificación o una orden de compra que nadie recibió. Ahora el nivel de transporte **lanza** en todo desenlace que no sea "entregado a un proveedor vivo" (`EmailNotConfigured`), y los `send_*` públicos devuelven `bool` sin lanzar, para que un servidor de correo caído no rompa un request ni un loop de alertas. Se distingue `not_configured` (falta configurar credenciales) de `transport_error` (el proveedor nos rechazó), que los arregla gente distinta.
+5. **El digest diario de quiebres mentía en el número.** Contaba las filas que había listado (10 en email, 5 en WhatsApp) en vez de los SKUs realmente en riesgo (47), y nunca decía cuántos quedaban ocultos.
+6. **Una granularidad mezclada en el archivo no llegaba al usuario.** El perfilador siempre la detectó y la API siempre la llevó en `inspection.granularity`, pero nadie la leía. Importa porque cada SKU entrena sobre **un** eje temporal: un producto reportado mensualmente se modela como serie diaria, así que su cantidad a pedir sale unas 30 veces por debajo de lo que necesita. Se muestra ahora en Quick Start (`DataIssuesPanel`).
+7. **Un reentrenamiento programado que fallaba se veía igual que uno sano.** El error solo iba al log, así que un schedule roto hacía semanas era indistinguible de uno correcto. `scheduled_jobs` gana `last_error` / `last_error_at` (mismo contrato que `integration_connections.last_error`) y `GET /schedule` los expone. Además un disparo fallido dejaba `next_run` en el pasado, así que el loop lo reintentaba en cada vuelta; ahora avanza igual que en el camino feliz.
+8. **El costo fijo del MILP se apagaba solo en catálogos grandes.** El big-M que liga los envíos a su binario estaba sumado sobre **todo** el catálogo, así que lo dominaba el SKU más grande del tenant y la fila de linking quedaba satisfecha con un `ship` de (unidades movidas / M). Cuando ese cociente cae por debajo de la tolerancia de integralidad del solver (~1e-6), HiGHS acepta el binario como "0" y el envío viaja gratis. Verificado contra el solver real: con un SKU de 5e7 unidades en el mismo problema, un envío de 2 unidades en una ruta que cobra 1000 salía costando **0,00004**. El big-M pasa a ser por SKU, que además aprieta la relajación lineal.
+
 ---
 
 ## Verificación
@@ -51,4 +66,4 @@ Recorrido en navegador como usuario real: registro, Quick Start completo, panel 
 
 - `backend/.env` tiene credenciales Twilio reales; el conftest ahora parchea `whatsapp._send` a nivel de sesión para que los tests no envíen mensajes.
 - Un commit único por fase: los cambios están entrelazados a nivel de archivo (`inventory.py` toca órdenes manuales, proveedor, rutas y familia), así que separarlos habría producido commits que no compilan por sí solos.
-- El badge de sesión activa del TopBar es **código muerto** (`setActiveSessionId` no se llama en ningún lado). Se dejó como está: dónde mostrar la sesión activa es una decisión de diseño.
+- El badge de sesión activa del TopBar era **código muerto**: leía un `ActiveSessionContext` cuyo setter no se llamaba en ningún lado, así que `activeSessionId` quedaba en `null` para siempre y el badge nunca se dibujaba. Ese contexto se **borró** en vez de cablearse: `PlanningContext` ya trae `active_session_id` del resolutor del servidor (`planning_service.resolve_active_session`), que es la sesión de la que cada pantalla saca sus números. Un segundo almacén de "sesión activa" en el cliente habría que empujarlo desde cada página y podría desincronizarse del resolutor; leer la respuesta del resolutor no puede. El badge se oculta en `/skus`, que tiene su propio selector.

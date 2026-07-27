@@ -11,6 +11,7 @@ import type { TrainingFamily } from '@/lib/api'
 import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
+import DataIssuesPanel from '@/components/ui/DataIssuesPanel'
 import type {
  InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary,
 } from '@/lib/types'
@@ -1253,6 +1254,13 @@ function QuickStartPageContent() {
  </div>
 
  <PreviewTable />
+
+ {/* The profiler has always found these; nothing used to show them. This is
+     the last screen where the user can still go fix the file. */}
+ <DataIssuesPanel
+  issues={inspection.profile.data_quality?.issues ?? []}
+  granularity={inspection.granularity}
+ />
 
  {error && (
  <div style={{ marginTop: 16, padding: '10px 14px', background: '#fee2e2',

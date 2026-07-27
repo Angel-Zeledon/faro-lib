@@ -231,6 +231,44 @@ class TestPlanningApi:
         assert r.status_code == 422, r.text
 
 
+class TestActiveSessionBadgeContract:
+    """The top-bar active-session badge resolves `planning.active_session_id`
+    against the session list it already polls, and labels the session with its
+    own granularity. Both fields must therefore stay on the wire together."""
+
+    def test_sessions_list_exposes_granularity_of_the_resolved_session(
+            self, client, auth_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
+        assert client.put("/api/v1/planning", headers=auth_headers,
+                          json={"period": "weekly", "horizon": 6}).status_code == 200
+
+        active_id = client.get(
+            "/api/v1/planning", headers=auth_headers).json()["data"]["active_session_id"]
+        row = query_one("SELECT granularity FROM sessions WHERE id=%s AND tenant_id=%s",
+                        (active_id, tid))
+        assert row["granularity"] == "weekly"
+
+        items = client.get("/api/v1/sessions", headers=auth_headers).json()["data"]["items"]
+        listed = next(s for s in items if s["session_id"] == active_id)
+        assert listed["granularity"] == "weekly"
+        assert listed["name"]
+
+    def test_granularity_is_null_not_missing_for_family_less_session(
+            self, client, auth_headers, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        s = session_svc.create_session(tid, uid, "legacy")
+        execute("UPDATE sessions SET status='COMPLETED' WHERE id=%s AND tenant_id=%s",
+                (s["id"], tid))
+        active_id = client.get(
+            "/api/v1/planning", headers=auth_headers).json()["data"]["active_session_id"]
+        assert active_id == s["id"]
+
+        items = client.get("/api/v1/sessions", headers=auth_headers).json()["data"]["items"]
+        listed = next(x for x in items if x["session_id"] == active_id)
+        assert "granularity" in listed and listed["granularity"] is None
+
+
 class TestAlertLoopUsesResolver:
     def test_alert_loop_resolves_active_period_session(self, client, test_tenant, registered_user, monkeypatch):
         tid, uid = test_tenant["id"], registered_user["user"]["id"]

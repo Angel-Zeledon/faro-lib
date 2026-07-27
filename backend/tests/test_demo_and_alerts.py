@@ -249,13 +249,19 @@ class TestResendTransport:
         assert kwargs["json"]["to"] == ["dest@example.com"]
 
     @pytest.mark.offline
-    def test_no_transport_is_logged_noop(self):
+    def test_no_transport_raises_and_contacts_no_provider(self):
+        """
+        With no credentials the dispatch raises instead of returning quietly.
+        A silent return here is what let every `try: _send() ... return True`
+        caller report an invite or a purchase order as sent to nobody.
+        """
         from backend.notifications import email as email_mod
 
         with mock.patch.object(email_mod.settings, "resend_api_key", ""), \
              mock.patch.object(email_mod.settings, "smtp_user", ""), \
              mock.patch("httpx.post") as post, \
              mock.patch("smtplib.SMTP") as smtp:
-            email_mod._transport_send("dest@example.com", "Prueba", "<b>hola</b>")
+            with pytest.raises(email_mod.EmailNotConfigured):
+                email_mod._transport_send("dest@example.com", "Prueba", "<b>hola</b>")
         post.assert_not_called()
         smtp.assert_not_called()

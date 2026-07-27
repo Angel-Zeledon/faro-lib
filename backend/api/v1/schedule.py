@@ -55,8 +55,12 @@ def _next_run(cron_expr: str) -> datetime:
 def get_schedule(session_id: str, user: CurrentUser = Depends(get_current_user)):
     if not session_svc.get_session(user.tenant_id, session_id):
         raise HTTPException(status_code=404, detail="Session not found")
+    # last_run / last_error / last_error_at come along so the UI can tell a
+    # healthy schedule from one whose trigger has been failing for weeks —
+    # same contract as integration_connections.last_error.
     row = query_one(
-        "SELECT id, session_id, cron_expr, next_run, enabled FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
+        "SELECT id, session_id, cron_expr, next_run, enabled, last_run, last_error, last_error_at "
+        "FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
         (session_id, user.tenant_id),
     )
     if not row:

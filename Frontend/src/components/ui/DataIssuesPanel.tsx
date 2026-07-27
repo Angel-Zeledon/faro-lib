@@ -1,0 +1,114 @@
+'use client'
+// Problems the profiler found in the uploaded file, shown WHILE the user can
+// still fix the file — before training.
+//
+// The profiler has always produced `profile.data_quality.issues`, and the
+// backend has always stored them, but nothing rendered them: the user uploaded
+// a file with 5.000 duplicate date+SKU rows and the wizard said "listo".
+//
+// `issue.type` is a stable English code; every sentence comes from i18n. The
+// counts travel as named fields on the issue, so the Spanish sentence can place
+// them wherever it reads best.
+
+import { AlertTriangle, AlertCircle, Info } from 'lucide-react'
+import type { DataQualityIssue, GranularityDetection } from '@/lib/types'
+import { useLanguage } from '@/contexts/LanguageContext'
+
+const SEVERITY_RANK: Record<string, number> = { error: 0, warning: 1, info: 2 }
+
+function tone(severity: string) {
+  if (severity === 'error')   return { color: '#dc2626', bg: 'rgba(220,38,38,0.06)' }
+  if (severity === 'warning') return { color: '#d97706', bg: 'rgba(217,119,6,0.07)' }
+  return { color: '#0284c7', bg: 'rgba(2,132,199,0.06)' }
+}
+
+// A mixed-granularity file is its own issue kind: the profiler has always
+// detected it and the API has always returned it, but it never had a renderer.
+// Modelled as a synthetic issue so it sorts and reads with the rest.
+function granularityIssue(g: GranularityDetection | undefined): DataQualityIssue | null {
+  if (!g || g.status !== 'conflict') return null
+  const perBucket = g.detected
+    .map(b => `${b}: ${(g.skus_by_frequency[b] || []).length}`)
+    .join(', ')
+  return {
+    type: 'granularity_conflict',
+    severity: 'error',
+    message: `Mixed reporting frequency (${perBucket})`,
+    detected: g.detected.join(', '),
+    per_bucket: perBucket,
+    suggested: g.suggested_target ?? '',
+  }
+}
+
+export default function DataIssuesPanel({ issues, granularity }: {
+  issues: DataQualityIssue[]
+  granularity?: GranularityDetection
+}) {
+  const { t } = useLanguage()
+  const conflict = granularityIssue(granularity)
+  const all = conflict ? [conflict, ...(issues || [])] : (issues || [])
+  if (all.length === 0) return null
+
+  const sorted = [...all].sort(
+    (a, b) => (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3),
+  )
+  const worst = sorted[0].severity
+  const { color, bg } = tone(worst)
+
+  return (
+    <div
+      role="status"
+      style={{
+        marginTop: 16,
+        border: `1px solid ${color}44`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 10,
+        background: bg,
+        padding: '14px 16px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {worst === 'error'
+          ? <AlertTriangle size={16} color={color} />
+          : worst === 'warning' ? <AlertCircle size={16} color={color} />
+          : <Info size={16} color={color} />}
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)' }}>
+          {t('dqissue.title')}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3, lineHeight: 1.5 }}>
+        {t('dqissue.subtitle')}
+      </div>
+
+      <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {sorted.map((issue, i) => {
+          const key = `dqissue.${issue.type}`
+          // Unknown codes fall back to the engine's own message instead of
+          // rendering a raw i18n key.
+          const label = t(key, issue as Record<string, unknown>)
+          const fixKey = `${key}.fix`
+          const fix = t(fixKey, issue as Record<string, unknown>)
+          const dot = tone(issue.severity).color
+          return (
+            <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: 3, background: dot,
+                flexShrink: 0, marginTop: 6,
+              }} />
+              <div>
+                <div style={{ fontSize: 12.5, color: 'var(--text)', lineHeight: 1.55 }}>
+                  {label === key ? issue.message : label}
+                </div>
+                {fix !== fixKey && (
+                  <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2, lineHeight: 1.5 }}>
+                    {fix}
+                  </div>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}

@@ -220,13 +220,20 @@ def create_user_admin(
         expires_minutes=60 * 30,
     )
     setup_url = f"{settings.frontend_url}/verify-email?token={verify_token}"
+    from backend.notifications import email as email_mod
     from backend.notifications.email import send_account_setup_email
     email_sent = send_account_setup_email(body.email, body.full_name or "", setup_url)
     if not email_sent:
         log.warning("[create-user] email delivery failed for user=%s — check SMTP config", new_user["id"])
     log.info("[create-user] admin=%s created user=%s email=%s email_sent=%s", user.user_id, new_user["id"], body.email, email_sent)
 
-    return ok({"user": new_user, "email_sent": email_sent})
+    # An invite that never left strands an account nobody can activate, so the
+    # admin gets the reason as a stable code the UI localizes (CLAUDE.md).
+    return ok({
+        "user": new_user,
+        "email_sent": email_sent,
+        "email_error": None if email_sent else email_mod.failure_reason(),
+    })
 
 
 @router.post("/{user_id}/resend-verification", status_code=200)
@@ -291,8 +298,12 @@ def update_user_admin(
         from backend.notifications.email import send_account_setup_email
         new_email = str(body.email)
         name = (body.full_name or target.get("full_name") or "").strip()
-        send_account_setup_email(new_email, name, setup_url)
-        log.info("[update-user] email changed for user=%s, verification sent to %s", user_id, new_email)
+        verification_sent = send_account_setup_email(new_email, name, setup_url)
+        log.info("[update-user] email changed for user=%s, verification sent=%s to %s",
+                 user_id, verification_sent, new_email)
+        # The account cannot be used again until the new address is verified,
+        # so a failed send is part of the result, not a log line.
+        return ok({**updated, "verification_email_sent": verification_sent})
 
     return ok(updated)
 
@@ -387,11 +398,18 @@ def request_password_change(
 
     code = _issue_code(user.user_id, user.tenant_id, purpose="change")
 
+    from backend.notifications import email as email_mod
     from backend.notifications.email import send_change_password_code
-    send_change_password_code(u["email"], code)
-    log.info("[change-password] code issued for user=%s", user.user_id)
+    sent = send_change_password_code(u["email"], code)
+    log.info("[change-password] code issued for user=%s sent=%s", user.user_id, sent)
 
-    return ok({"message": "Verification code sent to your email."})
+    # The confirm step is unreachable without this code, so "we sent it" when
+    # nothing left leaves the user waiting on an email that will never arrive.
+    return ok({
+        "message": "Verification code sent to your email.",
+        "email_sent": sent,
+        "email_error": None if sent else email_mod.failure_reason(),
+    })
 
 
 @router.post("/me/change-password/confirm")
@@ -455,7 +473,12 @@ def invite_user(
         expires_minutes=60 * 30,
     )
     setup_url = f"{settings.frontend_url}/verify-email?token={verify_token}"
+    from backend.notifications import email as email_mod
     from backend.notifications.email import send_account_setup_email
-    send_account_setup_email(body.email, body.full_name or "", setup_url)
+    email_sent = send_account_setup_email(body.email, body.full_name or "", setup_url)
 
-    return ok({"user": new_user})
+    return ok({
+        "user": new_user,
+        "email_sent": email_sent,
+        "email_error": None if email_sent else email_mod.failure_reason(),
+    })

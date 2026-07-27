@@ -1,6 +1,17 @@
 """
 Email notification service via SMTP (Gmail App Password).
 All email templates live here. Credentials come from settings.
+
+Delivery contract (two tiers, so no caller can report a send that never left):
+
+* Transport tier — ``_transport_send`` / ``_send`` RAISE on every outcome that
+  is not "handed to a live provider", including "no transport configured"
+  (``EmailNotConfigured``). Returning quietly there is what made every caller
+  below report success while nothing was sent.
+* Public tier — every ``send_*`` returns ``bool``: True only when the message
+  reached a transport. They never raise, so a failing mail server can never
+  break a request or an alert loop. Callers that must tell the user (API
+  responses, alert loops writing activity rows) branch on that bool.
 """
 
 import base64
@@ -11,8 +22,31 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from backend.config import settings
+from backend.notifications.locale import render_es
 
 log = logging.getLogger(__name__)
+
+
+class EmailDeliveryError(RuntimeError):
+    """The message could not be handed to a transport."""
+
+
+class EmailNotConfigured(EmailDeliveryError):
+    """Neither Resend nor SMTP credentials are set — nothing can be sent."""
+
+
+def is_configured() -> bool:
+    """True when some transport can actually deliver. Mirrors whatsapp.is_configured()."""
+    return bool(settings.resend_api_key or (settings.smtp_user and settings.smtp_pass))
+
+
+def failure_reason() -> str:
+    """
+    Stable code for why a send failed, for API payloads and activity rows.
+    The two are fixed by different people: `not_configured` is an operator
+    setting up credentials, `transport_error` is the provider rejecting us.
+    """
+    return "transport_error" if is_configured() else "not_configured"
 
 _APP_NAME = "ForecastPlatform"
 _PRIMARY   = "#818cf8"
@@ -114,9 +148,13 @@ def _send_smtp(to: str, subject: str, html: str, attachment: dict | None = None)
 
 def _transport_send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
     """
-    Dispatch an email: Resend when RESEND_API_KEY is set, SMTP as fallback,
-    logged no-op with neither. Raises on transport failure so callers can
-    report `email_sent=False`.
+    Dispatch an email: Resend when RESEND_API_KEY is set, SMTP as fallback.
+    Raises on transport failure so callers can report `email_sent=False`.
+
+    "No transport configured" raises too: it is a non-delivery like any other,
+    and returning quietly here made every `try: _send() ... return True`
+    caller claim it had mailed an invite / a verification link / a purchase
+    order that no one ever received.
     """
     if settings.resend_api_key:
         _send_resend(to, subject, html, attachment)
@@ -124,8 +162,9 @@ def _transport_send(to: str, subject: str, html: str, attachment: dict | None = 
         return
 
     if not settings.smtp_user or not settings.smtp_pass:
-        log.warning("No email transport configured (RESEND_API_KEY / SMTP) — email not sent to %s", to)
-        return
+        raise EmailNotConfigured(
+            f"No email transport configured (RESEND_API_KEY / SMTP) — nothing sent to {to}"
+        )
 
     _send_smtp(to, subject, html, attachment)
     log.info("Email sent via SMTP → %s | subject: %s", to, subject)
@@ -135,6 +174,13 @@ def _send(to: str, subject: str, html: str, attachment: dict | None = None) -> N
     # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
     # while the dispatch logic in _transport_send stays independently testable.
     _transport_send(to, subject, html, attachment)
+
+
+# Rows an inventory digest lists before collapsing the rest into a "+N more"
+# line. A mail client is not a dashboard — the table stays scannable while the
+# headline count stays the real one.
+_ALERT_MAX_CRITICAL_ROWS = 10
+_ALERT_MAX_WARNING_ROWS  = 5
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -164,8 +210,8 @@ def send_verification_email(to: str, full_name: str, verify_url: str) -> bool:
         return False
 
 
-def send_password_reset_email(to: str, reset_url: str) -> None:
-    """Send password reset link."""
+def send_password_reset_email(to: str, reset_url: str) -> bool:
+    """Send password reset link. Returns True if sent successfully."""
     html = _base_html(
         "Reset your password",
         f"""
@@ -183,12 +229,14 @@ def send_password_reset_email(to: str, reset_url: str) -> None:
     )
     try:
         _send(to, "Password reset request", html)
+        return True
     except Exception as exc:
         log.error("Failed to send password reset email to %s: %s", to, exc)
+        return False
 
 
-def send_change_password_code(to: str, code: str) -> None:
-    """Send a 6-digit password-change verification code."""
+def send_change_password_code(to: str, code: str) -> bool:
+    """Send a 6-digit password-change verification code. Returns True if sent."""
     html = _base_html(
         "Código de verificación",
         f"""
@@ -211,12 +259,14 @@ def send_change_password_code(to: str, code: str) -> None:
     )
     try:
         _send(to, "Código de verificación para cambio de contraseña", html)
+        return True
     except Exception as exc:
         log.error("Failed to send password-change code to %s: %s", to, exc)
+        return False
 
 
-def send_password_reset_otp(to: str, code: str) -> None:
-    """Send a 6-digit OTP for forgot-password flow."""
+def send_password_reset_otp(to: str, code: str) -> bool:
+    """Send a 6-digit OTP for forgot-password flow. Returns True if sent."""
     html = _base_html(
         "Recuperar contraseña",
         f"""
@@ -239,8 +289,10 @@ def send_password_reset_otp(to: str, code: str) -> None:
     )
     try:
         _send(to, "Código de verificación para recuperar contraseña", html)
+        return True
     except Exception as exc:
         log.error("Failed to send password-reset OTP to %s: %s", to, exc)
+        return False
 
 
 def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
@@ -273,8 +325,15 @@ def send_inventory_alert_email(
     critical_items: list[dict],
     warning_items: list[dict],
     inventory_url: str,
-) -> None:
-    """Daily digest: SKUs at risk of stockout."""
+) -> bool:
+    """
+    Daily digest: SKUs at risk of stockout. Returns True if sent.
+
+    Callers pass the FULL lists. Trimming for readability happens here, after
+    the counts are taken, so the subject and body report how many SKUs are
+    really at risk — callers used to slice to [:10]/[:5] and the digest then
+    announced "10 SKUs" when 47 were about to run out.
+    """
     _RED  = "#ef4444"
     _AMB  = "#f59e0b"
     _GRN  = "#22c55e"
@@ -301,13 +360,24 @@ def send_inventory_alert_email(
             f'</tr>'
         )
 
-    all_items = (
-        [_row(i, _RED, "🔴 PEDIR YA") for i in critical_items] +
-        [_row(i, _AMB, "🟡 PEDIR PRONTO") for i in warning_items]
-    )
+    def _more_row(hidden: int) -> str:
+        return (
+            f'<tr style="border-bottom:1px solid #1e2030;">'
+            f'<td colspan="6" style="padding:10px 12px;font-size:12px;color:{_DIM};">'
+            f'{render_es("alert_email_more_row", n=hidden, s="s" if hidden != 1 else "")}'
+            f'</td></tr>'
+        )
 
     n_critical = len(critical_items)
     n_warning  = len(warning_items)
+
+    all_items = [_row(i, _RED, "🔴 PEDIR YA") for i in critical_items[:_ALERT_MAX_CRITICAL_ROWS]]
+    if n_critical > _ALERT_MAX_CRITICAL_ROWS:
+        all_items.append(_more_row(n_critical - _ALERT_MAX_CRITICAL_ROWS))
+    all_items += [_row(i, _AMB, "🟡 PEDIR PRONTO") for i in warning_items[:_ALERT_MAX_WARNING_ROWS]]
+    if n_warning > _ALERT_MAX_WARNING_ROWS:
+        all_items.append(_more_row(n_warning - _ALERT_MAX_WARNING_ROWS))
+
     subject_prefix = f"🔴 {n_critical} SKU{'s' if n_critical > 1 else ''} en riesgo de stockout" if n_critical else f"🟡 {n_warning} SKU{'s' if n_warning > 1 else ''} por reabastecer"
 
     table_html = (
@@ -341,19 +411,21 @@ def send_inventory_alert_email(
     )
     try:
         _send(to, subject_prefix, html)
+        return True
     except Exception as exc:
         log.error("Failed to send inventory alert to %s: %s", to, exc)
+        return False
 
 
 def send_supplier_lead_time_alert_email(
     to: str,
     deviations: list[dict],
     scorecard_url: str,
-) -> None:
+) -> bool:
     """
     Daily digest: suppliers whose recent lead time drifted significantly off
     their own history (feature 3.3). Rows come from
-    supplier_health_service.get_lead_time_deviations().
+    supplier_health_service.get_lead_time_deviations(). Returns True if sent.
     """
     _RED = "#ef4444"
     _AMB = "#f59e0b"
@@ -411,12 +483,14 @@ def send_supplier_lead_time_alert_email(
     )
     try:
         _send(to, subject, html)
+        return True
     except Exception as exc:
         log.error("Failed to send supplier lead-time alert to %s: %s", to, exc)
+        return False
 
 
-def send_training_complete_email(to: str, session_name: str, dashboard_url: str) -> None:
-    """Notify user when a training job finishes."""
+def send_training_complete_email(to: str, session_name: str, dashboard_url: str) -> bool:
+    """Notify user when a training job finishes. Returns True if sent."""
     html = _base_html(
         "Training complete",
         f"""
@@ -431,8 +505,10 @@ def send_training_complete_email(to: str, session_name: str, dashboard_url: str)
     )
     try:
         _send(to, f"Training complete — {session_name}", html)
+        return True
     except Exception as exc:
         log.error("Failed to send training complete email to %s: %s", to, exc)
+        return False
 
 
 def send_po_to_supplier_email(

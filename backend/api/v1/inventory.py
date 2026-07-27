@@ -1193,15 +1193,34 @@ def send_po_to_suppliers(
             text = wa_mod.build_po_supplier_text(supplier_name, po_log_id, supplier_items)
             whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text, media_url=media_url)
 
-        sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
+        if email_ok or whatsapp_ok:
+            sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
+        else:
+            # We had contact details and still reached nobody (dead SMTP creds,
+            # Twilio down, no transport configured at all). Reported as skipped
+            # rather than sent: `sent` is what the buyer reads as "the supplier
+            # has the order", and acting on that when nothing left is the
+            # expensive mistake.
+            skipped.append({"supplier": supplier_name, "reason": "delivery_failed"})
 
     # Stamp the send time once anything actually left: the payment clock starts
     # here, so the cash calendar (3.6) has no due date to compute without it.
     # Only on a real delivery — a PO that reached nobody owes nobody. Kept
     # idempotent (sent_at IS NULL) so re-sending does not push the due dates of
     # invoices the supplier already issued.
-    if any(s["email"] or s["whatsapp"] for s in sent):
+    if sent:
         rec_svc.mark_po_sent(user.tenant_id, po_log_id)
+
+    # A PO that reached no supplier is the single most expensive silent failure
+    # in the product, so the attempt is recorded against the buyer who made it.
+    svc.record_notification_delivery(
+        user.tenant_id, user.user_id, "po_sent_to_suppliers", bool(sent),
+        context={
+            "po_log_id": po_log_id,
+            "delivered": [s["supplier"] for s in sent],
+            "not_delivered": [s["supplier"] for s in skipped],
+        },
+    )
 
     return ok({"sent": sent, "skipped": skipped, "unresolved": unresolved})
 
@@ -1782,15 +1801,16 @@ def send_alert_now(
     from backend.notifications.email import send_inventory_alert_email
 
     inventory_url = f"{_settings.frontend_url}/inventory"
+    # Full lists: the email renderer trims the table itself and keeps the
+    # counts real, so a test fire shows the same numbers the daily loop would.
     emails = svc.get_tenant_admin_emails(user.tenant_id)
-    for email in emails:
-        try:
-            send_inventory_alert_email(
-                to=email, critical_items=critical[:10], warning_items=warning[:5],
-                inventory_url=inventory_url,
-            )
-        except Exception as e:
-            log.warning("alert test email failed to=%s: %s", email, e)
+    emails_sent = sum(
+        1 for email in emails
+        if send_inventory_alert_email(
+            to=email, critical_items=critical, warning_items=warning,
+            inventory_url=inventory_url,
+        )
+    )
 
     wa_sent = 0
     tenant = get_tenant(user.tenant_id) or {}
@@ -1799,14 +1819,27 @@ def send_alert_now(
 
         numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
         if numbers:
-            text = build_inventory_alert_text(critical[:10], warning[:5], inventory_url)
+            text = build_inventory_alert_text(critical, warning, inventory_url)
             wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
 
+    # The point of a test fire is to prove the channel works, so its outcome is
+    # recorded like a real send instead of only being echoed in the response.
+    svc.record_notification_delivery(
+        user.tenant_id, user.user_id, "inventory_alert_test_fire",
+        bool(emails_sent or wa_sent),
+        context={
+            "critical": len(critical), "warning": len(warning),
+            "emails_attempted": len(emails), "emails_sent": emails_sent,
+            "whatsapp_sent": wa_sent,
+        },
+    )
+
     return ok({
-        "sent": True,
+        "sent": bool(emails_sent or wa_sent),
         "critical": len(critical),
         "warning": len(warning),
         "emails_attempted": len(emails),
+        "emails_sent": emails_sent,
         "whatsapp_sent": wa_sent,
     })
 

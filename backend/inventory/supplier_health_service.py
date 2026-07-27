@@ -325,7 +325,11 @@ def run_daily_supplier_lead_time_alerts() -> None:
     fine — it is the early warning that the semáforo hasn't caught yet.
     """
     from backend.config import settings
-    from backend.inventory.service import get_tenant_admin_emails
+    from backend.inventory.service import (
+        get_tenant_alert_recipients,
+        record_notification_delivery,
+    )
+    from backend.notifications import email as email_mod
     from backend.notifications.email import send_supplier_lead_time_alert_email
 
     tenants = query("SELECT DISTINCT tenant_id FROM supplier_lead_time_obs")
@@ -341,12 +345,22 @@ def run_daily_supplier_lead_time_alerts() -> None:
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
             scorecard_url = f"{app_url}/inventory/suppliers/scorecard"
 
-            for email in get_tenant_admin_emails(tid):
-                try:
-                    send_supplier_lead_time_alert_email(
-                        to=email, deviations=deviations, scorecard_url=scorecard_url,
-                    )
-                except Exception as e:
-                    log.warning("lead-time alert email failed to=%s: %s", email, e)
+            for r in get_tenant_alert_recipients(tid):
+                if not r.get("email"):
+                    continue
+                delivered = send_supplier_lead_time_alert_email(
+                    to=r["email"], deviations=deviations, scorecard_url=scorecard_url,
+                )
+                if not delivered:
+                    log.warning("lead-time alert email not delivered to=%s", r["email"])
+                record_notification_delivery(
+                    tid, r["id"], "supplier_lead_time_alert_email", delivered,
+                    context={
+                        "channel": "email",
+                        "recipient": r["email"],
+                        "suppliers": len(deviations),
+                        **({} if delivered else {"reason": email_mod.failure_reason()}),
+                    },
+                )
         except Exception as e:
             log.error("supplier_lead_time_alert: tenant=%s error=%s", tid, e)

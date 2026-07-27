@@ -8,7 +8,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from croniter import croniter
 
@@ -90,36 +90,99 @@ async def _loop() -> None:
 
 
 _SCHEDULER_POLL_SECONDS = 60
+_SCHEDULER_ERROR_MAX_CHARS = 500
+_SCHEDULER_RETRY_AFTER_SECONDS = 3600
+
+
+def _next_cron_run(cron_expr: str, now: datetime) -> datetime:
+    """Next occurrence of `cron_expr` strictly after `now`.
+
+    Falls back to a fixed retry delay when the expression itself is
+    unparseable — an invalid cron must not leave `next_run` in the past, which
+    would turn the scheduler poll into a hot loop retrying every 60 s forever.
+    """
+    try:
+        return croniter(cron_expr, now).get_next(datetime)
+    except Exception:
+        return now + timedelta(seconds=_SCHEDULER_RETRY_AFTER_SECONDS)
+
+
+def _record_schedule_failure(sched_id: str, cron_expr: str, now: datetime, error: str) -> None:
+    """Persist why a scheduled trigger failed and move `next_run` forward.
+
+    Mirrors `integration_connections.last_error`: without a stored error a
+    schedule that has been failing for weeks is indistinguishable from a
+    healthy one, because the only trace was a log line. Advancing `next_run`
+    is part of the same fix — a failed trigger used to leave `next_run` in the
+    past, so the scheduler re-attempted (and re-failed) every poll.
+    """
+    try:
+        execute(
+            "UPDATE scheduled_jobs SET last_error = %s, last_error_at = NOW(), next_run = %s "
+            "WHERE id = %s",
+            (error[:_SCHEDULER_ERROR_MAX_CHARS], _next_cron_run(cron_expr, now), sched_id),
+        )
+    except Exception as e:
+        log.error("Could not record failure for scheduled job %s: %s", sched_id, e, exc_info=True)
+
+
+def _run_due_scheduled_jobs(now: datetime) -> int:
+    """Trigger every enabled schedule whose `next_run` has passed.
+
+    Returns the number of schedules successfully triggered. Extracted from the
+    loop so it can be exercised directly by tests without sleeping.
+    """
+    due = query(
+        "SELECT id, tenant_id, session_id, cron_expr FROM scheduled_jobs "
+        "WHERE enabled = true AND next_run <= %s",
+        (now,),
+    )
+    triggered = 0
+    for job in due:
+        sched_id   = job["id"]
+        tenant_id  = job["tenant_id"]
+        session_id = job["session_id"]
+        cron_expr  = job["cron_expr"]
+        try:
+            create_job(tenant_id, session_id, created_by="scheduler")
+            nxt = _next_cron_run(cron_expr, now)
+            execute(
+                "UPDATE scheduled_jobs SET next_run = %s, last_run = %s, "
+                "last_error = NULL, last_error_at = NULL WHERE id = %s",
+                (nxt, now, sched_id),
+            )
+            triggered += 1
+            log.info(f"Scheduled job triggered: session={session_id} next={nxt.isoformat()}")
+        except Exception as e:
+            log.error(f"Failed to trigger scheduled job {sched_id}: {e}", exc_info=True)
+            _record_schedule_failure(sched_id, cron_expr, now, str(e))
+    return triggered
 
 
 def _scheduler_loop() -> None:
     log.info("Scheduler loop started")
     while True:
         try:
-            now = datetime.now(timezone.utc)
-            due = query(
-                "SELECT id, tenant_id, session_id, cron_expr FROM scheduled_jobs "
-                "WHERE enabled = true AND next_run <= %s",
-                (now,),
-            )
-            for job in due:
-                sched_id   = job["id"]
-                tenant_id  = job["tenant_id"]
-                session_id = job["session_id"]
-                cron_expr  = job["cron_expr"]
-                try:
-                    create_job(tenant_id, session_id, created_by="scheduler")
-                    nxt = croniter(cron_expr, now).get_next(datetime)
-                    execute(
-                        "UPDATE scheduled_jobs SET next_run = %s WHERE id = %s",
-                        (nxt, sched_id),
-                    )
-                    log.info(f"Scheduled job triggered: session={session_id} next={nxt.isoformat()}")
-                except Exception as e:
-                    log.error(f"Failed to trigger scheduled job {sched_id}: {e}", exc_info=True)
+            _run_due_scheduled_jobs(datetime.now(timezone.utc))
         except Exception as e:
             log.error(f"Scheduler loop error: {e}", exc_info=True)
         time.sleep(_SCHEDULER_POLL_SECONDS)
+
+
+_DAILY_LOOP_RETRY_SECONDS = 3600
+
+
+def _next_daily_run(now: datetime, hour: int) -> datetime:
+    """Next `hour`:00:00 UTC boundary strictly after `now`.
+
+    Must be date arithmetic, not `replace(day=day + 1)`: that raised
+    "day is out of range for month" on the 31st, on Feb 28/29 and on the last
+    day of every 30-day month, killing the daily scheduler for the whole day.
+    """
+    candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate
 
 
 def _inventory_alert_loop() -> None:
@@ -131,14 +194,18 @@ def _inventory_alert_loop() -> None:
     while True:
         try:
             now = datetime.now(timezone.utc)
-            next_run = now.replace(hour=8, minute=0, second=0, microsecond=0)
-            if now >= next_run:
-                next_run = next_run.replace(day=next_run.day + 1)
+            next_run = _next_daily_run(now, 8)
             sleep_secs = (next_run - now).total_seconds()
             log.info("Inventory alert: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
             time.sleep(max(sleep_secs, 1))
-        except Exception:
-            time.sleep(3600)
+        except Exception as e:
+            # Never swallow silently: this branch used to hide the month-end
+            # crash above, so a whole day without alerts left no trace at all.
+            log.error(
+                "Inventory alert scheduler error — retrying in %d s: %s",
+                _DAILY_LOOP_RETRY_SECONDS, e, exc_info=True,
+            )
+            time.sleep(_DAILY_LOOP_RETRY_SECONDS)
             continue
         try:
             from backend.inventory.service import run_daily_inventory_alerts
@@ -162,14 +229,16 @@ def _integration_sync_loop() -> None:
     while True:
         try:
             now = datetime.now(timezone.utc)
-            next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
-            if now >= next_run:
-                next_run = next_run.replace(day=next_run.day + 1)
+            next_run = _next_daily_run(now, 6)
             sleep_secs = (next_run - now).total_seconds()
             log.info("Integration sync: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
             time.sleep(max(sleep_secs, 1))
-        except Exception:
-            time.sleep(3600)
+        except Exception as e:
+            log.error(
+                "Integration sync scheduler error — retrying in %d s: %s",
+                _DAILY_LOOP_RETRY_SECONDS, e, exc_info=True,
+            )
+            time.sleep(_DAILY_LOOP_RETRY_SECONDS)
             continue
         try:
             from backend.integrations.crypto import integrations_enabled
@@ -208,8 +277,12 @@ def _monthly_overstock_snapshot_loop() -> None:
             sleep_secs = (next_run - now).total_seconds()
             log.info("Overstock snapshot: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
             time.sleep(max(sleep_secs, 1))
-        except Exception:
-            time.sleep(3600)
+        except Exception as e:
+            log.error(
+                "Overstock snapshot scheduler error — retrying in %d s: %s",
+                _DAILY_LOOP_RETRY_SECONDS, e, exc_info=True,
+            )
+            time.sleep(_DAILY_LOOP_RETRY_SECONDS)
             continue
         try:
             from backend.inventory.service import run_monthly_overstock_snapshot
