@@ -22,7 +22,7 @@ import {
  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
 import { TransferSuggestions } from '@/components/inventory/TransferSuggestions'
-import { useWarehouses } from '@/components/inventory/WarehouseControls'
+import { useWarehouses, defaultWarehouse } from '@/components/inventory/WarehouseControls'
 import { coverageUnitLabel } from '@/lib/period'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
@@ -597,14 +597,10 @@ export default function HoyPage() {
  const [destWarehouse, setDestWarehouse] = useState<string>('')
  useEffect(() => {
   if (warehouses.length > 0 && destWarehouse === '') {
-   // Precedence mirrors the backend default-warehouse rule: is_default flag,
-   // then 'principal' (auto-created rows carry is_default=false, so without
-   // this the destination fell to the alphabetically-first warehouse — an
-   // emoji/capitalized name would win over 'principal').
-   const def = warehouses.find(w => w.is_default)
-    ?? warehouses.find(w => w.name === 'principal')
-    ?? warehouses[0]
-   setDestWarehouse(def.name)
+   // Shared with the manual-PO modal so both destination pickers agree on
+   // which warehouse is the default (see defaultWarehouse).
+   const def = defaultWarehouse(warehouses)
+   if (def) setDestWarehouse(def.name)
   }
  }, [warehouses, destWarehouse])
 

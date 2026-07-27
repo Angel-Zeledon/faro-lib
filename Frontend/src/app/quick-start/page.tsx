@@ -16,6 +16,7 @@ import type {
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { usePlanning } from '@/contexts/PlanningContext'
 
 // The worker reports data problems as a stable code (see runner.py's
 // TrainingDataError) so the user reads an actionable sentence instead of a raw
@@ -476,6 +477,10 @@ function QuickStartPageContent() {
  const router = useRouter()
  const searchParams = useSearchParams()
  const { t } = useLanguage()
+ // The wizard runs inside the AppShell, so the planning context that resolves
+ // the active session was loaded BEFORE this training existed — see the
+ // redirect in pollFamily for why it has to be refreshed there.
+ const planningCtx = usePlanning()
 
  const [step, setStep] = useState(1)
  const [busy, setBusy] = useState(false)
@@ -855,6 +860,17 @@ function QuickStartPageContent() {
  // is non-fatal to onboarding (the daily semáforo still works).
  if (baseJob?.status === 'COMPLETED') {
  setTrainPct(100)
+ // Make the run the user just waited for the ACTIVE session before landing
+ // on /hoy. The backend resolver already prefers the newest family, but the
+ // planning context lives in the AppShell — which stays mounted across this
+ // client-side navigation — so it still holds the active_session_id resolved
+ // before this training existed. useAutoSession applies that cached id on
+ // mount and then skips its own fetch, which is exactly how /hoy ended up
+ // showing the PREVIOUS session's briefing, KPIs and cart. Awaited, so /hoy
+ // mounts with the new value. Deliberately scoped to the user's OWN
+ // just-finished run: the app is never re-pointed at a session that finished
+ // in the background while the user was mid-task somewhere else.
+ await planningCtx?.reload()
  router.push('/hoy')
  return
  }

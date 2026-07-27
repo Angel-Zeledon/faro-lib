@@ -11,6 +11,8 @@ Model (buckets t = 1..H, 1-indexed; t=0 is "now", a constant not a variable):
                      t (forced to 0 while t <= the lane's transit buckets).
   inv[i,w,t]:      float >= 0, ending inventory of SKU i at warehouse w at t.
   short[i,w,t]:    float >= 0, unmet demand of SKU i at warehouse w at t.
+  ship[a,b,t]:     binary, 1 when ANY unit moves on lane a->b arriving at t.
+                   Only created for lanes whose fixed_cost > 0 (see below).
 
 Balance (per i,w,t):
   inv[i,w,t] - inv[i,w,t-1] - order[i,w,t]
@@ -18,9 +20,15 @@ Balance (per i,w,t):
     - short[i,w,t] = -demand[i,w,t]
   (inv[i,w,0] is the constant stock0[i,w], folded into the t=1 row's RHS.)
 
+Shipment linking (per fixed-cost lane a->b and bucket t):
+  sum_i transfer[i,a,b,t] - M[a,b] * ship[a,b,t] <= 0
+  so a bucket carrying units on that lane must switch its binary on and pay
+  the lane's fixed cost once.
+
 Objective (minimize):
   sum holding_cost[i]*inv + stockout_cost[i]*short
     + order_cost[i]*order + transfer_cost[a,b]*transfer
+    + transfer_fixed_cost[a,b]*ship
   (transfer_cost[a,b] is the lane's cost per unit, falling back to the global
    transfer_cost for pairs the caller left unconfigured.)
 """
@@ -56,6 +64,11 @@ class OptimizationInput:
     # absent here is treated as arriving within the bucket (0), which is the
     # pre-feature "transfers are instant" behavior.
     transfer_lead_buckets: Dict[Tuple[str, str], int] = field(default_factory=dict)
+    # Per-lane FIXED cost of one shipment, keyed by (from_wh, to_wh) — the
+    # truck/dispatch charge you pay once no matter how many units ride along.
+    # A pair absent here (or set to 0) costs nothing to dispatch, which is the
+    # pre-feature behavior; see _lanes_with_fixed_cost for why that matters.
+    transfer_fixed_cost_by_lane: Dict[Tuple[str, str], float] = field(default_factory=dict)
 
 
 @dataclass
@@ -72,11 +85,24 @@ class VariableIndex:
     """
     Maps (sku, warehouse[, warehouse], bucket) tuples to flat vector positions
     for the MILP decision vector. Four contiguous blocks, in this order:
-    order, transfer, inv, short. Nothing outside this class ever hand-derives
-    an offset.
+    order, transfer, inv, short — plus an OPTIONAL fifth block of shipment
+    binaries, one per (fixed-cost lane, bucket). Nothing outside this class
+    ever hand-derives an offset.
+
+    `fixed_cost_lanes` is the (already filtered) list of lanes that charge a
+    fixed cost per shipment. When it is empty the fifth block has size 0, so
+    n_vars and every other index are bit-for-bit what they were before the
+    feature existed: a tenant with no fixed costs configured pays no binaries
+    and no solver slowdown.
     """
 
-    def __init__(self, skus: List[str], warehouses: List[str], horizon: int):
+    def __init__(
+        self,
+        skus: List[str],
+        warehouses: List[str],
+        horizon: int,
+        fixed_cost_lanes: List[Tuple[str, str]] | None = None,
+    ):
         self.skus = list(skus)
         self.warehouses = list(warehouses)
         self.horizon = horizon
@@ -95,12 +121,23 @@ class VariableIndex:
         self._block_size_owis = n_sku * n_wh * horizon       # order / inv / short block size
         self._block_size_transfer = n_sku * n_pairs * horizon
 
+        # Lanes that charge a fixed cost, in a fixed deterministic order, and
+        # only ones that are real ordered pairs of THESE warehouses (a stray
+        # key must never mint a variable for a lane that cannot exist).
+        self._fixed_cost_lanes = [
+            pair for pair in sorted(set(fixed_cost_lanes or []))
+            if pair in self._pair_pos
+        ]
+        self._ship_pos = {pair: k for k, pair in enumerate(self._fixed_cost_lanes)}
+        self._block_size_ship = len(self._fixed_cost_lanes) * horizon
+
         self._order_offset = 0
         self._transfer_offset = self._order_offset + self._block_size_owis
         self._inv_offset = self._transfer_offset + self._block_size_transfer
         self._short_offset = self._inv_offset + self._block_size_owis
+        self._ship_offset = self._short_offset + self._block_size_owis
 
-        self.n_vars = self._short_offset + self._block_size_owis
+        self.n_vars = self._ship_offset + self._block_size_ship
 
     def _owis_flat(self, i: str, w: str, t: int) -> int:
         """Flat position WITHIN an order/inv/short-shaped block (before adding
@@ -128,9 +165,20 @@ class VariableIndex:
         flat = (si * len(self._transfer_pairs) + pi) * self.horizon + ti
         return self._transfer_offset + flat
 
+    def ship_idx(self, a: str, b: str, t: int) -> int:
+        """Position of the binary "lane a->b ships something arriving at t".
+        Only defined for lanes that carry a fixed cost."""
+        if (a, b) not in self._ship_pos:
+            raise ValueError(f"ship_idx: lane '{a}'->'{b}' has no fixed cost, so no binary exists")
+        return self._ship_offset + self._ship_pos[(a, b)] * self.horizon + (t - 1)
+
     def transfer_pairs(self) -> List[Tuple[str, str]]:
         """All valid (from_warehouse, to_warehouse) pairs, a != b."""
         return list(self._transfer_pairs)
+
+    def fixed_cost_lanes(self) -> List[Tuple[str, str]]:
+        """Lanes that got a shipment binary (empty = the block doesn't exist)."""
+        return list(self._fixed_cost_lanes)
 
 
 @dataclass
@@ -141,10 +189,53 @@ class MilpProblem:
     bounds: Bounds
     integrality: np.ndarray
     index: VariableIndex
+    # Shipment-linking rows (A_ub @ x <= b_ub). None — not an empty array —
+    # when no lane charges a fixed cost, so the solve stays a pure equality
+    # problem exactly as before the fixed-cost feature.
+    A_ub: np.ndarray | None = None
+    b_ub: np.ndarray | None = None
+
+
+def _lanes_with_fixed_cost(inp: OptimizationInput) -> List[Tuple[str, str]]:
+    """Lanes whose fixed cost is strictly positive.
+
+    A zero (or absent) fixed cost must produce NO binary: charging 0 once per
+    shipment changes nothing about the optimum but would add one integer
+    variable per lane per bucket, which is exactly the kind of silent solver
+    slowdown existing tenants (none of whom have fixed costs configured)
+    should never pay for.
+    """
+    return sorted(
+        pair for pair, cost in (inp.transfer_fixed_cost_by_lane or {}).items()
+        if float(cost or 0.0) > 0
+    )
+
+
+def _shipment_big_m(inp: OptimizationInput) -> float:
+    """
+    Upper bound on how many units one lane can carry in one bucket.
+
+    Derived from the problem's own numbers, not a magic constant: every unit
+    that can ever move is either already on hand somewhere (sum of stock0) or
+    was purchased, and with all costs non-negative there is always an optimal
+    plan that never buys more than the horizon's total demand. So the whole
+    system can never hold more than stock0 + demand units, and a single
+    lane-bucket shipment is a subset of that. Being a valid bound on SOME
+    optimal solution is what big-M needs; a tighter per-lane bound (donor
+    stock only) would be wrong, because a donor can also relay units it
+    received.
+
+    Floored at 1.0 so a degenerate all-zero instance still yields a usable
+    (non-vacuous) constraint instead of pinning every transfer to zero.
+    """
+    total_stock = sum(float(v) for v in inp.stock0.values())
+    total_demand = sum(float(v) for series in inp.demand.values() for v in series)
+    return max(total_stock + total_demand, 1.0)
 
 
 def build_problem(inp: OptimizationInput) -> MilpProblem:
-    idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
+    fixed_cost_lanes = _lanes_with_fixed_cost(inp)
+    idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon, fixed_cost_lanes)
     n = idx.n_vars
 
     c = np.zeros(n)
@@ -175,6 +266,22 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                 if t <= lane_lead:
                     ub[idx.transfer_idx(i, a, b, t)] = 0
 
+    # One binary PER (lane, bucket), not per lane: the fixed cost is what a
+    # single dispatch on that lane costs, and two shipments in two different
+    # buckets are two trucks. A per-lane-only binary would charge the fixed
+    # cost once however many times the lane is used, making it free to split a
+    # move across buckets — the exact behavior the fixed cost exists to
+    # discourage. Conversely the binary is shared across SKUs, because one
+    # truck carries the whole bucket's load regardless of how many SKUs ride
+    # in it.
+    for a, b in idx.fixed_cost_lanes():
+        lane_fixed = float(inp.transfer_fixed_cost_by_lane[(a, b)])
+        for t in range(1, inp.horizon + 1):
+            k = idx.ship_idx(a, b, t)
+            c[k] = lane_fixed
+            ub[k] = 1
+            integrality[k] = 1
+
     # Balance equality rows: one per (sku, warehouse, t).
     n_rows = len(inp.skus) * len(inp.warehouses) * inp.horizon
     A_eq = np.zeros((n_rows, n))
@@ -202,8 +309,31 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                     b_eq[row] = -demand_t
                 row += 1
 
+    # Shipment-linking inequality rows, one per (fixed-cost lane, bucket):
+    #   sum_i transfer[i,a,b,t] - M * ship[a,b,t] <= 0
+    # Nothing can ride the lane in that bucket unless its binary is on, and
+    # because the binary costs money the solver only turns it on when it has
+    # to. Built only when at least one lane charges a fixed cost.
+    A_ub = None
+    b_ub = None
+    if idx.fixed_cost_lanes():
+        big_m = _shipment_big_m(inp)
+        n_ub_rows = len(idx.fixed_cost_lanes()) * inp.horizon
+        A_ub = np.zeros((n_ub_rows, n))
+        b_ub = np.zeros(n_ub_rows)
+        ub_row = 0
+        for a, b in idx.fixed_cost_lanes():
+            for t in range(1, inp.horizon + 1):
+                for i in inp.skus:
+                    A_ub[ub_row, idx.transfer_idx(i, a, b, t)] = 1.0
+                A_ub[ub_row, idx.ship_idx(a, b, t)] = -big_m
+                ub_row += 1
+
     bounds = Bounds(lb=lb, ub=ub)
-    return MilpProblem(c=c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, integrality=integrality, index=idx)
+    return MilpProblem(
+        c=c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, integrality=integrality,
+        index=idx, A_ub=A_ub, b_ub=b_ub,
+    )
 
 
 # Hard ceiling on a single HiGHS solve. A pathological instance can otherwise
@@ -232,7 +362,8 @@ def optimize(
     solve returns a non-success status and degrades to the fallback.
     """
     try:
-        idx = VariableIndex(inp.skus, inp.warehouses, inp.horizon)
+        idx = VariableIndex(
+            inp.skus, inp.warehouses, inp.horizon, _lanes_with_fixed_cost(inp))
     except Exception:
         # Even the index can't be built from a sufficiently malformed input
         # (e.g. non-list skus/warehouses) — fall back with an empty index.
@@ -243,12 +374,15 @@ def optimize(
 
     try:
         problem = build_problem(inp)
-        constraint = LinearConstraint(problem.A_eq, lb=problem.b_eq, ub=problem.b_eq)
+        constraints = [LinearConstraint(problem.A_eq, lb=problem.b_eq, ub=problem.b_eq)]
+        if problem.A_ub is not None:
+            constraints.append(
+                LinearConstraint(problem.A_ub, lb=-np.inf, ub=problem.b_ub))
         res = milp(
             problem.c,
             integrality=problem.integrality,
             bounds=problem.bounds,
-            constraints=[constraint],
+            constraints=constraints,
             options={"time_limit": time_limit_s},
         )
     except Exception:

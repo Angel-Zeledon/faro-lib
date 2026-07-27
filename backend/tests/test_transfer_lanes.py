@@ -380,6 +380,35 @@ class TestOptimizerLaneWiring:
         assert inp.transfer_cost_by_lane[("Sur", "Norte")] == 0.0
         assert inp.transfer_lead_buckets[("Sur", "Norte")] == 1
 
+    def test_lane_fixed_cost_reaches_the_milp_and_becomes_a_binary(self, test_tenant, test_session):
+        """The per-shipment fixed cost must reach the engine AND turn into a
+        real shipment binary there — passing the number through without the
+        variable would silently keep the cost unmodeled."""
+        from backend.inventory.optimizer_service import build_optimization_input
+        from forecasting_core.business.optimizer import build_problem
+
+        tid, sid = test_tenant["id"], test_session["id"]
+        for warehouse, stock in (("Norte", 100), ("Sur", 0)):
+            inv_svc.upsert_stock(tid, "OPT2", {
+                "current_stock": stock, "lead_time_days": 10, "unit_cost": 20.0,
+                "warehouse": warehouse})
+        session_store.set_forecasts(tid, sid, {
+            "OPT2": {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 3}},
+        })
+        lane_svc.upsert_lane(tid, "Norte", "Sur", lead_time_days=1,
+                             cost_per_unit=1.0, fixed_cost=40.0)
+
+        inp = build_optimization_input(tid, sid, horizon_days=3)
+
+        assert inp.transfer_fixed_cost_by_lane[("Norte", "Sur")] == 40.0
+        # The unconfigured reverse direction keeps the documented free default.
+        assert inp.transfer_fixed_cost_by_lane[("Sur", "Norte")] == 0.0
+
+        problem = build_problem(inp)
+        assert problem.index.fixed_cost_lanes() == [("Norte", "Sur")]
+        assert problem.c[problem.index.ship_idx("Norte", "Sur", 1)] == 40.0
+        assert problem.A_ub is not None
+
     def test_slow_lane_cannot_deliver_before_its_transit_time(self):
         """Pure-engine check: a lane with N buckets of transit is bounded to
         zero for buckets 1..N, so the solver cannot teleport stock."""

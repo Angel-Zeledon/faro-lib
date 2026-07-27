@@ -55,6 +55,12 @@ export interface CsvCheckResult {
 /** How many offending rows are listed per group before collapsing into "y N más". */
 const MAX_PER_GROUP = 5
 
+// Ceiling for a single period's sales of one SKU. Anything above this is a
+// corrupted cell (a barcode or an id landing in the quantity column), not a
+// real order: it matches the backend's own per-line cap so the file is
+// rejected here instead of failing later on the server.
+const MAX_REASONABLE_QTY = 1_000_000_000
+
 const DATE_HINTS = ['fecha', 'date', 'dia', 'día', 'day', 'periodo']
 const QTY_HINTS  = ['cantidad', 'demanda', 'venta', 'ventas', 'qty', 'quantity', 'demand', 'sales', 'units', 'unidades']
 const SKU_HINTS  = ['sku', 'producto', 'product', 'articulo', 'artículo', 'item', 'codigo', 'código', 'code', 'referencia', 'ref']
@@ -267,12 +273,21 @@ export function validateSalesCsv(text: string): CsvCheckResult {
     if (qtyIdx >= 0) {
       const raw = cells[qtyIdx]
       const v = raw.replace(',', '.')
-      if (v === '' || isNaN(Number(v))) {
+      // `Number.isFinite`, not `!isNaN`: Number('1e309') is Infinity and
+      // isNaN(Infinity) is false, so an overflowing figure — the kind a
+      // corrupted export produces — used to sail through as a valid quantity
+      // and reach training as `inf`, poisoning that SKU's metrics.
+      if (v === '' || !Number.isFinite(Number(v))) {
         issues.push({
           row: rowN, kind: 'non_numeric_qty',
           message: raw === ''
             ? `Fila ${rowN}: cantidad vacía en la columna "${columns[qtyIdx]}" — se esperaba un número.`
             : `Fila ${rowN}: cantidad no numérica "${raw}" en la columna "${columns[qtyIdx]}" — se esperaba un número.`,
+        })
+      } else if (Number(v) > MAX_REASONABLE_QTY) {
+        issues.push({
+          row: rowN, kind: 'non_numeric_qty',
+          message: `Fila ${rowN}: cantidad fuera de rango "${raw}" en la columna "${columns[qtyIdx]}" — se esperaba un número menor que ${MAX_REASONABLE_QTY.toLocaleString('es')}.`,
         })
       } else if (Number(v) < 0) {
         issues.push({

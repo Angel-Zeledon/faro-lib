@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+import numpy as np
 import pandas as pd
 
 from forecasting_core.validation.exceptions import (
@@ -62,6 +63,22 @@ def validate_data(
             else:
                 sku_warnings.append(msg)
             continue
+
+        # Infinite values. A corrupted export ("1e309", an overflowing formula)
+        # parses as a perfectly valid float(inf), passes every other check here,
+        # and then silently turns that SKU's error metrics into inf/NaN. Caught
+        # before training rather than debugged afterwards from a broken chart.
+        n_inf = int(np.isinf(series).sum())
+        if n_inf:
+            errors.append(DataValidationError(
+                f"SKU '{sku}': {n_inf} infinite target value(s).",
+                error_id="INFINITE_TARGET",
+                suggestions=[
+                    "A quantity overflowed to infinity — check that column for "
+                    "corrupted numbers (e.g. 1e309) or misplaced identifiers.",
+                ],
+                context={"sku": str(sku), "n_infinite": n_inf},
+            ))
 
         # All NaN
         if series.isna().all():

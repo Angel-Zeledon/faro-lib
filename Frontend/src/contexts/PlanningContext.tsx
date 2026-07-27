@@ -11,7 +11,10 @@ interface PlanningValue {
   // Persist a new period/horizon and refresh the shared state so consumers
   // (useAutoSession, the inventory/hoy pages) react to the new active session.
   apply: (period: PlanningPeriod, horizon: number) => Promise<void>
-  reload: () => void
+  // Re-resolves the active session. Awaitable so a caller that is about to
+  // navigate (the Quick Start redirect) can guarantee the next screen mounts
+  // with the fresh active_session_id instead of the pre-training one.
+  reload: () => Promise<void>
 }
 
 const PlanningContext = createContext<PlanningValue | null>(null)
@@ -24,13 +27,19 @@ export function PlanningProvider({ children }: { children: React.ReactNode }) {
   // must NOT blank the top-bar period control: retry a few times, and never
   // clobber an already-good state to null on error. Only the very first load,
   // which starts from null, stays null if every attempt genuinely fails.
-  const load = useCallback((retriesLeft: number) => {
+  // Resolves once the state is fresh (or the retries are spent) and never
+  // rejects — callers await it only to sequence a navigation, and a planning
+  // fetch that fails must not break the flow that triggered it.
+  const load = useCallback((retriesLeft: number): Promise<void> =>
     getPlanning()
       .then(setPlanningState)
       .catch(() => {
-        if (retriesLeft > 0) setTimeout(() => load(retriesLeft - 1), 600)
+        if (retriesLeft <= 0) return
+        return new Promise<void>(resolve => {
+          setTimeout(() => resolve(load(retriesLeft - 1)), 600)
+        })
       })
-  }, [])
+  , [])
 
   const reload = useCallback(() => load(1), [load])
 

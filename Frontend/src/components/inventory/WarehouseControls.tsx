@@ -16,6 +16,27 @@ const C = {
   text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8',
 }
 
+// The tenant default warehouse is a REAL row, not a synthetic entry: the
+// backend auto-creates it and every "no destination given" path resolves to it
+// by name (backend/inventory/warehouse_service.py DEFAULT_WAREHOUSE, read by
+// reception_service/roi_service). Pickers must therefore never render a
+// separate "default" option next to it — that shows the same warehouse twice.
+export const DEFAULT_WAREHOUSE_NAME = 'principal'
+
+/**
+ * The warehouse a purchase order lands in when the user does not pick one.
+ * Precedence mirrors the backend rule: the explicit is_default flag, then the
+ * canonical DEFAULT_WAREHOUSE_NAME (auto-created rows carry is_default=false,
+ * so without this an emoji/Capitalized name would win the alphabetical sort),
+ * then the first warehouse on file. Null only when the tenant has none.
+ */
+export function defaultWarehouse(warehouses: Warehouse[]): Warehouse | null {
+  return warehouses.find(w => w.is_default)
+    ?? warehouses.find(w => w.name === DEFAULT_WAREHOUSE_NAME)
+    ?? warehouses[0]
+    ?? null
+}
+
 // Single-flight cache: several components mount useWarehouses on one page
 // (/hoy renders three), and without this each fired its own identical GET.
 // One in-flight promise is shared; reload() busts it (e.g. after creating a

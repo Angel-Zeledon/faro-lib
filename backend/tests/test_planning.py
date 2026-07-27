@@ -106,6 +106,82 @@ class TestResolveActiveSession:
         assert plan.resolve_active_session(test_tenant["id"]) is None
 
 
+class TestResolveActiveSessionFollowsNewestTraining:
+    """The Quick Start redirect lands on /hoy and lets the resolver decide which
+    session the screen reads, so 'the run I just trained is the active one' is a
+    property of resolve_active_session, not of the redirect."""
+
+    def _newest(self, tid, family_id, hours=1):
+        """Make one family unambiguously the newest by created_at (the seconds
+        stagger inside _make_family is too small to order two families)."""
+        execute(
+            "UPDATE sessions SET created_at = NOW() + (%s || ' hours')::interval "
+            "WHERE tenant_id=%s AND family_id=%s", (str(hours), tid, family_id))
+
+    def test_freshly_trained_family_becomes_active(self, client, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily"], family_id="fam_old")
+        _make_family(tid, uid, ["daily"], family_id="fam_new")
+        self._newest(tid, "fam_new")
+
+        sid = plan.resolve_active_session(tid)
+        row = query_one("SELECT family_id FROM sessions WHERE id=%s AND tenant_id=%s",
+                        (sid, tid))
+        assert row["family_id"] == "fam_new", "the run just trained must be the active session"
+
+    def test_stored_period_still_wins_when_the_new_family_offers_it(self, client, test_tenant, registered_user):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_old")
+        plan.set_planning(tid, "weekly", 4)
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_new")
+        self._newest(tid, "fam_new")
+
+        sid = plan.resolve_active_session(tid)
+        row = query_one("SELECT family_id, granularity FROM sessions WHERE id=%s AND tenant_id=%s",
+                        (sid, tid))
+        assert (row["family_id"], row["granularity"]) == ("fam_new", "weekly")
+
+    def test_period_absent_from_new_family_resolves_that_family_not_a_stale_grain(
+            self, client, test_tenant, registered_user):
+        """The tenant was planning monthly; the new upload only supports
+        daily+weekly. get_planning coerces the period to 'daily', so the
+        resolver must too — dropping through to latest-completed handed the
+        screens the weekly sibling while the top bar said 'daily'."""
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        _make_family(tid, uid, ["daily", "weekly", "monthly"], family_id="fam_old")
+        plan.set_planning(tid, "monthly", 6)
+        _make_family(tid, uid, ["daily", "weekly"], family_id="fam_new")
+        self._newest(tid, "fam_new")
+        # The coarser sibling finished last — that is what latest-completed
+        # would have returned.
+        execute("UPDATE sessions SET updated_at = NOW() + interval '2 hours' "
+                "WHERE tenant_id=%s AND family_id='fam_new' AND granularity='weekly'", (tid,))
+
+        planning = plan.get_planning(tid)
+        assert planning["period"] == "daily"
+        assert "monthly" not in planning["available_periods"]
+        # The stored value is untouched — only the resolved view is coerced.
+        assert tenant_svc.get_settings(tid)["planning"]["period"] == "monthly"
+
+        sid = plan.resolve_active_session(tid)
+        row = query_one("SELECT family_id, granularity FROM sessions WHERE id=%s AND tenant_id=%s",
+                        (sid, tid))
+        assert row["family_id"] == "fam_new"
+        assert row["granularity"] == planning["period"]
+
+    def test_family_less_tenant_unaffected(self, client, test_tenant, registered_user):
+        """Tenants who never trained a family (pre-feature data) keep the legacy
+        latest-completed behavior."""
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        old = session_svc.create_session(tid, uid, "legacy old")
+        new = session_svc.create_session(tid, uid, "legacy new")
+        execute("UPDATE sessions SET status='COMPLETED', updated_at=NOW() - interval '1 day' "
+                "WHERE id=%s", (old["id"],))
+        execute("UPDATE sessions SET status='COMPLETED', updated_at=NOW() WHERE id=%s",
+                (new["id"],))
+        assert plan.resolve_active_session(tid) == new["id"]
+
+
 class TestPlanningApi:
     def test_get_planning_default(self, client, auth_headers):
         r = client.get("/api/v1/planning", headers=auth_headers)

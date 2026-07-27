@@ -175,6 +175,79 @@ def _primary_group_col(col_cfg: dict):
     return col_cfg.get("group")   # legacy fallback (should no longer be needed)
 
 
+# ── Corrupted-value guard ─────────────────────────────────────────────────
+
+def _neutralize_infinities(df: "pd.DataFrame", target_col: str) -> "pd.DataFrame":
+    """Replace ±inf in the target with NaN, so the missing-data path handles it.
+
+    An overflowing quantity is not a large sale — it is a broken cell. Left
+    alone it is neither NaN nor an outlier, so it reaches training intact and
+    every error metric for that SKU comes back inf/NaN. Returns the frame
+    unchanged (same object) when there is nothing to fix, which is the case for
+    every healthy dataset.
+    """
+    import numpy as np
+    import pandas as pd
+
+    if target_col not in df.columns:
+        return df
+    try:
+        col = pd.to_numeric(df[target_col], errors="coerce")
+    except Exception:
+        return df
+    mask = np.isinf(col)
+    n = int(mask.sum())
+    if not n:
+        return df
+    log.warning(
+        "Neutralized %d infinite value(s) in target column '%s' — treated as missing.",
+        n, target_col,
+    )
+    out = df.copy()
+    out.loc[mask.fillna(False), target_col] = np.nan
+    return out
+
+
+def _collapse_duplicate_periods(df: "pd.DataFrame", date_col: str, target_col: str,
+                                group_col: str | None) -> "pd.DataFrame":
+    """Sum rows that share the same (date, SKU) into a single observation.
+
+    ERPs commonly export one row per SALE, not per day. Left as-is those rows
+    become separate points of the series: 3 transactions of 4+3+3 on one day
+    train a model that predicts ~3 per step instead of 10 per day, and the
+    resulting purchase suggestion is a third of what the business needs — a
+    silent stockout. The profiler already reports the duplicates ("180
+    duplicate date+SKU rows"); nothing acted on them.
+
+    Summing is the only defensible reading for demand: the day's sales ARE the
+    sum of that day's transactions. Non-target columns (price, cost, stock)
+    would be nonsense summed, so they keep their first value in the group.
+    Returns the frame untouched when there is nothing to collapse.
+    """
+    import pandas as pd
+
+    if not date_col or date_col not in df.columns or target_col not in df.columns:
+        return df
+    keys = [date_col] + ([group_col] if group_col and group_col in df.columns else [])
+    try:
+        n_dupes = int(df.duplicated(subset=keys, keep=False).sum())
+    except Exception:
+        return df
+    if not n_dupes:
+        return df
+
+    others = [c for c in df.columns if c not in keys and c != target_col]
+    agg = {target_col: "sum"}
+    agg.update({c: "first" for c in others})
+    out = df.groupby(keys, as_index=False, sort=False).agg(agg)
+    log.warning(
+        "Collapsed %d duplicate (date, SKU) row(s) into %d period totals — "
+        "quantities summed so demand is per period, not per transaction.",
+        n_dupes, len(out),
+    )
+    return out[df.columns.tolist()]
+
+
 # ── Gap fill helper ───────────────────────────────────────────────────────
 
 def _apply_gap_fill(df: "pd.DataFrame", date_col: str, target_col: str,
@@ -530,6 +603,27 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 log.info("Applied canonical defaults to dataset (canonical_v1 session)")
             except Exception as e:
                 log.warning(f"Canonical defaults application failed (non-fatal): {e}")
+
+        # Neutralize infinities BEFORE gap fill and outlier treatment. A
+        # corrupted quantity ("1e309", an overflowing formula) parses as a
+        # valid float(inf) that is neither NaN nor an outlier, so it survives
+        # every later step and turns that SKU's metrics into inf/NaN. Turning
+        # it into NaN hands it to the missing-data machinery that already
+        # exists instead of inventing a second policy for it. The validator
+        # reports the count; the pipeline runs in WARNING mode and only logs,
+        # so the data has to be made safe here.
+        if engine._df is not None:
+            engine._df = _neutralize_infinities(
+                engine._df, target_col=col_cfg["target"],
+            )
+            # Then collapse per-transaction rows into per-period totals, before
+            # gap fill reindexes dates and before the models see the series.
+            engine._df = _collapse_duplicate_periods(
+                engine._df,
+                date_col=col_cfg["date"],
+                target_col=col_cfg["target"],
+                group_col=_primary_group_col(col_cfg),
+            )
 
         if gap_fill and gap_fill != "leave" and engine._df is not None:
             _emit(tenant_id, session_id, job_id, 14, "gap_fill",

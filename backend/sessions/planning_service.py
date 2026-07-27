@@ -51,14 +51,21 @@ def _available_periods(tenant_id: str, family_id: Optional[str]) -> list[str]:
     return out or ["daily"]
 
 
+def _coerce_period(stored_period: Optional[str], available: list[str]) -> str:
+    """The period the app actually shows: the stored one when the newest family
+    still offers that grain, else the family's finest available grain. Pure, and
+    shared by get_planning and resolve_active_session so the period in the top
+    bar and the session behind the numbers can never disagree."""
+    period = stored_period or DEFAULT_PLANNING["period"]
+    return period if period in available else available[0]
+
+
 def get_planning(tenant_id: str) -> dict:
     """Resolve the active setting against the newest family. period is coerced
     into available_periods and horizon clamped into 1..reach(period)."""
     stored = tenant_svc.get_settings(tenant_id).get("planning") or {}
     available = _available_periods(tenant_id, _newest_family_id(tenant_id))
-    period = stored.get("period", DEFAULT_PLANNING["period"])
-    if period not in available:
-        period = available[0]
+    period = _coerce_period(stored.get("period"), available)
     max_horizon = GENEROUS_REACH.get(period, 90)
     try:
         horizon = int(stored.get("horizon", DEFAULT_PLANNING["horizon"]))
@@ -87,15 +94,29 @@ def set_planning(tenant_id: str, period: str, horizon: int) -> dict:
 
 def resolve_active_session(tenant_id: str) -> Optional[str]:
     """The session the app should use now. Newest family's COMPLETED session at
-    the active period; falls back to the legacy latest-completed session when
-    that is not found (family-less tenant, or the active grain hasn't finished
-    training). None when the tenant has no completed session at all."""
+    the active period — the SAME period get_planning reports, so the resolved
+    session's granularity always matches what the UI displays. Falls back to the
+    legacy latest-completed session when that is not found (family-less tenant,
+    or the active grain hasn't finished training yet). None when the tenant has
+    no completed session at all.
+
+    Because the newest family wins, a training run that has just finished
+    becomes the active session: this is the seam the Quick Start redirect relies
+    on to land the user on the data they just trained."""
     from backend.inventory.service import get_latest_completed_session
 
     family_id = _newest_family_id(tenant_id)
     if family_id:
         stored = tenant_svc.get_settings(tenant_id).get("planning") or {}
-        period = stored.get("period", DEFAULT_PLANNING["period"])
+        # Coerce exactly like get_planning: a stored period the newest family
+        # does not offer (the tenant was on 'monthly' and then trained a family
+        # without a monthly grain) must fall back to that family's finest grain,
+        # NOT drop through to the legacy latest-completed session. Dropping
+        # through picked whichever session was updated last — routinely a
+        # coarser sibling of the same family — so the screens read the numbers
+        # of one grain while the top bar announced another.
+        period = _coerce_period(
+            stored.get("period"), _available_periods(tenant_id, family_id))
         row = query_one(
             """SELECT id AS session_id FROM sessions
                WHERE tenant_id = %s AND family_id = %s AND granularity = %s

@@ -7,7 +7,9 @@
 import { useState, useEffect } from 'react'
 import { listSuppliers, createManualPO } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
-import { useWarehouses } from '@/components/inventory/WarehouseControls'
+import {
+  useWarehouses, defaultWarehouse, DEFAULT_WAREHOUSE_NAME,
+} from '@/components/inventory/WarehouseControls'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useErrorDetail } from '@/components/ui/States'
 import Spinner from '@/components/ui/Spinner'
@@ -49,6 +51,20 @@ export function ManualPOModal({ onClose, onSaved }: {
       .catch(e => setError(errorDetail(e) || t('common.error')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Destination options. The tenant default IS a real warehouse row (the
+  // backend auto-creates one named `principal` and resolves every destination-
+  // less PO to it BY NAME), so rendering a synthetic "Bodega principal" entry
+  // above the list showed the buyer the same place twice. When that row is on
+  // file we drop the synthetic entry and instead flag the real warehouse as the
+  // default, preselecting it so the PO records its destination explicitly.
+  // Tenants with no `principal` row keep the synthetic entry: for them it is
+  // the only way to say "leave it to the default", and it duplicates nothing.
+  const hasCanonicalDefault = warehouses.some(w => w.name === DEFAULT_WAREHOUSE_NAME)
+  const defaultWh = hasCanonicalDefault ? defaultWarehouse(warehouses) : null
+  useEffect(() => {
+    if (defaultWh && !warehouse) setWarehouse(defaultWh.name)
+  }, [defaultWh, warehouse])
 
   const setLine = (idx: number, patch: Partial<LineDraft>) =>
     setLines(prev => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
@@ -164,8 +180,14 @@ export function ManualPOModal({ onClose, onSaved }: {
                     color: C.text, fontSize: 12,
                   }}
                 >
-                  <option value="">{t('po.manual_warehouse_default')}</option>
-                  {warehouses.map(w => <option key={w.name} value={w.name}>{w.name}</option>)}
+                  {!defaultWh && <option value="">{t('po.manual_warehouse_default')}</option>}
+                  {warehouses.map(w => (
+                    <option key={w.name} value={w.name}>
+                      {w.name === defaultWh?.name
+                        ? t('po.manual_warehouse_default_option').replace('{name}', w.name)
+                        : w.name}
+                    </option>
+                  ))}
                 </select>
               </label>
             )}

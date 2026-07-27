@@ -158,17 +158,17 @@ def build_optimization_input(
 
     # Per-lane money and time. The old model priced EVERY move at a single
     # hardcoded 0.5/unit and let it teleport within the bucket; now each
-    # ordered pair carries its own cost and its transit time in buckets, so a
-    # slow lane can no longer beat a purchase for free.
-    # KNOWN LIMITATION: a lane's `fixed_cost` is NOT modeled here — charging it
-    # once per lane used needs a binary "lane active" variable, which the
-    # current pure-continuous/integer formulation has no room for. The
-    # per-unit cost and the transit time are modeled; the fixed cost is applied
-    # only by the heuristic recommendation (_evaluate_transfer_lane).
+    # ordered pair carries its own per-unit cost, its transit time in buckets
+    # and its per-shipment fixed cost, so a slow lane can no longer beat a
+    # purchase for free and splitting one move into many is no longer free
+    # either. The engine turns each lane with a positive fixed_cost into a
+    # binary per (lane, bucket); lanes left at the default 0 add no variable,
+    # so a tenant that never configures a fixed cost solves exactly as before.
     if lanes is None:
         lanes = lane_svc.lane_map(tenant_id)
     transfer_cost_by_lane: dict[tuple[str, str], float] = {}
     transfer_lead_buckets: dict[tuple[str, str], int] = {}
+    transfer_fixed_cost_by_lane: dict[tuple[str, str], float] = {}
     for a in warehouses:
         for b in warehouses:
             if a == b:
@@ -177,6 +177,7 @@ def build_optimization_input(
             transfer_cost_by_lane[(a, b)] = float(lane["cost_per_unit"])
             transfer_lead_buckets[(a, b)] = int(
                 _math.ceil(int(lane["lead_time_days"]) / _days_per_period(period)))
+            transfer_fixed_cost_by_lane[(a, b)] = float(lane["fixed_cost"])
 
     return OptimizationInput(
         skus=skus,
@@ -192,6 +193,7 @@ def build_optimization_input(
         transfer_cost=lane_svc.DEFAULT_LANE_COST_PER_UNIT,
         transfer_cost_by_lane=transfer_cost_by_lane,
         transfer_lead_buckets=transfer_lead_buckets,
+        transfer_fixed_cost_by_lane=transfer_fixed_cost_by_lane,
     )
 
 
