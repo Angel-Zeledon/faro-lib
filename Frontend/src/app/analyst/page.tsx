@@ -12,6 +12,7 @@ import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion 
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { chatSourceLabel, chatDataSourceLabel } from '@/lib/enumLabels'
 import {
   Plus, Search, Star, Trash2, Bot, User, Send,
   Sparkles, MessageSquare, ChevronDown, X, Filter,
@@ -19,13 +20,16 @@ import {
 } from 'lucide-react'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
-const SOURCE_META: Record<string, { label: string; color: string }> = {
-  rag:       { label: 'RAG',     color: '#818cf8' },
-  fallback:  { label: 'Fallback', color: '#f59e0b' },
-  general:   { label: 'General', color: '#22c55e' },
-  off_topic: { label: 'Off-topic', color: '#f59e0b' },
-  no_access: { label: 'No Access', color: '#ef4444' },
-  error:     { label: 'Error',   color: '#ef4444' },
+// Colour only — the badge text comes from `chatSourceLabel`, so the copy the
+// user reads lives in the i18n catalog and not in this map.
+const SOURCE_COLOR: Record<string, string> = {
+  rag:           '#818cf8',
+  rag_retrieved: '#818cf8',
+  fallback:      '#f59e0b',
+  general:       '#22c55e',
+  off_topic:     '#f59e0b',
+  no_access:     '#ef4444',
+  error:         '#ef4444',
 }
 
 function fmtTime(iso: string) {
@@ -96,8 +100,9 @@ function TypingBubble() {
 
 // ── Message bubble ─────────────────────────────────────────────────────────────
 function MessageBubble({ msg }: { msg: ChatMessage }) {
+  const { t }  = useLanguage()
   const isUser = msg.role === 'user'
-  const src    = msg.source ? SOURCE_META[msg.source] : null
+  const srcColor = msg.source ? (SOURCE_COLOR[msg.source] ?? '#94a3b8') : null
   return (
     <div
       data-testid={isUser ? 'user-message' : 'assistant-message'}
@@ -134,13 +139,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtTime(msg.created_at)}</span>
-          {src && !isUser && (
+          {srcColor && msg.source && !isUser && (
             <span style={{
               fontSize: 9, fontWeight: 600, letterSpacing: '0.05em',
-              color: src.color, background: src.color + '18',
+              color: srcColor, background: srcColor + '18',
               borderRadius: 4, padding: '1px 6px',
             }}>
-              {src.label}
+              {chatSourceLabel(t, msg.source)}
             </span>
           )}
         </div>
@@ -227,7 +232,7 @@ function SourcesFilter({
                 {selected
                   ? <CheckSquare size={13} color="var(--accent)" />
                   : <Square size={13} color="var(--dim)" />}
-                {st.label}
+                {chatDataSourceLabel(t, st.id, st.label)}
               </div>
             )
           })}

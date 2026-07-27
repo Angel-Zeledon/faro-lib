@@ -2,6 +2,7 @@
 import { useEffect } from 'react'
 import Button from '@/components/ui/Button'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function GlobalError({
   error,
@@ -10,6 +11,7 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const { t } = useLanguage()
   useEffect(() => { console.error('[page error]', error) }, [error])
 
   return (
@@ -25,18 +27,21 @@ export default function GlobalError({
         <AlertTriangle size={22} color="#ef4444" />
       </div>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Something went wrong</div>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('states.err_unknown_title')}</div>
+        {/* `error.message` is a JS exception string — English, and written for
+            us, not for the user. The digest below is what support actually
+            needs, so the body stays the localized generic sentence. */}
         <div style={{ fontSize: 13, color: 'var(--dim)', maxWidth: 400, lineHeight: 1.5 }}>
-          {error.message || 'An unexpected error occurred on this page.'}
+          {t('states.err_unknown_body')}
         </div>
         {error.digest && (
           <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 8, fontFamily: 'monospace' }}>
-            Error ID: {error.digest}
+            {t('states.error_id')}: {error.digest}
           </div>
         )}
       </div>
       <Button variant="primary" icon={<RefreshCw size={13} />} onClick={reset}>
-        Try again
+        {t('states.retry')}
       </Button>
     </div>
   )

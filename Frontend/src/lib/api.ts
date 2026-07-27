@@ -222,8 +222,11 @@ async function request<T = unknown>(
     // error to the form instead of treating it as an expired session.
     if (path.startsWith('/auth/')) {
       const payload = await res.json().catch(() => ({ detail: res.statusText }))
+      // `detail` stays whatever the backend said (English) — the auth screens
+      // map the 401 to their own localized copy rather than rendering it.
       const err = new ApiError(
-        'validation', 401, extractErrorMessage(payload) || 'Credenciales inválidas', path,
+        'validation', 401, extractErrorMessage(payload) || '', path,
+        extractErrorCode(payload), extractErrorParams(payload),
       )
       notify(err, silent)
       throw err

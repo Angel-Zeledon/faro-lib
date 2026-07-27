@@ -106,7 +106,10 @@ def list_stock(user: CurrentUser = Depends(get_current_user)):
 def get_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
     row = svc.get_stock(user.tenant_id, sku)
     if not row:
-        raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in inventory")
+        raise AppError(
+            "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
+            status_code=404, params={"sku": sku},
+        )
     return ok(row)
 
 
@@ -141,7 +144,10 @@ def patch_stock(
 ):
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in inventory")
+        raise AppError(
+            "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
+            status_code=404, params={"sku": sku},
+        )
     data = body.model_dump(exclude_none=True)
     if not data:
         return ok(existing)
@@ -153,11 +159,19 @@ def patch_stock(
 def delete_stock(sku: str, user: CurrentUser = Depends(require_analyst_or_above)):
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in inventory")
+        raise AppError(
+            "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
+            status_code=404, params={"sku": sku},
+        )
     svc.delete_stock(user.tenant_id, sku)
 
 
 # ── Bulk import from CSV ───────────────────────────────────────────────────────
+
+# Upper bound on the per-row diagnostics echoed back when a whole import is
+# rejected — the count is always exact, only the sample is capped.
+_MAX_REPORTED_ROW_ERRORS = 50
+
 
 @router.post("/bulk")
 async def bulk_import(
@@ -243,10 +257,15 @@ async def bulk_import(
         rows.append({"sku": sku, **validated.model_dump(exclude_none=True)})
 
     if not rows:
-        detail = "No valid rows found in CSV. Ensure 'sku' column exists."
-        if errors:
-            raise HTTPException(status_code=422, detail={"message": detail, "errors": errors})
-        raise HTTPException(status_code=422, detail=detail)
+        # The whole file was rejected — a user event, not API misuse, so it
+        # carries a code. The per-row diagnostics ride along in params, capped:
+        # a 10k-row garbage CSV used to echo 10k error objects back.
+        raise AppError(
+            "inventory_import_no_valid_rows",
+            "No valid rows found in CSV. Ensure 'sku' column exists.",
+            status_code=422,
+            params={"rejected": len(errors), "errors": errors[:_MAX_REPORTED_ROW_ERRORS]},
+        )
 
     # Resolve every distinct warehouse spelling in the CSV to its canonical
     # form BEFORE the limit pre-checks and the writes: 'norte' rows must land
@@ -370,7 +389,11 @@ def inventory_status(
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:
-            raise HTTPException(status_code=400, detail="No completed session for this tenant yet")
+            raise AppError(
+                "no_completed_session",
+                "No completed session for this tenant yet",
+                status_code=400,
+            )
 
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
 
@@ -501,7 +524,10 @@ def get_stock_history(
     """Returns point-in-time stock snapshots for trend visualization."""
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in inventory")
+        raise AppError(
+            "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
+            status_code=404, params={"sku": sku},
+        )
     history = svc.get_stock_history(user.tenant_id, sku, days=days)
     return ok({"sku": sku, "days": days, "history": history})
 
@@ -617,6 +643,9 @@ def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_c
             user.tenant_id, body.session_id, start, end, mult,
             event_name=name, event_id=body.event_id,
         )
+    except AppError:
+        # Already carries its own code/params — wrapping it would strip them.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ok(result)
@@ -655,6 +684,9 @@ def upsert_event_multiplier(
         row = svc.set_event_multiplier(
             user.tenant_id, event_id, body.scope, body.scope_value, body.multiplier,
         )
+    except AppError:
+        # Already carries its own code/params — wrapping it would strip them.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ok(row)
@@ -708,15 +740,19 @@ def patch_event(
     if "start_date" in data or "end_date" in data:
         existing = svc.get_event(user.tenant_id, event_id)
         if not existing:
-            raise HTTPException(status_code=404, detail="Event not found")
+            raise AppError("event_not_found", "Event not found", status_code=404)
         effective_start = data.get("start_date", str(existing["start_date"]))
         effective_end = data.get("end_date", str(existing["end_date"]))
         if date.fromisoformat(effective_end) < date.fromisoformat(effective_start):
-            raise HTTPException(status_code=422, detail="end_date must not be before start_date")
+            raise AppError(
+                "event_end_before_start",
+                "end_date must not be before start_date",
+                status_code=422,
+            )
 
     ev = svc.update_event(user.tenant_id, event_id, data)
     if not ev:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise AppError("event_not_found", "Event not found", status_code=404)
     return ok(ev)
 
 
@@ -785,6 +821,9 @@ def seed_event_catalog(
     """Preload the LatAm commercial calendar into this tenant's events."""
     try:
         result = svc.seed_calendar_events(user.tenant_id, body.country, body.years)
+    except AppError:
+        # Already carries its own code/params — wrapping it would strip them.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ok(result)
@@ -920,7 +959,7 @@ def create_manual_po(
 
     supplier = sup_svc.get_supplier(user.tenant_id, body.supplier_id)
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
 
     record = create_po_svc(
         user.tenant_id, supplier,
@@ -1114,7 +1153,7 @@ def download_po_pdf(po_log_id: str, supplier_slug: str):
     pos_root = storage_paths.po_pdf_dir("")
     for candidate in pos_root.glob(f"*/{po_log_id}_{supplier_slug}.pdf"):
         return FileResponse(candidate, media_type="application/pdf", filename=candidate.name)
-    raise HTTPException(status_code=404, detail="PO PDF not found")
+    raise AppError("po_pdf_not_found", "Purchase order PDF not found", status_code=404)
 
 
 @router.post("/po/{po_log_id}/send", status_code=200)
@@ -1527,7 +1566,7 @@ def update_supplier(
     data = _with_derived_credit_days(body.model_dump(exclude_none=True))
     supplier = sup_svc.update_supplier(user.tenant_id, supplier_id, data)
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
     return ok(supplier)
 
 
@@ -1535,7 +1574,7 @@ def update_supplier(
 def delete_supplier(supplier_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     existing = sup_svc.get_supplier(user.tenant_id, supplier_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
     sup_svc.delete_supplier(user.tenant_id, supplier_id)
 
 
@@ -1557,7 +1596,9 @@ def list_warehouses(user: CurrentUser = Depends(get_current_user)):
 )
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     if not (body.name or "").strip():
-        raise HTTPException(status_code=422, detail="Warehouse name is required")
+        raise AppError(
+            "warehouse_name_required", "Warehouse name is required", status_code=422,
+        )
     # Resolve first so a case-variant of an existing warehouse ('norte' vs
     # 'Norte') is treated as the idempotent re-create it is, not a new
     # location for the max_locations pre-check.
@@ -1640,7 +1681,9 @@ def delete_transfer_lane(
     """Names travel as query params, not path segments: a warehouse name may
     contain a slash and would break path matching once encoded."""
     if not lane_svc.delete_lane(user.tenant_id, from_warehouse, to_warehouse):
-        raise HTTPException(status_code=404, detail="Transfer lane not found")
+        raise AppError(
+            "transfer_lane_not_found", "Transfer lane not found", status_code=404,
+        )
 
 
 @router.get("/stock/{sku}/suppliers")
@@ -1666,9 +1709,16 @@ class TransferReceive(BaseModel):
     lines: Optional[list[dict]] = None  # [{sku, received_qty}] | null = all
 
 
-def _svc_error(e: ValueError) -> HTTPException:
+def _svc_error(e: ValueError) -> Exception:
     """Service-layer ValueError → HTTP: 'not found' wording means 404, the
-    rest is a rejected request. Shared by the transfer and warehouse routes."""
+    rest is a rejected request. Shared by the transfer and warehouse routes.
+
+    An ``AppError`` is already a ValueError that carries its own status, code
+    and params — hand it straight back, otherwise wrapping it here would throw
+    away the machine code and leave the user reading English prose.
+    """
+    if isinstance(e, AppError):
+        return e
     msg = str(e)
     return HTTPException(status_code=404 if "not found" in msg.lower() else 422,
                          detail=msg)
@@ -1759,7 +1809,7 @@ def assign_sku_supplier(
     # Verify supplier exists for this tenant
     supplier = sup_svc.get_supplier(user.tenant_id, supplier_id)
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
     link = sup_svc.upsert_sku_supplier(user.tenant_id, sku, supplier_id, body.model_dump(exclude_none=True))
     return ok(link)
 
@@ -1863,7 +1913,11 @@ def morning_briefing(
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:
-            raise HTTPException(status_code=400, detail="No completed session for this tenant yet")
+            raise AppError(
+                "no_completed_session",
+                "No completed session for this tenant yet",
+                status_code=400,
+            )
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     data = svc.get_morning_briefing(user.tenant_id, session_id, service_level, period)
     return ok(data)
@@ -1885,7 +1939,10 @@ def set_product_type(
 ):
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in inventory")
+        raise AppError(
+            "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
+            status_code=404, params={"sku": sku},
+        )
     if product_type not in bom_svc.PRODUCT_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid product_type. Options: {list(bom_svc.PRODUCT_TYPES)}")
     from backend.db.connection import execute as db_execute
@@ -1925,6 +1982,9 @@ def upsert_bom_item(
             user.tenant_id, parent_sku, child_sku, body.model_dump(exclude_none=True)
         )
         return ok(item)
+    except AppError:
+        # Already carries its own code/params — wrapping it would strip them.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -2130,7 +2190,11 @@ def optimize_inventory(
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:
-            raise HTTPException(status_code=400, detail="No completed session for this tenant yet")
+            raise AppError(
+                "no_completed_session",
+                "No completed session for this tenant yet",
+                status_code=400,
+            )
     if horizon_days is None:
         horizon_days = int(plan.get("horizon", 14)) * svc._days_per_period(period)
         horizon_days = max(1, min(horizon_days, 360))
@@ -2149,9 +2213,10 @@ def optimize_inventory(
         # blocking once every connection is checked out, so a concurrent burst
         # can momentarily starve this request. That is transient and retryable,
         # not a server bug — surface 503 (retry) instead of a bare 500.
-        raise HTTPException(
+        raise AppError(
+            "optimizer_unavailable",
+            "Optimizer temporarily unavailable (database busy); please retry.",
             status_code=503,
-            detail="Optimizer temporarily unavailable (database busy); please retry.",
         )
 
     if inp is None:
@@ -2170,8 +2235,9 @@ def optimize_inventory(
         with opt_svc.solve_slot():
             result = optimize(inp)
     except opt_svc.OptimizerBusy:
-        raise HTTPException(
+        raise AppError(
+            "optimizer_busy",
+            "Optimizer busy (too many concurrent requests); please retry.",
             status_code=503,
-            detail="Optimizer busy (too many concurrent requests); please retry.",
         )
     return ok(opt_svc.serialize_optimization_result(inp, result, stock_rows))

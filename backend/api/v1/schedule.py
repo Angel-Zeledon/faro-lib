@@ -1,13 +1,14 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.db.connection import execute, query_one
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
@@ -54,7 +55,7 @@ def _next_run(cron_expr: str) -> datetime:
 @router.get("/sessions/{session_id}/schedule")
 def get_schedule(session_id: str, user: CurrentUser = Depends(get_current_user)):
     if not session_svc.get_session(user.tenant_id, session_id):
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     # last_run / last_error / last_error_at come along so the UI can tell a
     # healthy schedule from one whose trigger has been failing for weeks —
     # same contract as integration_connections.last_error.
@@ -64,7 +65,11 @@ def get_schedule(session_id: str, user: CurrentUser = Depends(get_current_user))
         (session_id, user.tenant_id),
     )
     if not row:
-        raise HTTPException(status_code=404, detail="No schedule configured for this session")
+        raise AppError(
+            "schedule_not_configured",
+            "No schedule configured for this session",
+            status_code=404,
+        )
     return ok(dict(row))
 
 
@@ -75,7 +80,7 @@ def save_schedule(
     user: CurrentUser = Depends(get_current_user),
 ):
     if not session_svc.get_session(user.tenant_id, session_id):
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     next_run = _next_run(body.cron_expr)
     existing = query_one(
         "SELECT id FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
@@ -108,7 +113,7 @@ def save_schedule(
 @router.delete("/sessions/{session_id}/schedule")
 def delete_schedule(session_id: str, user: CurrentUser = Depends(get_current_user)):
     if not session_svc.get_session(user.tenant_id, session_id):
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     execute(
         "DELETE FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
         (session_id, user.tenant_id),

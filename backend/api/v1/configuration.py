@@ -25,6 +25,7 @@ from backend.auth.guards import CurrentUser, get_current_user, require_analyst_o
 from backend.datasets import service as ds_svc
 from backend.datasets.service import get_dataset, update_stats
 from backend.db import session_store
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.schemas.configuration import (
     AttachDatasetRequest, BusinessConfigRequest, CanonicalColumnsRequest,
@@ -41,7 +42,7 @@ router = APIRouter(tags=["configuration"])
 def _get_session_or_404(tenant_id: str, session_id: str) -> dict:
     s = session_svc.get_session(tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     return s
 
 
@@ -87,7 +88,7 @@ def attach_dataset(
     _get_session_or_404(user.tenant_id, session_id)
     ds = get_dataset(user.tenant_id, body.dataset_id)
     if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise AppError("dataset_not_found", "Dataset not found", status_code=404)
 
     session = session_svc.attach_dataset(user.tenant_id, session_id, body.dataset_id)
     if session["status"] == "DRAFT":
@@ -107,7 +108,11 @@ def inspect_dataset(
 ):
     s = _get_session_or_404(user.tenant_id, session_id)
     if not s.get("dataset_id"):
-        raise HTTPException(status_code=400, detail="No dataset attached. POST /sessions/{id}/dataset first.")
+        raise AppError(
+            "session_no_dataset",
+            "No dataset attached. POST /sessions/{id}/dataset first.",
+            status_code=400,
+        )
 
     cached = session_store.get_field(user.tenant_id, session_id, "inspection")
     if cached:
@@ -115,13 +120,18 @@ def inspect_dataset(
 
     ds_meta = get_dataset(user.tenant_id, s["dataset_id"])
     if not ds_meta:
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+        raise AppError(
+            "dataset_file_missing", "Dataset file not found", status_code=404,
+            params={"session": s["name"]},
+        )
 
     import os
     if not os.path.exists(ds_meta["file_path"]):
-        raise HTTPException(
+        raise AppError(
+            "dataset_file_missing",
+            f"Dataset file not found on disk. Please re-upload the file for session '{s['name']}'.",
             status_code=404,
-            detail=f"Dataset file not found on disk. Please re-upload the file for session '{s['name']}'.",
+            params={"session": s["name"]},
         )
 
     try:
@@ -169,20 +179,20 @@ def inspect_dataset(
         from backend.dataframes.analysis import read_error_message
         kind = read_error_message(e)
         if kind == "empty":
-            raise HTTPException(
+            raise AppError(
+                "dataset_file_empty",
+                f"The file for session '{s['name']}' is empty or has no columns. "
+                "Upload a CSV file with at least a header row and data.",
                 status_code=422,
-                detail=(
-                    f"The file for session '{s['name']}' is empty or has no columns. "
-                    "Upload a CSV file with at least a header row and data."
-                ),
+                params={"session": s["name"]},
             )
         if kind == "parser":
-            raise HTTPException(
+            raise AppError(
+                "dataset_file_unreadable",
+                f"Could not read the file for session '{s['name']}': invalid CSV format ({e}). "
+                "Make sure the file is not corrupted and try again.",
                 status_code=422,
-                detail=(
-                    f"Could not read the file for session '{s['name']}': invalid CSV format ({e}). "
-                    "Make sure the file is not corrupted and try again."
-                ),
+                params={"session": s["name"], "reason": str(e)},
             )
         raise HTTPException(status_code=500, detail=f"Inspection failed: {e}")
 
@@ -212,14 +222,22 @@ def configure_columns(
     real_columns = [c["name"] for c in inspection.get("profile", {}).get("columns", [])]
 
     if is_canonical:
+        # The wizard's column-mapping step is where a user lands here, so both
+        # failures share one code and carry the schema's English as `reason`.
         try:
             req = CanonicalColumnsRequest(**body)
         except Exception as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise AppError(
+                "columns_config_invalid", str(e), status_code=422,
+                params={"reason": str(e)},
+            )
         try:
             req.validate_required(real_columns)
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise AppError(
+                "columns_config_invalid", str(e), status_code=422,
+                params={"reason": str(e)},
+            )
         config = {
             **req.model_dump(),
             "schema_version": "canonical_v1",
@@ -231,32 +249,38 @@ def configure_columns(
 
         def _require_column(value: Optional[str], field_label: str):
             if not value or not value.strip():
-                raise HTTPException(
+                raise AppError(
+                    "column_required",
+                    f"The '{field_label}' column is required and was not provided. "
+                    f"Select one of the available columns: {', '.join(real_columns)}.",
                     status_code=422,
-                    detail=(
-                        f"The '{field_label}' column is required and was not provided. "
-                        f"Select one of the available columns: {', '.join(real_columns)}."
-                    ),
+                    # Lower-cased so the param is a stable token ("date",
+                    # "target") the frontend can name in Spanish, not a label
+                    # it would have to render in English.
+                    params={
+                        "field": field_label.lower(),
+                        "columns": ", ".join(real_columns),
+                    },
                 )
             if real_columns and value not in real_columns:
-                raise HTTPException(
+                raise AppError(
+                    "column_not_in_file",
+                    f"Column '{value}' does not exist in the uploaded file. "
+                    f"Available columns: {', '.join(real_columns)}.",
                     status_code=422,
-                    detail=(
-                        f"Column '{value}' does not exist in the uploaded file. "
-                        f"Available columns: {', '.join(real_columns)}."
-                    ),
+                    params={"column": value, "columns": ", ".join(real_columns)},
                 )
 
         _require_column(req_old.date_column, "Date")
         _require_column(req_old.target_column, "Target")
         if req_old.sku_column is not None and req_old.sku_column.strip():
             if real_columns and req_old.sku_column not in real_columns:
-                raise HTTPException(
+                raise AppError(
+                    "column_not_in_file",
+                    f"Column '{req_old.sku_column}' (SKU) does not exist in the uploaded file. "
+                    f"Available columns: {', '.join(real_columns)}.",
                     status_code=422,
-                    detail=(
-                        f"Column '{req_old.sku_column}' (SKU) does not exist in the uploaded file. "
-                        f"Available columns: {', '.join(real_columns)}."
-                    ),
+                    params={"column": req_old.sku_column, "columns": ", ".join(real_columns)},
                 )
         config = {**req_old.model_dump(), "configured_at": _now(), "configured_by": user.user_id}
 
@@ -386,6 +410,9 @@ async def upload_and_attach(
 
     try:
         meta = await ds_svc.upload_dataset(user.tenant_id, user.user_id, file)
+    except AppError:
+        # Already carries its own code/params — wrapping it would strip them.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -509,13 +536,18 @@ def get_data_health(
     s = _get_session_or_404(user.tenant_id, session_id)
 
     if not s.get("dataset_id"):
-        raise HTTPException(400, "No dataset attached. POST /sessions/{id}/dataset first.")
+        raise AppError(
+            "session_no_dataset",
+            "No dataset attached. POST /sessions/{id}/dataset first.",
+            status_code=400,
+        )
 
     inspection = session_store.get_field(user.tenant_id, session_id, "inspection")
     if not inspection:
-        raise HTTPException(
-            400,
+        raise AppError(
+            "dataset_not_inspected",
             "Dataset not inspected yet. Call GET /sessions/{id}/inspect first.",
+            status_code=400,
         )
 
     if not refresh and inspection.get("health"):
@@ -530,16 +562,20 @@ def get_data_health(
     group_col  = col_cfg.get("sku_column")    or recommended.get("group")
 
     if not dt_col or not target_col:
-        raise HTTPException(
-            400,
+        raise AppError(
+            "columns_not_configured",
             "Cannot determine date/target columns. "
             "Call GET /sessions/{id}/inspect first, or configure columns via "
             "POST /sessions/{id}/configure/columns.",
+            status_code=400,
         )
 
     ds_meta = get_dataset(user.tenant_id, s["dataset_id"])
     if not ds_meta:
-        raise HTTPException(404, "Dataset file not found on disk")
+        raise AppError(
+            "dataset_file_missing", "Dataset file not found on disk", status_code=404,
+            params={"session": s["name"]},
+        )
 
     try:
         from backend.dataframes.io import read_dataframe
@@ -619,7 +655,10 @@ def get_dataset_analysis(
     """Rich dataset analysis for the pre-column wizard step."""
     try:
         return _get_dataset_analysis_impl(session_id, user)
-    except HTTPException:
+    except (AppError, HTTPException):
+        # AppError is a ValueError, not an HTTPException — without it listed
+        # here the impl's own 404/400 codes would be swallowed by the catch-all
+        # below and re-raised as a 500.
         raise
     except Exception as exc:
         log.exception(f"Unhandled error in analysis for session {session_id}")
@@ -631,23 +670,32 @@ def _get_dataset_analysis_impl(session_id: str, user):
 
     inspection = session_store.get_field(user.tenant_id, session_id, "inspection")
     if not inspection:
-        raise HTTPException(400, "Dataset not inspected yet. Call GET /sessions/{id}/inspect first.")
+        raise AppError(
+            "dataset_not_inspected",
+            "Dataset not inspected yet. Call GET /sessions/{id}/inspect first.",
+            status_code=400,
+        )
 
     cached = inspection.get("analysis")
     if cached:
         return ok(cached)
 
     if not s.get("dataset_id"):
-        raise HTTPException(400, "No dataset attached.")
+        raise AppError(
+            "session_no_dataset", "No dataset attached.", status_code=400,
+        )
 
     ds_meta = get_dataset(user.tenant_id, s["dataset_id"])
     if not ds_meta:
-        raise HTTPException(404, "Dataset not found")
+        raise AppError("dataset_not_found", "Dataset not found", status_code=404)
 
     import os
     fp = ds_meta["file_path"]
     if not os.path.exists(fp):
-        raise HTTPException(404, "Dataset file not found on disk")
+        raise AppError(
+            "dataset_file_missing", "Dataset file not found on disk", status_code=404,
+            params={"session": s["name"]},
+        )
 
     col_cfg    = session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {}
     recommended = inspection.get("profile", {}).get("recommended", {})

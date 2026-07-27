@@ -14,6 +14,7 @@ import {
   type AdminUser,
 } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { roleLabel } from '@/lib/enumLabels'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -74,14 +75,15 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function RoleBadge({ role }: { role: string }) {
+  const { t } = useLanguage()
   const color = role === 'admin' ? '#818cf8' : role === 'analyst' ? '#06b6d4' : '#94a3b8'
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: 99,
-      fontSize: 11, fontWeight: 600, textTransform: 'capitalize',
+      fontSize: 11, fontWeight: 600,
       color, background: color + '18',
     }}>
-      {role}
+      {roleLabel(t, role)}
     </span>
   )
 }
@@ -235,7 +237,7 @@ function UserFormModal({
             onFocus={e => (e.target.style.borderColor = '#818cf8')}
             onBlur={e => (e.target.style.borderColor = '#1e2030')}
           >
-            {ROLES.map(r => <option key={r} value={r} style={{ background: '#141520', textTransform: 'capitalize' }}>{r}</option>)}
+            {ROLES.map(r => <option key={r} value={r} style={{ background: '#141520' }}>{roleLabel(t, r)}</option>)}
           </select>
         </div>
 
@@ -396,7 +398,7 @@ function PermissionsModal({
             {t('users.permissions')}
           </h2>
           <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
-            {target.full_name || target.email} · <span style={{ textTransform: 'capitalize' }}>{target.role}</span>
+            {target.full_name || target.email} · <span>{roleLabel(t, target.role)}</span>
           </p>
         </div>
         <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
@@ -727,7 +729,7 @@ export default function UsersPage() {
           style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
         >
           <option value="">{t('users.all_roles')}</option>
-          {ROLES.map(r => <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r}</option>)}
+          {ROLES.map(r => <option key={r} value={r}>{roleLabel(t, r)}</option>)}
         </select>
       </div>
 

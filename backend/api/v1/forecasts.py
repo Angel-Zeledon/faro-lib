@@ -8,6 +8,7 @@ from backend.auth.guards import CurrentUser, get_current_user
 from backend.db import session_store
 from backend.db.connection import execute, query
 from backend.datasets.service import get_dataset
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.schemas.forecast import PredictRequest
 from backend.sessions import service as session_svc
@@ -36,11 +37,15 @@ def _enrich_forecast_points(pts: list) -> list:
 def _require_completed(tenant_id: str, session_id: str) -> dict:
     s = session_svc.get_session(tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     if s["status"] != "COMPLETED":
-        raise HTTPException(
+        # Opening any results screen while the run is still going trips this —
+        # the single most-hit guard in this module, so it carries the status.
+        raise AppError(
+            "session_still_training",
+            f"Session must be COMPLETED. Current: {s['status']}",
             status_code=409,
-            detail=f"Session must be COMPLETED. Current: {s['status']}",
+            params={"status": s["status"]},
         )
     return s
 
@@ -54,7 +59,9 @@ def get_training_results(
     _require_completed(user.tenant_id, session_id)
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Training results not found")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
     if level:
         rows = result.get("metrics", {}).get("rows", [])
         result = dict(result)
@@ -76,7 +83,9 @@ def get_run_warnings(session_id: str, user: CurrentUser = Depends(get_current_us
     _require_completed(user.tenant_id, session_id)
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="No results")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
     warnings = result.get("warnings") or {}
     return ok({
         "validation":  warnings.get("validation") or [],
@@ -89,7 +98,9 @@ def get_metrics(session_id: str, user: CurrentUser = Depends(get_current_user)):
     _require_completed(user.tenant_id, session_id)
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="No results")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
     return ok(result.get("metrics", {}))
 
 
@@ -98,7 +109,9 @@ def get_inventory(session_id: str, user: CurrentUser = Depends(get_current_user)
     _require_completed(user.tenant_id, session_id)
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="No results")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
     return ok(result.get("inventory", {}))
 
 
@@ -255,12 +268,20 @@ async def reconcile_actuals(
     try:
         actual_rows = read_rows(content, fmt="csv")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not parse CSV: {e}")
+        raise AppError(
+            "upload_parse_failed", f"Could not parse CSV: {e}",
+            status_code=400, params={"reason": str(e)},
+        )
 
     columns = list(actual_rows[0].keys()) if actual_rows else []
     for col in [date_col, target_col]:
         if actual_rows and col not in columns:
-            raise HTTPException(status_code=400, detail=f"Column '{col}' not found in uploaded file")
+            raise AppError(
+                "upload_column_missing",
+                f"Column '{col}' not found in uploaded file",
+                status_code=400,
+                params={"column": col, "columns": ", ".join(columns)},
+            )
 
     actual_rows = normalize_date_column(actual_rows, date_col)
 
@@ -352,7 +373,9 @@ def get_forecast_series(
 
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Training results not found")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
 
     forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
 
@@ -424,7 +447,9 @@ def get_sku_intelligence(
     _require_completed(user.tenant_id, session_id)
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Training results not found")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
 
     forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
 
@@ -527,12 +552,17 @@ def get_shap(
     _require_completed(user.tenant_id, session_id)
     result = session_store.get_training_result(user.tenant_id, session_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Training results not found")
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
 
     shap_data = result.get("metrics", {}).get("shap", {})
     sku_shap = shap_data.get(sku)
     if not sku_shap:
-        raise HTTPException(status_code=404, detail=f"No SHAP data for SKU '{sku}'")
+        raise AppError(
+            "shap_not_available", f"No SHAP data for SKU '{sku}'",
+            status_code=404, params={"sku": sku},
+        )
 
     # Find best model by lowest MAE
     metrics_rows = result.get("metrics", {}).get("rows", [])
@@ -619,7 +649,11 @@ async def detect_drift(
         ref_path = ds_meta.get("file_path") if ds_meta else None
 
     if not ref_path or not col_info:
-        raise HTTPException(status_code=409, detail="Session has no reference dataset configured")
+        raise AppError(
+            "drift_no_reference_dataset",
+            "Session has no reference dataset configured",
+            status_code=409,
+        )
 
     target_col = col_info.get("target_column") or col_info.get("target", "")
     group_col = col_info.get("sku_column") or col_info.get("sku") or col_info.get("group", "")
@@ -635,7 +669,10 @@ async def detect_drift(
         cur_fmt = "excel" if (file.filename and file.filename.endswith((".xlsx", ".xls"))) else "csv"
         cur_df = read_dataframe(content, fmt=cur_fmt)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Could not parse uploaded file: {e}")
+        raise AppError(
+            "upload_parse_failed", f"Could not parse uploaded file: {e}",
+            status_code=422, params={"reason": str(e)},
+        )
 
     try:
         from forecasting_core.monitoring.drift import DriftDetector

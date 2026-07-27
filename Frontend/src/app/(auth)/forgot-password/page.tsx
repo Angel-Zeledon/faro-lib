@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authForgotPassword, authForgotPasswordVerify, authResetPassword } from '@/lib/api'
 import { Zap, CheckCircle2, AlertTriangle, ArrowLeft, KeyRound, Mail, Lock } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
 const _input: React.CSSProperties = {
   width: '100%', padding: '10px 12px', boxSizing: 'border-box',
@@ -14,6 +16,8 @@ const _input: React.CSSProperties = {
 type Step = 'email' | 'code' | 'password' | 'done'
 
 export default function ForgotPasswordPage() {
+  const { t } = useLanguage()
+  const authErrorText = useAuthErrorText()
   const router = useRouter()
   const [step,      setStep]      = useState<Step>('email')
   const [email,     setEmail]     = useState('')
@@ -36,7 +40,7 @@ export default function ForgotPasswordPage() {
       await authForgotPassword(email)
       setStep('code')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Request failed')
+      setError(authErrorText(err, 'auth.recover_request_failed'))
     } finally {
       setLoading(false)
     }
@@ -61,7 +65,7 @@ export default function ForgotPasswordPage() {
   async function handleCodeSubmit(e: React.FormEvent) {
     e.preventDefault()
     const fullCode = code.join('')
-    if (fullCode.length < 6) { setError('Enter the complete 6-digit code'); return }
+    if (fullCode.length < 6) { setError(t('auth.recover_code_incomplete')); return }
     setError(null)
     setLoading(true)
     try {
@@ -69,7 +73,7 @@ export default function ForgotPasswordPage() {
       setResetToken(res.reset_token)
       setStep('password')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Invalid code')
+      setError(authErrorText(err, 'auth.recover_code_invalid'))
     } finally {
       setLoading(false)
     }
@@ -79,8 +83,8 @@ export default function ForgotPasswordPage() {
 
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (pw !== pw2) { setError('Passwords do not match'); return }
-    if (pw.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (pw !== pw2) { setError(t('auth.pw_mismatch')); return }
+    if (pw.length < 8) { setError(t('auth.pw_too_short')); return }
     setError(null)
     setLoading(true)
     try {
@@ -88,7 +92,7 @@ export default function ForgotPasswordPage() {
       setStep('done')
       setTimeout(() => router.replace('/login'), 2500)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Reset failed')
+      setError(authErrorText(err, 'auth.reset_failed'))
     } finally {
       setLoading(false)
     }
@@ -125,10 +129,10 @@ export default function ForgotPasswordPage() {
           <Zap size={20} color="#fff" strokeWidth={2.5} />
         </div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
-          Recover your password
+          {t('auth.recover_title')}
         </h1>
         <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-          We&apos;ll send a verification code to your email
+          {t('auth.recover_subtitle')}
         </p>
       </div>
 
@@ -149,8 +153,8 @@ export default function ForgotPasswordPage() {
         {step === 'done' && (
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={36} color="#22c55e" style={{ margin: '0 auto 12px' }} />
-            <p style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', margin: '0 0 6px' }}>Password updated!</p>
-            <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>Redirecting to login…</p>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', margin: '0 0 6px' }}>{t('auth.pw_updated')}</p>
+            <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>{t('auth.redirecting_login')}</p>
           </div>
         )}
 
@@ -159,13 +163,13 @@ export default function ForgotPasswordPage() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <Mail size={14} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Enter your email address</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('auth.recover_step_email')}</span>
             </div>
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label htmlFor="forgot-email" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
-                  Email address
+                  {t('auth.email_label')}
                 </label>
                 <input
                   id="forgot-email" name="email"
@@ -175,9 +179,9 @@ export default function ForgotPasswordPage() {
                   onBlur={e => (e.target.style.borderColor = '#1e2030')}
                 />
               </div>
-              <PrimaryBtn loading={loading} label="Send verification code" loadingLabel="Sending…" />
+              <PrimaryBtn loading={loading} label={t('auth.recover_send_code')} loadingLabel={t('auth.recover_sending')} />
             </form>
-            <BackToLogin />
+            <BackToLogin label={t('auth.back_to_login')} />
           </>
         )}
 
@@ -186,11 +190,11 @@ export default function ForgotPasswordPage() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <KeyRound size={14} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Enter the verification code</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('auth.recover_step_code')}</span>
             </div>
             <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>
-              We sent a 6-digit code to <strong style={{ color: '#94a3b8' }}>{email}</strong>.
-              It expires in 30 hours.
+              {t('auth.recover_code_sent_to')} <strong style={{ color: '#94a3b8' }}>{email}</strong>.
+              {' '}{t('auth.recover_code_expires')}
             </p>
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handleCodeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -199,7 +203,7 @@ export default function ForgotPasswordPage() {
                   <input
                     key={i}
                     ref={el => { codeRefs.current[i] = el }}
-                    name={`reset-code-${i + 1}`} aria-label={`Verification code digit ${i + 1}`}
+                    name={`reset-code-${i + 1}`} aria-label={t('auth.recover_code_digit', { n: i + 1 })}
                     type="text" inputMode="numeric" maxLength={1}
                     value={digit}
                     onChange={e => handleCodeInput(i, e.target.value)}
@@ -215,15 +219,15 @@ export default function ForgotPasswordPage() {
                   />
                 ))}
               </div>
-              <PrimaryBtn loading={loading} label="Verify code" loadingLabel="Verifying…" />
+              <PrimaryBtn loading={loading} label={t('auth.recover_verify')} loadingLabel={t('auth.recover_verifying')} />
             </form>
             <div style={{ textAlign: 'center', marginTop: 14, fontSize: 12, color: '#64748b' }}>
-              Didn&apos;t receive it?{' '}
+              {t('auth.recover_not_received')}{' '}
               <button
                 style={{ all: 'unset', cursor: 'pointer', color: '#818cf8' }}
                 onClick={() => { setStep('email'); setCode(['','','','','','']); setError(null) }}
               >
-                Try again
+                {t('auth.recover_try_again')}
               </button>
             </div>
           </>
@@ -234,36 +238,36 @@ export default function ForgotPasswordPage() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <Lock size={14} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Set your new password</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('auth.recover_step_password')}</span>
             </div>
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label htmlFor="forgot-new-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
-                  New password
+                  {t('auth.new_password_label')}
                 </label>
                 <input
                   id="forgot-new-password" name="new_password"
                   type="password" required value={pw} onChange={e => setPw(e.target.value)}
-                  placeholder="Min. 8 characters" style={_input}
+                  placeholder={t('auth.password_placeholder')} style={_input}
                   onFocus={e => (e.target.style.borderColor = '#818cf8')}
                   onBlur={e => (e.target.style.borderColor = '#1e2030')}
                 />
               </div>
               <div>
                 <label htmlFor="forgot-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
-                  Confirm password
+                  {t('auth.confirm_password_label')}
                 </label>
                 <input
                   id="forgot-confirm-password" name="confirm_password"
                   type="password" required value={pw2} onChange={e => setPw2(e.target.value)}
-                  placeholder="Repeat password"
+                  placeholder={t('auth.confirm_password_placeholder')}
                   style={{ ..._input, borderColor: pw2 && pw !== pw2 ? '#ef4444' : '#1e2030' }}
                   onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#818cf8')}
                   onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#1e2030')}
                 />
               </div>
-              <PrimaryBtn loading={loading} label="Reset password" loadingLabel="Saving…" />
+              <PrimaryBtn loading={loading} label={t('auth.reset_password_btn')} loadingLabel={t('auth.saving')} />
             </form>
           </>
         )}
@@ -300,12 +304,12 @@ function PrimaryBtn({ loading, label, loadingLabel }: { loading: boolean; label:
   )
 }
 
-function BackToLogin() {
+function BackToLogin({ label }: { label: string }) {
   return (
     <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#64748b' }}>
       <Link href="/login" style={{ color: '#818cf8', textDecoration: 'none' }}>
         <ArrowLeft size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />
-        Back to login
+        {label}
       </Link>
     </p>
   )

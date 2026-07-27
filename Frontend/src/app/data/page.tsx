@@ -18,6 +18,10 @@ import {
  Layers, ArrowLeft, BarChart2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import {
+  seasonalityClassLabel, trendDirectionLabel, stationarityLabel,
+  crostonClassLabel, distributionLabel,
+} from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -498,15 +502,15 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  {row.cv != null ? row.cv.toFixed(2) : '—'}
  </td>
  <td style={{ ...TD, color: seasColor }}>
- {row.seasonality_class ?? '—'}
+ {seasonalityClassLabel(t, row.seasonality_class)}
  </td>
  <td style={TD}>{row.dominant_period ?? '—'}</td>
  <td style={{ ...TD, color: trendColor }}>
  {row.trend_direction === 'increasing' ? '↑ ' : row.trend_direction === 'decreasing' ? '↓ ' : row.trend_direction ? '→ ' : ''}
- {row.trend_direction ?? '—'}
+ {trendDirectionLabel(t, row.trend_direction)}
  </td>
- <td style={{ ...TD, color: statColor }}>{row.stationarity ?? '—'}</td>
- <td style={{ ...TD, color: C.muted, fontSize: 11 }}>{row.croston_class ?? '—'}</td>
+ <td style={{ ...TD, color: statColor }}>{stationarityLabel(t, row.stationarity)}</td>
+ <td style={{ ...TD, color: C.muted, fontSize: 11 }}>{crostonClassLabel(t, row.croston_class)}</td>
  </tr>
  )
  })}
@@ -560,13 +564,13 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  [t('data.stat_skewness'), n(dist.skewness)],
  [t('data.stat_zero_pct'), pct(dist.zero_pct)],
  [t('data.stat_outliers'), pct(dist.outlier_pct)],
- [t('data.stat_best_dist'), String(dist.best_distribution ?? '—')],
+ [t('data.stat_best_dist'), distributionLabel(t, dist.best_distribution as string | null)],
  ],
  },
  {
  title: t('data.panel_seasonality'), color: C.green,
  rows: [
- [t('data.stat_class'), String(seas.classification ?? '—')],
+ [t('data.stat_class'), seasonalityClassLabel(t, seas.classification as string | null)],
  [t('data.stat_period'), String(seas.dominant_period ?? '—')],
  [t('data.stat_strength'), n(seas.seasonal_strength)],
  [t('data.stat_stl_seasonal'), n(dec.seasonal_strength)],
@@ -576,7 +580,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  {
  title: t('data.panel_trend'), color: C.amber,
  rows: [
- [t('data.stat_direction'), String(mk.direction ?? '—')],
+ [t('data.stat_direction'), trendDirectionLabel(t, mk.direction as string | null)],
  [t('data.stat_mk_pvalue'), pf(mk.pvalue)],
  [t('data.stat_sens_slope'), n(trend.sens_slope, 4)],
  [t('data.stat_linear_r2'), n(lin.r2)],
@@ -586,7 +590,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  {
  title: t('data.panel_stationarity'), color: C.muted,
  rows: [
- [t('data.stat_verdict'), String(stat.verdict ?? '—')],
+ [t('data.stat_verdict'), stationarityLabel(t, stat.verdict as string | null)],
  [t('data.stat_diff_order'), String(stat.diff_order ?? '—')],
  [t('data.stat_adf_pvalue'), pf(adf.pvalue)],
  [t('data.stat_kpss_pvalue'), pf(kpss.pvalue)],
@@ -772,10 +776,10 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
  textTransform: 'uppercase', marginBottom: 10 }}>{t('data.section_demand_class')}</div>
  {[
- [t('data.dc_croston_class'), String(croston.classification ?? '—')],
+ [t('data.dc_croston_class'), crostonClassLabel(t, croston.classification as string | null)],
  [t('data.dc_adi'), n(croston.adi)],
  [t('data.dc_cv2'), n(croston.cv2)],
- [t('data.dc_best_fit_dist'), String(dist.best_distribution ?? '—')],
+ [t('data.dc_best_fit_dist'), distributionLabel(t, dist.best_distribution as string | null)],
  [t('data.dc_is_normal'), norm.is_normal != null ? (norm.is_normal ? t('common.yes') : t('common.no')) : '—'],
  ].map(([l, v]) => (
  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>

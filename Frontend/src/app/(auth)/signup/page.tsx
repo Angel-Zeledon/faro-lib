@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { authSignup } from '@/lib/api'
 import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
 // Composition, deliberately NOT a mirror of /login: this screen carries more
 // fields, so the heading is lifted OUT of the card and set as an editorial
@@ -13,11 +14,12 @@ import { useLanguage } from '@/contexts/LanguageContext'
 // Ambient canvas, wordmark and fixed shell come from (auth)/layout.tsx.
 
 function PasswordStrength({ password }: { password: string }) {
+  const { t } = useLanguage()
   const checks = [
-    { label: 'At least 8 characters', ok: password.length >= 8 },
-    { label: 'Uppercase letter',       ok: /[A-Z]/.test(password) },
-    { label: 'Number',                 ok: /\d/.test(password) },
-    { label: 'Special character',      ok: /[^A-Za-z0-9]/.test(password) },
+    { label: t('auth.pw_check_length'),    ok: password.length >= 8 },
+    { label: t('auth.pw_check_uppercase'), ok: /[A-Z]/.test(password) },
+    { label: t('auth.pw_check_number'),    ok: /\d/.test(password) },
+    { label: t('auth.pw_check_special'),   ok: /[^A-Za-z0-9]/.test(password) },
   ]
   const score = checks.filter(c => c.ok).length
   const color = score < 2 ? '#dc2626' : score < 4 ? '#d97706' : '#16a34a'
@@ -51,6 +53,11 @@ function PasswordStrength({ password }: { password: string }) {
 
 function SignupPageContent() {
   const { t } = useLanguage()
+  // Pydantic rejects a malformed email with its own English prose.
+  // `authErrorText` rebuilds the sentence from the machine-readable `type` +
+  // field, so the user reads Spanish instead of "value is not a valid email
+  // address: …".
+  const authErrorText = useAuthErrorText()
   const searchParams = useSearchParams()
   const wantsDemo = searchParams.get('demo') === '1'
   const loginHref = wantsDemo ? '/login?demo=1' : '/login'
@@ -87,7 +94,7 @@ function SignupPageContent() {
       })
       setDone(true)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Signup failed')
+      setError(authErrorText(err, 'auth.signup_failed'))
     } finally {
       setLoading(false)
     }

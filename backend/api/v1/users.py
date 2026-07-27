@@ -10,8 +10,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from backend.api.v1.auth import _reject_weak_password
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
-from backend.auth.password import validate_strength
 from backend.config import settings
 from backend.db.connection import execute, query_one
 from backend.errors import AppError
@@ -66,20 +66,23 @@ class ProfileUpdate(BaseModel):
 def get_me(user: CurrentUser = Depends(get_current_user)):
     u = user_svc.get_user(user.tenant_id, user.user_id)
     if not u:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
     return ok(user_svc._public(u))
 
 
 @router.patch("/me")
 def update_me(body: ProfileUpdate, user: CurrentUser = Depends(get_current_user)):
     if body.full_name is not None and not body.full_name.strip():
-        raise HTTPException(status_code=400, detail="full_name cannot be blank")
+        raise AppError(
+            "full_name_required", "full_name cannot be blank", status_code=400,
+        )
     if body.whatsapp_number:
         num = body.whatsapp_number.strip()
         if not re.fullmatch(r"\+[1-9]\d{7,14}", num):
-            raise HTTPException(
+            raise AppError(
+                "whatsapp_number_invalid_format",
+                "whatsapp_number must be E.164 format with country code, e.g. +573001234567",
                 status_code=422,
-                detail="whatsapp_number must be E.164 format with country code, e.g. +573001234567",
             )
     if body.full_name is not None or body.whatsapp_number is not None:
         updated = user_svc.update_profile(
@@ -204,7 +207,9 @@ def create_user_admin(
 
     from backend.api.v1.auth import _lookup_email
     if _lookup_email(body.email):
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise AppError(
+            "email_already_registered", "Email already registered", status_code=409,
+        )
 
     from backend.entitlements.service import enforce_limit
     enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
@@ -243,9 +248,11 @@ def resend_verification_email(
 ):
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
     if target.get("email_verified") and target.get("status") != "pending_confirmation":
-        raise HTTPException(status_code=400, detail="User email is already verified")
+        raise AppError(
+            "user_already_verified", "User email is already verified", status_code=400,
+        )
 
     from backend.auth.jwt_handler import create_signed_token
     verify_token = create_signed_token(
@@ -258,7 +265,11 @@ def resend_verification_email(
     sent = send_account_setup_email(target["email"], name, setup_url)
     if not sent:
         log.warning("[resend-verification] email delivery failed for user=%s — check SMTP config", user_id)
-        raise HTTPException(status_code=503, detail="Email delivery failed. Check SMTP configuration.")
+        raise AppError(
+            "email_delivery_failed",
+            "Email delivery failed. Check SMTP configuration.",
+            status_code=503,
+        )
     log.info("[resend-verification] sent to user=%s by admin=%s", user_id, user.user_id)
     return ok({"message": "Verification email sent.", "email": target["email"]})
 
@@ -271,7 +282,7 @@ def update_user_admin(
 ):
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
 
     if body.role is not None and body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Options: {sorted(VALID_ROLES)}")
@@ -314,10 +325,12 @@ def delete_user_admin(
     user: CurrentUser = Depends(require_admin),
 ):
     if user_id == user.user_id:
-        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+        raise AppError(
+            "cannot_delete_own_account", "Cannot delete your own account", status_code=400,
+        )
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
     user_svc.delete_user(user.tenant_id, user_id)
     log.info("[delete-user] admin=%s deleted user=%s", user.user_id, user_id)
     return ok({"deleted": user_id})
@@ -330,12 +343,14 @@ def set_user_status(
     user: CurrentUser = Depends(require_admin),
 ):
     if user_id == user.user_id:
-        raise HTTPException(status_code=400, detail="Cannot change your own status")
+        raise AppError(
+            "cannot_change_own_status", "Cannot change your own status", status_code=400,
+        )
     if body.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Options: {sorted(VALID_STATUSES)}")
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
     user_svc.update_status(user.tenant_id, user_id, body.status)
     updated = user_svc.get_user(user.tenant_id, user_id)
     return ok(user_svc._public(updated))
@@ -348,7 +363,7 @@ def get_user_permissions(
 ):
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
     return ok({
         "user_id": user_id,
         "permissions": user_svc.get_permissions(user.tenant_id, user_id),
@@ -364,7 +379,7 @@ def set_user_permissions(
 ):
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
     user_svc.set_permissions(user.tenant_id, user_id, body.permissions)
     return ok({
         "user_id": user_id,
@@ -388,13 +403,11 @@ def request_password_change(
     body: ChangePasswordRequest,
     user: CurrentUser = Depends(get_current_user),
 ):
-    valid, msg = validate_strength(body.new_password)
-    if not valid:
-        raise HTTPException(status_code=400, detail=msg)
+    _reject_weak_password(body.new_password)
 
     u = user_svc.get_user(user.tenant_id, user.user_id)
     if not u:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user_not_found", "User not found", status_code=404)
 
     code = _issue_code(user.user_id, user.tenant_id, purpose="change")
 
@@ -417,9 +430,7 @@ def confirm_password_change(
     body: ChangePasswordConfirm,
     user: CurrentUser = Depends(get_current_user),
 ):
-    valid, msg = validate_strength(body.new_password)
-    if not valid:
-        raise HTTPException(status_code=400, detail=msg)
+    _reject_weak_password(body.new_password)
 
     row = query_one(
         """SELECT id, code_hash FROM pw_change_codes
@@ -429,14 +440,20 @@ def confirm_password_change(
         (user.user_id, _CODE_MAX_ATTEMPTS),
     )
     if not row:
-        raise HTTPException(status_code=400, detail="No active code found. Request a new one.")
+        raise AppError(
+            "change_password_code_missing",
+            "No active code found. Request a new one.",
+            status_code=400,
+        )
 
     if not hmac.compare_digest(row["code_hash"], _hash_code(body.code.strip())):
         execute(
             "UPDATE pw_change_codes SET attempts = attempts + 1 WHERE id = %s",
             (row["id"],),
         )
-        raise HTTPException(status_code=400, detail="Invalid verification code.")
+        raise AppError(
+            "change_password_code_invalid", "Invalid verification code.", status_code=400,
+        )
 
     execute("UPDATE pw_change_codes SET used = TRUE WHERE id = %s", (row["id"],))
     user_svc.update_password(user.tenant_id, user.user_id, body.new_password)
@@ -457,7 +474,9 @@ def invite_user(
 
     from backend.api.v1.auth import _lookup_email
     if _lookup_email(body.email):
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise AppError(
+            "email_already_registered", "Email already registered", status_code=409,
+        )
 
     from backend.entitlements.service import enforce_limit
     enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))

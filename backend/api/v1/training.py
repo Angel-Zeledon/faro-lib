@@ -1,11 +1,12 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.config import settings
 from backend.db import session_store
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 from backend.sessions.state_machine import PRE_TRAIN_STATES
@@ -29,13 +30,17 @@ def start_training(
 ):
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
 
     if s["status"] not in PRE_TRAIN_STATES:
-        raise HTTPException(
+        # Re-launching an already-trained (or still-running) session is a normal
+        # mis-click in the wizard, so the status travels as a param.
+        raise AppError(
+            "session_not_trainable",
+            f"Session must be in {sorted(PRE_TRAIN_STATES)} to start training. "
+            f"Current status: {s['status']}",
             status_code=409,
-            detail=f"Session must be in {sorted(PRE_TRAIN_STATES)} to start training. "
-                   f"Current status: {s['status']}",
+            params={"status": s["status"]},
         )
 
     # Validate required configs are present in DB
@@ -44,19 +49,24 @@ def start_training(
         if not session_store.get_field(user.tenant_id, session_id, field):
             missing.append(field.replace("_cfg", ""))
     if missing:
-        raise HTTPException(
+        raise AppError(
+            "training_config_incomplete",
+            f"Missing required configuration: {missing}. "
+            "Complete the wizard steps before training.",
             status_code=422,
-            detail=f"Missing required configuration: {missing}. "
-                   "Complete the wizard steps before training.",
+            params={"missing": ", ".join(missing)},
         )
 
     # Rate limit: max 3 concurrent jobs per tenant (bypassed in testing mode)
     if not settings.testing_mode:
         active = job_service.count_active_jobs_for_tenant(user.tenant_id)
         if active >= 3:
-            raise HTTPException(
+            raise AppError(
+                "too_many_active_jobs",
+                f"Too many active training jobs ({active}). "
+                "Wait for a job to finish before queuing another.",
                 status_code=429,
-                detail=f"Too many active training jobs ({active}). Wait for a job to finish before queuing another.",
+                params={"active": active, "max": 3},
             )
 
     from backend.sessions import family_service as fam
@@ -79,7 +89,7 @@ def list_jobs(session_id: str, user: CurrentUser = Depends(get_current_user)):
 def get_job(job_id: str, user: CurrentUser = Depends(get_current_user)):
     job = job_service.get_job(user.tenant_id, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError("job_not_found", "Job not found", status_code=404)
     return ok(job)
 
 
@@ -91,7 +101,7 @@ def get_job_logs(
 ):
     job = job_service.get_job(user.tenant_id, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError("job_not_found", "Job not found", status_code=404)
 
     lines = session_store.get_logs(user.tenant_id, job["session_id"], job_id, tail=tail)
     return ok({"job_id": job_id, "lines": lines, "total": len(lines)})
@@ -105,7 +115,7 @@ def get_train_status(session_id: str, user: CurrentUser = Depends(get_current_us
     """
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
 
     last_job_id = s.get("last_job_id")
     if not last_job_id:
@@ -122,10 +132,18 @@ def get_train_status(session_id: str, user: CurrentUser = Depends(get_current_us
 
 @router.delete("/jobs/{job_id}", status_code=200)
 def cancel_job(job_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+    # Resolve first so a missing job is a 404 with its own code instead of the
+    # service's English "Job not found" arriving as a 409.
+    existing = job_service.get_job(user.tenant_id, job_id)
+    if not existing:
+        raise AppError("job_not_found", "Job not found", status_code=404)
     try:
         job = job_service.cancel_job(user.tenant_id, job_id)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise AppError(
+            "job_not_cancellable", str(e), status_code=409,
+            params={"status": existing["status"]},
+        )
 
     try:
         session_svc.force_status(user.tenant_id, job["session_id"], "CANCELLED")

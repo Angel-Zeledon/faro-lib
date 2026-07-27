@@ -6,6 +6,7 @@ import { authLogin } from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
 import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
 // Composition: the card sits left of centre and a touch above the optical
 // midline, leaving the open right-hand field for the beam to sweep into and
@@ -14,6 +15,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 function LoginPageContent() {
   const { t } = useLanguage()
+  const authErrorText = useAuthErrorText()
   const router = useRouter()
   const searchParams = useSearchParams()
   const wantsDemo = searchParams.get('demo') === '1'
@@ -47,7 +49,7 @@ function LoginPageContent() {
       })
       router.replace(destination)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+      setError(authErrorText(err, 'auth.login_failed'))
     } finally {
       setLoading(false)
     }

@@ -21,6 +21,7 @@ import {
 import Button from '@/components/ui/Button'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { granularityLabel, seriesTypeLabel } from '@/lib/enumLabels'
 import { coverageUnitShort } from '@/lib/period'
 import { formatMoney } from '@/lib/currency'
 import {
@@ -61,13 +62,7 @@ const GRANULARITY_LABELS: Record<string, string> = {
   yearly:    'Y',
 }
 
-const GRANULARITY_FULL: Record<string, string> = {
-  daily:     'Daily',
-  weekly:    'Weekly',
-  monthly:   'Monthly',
-  quarterly: 'Quarterly',
-  yearly:    'Yearly',
-}
+// Full granularity names are localized — see `granularityLabel`.
 
 interface CIBand {
   key:    string
@@ -282,7 +277,7 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick }: {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
         <span style={{ fontSize: 10, fontWeight: 500, color, background: color + '18', borderRadius: 4, padding: '1px 5px' }}>
-          {seriesType}
+          {seriesTypeLabel(t, seriesType)}
         </span>
         {best?.mae !== null && best && (
           <span style={{ fontSize: 10, color: 'var(--dim)' }}>MAE {fmt(best.mae)}</span>
@@ -987,26 +982,28 @@ function ChartPanel({ sessionId, sku, isDark }: {
       ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
       ...data.metrics.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null] as (string | number | null)[]),
     ]
+    // The workbook is opened by the user, so its sheet names and the Summary
+    // sheet's row labels are copy, not field names — they go through i18n.
     const summaryRows: (string | number | null)[][] = [
-      ['Metric', 'Value'],
+      [t('skus.xls_metric'), t('skus.xls_value')],
       ['SKU', sku],
-      ['Model', data.model ?? 'N/A'],
-      ['Granularity', data.applied_granularity],
-      ['Historical Points', data.historical.length],
-      ['Forecast Steps', data.forecast.length],
+      [t('skus.xls_model'), data.model ?? '—'],
+      [t('skus.xls_granularity'), granularityLabel(t, data.applied_granularity)],
+      [t('skus.xls_historical_points'), data.historical.length],
+      [t('skus.xls_forecast_steps'), data.forecast.length],
       ...(data.stats ? [
-        ['Mean',   data.stats.mean],
-        ['Std Dev', data.stats.std],
-        ['Min',    data.stats.min],
-        ['Max',    data.stats.max],
-        ['Median', data.stats.median],
-        ['N',      data.stats.n],
+        [t('skus.xls_mean'),   data.stats.mean],
+        [t('skus.xls_std'),    data.stats.std],
+        [t('skus.xls_min'),    data.stats.min],
+        [t('skus.xls_max'),    data.stats.max],
+        [t('skus.xls_median'), data.stats.median],
+        [t('skus.xls_n'),      data.stats.n],
       ] as (string | number | null)[][] : []),
     ]
     downloadWorkbook(`forecast_${sku}_${data.applied_granularity}.xlsx`, [
-      { name: 'Forecast', rows: forecastRows },
-      { name: 'Metrics',  rows: metricRows },
-      { name: 'Summary',  rows: summaryRows },
+      { name: t('skus.xls_sheet_forecast'), rows: forecastRows },
+      { name: t('skus.xls_sheet_metrics'),  rows: metricRows },
+      { name: t('skus.xls_sheet_summary'),  rows: summaryRows },
     ]).then(() => setShowExportMenu(false))
   }, [sku, data])
 
@@ -1097,7 +1094,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
           options={validGranularities.map(g => ({
             value: g,
             label: GRANULARITY_LABELS[g] ?? g,
-            title: GRANULARITY_FULL[g] ?? g,
+            title: granularityLabel(t, g),
           }))}
         />
 
@@ -2016,7 +2013,7 @@ export default function SkusPage() {
                     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1 }}>
                       {skuQuality ? (
                         <>
-                          <span style={{ color: skuColor }}>{skuQuality.series_type}</span>
+                          <span style={{ color: skuColor }}>{seriesTypeLabel(t, skuQuality.series_type)}</span>
                           {' · '}
                           {skuQuality.n_rows} {t('skus.rows_label')} · {pct(skuQuality.quality_score)} {t('skus.quality_label_lower')}
                         </>

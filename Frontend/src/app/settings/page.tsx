@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button'
 import Spinner from '@/components/ui/Spinner'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { webhookEventLabel } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
@@ -281,7 +282,7 @@ function WebhooksTab() {
             {hooks.map(h => (
               <tr key={h.id}>
                 <td style={{ fontFamily: 'monospace', fontSize: 11, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.url}</td>
-                <td style={{ fontSize: 11 }}>{h.events.join(', ')}</td>
+                <td style={{ fontSize: 11 }}>{h.events.map(e => webhookEventLabel(t, e)).join(', ')}</td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{h.created_at.slice(0, 10)}</td>
                 <td>
                   <Button variant="danger" size="sm" loading={deleting === h.id} icon={<Trash2 size={11} />} onClick={() => handleDelete(h.id)}>

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasources import service as svc
 from backend.datasources.service import SQL_ENGINES
+from backend.errors import AppError
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/data-sources", tags=["data-sources"])
@@ -97,10 +98,26 @@ class SaveAsNewRequest(BaseModel):
         return v
 
 
+def _service_error(e: ValueError) -> Exception:
+    """Data-source service failure → 400.
+
+    An ``AppError`` is a ValueError that already carries its own status, code
+    and params; hand it straight back so migrating a service message to a code
+    is enough — otherwise this wrapper would flatten it to English prose and
+    the user would keep reading English.
+    """
+    if isinstance(e, AppError):
+        return e
+    return HTTPException(status_code=400, detail=str(e))
+
+
 def _ds_or_404(tenant_id: str, source_id: str) -> dict:
     src = svc.get_source(tenant_id, source_id)
     if not src:
-        raise HTTPException(status_code=404, detail=f"Data source {source_id} not found")
+        raise AppError(
+            "data_source_not_found", f"Data source {source_id} not found",
+            status_code=404, params={"source_id": source_id},
+        )
     return src
 
 
@@ -141,7 +158,7 @@ async def create_file_source(
         )
         return ok(src)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── Create SQL source ──────────────────────────────────────────────────────────
@@ -166,7 +183,7 @@ def create_sql_source(
         )
         return ok(src)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── Replace file ───────────────────────────────────────────────────────────────
@@ -182,7 +199,7 @@ async def replace_file(
         src = await svc.replace_file_source(user.tenant_id, user.user_id, source_id, file)
         return ok(src)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── Update SQL config ──────────────────────────────────────────────────────────
@@ -207,7 +224,7 @@ def update_sql_config(
         )
         return ok(src)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── Test SQL connection ────────────────────────────────────────────────────────
@@ -235,7 +252,7 @@ def execute_query(
         result = svc.execute_sql_query(user.tenant_id, source_id, body.sql, limit=body.limit)
         return ok(result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── Save SQL query ─────────────────────────────────────────────────────────────
@@ -265,7 +282,7 @@ def get_preview(
         result = svc.get_preview(user.tenant_id, source_id, rows=rows, sheet=sheet)
         return ok(result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── In-app editor ────────────────────────────────────────────────────────────
@@ -280,7 +297,7 @@ def edit_table(
         result = svc.load_editable_table(user.tenant_id, source_id)
         return ok(result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 @router.post("/{source_id}/save-as-new")
@@ -296,7 +313,7 @@ def save_as_new(
         )
         return ok(new_ds)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
 
 # ── Rename / update metadata ───────────────────────────────────────────────────
@@ -324,9 +341,10 @@ def delete_source(
     try:
         svc.delete_source(user.tenant_id, source_id)
     except psycopg2.errors.ForeignKeyViolation:
-        raise HTTPException(
+        raise AppError(
+            "data_source_in_use",
+            "Cannot delete: this data source is still referenced by one or more sessions.",
             status_code=409,
-            detail="Cannot delete: this data source is still referenced by one or more sessions.",
         )
     return ok({"deleted": source_id})
 
@@ -348,7 +366,7 @@ def analyze_source(
     try:
         df = svc.load_dataframe(user.tenant_id, source_id, sheet=sheet)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
     detected = svc.detect_columns(df)
     dc = date_col or detected["date_col"]
@@ -409,7 +427,7 @@ def analyze_sku(
     try:
         df = svc.load_dataframe(user.tenant_id, source_id, sheet=sheet)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _service_error(e)
 
     try:
         from backend.dataframes.series import filter_dataframe_by_date

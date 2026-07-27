@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from backend.activity.service import log_action
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.schemas.session import SessionCreate, SessionUpdate
 from backend.sessions import service as session_svc
@@ -52,7 +53,7 @@ def list_session_summaries(
 def get_session(session_id: str, user: CurrentUser = Depends(get_current_user)):
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     return ok(s)
 
 
@@ -65,7 +66,7 @@ def update_session(
     from backend.db.connection import execute
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
 
     updates = {}
     if body.name is not None:
@@ -97,9 +98,13 @@ def delete_session(
 ):
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise AppError("session_not_found", "Session not found", status_code=404)
     if s["status"] == "RUNNING":
-        raise HTTPException(status_code=409, detail="Cannot delete a running session")
+        raise AppError(
+            "session_running_cannot_delete",
+            "Cannot delete a running session",
+            status_code=409,
+        )
     session_svc.delete_session(user.tenant_id, session_id)
     log_action(
         user.tenant_id, user.user_id, "session.delete", resource=session_id,

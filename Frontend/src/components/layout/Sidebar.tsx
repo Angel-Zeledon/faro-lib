@@ -14,6 +14,7 @@ import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { roleLabel } from '@/lib/enumLabels'
 import { useEntitlements } from '@/lib/entitlements'
 import UpsellModal from './UpsellModal'
 
@@ -245,7 +246,7 @@ export default function Sidebar() {
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.full_name || user.email.split('@')[0]}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'capitalize' }}>{user.role}</div>
+                  <div style={{ fontSize: 11, color: 'var(--dim)' }}>{roleLabel(t, user.role)}</div>
                 </div>
                 <button
                   onClick={handleLogout}

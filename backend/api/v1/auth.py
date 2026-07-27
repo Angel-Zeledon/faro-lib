@@ -11,7 +11,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 _security = HTTPBearer(auto_error=False)
@@ -23,6 +23,7 @@ from backend.auth.jwt_handler import (
 from backend.auth.password import validate_strength
 from backend.config import settings
 from backend.db.connection import execute, query_one
+from backend.errors import AppError
 from backend.schemas.auth import (
     ForgotPasswordRequest, ForgotPasswordVerifyRequest,
     LoginRequest, RefreshRequest,
@@ -73,7 +74,25 @@ def _check_rate(key: str, max_attempts: int, window_secs: int) -> None:
                 dq.append(now)
 
     if not allowed:
-        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+        raise AppError(
+            "too_many_attempts",
+            "Too many attempts. Please try again later.",
+            status_code=429,
+        )
+
+
+def _reject_weak_password(password: str) -> None:
+    """Guard every password entry point with one localizable code.
+
+    ``validate_strength`` returns an English sentence per broken rule; the user
+    must read this in their own language, so the rules travel as a single stable
+    code and the frontend renders the full requirement list from
+    ``errors.password_invalid``. The English sentence stays as the fallback
+    ``message`` (and in the ``rule`` param) for clients with no mapping.
+    """
+    valid, msg = validate_strength(password)
+    if not valid:
+        raise AppError("password_invalid", msg, status_code=400, params={"rule": msg})
 
 
 def _lookup_email(email: str) -> dict | None:
@@ -114,16 +133,15 @@ def _issue_reset_otp(user_id: str, tenant_id: str) -> str:
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(body: SignupRequest):
-    valid, msg = validate_strength(body.password)
-    if not valid:
-        raise HTTPException(status_code=400, detail=msg)
+    _reject_weak_password(body.password)
 
     if _lookup_email(body.email):
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise AppError(
+            "email_already_registered", "Email already registered", status_code=409,
+        )
 
     # A number already VERIFIED by someone else authenticates the inbound
     # WhatsApp bot as that person — signup must not be able to claim it.
-    from backend.errors import AppError
     from backend.whatsapp.identity import normalize_phone
 
     phone = normalize_phone(body.whatsapp_number)
@@ -177,13 +195,17 @@ async def signup(body: SignupRequest):
 
 @router.post("/verify-email")
 async def verify_email(body: VerifyEmailRequest):
+    # Expired and malformed collapse into one code on purpose: the user's next
+    # step is identical (request a new link), and `str(e)` is jwt's own English.
     try:
         payload = decode_token(body.token)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise AppError("verification_token_invalid", str(e), status_code=400)
 
     if payload.get("purpose") != "email_verify":
-        raise HTTPException(status_code=400, detail="Invalid token purpose")
+        raise AppError(
+            "verification_token_invalid", "Invalid token purpose", status_code=400,
+        )
 
     user_svc.mark_verified(payload["tenant_id"], payload["sub"])
     return ok({"message": "Email verified. You can now log in."})
@@ -194,20 +216,33 @@ async def login(body: LoginRequest):
     _check_rate(f"login:{body.email.lower()}", max_attempts=5, window_secs=300)
     entry = _lookup_email(body.email)
     if not entry:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        # Unknown address and wrong password share one code deliberately —
+        # distinguishing them would make login an account-enumeration oracle.
+        raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
 
     user = user_svc.verify_credentials(entry["tenant_id"], body.email, body.password)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
 
     if not user.get("email_verified"):
-        raise HTTPException(status_code=403, detail="Please verify your email first")
+        raise AppError(
+            "email_not_verified", "Please verify your email first", status_code=403,
+        )
 
     user_status = user.get("status", "active")
     if user_status != "active":
         if user_status == "pending_confirmation":
-            raise HTTPException(status_code=403, detail="Account pending email verification. Check your inbox.")
-        raise HTTPException(status_code=403, detail="Account is not active. Contact your administrator.")
+            raise AppError(
+                "account_pending_confirmation",
+                "Account pending email verification. Check your inbox.",
+                status_code=403,
+            )
+        raise AppError(
+            "account_not_active",
+            "Account is not active. Contact your administrator.",
+            status_code=403,
+            params={"status": user_status},
+        )
 
     user_svc.update_last_login(entry["tenant_id"], user["id"])
 
@@ -235,7 +270,9 @@ async def refresh(body: RefreshRequest):
     token_hash = hash_token(body.refresh_token)
     user = user_svc.validate_refresh_token(token_hash)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        raise AppError(
+            "refresh_token_invalid", "Invalid or expired refresh token", status_code=401,
+        )
 
     access_token = create_access_token(user["id"], user["tenant_id"], user["role"])
     return ok({
@@ -265,7 +302,7 @@ async def forgot_password_verify(body: ForgotPasswordVerifyRequest):
     _check_rate(f"otp:{body.email.lower()}", max_attempts=10, window_secs=600)
     entry = _lookup_email(body.email)
     if not entry:
-        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+        raise AppError("reset_code_invalid", "Invalid or expired code.", status_code=400)
 
     row = query_one(
         """SELECT id, code_hash FROM pw_change_codes
@@ -275,7 +312,7 @@ async def forgot_password_verify(body: ForgotPasswordVerifyRequest):
         (entry["user_id"], _OTP_MAX_ATTEMPTS),
     )
     if not row:
-        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+        raise AppError("reset_code_invalid", "Invalid or expired code.", status_code=400)
     if not hmac.compare_digest(row["code_hash"], _hash_code(body.code.strip())):
         # Count the failure; after _OTP_MAX_ATTEMPTS wrong guesses the code is dead
         # and the user must request a new one.
@@ -283,7 +320,7 @@ async def forgot_password_verify(body: ForgotPasswordVerifyRequest):
             "UPDATE pw_change_codes SET attempts = attempts + 1 WHERE id = %s",
             (row["id"],),
         )
-        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+        raise AppError("reset_code_invalid", "Invalid or expired code.", status_code=400)
 
     execute("UPDATE pw_change_codes SET used = TRUE WHERE id = %s", (row["id"],))
 
@@ -300,14 +337,12 @@ async def reset_password(body: ResetPasswordRequest):
     try:
         payload = decode_token(body.token)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise AppError("reset_token_invalid", str(e), status_code=400)
 
     if payload.get("purpose") != "password_reset":
-        raise HTTPException(status_code=400, detail="Invalid token")
+        raise AppError("reset_token_invalid", "Invalid token", status_code=400)
 
-    valid, msg = validate_strength(body.new_password)
-    if not valid:
-        raise HTTPException(status_code=400, detail=msg)
+    _reject_weak_password(body.new_password)
 
     user_svc.update_password(payload["tenant_id"], payload["sub"], body.new_password)
     return ok({"message": "Password updated. All sessions have been revoked."})

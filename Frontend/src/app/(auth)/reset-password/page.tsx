@@ -3,9 +3,13 @@ import { Suspense, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { authResetPassword } from '@/lib/api'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import { Zap, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
 
 function ResetPasswordForm() {
+  const { t }    = useLanguage()
+  const authErrorText = useAuthErrorText()
   const params   = useSearchParams()
   const router   = useRouter()
   const token    = params.get('token') ?? ''
@@ -18,8 +22,8 @@ function ResetPasswordForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (pw !== pw2) { setError('Passwords do not match'); return }
-    if (pw.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (pw !== pw2) { setError(t('auth.pw_mismatch')); return }
+    if (pw.length < 8) { setError(t('auth.pw_too_short')); return }
     setError(null)
     setLoading(true)
     try {
@@ -27,7 +31,7 @@ function ResetPasswordForm() {
       setDone(true)
       setTimeout(() => router.replace('/login'), 2500)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Reset failed')
+      setError(authErrorText(err, 'auth.reset_failed'))
     } finally {
       setLoading(false)
     }
@@ -50,7 +54,7 @@ function ResetPasswordForm() {
           <Zap size={20} color="#fff" strokeWidth={2.5} />
         </div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', margin: '0 0 4px' }}>
-          Set a new password
+          {t('auth.set_new_password_title')}
         </h1>
       </div>
 
@@ -59,14 +63,15 @@ function ResetPasswordForm() {
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={32} color="#22c55e" style={{ margin: '0 auto 12px' }} />
             <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>
-              Password updated! Redirecting to login…
+              {t('auth.pw_updated')} {t('auth.redirecting_login')}
             </p>
           </div>
         ) : (
           <>
             {!token && (
               <div style={{ fontSize: 13, color: '#ef4444', marginBottom: 16 }}>
-                Invalid or missing reset token. <Link href="/forgot-password" style={{ color: '#818cf8' }}>Request a new link</Link>.
+                {t('auth.reset_token_missing')}{' '}
+                <Link href="/forgot-password" style={{ color: '#818cf8' }}>{t('auth.reset_request_new_link')}</Link>.
               </div>
             )}
             {error && (
@@ -82,14 +87,14 @@ function ResetPasswordForm() {
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label htmlFor="reset-new-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
-                  New password
+                  {t('auth.new_password_label')}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
                     id="reset-new-password" name="new_password"
                     type={showPw ? 'text' : 'password'} required value={pw}
                     onChange={e => setPw(e.target.value)}
-                    placeholder="Min. 8 characters"
+                    placeholder={t('auth.password_placeholder')}
                     style={{ ...inputStyle, paddingRight: 36 }}
                     onFocus={e => (e.target.style.borderColor = '#818cf8')}
                     onBlur={e => (e.target.style.borderColor = '#1e2030')}
@@ -104,13 +109,13 @@ function ResetPasswordForm() {
               </div>
               <div>
                 <label htmlFor="reset-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
-                  Confirm password
+                  {t('auth.confirm_password_label')}
                 </label>
                 <input
                   id="reset-confirm-password" name="confirm_password"
                   type={showPw ? 'text' : 'password'} required value={pw2}
                   onChange={e => setPw2(e.target.value)}
-                  placeholder="Repeat password"
+                  placeholder={t('auth.confirm_password_placeholder')}
                   style={{ ...inputStyle, borderColor: pw2 && pw !== pw2 ? '#ef4444' : '#1e2030' }}
                   onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#818cf8')}
                   onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#1e2030')}
@@ -124,7 +129,7 @@ function ResetPasswordForm() {
                   fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 4,
                 }}
               >
-                {loading ? 'Saving…' : 'Set new password'}
+                {loading ? t('auth.saving') : t('auth.set_new_password_btn')}
               </button>
             </form>
           </>

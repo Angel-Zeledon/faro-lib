@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasets import service as ds_svc
+from backend.errors import AppError
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -14,6 +15,9 @@ async def upload_dataset(
 ):
     try:
         meta = await ds_svc.upload_dataset(user.tenant_id, user.user_id, file)
+    except AppError:
+        # Already carries its own code/params — wrapping it would strip them.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ok(meta)
@@ -38,5 +42,8 @@ def list_datasets(
 def get_dataset(dataset_id: str, user: CurrentUser = Depends(get_current_user)):
     ds = ds_svc.get_dataset(user.tenant_id, dataset_id)
     if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise AppError(
+            "dataset_not_found", "Dataset not found",
+            status_code=404, params={"dataset_id": dataset_id},
+        )
     return ok(ds)
