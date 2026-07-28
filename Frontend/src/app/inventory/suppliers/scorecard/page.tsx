@@ -66,7 +66,7 @@ function ScorecardTable({ rows, alerts }: {
               }}>
                 {/* The divider is on the <tr>, so the cells do not draw their own. */}
                 <Td size="lg" divider={false} style={{ fontWeight: 600 }}>{row.supplier}</Td>
-                <Td size="lg" divider={false}>{row.n_recepciones}</Td>
+                <Td size="lg" divider={false}>{row.n_receptions}</Td>
                 <Td size="lg" divider={false} mono>
                   {fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
                 </Td>
@@ -98,7 +98,7 @@ function ScorecardTable({ rows, alerts }: {
                 <Td size="lg" divider={false} mono style={{ color: C.green, fontWeight: 600 }}>
                   {formatMoney(row.purchased_value)}
                 </Td>
-                <Td size="lg" divider={false} style={{ color: C.dim }}>{fmtDate(row.ultima_recepcion, lang)}</Td>
+                <Td size="lg" divider={false} style={{ color: C.dim }}>{fmtDate(row.last_reception, lang)}</Td>
               </tr>
             )
           })}

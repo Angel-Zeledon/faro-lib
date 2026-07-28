@@ -373,11 +373,11 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     """
     lead_rows = query(
         """SELECT o.supplier,
-                  COUNT(*)::int                      AS n_recepciones,
+                  COUNT(*)::int                      AS n_receptions,
                   MIN(o.lead_time_days)              AS lead_time_real_min,
                   MAX(o.lead_time_days)              AS lead_time_real_max,
                   AVG(o.lead_time_days)              AS lead_time_real_avg,
-                  MAX(o.observed_at)                 AS ultima_recepcion,
+                  MAX(o.observed_at)                 AS last_reception,
                   s.lead_time_days                   AS lead_time_declarado,
                   AVG(CASE WHEN o.lead_time_days <= s.lead_time_days THEN 1.0 ELSE 0.0 END)
                       FILTER (WHERE s.lead_time_days IS NOT NULL) AS on_time_rate
@@ -386,7 +386,7 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
              ON s.tenant_id = o.tenant_id AND LOWER(s.name) = LOWER(o.supplier)
            WHERE o.tenant_id = %s
            GROUP BY o.supplier, s.lead_time_days
-           ORDER BY n_recepciones DESC, o.supplier""",
+           ORDER BY n_receptions DESC, o.supplier""",
         (tenant_id,),
     )
 
@@ -409,8 +409,8 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     out = []
     for r in lead_rows:
         d = dict(r)
-        if isinstance(d.get("ultima_recepcion"), datetime):
-            d["ultima_recepcion"] = d["ultima_recepcion"].isoformat()
+        if isinstance(d.get("last_reception"), datetime):
+            d["last_reception"] = d["last_reception"].isoformat()
         for k in ("lead_time_real_avg", "lead_time_real_min", "lead_time_real_max"):
             if d.get(k) is not None:
                 d[k] = round(float(d[k]), 1)
@@ -441,11 +441,11 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
         order_total = float(fill["order_total"])
         out.append({
             "supplier": prov,
-            "n_recepciones": 0,
+            "n_receptions": 0,
             "lead_time_real_min": None,
             "lead_time_real_max": None,
             "lead_time_real_avg": None,
-            "ultima_recepcion": None,
+            "last_reception": None,
             "lead_time_declarado": None,
             "on_time_rate": None,
             "deviation_days": None,

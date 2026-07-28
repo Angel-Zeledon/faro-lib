@@ -212,8 +212,8 @@ class TestExplanation:
             {"scope": "category", "scope_value": "lacteos", "multiplier": 1.0},
         ]
         exp = inv_svc.build_multiplier_explanation(None, 2.0, overrides)
-        assert exp["overrides_activos"] == 3
-        assert exp["overrides_por_sku"] == 2
+        assert exp["active_overrides"] == 3
+        assert exp["overrides_by_sku"] == 2
         assert exp["overrides_by_category"] == 1
 
 

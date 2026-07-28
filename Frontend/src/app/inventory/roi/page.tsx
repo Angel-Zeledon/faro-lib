@@ -164,6 +164,14 @@ function fmtMonthLabel(month: string, lang: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString(localeFor(lang), { month: 'long', year: 'numeric' })
 }
 
+// `text-transform: capitalize` uppercases every word, which turns the Spanish
+// "junio de 2026" into "Junio De 2026". Spanish month names are lowercase and
+// the preposition is not a title word, so only the first letter may change.
+// A no-op in English, where toLocaleDateString already capitalizes the month.
+function capitalizeFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   const { t, lang } = useLanguage()
 
@@ -191,8 +199,8 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                 background: idx % 2 === 0 ? C.surface : C.card,
                 borderBottom: `1px solid ${C.border}`,
               }}>
-                <Td size="lg" divider={false} style={{ fontWeight: 600, textTransform: 'capitalize' }}>
-                  {fmtMonthLabel(row.month, lang)}
+                <Td size="lg" divider={false} style={{ fontWeight: 600 }}>
+                  {capitalizeFirst(fmtMonthLabel(row.month, lang))}
                 </Td>
                 <Td size="lg" divider={false}>{row.pos_count}</Td>
                 <Td size="lg" divider={false} style={{ color: row.skus_order_now > 0 ? C.red : C.dim, fontWeight: row.skus_order_now > 0 ? 700 : 400 }}>
@@ -204,9 +212,11 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                 <Td size="lg" divider={false}>
                   {row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—'}
                 </Td>
-                <Td size="lg" divider={false} mono style={{ color: row.capital_liberado != null ? C.green : C.dim, fontWeight: row.capital_liberado != null ? 600 : 400 }}>
-                  {row.capital_liberado != null
-                    ? formatMoney(row.capital_liberado)
+                {/* mono is for figures: the pending sentence is prose and reads
+                    as a glitch in the numeric face. */}
+                <Td size="lg" divider={false} mono={row.capital_freed != null} style={{ color: row.capital_freed != null ? C.green : C.dim, fontWeight: row.capital_freed != null ? 600 : 400 }}>
+                  {row.capital_freed != null
+                    ? formatMoney(row.capital_freed)
                     : t('roi.capital_freed_pending')}
                 </Td>
               </tr>
@@ -247,7 +257,6 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
       icon={<Calendar size={14} color={C.indigo} />}
       title={`${t('recap.month_of')} ${monthLabel}`}
       style={{ background: C.card }}
-      titleStyle={{ textTransform: 'capitalize' }}
     />
   )
 
@@ -283,7 +292,9 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           <RecapTile
             value={`${report.orders_generated}`}
-            label={t('recap.metric_orders')}
+            label={report.orders_generated === 1
+              ? t('recap.metric_orders_singular')
+              : t('recap.metric_orders')}
             note={t('recap.metric_orders_note')}
             color={C.indigo}
           />

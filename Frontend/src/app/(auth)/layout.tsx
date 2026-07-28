@@ -48,8 +48,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <>
+      {/* `spin` is global (globals.css). It used to be declared here, which
+          meant the spinners on /verify-email and /reset-password froze
+          whenever this layout took its early `!showScene` return. */}
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg) } }
         body { margin: 0; }
         .auth-field label { transition: color 0.22s ease; }
         .auth-field:focus-within label { color: #0a0a0a; }

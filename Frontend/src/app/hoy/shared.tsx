@@ -210,9 +210,12 @@ export function AssumptionsBanner({ summary, stacked = false }: {
     <Info size={15} color={C.indigo} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
     <div style={{ flex: 1, minWidth: 0 }}>
      <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-      {tOr(t, 'hoy.assumptions_title',
-       `These recommendations rest on ${summary.fields.length} assumptions of ours — review them`,
-       { n: summary.fields.length })}
+      {summary.fields.length === 1
+       ? tOr(t, 'hoy.assumptions_title_singular',
+          'This recommendation uses 1 assumption of ours — review it')
+       : tOr(t, 'hoy.assumptions_title_plural',
+          `These recommendations use ${summary.fields.length} assumptions of ours — review them`,
+          { n: summary.fields.length })}
      </div>
      <div style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>
       {tOr(t, 'hoy.assumptions_body',

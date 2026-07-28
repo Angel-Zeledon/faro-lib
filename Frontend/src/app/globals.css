@@ -264,6 +264,16 @@
   }
 }
 
+/* Every spinner in the app animates with this. It used to be injected by four
+   components inside a local <style>, so a screen that spun a Loader2 without
+   also mounting one of them got a FROZEN spinner — which in a purchasing tool
+   reads as "it crashed", the opposite of what a spinner is for. Declared once,
+   globally, so the animation cannot depend on what else happens to be on
+   screen. */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

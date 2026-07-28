@@ -409,7 +409,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
         total_approved  = int(po["total_approved"]) if po else 0
         adoption_rate = (total_approved / total_suggested) if total_suggested > 0 else None
 
-        capital_liberado = _capital_freed_during(key, snap_by_month)
+        capital_freed = _capital_freed_during(key, snap_by_month)
 
         result.append({
             "month":            key,
@@ -417,7 +417,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
             "skus_order_now":    skus_order_now,
             "total_value":      round(total_value, 2),
             "adoption_rate":    adoption_rate,
-            "capital_liberado": capital_liberado,
+            "capital_freed":    capital_freed,
         })
 
     result.reverse()  # most recent first

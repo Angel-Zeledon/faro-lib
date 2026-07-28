@@ -71,7 +71,7 @@ export default function OrdersPage() {
   // On this screen there is no cart, so relevance is exactly "named on an
   // order that is still open" — those are the orders that still need to
   // reach the supplier.
-  const relevantContactHealth = contactHealth.filter(r => r.en_ordenes_pendientes)
+  const relevantContactHealth = contactHealth.filter(r => r.has_open_pos)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>

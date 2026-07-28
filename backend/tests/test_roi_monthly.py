@@ -86,7 +86,7 @@ class TestRunMonthlyOverstockSnapshot:
 
 
 class TestGetMonthlySummary:
-    def test_aggregates_by_calendar_month_and_computes_capital_liberado(self, test_tenant):
+    def test_aggregates_by_calendar_month_and_computes_capital_freed(self, test_tenant):
         from backend.inventory.roi_service import get_monthly_summary
 
         tid = test_tenant["id"]
@@ -146,14 +146,14 @@ class TestGetMonthlySummary:
         assert this_row["total_value"] == 150.0
         assert this_row["adoption_rate"] == 0.5          # 1 approved / 2 suggested
         # No snapshot opening next month yet, so this month is still unmeasured.
-        assert this_row["capital_liberado"] is None
+        assert this_row["capital_freed"] is None
 
         last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
         assert last_row["pos_count"] == 2
         assert last_row["skus_order_now"] == 3
         assert last_row["total_value"] == 800.0
         assert last_row["adoption_rate"] == pytest.approx(5 / 6)
-        assert last_row["capital_liberado"] == 4000.0    # 10000 -> 6000 during last month
+        assert last_row["capital_freed"] == 4000.0    # 10000 -> 6000 during last month
 
     def test_month_with_no_activity_returns_zeroed_row(self, test_tenant):
         from backend.inventory.roi_service import get_monthly_summary
@@ -165,9 +165,9 @@ class TestGetMonthlySummary:
             assert row["pos_count"] == 0
             assert row["skus_order_now"] == 0
             assert row["adoption_rate"] is None
-            assert row["capital_liberado"] is None
+            assert row["capital_freed"] is None
 
-    def test_capital_liberado_is_none_when_overstock_increases(self, test_tenant):
+    def test_capital_freed_is_none_when_overstock_increases(self, test_tenant):
         from backend.inventory.roi_service import get_monthly_summary
 
         tid = test_tenant["id"]
@@ -178,7 +178,7 @@ class TestGetMonthlySummary:
         )
 
         # Last month: overstock value = 5000. This month: overstock value = 8000.
-        # Delta = 5000 - 8000 = -3000 (negative), so capital_liberado should be None.
+        # Delta = 5000 - 8000 = -3000 (negative), so capital_freed should be None.
         execute(
             """INSERT INTO inventory_overstock_snapshots
                    (tenant_id, session_id, overstock_value, recorded_at)
@@ -198,10 +198,10 @@ class TestGetMonthlySummary:
         # Overstock went UP during last month (5000 -> 8000), so no capital was
         # freed and the row must say "unknown" rather than 0.
         last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
-        assert last_row["capital_liberado"] is None
+        assert last_row["capital_freed"] is None
         this_row = rows[0]  # most recent first
         assert this_row["month"] == this_month.strftime("%Y-%m")
-        assert this_row["capital_liberado"] is None
+        assert this_row["capital_freed"] is None
 
 
 class TestRoiMonthlyEndpoint:

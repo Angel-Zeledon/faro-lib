@@ -906,7 +906,7 @@ export default function HoyPage() {
          .map(p => p.toLowerCase()),
  )
  const relevantContactHealth = contactHealth.filter(
-  r => cartSupplierNames.has(r.supplier.toLowerCase()) || r.en_ordenes_pendientes,
+  r => cartSupplierNames.has(r.supplier.toLowerCase()) || r.has_open_pos,
  )
 
  // ── Price breaks (3.5) ───────────────────────────────────────────────────

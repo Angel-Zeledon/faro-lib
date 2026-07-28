@@ -75,7 +75,7 @@ class TestGetSupplierScorecard:
         rows = get_supplier_scorecard(tid)
         row = next(r for r in rows if r["supplier"] == prov)
 
-        assert row["n_recepciones"] == 2
+        assert row["n_receptions"] == 2
         assert row["lead_time_real_min"] == 8.0
         assert row["lead_time_real_max"] == 14.0
         assert row["lead_time_real_avg"] == 11.0
@@ -121,13 +121,13 @@ class TestGetSupplierScorecard:
         rows = get_supplier_scorecard(tid)
         row = next(r for r in rows if r["supplier"] == prov)
 
-        assert row["n_recepciones"] == 0
+        assert row["n_receptions"] == 0
         assert row["lead_time_real_min"] is None
         assert row["lead_time_real_max"] is None
         assert row["lead_time_real_avg"] is None
         assert row["on_time_rate"] is None
         assert row["deviation_days"] is None
-        assert row["ultima_recepcion"] is None
+        assert row["last_reception"] is None
         assert row["fill_rate"] == 0.0
         assert row["purchased_value"] == 200.0  # 40 * 5.0, based on what was ordered
 

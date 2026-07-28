@@ -66,8 +66,8 @@ class TestContactHealthDetection:
         assert row is not None, "supplier with no contact channel must be flagged"
         assert row["reason"] == "no_contact"
         assert row["supplier_id"] == sup_id
-        assert row["tiene_email"] is False
-        assert row["tiene_whatsapp"] is False
+        assert row["has_email"] is False
+        assert row["has_whatsapp"] is False
 
     def test_supplier_with_email_is_not_flagged(self, client, test_tenant):
         """Negative case: having ONE channel is enough for the send path."""
@@ -98,7 +98,7 @@ class TestContactHealthDetection:
         assert row["reason"] == "no_contact"
 
     def test_supplier_on_po_with_no_supplier_record_is_flagged(self, client, auth_headers, test_tenant):
-        """The easiest gap to miss: a name typed on a PO that has no ficha."""
+        """The easiest gap to miss: a name typed on a PO with no supplier record."""
         tid = test_tenant["id"]
         prov = f"Fantasma-{uuid.uuid4().hex[:6]}"
         _make_po(client, auth_headers, sku=f"GH-{uuid.uuid4().hex[:6]}", supplier=prov)
@@ -139,8 +139,8 @@ class TestContactHealthRelevance:
 
         row = _row_for(health_svc.get_contact_health(tid), prov)
 
-        assert row["en_ordenes_pendientes"] is True
-        assert row["ordenes_pendientes"] == 1
+        assert row["has_open_pos"] is True
+        assert row["open_pos"] == 1
 
     def test_supplier_with_no_orders_is_flagged_but_not_relevant(self, client, test_tenant):
         """Still returned — the /hoy cart filter needs the full flagged set —
@@ -152,8 +152,8 @@ class TestContactHealthRelevance:
         row = _row_for(health_svc.get_contact_health(tid), prov)
 
         assert row is not None
-        assert row["en_ordenes_pendientes"] is False
-        assert row["ordenes_pendientes"] == 0
+        assert row["has_open_pos"] is False
+        assert row["open_pos"] == 0
 
     def test_received_po_no_longer_counts_as_relevant(self, client, auth_headers, test_tenant):
         tid = test_tenant["id"]
@@ -163,14 +163,14 @@ class TestContactHealthRelevance:
         po = _make_po(client, auth_headers, sku=sku, supplier=prov)
 
         before = _row_for(health_svc.get_contact_health(tid), prov)
-        assert before["ordenes_pendientes"] == 1
+        assert before["open_pos"] == 1
 
         resp = client.post(f"/api/v1/inventory/po/{po}/receive", json={}, headers=auth_headers)
         assert resp.status_code == 200, resp.text
 
         after = _row_for(health_svc.get_contact_health(tid), prov)
-        assert after["ordenes_pendientes"] == 0
-        assert after["en_ordenes_pendientes"] is False
+        assert after["open_pos"] == 0
+        assert after["has_open_pos"] is False
 
 
 class TestContactHealthMatchesSendBehaviour:
@@ -183,7 +183,7 @@ class TestContactHealthMatchesSendBehaviour:
         tid = test_tenant["id"]
         ok_prov      = f"Contactable-{uuid.uuid4().hex[:6]}"
         no_contact   = f"SinCanal-{uuid.uuid4().hex[:6]}"
-        no_ficha     = f"SinFicha-{uuid.uuid4().hex[:6]}"
+        no_record     = f"NoRecord-{uuid.uuid4().hex[:6]}"
         _make_supplier(tid, ok_prov, email="ok@acme.test")
         _make_supplier(tid, no_contact)
 
@@ -195,7 +195,7 @@ class TestContactHealthMatchesSendBehaviour:
                 {"sku": f"A-{uuid.uuid4().hex[:5]}", "supplier": p, "signal": "PEDIR_YA",
                  "recommended_qty": 5, "final_qty": 5,
                  "unit_cost": 1.0, "status": "approved"}
-                for p in (ok_prov, no_contact, no_ficha)
+                for p in (ok_prov, no_contact, no_record)
             ]},
             headers=auth_headers,
         )
@@ -204,7 +204,7 @@ class TestContactHealthMatchesSendBehaviour:
 
         flagged = {
             r["supplier"] for r in health_svc.get_contact_health(tid)
-            if r["en_ordenes_pendientes"]
+            if r["has_open_pos"]
         }
 
         send = client.post(f"/api/v1/inventory/po/{po_id}/send", headers=auth_headers)
@@ -218,7 +218,7 @@ class TestContactHealthMatchesSendBehaviour:
         # matches no supplier record at all (unresolved, previously dropped in
         # silence). Contact health flags both, and must keep matching their union.
         assert skipped == {no_contact}
-        assert unresolved == {no_ficha}
+        assert unresolved == {no_record}
         assert flagged == skipped | unresolved, (
             f"health endpoint promised {flagged} would not be reached, "
             f"send reported skipped={skipped} unresolved={unresolved}"

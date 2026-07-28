@@ -1814,8 +1814,8 @@ export default function InventoryPage() {
  }
 
  const summary = data?.summary
- const skusSinStock = data ? data.items.filter(i => !i.has_stock).length : 0
- const skusConForecast = data ? data.items.filter(i => i.has_forecast).length : 0
+ const skusWithoutStock = data ? data.items.filter(i => !i.has_stock).length : 0
+ const skusWithForecast = data ? data.items.filter(i => i.has_forecast).length : 0
 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
@@ -1950,10 +1950,10 @@ export default function InventoryPage() {
  {summary && <ContextMessage summary={summary} />}
 
  {/* SKUs sin stock banner */}
- {!loading && sessionId && skusSinStock > 0 && (
+ {!loading && sessionId && skusWithoutStock > 0 && (
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', color: C.indigo, fontSize: 13 }}>
  <Info size={14} style={{ flexShrink: 0 }} />
- <span><strong>{skusSinStock} {t('inventory.skus_of_label')} {skusConForecast} SKUs</strong> {t('inventory.skus_no_stock_hint')} <code style={{ fontSize: 11, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code></span>
+ <span><strong>{skusWithoutStock} {t('inventory.skus_of_label')} {skusWithForecast} SKUs</strong> {t('inventory.skus_no_stock_hint')} <code style={{ fontSize: 11, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code></span>
  </div>
  )}
 

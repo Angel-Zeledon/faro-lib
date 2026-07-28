@@ -1325,11 +1325,11 @@ def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
 def supplier_contact_health(user: CurrentUser = Depends(get_current_user)):
     """
     Suppliers that POST /po/{id}/send would silently skip — no email and no
-    WhatsApp on file, or a supplier name on PO lines with no ficha at all
+    WhatsApp on file, or a supplier name on PO lines with no record at all
     (feature 2.5).
 
     Returns BOTH relevant and dormant cases, each carrying
-    `en_ordenes_pendientes` / `ordenes_pendientes`, rather than pre-filtering
+    `has_open_pos` / `open_pos`, rather than pre-filtering
     to "only those in open orders". Reason: the /hoy warning must also cover
     suppliers in the buyer's CURRENT CART, and the cart lives only in the
     browser until the PO is generated — the server cannot know it. Filtering

@@ -1041,7 +1041,7 @@ export interface ROIMonthlyRow {
   skus_order_now:     number
   total_value:       number
   adoption_rate:     number | null
-  capital_liberado:  number | null
+  capital_freed:     number | null
 }
 
 // Monthly recap (feature 3.2). A null metric means "could not be derived from
@@ -1131,8 +1131,8 @@ export interface MultiplierExplanation {
   reason:                  string | null
   editable:                boolean
   es_estimacion:           boolean
-  overrides_activos:       number
-  overrides_por_sku:       number
+  active_overrides:       number
+  overrides_by_sku:       number
   overrides_by_category: number
 }
 
@@ -1207,7 +1207,7 @@ export interface OverdueReception {
 
 export interface SupplierScorecardRow {
   supplier:            string
-  n_recepciones:        number
+  n_receptions:        number
   lead_time_real_min:   number | null
   lead_time_real_max:   number | null
   lead_time_real_avg:   number | null
@@ -1216,7 +1216,7 @@ export interface SupplierScorecardRow {
   on_time_rate:         number | null
   fill_rate:            number | null
   purchased_value:       number
-  ultima_recepcion:     string | null
+  last_reception:     string | null
 }
 
 // Feature 2.5 — a supplier the PO-send path would silently skip.
@@ -1225,10 +1225,10 @@ export interface SupplierContactHealthRow {
   supplier_id:           string | null
   reason:                'no_supplier_record' | 'no_contact'
   reason_text:          string
-  tiene_email:           boolean
-  tiene_whatsapp:        boolean
-  ordenes_pendientes:    number
-  en_ordenes_pendientes: boolean
+  has_email:           boolean
+  has_whatsapp:        boolean
+  open_pos:    number
+  has_open_pos: boolean
 }
 
 // Feature 3.3 — a supplier whose recent lead time drifted off its own history.

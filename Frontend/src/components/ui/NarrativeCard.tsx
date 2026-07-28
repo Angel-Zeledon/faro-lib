@@ -219,9 +219,9 @@ export default function NarrativeCard({
               animation: `pulse 1.5s ease-in-out ${i * 0.1}s infinite`,
             }} />
           ))}
+          {/* `spin` is global (globals.css); only `pulse` is local to this card. */}
           <style>{`
             @keyframes pulse { 0%,100% { opacity:0.4 } 50% { opacity:0.8 } }
-            @keyframes spin  { to { transform: rotate(360deg) } }
           `}</style>
         </div>
       )}

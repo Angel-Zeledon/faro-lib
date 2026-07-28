@@ -35,9 +35,12 @@ log = logging.getLogger(__name__)
 #   - a supplier name on a PO line with no supplier record at all.
 # phone is deliberately NOT counted: nothing in the send path uses it.
 
+# English text, per the language mandate: `reason` is the stable code the
+# frontend renders through i18n, and `reason_text` is only the readable
+# fallback for a consumer that has no catalogue.
 _SEND_BLOCKING_REASONS = {
-    "no_supplier_record":    "Sin ficha de proveedor",
-    "no_contact": "Sin email ni WhatsApp",
+    "no_supplier_record": "No supplier record",
+    "no_contact":         "Neither email nor WhatsApp",
 }
 
 # PO line statuses that were actually ordered (mirrors reception_service._ORDERED)
@@ -53,13 +56,14 @@ def get_contact_health(tenant_id: str) -> list[dict]:
     decide whether it matters right now.
 
     Returns one row per supplier name:
-        supplier              supplier name as it appears on PO lines / ficha
-        supplier_id            None when there is no ficha at all
-        reason                 'no_supplier_record' | 'no_contact'
-        reason_text           user-facing Spanish reason
-        tiene_email/whatsapp   booleans (both False by construction)
-        ordenes_pendientes     count of open POs (pending/partial) naming it
-        en_ordenes_pendientes  ordenes_pendientes > 0
+        supplier      supplier name as it appears on PO lines / supplier record
+        supplier_id   None when there is no supplier record at all
+        reason        'no_supplier_record' | 'no_contact'
+        reason_text   readable English fallback; the frontend renders `reason`
+        has_email / has_whatsapp
+                      booleans (both False by construction)
+        open_pos      count of open POs (pending/partial) naming it
+        has_open_pos  open_pos > 0
 
     Both relevant and not-yet-relevant suppliers are returned, each flagged.
     The caller decides which to surface — see the module note in the API
@@ -68,8 +72,8 @@ def get_contact_health(tenant_id: str) -> list[dict]:
     # Registered suppliers with no usable contact channel.
     registered = query(
         """SELECT id AS supplier_id, name AS supplier,
-                  (email    IS NOT NULL AND email    <> '') AS tiene_email,
-                  (whatsapp IS NOT NULL AND whatsapp <> '') AS tiene_whatsapp
+                  (email    IS NOT NULL AND email    <> '') AS has_email,
+                  (whatsapp IS NOT NULL AND whatsapp <> '') AS has_whatsapp
            FROM suppliers
            WHERE tenant_id = %s
              AND active = TRUE
@@ -121,7 +125,7 @@ def get_contact_health(tenant_id: str) -> list[dict]:
 
     # Relevant first (most open orders), then alphabetical — the buyer should
     # see the supplier blocking today's order before the dormant one.
-    out.sort(key=lambda d: (-d["ordenes_pendientes"], d["supplier"].lower()))
+    out.sort(key=lambda d: (-d["open_pos"], d["supplier"].lower()))
     return out
 
 
@@ -133,10 +137,10 @@ def _contact_row(supplier: str, supplier_id: Optional[str], reason: str,
         "supplier_id":           supplier_id,
         "reason":                reason,
         "reason_text":          _SEND_BLOCKING_REASONS[reason],
-        "tiene_email":           False,
-        "tiene_whatsapp":        False,
-        "ordenes_pendientes":    n_open,
-        "en_ordenes_pendientes": n_open > 0,
+        "has_email":           False,
+        "has_whatsapp":        False,
+        "open_pos":    n_open,
+        "has_open_pos": n_open > 0,
     }
 
 
