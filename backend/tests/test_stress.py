@@ -303,28 +303,48 @@ class TestBulkOperations:
         import_result = {}
 
         def do_import():
-            resp = client.post(
-                "/api/v1/inventory/bulk",
-                files={"file": ("large.csv", csv_bytes, "text/csv")},
-                headers=auth_headers,
-            )
-            import_result["status_code"] = resp.status_code
-            import_done.set()
+            started = time.monotonic()
+            try:
+                resp = client.post(
+                    "/api/v1/inventory/bulk",
+                    files={"file": ("large.csv", csv_bytes, "text/csv")},
+                    headers=auth_headers,
+                )
+                import_result["status_code"] = resp.status_code
+                import_result["body"] = resp.text[:400]
+            except Exception as exc:  # noqa: BLE001 - reported, see the assert below
+                import_result["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                import_result["seconds"] = time.monotonic() - started
+                import_done.set()
 
         import_thread = threading.Thread(target=do_import)
         import_thread.start()
 
         health_latencies = []
-        # Poll /health repeatedly while the import is in flight.
+        # Poll /health while the import is in flight. The sleep matters: without
+        # it this loop is a busy spin that fights the import thread for the GIL,
+        # which is exactly the stall the test claims to be measuring.
         while not import_done.is_set():
             start = time.monotonic()
             client.get("/health")
             health_latencies.append(time.monotonic() - start)
-            if len(health_latencies) > 200:  # safety cap in case import_done is missed
+            time.sleep(0.05)
+            if len(health_latencies) > 2000:  # safety cap in case import_done is missed
                 break
 
         import_thread.join(timeout=120)
-        assert import_result.get("status_code") == 200
+        # Distinguish the three ways this can go wrong. Asserting only on
+        # status_code reported all of them as the same opaque `None != 200`.
+        assert not import_result.get("error"), (
+            f"Bulk import raised instead of responding: {import_result['error']}"
+        )
+        assert import_result.get("status_code") is not None, (
+            "Bulk import never returned — still running after the 120 s join timeout"
+        )
+        assert import_result["status_code"] == 200, (
+            f"Bulk import returned {import_result['status_code']}: {import_result.get('body')}"
+        )
 
         assert health_latencies, "Import finished before any /health probe ran — increase n_rows"
 
@@ -335,7 +355,8 @@ class TestBulkOperations:
         assert max(health_latencies) < budget, (
             f"/health latency spiked to {max(health_latencies):.2f}s while bulk import "
             f"was in flight, against an idle baseline of {idle:.2f}s — the event loop "
-            f"appears to be blocked again (regression of 72a8ec4)"
+            f"appears to be blocked again (regression of 72a8ec4). The import itself "
+            f"took {import_result['seconds']:.1f}s over {len(health_latencies)} probes"
         )
 
 
