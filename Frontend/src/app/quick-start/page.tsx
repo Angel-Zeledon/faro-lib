@@ -517,6 +517,12 @@ function QuickStartPageContent() {
  // Shown on the mapping step after a retry that skipped the re-upload.
  const [retryNote, setRetryNote] = useState(false)
 
+ // Set when the mapping came from the previous session instead of from the
+ // profiler's suggestions. `missing` non-empty means it could NOT be reused —
+ // the user is told which columns disappeared rather than left to spot it.
+ const [reusedMapping, setReusedMapping] =
+  useState<{ from: string; missing: string[] } | null>(null)
+
  // Plan settings (step 1): optional session name, forecast horizon in calendar
  // days and planning grain. The backend derives each grain's horizon from the
  // days value — no hardcoded forecast_cfg horizon is posted anymore.
@@ -596,6 +602,28 @@ function QuickStartPageContent() {
  .catch(() => { /* clone tab simply stays hidden */ })
  }, [])
 
+ // The column mapping the user last confirmed, from the newest COMPLETED
+ // session that still has one. Returns null when this is their first upload,
+ // when the older session predates canonical mapping, or on any read failure —
+ // in every one of those cases the wizard simply behaves as it always did.
+ const lastConfirmedMapping = async (): Promise<
+  { name: string; mapping: Record<string, string | null> } | null
+ > => {
+  const candidates = [...clonableSessions].sort(
+   (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
+  )
+  for (const s of candidates.slice(0, 3)) {
+   try {
+    const cfg = await getColumnsConfig(s.session_id)
+    const mapped = (cfg?.canonical_mapping ?? null) as Record<string, string | null> | null
+    if (mapped && Object.values(mapped).some(Boolean)) {
+     return { name: s.name, mapping: mapped }
+    }
+   } catch { /* try the next one */ }
+  }
+  return null
+ }
+
  // ── Step 1: session over an already-stored dataset ──────────────────────────
  // Create a fresh session, attach the dataset, inspect it and enter the
  // column-mapping step. Shared by the upload path (right after the file
@@ -619,15 +647,40 @@ function QuickStartPageContent() {
  setDatasetId(dsId)
 
  if (!keepMapping) {
-  // Pre-select from canonical suggestions
-  const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
-  const next: Record<string, string | null> =
-   Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null]))
-  for (const field of CANONICAL_FIELDS) {
-   const sug = suggestions[field.name]
-   if (sug?.top && sug.confidence >= 0.7) next[field.name] = sug.top
+  // The monthly upload is last month's file with new rows, so the mapping
+  // the user already confirmed almost always still fits. Redoing the whole
+  // wizard every month is a recurring cost that buys nothing, and it is
+  // what makes people stop updating after the second month.
+  //
+  // Reused only when EVERY column it names is still present: otherwise the
+  // run would train on a silently different set of fields, which is worse
+  // than asking. A partial match falls back to the suggestions and reports
+  // which columns went missing.
+  const available = new Set(insp.profile.columns.map(c => c.name))
+  const previous = await lastConfirmedMapping()
+  const named = previous
+   ? (CANONICAL_FIELDS.map(f => previous.mapping[f.name]).filter(Boolean) as string[])
+   : []
+  const missing = named.filter(col => !available.has(col))
+
+  if (previous && named.length > 0 && missing.length === 0) {
+   setMapping(Object.fromEntries(
+    CANONICAL_FIELDS.map(f => [f.name, previous.mapping[f.name] ?? null]),
+   ))
+   setReusedMapping({ from: previous.name, missing: [] })
+  } else {
+   const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
+   const next: Record<string, string | null> =
+    Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null]))
+   for (const field of CANONICAL_FIELDS) {
+    const sug = suggestions[field.name]
+    if (sug?.top && sug.confidence >= 0.7) next[field.name] = sug.top
+   }
+   setMapping(next)
+   setReusedMapping(
+    previous && missing.length > 0 ? { from: previous.name, missing } : null,
+   )
   }
-  setMapping(next)
  }
 
  setStep(2)
@@ -659,6 +712,9 @@ function QuickStartPageContent() {
  setCsvWarnings([])
  setCsvIssues([])
  setRetryNote(false)
+ // Cloning states its own reuse in the tab copy; the upload banner would be
+ // a second, contradictory explanation of where the mapping came from.
+ setReusedMapping(null)
  setError(null)
  setBusy(true)
  trainLaunchedRef.current = false
@@ -1208,6 +1264,27 @@ function QuickStartPageContent() {
  fontSize: 13, color: 'var(--accent)',
  }}>
  {t('qs.reuse_retry_note')}
+ </div>
+ )}
+
+ {/* The monthly re-upload: last month's file with new rows. Naming the run
+ the mapping came from is what makes it safe to just confirm — and when it
+ could NOT be carried over, naming the columns that disappeared is the
+ difference between a considered choice and a silent change of what gets
+ trained on. */}
+ {reusedMapping && (
+ <div style={{
+ marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+ border: `1px solid ${reusedMapping.missing.length ? '#d9770655' : 'var(--border)'}`,
+ background: reusedMapping.missing.length ? 'rgba(217,119,6,0.07)' : 'var(--surface-2)',
+ fontSize: 13, color: 'var(--text)', lineHeight: 1.55,
+ }}>
+ {reusedMapping.missing.length === 0
+ ? t('qs.mapping_reused', { session: reusedMapping.from })
+ : t('qs.mapping_reuse_failed', {
+  session: reusedMapping.from,
+  columns: reusedMapping.missing.join(', '),
+ })}
  </div>
  )}
 

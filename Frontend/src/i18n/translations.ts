@@ -1031,6 +1031,12 @@ export const translations = {
     'sidebar.see_plans': 'Ver planes',
     'nav.inventory_setup': 'Configurar inventario',
 
+    // Resubida mensual: mismo archivo, filas nuevas. Reusar el mapeo que ya
+    // confirmaron evita rehacer el asistente cada mes, que es el costo
+    // recurrente que hace que la gente deje de actualizar al segundo mes.
+    'qs.mapping_reused':      'Usamos las mismas columnas que en «{session}», así que no tienes que configurar nada: revisa que se vean bien y continúa.',
+    'qs.mapping_reuse_failed': 'Tu archivo cambió de formato desde «{session}»: ya no trae {columns}. Elegimos las columnas por ti, pero conviene que las revises.',
+
     // Por qué recomendamos lo que recomendamos. El backend manda el código y
     // los números; la frase vive aquí. La cláusula que importa es `lead_default`:
     // antes decía «lead time configurado» sobre un número que nadie configuró.
@@ -3573,6 +3579,12 @@ export const translations = {
 
     'sidebar.see_plans': 'See plans',
     'nav.inventory_setup': 'Set up inventory',
+
+    // Monthly re-upload: same file, new rows. Reusing the mapping they already
+    // confirmed avoids redoing the wizard every month — the recurring cost
+    // that makes people stop updating after the second month.
+    'qs.mapping_reused':      'We used the same columns as in "{session}", so there is nothing to configure: check they look right and continue.',
+    'qs.mapping_reuse_failed': 'Your file changed format since "{session}": it no longer has {columns}. We picked the columns for you, but it is worth checking them.',
 
     // Why we recommend what we recommend. The backend sends the code and the
     // numbers; the sentence lives here. `lead_default` is the clause that
