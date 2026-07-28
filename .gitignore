@@ -54,8 +54,13 @@ registry.json
 # TypeScript incremental build info
 *.tsbuildinfo
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings (machine-specific: settings.local.json, worktrees,
+# locks). Skills are the exception — they are project knowledge and belong to
+# whoever clones this, not to one machine. `.claude/*` rather than `.claude/`
+# so git still descends into the directory; it will not look inside an excluded
+# directory, and the negation below would never be reached.
+.claude/*
+!.claude/skills/
 
 # Personal notes / memory
 memory/
