@@ -17,13 +17,20 @@ from typing import Any, Optional
 
 from backend.db.connection import execute, query, query_one, transaction
 from backend.errors import AppError
+from backend.inventory.defaults import (
+    DEFAULT_LEAD_TIME_DAYS,
+    SOURCE_DEFAULT,
+    SOURCE_LEARNED,
+    SOURCE_SUPPLIER_RULE,
+)
 
 log = logging.getLogger(__name__)
 
-# Same fallback used in service.py's stock signal calc when a SKU has no
-# lead_time_days on file — keeps the "expected arrival" guess consistent
-# with the rest of the app when a supplier has no data at all.
-_DEFAULT_LEAD_TIME_DAYS = 15.0
+# The one default the whole product uses when a supplier has no data at all —
+# imported, not re-declared. This module used to carry its own 15.0 literal
+# while canonical.py and the training runner carried 7; see
+# backend/inventory/defaults.py for why one number, and why that number is 15.
+_DEFAULT_LEAD_TIME_DAYS = float(DEFAULT_LEAD_TIME_DAYS)
 
 # Line statuses that were actually ordered (mirrors roi_service._ORDERED)
 _ORDERED = ("approved", "modified")
@@ -453,7 +460,15 @@ def _effective_lead_time(tenant_id: str, supplier: str) -> tuple[float, str]:
     The "already-learned" lead time for a supplier, preferring real observed
     receptions over the declared value on the supplier's card, and falling
     back to a sane default when neither exists yet.
-    Returns (lead_time_days, source) where source ∈ observed | declared | default.
+
+    Returns (lead_time_days, source) where source is one of the FIVE values in
+    `backend/inventory/defaults.py` — the same vocabulary the semáforo speaks.
+    This module used to answer 'observed' | 'declared' | 'default' while
+    service.py answered 'learned' | 'configured' for the identical question, so
+    the overdue-receptions screen and the SKU card described the same lead time
+    with two different words. 'observed' is now 'learned' (evidence from real
+    deliveries) and 'declared' is 'supplier_rule' (a value carried by the
+    supplier's card, not by the SKU).
     """
     obs = query_one(
         """SELECT AVG(lead_time_days) AS avg_days, COUNT(*)::int AS n
@@ -473,14 +488,19 @@ def _effective_lead_time(tenant_id: str, supplier: str) -> tuple[float, str]:
         and obs["n"] >= MIN_LEAD_TIME_OBSERVATIONS
         and obs.get("avg_days") is not None
     ):
-        return float(obs["avg_days"]), "observed"
+        return float(obs["avg_days"]), SOURCE_LEARNED
 
     from backend.inventory import supplier_service as sup_svc
     supplier = sup_svc.get_supplier_by_name(tenant_id, supplier)
-    if supplier and supplier.get("lead_time_days") is not None:
-        return float(supplier["lead_time_days"]), "declared"
+    # `lead_time_set_by` must be set: the column is NOT NULL DEFAULT 15, so
+    # "the supplier card says 15" and "nobody filled the supplier card" were the
+    # same row, and this screen reported our assumption as a declared value.
+    if (supplier
+            and supplier.get("lead_time_days") is not None
+            and supplier.get("lead_time_set_by")):
+        return float(supplier["lead_time_days"]), SOURCE_SUPPLIER_RULE
 
-    return _DEFAULT_LEAD_TIME_DAYS, "default"
+    return _DEFAULT_LEAD_TIME_DAYS, SOURCE_DEFAULT
 
 
 def get_overdue_receptions(tenant_id: str) -> list[dict]:

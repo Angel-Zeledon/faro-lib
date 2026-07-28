@@ -69,6 +69,10 @@ function SignupPageContent() {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   const [done,    setDone]    = useState(false)
+  // Set only when the backend tells us the verification mail did NOT leave.
+  // Then the link goes on screen — sending someone to check an inbox we know
+  // received nothing is how accounts end up permanently unactivatable.
+  const [verifyUrl, setVerifyUrl] = useState<string | null>(null)
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -85,13 +89,14 @@ function SignupPageContent() {
     }
     setLoading(true)
     try {
-      await authSignup({
+      const res = await authSignup({
         email:           form.email,
         password:        form.password,
         full_name:       form.full_name || undefined,
         tenant_name:     form.tenant_name,
         whatsapp_number: phone,
       })
+      setVerifyUrl(res.email_sent ? null : (res.verify_url ?? null))
       setDone(true)
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.signup_failed'))
@@ -147,13 +152,33 @@ function SignupPageContent() {
               <CheckCircle2 size={21} color="#fff" strokeWidth={2} />
             </div>
             <h1 style={{ fontSize: 23, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
-              {t('auth.check_email_title')}
+              {verifyUrl ? t('auth.verify_link_onscreen_title') : t('auth.check_email_title')}
             </h1>
-            <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 26px', lineHeight: 1.6 }}>
-              {t('auth.check_email_sent_to')} <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
-              {' '}{t('auth.check_email_click')}
-              {wantsDemo && ` ${t('auth.check_email_demo_hint')}`}
-            </p>
+            {verifyUrl ? (
+              <>
+                <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 16px', lineHeight: 1.6 }}>
+                  {t('auth.verify_link_onscreen_body')}
+                </p>
+                <a
+                  href={verifyUrl}
+                  style={{
+                    display: 'block', wordBreak: 'break-all', marginBottom: 22,
+                    padding: '11px 13px', borderRadius: 10,
+                    background: 'rgba(9,9,11,0.035)', border: '1px solid rgba(9,9,11,0.09)',
+                    fontSize: 12.5, color: '#0a0a0a', fontFamily: 'ui-monospace, monospace',
+                    textDecoration: 'none', lineHeight: 1.45,
+                  }}
+                >
+                  {verifyUrl}
+                </a>
+              </>
+            ) : (
+              <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 26px', lineHeight: 1.6 }}>
+                {t('auth.check_email_sent_to')} <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
+                {' '}{t('auth.check_email_click')}
+                {wantsDemo && ` ${t('auth.check_email_demo_hint')}`}
+              </p>
+            )}
             <Link href={loginHref} className="auth-submit" style={{
               display: 'inline-flex', alignItems: 'center', padding: '11.5px 24px',
               background: '#0a0a0a', color: '#fff', borderRadius: 11,

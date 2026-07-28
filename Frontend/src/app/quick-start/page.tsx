@@ -8,6 +8,9 @@ import {
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
+import {
+  DEFAULT_HOLDING_COST_PCT, DEFAULT_LEAD_TIME_DAYS, DEFAULT_SERVICE_LEVEL,
+} from '@/lib/inventoryDefaults'
 import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
@@ -358,7 +361,11 @@ const CANONICAL_FIELDS = [
  { name: 'store',         label: 'Tienda',             required: false, default: 'Tienda única' },
  { name: 'region',        label: 'Región',             required: false, default: 'Sin región' },
  { name: 'inventory',     label: 'Inventario',         required: false, default: '0' },
- { name: 'lead_time',     label: 'Lead Time (días)',   required: false, default: '7' },
+ // The default shown here is what the engine actually broadcasts into an
+ // unmapped lead_time column. It said 7 while the DB, this wizard's business
+ // config and /inventory all said 15 — the mapping step was promising the user
+ // a number no other screen would honour.
+ { name: 'lead_time',     label: 'Lead Time (días)',   required: false, default: String(DEFAULT_LEAD_TIME_DAYS) },
  { name: 'price',         label: 'Precio',             required: false, default: 'Desconocido' },
  { name: 'cost',          label: 'Costo',              required: false, default: 'Desconocido' },
  { name: 'regular_price', label: 'Precio Regular',     required: false, default: 'Desconocido' },
@@ -784,10 +791,13 @@ function QuickStartPageContent() {
  // horizon from user_horizon_days at launch (see startTraining below).
 
  // POST business config
+ // One source of truth for what Faro assumes (src/lib/inventoryDefaults.ts,
+ // mirroring backend/inventory/defaults.py) — this used to be a literal 15
+ // sitting next to a literal 7 in the mapping step above.
  await setBusinessConfig(sessionId, {
- service_level: 0.95,
- lead_time_days: 15,
- holding_cost_pct: 0.20,
+ service_level: DEFAULT_SERVICE_LEVEL,
+ lead_time_days: DEFAULT_LEAD_TIME_DAYS,
+ holding_cost_pct: DEFAULT_HOLDING_COST_PCT,
  stockout_cost_multiplier: 3.0,
  })
 

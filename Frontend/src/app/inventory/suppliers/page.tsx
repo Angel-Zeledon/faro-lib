@@ -9,6 +9,7 @@ import type { Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { DEFAULT_LEAD_TIME_DAYS } from '@/lib/inventoryDefaults'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
 import {
@@ -74,7 +75,7 @@ interface SupplierForm {
 }
 
 function blankForm(name = ''): SupplierForm {
-  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '15', lead_time_std: '3', payment_terms: '', notes: '' }
+  return { name, email: '', phone: '', whatsapp: '', lead_time_days: String(DEFAULT_LEAD_TIME_DAYS), lead_time_std: '3', payment_terms: '', notes: '' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
@@ -176,6 +177,14 @@ function SupplierFormPanel({
             </Tooltip>
           </label>
           <input style={inputS} name="supplier_lead_time_days" type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
+          {/* This field now governs every SKU of this supplier that has no lead
+              time of its own — a distributor has 12 suppliers, not 2.000 lead
+              times. State the precedence explicitly (the lesson from the event
+              multipliers): the buyer must be able to tell why a given SKU got
+              the number it got, and that a SKU they set by hand keeps theirs. */}
+          <div style={{ fontSize: 10, color: C.dim, marginTop: 4, lineHeight: 1.5 }}>
+            {t('suppliers.lead_time_applies_to_catalog')}
+          </div>
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
@@ -375,7 +384,7 @@ function SuppliersPageInner() {
       email:          form.email.trim() || null,
       phone:          form.phone.trim() || null,
       whatsapp:       form.whatsapp.trim() || null,
-      lead_time_days: parseInt(form.lead_time_days) || 15,
+      lead_time_days: parseInt(form.lead_time_days) || DEFAULT_LEAD_TIME_DAYS,
       lead_time_std:  parseInt(form.lead_time_std) || 3,
       payment_terms:  form.payment_terms || null,
       notes:          form.notes.trim() || null,

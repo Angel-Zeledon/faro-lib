@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { renderExplanation } from '@/lib/explanationCopy'
+import { sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
 import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
@@ -28,6 +30,8 @@ import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import DataFreshness from '@/components/ui/DataFreshness'
+import StaleDataBanner, { StaleSignalChip } from '@/components/ui/StaleDataBanner'
+import { useDataFreshness } from '@/hooks/useDataFreshness'
 import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
@@ -129,9 +133,17 @@ interface ActionItem {
  daily_demand: number | null   // forecasted daily demand — for the "why" panel
  current_stock:   number | null   // current stock — for the "why" panel
  // "Por qué" — every value below is computed by the backend, never here
- lead_time_source: 'learned' | 'configured'
+ // user | file | supplier_rule | learned | default. 'default' is the case the
+ // old 'learned' | 'configured' pair could not express, so this panel told the
+ // buyer their lead time was "configurado por ti" when nobody had configured it.
+ lead_time_source: ValueSource
+ lead_time_rule_scope: RuleScope | null
  reorder_point:    number | null
+ // English fallback from the backend; the Spanish is rendered here from
+ // explanation_code + explanation_params.
  explanation:      string | null
+ explanation_code:   string | null
+ explanation_params: Record<string, unknown> | null
  unit_margin:  number | null   // null = SKU sin price o sin cost
  reason:         string
  status:         ActionStatus
@@ -243,13 +255,19 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
      padding: '10px 12px', marginBottom: 12, fontSize: 12,
     }}>
-     {item.explanation && (
-      <p style={{
-       margin: '0 0 10px', fontSize: 13, lineHeight: 1.55, color: 'var(--text)',
-      }}>
-       {item.explanation}
-      </p>
-     )}
+     {(() => {
+      // The reasoning comes from the backend as a stable code + params; the
+      // wording is rendered here so the Spanish lives in the i18n catalog.
+      const sentence = renderExplanation(
+       t, item.explanation_code, item.explanation_params, item.explanation)
+      return sentence ? (
+       <p style={{
+        margin: '0 0 10px', fontSize: 13, lineHeight: 1.55, color: 'var(--text)',
+       }}>
+        {sentence}
+       </p>
+      ) : null
+     })()}
      <div style={{
       display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10,
      }}>
@@ -281,9 +299,9 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
        {item.lead_time} {t('hoy.why_days')}
       </div>
       <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
-       {item.lead_time_source === 'learned'
-        ? t('hoy.why_lead_time_learned')
-        : t('hoy.why_lead_time_configured')}
+       {item.lead_time_source === 'supplier_rule' && item.lead_time_rule_scope
+        ? `${t(sourceLabelKey(item.lead_time_source))} · ${t(`explain.scope_${item.lead_time_rule_scope}`)}`
+        : t(sourceLabelKey(item.lead_time_source))}
       </div>
      </div>
      {item.current_stock != null && (
@@ -469,9 +487,14 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    lead_time:      risk.lead_time_days,
    daily_demand: risk.daily_demand ?? null,
    current_stock:   risk.current_stock ?? null,
-   lead_time_source: risk.lead_time_source ?? 'configured',
+   // No source at all means we cannot prove authorship, so it reads as our
+   // assumption — never as something the user configured.
+   lead_time_source: risk.lead_time_source ?? 'default',
+   lead_time_rule_scope: risk.lead_time_rule_scope ?? null,
    reorder_point:    risk.reorder_point ?? null,
    explanation:      risk.explanation ?? null,
+   explanation_code:   risk.explanation_code ?? null,
+   explanation_params: risk.explanation_params ?? null,
    unit_margin:  risk.unit_margin ?? null,
    reason,
    status:      'pending',
@@ -494,9 +517,12 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    lead_time:      w.lead_time_days,
    daily_demand: w.daily_demand ?? null,
    current_stock:   w.current_stock ?? null,
-   lead_time_source: w.lead_time_source ?? 'configured',
+   lead_time_source: w.lead_time_source ?? 'default',
+   lead_time_rule_scope: w.lead_time_rule_scope ?? null,
    reorder_point:    w.reorder_point ?? null,
    explanation:      w.explanation ?? null,
+   explanation_code:   w.explanation_code ?? null,
+   explanation_params: w.explanation_params ?? null,
    unit_margin:  w.unit_margin ?? null,
    reason:      `${d != null ? d + ' ' + coverageUnitLabel(cu, d, t) + ' ' + t('hoy.reason_coverage_suffix') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
@@ -543,6 +569,27 @@ function HoyEmptyState({ variant }: { variant: 'no_session' | 'no_inventory' }) 
      {t('hoy.empty_demo_hint')}
     </p>
    )}
+  </div>
+ )
+}
+
+// ── "Nothing to do today" ─────────────────────────────────────────────────────
+// The most confident thing this page ever says — and the exact claim stale data
+// invalidates. Over a stock table nobody has touched in a month, the absence of
+// a red signal is not evidence that nothing is wrong: it is evidence that we
+// cannot see. So the green all-clear becomes an explicit "no lo podemos
+// confirmar" instead of quietly reassuring the buyer.
+function AllClear({ stale }: { stale: boolean }) {
+ const { t } = useLanguage()
+ return (
+  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)' }}>
+   {stale && <div style={{ marginBottom: 10 }}><StaleSignalChip /></div>}
+   <div style={{ fontSize: 15, marginBottom: 8 }}>
+    {t(stale ? 'hoy.no_pending_actions_unverified' : 'hoy.no_pending_actions')}
+   </div>
+   <div style={{ fontSize: 13, color: 'var(--dim)' }}>
+    {t(stale ? 'hoy.inventory_unverified' : 'hoy.inventory_under_control')}
+   </div>
   </div>
  )
 }
@@ -612,6 +659,13 @@ export default function HoyPage() {
 
  const user    = getUser()
  const { addToast } = useToast()
+
+ // How old the two inputs behind the semáforo are. When either has gone blind
+ // the page stops presenting the traffic light as trustworthy (see
+ // StaleDataBanner) instead of showing a confident green over data nobody has
+ // refreshed in a month.
+ const { freshness } = useDataFreshness()
+ const semaphoreStale = freshness?.semaphore === 'degraded'
 
  // Load briefing when session changes
  const load = useCallback(async (sid: string) => {
@@ -1022,6 +1076,11 @@ export default function HoyPage() {
       <HoyEmptyState variant="no_inventory" />
      ) : (
       <>
+       {/* Above every other banner on purpose: it is not one more alert, it
+           is the caveat that applies to all of them — the semáforo below was
+           computed on stock (or sales) nobody has refreshed. */}
+       {freshness && <StaleDataBanner freshness={freshness} />}
+
        {/* Feature 3.3 — a supplier's recent lead time drifted significantly
            off its own history. Sits above the overdue nudge because it is the
            earlier signal: it explains WHY orders are starting to run late. */}
@@ -1091,7 +1150,7 @@ export default function HoyPage() {
        )}
 
        {/* KPI row */}
-       <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
+       <div style={{ display: 'flex', gap: 12, marginBottom: semaphoreStale ? 8 : 28, flexWrap: 'wrap' }}>
         <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
         <KpiCard label={t('hoy.kpi_risk_today')}        value={String(kpis!.order_now)}         color={kpis!.order_now > 0 ? C.red : C.text} />
         <KpiCard label={t('hoy.kpi_this_week')}         value={String(kpis!.order_soon)}      color={kpis!.order_soon > 0 ? C.amber : C.text} />
@@ -1099,6 +1158,13 @@ export default function HoyPage() {
          help={t('hoy.kpi_avg_accuracy_help')} />
         <KpiCard label={t('hoy.kpi_inventory_value')}   value={fmtM(kpis!.total_inventory_value)} color={C.text} />
        </div>
+       {/* Every counter above divides by the same stale stock — say so once,
+           right under them, instead of letting five confident numbers stand. */}
+       {semaphoreStale && (
+        <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
+         {t('freshness.kpi_caveat')}
+        </div>
+       )}
 
        {/* Work queue */}
        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -1181,20 +1247,10 @@ export default function HoyPage() {
         )}
 
         {/* All-rejected empty state */}
-        {cart.length > 0 && cart.every(i => i.status === 'rejected') && (
-         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)' }}>
-          <div style={{ fontSize: 15, marginBottom: 8 }}>{t('hoy.no_pending_actions')}</div>
-          <div style={{ fontSize: 13, color: 'var(--dim)' }}>{t('hoy.inventory_under_control')}</div>
-         </div>
-        )}
+        {cart.length > 0 && cart.every(i => i.status === 'rejected') && <AllClear stale={semaphoreStale} />}
 
         {/* No risks / warnings at all */}
-        {cart.length === 0 && (
-         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)' }}>
-          <div style={{ fontSize: 15, marginBottom: 8 }}>{t('hoy.no_pending_actions')}</div>
-          <div style={{ fontSize: 13, color: 'var(--dim)' }}>{t('hoy.inventory_under_control')}</div>
-         </div>
-        )}
+        {cart.length === 0 && <AllClear stale={semaphoreStale} />}
 
         {/* Feature 2.5 — suppliers the send path would silently skip. */}
         {relevantContactHealth.length > 0 && (

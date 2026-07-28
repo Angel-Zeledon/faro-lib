@@ -12,6 +12,14 @@ from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
 from backend.formatting import money, format_days as _format_days
+from backend.inventory.defaults import (
+    DEFAULT_LEAD_TIME_DAYS,
+    DEFAULT_MOQ,
+    SOURCE_DEFAULT,
+    SOURCE_FILE,
+    SOURCE_LEARNED,
+    SOURCE_USER,
+)
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +30,13 @@ _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
-def upsert_stock(tenant_id: str, sku: str, data: dict, conn: Optional[Any] = None) -> dict:
+def upsert_stock(
+    tenant_id: str,
+    sku: str,
+    data: dict,
+    conn: Optional[Any] = None,
+    source: str = SOURCE_USER,
+) -> dict:
     """
     `conn`: optional shared connection from db.connection.transaction(). When
     provided, every DB call this function makes runs on THAT connection and
@@ -30,6 +44,19 @@ def upsert_stock(tenant_id: str, sku: str, data: dict, conn: Optional[Any] = Non
     block (used by reception_service.receive_po to make a reception
     atomic). When omitted (the default), behavior is exactly as before: each
     DB call opens its own pooled connection and auto-commits immediately.
+
+    `source`: WHO supplied these values, one of backend.inventory.defaults'
+    VALUE_SOURCES. Only the provenance columns of the fields actually present in
+    `data` are stamped, so a reception that updates current_stock never claims
+    authorship of the lead time. Defaults to 'user' because this function is the
+    chokepoint every human-driven write path funnels through; the dataset sync
+    and the CSV import pass 'file' explicitly.
+
+    This stamp is the whole point of the provenance migration: with
+    `lead_time_days INT NOT NULL DEFAULT 15` alone, a SKU the buyer deliberately
+    set to 15 and a SKU nobody ever opened were the same row. Now the first
+    reports 'user' and the second 'default', and the explanation stops claiming
+    a lead time was configured when it was assumed.
     """
     allowed = {
         "display_name", "current_stock", "min_stock",
@@ -105,6 +132,19 @@ def upsert_stock(tenant_id: str, sku: str, data: dict, conn: Optional[Any] = Non
         enforce_limit(tenant_id, "max_skus", count_stock(tenant_id))
     if not wh_svc.get_warehouse_by_name(tenant_id, safe["warehouse"]):
         enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id))
+
+    # Stamp provenance for exactly the tracked fields this call actually writes.
+    # Added to `safe` (not written separately) so the value and its provenance
+    # land in the SAME statement — they can never disagree, not even if the
+    # process dies between two writes.
+    from backend.inventory.defaults import PROVENANCE_FIELDS, VALUE_SOURCES
+    from backend.inventory.stock_defaults_service import _provenance_column
+
+    if source not in VALUE_SOURCES:
+        raise ValueError(f"source must be one of {sorted(VALUE_SOURCES)}")
+    for field in PROVENANCE_FIELDS:
+        if field in safe:
+            safe[_provenance_column(field)] = source
 
     cols   = ", ".join(safe.keys())
     values = list(safe.values())
@@ -345,7 +385,11 @@ def sync_stock_from_dataset(
     count = 0
     for sku, data in entries:
         try:
-            upsert_stock(tenant_id, sku, data)
+            # 'file' provenance: these values came off the user's upload, which
+            # is their data — not our assumption — but also not something they
+            # typed on the SKU card. The distinction matters for the copy: "el
+            # lead time que venía en tu archivo" is a claim we can actually back.
+            upsert_stock(tenant_id, sku, data, source=SOURCE_FILE)
             count += 1
         except HTTPException:
             # A plan-limit 403 from the per-row chokepoint must propagate, not
@@ -358,8 +402,77 @@ def sync_stock_from_dataset(
     return count
 
 
-def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
-    """Upsert multiple SKUs from a CSV/bulk import. Returns count saved."""
+# Columns a re-import ALWAYS refreshes, even under only_fill_missing.
+#
+# current_stock is a measurement, not a configuration: refreshing it is the
+# entire reason a distributor re-uploads their ERP export, and a stale quantity
+# is strictly worse than a fresh one. Protecting it would have made
+# only_fill_missing turn the stock importer into a no-op for every SKU that
+# already exists — a silent failure worse than the overwrite it prevents.
+# Everything else under only_fill_missing is protected: see _fields_to_fill.
+_ALWAYS_REFRESHED_ON_IMPORT = frozenset({"current_stock"})
+
+
+def _fields_to_fill(existing: Optional[dict], data: dict, source: str) -> dict:
+    """The subset of `data` a fill-missing import is allowed to write.
+
+    "Did the user set this?" is exactly what the provenance columns answer, so
+    they are the decision input rather than a bare NULL check — which could not
+    have worked anyway for lead_time_days / moq / service_level, since all three
+    are NOT NULL with a schema default and are therefore *never* null.
+
+      - a value whose `<field>_set_by` is 'user' survives a file import: a lead
+        time the buyer corrected by hand in March must not be silently reverted
+        by April's ERP export;
+      - a value that came from a previous 'file' import, or that nobody ever set,
+        IS refreshed — that is the import doing its job;
+      - a write whose own source is 'user' (a human editing) may overwrite
+        anything, so this guard never blocks the buyer themselves;
+      - fields with no provenance column (supplier, category, notes, …) fall back
+        to the plain "only if currently empty" rule.
+    """
+    if existing is None:
+        return data
+
+    from backend.inventory.defaults import PROVENANCE_FIELDS
+    from backend.inventory.stock_defaults_service import _provenance_column
+
+    out: dict = {}
+    for field, value in data.items():
+        if field in _ALWAYS_REFRESHED_ON_IMPORT or field == "warehouse":
+            out[field] = value
+            continue
+        if field in PROVENANCE_FIELDS:
+            owner = existing.get(_provenance_column(field))
+            if owner == SOURCE_USER and source != SOURCE_USER:
+                continue
+            out[field] = value
+            continue
+        current = existing.get(field)
+        if current is None or (isinstance(current, str) and not current.strip()):
+            out[field] = value
+    return out
+
+
+def bulk_upsert(
+    tenant_id: str,
+    rows: list[dict],
+    source: str = SOURCE_FILE,
+    only_fill_missing: bool = False,
+) -> int:
+    """Upsert multiple SKUs from a CSV/bulk import. Returns count saved.
+
+    `source` defaults to 'file' because that is what this function is for — a
+    stock CSV the user uploaded. Callers that are replaying values the user
+    typed (none today) can override it.
+
+    `only_fill_missing` makes a re-import additive: it fills what is unset and
+    refreshes what a previous import set, but never overwrites a value the buyer
+    edited by hand. Without it a monthly ERP re-export silently erases every
+    manual correction accumulated since the last one — the same class of quiet
+    data loss the provenance columns exist to make visible. Defaults to False so
+    every existing caller behaves exactly as before.
+    """
     from fastapi import HTTPException
 
     count = 0
@@ -368,7 +481,23 @@ def bulk_upsert(tenant_id: str, rows: list[dict]) -> int:
         if not sku:
             continue
         try:
-            upsert_stock(tenant_id, sku, {k: v for k, v in row.items() if k != "sku"})
+            data = {k: v for k, v in row.items() if k != "sku"}
+            if only_fill_missing:
+                # Read the row ONCE here rather than inside upsert_stock: the
+                # decision needs the provenance columns, and skipping the write
+                # entirely when nothing survives the filter keeps updated_at
+                # honest (an import that changed nothing did not touch the row).
+                # Resolve the warehouse name the same way upsert_stock will, or
+                # a case-variant (' norte ') would miss the existing row and be
+                # treated as brand new — i.e. overwrite everything.
+                from backend.inventory import warehouse_service as _wh_svc
+                warehouse = _wh_svc.resolve_canonical_name(
+                    tenant_id, data.get("warehouse") or "principal")
+                data = _fields_to_fill(
+                    get_stock(tenant_id, sku, warehouse=warehouse), data, source)
+                if not {k for k in data if k != "warehouse"}:
+                    continue
+            upsert_stock(tenant_id, sku, data, source=source)
             count += 1
         except HTTPException:
             # A plan-limit 403 from the per-row chokepoint must propagate, not
@@ -641,6 +770,7 @@ def resolve_lead_time(
     configured: int,
     supplier: Optional[str],
     learned_by_supplier: dict[str, float],
+    configured_source: str = SOURCE_USER,
 ) -> tuple[int, str, Optional[float]]:
     """
     The lead time a recommendation is actually built on.
@@ -648,15 +778,25 @@ def resolve_lead_time(
     Prefers the lead time LEARNED from this supplier's real receptions over the
     one typed into the SKU card — a supplier who says 7 days but consistently
     delivers in 12 must not keep producing recommendations that assume 7.
+    Evidence outranks declaration; that ordering is unchanged.
 
-    Returns (lead_time_days, source, learned_raw) where source is
-    'learned' | 'configured' (business-language, surfaced straight to the UI).
+    `configured_source` is where the fallback value came from, already resolved
+    by the SKU > supplier-rule > category > global > system cascade
+    (`stock_defaults_service.resolve_field`). It is passed through untouched
+    when the evidence does not fire.
+
+    Returns (lead_time_days, source, learned_raw). `source` is one of the five
+    values in `backend.inventory.defaults` — user | file | supplier_rule |
+    learned | default. It used to be 'learned' | 'configured', where
+    'configured' was a lie for every tenant who had configured nothing: the DB
+    could not tell a chosen 15 from an untouched one, so the UI said
+    "configurado por ti" about a number we invented.
     """
     if supplier:
         learned = learned_by_supplier.get(supplier.strip().lower())
         if learned is not None and learned > 0:
-            return max(1, int(round(learned))), "learned", round(learned, 1)
-    return configured, "configured", None
+            return max(1, int(round(learned))), SOURCE_LEARNED, round(learned, 1)
+    return configured, configured_source, None
 
 
 def calc_unit_margin(
@@ -675,6 +815,25 @@ def calc_unit_margin(
     return round(float(sale_price) - float(unit_cost), 2)
 
 
+def _english_days(n: float) -> str:
+    """Day count that agrees in number, in English. `formatting.format_days` is
+    the Spanish sibling; the explanation's fallback text must stay English (see
+    CLAUDE.md — no Spanish string literals in backend logic)."""
+    rounded = round(n)
+    return "1 day" if rounded == 1 else f"{rounded:,.0f} days"
+
+
+# Which of the five provenance values the explanation is describing decides the
+# clause about the lead time. 'default' is the one that used to lie.
+_LEAD_TIME_CLAUSE_EN = {
+    SOURCE_LEARNED: "your supplier takes {days} to deliver (learned from their real deliveries)",
+    SOURCE_USER:    "your supplier takes {days} to deliver (lead time you configured)",
+    SOURCE_FILE:    "your supplier takes {days} to deliver (lead time from your file)",
+    "supplier_rule": "your supplier takes {days} to deliver (rule for this {scope})",
+    SOURCE_DEFAULT: "we assume {days} because you have not configured this supplier yet",
+}
+
+
 def build_explanation(
     current_stock: float,
     daily_demand: float,
@@ -683,39 +842,81 @@ def build_explanation(
     lead_time_source: str,
     reorder_point: float,
     signal: str,
-) -> str:
+    lead_time_rule_scope: Optional[str] = None,
+) -> dict:
     """
-    One plain-Spanish sentence explaining the recommendation — business
-    language, never ML vocabulary. This lives in the backend on purpose: it is
-    business reasoning, not presentation.
+    The reasoning behind a recommendation, as a STRUCTURED value:
+    ``{"code": ..., "params": {...}, "text": "<English fallback>"}``.
+
+    Two things changed here and both matter.
+
+    1. It no longer claims the lead time was configured when it was assumed.
+       When `lead_time_source` is 'default' the sentence says "we assume 15 days
+       because you have not configured this supplier yet" — the honest version of
+       what the product used to assert. This sentence is the one we use to earn
+       the buyer's trust; getting it wrong is worse than not showing it.
+
+    2. It no longer returns a hardcoded Spanish sentence. The business reasoning
+       still lives here (it IS business logic, not presentation), but it leaves
+       as a stable code plus its parameters, and the frontend renders the Spanish
+       from `translations.ts` — the pattern `AppError` established for errors,
+       and what CLAUDE.md requires of every user-facing string.
+
+    `text` is the English fallback, shown only by a client that has no mapping
+    for `code`.
     """
-    lead_time_phrase = (
-        f"tu proveedor tarda {_format_days(lead_time)} en entregar (aprendido de sus entregas reales)"
-        if lead_time_source == "learned"
-        else f"tu proveedor tarda {_format_days(lead_time)} en entregar (lead time configurado)"
-    )
+    scope = lead_time_rule_scope or "supplier"
+
     if daily_demand <= 0:
         # No projected sales at all: coverage is effectively unlimited, saying
-        # "te alcanza para N días" would be nonsense.
-        return (
-            f"Tienes {current_stock:,.0f} unidades y el pronóstico no proyecta ventas "
-            f"para este producto, así que no hay nada que reponer por ahora."
-        )
-    coverage_phrase = (
-        f"te alcanza para {_format_days(coverage_days)}"
+        # "it lasts you N days" would be nonsense.
+        params = {"current_stock": round(float(current_stock), 2)}
+        return {
+            "code": "inventory_explain_no_demand",
+            "params": params,
+            "text": (
+                f"You have {current_stock:,.0f} units and the forecast projects no sales "
+                f"for this product, so there is nothing to replenish right now."
+            ),
+        }
+
+    params = {
+        "current_stock": round(float(current_stock), 2),
+        "daily_demand": round(float(daily_demand), 2),
+        # None means "coverage runs past the forecast horizon" — a real state,
+        # not a missing value, and the copy has its own clause for it.
+        "coverage_days": round(float(coverage_days), 1) if coverage_days is not None else None,
+        "lead_time_days": int(lead_time),
+        "lead_time_source": lead_time_source,
+        # Which level of the SKU > supplier > category > global cascade won, so
+        # the copy can state the precedence explicitly instead of leaving the
+        # buyer to guess why this SKU shows this number.
+        "lead_time_rule_scope": lead_time_rule_scope,
+        "reorder_point": round(float(reorder_point), 2),
+        "signal": signal,
+    }
+
+    coverage_en = (
+        f"it lasts you {_english_days(coverage_days)}"
         if coverage_days is not None
-        else "la cobertura supera el horizonte del pronóstico"
+        else "coverage runs past the forecast horizon"
     )
+    lead_en = _LEAD_TIME_CLAUSE_EN.get(
+        lead_time_source, _LEAD_TIME_CLAUSE_EN[SOURCE_DEFAULT]
+    ).format(days=_english_days(lead_time), scope=scope)
     base = (
-        f"Tienes {current_stock:,.0f} unidades y vendes {daily_demand:,.1f} por día, "
-        f"así que {coverage_phrase}. Como {lead_time_phrase}, deberías volver a pedir cuando "
-        f"el stock baje a {reorder_point:,.0f} unidades"
+        f"You have {current_stock:,.0f} units and sell {daily_demand:,.1f} per day, "
+        f"so {coverage_en}. Since {lead_en}, you should reorder when stock drops to "
+        f"{reorder_point:,.0f} units"
     )
     if signal == "PEDIR_YA":
-        return base + " — ya estás por debajo de ese punto, por eso aparece como urgente."
-    if signal == "PEDIR_PRONTO":
-        return base + " — estás acercándote a ese punto, por eso conviene pedir esta semana."
-    return base + "."
+        text = base + " — you are already below that point, which is why it shows as urgent."
+    elif signal == "PEDIR_PRONTO":
+        text = base + " — you are getting close to that point, so it is worth ordering this week."
+    else:
+        text = base + "."
+
+    return {"code": "inventory_explain_reorder", "params": params, "text": text}
 
 
 def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
@@ -828,11 +1029,17 @@ def _compute_inventory_status(
     # buyer typed on the SKU card — but a SKU with no name there now inherits
     # its configured primary instead of showing "sin proveedor".
     from backend.inventory import supplier_service as _sup_svc
+    from backend.inventory import stock_defaults_service as _sd_svc
     try:
         primary_suppliers = _sup_svc.get_primary_suppliers_map(tenant_id)
     except Exception as e:
         log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
         primary_suppliers = {}
+
+    # Supplier/category/global planning rules, one query for the whole tenant.
+    # A distributor configures 12 suppliers, not 2.000 SKUs — this is where that
+    # configuration enters the recommendation.
+    rule_index = _sd_svc.build_rule_index(tenant_id)
 
     items: list[dict] = []
 
@@ -843,18 +1050,47 @@ def _compute_inventory_status(
         primary           = primary_suppliers.get(sku) or {}
         supplier          = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
         supplier_id       = primary.get("supplier_id") if supplier == primary.get("supplier_name") else None
-        lead_time_config   = int(stock["lead_time_days"]) if stock else 15
-        lead_time, lead_time_source, lead_time_learned = resolve_lead_time(
-            lead_time_config, supplier, learned_lead_times,
+        category          = stock.get("category") if stock else None
+        # SKU > supplier rule > category rule > global rule > system default,
+        # reporting which level won. A stock row whose lead_time_days is 15
+        # only because that is the schema default does NOT count as configured —
+        # that is exactly what the provenance columns exist to distinguish.
+        _lt_cfg, lead_time_config_source, lead_time_rule_scope = _sd_svc.resolve_field(
+            "lead_time_days", stock, rule_index, supplier=supplier, category=category,
         )
+        lead_time_config = int(_lt_cfg if _lt_cfg is not None else DEFAULT_LEAD_TIME_DAYS)
+        lead_time, lead_time_source, lead_time_learned = resolve_lead_time(
+            lead_time_config, supplier, learned_lead_times, lead_time_config_source,
+        )
+        if lead_time_source == SOURCE_LEARNED:
+            # Receptions beat the cascade outright, so the rule scope no longer
+            # describes where the number came from.
+            lead_time_rule_scope = None
         current_stock = float(stock["current_stock"]) if stock else None
-        moq          = float(stock["moq"]) if stock else 1.0
+        _moq_val, moq_source, moq_rule_scope = _sd_svc.resolve_field(
+            "moq", stock, rule_index, supplier=supplier, category=category,
+        )
+        moq = float(_moq_val if _moq_val is not None else DEFAULT_MOQ)
 
         has_forecast = bool(model_forecasts)
         has_stock    = stock is not None and current_stock is not None
 
+        _sl_val, service_level_source, service_level_rule_scope = _sd_svc.resolve_field(
+            "service_level", stock, rule_index, supplier=supplier, category=category,
+        )
+        _cost_val, unit_cost_source, _ = _sd_svc.resolve_field(
+            "unit_cost", stock, rule_index, supplier=supplier, category=category,
+        )
+        # The caller-supplied `service_level` is the tenant-wide preference; it
+        # outranks the hardcoded system default but not a per-SKU value or a
+        # rule, so it only applies when the cascade fell all the way through.
+        # Preserves the pre-provenance behavior exactly.
+        sku_service_level = (
+            float(service_level) if service_level_source == SOURCE_DEFAULT
+            else float(_sl_val)
+        )
+
         if has_forecast and has_stock:
-            sku_service_level = float(stock.get("service_level") or service_level) if stock else service_level
             z = _Z.get(sku_service_level, 1.645)
             # Per-period demand: average over as many forecast buckets as the
             # lead time spans in periods, and judge the signal against the lead
@@ -879,9 +1115,12 @@ def _compute_inventory_status(
             calc_explanation = {
                 "daily_demand":    round(avg_daily, 2),
                 "lead_time_days":    lead_time,
-                # Where the lead time came from, so the breakdown can label it
-                # 'learned'/'configured' the same way /hoy does.
+                # Where the lead time came from, so the breakdown labels it the
+                # same way /hoy does — now across all five real sources, not the
+                # old learned/configured pair that called an untouched row
+                # "configured".
                 "lead_time_source":  lead_time_source,
+                "lead_time_rule_scope": lead_time_rule_scope,
                 "lead_time_demand": _demand_lt,
                 "safety_stock":      _safety,
                 "current_stock":      current_stock,
@@ -898,7 +1137,7 @@ def _compute_inventory_status(
             # the shipment arrives before the shelf empties (lead-time demand
             # plus the safety cushion).
             reorder_point = round(_demand_lt + _safety, 2)
-            explanation = build_explanation(
+            explanation_obj = build_explanation(
                 current_stock=current_stock,
                 daily_demand=avg_daily,
                 coverage_days=round(coverage_days, 1) if coverage_days < 9990 else None,
@@ -906,6 +1145,7 @@ def _compute_inventory_status(
                 lead_time_source=lead_time_source,
                 reorder_point=reorder_point,
                 signal=signal,
+                lead_time_rule_scope=lead_time_rule_scope,
             )
         else:
             avg_daily = avg_std = None
@@ -915,7 +1155,7 @@ def _compute_inventory_status(
             inventory_value = None
             calc_explanation = None
             reorder_point = None
-            explanation = None
+            explanation_obj = None
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
         history: list[dict] = []
@@ -938,15 +1178,33 @@ def _compute_inventory_status(
             "current_stock":       current_stock,
             "min_stock":       float(stock["min_stock"]) if stock else 0.0,
             "lead_time_days":     lead_time,
-            # Which lead time the recommendation actually used, so the UI can
-            # say "aprendido de sus entregas" vs "configurado por ti".
+            # Which lead time the recommendation actually used, and where it came
+            # from: user | file | supplier_rule | learned | default. 'default'
+            # is the honest answer the schema could not express before, and the
+            # one the UI badges as an assumption of ours rather than the
+            # tenant's data.
             "lead_time_source":     lead_time_source,
+            # supplier | category | global — set only when a stock_defaults rule
+            # won, so the copy can state the precedence instead of leaving the
+            # buyer to guess why this SKU shows this number.
+            "lead_time_rule_scope": lead_time_rule_scope,
             "lead_time_configured": lead_time_config,
             "lead_time_learned":  lead_time_learned,
             "reorder_point":        reorder_point,
-            "explanation":          explanation,
+            # English fallback sentence; the frontend renders Spanish from
+            # `explanation_code` + `explanation_params` (CLAUDE.md — no Spanish
+            # string literals in backend logic).
+            "explanation":          (explanation_obj or {}).get("text"),
+            "explanation_code":     (explanation_obj or {}).get("code"),
+            "explanation_params":   (explanation_obj or {}).get("params"),
             "unit_cost":     float(stock["unit_cost"]) if stock and stock.get("unit_cost") is not None else None,
+            "unit_cost_source":   unit_cost_source,
             "moq":                moq,
+            "moq_source":         moq_source,
+            "moq_rule_scope":     moq_rule_scope,
+            "service_level":      sku_service_level,
+            "service_level_source": service_level_source,
+            "service_level_rule_scope": service_level_rule_scope,
             "supplier":          supplier,
             "notes":              stock.get("notes") if stock else None,
             "sale_price":       float(stock["sale_price"]) if stock and stock.get("sale_price") is not None else None,
@@ -1029,6 +1287,7 @@ def get_inventory_status_by_warehouse(
     """
     from backend.db import session_store
     from backend.inventory import warehouse_service as wh_svc
+    from backend.inventory import stock_defaults_service as _sd_svc
     from backend.inventory.series import stores_in, for_store, split_key
 
     if forecasts is None:
@@ -1037,6 +1296,7 @@ def get_inventory_status_by_warehouse(
         stock_rows = list_stock(tenant_id)
     if learned_lead_times is None:
         learned_lead_times = get_learned_lead_times(tenant_id)
+    rule_index = _sd_svc.build_rule_index(tenant_id)
 
     warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
                   or [wh_svc.DEFAULT_WAREHOUSE])
@@ -1078,16 +1338,26 @@ def get_inventory_status_by_warehouse(
                 continue
 
             supplier = stock.get("supplier") if stock else None
-            lead_time_config = int(stock["lead_time_days"]) if stock else 15
+            category = stock.get("category") if stock else None
+            # Same SKU > supplier > category > global > system cascade as the
+            # aggregated view; the per-warehouse rows must not disagree with it.
+            _lt_cfg, lt_cfg_source, lead_time_rule_scope = _sd_svc.resolve_field(
+                "lead_time_days", stock, rule_index, supplier=supplier, category=category)
+            lead_time_config = int(_lt_cfg if _lt_cfg is not None else DEFAULT_LEAD_TIME_DAYS)
             lead_time, lead_time_source, _ = resolve_lead_time(
-                lead_time_config, supplier, learned_lead_times)
+                lead_time_config, supplier, learned_lead_times, lt_cfg_source)
+            if lead_time_source == SOURCE_LEARNED:
+                lead_time_rule_scope = None
             current_stock = float(stock["current_stock"]) if stock else 0.0
-            moq = float(stock["moq"]) if stock else 1.0
+            _moq_val, _, _ = _sd_svc.resolve_field(
+                "moq", stock, rule_index, supplier=supplier, category=category)
+            moq = float(_moq_val if _moq_val is not None else DEFAULT_MOQ)
 
             if model_forecasts and share > 0.0:
+                _sl_val, sl_source, _ = _sd_svc.resolve_field(
+                    "service_level", stock, rule_index, supplier=supplier, category=category)
                 sku_service_level = (
-                    float(stock.get("service_level") or service_level)
-                    if stock else service_level)
+                    float(service_level) if sl_source == SOURCE_DEFAULT else float(_sl_val))
                 z = _Z.get(sku_service_level, 1.645)
                 # Per-period demand + period lead time (identity for daily).
                 lt_periods = _lead_time_in_periods(lead_time, period)
@@ -1119,6 +1389,7 @@ def get_inventory_status_by_warehouse(
                 "current_stock": current_stock if stock else None,
                 "lead_time_days": lead_time,
                 "lead_time_source": lead_time_source,
+                "lead_time_rule_scope": lead_time_rule_scope,
                 "moq": moq,
                 "daily_demand": round(avg_daily, 4) if avg_daily is not None else None,
                 "coverage_days": (round(coverage_days, 1)
@@ -1480,7 +1751,7 @@ def simulate_event_impact(
         if not daily or daily <= 0:
             continue  # sin forecast no hay nada que simular
 
-        lead_time = int(it.get("lead_time_days") or 15)
+        lead_time = int(it.get("lead_time_days") or DEFAULT_LEAD_TIME_DAYS)
         moq       = float(it.get("moq") or 1)
         stock     = it.get("current_stock")
         cost      = it.get("unit_cost")
@@ -2043,7 +2314,7 @@ def get_demand_spikes(
         if uplift < uplift_threshold or (peak["value"] - baseline) < 1:
             continue
 
-        lead = int(item.get("lead_time_days") or 15)
+        lead = int(item.get("lead_time_days") or DEFAULT_LEAD_TIME_DAYS)
 
         peak_date: Optional[object] = None
         days_until = peak["step"] + 1
@@ -2103,7 +2374,7 @@ def generate_recommendations(items: list[dict], period: str = "daily") -> list[d
         name     = item.get('display_name') or sku
         signal   = item['signal']
         days     = item.get('coverage_days')
-        lead     = item.get('lead_time_days', 15)
+        lead     = item.get('lead_time_days', DEFAULT_LEAD_TIME_DAYS)
         qty      = item.get('recommended_qty') or 0
         prov     = item.get('supplier') or 'el proveedor'
         abc      = item.get('abc', '?')

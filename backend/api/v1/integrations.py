@@ -11,7 +11,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.auth.guards import (
-    CurrentUser, get_current_user, require_admin, require_analyst_or_above,
+    CurrentUser, get_current_user, require_admin,
+    require_verified_admin, require_verified_analyst_or_above,
 )
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -40,7 +41,9 @@ def list_integrations(user: CurrentUser = Depends(get_current_user)):
 def connect_provider(
     provider: str,
     credentials: dict,
-    user: CurrentUser = Depends(require_admin),
+    # Verified email required: connecting hands third-party credentials to an
+    # account whose address nobody has proven belongs to the signer-up.
+    user: CurrentUser = Depends(require_verified_admin),
 ):
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=404, detail=f"Unknown accounting provider: {provider!r}")
@@ -61,7 +64,7 @@ def connect_provider(
 
 
 @router.post("/{id}/sync")
-def sync_now(id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+def sync_now(id: str, user: CurrentUser = Depends(require_verified_analyst_or_above)):
     connection = store.get_connection(id)
     if connection is None or connection["tenant_id"] != user.tenant_id:
         raise HTTPException(status_code=404, detail="Integration connection not found")

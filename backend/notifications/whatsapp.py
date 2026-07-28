@@ -122,6 +122,27 @@ def build_inventory_alert_text(
     return "\n".join(lines)
 
 
+def build_freshness_reminder_text(
+    sales_age_days: int | None,
+    stock_age_days: int | None,
+    upload_url: str,
+) -> str:
+    """
+    Data-freshness reminder for the highest open-rate channel in LatAm.
+
+    Only the clock that triggered the reminder is mentioned — `stock_age_days`
+    is None unless the stock itself went blind — so the message never pads
+    itself with an age that is not part of the problem.
+    """
+    lines: list[str] = []
+    if sales_age_days is not None:
+        lines.append(render_es("freshness_whatsapp_sales", days=sales_age_days))
+    if stock_age_days is not None:
+        lines.append(render_es("freshness_whatsapp_stock", days=stock_age_days))
+    lines.append(render_es("freshness_whatsapp_cta", url=upload_url))
+    return "\n".join(lines)
+
+
 def _line_label(item: dict) -> str:
     return str(item.get("display_name") or item.get("sku") or "")
 

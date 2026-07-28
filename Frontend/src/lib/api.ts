@@ -302,9 +302,16 @@ export const authSignup = (body: {
   /** E.164, required — purchase orders are delivered here for forwarding. */
   whatsapp_number: string
 }) =>
-  request<{ user: Record<string, unknown>; tenant: Record<string, unknown> }>(
-    'POST', '/auth/signup', body,
-  )
+  request<{
+    user: Record<string, unknown>; tenant: Record<string, unknown>
+    /** False when no mail transport accepted the message. */
+    email_sent: boolean
+    /** Stable code for WHY it failed, localized by the UI. */
+    email_error: string | null
+    /** Present only when `email_sent` is false — the link is shown on screen
+     *  rather than sending the user to an inbox that received nothing. */
+    verify_url: string | null
+  }>('POST', '/auth/signup', body)
 
 export const authLogin = (email: string, password: string) =>
   request<{
@@ -312,11 +319,22 @@ export const authLogin = (email: string, password: string) =>
     refresh_token: string
     token_type:    string
     expires_in:    number
-    user: { id: string; email: string; full_name: string | null; role: string; tenant_id: string }
+    user: {
+      id: string; email: string; full_name: string | null; role: string
+      tenant_id: string
+      /** Unverified users log in fine — only outward actions (invites,
+       *  integrations, sending notifications) demand verification. */
+      email_verified: boolean
+    }
   }>('POST', '/auth/login', { email, password })
 
 export const authVerifyEmail = (token: string) =>
   request<{ message: string }>('POST', '/auth/verify-email', { token })
+
+/** Deliberately generic response — identical for unknown, verified and resent
+ *  addresses, so it cannot be used to enumerate accounts. */
+export const authResendVerification = (email: string) =>
+  request<{ message: string }>('POST', '/auth/resend-verification', { email })
 
 export const authForgotPassword = (email: string) =>
   request<{ message: string }>('POST', '/auth/forgot-password', { email })
@@ -1270,3 +1288,91 @@ export const runScenario = (sessionId: string, scenarioId: string, opts?: Reques
     `/sessions/${encodeURIComponent(sessionId)}/scenarios/${encodeURIComponent(scenarioId)}/run`,
     undefined, opts,
   )
+
+// ── Data freshness ────────────────────────────────────────────────────────────
+// How old the two inputs behind the semáforo are. Sales and stock age on
+// separate clocks (stock in days, sales in weeks), and `semaphore` is the
+// verdict the traffic light has to obey: past the blind thresholds it may no
+// longer claim a colour. Same computation the daily reminder email runs, so the
+// screen and the email can never disagree.
+
+export interface FreshnessClock {
+  age_days:   number | null
+  /** 'unknown' (never loaded) | 'fresh' | 'stale' (warn) | 'blind' (degrade) */
+  state:      'unknown' | 'fresh' | 'stale' | 'blind'
+  stale_days: number
+  blind_days: number
+}
+
+export interface SalesFreshness extends FreshnessClock {
+  session_id:   string | null
+  session_name: string | null
+  trained_at:   string | null
+  /** Last date INSIDE the file (YYYY-MM-DD), when the profiler could read it. */
+  data_through: string | null
+  /** 'data_date' when age comes from the file's last date, 'upload_date' otherwise. */
+  basis:        'data_date' | 'upload_date' | null
+  reminder_days: number
+}
+
+export interface StockFreshness extends FreshnessClock {
+  tracked_skus: number
+  updated_at:   string | null
+}
+
+export interface DataFreshnessInfo {
+  sales:       SalesFreshness
+  stock:       StockFreshness
+  semaphore:   'current' | 'degraded'
+  degraded_by: Array<'stock' | 'sales'>
+  warn:        boolean
+}
+
+export const getDataFreshness = (opts?: RequestOpts) =>
+  request<DataFreshnessInfo>('GET', '/data-freshness', undefined, opts)
+
+// ── Stock setup: Pareto gaps + tolerant importer (friction plan #1, 3-4) ─────
+// `getSetupGaps` ranks the unconfigured SKUs by the MONEY they move, so the UI
+// can ask for 40 rows instead of 2.000. `previewStockImport` is the dry run
+// behind the column-mapping wizard; `importStockFile` commits it and accepts
+// .xlsx as well as CSV.
+export const getSetupGaps = (
+  params: { sessionId?: string; horizonDays?: number; limit?: number; targetPct?: number } = {},
+  opts?: RequestOpts,
+) => {
+  const q = new URLSearchParams()
+  if (params.sessionId)   q.set('session_id', params.sessionId)
+  if (params.horizonDays) q.set('horizon_days', String(params.horizonDays))
+  if (params.limit)       q.set('limit', String(params.limit))
+  if (params.targetPct)   q.set('target_pct', String(params.targetPct))
+  const qs = q.toString()
+  return request<import('./stockSetupTypes').SetupGapsResponse>(
+    'GET', `/inventory/setup-gaps${qs ? `?${qs}` : ''}`, undefined, opts,
+  )
+}
+
+export const previewStockImport = (
+  file: File,
+  mapping?: import('./stockSetupTypes').StockImportMapping,
+  opts?: RequestOpts,
+) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (mapping) fd.append('mapping', JSON.stringify(mapping))
+  return request<import('./stockSetupTypes').StockImportPreview>(
+    'POST', '/inventory/bulk/preview', fd, opts,
+  )
+}
+
+export const importStockFile = (
+  file: File,
+  mapping?: import('./stockSetupTypes').StockImportMapping,
+  opts?: RequestOpts,
+) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (mapping) fd.append('mapping', JSON.stringify(mapping))
+  return request<import('./stockSetupTypes').StockImportResult>(
+    'POST', '/inventory/bulk', fd, opts,
+  )
+}

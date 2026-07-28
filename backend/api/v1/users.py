@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.api.v1.auth import _reject_weak_password
-from backend.auth.guards import CurrentUser, get_current_user, require_admin
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_admin, require_verified_admin,
+)
 from backend.config import settings
 from backend.db.connection import execute, query_one
 from backend.errors import AppError
@@ -200,7 +202,9 @@ def list_users(
 @router.post("", status_code=201)
 def create_user_admin(
     body: CreateUserRequest,
-    user: CurrentUser = Depends(require_admin),
+    # Verified email required: this mails an account-setup link to a third
+    # party in the tenant's name.
+    user: CurrentUser = Depends(require_verified_admin),
 ):
     if body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Options: {sorted(VALID_ROLES)}")
@@ -244,7 +248,7 @@ def create_user_admin(
 @router.post("/{user_id}/resend-verification", status_code=200)
 def resend_verification_email(
     user_id: str,
-    user: CurrentUser = Depends(require_admin),
+    user: CurrentUser = Depends(require_verified_admin),
 ):
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
@@ -467,7 +471,7 @@ def confirm_password_change(
 @router.post("/invite", status_code=201)
 def invite_user(
     body: InviteUserRequest,
-    user: CurrentUser = Depends(require_admin),
+    user: CurrentUser = Depends(require_verified_admin),
 ):
     if body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Options: {sorted(VALID_ROLES)}")

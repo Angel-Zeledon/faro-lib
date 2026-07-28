@@ -42,6 +42,10 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
 class InviteUserRequest(BaseModel):
     email: EmailStr
     role: str = "analyst"

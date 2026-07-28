@@ -1027,6 +1027,87 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("create_report_runs_idx",
      "CREATE INDEX IF NOT EXISTS report_runs_session_idx "
      "ON report_runs (tenant_id, session_id, created_at DESC)"),
+    # ── Provenance of the planning values (friction plan #2, step 2) ─────────
+    # `lead_time_days INT NOT NULL DEFAULT 15` made two completely different
+    # situations physically indistinguishable: "the buyer configured 15 days"
+    # and "nobody ever touched this row". The product then told the user, in the
+    # explanation it uses to earn their trust, that their supplier's lead time
+    # was "configurado" — asserting something false.
+    #
+    # A sibling `<field>_set_by` column rather than making the value nullable:
+    # nullable would have forced a COALESCE into every read path (and every
+    # existing NOT NULL contract), while the sibling adds provenance without
+    # touching the value's type. NULL here means "unknown provenance", which the
+    # resolver reads as 'default' — the honest answer for a row nobody claimed.
+    # Values ∈ user | file | supplier_rule | learned | default (see
+    # backend/inventory/defaults.py). Plain TEXT, no CHECK: this repo has
+    # already been burned by a re-added CHECK carrying a stale vocabulary.
+    ("add_stock_lead_time_set_by",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS lead_time_set_by TEXT"),
+    ("add_stock_service_level_set_by",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS service_level_set_by TEXT"),
+    ("add_stock_unit_cost_set_by",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS unit_cost_set_by TEXT"),
+    ("add_stock_moq_set_by",
+     "ALTER TABLE inventory_stock ADD COLUMN IF NOT EXISTS moq_set_by TEXT"),
+    # One-time, best-effort backfill for rows that predate provenance. We cannot
+    # recover who set what, but a value that DIFFERS from the schema default
+    # could only have got there because somebody put it there — so it is marked
+    # 'user'. A value equal to the schema default stays NULL and therefore reads
+    # as 'default', which is the honest reading: it is exactly the case we could
+    # never tell apart. Idempotent twice over — guarded on IS NULL, and it can
+    # only ever move a row from "unknown" to "user".
+    ("backfill_stock_lead_time_set_by",
+     "UPDATE inventory_stock SET lead_time_set_by = 'user' "
+     "WHERE lead_time_set_by IS NULL AND lead_time_days IS DISTINCT FROM 15"),
+    ("backfill_stock_service_level_set_by",
+     "UPDATE inventory_stock SET service_level_set_by = 'user' "
+     "WHERE service_level_set_by IS NULL AND service_level IS DISTINCT FROM 0.95"),
+    ("backfill_stock_unit_cost_set_by",
+     "UPDATE inventory_stock SET unit_cost_set_by = 'user' "
+     "WHERE unit_cost_set_by IS NULL AND unit_cost IS NOT NULL"),
+    ("backfill_stock_moq_set_by",
+     "UPDATE inventory_stock SET moq_set_by = 'user' "
+     "WHERE moq_set_by IS NULL AND moq IS DISTINCT FROM 1"),
+    # The supplier card has the SAME problem one table over:
+    # `suppliers.lead_time_days INT NOT NULL DEFAULT 15`. Without provenance
+    # here, creating a supplier and never touching its lead time would inject a
+    # 15 into the cascade and the SKU would report 'supplier_rule' — the same
+    # false claim of authorship, just relocated. The cascade only reads this
+    # column when somebody actually set it.
+    ("add_suppliers_lead_time_set_by",
+     "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS lead_time_set_by TEXT"),
+    ("backfill_suppliers_lead_time_set_by",
+     "UPDATE suppliers SET lead_time_set_by = 'user' "
+     "WHERE lead_time_set_by IS NULL AND lead_time_days IS DISTINCT FROM 15"),
+    # ── Planning defaults by supplier / category / global (friction plan #1) ──
+    # A distributor does not have 2.000 lead times, it has 12 suppliers.
+    # Configuring per SKU is why the setup never gets finished, so one rule
+    # covers a supplier's whole catalogue at once. Resolution is
+    # SKU > supplier > category > global > system default, and it reports which
+    # level won — that answer IS the provenance vocabulary above, which is why
+    # the two features share one migration instead of migrating twice.
+    #
+    # Every value column is nullable on purpose: a rule that only sets a lead
+    # time must not also silently impose a service level. NULL = "this rule says
+    # nothing about this field", so the cascade keeps falling through.
+    ("create_stock_defaults",
+     """CREATE TABLE IF NOT EXISTS stock_defaults (
+         id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id        TEXT NOT NULL,
+         scope_type       TEXT NOT NULL,
+         scope_value      TEXT NOT NULL DEFAULT '',
+         lead_time_days   INT,
+         service_level    FLOAT,
+         moq              FLOAT,
+         holding_cost_pct FLOAT,
+         created_at       TIMESTAMPTZ DEFAULT NOW(),
+         updated_at       TIMESTAMPTZ DEFAULT NOW(),
+         UNIQUE (tenant_id, scope_type, scope_value)
+     )"""),
+    ("create_stock_defaults_idx",
+     "CREATE INDEX IF NOT EXISTS stock_defaults_tenant_idx "
+     "ON stock_defaults (tenant_id, scope_type)"),
 ]
 
 

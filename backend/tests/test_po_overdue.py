@@ -13,8 +13,17 @@ from backend.db.connection import execute
 
 
 def _make_supplier(tenant_id: str, name: str, lead_time_days: int = 10) -> None:
+    """A supplier whose lead time the user actually filled in.
+
+    `lead_time_set_by` has to be written here. The column is NOT NULL DEFAULT
+    15, so without provenance "the card says 15" and "nobody ever filled the
+    card" are the same row — and `_effective_lead_time` now (correctly) refuses
+    to report our own assumption as the supplier's declared time. Inserting raw
+    SQL bypasses `supplier_service`, which sets this on the real path.
+    """
     execute(
-        "INSERT INTO suppliers (tenant_id, name, lead_time_days) VALUES (%s, %s, %s)",
+        "INSERT INTO suppliers (tenant_id, name, lead_time_days, lead_time_set_by) "
+        "VALUES (%s, %s, %s, 'user')",
         (tenant_id, name, lead_time_days),
     )
 
@@ -58,7 +67,9 @@ class TestGetOverdueReceptions:
         row = next(r for r in rows if r["po_log_id"] == po)
 
         assert row["supplier"] == prov
-        assert row["lead_time_source"] == "declared"
+        # 'supplier_rule', not 'declared': this module and the SKU card used to
+        # answer the same question with two different vocabularies.
+        assert row["lead_time_source"] == "supplier_rule"
         assert row["lead_time_used"] == 5.0
         assert row["days_overdue"] >= 4  # ~5 days, allow for clock-boundary rounding
 
@@ -121,7 +132,8 @@ class TestGetOverdueReceptions:
         rows = get_overdue_receptions(tid)
         row = next(r for r in rows if r["po_log_id"] == po)
 
-        assert row["lead_time_source"] == "observed"
+        # 'learned' is the unified name for "evidence from real deliveries".
+        assert row["lead_time_source"] == "learned"
         assert row["lead_time_used"] == 3.0  # avg(2.0, 4.0)
         assert row["days_overdue"] >= 4
 

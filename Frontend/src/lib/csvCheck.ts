@@ -114,7 +114,7 @@ export function downloadCsvTemplate(filename: string = CSV_TEMPLATE_FILENAME): v
 
 // ── Parsing helpers ───────────────────────────────────────────────────────────
 
-function detectSeparator(headerLine: string): string {
+export function detectSeparator(headerLine: string): string {
   const counts: [string, number][] = [
     [',', (headerLine.match(/,/g) || []).length],
     [';', (headerLine.match(/;/g) || []).length],
@@ -354,5 +354,256 @@ export function validateSalesCsv(text: string): CsvCheckResult {
     rowCount: rows,
     columns,
     issueGroups,
+  }
+}
+
+// ── Stock file validation (onboarding-friction plan #1, phase 4) ──────────────
+// The stock importer used to demand our exact headers, which no LatAm ERP
+// exports — so it went unused. This is the same pre-upload check the sales
+// file gets, reusing the separator sniffing and the quoted-field split above,
+// tuned for a stock export: a product code, a quantity, a cost.
+//
+// Unlike `validateSalesCsv` (whose Spanish messages predate the i18n layer and
+// are consumed as plain strings by the wizard), NOTHING here returns copy:
+// every issue is an i18n KEY plus params, and the component renders it. New
+// user-visible text in this file goes through i18n, per CLAUDE.md.
+
+export type StockCsvIssueKind =
+  | 'column_count'
+  | 'empty_sku'
+  | 'duplicate_sku'
+  | 'non_numeric'
+  | 'negative'
+
+export interface StockCsvIssue {
+  row:    number
+  kind:   StockCsvIssueKind
+  /** i18n key for the per-row line, e.g. `csvStock.row.non_numeric`. */
+  key:    string
+  params: Record<string, string | number>
+}
+
+export interface StockCsvIssueGroup {
+  kind:     StockCsvIssueKind
+  titleKey: string
+  hintKey:  string
+  count:    number
+  /** First few offending rows, as key+params for the renderer. */
+  samples:  StockCsvIssue[]
+  hidden:   number
+  fatal:    boolean
+}
+
+export interface StockCsvCheckResult {
+  ok:          boolean
+  columns:     string[]
+  rowCount:    number
+  separator:   string
+  /** True when the file writes decimals with a comma ("3,75"). */
+  decimalComma: boolean
+  /** Column index guessed for the product code; -1 when none looks like one. */
+  skuIndex:    number
+  /** Blocking problems as i18n keys — an empty file, or no product column. */
+  errors:      { key: string; params: Record<string, string | number> }[]
+  groups:      StockCsvIssueGroup[]
+}
+
+// Header hints, unaccented and lowercased. Kept deliberately in step with the
+// backend alias table (backend/utils/stock_import.py `_ALIASES`) — this side
+// only has to be good enough to warn before uploading; the backend's answer is
+// the one that decides the import.
+const STOCK_SKU_HINTS   = [...SKU_HINTS, 'clave', 'cod', 'material']
+const STOCK_QTY_HINTS   = ['existencia', 'existencias', 'stock', 'inventario', 'cantidad',
+                           'saldo', 'disponible', 'on hand', 'unidades']
+const STOCK_MONEY_HINTS = ['costo', 'precio', 'cost', 'price', 'pvp']
+
+/** Accent- and punctuation-blind header key, mirroring the backend's normalize(). */
+function normalizeHeader(header: string): string {
+  return (header || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/**
+ * True when a comma is used as the decimal mark anywhere in these cells: a
+ * comma followed by anything other than a 3-digit group is never a thousands
+ * separator. Decided once per FILE so an ambiguous "1,250" inherits the answer
+ * its unambiguous neighbours already gave — the same rule the backend applies.
+ */
+export function hasDecimalComma(samples: string[]): boolean {
+  return samples.some(s => /,\d{1,2}(?!\d)/.test(s || '') || /,\d{4,}/.test(s || ''))
+}
+
+/**
+ * Read a spreadsheet cell as a number, or null when it is not one. Mirrors
+ * backend/utils/stock_import.py parse_number: money symbols, spaced or dotted
+ * thousands, comma decimals, accounting negatives.
+ */
+export function parseLatamNumber(raw: string, decimalComma?: boolean): number | null {
+  if (raw == null) return null
+  let text = String(raw).trim()
+  if (!text) return null
+
+  let negative = false
+  if (text.startsWith('(') && text.endsWith(')')) { negative = true; text = text.slice(1, -1).trim() }
+  if (text.endsWith('-')) { negative = true; text = text.slice(0, -1).trim() }
+
+  const tokens = text.split(/\s+/).filter(t => /\d/.test(t))
+  if (tokens.length === 0) return null
+  if (tokens.length === 1) text = tokens[0]
+  else if (/^\d{1,3}$/.test(tokens[0]) && tokens.slice(1).every(t => /^\d{3}$/.test(t))) {
+    text = tokens.join('')          // spaced thousands: "1 234 567"
+  } else return null
+
+  // Symbols glued to the figure, never letters: stripping letters would turn
+  // the garbage cell "12abc" into a silent 12.
+  text = text.replace(/^[^\w.,-]+|[^\w.,-]+$/g, '')
+  if (text.startsWith('-')) { negative = true; text = text.slice(1) }
+  if (!text || /[^\d.,]/.test(text)) return null
+
+  const hasDot = text.includes('.'), hasComma = text.includes(',')
+  if (hasDot && hasComma) {
+    text = text.lastIndexOf(',') > text.lastIndexOf('.')
+      ? text.replace(/\./g, '').replace(',', '.')
+      : text.replace(/,/g, '')
+  } else if (hasComma) {
+    const groups = text.split(',')
+    const looksLikeThousands = groups.length > 1 && groups.slice(1).every(g => g.length === 3)
+    const useDecimal = decimalComma === undefined ? !looksLikeThousands : decimalComma
+    text = useDecimal ? text.replace(',', '.') : text.replace(/,/g, '')
+  } else if (hasDot) {
+    const groups = text.split('.')
+    if (groups.length > 2 && groups.slice(1).every(g => g.length === 3)) text = text.replace(/\./g, '')
+    else if (groups.length === 2 && groups[1].length === 3 && decimalComma) text = text.replace('.', '')
+  }
+
+  if (!/^\d*\.?\d+$/.test(text)) return null
+  const value = Number(text)
+  if (!Number.isFinite(value)) return null
+  return negative ? -value : value
+}
+
+// A malformed row here and there is skipped by the importer; a majority of
+// them means the file itself is broken and uploading is a waste of time.
+// Ratios above 1 mean "never fatal".
+const STOCK_FATAL_RATIO: Record<StockCsvIssueKind, number> = {
+  column_count:  0.1,
+  empty_sku:     0.5,
+  duplicate_sku: 1.1,   // the last row simply wins
+  non_numeric:   0.5,
+  negative:      1.1,   // those rows are rejected one by one
+}
+
+const STOCK_ISSUE_ORDER: StockCsvIssueKind[] =
+  ['column_count', 'empty_sku', 'non_numeric', 'duplicate_sku', 'negative']
+
+/**
+ * Pre-upload check for a stock file. Returns i18n keys, never copy.
+ *
+ * Excel files skip this (they are validated by POST /inventory/bulk/preview,
+ * which reads them server-side) — exactly like the sales upload.
+ */
+export function validateStockCsv(text: string): StockCsvCheckResult {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim().length > 0)
+  if (lines.length < 2) {
+    return {
+      ok: false, columns: [], rowCount: 0, separator: ',', decimalComma: false,
+      skuIndex: -1, errors: [{ key: 'csvStock.error.empty_file', params: {} }], groups: [],
+    }
+  }
+
+  const sep     = detectSeparator(lines[0])
+  const columns = splitLine(lines[0], sep)
+  const header  = columns.map(normalizeHeader)
+
+  const findIdx = (hints: string[]) =>
+    header.findIndex(h => hints.some(k => h === k || h.includes(k)))
+
+  const skuIdx   = findIdx(STOCK_SKU_HINTS)
+  const qtyIdx   = findIdx(STOCK_QTY_HINTS)
+  const moneyIdx = findIdx(STOCK_MONEY_HINTS)
+
+  const rows = lines.length - 1
+  const numericIdx = [qtyIdx, moneyIdx].filter(i => i >= 0)
+
+  // File-level decimal verdict first — every cell is then read the same way.
+  const numericSamples: string[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitLine(lines[i], sep)
+    for (const idx of numericIdx) if (cells[idx]) numericSamples.push(cells[idx])
+  }
+  const decimalComma = hasDecimalComma(numericSamples)
+
+  const issues: StockCsvIssue[] = []
+  const seen = new Set<string>()
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitLine(lines[i], sep)
+    const rowN  = i + 1
+
+    if (cells.length !== header.length) {
+      issues.push({ row: rowN, kind: 'column_count', key: 'csvStock.row.column_count',
+                    params: { row: rowN, found: cells.length, expected: header.length } })
+      continue
+    }
+
+    if (skuIdx >= 0) {
+      const sku = cells[skuIdx]
+      if (!sku) {
+        issues.push({ row: rowN, kind: 'empty_sku', key: 'csvStock.row.empty_sku',
+                      params: { row: rowN, column: columns[skuIdx] } })
+      } else if (seen.has(sku)) {
+        issues.push({ row: rowN, kind: 'duplicate_sku', key: 'csvStock.row.duplicate_sku',
+                      params: { row: rowN, sku } })
+      } else {
+        seen.add(sku)
+      }
+    }
+
+    for (const idx of numericIdx) {
+      const raw = cells[idx]
+      if (!raw) continue                       // blank optional cell, not garbage
+      const value = parseLatamNumber(raw, decimalComma)
+      if (value === null) {
+        issues.push({ row: rowN, kind: 'non_numeric', key: 'csvStock.row.non_numeric',
+                      params: { row: rowN, column: columns[idx], value: raw } })
+      } else if (value < 0) {
+        issues.push({ row: rowN, kind: 'negative', key: 'csvStock.row.negative',
+                      params: { row: rowN, column: columns[idx], value: raw } })
+      }
+    }
+  }
+
+  const groups: StockCsvIssueGroup[] = STOCK_ISSUE_ORDER.flatMap(kind => {
+    const of = issues.filter(it => it.kind === kind)
+    if (of.length === 0) return []
+    const samples = of.slice(0, MAX_PER_GROUP)
+    return [{
+      kind,
+      titleKey: `csvStock.group.${kind}.title`,
+      hintKey:  `csvStock.group.${kind}.hint`,
+      count:    of.length,
+      samples,
+      hidden:   of.length - samples.length,
+      fatal:    of.length > rows * STOCK_FATAL_RATIO[kind],
+    }]
+  })
+
+  const errors: { key: string; params: Record<string, string | number> }[] = []
+  if (skuIdx === -1) {
+    // Not fatal on its own: the mapping wizard lets the user point at the
+    // column by hand, which is the entire point of having a wizard.
+    errors.push({ key: 'csvStock.error.no_sku_column', params: { columns: columns.join(', ') } })
+  }
+  for (const g of groups.filter(g => g.fatal)) {
+    errors.push({ key: `csvStock.error.too_many_${g.kind}`, params: { count: g.count, rows } })
+  }
+
+  return {
+    ok: !groups.some(g => g.fatal),
+    columns, rowCount: rows, separator: sep, decimalComma, skuIndex: skuIdx,
+    errors, groups,
   }
 }

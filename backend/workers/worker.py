@@ -187,9 +187,11 @@ def _next_daily_run(now: datetime, hour: int) -> datetime:
 
 def _inventory_alert_loop() -> None:
     """Fires inventory stockout alerts, then supplier lead-time deviation
-    alerts (feature 3.3), daily at 8:00 AM UTC. The two run independently:
-    a supplier drifting late matters most while stock still looks healthy,
-    which is exactly when the stockout digest sends nothing."""
+    alerts (feature 3.3), then data-freshness reminders, daily at 8:00 AM UTC.
+    The three run independently: a supplier drifting late matters most while
+    stock still looks healthy, which is exactly when the stockout digest sends
+    nothing — and a tenant whose file is two months old produces no stockout
+    digest at all, because the semáforo it would be built from is blind."""
     log.info("Inventory alert scheduler started")
     while True:
         try:
@@ -219,6 +221,17 @@ def _inventory_alert_loop() -> None:
             run_daily_supplier_lead_time_alerts()
         except Exception as e:
             log.error("Supplier lead-time alert error: %s", e, exc_info=True)
+        try:
+            # Last of the three on purpose: a tenant with real stockouts gets
+            # the actionable digest first, and this only adds why their numbers
+            # may not be trustworthy. It is also the only one of the three that
+            # still fires when the tenant has stopped opening the app.
+            from backend.notifications.freshness_service import (
+                run_daily_freshness_reminders,
+            )
+            run_daily_freshness_reminders()
+        except Exception as e:
+            log.error("Data-freshness reminder error: %s", e, exc_info=True)
 
 
 def _integration_sync_loop() -> None:

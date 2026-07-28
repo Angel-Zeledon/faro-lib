@@ -18,11 +18,19 @@ _ACCESS_EXPIRE_MIN = 15
 _REFRESH_EXPIRE_DAYS = 7
 
 
-def create_access_token(user_id: str, tenant_id: str, role: str) -> str:
+def create_access_token(
+    user_id: str, tenant_id: str, role: str, email_verified: bool = True
+) -> str:
+    """`email_verified` travels in the token so an unverified user can still log
+    in and explore (see backend/auth/guards.require_verified_email): the claim,
+    not a 403 at login, is what gates the few actions that reach outside the
+    tenant. Defaults to True so callers that predate the claim keep behaving
+    exactly as before."""
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
         "role": role,
+        "email_verified": bool(email_verified),
         "jti": secrets.token_hex(8),
         "type": "access",
         # timezone-aware UTC: datetime.utcnow().timestamp() misreads the naive

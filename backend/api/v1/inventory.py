@@ -11,16 +11,20 @@ GET                   /inventory/shrinkage    — shrinkage history
 import asyncio
 import csv
 import io
+import json
 import logging
 from datetime import date
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from psycopg2.pool import PoolError
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_analyst_or_above,
+    require_verified_analyst_or_above,
+)
 from backend.config import settings
 from backend.errors import AppError
 from backend.entitlements.guards import require_feature
@@ -39,6 +43,7 @@ from backend.inventory import transfer_lane_service as lane_svc
 from backend.inventory import price_break_service as pb_svc
 from backend.inventory import cash_service
 from backend.schemas.common import ok
+from backend.utils import stock_import
 from backend.utils.csv_safe import csv_safe
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -166,95 +171,269 @@ def delete_stock(sku: str, user: CurrentUser = Depends(require_analyst_or_above)
     svc.delete_stock(user.tenant_id, sku)
 
 
-# ── Bulk import from CSV ───────────────────────────────────────────────────────
+# ── Bulk import from CSV / Excel ──────────────────────────────────────────────
 
 # Upper bound on the per-row diagnostics echoed back when a whole import is
 # rejected — the count is always exact, only the sample is capped.
 _MAX_REPORTED_ROW_ERRORS = 50
 
+# Rows echoed back by the preview so the user can see what the mapping will
+# actually write before committing to it.
+_PREVIEW_SAMPLE_ROWS = 8
 
-@router.post("/bulk")
-async def bulk_import(
-    file: UploadFile = File(...),
-    user: CurrentUser = Depends(require_analyst_or_above),
-):
-    """
-    Import stock data from CSV.
-    Expected columns (case-insensitive): sku, warehouse, display_name, category, brand,
-    unit_of_measure, barcode, current_stock, min_stock, lead_time_days,
-    unit_cost, sale_price, moq, supplier, notes
-    """
-    content = await file.read()
+
+def _decode_csv(content: bytes) -> str:
     try:
-        text = content.decode("utf-8-sig")  # handle BOM from Excel
+        return content.decode("utf-8-sig")  # handle BOM from Excel
     except UnicodeDecodeError:
-        text = content.decode("latin-1")
+        return content.decode("latin-1")
 
-    reader = csv.DictReader(io.StringIO(text))
-    # Normalize headers: lowercase + strip. Whitespace-only cells are treated
-    # as empty (dropped here) so an optional column left blank is skipped, not
-    # reported as a bad numeric value.
+
+def _read_upload(filename: Optional[str], content: bytes) -> tuple[str, list[str], list[dict], str]:
+    """
+    (format, columns, raw rows, separator) for a stock upload.
+
+    Excel goes through backend/dataframes (the only layer allowed to touch
+    pandas) and comes back as plain dicts; CSV stays on the stdlib reader with
+    a sniffed separator, so a Spanish-locale ';' export is no longer read as a
+    single column.
+    """
+    name = (filename or "").lower()
+    if name.endswith((".xlsx", ".xls", ".xlsm")):
+        from backend.dataframes.io import read_rows
+        try:
+            rows = read_rows(content, fmt="excel")
+        except Exception as e:
+            log.warning("stock import: unreadable Excel file '%s': %s", filename, e)
+            raise AppError(
+                "inventory_import_unreadable_file",
+                "The file could not be read as a spreadsheet",
+                status_code=422,
+                params={"filename": filename or ""},
+            )
+        columns = list(rows[0].keys()) if rows else []
+        return "excel", [str(c) for c in columns], rows, ""
+
+    text = _decode_csv(content)
+    sep = stock_import.sniff_separator(text)
+    reader = csv.DictReader(io.StringIO(text), delimiter=sep)
+    rows = [dict(r) for r in reader]
+    columns = [str(c) for c in (reader.fieldnames or []) if c is not None]
+    return "csv", columns, rows, sep
+
+
+def _resolve_mapping(columns: list[str], mapping_json: Optional[str]) -> tuple[dict, dict]:
+    """
+    (mapping actually used, mapping auto-detected). An explicit mapping from
+    the wizard wins per field; every field the user did not pin keeps the
+    detected column, so a partial mapping is a correction, not a reset.
+    """
+    detected = stock_import.detect_mapping(columns)
+    if not mapping_json:
+        return dict(detected), detected
+
+    try:
+        explicit = json.loads(mapping_json)
+    except (ValueError, TypeError):
+        raise AppError(
+            "inventory_import_bad_mapping",
+            "mapping must be a JSON object of {canonical_field: source_column}",
+            status_code=422,
+        )
+    if not isinstance(explicit, dict):
+        raise AppError(
+            "inventory_import_bad_mapping",
+            "mapping must be a JSON object of {canonical_field: source_column}",
+            status_code=422,
+        )
+
+    used = dict(detected)
+    by_normalized = {stock_import.normalize(c): c for c in columns}
+    for field, source in explicit.items():
+        if field not in stock_import.CANONICAL_FIELDS:
+            continue
+        if source in (None, ""):
+            used.pop(field, None)          # explicit "do not import this field"
+            continue
+        source = str(source)
+        actual = source if source in columns else by_normalized.get(stock_import.normalize(source))
+        if actual is None:
+            raise AppError(
+                "inventory_import_unknown_column",
+                f"Column '{source}' is not in the file",
+                status_code=422,
+                params={"column": source, "field": field},
+            )
+        # One source column per field: pinning it here releases it elsewhere.
+        for other, taken in list(used.items()):
+            if taken == actual and other != field:
+                used.pop(other)
+        used[field] = actual
+    return used, detected
+
+
+def _row_error(line_no: int, sku: str, code: str, params: dict, fallback: str) -> dict:
+    """
+    One rejected row. Carries a stable snake_case `code` + `params` (what the
+    UI renders through i18n) and keeps `error` as the English fallback for
+    logs and older clients — the same contract AppError uses.
+    """
+    log.warning("stock import: rejected row %s sku=%s: %s", line_no, sku, fallback)
+    return {"row": line_no, "sku": sku, "code": code, "params": params, "error": fallback}
+
+
+def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], list[dict], int]:
+    """
+    (valid canonical rows, per-row errors, rows skipped for having no SKU).
+
+    Numbers are read with the LatAm-tolerant parser: '1.234,56' and '₡ 1 234'
+    are values, 'N/D' is a reported error. The comma/dot verdict is taken once
+    for the whole file so an ambiguous '1,250' inherits what its unambiguous
+    neighbours already proved.
+    """
+    numeric_sources = [mapping[f] for f in stock_import.NUMERIC_FIELDS if f in mapping]
+    samples = [
+        str(r.get(col)) for r in raw_rows for col in numeric_sources
+        if r.get(col) not in (None, "")
+    ]
+    decimal_comma = stock_import.has_decimal_comma(samples)
+
     rows: list[dict] = []
-    # Per-row problems are collected and returned to the caller instead of
-    # being silently swallowed: a non-numeric cell in a numeric column, or a
-    # value that fails a model constraint (negative, or above the sane upper
-    # bounds), fails ONLY that row and is surfaced in ``errors`` so the user
-    # learns their data was rejected.
     errors: list[dict] = []
-    # enumerate from 2: DictReader consumed line 1 as the header, so the first
-    # data row is CSV line 2 — the number a user sees in their spreadsheet.
-    for line_no, raw_row in enumerate(reader, start=2):
-        row = {k.strip().lower(): v.strip() for k, v in raw_row.items() if v and v.strip()}
+    skipped_no_sku = 0
 
+    # enumerate from 2: the header is line 1, so the first data row is line 2 —
+    # the number the user sees in their spreadsheet.
+    for line_no, raw_row in enumerate(raw_rows, start=2):
+        row = stock_import.apply_mapping(raw_row, mapping)
         sku = row.get("sku", "").strip()
         if not sku:
+            skipped_no_sku += 1
             continue
 
         parsed: dict = {"sku": sku}
-        row_error: Optional[str] = None
-
-        for fld in ("display_name", "supplier", "notes",
-                    "category", "brand", "unit_of_measure", "barcode", "warehouse"):
+        for fld in stock_import.TEXT_FIELDS:
             if fld in row:
                 parsed[fld] = row[fld]
 
-        # A field only appears in ``row`` when the cell was non-empty, so a
-        # parse failure here means genuine garbage (e.g. 'not-a-date'), NOT a
-        # blank/optional cell. Report it as a row error rather than coercing
-        # to 0 and importing silently.
-        for fld in ("current_stock", "min_stock", "unit_cost", "moq", "sale_price"):
-            if fld in row:
-                try:
-                    parsed[fld] = float(row[fld])
-                except (ValueError, TypeError):
-                    row_error = f"column '{fld}' is not a number: '{row[fld]}'"
-                    break
-        if row_error is None and "lead_time_days" in row:
-            try:
-                parsed["lead_time_days"] = int(float(row["lead_time_days"]))
-            except (ValueError, TypeError):
-                row_error = f"column 'lead_time_days' is not a number: '{row['lead_time_days']}'"
-
+        # A field only reaches here when the cell was non-empty, so a parse
+        # failure means genuine garbage ('N/D'), NOT a blank optional cell.
+        # Report it instead of coercing to 0 and importing silently.
+        row_error: Optional[dict] = None
+        for fld in stock_import.NUMERIC_FIELDS:
+            if fld not in row:
+                continue
+            value = stock_import.parse_number(row[fld], decimal_comma=decimal_comma)
+            if value is None:
+                row_error = _row_error(
+                    line_no, sku, "inventory_import_row_not_a_number",
+                    {"column": fld, "value": row[fld]},
+                    f"column '{fld}' is not a number: '{row[fld]}'",
+                )
+                break
+            parsed[fld] = int(value) if fld in stock_import.INT_FIELDS else value
         if row_error is not None:
-            log.warning(f"bulk_import: rejected row {line_no} sku={sku}: {row_error}")
-            errors.append({"row": line_no, "sku": sku, "error": row_error})
+            errors.append(row_error)
             continue
 
-        # Validate against the same constraints as the direct PUT/PATCH
-        # endpoints (ge=0 lower bounds and the sane upper bounds above) —
-        # without this, CSV import would be the only write path that lets
-        # negative or absurd (1e15) quantities into the DB.
+        # Same constraints as the direct PUT/PATCH endpoints (ge=0 lower
+        # bounds and the sane upper bounds above) — without this, import would
+        # be the only write path letting negative or absurd values into the DB.
         try:
             validated = StockPatch(**{k: v for k, v in parsed.items() if k != "sku"})
         except ValidationError as e:
+            first = e.errors()[0] if e.errors() else {}
+            column = str(first.get("loc", ["value"])[0]) if first.get("loc") else "value"
             detail = "; ".join(
                 f"{(err['loc'][0] if err.get('loc') else 'value')}: {err['msg']}"
                 for err in e.errors()
             )
-            log.warning(f"bulk_import: rejected row {line_no} sku={sku}: {detail}")
-            errors.append({"row": line_no, "sku": sku, "error": detail})
+            errors.append(_row_error(
+                line_no, sku, "inventory_import_row_out_of_range",
+                {"column": column, "value": parsed.get(column), "reason": first.get("type", "")},
+                detail,
+            ))
             continue
         rows.append({"sku": sku, **validated.model_dump(exclude_none=True)})
+
+    return rows, errors, skipped_no_sku
+
+
+@router.post("/bulk/preview")
+async def bulk_import_preview(
+    file: UploadFile = File(...),
+    mapping: Optional[str] = Form(default=None),
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Dry run of POST /bulk: what we detected in the file and what we would
+    write, without touching a single row. This is what makes the mapping
+    wizard possible — the user corrects our column guesses BEFORE importing,
+    the same way the sales upload works.
+    """
+    content = await file.read()
+    fmt, columns, raw_rows, sep = _read_upload(file.filename, content)
+    used, detected = _resolve_mapping(columns, mapping)
+    rows, errors, skipped_no_sku = _parse_stock_rows(raw_rows, used)
+
+    # Group the per-row errors so the UI shows "37 non-numeric cells", not 37
+    # separate lines the user has to read one by one.
+    grouped: dict[tuple, dict] = {}
+    for err in errors:
+        key = (err["code"], err["params"].get("column"))
+        group = grouped.setdefault(key, {
+            "code": err["code"],
+            "column": err["params"].get("column"),
+            "count": 0,
+            "samples": [],
+        })
+        group["count"] += 1
+        if len(group["samples"]) < 5:
+            group["samples"].append({"row": err["row"], "sku": err["sku"],
+                                     "value": err["params"].get("value")})
+
+    return ok({
+        "format": fmt,
+        "separator": sep,
+        "columns": columns,
+        "total_rows": len(raw_rows),
+        # Field -> column we will read. `detected_mapping` is what the file
+        # alone suggested, so the UI can show which picks are its own.
+        "mapping": used,
+        "detected_mapping": detected,
+        "unmapped_columns": [c for c in columns if c not in used.values()],
+        "missing_required": [] if "sku" in used else ["sku"],
+        "importable_rows": len(rows),
+        "rejected_rows": len(errors),
+        "skipped_no_sku": skipped_no_sku,
+        "sample_rows": rows[:_PREVIEW_SAMPLE_ROWS],
+        "issues": list(grouped.values()),
+        "fields": list(stock_import.CANONICAL_FIELDS),
+    })
+
+
+@router.post("/bulk")
+async def bulk_import(
+    file: UploadFile = File(...),
+    mapping: Optional[str] = Form(default=None),
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """
+    Import stock from a CSV or Excel file.
+
+    Columns are matched by alias, accent- and case-blind, so a real ERP export
+    ('Código', 'Existencia', 'Costo Unitario', separated by ';') imports with
+    no hand-editing. `mapping` — a JSON object of {canonical_field:
+    source_column} sent by the wizard — overrides the detection per field.
+
+    Canonical fields: sku, warehouse, display_name, category, brand,
+    unit_of_measure, barcode, current_stock, min_stock, lead_time_days,
+    unit_cost, sale_price, moq, supplier, notes.
+    """
+    content = await file.read()
+    fmt, columns, raw_rows, _sep = _read_upload(file.filename, content)
+    used, detected = _resolve_mapping(columns, mapping)
+    rows, errors, skipped_no_sku = _parse_stock_rows(raw_rows, used)
 
     if not rows:
         # The whole file was rejected — a user event, not API misuse, so it
@@ -262,9 +441,15 @@ async def bulk_import(
         # a 10k-row garbage CSV used to echo 10k error objects back.
         raise AppError(
             "inventory_import_no_valid_rows",
-            "No valid rows found in CSV. Ensure 'sku' column exists.",
+            "No valid rows found in the file. Ensure a product-code column exists.",
             status_code=422,
-            params={"rejected": len(errors), "errors": errors[:_MAX_REPORTED_ROW_ERRORS]},
+            params={
+                "rejected": len(errors),
+                "errors": errors[:_MAX_REPORTED_ROW_ERRORS],
+                "columns": columns,
+                "mapping": used,
+                "missing_required": [] if "sku" in used else ["sku"],
+            },
         )
 
     # Resolve every distinct warehouse spelling in the CSV to its canonical
@@ -299,7 +484,17 @@ async def bulk_import(
     # the import (confirmed: a 10k-row file blocked even the unrelated /health
     # endpoint for other tenants).
     count = await asyncio.to_thread(svc.bulk_upsert, user.tenant_id, rows)
-    result = {"imported": count, "total_rows": len(rows)}
+    result = {
+        "imported": count,
+        "total_rows": len(rows),
+        "format": fmt,
+        # What we read the file as, so the UI can say "we took Existencia as
+        # your stock" instead of leaving the user guessing.
+        "mapping": used,
+        "detected_mapping": detected,
+        "unmapped_columns": [c for c in columns if c not in used.values()],
+        "skipped_no_sku": skipped_no_sku,
+    }
     # Surface rejected rows so the user learns their data was garbage instead
     # of it being silently dropped/coerced.
     if errors:
@@ -331,6 +526,47 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="inventory_template.csv"'},
     )
+
+
+# ── Setup gaps — ask only for what moves the needle ───────────────────────────
+
+@router.get("/setup-gaps")
+def setup_gaps(
+    session_id: Optional[str] = Query(
+        default=None,
+        description="Completed forecast session; defaults to the tenant's active-period session"),
+    horizon_days: int = Query(default=30, ge=1, le=365,
+                              description="Window the projected spend is measured over"),
+    limit: int = Query(default=50, ge=1, le=500),
+    target_pct: float = Query(default=80.0, ge=1.0, le=100.0,
+                              description="Share of projected spend the recommendation aims at"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Unconfigured SKUs ordered by the money they move, with the running
+    cumulative share of projected spend.
+
+    This is what turns "configure 2.000 rows" — which nobody finishes — into
+    "configure these 40 and you cover 82% of your monthly purchase". The
+    ordering is by SPEND (projected demand x unit price), never by row count;
+    `basis` says so explicitly, and falls back to "units" when the tenant has
+    given us no money figure at all rather than pretending otherwise.
+    """
+    from backend.inventory import setup_gaps_service as gaps_svc
+
+    if not session_id:
+        session_id = planning_service.resolve_active_session(user.tenant_id)
+        if not session_id:
+            raise AppError(
+                "no_completed_session",
+                "No completed session for this tenant yet",
+                status_code=400,
+            )
+
+    return ok(gaps_svc.get_setup_gaps(
+        user.tenant_id, session_id,
+        horizon_days=horizon_days, limit=limit, target_pct=target_pct,
+    ))
 
 
 # ── Status endpoint — the core of the product ─────────────────────────────────
@@ -1159,7 +1395,9 @@ def download_po_pdf(po_log_id: str, supplier_slug: str):
 @router.post("/po/{po_log_id}/send", status_code=200)
 def send_po_to_suppliers(
     po_log_id: str,
-    user: CurrentUser = Depends(require_analyst_or_above),
+    # Verified email required: this leaves the tenant, reaching third-party
+    # suppliers by email and WhatsApp in the account's name.
+    user: CurrentUser = Depends(require_verified_analyst_or_above),
 ):
     """
     Sends a PO's PDF to each of its suppliers by email and WhatsApp,
@@ -1828,7 +2066,9 @@ def remove_sku_supplier(
 @router.post("/alerts/send-now", status_code=202)
 def send_alert_now(
     session_id: str = Query(...),
-    user: CurrentUser = Depends(require_analyst_or_above),
+    # Verified email required: fires real email + WhatsApp to the tenant's
+    # contacts.
+    user: CurrentUser = Depends(require_verified_analyst_or_above),
 ):
     """
     Fire the daily inventory alert immediately for this tenant (email to all

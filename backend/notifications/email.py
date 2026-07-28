@@ -489,6 +489,58 @@ def send_supplier_lead_time_alert_email(
         return False
 
 
+def send_data_freshness_reminder_email(
+    to: str,
+    sales_age_days: int | None,
+    stock_age_days: int | None,
+    upload_url: str,
+) -> bool:
+    """
+    The reminder that reaches a buyer who stopped opening the app.
+
+    Sent by `notifications.freshness_service.run_daily_freshness_reminders`.
+    `stock_age_days` is passed only when the stock clock is what triggered the
+    reminder, so the email never lists an age that is not part of the problem.
+    Returns True if the message reached a transport.
+    """
+    blocks: list[str] = []
+    if sales_age_days is not None:
+        blocks.append(
+            f'<p style="color:{_DIM};margin:0 0 14px;">'
+            f'{render_es("freshness_email_sales", days=sales_age_days)}</p>'
+        )
+    if stock_age_days is not None:
+        blocks.append(
+            f'<p style="color:{_DIM};margin:0 0 14px;">'
+            f'{render_es("freshness_email_stock", days=stock_age_days)}</p>'
+        )
+
+    html = _base_html(
+        render_es("freshness_email_title"),
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 12px;">
+          {render_es("freshness_email_title")}
+        </p>
+        {"".join(blocks)}
+        {_button(render_es("freshness_email_cta"), upload_url)}
+        <p style="color:{_DIM};font-size:11px;margin:0;">
+          {render_es("freshness_email_footer")}
+        </p>
+        """,
+    )
+    subject = (
+        render_es("freshness_email_subject", days=sales_age_days)
+        if sales_age_days is not None
+        else render_es("freshness_email_subject_stock", days=stock_age_days)
+    )
+    try:
+        _send(to, subject, html)
+        return True
+    except Exception as exc:
+        log.error("Failed to send data-freshness reminder to %s: %s", to, exc)
+        return False
+
+
 def send_training_complete_email(to: str, session_name: str, dashboard_url: str) -> bool:
     """Notify user when a training job finishes. Returns True if sent."""
     html = _base_html(

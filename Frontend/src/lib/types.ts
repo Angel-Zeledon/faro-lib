@@ -1,4 +1,7 @@
 // ── Session ──────────────────────────────────────────────────────────────────
+import type { RuleScope, ValueSource } from './inventoryDefaults'
+export type { RuleScope, ValueSource }
+
 export type SessionStatus =
   | 'DRAFT' | 'DATASET_LOADED' | 'INSPECTED'
   | 'COLUMNS_CONFIGURED' | 'FEATURES_CONFIGURED' | 'MODELS_CONFIGURED'
@@ -656,8 +659,13 @@ export interface InventoryCalcExplanation {
   suficiente?:        boolean
   daily_demand?:    number
   lead_time_days?:    number
-  // 'learned' (from real receptions) vs 'configured' (typed on the SKU card).
-  lead_time_source?: 'learned' | 'configured'
+  // Where the lead time came from: user | file | supplier_rule | learned |
+  // default. 'default' means Faro assumed it — the case the old
+  // 'learned' | 'configured' pair could not express, so an untouched SKU was
+  // labelled "configurado por ti".
+  lead_time_source?: ValueSource
+  // supplier | category | global — set only when a stock_defaults rule won.
+  lead_time_rule_scope?: RuleScope | null
   lead_time_demand?: number
   safety_stock?:      number
   current_stock?:      number
@@ -762,7 +770,8 @@ export interface WarehouseStatusItem {
   supplier: string | null
   current_stock: number | null
   lead_time_days: number
-  lead_time_source: 'learned' | 'configured'
+  lead_time_source: ValueSource
+  lead_time_rule_scope?: RuleScope | null
   moq: number
   daily_demand: number | null
   coverage_days: number | null
@@ -842,11 +851,22 @@ export interface InventoryStatusItem extends InventoryStock {
   stock_history:        { stock: number; date: string }[]
   calc_explanation:     InventoryCalcExplanation | null
   // The "why" behind the recommendation — all computed in the backend
-  lead_time_source?:      'learned' | 'configured'
+  lead_time_source?:      ValueSource
+  lead_time_rule_scope?:  RuleScope | null
   lead_time_configured?: number
   lead_time_learned?:   number | null
+  // Provenance of the other planning values, same vocabulary.
+  unit_cost_source?:      ValueSource
+  moq_source?:            ValueSource
+  moq_rule_scope?:        RuleScope | null
+  service_level_source?:  ValueSource
+  service_level_rule_scope?: RuleScope | null
   reorder_point?:         number | null
+  // English fallback sentence. The Spanish is rendered by the frontend from
+  // explanation_code + explanation_params (lib/explanationCopy.ts).
   explanation?:           string | null
+  explanation_code?:      string | null
+  explanation_params?:    Record<string, unknown> | null
   // Margen bruto por unit; null cuando falta sale_price o unit_cost
   unit_margin?:       number | null
 }
@@ -1180,7 +1200,9 @@ export interface OverdueReception {
   expected_arrival:  string
   days_overdue:      number
   lead_time_used:    number
-  lead_time_source:  'observed' | 'declared' | 'default'
+  // Unified with the semáforo's vocabulary: 'observed' is now 'learned' and
+  // 'declared' is 'supplier_rule'. Two words for one question was the bug.
+  lead_time_source:  ValueSource
 }
 
 export interface SupplierScorecardRow {

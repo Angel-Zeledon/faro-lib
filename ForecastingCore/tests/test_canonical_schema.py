@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from forecasting_core.data.canonical import (
     apply_canonical_defaults, series_key, parse_series_key,
-    REQUIRED_FIELDS, FIELD_DEFAULTS,
+    REQUIRED_FIELDS, FIELD_DEFAULTS, DEFAULT_LEAD_TIME_DAYS,
 )
 
 def _base_df():
@@ -22,11 +22,19 @@ def test_apply_defaults_adds_store_column_when_not_mapped():
     assert "store" in result.columns
     assert (result["store"] == "Tienda única").all()
 
-def test_apply_defaults_adds_lead_time_7_when_not_mapped():
+def test_apply_defaults_adds_the_one_lead_time_default_when_not_mapped():
+    """Pinned to the constant, not to a literal.
+
+    The product used to carry three different lead-time defaults — 7 here and
+    in the training runner, 15 in the DB schema and the wizard — so a number
+    nobody chose was deciding how much to spend, and which number depended on
+    which code path you came through. Asserting the constant is what keeps this
+    test honest if the business value is revisited.
+    """
     df = _base_df()
     mapping = {"sku": "prod", "date": "fecha", "demand": "ventas"}
     result = apply_canonical_defaults(df, mapping)
-    assert (result["lead_time"] == 7).all()
+    assert (result["lead_time"] == DEFAULT_LEAD_TIME_DAYS).all()
 
 def test_apply_defaults_sets_price_to_none_when_not_mapped():
     df = _base_df()

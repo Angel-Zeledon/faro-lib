@@ -6,8 +6,8 @@ import {
   Database, TrendingUp, Package,
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight,
-  ShoppingCart, Truck, Upload, Zap, ClipboardList, Lock, Plug, History,
-  FlaskConical,
+  ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
+  FlaskConical, ListChecks,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -38,6 +38,11 @@ const NAV: NavItem[] = [
   { href: '/data',                labelKey: 'nav.data',        Icon: Database,        group: 'data' },
 
   { href: '/inventory',           labelKey: 'nav.inventory',   Icon: Package,         group: 'purchasing' },
+  // Ahead of the full inventory list on purpose: a tenant with 2.000
+  // unconfigured products needs the 40 that carry 82% of the spend, not the
+  // 2.000. The route is /inventory-setup rather than /inventory/setup because
+  // the latter would nest under the inventory tree's own layout.
+  { href: '/inventory-setup',     labelKey: 'nav.inventory_setup', Icon: ListChecks,  group: 'purchasing' },
   { href: '/inventory/suppliers', labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
 
   { href: '/inventory/roi',       labelKey: 'nav.roi',         Icon: TrendingUp,      group: 'analysis' },

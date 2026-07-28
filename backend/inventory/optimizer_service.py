@@ -18,10 +18,10 @@ import math as _math
 
 from backend.db import session_store
 from backend.inventory import transfer_lane_service as lane_svc
+from backend.inventory.defaults import DEFAULT_LEAD_TIME_DAYS as _DEFAULT_LEAD_TIME_DAYS
 from backend.inventory.service import list_stock, _avg_forecast_curve, _days_per_period
 
 _DEFAULT_UNIT_COST = 1.0
-_DEFAULT_LEAD_TIME_DAYS = 15
 
 # A MILP solve is CPU-bound and can take tens of seconds. FastAPI runs sync
 # endpoints on a bounded thread pool, so an unthrottled burst of /optimize

@@ -2,9 +2,9 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { authLogin } from '@/lib/api'
+import { authLogin, authResendVerification, isApiError } from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
-import { Eye, EyeOff, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff, AlertTriangle, ArrowRight, MailCheck } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
@@ -24,6 +24,11 @@ function LoginPageContent() {
   const [showPw,   setShowPw]   = useState(false)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+  // A login refused for a verification reason is the one error the user cannot
+  // fix by retyping something, so it gets an action instead of just a message.
+  const [canResend,  setCanResend]  = useState(false)
+  const [resending,  setResending]  = useState(false)
+  const [resentNote, setResentNote] = useState<string | null>(null)
 
   // `/login` is a public path, so AuthGuard lets it render even with a live
   // session — a user coming back to a still-valid tab would otherwise be shown
@@ -34,9 +39,28 @@ function LoginPageContent() {
     if (isAuthenticated()) router.replace(destination)
   }, [router, destination])
 
+  const VERIFICATION_CODES = ['email_not_verified', 'account_pending_confirmation']
+
+  async function handleResend() {
+    setResending(true)
+    setResentNote(null)
+    try {
+      await authResendVerification(email)
+    } catch {
+      // The endpoint answers the same for every address by design, so there is
+      // nothing useful to distinguish here — say it was requested either way
+      // rather than inventing a failure the user cannot act on.
+    } finally {
+      setResentNote(t('auth.resend_verification_done'))
+      setResending(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setCanResend(false)
+    setResentNote(null)
     setLoading(true)
     try {
       const res = await authLogin(email, password)
@@ -50,6 +74,7 @@ function LoginPageContent() {
       router.replace(destination)
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.login_failed'))
+      setCanResend(isApiError(err) && VERIFICATION_CODES.includes(err.code))
     } finally {
       setLoading(false)
     }
@@ -110,14 +135,36 @@ function LoginPageContent() {
 
           {error && (
             <div style={{
-              display: 'flex', gap: 8, alignItems: 'center',
+              display: 'flex', flexDirection: 'column', gap: 8,
               padding: '10px 12px', borderRadius: 10, marginBottom: 20,
               background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
               fontSize: 13, color: '#dc2626',
               animation: 'auth-fade-up 0.35s ease-out both',
             }}>
-              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
-              {error}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                {error}
+              </div>
+              {canResend && !resentNote && (
+                <button
+                  type="button" onClick={handleResend} disabled={resending || !email}
+                  style={{
+                    all: 'unset', alignSelf: 'flex-start', cursor: resending ? 'wait' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    fontSize: 12.5, fontWeight: 600, color: '#0a0a0a',
+                    textDecoration: 'underline', textUnderlineOffset: 3,
+                  }}
+                >
+                  <MailCheck size={13} />
+                  {resending ? t('auth.resend_verification_sending') : t('auth.resend_verification')}
+                </button>
+              )}
+              {resentNote && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: '#52525b' }}>
+                  <MailCheck size={13} style={{ flexShrink: 0 }} />
+                  {resentNote}
+                </div>
+              )}
             </div>
           )}
 

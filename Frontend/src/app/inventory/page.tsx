@@ -29,6 +29,10 @@ import { useToast } from '@/contexts/ToastContext'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import { coverageUnitShort } from '@/lib/period'
 import {
+  DEFAULT_LEAD_TIME_DAYS, DEFAULT_MOQ, DEFAULT_SERVICE_LEVEL,
+  isAssumed, sourceLabelKey, type ValueSource,
+} from '@/lib/inventoryDefaults'
+import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
@@ -130,6 +134,36 @@ function Sparkline({ data }: { data: { stock: number }[] }) {
  )
 }
 
+// ── My data, or Faro's assumption? ────────────────────────────────────
+// A dotted grey badge on any value we assumed rather than received. The buyer
+// must be able to tell, at a glance, which numbers driving their spend are
+// theirs and which are ours — before this, a lead time of 15 days looked
+// identical whether they had chosen it or never opened the SKU.
+function SourceBadge({ source, scope }: { source?: ValueSource | null; scope?: string | null }) {
+  const { t } = useLanguage()
+  if (!source) return null
+  const assumed = isAssumed(source)
+  const label = t(sourceLabelKey(source))
+  // A rule hit names the level that won, so the precedence is visible rather
+  // than something the buyer has to reverse-engineer.
+  const text = source === 'supplier_rule' && scope
+    ? `${label} · ${t(`explain.scope_${scope}`)}`
+    : label
+  return (
+    <span
+      title={t(assumed ? 'inventory.source_assumed_tip' : 'inventory.source_yours_tip')}
+      style={{
+        marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+        textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,
+        color: assumed ? 'var(--dim)' : C.indigo,
+        border: assumed ? '1px dashed var(--border)' : '1px solid rgba(129,140,248,0.35)',
+        background: assumed ? 'transparent' : 'rgba(129,140,248,0.08)',
+        whiteSpace: 'nowrap',
+      }}
+    >{text}</span>
+  )
+}
+
 // ── Why is this being recommended? ──────────────────────────────────────────
 function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: number }) {
  const { t } = useLanguage()
@@ -143,13 +177,13 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  }
 
  const unitWord = t('inventory.calc_unit_units')
- // Label where the lead time came from, so the buyer knows whether the number
- // is learned from real receptions or the one typed on the SKU card.
- const leadOrigin = exp.lead_time_source === 'learned'
- ? t('inventory.lead_origin_learned')
- : exp.lead_time_source === 'configured'
- ? t('inventory.lead_origin_configured')
- : null
+ // Where the lead time came from, across all five real sources. It used to be
+ // a learned/configured pair, which called an untouched SKU 'configured' — the
+ // one label the product had no right to use.
+ const leadSource = (exp.lead_time_source || 'default') as ValueSource
+ const leadOrigin = leadSource === 'supplier_rule' && exp.lead_time_rule_scope
+ ? `${t(sourceLabelKey(leadSource))} · ${t(`explain.scope_${exp.lead_time_rule_scope}`)}`
+ : t(sourceLabelKey(leadSource))
  const steps = [
  { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.daily_demand!.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
  { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_days}d${leadOrigin ? ` · ${leadOrigin}` : ''})`, value: `= ${exp.lead_time_demand!.toFixed(0)} ${unitWord}`, op: '×' },
@@ -920,7 +954,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
 // ── Inline edit state ─────────────────────────────────────────────────────────
 interface EditState { current_stock: string; lead_time_days: string; unit_cost: string; moq: string; supplier: string; display_name: string; service_level: string; sale_price: string; category: string; family: string; brand: string; unit_of_measure: string; barcode: string }
 function rowToEdit(item: InventoryStatusItem): EditState {
- return { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? 15), unit_cost: String(item.unit_cost ?? ''), moq: String(item.moq ?? 1), supplier: item.supplier ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? 0.95), sale_price: String(item.sale_price ?? ''), category: item.category ?? '', family: item.family ?? '', brand: item.brand ?? '', unit_of_measure: item.unit_of_measure ?? '', barcode: item.barcode ?? '' }
+ return { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), unit_cost: String(item.unit_cost ?? ''), moq: String(item.moq ?? DEFAULT_MOQ), supplier: item.supplier ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? DEFAULT_SERVICE_LEVEL), sale_price: String(item.sale_price ?? ''), category: item.category ?? '', family: item.family ?? '', brand: item.brand ?? '', unit_of_measure: item.unit_of_measure ?? '', barcode: item.barcode ?? '' }
 }
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
@@ -1022,13 +1056,13 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const [demandMult, setDemandMult] = useState(100)
  const [stockDelta, setStockDelta] = useState(0)
 
- const simLeadTime = Math.max(1, (item.lead_time_days ?? 15) + ltDelta)
+ const simLeadTime = Math.max(1, (item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS) + ltDelta)
  const simDemand   = (item.daily_demand ?? 0) * demandMult / 100
  const simStock    = Math.max(0, (item.current_stock ?? 0) + stockDelta)
 
  // Approximate avgStd from safety stock and original lead_time
  // safety_stock = z * avgStd * sqrt(lead_time) → avgStd ≈ safety_stock / (z * sqrt(lead_time))
- const origLT = item.lead_time_days ?? 15
+ const origLT = item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS
  const origSS = exp.safety_stock ?? 0
  const z      = 1.645
  const avgStd = origLT > 0 ? origSS / (z * Math.sqrt(origLT)) : 0
@@ -1219,7 +1253,7 @@ export default function InventoryPage() {
  data.items.forEach(item => {
  draft[item.sku] = {
  current_stock: String(item.current_stock ?? ''),
- lead_time_days: String(item.lead_time_days ?? 15),
+ lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS),
  supplier: item.supplier ?? '',
  }
  })
@@ -1251,7 +1285,7 @@ export default function InventoryPage() {
  try {
  await upsertInventoryStock(sku, {
  current_stock: parseFloat(draft.current_stock) || 0,
- lead_time_days: parseInt(draft.lead_time_days) || 15,
+ lead_time_days: parseInt(draft.lead_time_days) || DEFAULT_LEAD_TIME_DAYS,
  supplier: draft.supplier || undefined,
  })
  saved++
@@ -1308,7 +1342,7 @@ export default function InventoryPage() {
  if (!editState || savingRef.current) return
  savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: parseInt(editState.lead_time_days) || 15, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || 1, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || 0.95, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: parseInt(editState.lead_time_days) || DEFAULT_LEAD_TIME_DAYS, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || DEFAULT_MOQ, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || DEFAULT_SERVICE_LEVEL, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_saving')) }
  finally { savingRef.current = false; setSaving(false) }
@@ -1670,7 +1704,7 @@ export default function InventoryPage() {
  if (data) {
  const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
  data.items.forEach(item => {
- draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? 15), supplier: item.supplier ?? '' }
+ draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), supplier: item.supplier ?? '' }
  })
  setUpdateDraft(draft)
  setUpdatedSkus(new Set())
@@ -2080,7 +2114,8 @@ export default function InventoryPage() {
  ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
  : '—'}
  </td>
- <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{item.lead_time_days}d</td>
+ <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{item.lead_time_days}d
+ <SourceBadge source={item.lead_time_source} scope={item.lead_time_rule_scope} /></td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{fmt(item.moq, 0)}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}><AbcXyzBadge value={item.abc_xyz} /></td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11, color: C.muted }}>{item.inventory_value != null ? fmtCurrency(item.inventory_value) : '—'}</td>

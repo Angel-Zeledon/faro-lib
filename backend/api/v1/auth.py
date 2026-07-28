@@ -27,7 +27,8 @@ from backend.errors import AppError
 from backend.schemas.auth import (
     ForgotPasswordRequest, ForgotPasswordVerifyRequest,
     LoginRequest, RefreshRequest,
-    ResetPasswordRequest, SignupRequest, VerifyEmailRequest,
+    ResendVerificationRequest, ResetPasswordRequest, SignupRequest,
+    VerifyEmailRequest,
 )
 from backend.schemas.common import ok
 from backend.tenants.service import create_tenant
@@ -184,11 +185,17 @@ async def signup(body: SignupRequest):
         # it a signup with no mail transport still told the user to go check
         # their inbox for a link that was never generated a delivery attempt.
         "email_error": None if email_sent else email_mod.failure_reason(),
+        # Honest fallback: when nothing was sent, hand the link straight to the
+        # person who just created the account instead of pointing them at an
+        # inbox we know is empty. It is only ever returned on the failure path
+        # (mail transport down), where the alternative is not a safer flow but
+        # an account nobody — including its legitimate owner — can activate.
+        "verify_url": None if email_sent else verify_url,
         "message": (
             "Account created. Check your email to verify."
             if email_sent else
             "Account created but verification email could not be sent. "
-            "Contact your administrator."
+            "Use the verification link returned with this response."
         ),
     })
 
@@ -211,6 +218,45 @@ async def verify_email(body: VerifyEmailRequest):
     return ok({"message": "Email verified. You can now log in."})
 
 
+@router.post("/resend-verification")
+async def resend_verification(body: ResendVerificationRequest):
+    """Re-send the verification link. The only self-service escape from a
+    verification mail that never arrived (spam is routine on @hotmail/@yahoo).
+
+    Rate limited, and the response is deliberately identical for an unknown
+    address, an already-verified one and a real resend — same anti-enumeration
+    criterion as ``forgot-password`` below. The outcome goes to the log only.
+    """
+    email = body.email.lower().strip()
+    # Rate first, before the lookup, so a hit costs the same for every address.
+    _check_rate(f"resend-verify:{email}", max_attempts=3, window_secs=900)
+
+    entry = _lookup_email(email)
+    if entry:
+        user = user_svc.get_user(entry["tenant_id"], entry["user_id"])
+        if user and not user.get("email_verified"):
+            verify_token = create_signed_token(
+                {"sub": user["id"], "tenant_id": entry["tenant_id"],
+                 "purpose": "email_verify"},
+                expires_minutes=60 * 24,
+            )
+            verify_url = f"{settings.frontend_url}/verify-email?token={verify_token}"
+            from backend.notifications.email import send_verification_email
+            sent = send_verification_email(
+                user["email"], (user.get("full_name") or "").strip(), verify_url,
+            )
+            log.info("[resend-verification] user=%s sent=%s", user["id"], sent)
+        else:
+            log.info("[resend-verification] no-op for email=%s (already verified)", email)
+    else:
+        log.info("[resend-verification] no-op for unknown email=%s", email)
+
+    return ok({
+        "message": "If the account exists and is not verified, "
+                   "a verification link has been sent.",
+    })
+
+
 @router.post("/login")
 async def login(body: LoginRequest):
     _check_rate(f"login:{body.email.lower()}", max_attempts=5, window_secs=300)
@@ -224,10 +270,12 @@ async def login(body: LoginRequest):
     if not user:
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
 
-    if not user.get("email_verified"):
-        raise AppError(
-            "email_not_verified", "Please verify your email first", status_code=403,
-        )
+    # An unverified address no longer blocks the login. It travels in the token
+    # instead (`email_verified` claim), and backend/auth/guards.py demands
+    # verification only on the actions that reach outside the tenant. Refusing
+    # here stranded anyone whose verification mail landed in spam — with no
+    # self-service way out and nothing of the product seen.
+    email_verified = bool(user.get("email_verified"))
 
     user_status = user.get("status", "active")
     if user_status != "active":
@@ -246,7 +294,9 @@ async def login(body: LoginRequest):
 
     user_svc.update_last_login(entry["tenant_id"], user["id"])
 
-    access_token = create_access_token(user["id"], user["tenant_id"], user["role"])
+    access_token = create_access_token(
+        user["id"], user["tenant_id"], user["role"], email_verified=email_verified,
+    )
     raw_refresh, hashed_refresh = create_refresh_token()
     user_svc.add_refresh_token(user["tenant_id"], user["id"], hashed_refresh)
 
@@ -261,6 +311,9 @@ async def login(body: LoginRequest):
             "full_name": user.get("full_name"),
             "role": user["role"],
             "tenant_id": user["tenant_id"],
+            # The UI needs it to explain why an outward action is unavailable
+            # and to offer the resend, without decoding the token itself.
+            "email_verified": email_verified,
         },
     })
 
@@ -274,11 +327,18 @@ async def refresh(body: RefreshRequest):
             "refresh_token_invalid", "Invalid or expired refresh token", status_code=401,
         )
 
-    access_token = create_access_token(user["id"], user["tenant_id"], user["role"])
+    # Re-read from the row, not from the old token: a user who verifies mid
+    # session gets the full-access claim on their next refresh (≤15 min) with
+    # no re-login, and a re-issued token can never upgrade itself.
+    access_token = create_access_token(
+        user["id"], user["tenant_id"], user["role"],
+        email_verified=bool(user.get("email_verified")),
+    )
     return ok({
         "access_token": access_token,
         "token_type": "bearer",
         "expires_in": 15 * 60,
+        "email_verified": bool(user.get("email_verified")),
     })
 
 

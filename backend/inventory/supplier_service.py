@@ -8,8 +8,27 @@ import logging
 from typing import Optional
 
 from backend.db.connection import query, query_one, execute
+from backend.inventory.defaults import SOURCE_USER
 
 log = logging.getLogger(__name__)
+
+
+def _stamp_lead_time_provenance(safe: dict, data: dict) -> dict:
+    """Mark `suppliers.lead_time_days` as user-set when this call supplies one.
+
+    `suppliers.lead_time_days` is `INT NOT NULL DEFAULT 15`, so every supplier
+    row carries a lead time whether or not anybody chose it. That column now
+    feeds the planning cascade (one supplier rule covering all of that
+    supplier's SKUs — a distributor has 12 suppliers, not 2.000 lead times), and
+    without this stamp merely creating a supplier would impose a 15 that the SKU
+    card would then report as 'supplier_rule'. That is the same false claim of
+    authorship the inventory_stock provenance migration exists to kill, one
+    table over. `stock_defaults_service.build_rule_index` only reads the column
+    when this flag is set.
+    """
+    if data.get("lead_time_days") is not None:
+        return {**safe, "lead_time_set_by": SOURCE_USER}
+    return safe
 
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
@@ -46,7 +65,8 @@ def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
 def create_supplier(tenant_id: str, data: dict) -> dict:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
                "payment_terms", "payment_terms_days", "notes"}
-    safe = {k: v for k, v in data.items() if k in allowed}
+    safe = _stamp_lead_time_provenance(
+        {k: v for k, v in data.items() if k in allowed}, data)
 
     cols = ", ".join(safe.keys())
     phs  = ", ".join(["%s"] * len(safe))
@@ -64,7 +84,8 @@ def create_supplier(tenant_id: str, data: dict) -> dict:
 def update_supplier(tenant_id: str, supplier_id: str, data: dict) -> Optional[dict]:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
                "payment_terms", "payment_terms_days", "notes"}
-    safe = {k: v for k, v in data.items() if k in allowed}
+    safe = _stamp_lead_time_provenance(
+        {k: v for k, v in data.items() if k in allowed}, data)
     if not safe:
         return get_supplier(tenant_id, supplier_id)
 

@@ -5,6 +5,23 @@ import pandas as pd
 
 REQUIRED_FIELDS: frozenset[str] = frozenset({"sku", "date", "demand"})
 
+# The one lead-time default the whole product uses when nobody configured one.
+#
+# It is repeated here as a literal instead of imported because the layering
+# forbids ForecastingCore from depending on `backend` — the authority is
+# `backend/inventory/defaults.py:DEFAULT_LEAD_TIME_DAYS`, and
+# `backend/tests/test_lead_time_provenance.py` asserts the two are equal so the
+# duplication cannot silently drift apart again.
+#
+# It used to be 7 here (and 7 in the training runner) while the DB schema, the
+# Quick Start wizard and /inventory all said 15. Three answers to one question,
+# and no way to tell which one a given recommendation had used. 15 is the
+# business call: the target user is a LatAm distributor whose replenishment
+# usually involves an import leg, and when we have to guess, guessing long is
+# the cheap mistake — a short guess shrinks the reorder point and the buyer
+# discovers the error as a stockout.
+DEFAULT_LEAD_TIME_DAYS = 15
+
 # internal_name → default when not mapped (None = unknown, stays NaN)
 FIELD_DEFAULTS: dict[str, Any] = {
     "sku":           None,   # required — no default
@@ -13,7 +30,7 @@ FIELD_DEFAULTS: dict[str, Any] = {
     "store":         "Tienda única",
     "region":        "Sin región",
     "inventory":     0,
-    "lead_time":     7,
+    "lead_time":     DEFAULT_LEAD_TIME_DAYS,
     "price":         None,
     "cost":          None,
     "regular_price": None,

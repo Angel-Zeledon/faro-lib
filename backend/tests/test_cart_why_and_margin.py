@@ -18,6 +18,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from backend.db.connection import execute, query_one
+from backend.inventory.defaults import (
+    DEFAULT_LEAD_TIME_DAYS,
+    SOURCE_DEFAULT,
+    SOURCE_FILE,
+    SOURCE_LEARNED,
+    SOURCE_USER,
+)
 from backend.inventory.service import (
     build_explanation,
     calc_unit_margin,
@@ -105,22 +112,34 @@ def _learn_lead_time(client, headers, *, sku: str, supplier: str, days_ago: int)
 class TestResolveLeadTime:
     def test_prefers_learned_over_configured(self):
         lt, source, learned = resolve_lead_time(7, "Acme", {"acme": 11.6})
-        assert (lt, source, learned) == (12, "learned", 11.6)  # 11.6 rounds to 12
+        assert (lt, source, learned) == (12, SOURCE_LEARNED, 11.6)  # 11.6 rounds to 12
 
-    def test_falls_back_to_configured_when_supplier_never_delivered(self):
-        assert resolve_lead_time(7, "Acme", {}) == (7, "configured", None)
+    def test_falls_back_to_the_cascade_answer_when_supplier_never_delivered(self):
+        """With no receptions the source is whatever the SKU > supplier >
+        category > global cascade already resolved and passed in. It used to be
+        the flat literal 'configured', which was a lie for every tenant who had
+        configured nothing."""
+        assert resolve_lead_time(7, "Acme", {}, SOURCE_USER) == (7, SOURCE_USER, None)
+
+    def test_an_unconfigured_lead_time_stays_labelled_default(self):
+        """The regression this whole change exists to prevent."""
+        assert resolve_lead_time(
+            DEFAULT_LEAD_TIME_DAYS, "Acme", {}, SOURCE_DEFAULT,
+        ) == (DEFAULT_LEAD_TIME_DAYS, SOURCE_DEFAULT, None)
 
     def test_supplier_name_matched_case_insensitively(self):
         lt, source, _ = resolve_lead_time(7, "  ACME  ", {"acme": 9.0})
-        assert (lt, source) == (9, "learned")
+        assert (lt, source) == (9, SOURCE_LEARNED)
 
-    def test_no_supplier_on_sku_uses_configured(self):
-        assert resolve_lead_time(15, None, {"acme": 9.0}) == (15, "configured", None)
+    def test_no_supplier_on_sku_keeps_the_cascade_answer(self):
+        assert resolve_lead_time(
+            15, None, {"acme": 9.0}, SOURCE_FILE,
+        ) == (15, SOURCE_FILE, None)
 
     def test_learned_never_rounds_down_to_zero(self):
         """A 0.2-day observation must not produce a 0-day lead time (division traps)."""
         lt, source, _ = resolve_lead_time(7, "Acme", {"acme": 0.2})
-        assert lt == 1 and source == "learned"
+        assert lt == 1 and source == SOURCE_LEARNED
 
 
 class TestMargenUnitario:
@@ -142,43 +161,68 @@ class TestMargenUnitario:
 
 
 class TestExplanation:
-    def test_mentions_every_business_number_and_learned_origin(self):
-        text = build_explanation(
+    """`build_explanation` now returns {code, params, text} instead of a Spanish
+    sentence: the Spanish moved to the frontend i18n catalog (CLAUDE.md) and the
+    numbers travel structured, so the copy can be rewritten without a backend
+    deploy. `text` is the English fallback for a client with no mapping."""
+
+    def test_carries_every_business_number_as_a_parameter(self):
+        exp = build_explanation(
             current_stock=120, daily_demand=8.0, coverage_days=15.0,
-            lead_time=12, lead_time_source="learned", reorder_point=110.0,
+            lead_time=12, lead_time_source=SOURCE_LEARNED, reorder_point=110.0,
             signal="PEDIR_PRONTO",
         )
-        assert "120" in text and "8.0" in text and "15 días" in text
-        assert "12 días" in text and "110" in text
-        assert "aprendido de sus entregas reales" in text
-        assert "esta semana" in text
+        assert exp["code"] == "inventory_explain_reorder"
+        assert exp["params"] == {
+            "current_stock": 120.0, "daily_demand": 8.0, "coverage_days": 15.0,
+            "lead_time_days": 12, "lead_time_source": SOURCE_LEARNED,
+            "lead_time_rule_scope": None, "reorder_point": 110.0,
+            "signal": "PEDIR_PRONTO",
+        }
+        assert "learned from their real deliveries" in exp["text"]
+        assert "this week" in exp["text"]
 
-    def test_configured_lead_time_is_labelled_as_such(self):
-        text = build_explanation(
+    def test_a_lead_time_the_user_set_is_labelled_as_theirs(self):
+        exp = build_explanation(
             current_stock=10, daily_demand=5.0, coverage_days=2.0,
-            lead_time=7, lead_time_source="configured", reorder_point=40.0,
+            lead_time=7, lead_time_source=SOURCE_USER, reorder_point=40.0,
             signal="PEDIR_YA",
         )
-        assert "lead time configurado" in text
-        assert "urgente" in text
+        assert exp["params"]["lead_time_source"] == SOURCE_USER
+        assert "you configured" in exp["text"]
+        assert "urgent" in exp["text"]
+
+    def test_an_unconfigured_lead_time_admits_it_is_our_assumption(self):
+        """The sentence the product used to get wrong: it claimed the lead time
+        was "configurado" when nobody had configured anything."""
+        exp = build_explanation(
+            current_stock=10, daily_demand=5.0, coverage_days=2.0,
+            lead_time=DEFAULT_LEAD_TIME_DAYS, lead_time_source=SOURCE_DEFAULT,
+            reorder_point=40.0, signal="PEDIR_YA",
+        )
+        assert exp["params"]["lead_time_source"] == SOURCE_DEFAULT
+        assert "we assume" in exp["text"]
+        assert "you have not configured this supplier" in exp["text"]
+        assert "configured)" not in exp["text"]
 
     def test_no_ml_vocabulary_leaks_into_the_sentence(self):
         text = build_explanation(
             current_stock=10, daily_demand=5.0, coverage_days=2.0,
-            lead_time=7, lead_time_source="configured", reorder_point=40.0,
+            lead_time=7, lead_time_source=SOURCE_USER, reorder_point=40.0,
             signal="PEDIR_YA",
-        ).lower()
+        )["text"].lower()
         for jargon in ("forecast", "modelo", "lightgbm", "safety stock", "z-score", "wape"):
-            assert jargon not in text, f"jerga técnica filtrada: {jargon}"
+            assert jargon not in text, f"ML jargon leaked: {jargon}"
 
     def test_zero_demand_does_not_claim_a_coverage_window(self):
-        text = build_explanation(
+        exp = build_explanation(
             current_stock=50, daily_demand=0.0, coverage_days=None,
-            lead_time=7, lead_time_source="configured", reorder_point=0.0,
+            lead_time=7, lead_time_source=SOURCE_DEFAULT, reorder_point=0.0,
             signal="SOBRESTOCK",
         )
-        assert "no proyecta ventas" in text
-        assert "alcanza para" not in text
+        assert exp["code"] == "inventory_explain_no_demand"
+        assert "projects no sales" in exp["text"]
+        assert "lasts you" not in exp["text"]
 
 
 # ── 2.4 — integration: the status endpoint really carries these fields ───────
@@ -244,7 +288,7 @@ class TestLearnedLeadTimeThreshold:
             ))["items"] if i["sku"] == sku
         )
 
-        assert item["lead_time_source"] == "configured"
+        assert item["lead_time_source"] == SOURCE_USER
         assert item["lead_time_days"] == 5, "not the 30 of the single freak delivery"
         assert item["lead_time_learned"] is None
         # 5 days of lead time -> 50 units of lead-time demand, not 300.
@@ -299,7 +343,7 @@ class TestStatusExposesWhyFields:
             ))["items"] if i["sku"] == sku
         )
 
-        assert item["lead_time_source"] == "learned"
+        assert item["lead_time_source"] == SOURCE_LEARNED
         assert item["lead_time_configured"] == 5
         assert item["lead_time_days"] == 12          # NOT the configured 5
         assert 11.5 <= item["lead_time_learned"] <= 12.5
@@ -315,9 +359,10 @@ class TestStatusExposesWhyFields:
         assert item["coverage_days"] == 2.0
         assert item["signal"] == "PEDIR_YA"
 
-        assert "12 días" in item["explanation"]
-        assert "aprendido de sus entregas reales" in item["explanation"]
-        assert "20" in item["explanation"]
+        assert item["explanation_code"] == "inventory_explain_reorder"
+        assert item["explanation_params"]["lead_time_days"] == 12
+        assert item["explanation_params"]["lead_time_source"] == SOURCE_LEARNED
+        assert item["explanation_params"]["current_stock"] == 20.0
 
     def test_without_receptions_the_configured_lead_time_is_used_and_labelled(
         self, client, auth_headers, test_tenant,
@@ -341,12 +386,13 @@ class TestStatusExposesWhyFields:
                 f"/api/v1/inventory/status?session_id={session_id}", headers=auth_headers,
             ))["items"] if i["sku"] == sku
         )
-        assert item["lead_time_source"] == "configured"
+        assert item["lead_time_source"] == SOURCE_USER
         assert item["lead_time_days"] == 8
         assert item["lead_time_learned"] is None
         # spread 0 -> no safety stock -> reorder point is pure lead-time demand.
         assert item["reorder_point"] == 80.0
-        assert "lead time configurado" in item["explanation"]
+        assert item["explanation_params"]["lead_time_source"] == SOURCE_USER
+        assert "you configured" in item["explanation"]
 
     def test_briefing_cart_lines_carry_the_same_why_fields(
         self, client, auth_headers, test_tenant,

@@ -29,6 +29,18 @@ _ES: dict[str, str] = {
     "po_forward_line":       "  • {name} — {qty}",
     "po_forward_more":       "  … y {n} más",
     "po_forward_footer":     "\nReenvía este mensaje a tu proveedor para confirmar el pedido.",
+    # Data-freshness reminder: the one message that has to reach someone who
+    # stopped opening the app, so it states the age and asks for one thing.
+    "freshness_email_subject":       "Tus ventas son de hace {days} días — sube el archivo de este mes",
+    "freshness_email_subject_stock": "Tu stock tiene {days} días sin actualizarse",
+    "freshness_email_title":         "Tus datos se están quedando viejos",
+    "freshness_email_sales":         "Tus ventas son de hace <strong>{days} días</strong>. Faro sigue pronosticando con ese archivo, así que lo que compres hoy se decide con lo que vendías hace más de un mes.",
+    "freshness_email_stock":         "Tu stock lleva <strong>{days} días</strong> sin actualizarse. Mientras tanto el semáforo no puede confirmar cuánto te queda, así que dejó de mostrarse en verde.",
+    "freshness_email_cta":           "Subir el archivo de este mes",
+    "freshness_email_footer":        "Te escribimos porque hace tiempo que no subes datos. En cuanto subas el archivo, dejamos de avisarte.",
+    "freshness_whatsapp_sales":      "📅 *Faro*: tus ventas son de hace {days} días — sube el archivo de este mes",
+    "freshness_whatsapp_stock":      "📦 Tu stock lleva {days} días sin actualizarse; el semáforo quedó en “desactualizado”",
+    "freshness_whatsapp_cta":        "Subir ahora: {url}",
 }
 
 

@@ -194,7 +194,16 @@ class TestLogin:
         })
         assert resp.status_code == 401
 
-    def test_login_unverified_user_returns_403(self, client, test_tenant):
+    def test_login_unverified_user_is_let_in_but_flagged(self, client, test_tenant):
+        """Unverified is no longer a locked door.
+
+        It used to 403, which left anyone whose verification mail hit spam
+        permanently outside with no self-service way back and nothing of the
+        product seen. They now get in with `email_verified: false` on the token,
+        and only outward-facing actions (inviting users, integrations, sending
+        notifications) are refused — see test_email_verification_unblock.py for
+        those, including the pair that proves an unverified admin cannot invite.
+        """
         from backend.users import service as user_svc
         email = f"unverified-{uuid4().hex[:8]}@example.com"
         user_svc.create_user(
@@ -207,7 +216,8 @@ class TestLogin:
             "email": email,
             "password": "TestPass123!",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["user"]["email_verified"] is False
 
 
 class TestRefresh:
