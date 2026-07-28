@@ -19,6 +19,7 @@ from backend.inventory.service import (
     _avg_daily_forecast,
     _classify_abc,
     _classify_xyz,
+    best_model_by_sku,
 )
 
 
@@ -211,8 +212,13 @@ class TestAvgDailyForecast:
         avg, std = _avg_daily_forecast(model_forecasts, 2)
         assert avg == 15.0
 
-    def test_single_model_std_is_upper_minus_value(self):
-        """std per point = (upper - value). avg_std = mean of those."""
+    def test_legacy_points_without_quantiles_fall_back_to_upper(self):
+        """Sessions trained before the quantile keys only carry `upper`.
+
+        For those, std per point stays (upper - value) — the old behaviour —
+        so an existing session keeps producing recommendations instead of
+        silently dropping to zero safety stock.
+        """
         model_forecasts = {
             "lgb": {"forecast": [
                 {"value": 10, "upper": 12},  # std=2
@@ -291,6 +297,119 @@ class TestAvgDailyForecast:
         avg, std = _avg_daily_forecast(model_forecasts, 2)
         # None becomes 0, so avg = (0+10)/2 = 5, not 10
         assert avg == 5.0  # Documents the None-coercion behavior
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sigma recovery and best-model selection
+#
+# The purchase quantity is max(0, demand·LT + z·sigma·√LT − stock). Both inputs
+# used to be wrong: sigma was read off `upper`, which is a p90 from a quantile
+# model rather than one standard deviation, and the demand was the mean of
+# every model trained, including the weakest.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSigmaFromQuantiles:
+
+    def test_sigma_is_recovered_from_q90_not_upper(self):
+        """q90 = value + 1.2816·sigma, so sigma = (q90 - value) / 1.2816.
+
+        `upper` is deliberately set to a far tighter spread here, exactly as a
+        quantile model produces it. If the code read `upper` this would come
+        out at 1.0 instead of 10.0.
+        """
+        model_forecasts = {
+            "xgb": {"forecast": [
+                {"value": 100.0, "q90": 100.0 + 1.2816 * 10.0, "upper": 101.0},
+            ]}
+        }
+        _avg, std = _avg_daily_forecast(model_forecasts, 1)
+        assert std == pytest.approx(10.0, abs=1e-3)
+
+    def test_q90_wins_over_upper_when_both_present(self):
+        """Both keys ship on every modern point; q90 is the honest one."""
+        pt = {"value": 50.0, "q90": 50.0 + 1.2816 * 8.0, "upper": 52.0}
+        _avg, std = _avg_daily_forecast({"m": {"forecast": [pt]}}, 1)
+        assert std == pytest.approx(8.0, abs=1e-3)
+        assert std != pytest.approx(2.0, abs=1e-3)   # 2.0 is what `upper` gives
+
+    def test_q90_below_value_cannot_produce_negative_sigma(self):
+        """A clamped-at-zero q90 on a near-zero forecast must not go negative."""
+        model_forecasts = {"m": {"forecast": [{"value": 20.0, "q90": 0.0}]}}
+        _avg, std = _avg_daily_forecast(model_forecasts, 1)
+        assert std == 0.0
+
+    def test_a_wider_sigma_buys_more(self):
+        """The whole point of getting sigma right: it moves the order."""
+        tight = _calc_recommended(current_stock=0, avg_daily=10, avg_std=2,
+                                  lead_time=9, moq=0, service_level=0.95)
+        wide  = _calc_recommended(current_stock=0, avg_daily=10, avg_std=8,
+                                  lead_time=9, moq=0, service_level=0.95)
+        # 90 + 1.645·2·3 = 99.87  vs  90 + 1.645·8·3 = 129.48
+        assert tight == pytest.approx(99.87, abs=0.01)
+        assert wide == pytest.approx(129.48, abs=0.01)
+
+
+class TestBestModelSelection:
+
+    def test_best_model_is_the_lowest_wape_non_baseline(self):
+        rows = [
+            {"sku": "A", "model": "prophet",  "wape": 0.11, "type": "stat"},
+            {"sku": "A", "model": "xgboost",  "wape": 0.03, "type": "ml"},
+            {"sku": "A", "model": "naive",    "wape": 0.01, "type": "baseline"},
+            {"sku": "B", "model": "lightgbm", "wape": 0.07, "type": "ml"},
+        ]
+        assert best_model_by_sku(rows) == {"A": "xgboost", "B": "lightgbm"}
+
+    def test_a_winning_baseline_is_never_selected(self):
+        """Baselines exist to be beaten. Buying from a naive forecast because
+        it happened to score best would be a bug, not a fallback."""
+        rows = [
+            {"sku": "A", "model": "naive",   "wape": 0.01, "type": "baseline"},
+            {"sku": "A", "model": "xgboost", "wape": 0.30, "type": "ml"},
+        ]
+        assert best_model_by_sku(rows) == {"A": "xgboost"}
+
+    def test_rows_without_wape_are_ignored(self):
+        rows = [
+            {"sku": "A", "model": "broken",  "wape": None, "type": "ml"},
+            {"sku": "A", "model": "xgboost", "wape": 0.05, "type": "ml"},
+        ]
+        assert best_model_by_sku(rows) == {"A": "xgboost"}
+
+    def test_the_chosen_model_alone_drives_the_demand(self):
+        """The weak model must not pull the number the buyer acts on."""
+        model_forecasts = {
+            "xgboost": {"forecast": [{"value": 10.0, "q90": 10.0 + 1.2816}]},
+            "prophet": {"forecast": [{"value": 90.0, "q90": 90.0 + 1.2816}]},
+        }
+        avg_best, _ = _avg_daily_forecast(model_forecasts, 1, "xgboost")
+        avg_pooled, _ = _avg_daily_forecast(model_forecasts, 1)
+        assert avg_best == 10.0
+        assert avg_pooled == 50.0    # the old behaviour, 5x the winner
+
+    def test_unknown_model_falls_back_to_pooling(self):
+        """A session whose metrics name a model that has no stored forecast
+        must still produce a number rather than none."""
+        model_forecasts = {
+            "lgb": {"forecast": [{"value": 10.0, "upper": 11.0}]},
+            "xgb": {"forecast": [{"value": 20.0, "upper": 21.0}]},
+        }
+        avg, _ = _avg_daily_forecast(model_forecasts, 1, "a_model_that_left")
+        assert avg == 15.0
+
+    def test_a_winner_with_no_stored_points_does_not_zero_the_sku(self):
+        """The dangerous shape: the best model is present but empty.
+
+        Narrowing to it would return demand 0, which reads downstream as "well
+        stocked" and drops the SKU off the semáforo without a word. Falling
+        back to the pooled number is a worse estimate but a visible one.
+        """
+        model_forecasts = {
+            "xgboost": {"forecast": []},
+            "lgb":     {"forecast": [{"value": 12.0, "upper": 13.0}]},
+        }
+        avg, _ = _avg_daily_forecast(model_forecasts, 1, "xgboost")
+        assert avg == 12.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

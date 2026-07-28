@@ -593,25 +593,71 @@ def _classify_abc(items: list[dict]) -> dict[str, str]:
 
 # ── Signal calculation ────────────────────────────────────────────────────────
 
-def _avg_daily_forecast(model_forecasts: dict, lead_time: int) -> tuple[float, float]:
+# norm.ppf(0.9). The engine writes q90 = value + 1.2816 * residual_std, so
+# dividing the q90 spread by this recovers the residual sigma exactly.
+_Q90_Z = 1.2816
+
+
+def _point_sigma(p: dict) -> float:
+    """One standard deviation of the forecast error at a single step.
+
+    `upper` is NOT a sigma. When quantile models are fitted the engine sets
+    upper = p90 from the quantile model itself, which is fitted on the training
+    set and is therefore far too tight: measured over the demo tenant's 8,240
+    points, xgboost's upper spread is 43% narrower than its own honest q90.
+    Treating that as sigma and multiplying by z(service_level) again produced a
+    safety stock that depended on which model happened to win rather than on
+    the service level the buyer asked for — roughly 89% effective coverage on
+    xgboost against 98% on lightgbm, for the same 95% setting.
+
+    `q90` is built from OUT-OF-FOLD residuals (trainer._wfv collects them per
+    fold), so it is the honest one. Legacy sessions predate the quantile keys;
+    those fall back to the old spread so they keep working.
     """
-    Returns (avg_daily_demand, avg_daily_std) across all models,
-    using the first `lead_time` forecast steps.
+    value = float(p.get("value") or 0.0)
+    q90 = p.get("q90")
+    if q90 is not None:
+        return max(0.0, (float(q90) - value) / _Q90_Z)
+    upper = p.get("upper")
+    return max(0.0, float(upper) - value) if upper is not None else 0.0
+
+
+def _pick_model(model_forecasts: dict, preferred: Optional[str]) -> dict:
+    """The models to plan from: the best one for this SKU when we know it.
+
+    Averaging every model was pulling the purchase quantity toward the weakest
+    one — on the demo tenant, prophet at 10.9% WAPE dragging on xgboost at
+    3.7% — and it also averaged `ensemble` alongside the very models it is
+    built from, counting them twice. It disagreed with the headline accuracy
+    too, since that is computed from each SKU's BEST model.
+    """
+    # The chosen model must actually carry points. A metrics row can name a
+    # model whose forecast failed to store, and narrowing to it would leave the
+    # SKU with zero demand — which reads as "well stocked" and drops it off the
+    # semáforo silently. Pooling is a worse number; disappearing is a worse bug.
+    if preferred:
+        chosen = model_forecasts.get(preferred)
+        if chosen and (chosen.get("forecast") or []):
+            return {preferred: chosen}
+    return model_forecasts
+
+
+def _avg_daily_forecast(
+    model_forecasts: dict, lead_time: int, preferred_model: Optional[str] = None,
+) -> tuple[float, float]:
+    """
+    Returns (avg_daily_demand, avg_daily_std) over the first `lead_time`
+    forecast steps of this SKU's best model (all models when it is unknown).
     """
     all_values: list[float] = []
     all_stds:   list[float] = []
 
-    for model_data in model_forecasts.values():
+    for model_data in _pick_model(model_forecasts, preferred_model).values():
         pts = model_data.get("forecast", [])[:lead_time]
         if not pts:
             continue
-        vals = [p.get("value") or 0.0 for p in pts]
-        stds = [
-            ((p.get("upper") or p.get("value") or 0) - (p.get("value") or 0))
-            for p in pts
-        ]
-        all_values.extend(vals)
-        all_stds.extend(stds)
+        all_values.extend([p.get("value") or 0.0 for p in pts])
+        all_stds.extend([_point_sigma(p) for p in pts])
 
     if not all_values:
         return 0.0, 0.0
@@ -621,15 +667,21 @@ def _avg_daily_forecast(model_forecasts: dict, lead_time: int) -> tuple[float, f
     return max(0.0, avg_daily), max(0.0, avg_std)
 
 
-def _avg_forecast_curve(model_forecasts: dict, max_steps: int = 90) -> list[dict]:
+def _avg_forecast_curve(
+    model_forecasts: dict, max_steps: int = 90, preferred_model: Optional[str] = None,
+) -> list[dict]:
     """
-    Averages the per-step forecast value across all models, aligned by step
-    index, returning a chronological [{step, date, value}] curve. Dates come
-    from whichever model provides them (all models share the same horizon).
+    Per-step forecast curve for this SKU's best model, aligned by step index and
+    returned chronologically as [{step, date, value}]. Falls back to averaging
+    every model when the best one is unknown. Dates come from whichever model
+    provides them (all models share the same horizon).
+
+    Same selection as `_avg_daily_forecast` on purpose: the curve the buyer
+    reads has to be the one the recommended quantity came from.
     """
     step_values: dict[int, list[float]] = {}
     step_dates:  dict[int, str] = {}
-    for model_data in model_forecasts.values():
+    for model_data in _pick_model(model_forecasts, preferred_model).values():
         pts = model_data.get("forecast", []) or []
         for idx, p in enumerate(pts[:max_steps]):
             v = p.get("value")
@@ -1023,12 +1075,16 @@ def _compute_inventory_status(
 
     # Try to pull CV per SKU from the quality report stored in training_result
     cv_by_sku: dict[str, Optional[float]] = {}
+    # And which model actually won for each SKU, so the recommendation is
+    # computed from that one instead of the mean of every model trained.
+    best_model: dict[str, str] = {}
     try:
         result = session_store.get_training_result(tenant_id, session_id) or {}
         quality: dict = result.get("data_quality") or {}
         for sku_key, q in quality.items():
             if isinstance(q, dict):
                 cv_by_sku[str(sku_key)] = q.get("cv")
+        best_model = best_model_by_sku((result.get("metrics") or {}).get("rows") or [])
     except Exception as e:
         log.debug("cv_by_sku lookup failed for session=%s: %s", session_id, e)
 
@@ -1133,7 +1189,9 @@ def _compute_inventory_status(
             # the identity, so this path is byte-identical to before Phase C.
             lt_periods = _lead_time_in_periods(lead_time, period)
             steps = _steps_for_lead_time(lead_time, period)
-            avg_daily, avg_std = _avg_daily_forecast(model_forecasts, steps)
+            avg_daily, avg_std = _avg_daily_forecast(
+                model_forecasts, steps, best_model.get(sku)
+            )
             coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
             signal = _calc_signal(coverage_days, lt_periods)
             recommended = _calc_recommended(
@@ -1341,6 +1399,16 @@ def get_inventory_status_by_warehouse(
         learned_lead_times = get_learned_lead_times(tenant_id)
     rule_index = _sd_svc.build_rule_index(tenant_id)
 
+    # Same best-model-per-SKU selection as the aggregated view. These rows must
+    # not disagree with it: a warehouse row and the tenant total for the same
+    # SKU would otherwise be computed from different models.
+    best_model: dict[str, str] = {}
+    try:
+        _res = session_store.get_training_result(tenant_id, session_id) or {}
+        best_model = best_model_by_sku((_res.get("metrics") or {}).get("rows") or [])
+    except Exception as e:
+        log.debug("best_model lookup failed for session=%s: %s", session_id, e)
+
     warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
                   or [wh_svc.DEFAULT_WAREHOUSE])
     store_names = stores_in(forecasts)
@@ -1405,7 +1473,9 @@ def get_inventory_status_by_warehouse(
                 # Per-period demand + period lead time (identity for daily).
                 lt_periods = _lead_time_in_periods(lead_time, period)
                 steps = _steps_for_lead_time(lead_time, period)
-                avg_daily, avg_std = _avg_daily_forecast(model_forecasts, steps)
+                avg_daily, avg_std = _avg_daily_forecast(
+                    model_forecasts, steps, best_model.get(sku)
+                )
                 avg_daily *= share
                 avg_std *= share
                 coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
@@ -2331,6 +2401,16 @@ def get_demand_spikes(
         from backend.db import session_store
         forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
 
+    # The spike has to be the one the recommendation will be computed from, so
+    # this reads the same best model per SKU as the semáforo does.
+    best_model: dict[str, str] = {}
+    try:
+        from backend.db import session_store as _ss
+        _res = _ss.get_training_result(tenant_id, session_id) or {}
+        best_model = best_model_by_sku((_res.get("metrics") or {}).get("rows") or [])
+    except Exception as e:
+        log.debug("best_model lookup failed for session=%s: %s", session_id, e)
+
     items_by_sku = {i["sku"]: i for i in items}
     today = _date.today()
     alerts: list[dict] = []
@@ -2340,7 +2420,7 @@ def get_demand_spikes(
         if not item or not item.get("has_forecast"):
             continue
 
-        curve = _avg_forecast_curve(model_forecasts)
+        curve = _avg_forecast_curve(model_forecasts, preferred_model=best_model.get(sku))
         if len(curve) < 2:
             continue
 
@@ -2499,6 +2579,28 @@ def generate_recommendations(items: list[dict], period: str = "daily") -> list[d
             seen[key] = r
 
     return list(seen.values())[:20]  # top 20 recommendations
+
+
+def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
+    """{sku: name of its most accurate real model}, by lowest WAPE.
+
+    Deliberately the same rule `compute_session_accuracy` scores with, so the
+    accuracy the app displays and the model the purchase is computed from are
+    the same one. Baselines are excluded: they exist to be beaten, and buying
+    from a naive forecast because it happened to win would be a bug, not a
+    fallback.
+    """
+    best: dict[str, tuple[float, str]] = {}
+    for r in rows:
+        if r.get("type") == "baseline":
+            continue
+        wape, model = r.get("wape"), r.get("model")
+        if wape is None or not model:
+            continue
+        sku = str(r.get("sku"))
+        if sku not in best or float(wape) < best[sku][0]:
+            best[sku] = (float(wape), str(model))
+    return {sku: model for sku, (_w, model) in best.items()}
 
 
 def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[float]:
