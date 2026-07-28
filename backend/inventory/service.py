@@ -766,6 +766,31 @@ def get_learned_lead_times(tenant_id: str) -> dict[str, float]:
     }
 
 
+def get_supplier_observation_counts(tenant_id: str) -> dict[str, int]:
+    """
+    Recorded receptions per supplier, INCLUDING the ones still below
+    MIN_LEAD_TIME_OBSERVATIONS.
+
+    `get_learned_lead_times` deliberately drops those — thin evidence must not
+    move a recommendation — but that is exactly why the UI needs this map: to
+    show progress towards the threshold it has to see the counts the planner is
+    still ignoring, otherwise "we will adjust the lead time on our own" is a
+    promise with no visible progress bar.
+
+    Keyed on the lower-cased free-text supplier name from the PO lines, like
+    `supplier_lead_time_obs` itself — a supplier with no ficha in `suppliers`
+    still accumulates observations and still gets its lead time learned.
+    """
+    rows = query(
+        """SELECT LOWER(supplier) AS supplier, COUNT(*)::int AS n
+           FROM supplier_lead_time_obs
+           WHERE tenant_id = %s
+           GROUP BY LOWER(supplier)""",
+        (tenant_id,),
+    )
+    return {r["supplier"]: int(r["n"]) for r in rows if r.get("supplier")}
+
+
 def resolve_lead_time(
     configured: int,
     supplier: Optional[str],
@@ -1024,6 +1049,16 @@ def _compute_inventory_status(
     if learned_lead_times is None:
         learned_lead_times = get_learned_lead_times(tenant_id)
 
+    # How many receptions each supplier has recorded so far — including the
+    # ones still short of the threshold, which `learned_lead_times` filters out.
+    # Without it the UI can say "we assumed this lead time" but not "and here is
+    # what has to happen for us to stop assuming it".
+    try:
+        observation_counts = get_supplier_observation_counts(tenant_id)
+    except Exception as e:
+        log.debug("supplier observation counts failed tenant=%s: %s", tenant_id, e)
+        observation_counts = {}
+
     # Per-SKU primary supplier (sku_suppliers), one query for the whole tenant.
     # The stock row's free-text supplier still wins when set — it is what the
     # buyer typed on the SKU card — but a SKU with no name there now inherits
@@ -1190,6 +1225,14 @@ def _compute_inventory_status(
             "lead_time_rule_scope": lead_time_rule_scope,
             "lead_time_configured": lead_time_config,
             "lead_time_learned":  lead_time_learned,
+            # State of the lead-time learning for THIS SKU's supplier: how many
+            # of their deliveries we have recorded and how many we need before
+            # the learned average replaces the configured value. Shipping the
+            # threshold with the data keeps the UI from hardcoding a number that
+            # could disagree with the one the planner actually applies.
+            "lead_time_observations": observation_counts.get(
+                (supplier or "").strip().lower(), 0),
+            "lead_time_observations_needed": MIN_LEAD_TIME_OBSERVATIONS,
             "reorder_point":        reorder_point,
             # English fallback sentence; the frontend renders Spanish from
             # `explanation_code` + `explanation_params` (CLAUDE.md — no Spanish

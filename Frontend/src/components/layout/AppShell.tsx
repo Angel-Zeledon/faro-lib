@@ -13,6 +13,7 @@ import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
 import { EntitlementsProvider } from '@/lib/entitlements'
 import ReadOnlyBanner from './ReadOnlyBanner'
+import VerifyEmailBanner from './VerifyEmailBanner'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -30,6 +31,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <TopBar />
                   <div className="page-content">
                     <ReadOnlyBanner />
+                    <VerifyEmailBanner />
                     {children}
                   </div>
                 </div>

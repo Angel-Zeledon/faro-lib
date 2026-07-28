@@ -23,10 +23,10 @@ Do not put ML logic in `backend/` or business logic in `Frontend/`. pandas/numpy
 
 ```bash
 # Backend (port 8010 for local dev; needs Postgres — see Database below)
-backend/.venv/Scripts/python.exe -m uvicorn backend.main:app --port 8010
+backend/.venv/Scripts/python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8010
 
-# Frontend (port 5000; proxies /api/* to BACKEND_URL, default localhost:8000)
-cd Frontend && set BACKEND_URL=http://localhost:8010&& npm run dev
+# Frontend (port 5000; proxies /api/* to BACKEND_URL, default 127.0.0.1:8010)
+cd Frontend && npm run dev
 
 # Tests
 cd backend && python -m pytest tests/ -q          # needs local Postgres on :5544
@@ -77,3 +77,5 @@ Backend env lives in `backend/.env` (see `backend/.env.example` for every variab
 - `TESTING_MODE=true` bypasses all quotas/rate limits — the server **refuses to boot** with it in `ENVIRONMENT=production`.
 - `RESEND_API_KEY`, `TWILIO_*` activate email/WhatsApp; without them, sends are logged no-ops.
 - `ANTHROPIC_API_KEY` switches AI features (chat/RAG/narrative) from the local Ollama fallback to the real Anthropic API — see AI features above.
+
+Frontend env: `Frontend/.env.local` is gitignored and per-machine, and **it beats a shell `BACKEND_URL=...`** — setting the variable before `npm run dev` does nothing if that file names a different port. When the app 500s on every `/api/*` call with an empty body, check it first. Two symptoms worth recognising, because neither looks like what it is: a proxy pointing at a port nothing listens on gives `500` with no body (not a connection error), and a backend still running old code answers `404 {"detail":"Not Found"}` on new routes — FastAPI's own 404, not the endpoint's. `uvicorn` does not reload on edits, so restart it after backend changes.

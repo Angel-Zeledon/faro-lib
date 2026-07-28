@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  Database, TrendingUp, Package,
+  TrendingUp, Package,
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
@@ -27,6 +27,9 @@ interface NavItem {
   /** Feature enum value gating this route (see backend `Feature`). Items
    *  without this always render as a normal link. */
   feature?:   string
+  /** Sibling routes this one entry stands for, so the item still reads as
+   *  active while the user is on a tab that is not `href`. */
+  alsoActive?: string[]
 }
 
 const NAV: NavItem[] = [
@@ -34,8 +37,11 @@ const NAV: NavItem[] = [
   { href: '/pedidos',             labelKey: 'nav.orders',     Icon: ClipboardList,   group: 'operation' },
   { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'operation' },
 
-  { href: '/quick-start',         labelKey: 'nav.quick_start', Icon: Upload,          group: 'data' },
-  { href: '/data',                labelKey: 'nav.data',        Icon: Database,        group: 'data' },
+  // One door, not two. "Subir mis ventas" and "mis archivos" are the same
+  // errand to the person doing it, so the nav carries a single entry and the
+  // two routes are tabs of each other (see components/layout/DataTabs.tsx).
+  { href: '/quick-start',         labelKey: 'nav.data',        Icon: Upload,          group: 'data',
+    alsoActive: ['/data'] },
 
   { href: '/inventory',           labelKey: 'nav.inventory',   Icon: Package,         group: 'purchasing' },
   // Ahead of the full inventory list on purpose: a tenant with 2.000
@@ -136,8 +142,9 @@ export default function Sidebar() {
                   {t(`group.${group}`)}
                 </div>
               )}
-              {items.map(({ href, labelKey, Icon }) => {
-                const active = path === href || path.startsWith(`${href}/`)
+              {items.map(({ href, labelKey, Icon, alsoActive }) => {
+                const matches = (p: string) => path === p || path.startsWith(`${p}/`)
+                const active = matches(href) || (alsoActive?.some(matches) ?? false)
                 const label = t(labelKey)
 
                 return (

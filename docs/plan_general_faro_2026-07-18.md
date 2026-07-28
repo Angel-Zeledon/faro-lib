@@ -3,6 +3,8 @@
 > Fecha: 2026-07-18 (v3 — reordenado: lanzamiento previsto en ~3 meses (≈ octubre 2026), así que la capa comercial pasa a fase de pre-lanzamiento y el foco inmediato es **diseño y día a día del usuario final**. v3 añade 8 features de nicho verificadas contra el código: mermas, margen en carrito, calendario LatAm, price breaks, calendario de caja, aprobación por WhatsApp, FEFO y conteo cíclico)
 > Base: auditoría integral (2026-07-04), features propuestas (2026-07-05) y **verificación directa del código de hoy** — este plan parte de lo que realmente existe, no de lo que decían los documentos anteriores.
 > Regla de oro intacta: el cliente no compra modelos ML — compra **no quedarse sin stock**. Cada ítem se justifica por cuánto acerca esa promesa.
+>
+> **Nota (2026-07-28):** `docs/superpowers/` y `docs/plans/` se eliminaron junto con el flujo de spec/plan que los generaba. Las citas de este documento a rutas bajo esos directorios son históricas y ya no resuelven; el contenido sigue en el historial de git, y lo que era una restricción viva se movió al código (el modelo del MILP vive ahora en el docstring de `forecasting_core/business/optimizer.py`, y la frontera de pandas está en CLAUDE.md).
 
 ---
 

@@ -1,8 +1,18 @@
+'use client'
 import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import { SearchX, ArrowLeft } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function NotFound() {
+  const { t } = useLanguage()
+  // `t` echoes the key back when the catalog has no entry — rendering
+  // "notfound.title" at the user is worse than the English sentence.
+  const copy = (key: string, fallback: string) => {
+    const rendered = t(key)
+    return rendered === key ? fallback : rendered
+  }
+
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -16,14 +26,16 @@ export default function NotFound() {
         <SearchX size={22} color="#818cf8" />
       </div>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Página no encontrada</div>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+          {copy('notfound.title', 'Page not found')}
+        </div>
         <div style={{ fontSize: 13, color: 'var(--dim)', maxWidth: 400, lineHeight: 1.5 }}>
-          La página que buscas no existe o fue movida.
+          {copy('notfound.body', 'The page you are looking for does not exist or was moved.')}
         </div>
       </div>
       <Link href="/hoy" style={{ textDecoration: 'none' }}>
         <Button variant="primary" icon={<ArrowLeft size={13} />}>
-          Volver al panel
+          {copy('notfound.back', 'Back to the dashboard')}
         </Button>
       </Link>
     </div>

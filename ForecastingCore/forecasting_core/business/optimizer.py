@@ -1,9 +1,11 @@
 """
 MILP inventory optimizer — decides, per SKU x warehouse x time bucket, how
 much to purchase from suppliers and how much to transfer between warehouses,
-minimizing total cost. Pure function, no DB/API — see the Multi-Warehouse
-design spec (docs/superpowers/specs/2026-07-12-multi-warehouse-milp-design.md)
-for the full model.
+minimizing total cost. Pure function, no DB/API.
+
+The full model is written out below rather than left to a design document:
+the variables, every constraint family and the objective. That is deliberate —
+this docstring is the specification now.
 
 Model (buckets t = 1..H, 1-indexed; t=0 is "now", a constant not a variable):
   order[i,w,t]:    int >= 0, units of SKU i arriving at warehouse w at t.

@@ -53,6 +53,69 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
   )
 }
 
+// ── Lead-time learning ────────────────────────────────────────────────────────
+// `service.resolve_lead_time` replaces the configured lead time with the one
+// learned from this supplier's real receptions — but only past
+// MIN_LEAD_TIME_OBSERVATIONS of them, a bar a new tenant never clears. So the
+// planner quietly used our own assumption and no screen admitted the mechanism
+// existed. `GET /inventory/suppliers` now ships the counters (observations
+// recorded, observations needed, learned average) so this row can state where
+// the learning stands. The threshold comes from the payload, never from a
+// literal here: a number that can disagree with the planner is worse than none.
+interface SupplierLearning {
+  lead_time_observations?:        number
+  lead_time_observations_needed?: number
+  lead_time_learned_days?:        number | null
+}
+type SupplierWithLearning = Supplier & SupplierLearning
+
+/** `t` returns the key itself when the catalog has no entry for it. Rendering
+ *  "suppliers.learning_none" at the buyer is worse than plain English — the
+ *  guard `lib/explanationCopy.ts` already uses. */
+function tOr(
+  t: (key: string, params?: Record<string, unknown>) => string,
+  key: string, fallback: string, params?: Record<string, unknown>,
+): string {
+  const text = t(key, params)
+  return text === key ? fallback : text
+}
+
+function LeadTimeLearning({ supplier }: { supplier: SupplierWithLearning }) {
+  const { t } = useLanguage()
+  const needed = supplier.lead_time_observations_needed
+  // Older backend: say nothing rather than invent a threshold.
+  if (needed == null) return null
+
+  const seen = supplier.lead_time_observations ?? 0
+  const learned = supplier.lead_time_learned_days
+
+  if (seen >= needed && learned != null) {
+    return (
+      <span style={{ color: C.green }}>
+        {tOr(t, 'suppliers.learning_active',
+          `Learned from ${seen} deliveries: ${learned} days on average — that is the number we plan with.`,
+          { n: seen, days: learned })}
+      </span>
+    )
+  }
+  if (seen === 0) {
+    return (
+      <span style={{ color: C.dim }}>
+        {tOr(t, 'suppliers.learning_none',
+          `No deliveries from this supplier recorded yet. Once you receive ${needed} orders, we adjust the lead time on our own.`,
+          { needed })}
+      </span>
+    )
+  }
+  return (
+    <span style={{ color: C.dim }}>
+      {tOr(t, 'suppliers.learning_partial',
+        `${seen} of ${needed} deliveries recorded. ${needed - seen} more and we adjust the lead time on our own.`,
+        { n: seen, needed, missing: needed - seen })}
+    </span>
+  )
+}
+
 // ── Shared input style ────────────────────────────────────────────────────────
 const inputS: React.CSSProperties = {
   background: 'var(--surface-2)', border: `1px solid var(--border)`,
@@ -246,7 +309,7 @@ function SupplierRow({
   expanded,
   onToggleExpand,
 }: {
-  supplier: Supplier
+  supplier: SupplierWithLearning
   onEdit: (s: Supplier) => void
   onDelete: (id: string) => void
   expanded: boolean
@@ -266,6 +329,12 @@ function SupplierRow({
         </td>
         <td style={{ padding: '12px 16px', fontSize: 12, color: C.dim }}>
           ±{supplier.lead_time_std}d
+        </td>
+        {/* What the lead-time learning is waiting for. A default nobody chose
+            stops being silent the moment the screen says when it will stop
+            being a default. */}
+        <td style={{ padding: '12px 16px', fontSize: 11, lineHeight: 1.5, minWidth: 230 }}>
+          <LeadTimeLearning supplier={supplier} />
         </td>
         <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
           {supplier.payment_terms || <span style={{ color: C.dim }}>—</span>}
@@ -319,7 +388,7 @@ function SupplierRow({
       </tr>
       {expanded && (
         <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-          <td colSpan={7} style={{ padding: '0 16px 14px' }}>
+          <td colSpan={8} style={{ padding: '0 16px 14px' }}>
             <PriceBreakManager supplier={supplier} />
           </td>
         </tr>
@@ -340,7 +409,9 @@ function SuppliersPageInner() {
 
   const { t } = useLanguage()
   const confirm = useConfirm()
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  // Typed with the learning counters the list endpoint now ships alongside each
+  // supplier; they are optional so an older backend simply renders no state.
+  const [suppliers, setSuppliers] = useState<SupplierWithLearning[]>([])
   const [loading,   setLoading]   = useState(true)
   // The raw error is kept (not a flattened string) so ErrorState/InlineError
   // can classify it by kind. `loadError` is the one that blanks the screen;
@@ -521,6 +592,9 @@ function SuppliersPageInner() {
                     [t('suppliers.table_name'), ''],
                     [t('suppliers.table_lead_time'), t('suppliers.table_lead_time_tip')],
                     [t('suppliers.table_variability'), t('suppliers.table_variability_tip')],
+                    [tOr(t, 'suppliers.table_learning', 'Learning'),
+                     tOr(t, 'suppliers.table_learning_tip',
+                       'Faro learns each supplier’s real lead time from the receptions you record, and replaces the configured value once there is enough evidence.')],
                     [t('suppliers.table_payment_terms'), ''],
                     [t('suppliers.table_email'), ''],
                     [t('suppliers.table_contact'), ''],

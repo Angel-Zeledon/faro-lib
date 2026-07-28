@@ -56,13 +56,13 @@ export const SIGNAL_ORDER: InventorySignal[] = [
   'PEDIR_YA', 'PEDIR_PRONTO', 'SOBRESTOCK', 'OK', 'SIN_DATOS',
 ]
 
-/** Color de primer plano del semáforo, para texto/bordes fuera del badge. */
+/** The signal's foreground colour, for text and borders outside the badge. */
 export function signalColor(signal: InventorySignal | string | null | undefined): string {
   const s = SIGNAL_STYLES[signal as InventorySignal]
   return s ? s.fg : 'var(--signal-sin-datos-fg)'
 }
 
-/** Etiqueta traducida — hook, para usar donde ya hay contexto de idioma. */
+/** Translated label as a hook, for callers that already have language context. */
 export function useSignalLabel() {
   const { t } = useLanguage()
   return (signal: InventorySignal | string | null | undefined) => {
@@ -73,10 +73,10 @@ export function useSignalLabel() {
 
 interface SignalBadgeProps {
   signal: InventorySignal | string | null | undefined
-  /** `sm` para tablas densas, `md` para tarjetas y cabeceras. */
+  /** `sm` for dense tables, `md` for cards and headers. */
   size?: 'sm' | 'md'
-  /** Oculta la etiqueta visualmente pero la deja para lectores de pantalla.
-   *  Úsalo SÓLO donde el texto ya aparece adyacente — nunca como default. */
+  /** Hides the label visually but keeps it for screen readers. Use ONLY where
+   *  the text already appears next to the badge — never as a default. */
   iconOnly?: boolean
   className?: string
   style?: React.CSSProperties

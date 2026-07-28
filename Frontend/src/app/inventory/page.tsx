@@ -135,32 +135,196 @@ function Sparkline({ data }: { data: { stock: number }[] }) {
 }
 
 // ── My data, or Faro's assumption? ────────────────────────────────────
-// A dotted grey badge on any value we assumed rather than received. The buyer
-// must be able to tell, at a glance, which numbers driving their spend are
-// theirs and which are ours — before this, a lead time of 15 days looked
-// identical whether they had chosen it or never opened the SKU.
-function SourceBadge({ source, scope }: { source?: ValueSource | null; scope?: string | null }) {
+// `t` returns the key itself when the catalog has no entry, so a build whose
+// copy has not landed yet would print "inventory.source_default" at the buyer.
+// Same guard `lib/explanationCopy.ts` uses: probe, and fall back to real words.
+type Translate = (key: string, params?: Record<string, unknown>) => string
+
+function tOr(t: Translate, key: string, fallback: string, params?: Record<string, unknown>): string {
+  const text = t(key, params)
+  return text === key ? fallback : text
+}
+
+// English last-resort wording, one per provenance value. Spanish never appears
+// here — it lives in the i18n catalog (CLAUDE.md).
+const SOURCE_FALLBACK_EN: Record<ValueSource, string> = {
+  user:          'you set it',
+  file:          'from your file',
+  supplier_rule: 'rule',
+  learned:       'learned from your deliveries',
+  default:       'estimated',
+}
+
+/** Names where a value came from, across all five sources. Used in the detail
+ *  panel, where the buyer is asking exactly this question. */
+function ProvenanceNote({ source, scope }: { source?: ValueSource | null; scope?: string | null }) {
   const { t } = useLanguage()
-  if (!source) return null
-  const assumed = isAssumed(source)
-  const label = t(sourceLabelKey(source))
+  const value: ValueSource = source || 'default'
+  const label = tOr(t, sourceLabelKey(value), SOURCE_FALLBACK_EN[value])
   // A rule hit names the level that won, so the precedence is visible rather
   // than something the buyer has to reverse-engineer.
-  const text = source === 'supplier_rule' && scope
-    ? `${label} · ${t(`explain.scope_${scope}`)}`
-    : label
+  if (value === 'supplier_rule' && scope) {
+    return <>{label} · {tOr(t, `explain.scope_${scope}`, scope)}</>
+  }
+  return <>{label}</>
+}
+
+// A muted dotted "estimado" badge on any value we assumed rather than received.
+// Only assumed values are badged: the absence of a badge means the number is
+// the tenant's own (typed, imported, ruled or learned from their receptions).
+// Marking all five sources filled the table with labels without answering the
+// one question a buyer actually has — which of these numbers did I never give
+// you? Before this, a lead time of 15 days looked identical whether they had
+// chosen it or never opened the SKU.
+function SourceBadge({ source }: { source?: ValueSource | null }) {
+  const { t } = useLanguage()
+  if (!isAssumed(source)) return null
   return (
     <span
-      title={t(assumed ? 'inventory.source_assumed_tip' : 'inventory.source_yours_tip')}
+      title={tOr(t, 'inventory.source_assumed_tip',
+        'Faro assumed this value — you have not given us one yet.')}
       style={{
         marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
         textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,
-        color: assumed ? 'var(--dim)' : C.indigo,
-        border: assumed ? '1px dashed var(--border)' : '1px solid rgba(129,140,248,0.35)',
-        background: assumed ? 'transparent' : 'rgba(129,140,248,0.08)',
-        whiteSpace: 'nowrap',
+        color: 'var(--dim)', border: '1px dashed var(--border)',
+        background: 'transparent', whiteSpace: 'nowrap',
       }}
-    >{text}</span>
+    >{tOr(t, 'inventory.source_assumed_badge', 'estimated')}</span>
+  )
+}
+
+// ── Lead-time learning state ────────────────────────────────────────────────
+// `resolve_lead_time` already replaces the configured lead time with the one
+// learned from a supplier's real receptions — but only past
+// MIN_LEAD_TIME_OBSERVATIONS of them, a bar a new tenant never clears. So every
+// SKU quietly fell back to our assumption and nothing on screen said the
+// learning existed at all.
+//
+// The status payload now carries, per SKU, how many of that supplier's
+// deliveries we have recorded and how many we need. The threshold travels with
+// the data: a literal here would be free to disagree with the number the
+// planner actually applies, which is the same class of bug as the three
+// coexisting lead-time defaults this whole change exists to remove.
+interface LeadTimeLearningFields {
+  lead_time_observations?:        number
+  lead_time_observations_needed?: number
+  lead_time_learned?:             number | null
+}
+
+/** "Todavía no tengo entregas tuyas de este proveedor…" — turns a silent
+ *  fallback into something the buyer can wait for. Renders nothing when the
+ *  backend did not ship the counters (older build): inventing a threshold is
+ *  exactly the kind of unfounded number this change exists to remove. */
+function LeadTimeLearning({ item }: { item: InventoryStatusItem & LeadTimeLearningFields }) {
+  const { t } = useLanguage()
+  const supplier = item.supplier
+
+  if (!supplier) {
+    return (
+      <div style={learningStyle}>
+        {tOr(t, 'inventory.lead_time_learning_no_supplier',
+          'This product has no supplier, so we cannot learn its real lead time. Assign one and we start measuring.')}
+      </div>
+    )
+  }
+
+  const needed = item.lead_time_observations_needed
+  if (needed == null) return null
+  const seen = item.lead_time_observations ?? 0
+
+  // 'learned' is the only state where the average is what the planner used;
+  // below the threshold it exists but is deliberately ignored, so showing it
+  // would advertise a number nothing acts on.
+  if (item.lead_time_source === 'learned' && item.lead_time_learned != null) {
+    return (
+      <div style={{ ...learningStyle, color: C.green }}>
+        {tOr(t, 'inventory.lead_time_learning_active',
+          `Learned from ${seen} of your deliveries from ${supplier}: ${item.lead_time_learned} days on average, and that is the number we use.`,
+          { supplier, n: seen, days: item.lead_time_learned })}
+      </div>
+    )
+  }
+
+  if (seen === 0) {
+    return (
+      <div style={learningStyle}>
+        {tOr(t, 'inventory.lead_time_learning_none',
+          `We have no deliveries from ${supplier} yet. Once you record ${needed}, we adjust the lead time on our own.`,
+          { supplier, needed })}
+      </div>
+    )
+  }
+
+  return (
+    <div style={learningStyle}>
+      {tOr(t, 'inventory.lead_time_learning_partial',
+        `${seen} of ${needed} deliveries from ${supplier} recorded. ${needed - seen} more and we adjust the lead time on our own.`,
+        { supplier, n: seen, needed, missing: needed - seen })}
+    </div>
+  )
+}
+
+const learningStyle: React.CSSProperties = {
+  fontSize: 11, color: C.dim, lineHeight: 1.5, marginTop: 8,
+  paddingTop: 8, borderTop: `1px dashed ${C.border}`,
+}
+
+// ── The four numbers that decide the order, and who chose each ──────────────
+function PlanningValues({ item }: {
+  item: InventoryStatusItem & LeadTimeLearningFields
+}) {
+  const { t } = useLanguage()
+  const rows: { label: string; value: string; source?: ValueSource | null; scope?: string | null }[] = [
+    {
+      label: t('inventory.col_lead_time'),
+      value: `${item.lead_time_days} ${tOr(t, 'inventory.planning_days_unit', 'days')}`,
+      source: item.lead_time_source, scope: item.lead_time_rule_scope,
+    },
+    {
+      label: tOr(t, 'inventory.planning_service_level_label', 'Service level'),
+      value: item.service_level != null ? `${Math.round(item.service_level * 100)}%` : '—',
+      source: item.service_level_source, scope: item.service_level_rule_scope,
+    },
+    {
+      label: tOr(t, 'inventory.planning_unit_cost_label', 'Unit cost'),
+      value: item.unit_cost != null ? fmtCurrency(item.unit_cost) : '—',
+      source: item.unit_cost_source,
+    },
+    {
+      label: 'MOQ',
+      value: fmt(item.moq, 0),
+      source: item.moq_source, scope: item.moq_rule_scope,
+    },
+  ]
+
+  return (
+    <div style={{
+      marginTop: 10, padding: '12px 16px', borderRadius: 9,
+      background: C.card, border: `1px solid ${C.border}`,
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, color: C.dim, marginBottom: 8,
+        textTransform: 'uppercase', letterSpacing: '0.06em',
+      }}>
+        {tOr(t, 'inventory.planning_values_title', 'Values behind this order')}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+        {rows.map(r => (
+          <div key={r.label}>
+            <div style={{ fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {r.label}
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginTop: 2 }}>
+              {r.value}<SourceBadge source={r.source} />
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>
+              <ProvenanceNote source={r.source} scope={r.scope} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <LeadTimeLearning item={item} />
+    </div>
   )
 }
 
@@ -435,6 +599,19 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
  )
 }
 
+// Renders *emphasis* markers coming from the i18n catalog as <strong>. Keeps a
+// whole sentence — including where the emphasis falls — inside ONE catalog
+// entry, instead of splintering it into fragments no translator can reorder.
+function Emphasized({ text }: { text: string }) {
+ return (
+  <>
+   {text.split(/\*([^*]+)\*/g).map((part, i) => (
+    i % 2 === 1 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>
+   ))}
+  </>
+ )
+}
+
 // ── Event impact simulator modal (feature 2.3) ───────────────────────────────
 function EventSimModal({ ev, sessionId, onClose, onReload }: {
  ev: InventoryEvent
@@ -449,7 +626,10 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  useEffect(() => {
  simulateEvent({ session_id: sessionId, event_id: ev.id })
  .then(setResult)
- .catch(e => setError(e instanceof Error ? e.message : 'Error al simular'))
+ .catch(e => setError(e instanceof Error ? e.message : t('inventory.sim_err_failed')))
+ // `t` is stable per language and re-running the simulation on a language
+ // switch would be a pointless request.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [ev.id, sessionId])
 
  const fmtD = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long' })
@@ -460,11 +640,13 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 640, maxHeight: '85vh', overflowY: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
  <Zap size={16} color={C.amber} />
- <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Simulación: {ev.name}</span>
+ <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+ {tOr(t, 'inventory.sim_modal_title', `Simulation: ${ev.name}`, { event: ev.name })}
+ </span>
  <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
  </div>
  <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim }}>
- {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · demanda estimada +{pctExtra}%
+ {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · {tOr(t, 'inventory.sim_modal_uplift', `estimated demand +${pctExtra}%`, { pct: pctExtra })}
  </p>
 
  {!result && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
@@ -481,19 +663,38 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  }}>
  {result.summary.skus_at_risk > 0 ? (
  <>
- Con <strong>{ev.name}</strong> (+{pctExtra}% de demanda), necesitarías pedir{' '}
- <strong>{result.summary.total_to_order.toLocaleString()} unidades extra</strong> en{' '}
- <strong>{result.summary.skus_at_risk} producto{result.summary.skus_at_risk !== 1 ? 's' : ''}</strong>
- {result.summary.order_before && <> antes del <strong>{fmtD(result.summary.order_before)}</strong></>}
- {result.summary.total_order_value > 0 && <> (≈ {formatMoney(result.summary.total_order_value)})</>}.
+ <Emphasized text={tOr(
+  t,
+  result.summary.skus_at_risk === 1 ? 'inventory.sim_headline_risk_one' : 'inventory.sim_headline_risk_many',
+  `With *${ev.name}* (+${pctExtra}% demand) you would need to order *${result.summary.total_to_order.toLocaleString()} extra units* across *${result.summary.skus_at_risk} ${result.summary.skus_at_risk === 1 ? 'product' : 'products'}*.`,
+  {
+   event: ev.name,
+   pct:   pctExtra,
+   units: result.summary.total_to_order.toLocaleString(),
+   skus:  result.summary.skus_at_risk,
+  },
+ )} />
+ {result.summary.order_before && (
+  <Emphasized text={tOr(t, 'inventory.sim_headline_order_before',
+   ` Order before *${fmtD(result.summary.order_before)}*.`,
+   { date: fmtD(result.summary.order_before) })} />
+ )}
+ {result.summary.total_order_value > 0 && (
+  <Emphasized text={tOr(t, 'inventory.sim_headline_value',
+   ` About *${formatMoney(result.summary.total_order_value)}*.`,
+   { value: formatMoney(result.summary.total_order_value) })} />
+ )}
  {result.summary.any_order_late && (
  <div style={{ color: C.red, fontWeight: 600, marginTop: 6 }}>
- Para algunos productos ya es tarde: si pides hoy, la orden llegaría con el evento en curso.
+ {tOr(t, 'inventory.sim_headline_late',
+  'For some products it is already too late: ordering today, the shipment would arrive with the event under way.')}
  </div>
  )}
  </>
  ) : (
- <>Tu stock actual resiste <strong>{ev.name}</strong> (+{pctExtra}% de demanda) sin pedidos adicionales.</>
+ <Emphasized text={tOr(t, 'inventory.sim_headline_safe',
+  `Your current stock survives *${ev.name}* (+${pctExtra}% demand) with no extra orders.`,
+  { event: ev.name, pct: pctExtra })} />
  )}
  </div>
 
@@ -532,15 +733,20 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  {r.qty_to_order ? r.qty_to_order.toLocaleString() : '—'}
  </td>
  <td style={{ padding: '8px', fontSize: 11, color: r.llega_tarde && r.en_risk ? C.red : C.muted, whiteSpace: 'nowrap' }}>
- {r.en_risk ? (r.llega_tarde ? '¡hoy mismo!' : fmtD(r.order_by)) : '—'}
+ {r.en_risk ? (r.llega_tarde ? tOr(t, 'inventory.sim_order_today', 'today!') : fmtD(r.order_by)) : '—'}
  </td>
  </tr>
  ))}
  </tbody>
  </table>
  <p style={{ margin: '14px 0 0', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
- Cálculo: demanda diaria del pronóstico × {result.event_days} día{result.event_days !== 1 ? 's' : ''} × {ev.multiplier.toFixed(1)},
- contra el stock proyectado al inicio del evento. Las cantidades respetan el MOQ de cada producto. Nada se guarda — es solo una simulación.
+ {tOr(t, 'inventory.sim_footer_note',
+  `Calculation: forecast daily demand × ${result.event_days} days × ${ev.multiplier.toFixed(1)}, against the stock projected at the start of the event. Quantities respect each product's MOQ. Nothing is saved — this is only a simulation.`,
+  {
+   days: `${result.event_days} ${tOr(t, result.event_days === 1 ? 'inventory.sim_day_one' : 'inventory.sim_day_many', result.event_days === 1 ? 'day' : 'days')}`,
+   mult: ev.multiplier.toFixed(1),
+  },
+ )}
  </p>
  </>
  )}
@@ -2117,8 +2323,9 @@ export default function InventoryPage() {
  : '—'}
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{item.lead_time_days}d
- <SourceBadge source={item.lead_time_source} scope={item.lead_time_rule_scope} /></td>
- <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{fmt(item.moq, 0)}</td>
+ <SourceBadge source={item.lead_time_source} /></td>
+ <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{fmt(item.moq, 0)}
+ <SourceBadge source={item.moq_source} /></td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}><AbcXyzBadge value={item.abc_xyz} /></td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11, color: C.muted }}>{item.inventory_value != null ? fmtCurrency(item.inventory_value) : '—'}</td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
@@ -2141,6 +2348,9 @@ export default function InventoryPage() {
  <tr key={`${item.sku}-exp`}>
  <td colSpan={13} style={{ padding: '0 16px 12px 48px', borderBottom: `1px solid ${C.border}`, background: crit ? 'rgba(239,68,68,0.01)' : rowBg }}>
  <CalcExplainer exp={item.calc_explanation} moq={item.moq} />
+ {/* Which of the four planning numbers are the buyer's and which are ours,
+     plus what the lead-time learning is waiting for. */}
+ <PlanningValues item={item} />
  <SimulatorPanel item={item} />
  </td>
  </tr>

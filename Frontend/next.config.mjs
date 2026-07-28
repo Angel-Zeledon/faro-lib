@@ -1,5 +1,16 @@
 /** @type {import('next').NextConfig} */
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
+// Defaults to the port CLAUDE.md tells you to start the backend on. It used to
+// say 8000, so a fresh clone followed the documented command and got a proxy
+// pointing somewhere nothing was listening.
+//
+// 127.0.0.1, not localhost, on purpose: Node resolves localhost to ::1 first
+// and uvicorn binds IPv4 only, so `localhost` yields ECONNREFUSED ::1 and Next
+// answers 500 with an empty body — which reads like a broken backend rather
+// than a name that resolved to the wrong family.
+//
+// A `Frontend/.env.local` (gitignored, per-machine) overrides this and BEATS a
+// shell `BACKEND_URL=...`, so check that file before believing either.
+const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:8010'
 const isDev = process.env.NODE_ENV === 'development'
 
 const CSP = [

@@ -34,10 +34,56 @@ def _stamp_lead_time_provenance(safe: dict, data: dict) -> dict:
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
 def list_suppliers(tenant_id: str) -> list[dict]:
-    return query(
-        "SELECT * FROM suppliers WHERE tenant_id = %s AND active = TRUE ORDER BY name",
-        (tenant_id,),
+    """Active suppliers, each carrying the state of the lead-time learning.
+
+    `service.resolve_lead_time` already replaces the configured lead time with
+    the one learned from a supplier's real receptions, but only once there are
+    MIN_LEAD_TIME_OBSERVATIONS of them. A new tenant never clears that bar, so
+    every SKU fell back to our assumption and no screen said the learning
+    existed at all — a silent default the buyer had no reason to expect would
+    ever improve.
+
+    The three fields below turn it into a promise they can wait for: how many
+    of this supplier's deliveries we have recorded, how many we need, and the
+    average once we have enough. The threshold travels with the data instead of
+    being duplicated in the frontend, so it can never disagree with the number
+    the planner actually uses.
+    """
+    # Imported inside the function: service.py is the heavier module and imports
+    # this one, so a module-level import would close the cycle.
+    from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
+
+    rows = query(
+        """SELECT s.*,
+                  COALESCE(o.n, 0) AS lead_time_observations,
+                  o.avg_days       AS lead_time_learned_days
+           FROM suppliers s
+           LEFT JOIN (
+               SELECT LOWER(supplier)     AS supplier,
+                      COUNT(*)::int       AS n,
+                      AVG(lead_time_days) AS avg_days
+               FROM supplier_lead_time_obs
+               WHERE tenant_id = %s
+               GROUP BY LOWER(supplier)
+           ) o ON o.supplier = LOWER(s.name)
+           WHERE s.tenant_id = %s AND s.active = TRUE
+           ORDER BY s.name""",
+        (tenant_id, tenant_id),
     )
+    for row in rows:
+        observations = int(row.get("lead_time_observations") or 0)
+        row["lead_time_observations"] = observations
+        row["lead_time_observations_needed"] = MIN_LEAD_TIME_OBSERVATIONS
+        # Below the threshold the average describes one delivery, not the
+        # supplier, and the planner ignores it. Reporting it anyway would show
+        # the buyer a number nothing is actually using.
+        average = row.get("lead_time_learned_days")
+        row["lead_time_learned_days"] = (
+            round(float(average), 1)
+            if average is not None and observations >= MIN_LEAD_TIME_OBSERVATIONS
+            else None
+        )
+    return rows
 
 
 def get_supplier(tenant_id: str, supplier_id: str) -> Optional[dict]:

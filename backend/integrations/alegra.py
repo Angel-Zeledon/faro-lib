@@ -3,7 +3,8 @@
 Auth: HTTP Basic, with the account email as username and the Alegra API
 token as password (`requests.auth.HTTPBasicAuth`).
 
-Field-shape notes (see `.superpowers/sdd/task-5-report.md` for sources):
+Field-shape notes, marking what the provider docs confirm and what they do not,
+so a surprise from Alegra lands on the right line:
 - `/items`: cost and stock quantity live under the nested `inventory` object
   (`inventory.unitCost`, `inventory.availableQuantity`), not at the item's
   top level. The SKU is the item's `reference` (a plain string for most

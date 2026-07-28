@@ -1,9 +1,11 @@
 """
 Assembles a forecasting_core MILP OptimizationInput from live DB state
 (inventory_stock across warehouses, session forecasts, business_cfg), and
-collapses an OptimizationResult back into one actionable total per line —
-see docs/superpowers/specs/2026-07-12-multi-warehouse-milp-design.md,
-"Sub-proyecto 6", for the design this implements.
+collapses an OptimizationResult back into one actionable total per line.
+
+The model itself — variables, constraints, objective — is documented in
+`forecasting_core/business/optimizer.py`'s module docstring. This module only
+does the translation between the database and that model.
 """
 
 from __future__ import annotations

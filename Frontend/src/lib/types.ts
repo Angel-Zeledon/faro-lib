@@ -867,7 +867,7 @@ export interface InventoryStatusItem extends InventoryStock {
   explanation?:           string | null
   explanation_code?:      string | null
   explanation_params?:    Record<string, unknown> | null
-  // Margen bruto por unit; null cuando falta sale_price o unit_cost
+  // Gross margin per unit; null when sale_price or unit_cost is missing.
   unit_margin?:       number | null
 }
 
@@ -1136,7 +1136,7 @@ export interface MultiplierExplanation {
   overrides_by_category: number
 }
 
-/** Override de multiplier por SKU o categoría dentro de un event. */
+/** A per-SKU or per-category multiplier override inside an event. */
 export interface EventMultiplier {
   id:          string
   tenant_id:   string
@@ -1177,7 +1177,7 @@ export interface EventSimulationResult {
   multiplier: number
   event_id:   string | null
   explanation: MultiplierExplanation
-  /** Cuántos SKU corrieron con cada multiplier. */
+  /** How many SKUs ran with each multiplier. */
   multipliers_applied: { multiplier: number; source: string; skus: number }[]
   items:      EventSimulationRow[]
   summary: {

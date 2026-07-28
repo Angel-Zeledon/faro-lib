@@ -287,6 +287,18 @@ class TestBulkOperations:
             lines.append(f"FREEZE-TEST-{_uuid4().hex[:10]}-{i},10,5")
         csv_bytes = ("\n".join(lines) + "\n").encode("utf-8")
 
+        # Baseline BEFORE the import, on this machine, in this state. The
+        # assertion below is relative to it: an absolute ceiling measures how
+        # busy the machine is, and this test is about whether the event loop is
+        # blocked. Whatever slows the baseline slows the probes equally, while a
+        # blocked loop shows up as a spike no ambient load can explain.
+        idle_latencies = []
+        for _ in range(10):
+            start = time.monotonic()
+            client.get("/health")
+            idle_latencies.append(time.monotonic() - start)
+        idle = sorted(idle_latencies)[len(idle_latencies) // 2]
+
         import_done = threading.Event()
         import_result = {}
 
@@ -315,9 +327,15 @@ class TestBulkOperations:
         assert import_result.get("status_code") == 200
 
         assert health_latencies, "Import finished before any /health probe ran — increase n_rows"
-        assert max(health_latencies) < 2.0, (
+
+        # 2 s of headroom OVER the idle baseline: the same budget the absolute
+        # version used, minus the machine. A blocked loop parks /health for the
+        # whole import (seconds), so it cannot slip under this.
+        budget = idle + 2.0
+        assert max(health_latencies) < budget, (
             f"/health latency spiked to {max(health_latencies):.2f}s while bulk import "
-            f"was in flight — the event loop appears to be blocked again (regression of 72a8ec4)"
+            f"was in flight, against an idle baseline of {idle:.2f}s — the event loop "
+            f"appears to be blocked again (regression of 72a8ec4)"
         )
 
 

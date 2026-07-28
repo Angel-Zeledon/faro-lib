@@ -39,12 +39,20 @@ def _db_pool(client):
 
 # ── Arrangement helpers ──────────────────────────────────────────────────────
 
-def _stock_row(tenant_id: str, sku: str, age_days: int) -> None:
-    """A stock row last confirmed `age_days` ago."""
+def _stock_row(tenant_id: str, sku: str, age_days: int,
+               now: datetime | None = None) -> None:
+    """A stock row last confirmed `age_days` ago.
+
+    `now` defaults to the frozen NOW the unit tests pass into the service.
+    Tests that go through the HTTP endpoint must pass the REAL clock: the
+    endpoint calls datetime.now() itself, so a NOW captured at import time
+    reports an age one day off as soon as the run crosses UTC midnight — which
+    a suite that can take over an hour does routinely.
+    """
     execute(
         """INSERT INTO inventory_stock (tenant_id, sku, current_stock, updated_at)
            VALUES (%s, %s, %s, %s)""",
-        (tenant_id, sku, 10, NOW - timedelta(days=age_days)),
+        (tenant_id, sku, 10, (now or NOW) - timedelta(days=age_days)),
     )
 
 
@@ -254,10 +262,12 @@ class TestSemaphoreDegradation:
 class TestFreshnessEndpoint:
     def test_returns_both_clocks_and_the_verdict(self, client, auth_headers, test_tenant):
         tid = test_tenant["id"]
-        _stock_row(tid, "SKU-1", 30)
-        # Real clock, not the frozen NOW — the endpoint uses its own.
+        # Real clock on BOTH clocks, not the frozen NOW — the endpoint uses its
+        # own, and seeding either side against NOW drifts a day at midnight.
+        real_now = datetime.now(timezone.utc)
+        _stock_row(tid, "SKU-1", 30, now=real_now)
         _completed_session(tid, trained_days_ago=2, data_through_days_ago=3,
-                           now=datetime.now(timezone.utc))
+                           now=real_now)
 
         resp = client.get("/api/v1/data-freshness", headers=auth_headers)
         assert resp.status_code == 200, resp.text
@@ -271,7 +281,7 @@ class TestFreshnessEndpoint:
     def test_viewer_can_read_it(self, client, viewer_headers, test_tenant):
         """Read-only and, above all, the honest answer must not be a privilege:
         a viewer looking at a green board deserves to know it is two months old."""
-        _stock_row(test_tenant["id"], "SKU-1", 40)
+        _stock_row(test_tenant["id"], "SKU-1", 40, now=datetime.now(timezone.utc))
         resp = client.get("/api/v1/data-freshness", headers=viewer_headers)
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["stock"]["age_days"] == 40
@@ -386,19 +396,29 @@ class TestFreshnessReminder:
     def test_a_delivered_reminder_silences_the_next_six_days(
         self, monkeypatch, registered_user, test_tenant,
     ):
+        """Driven off the REAL clock, unlike its neighbours, and it has to be.
+
+        The cooldown reads `MAX(activity_logs.created_at)`, and that column is
+        stamped by the DATABASE's NOW() — so the cadence is measured between a
+        real timestamp and whatever clock the loop is handed. A frozen NOW only
+        agrees with the DB while today happens to be that date; the day it is
+        not, `NOW + 8 days` is less than seven real days after the row was
+        written and the reminder silently does not come back.
+        """
         tid = test_tenant["id"]
-        _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
+        base = datetime.now(timezone.utc)
+        _completed_session(tid, trained_days_ago=40, data_through_days_ago=40, now=base)
         _only_this_tenant(monkeypatch, tid)
         sent = _capture_emails(monkeypatch)
 
-        assert fs.run_daily_freshness_reminders(NOW) == 1
-        assert fs.run_daily_freshness_reminders(NOW + timedelta(days=1)) == 0
-        assert fs.run_daily_freshness_reminders(NOW + timedelta(days=6)) == 0
+        assert fs.run_daily_freshness_reminders(base) == 1
+        assert fs.run_daily_freshness_reminders(base + timedelta(days=1)) == 0
+        assert fs.run_daily_freshness_reminders(base + timedelta(days=6)) == 0
         assert len(sent) == 1, "the daily loop mailed the same tenant twice"
 
         # And it comes back once the cooldown has elapsed — the reminder is a
         # cadence, not a one-shot.
-        assert fs.run_daily_freshness_reminders(NOW + timedelta(days=8)) == 1
+        assert fs.run_daily_freshness_reminders(base + timedelta(days=8)) == 1
         assert len(sent) == 2
 
     def test_a_failed_reminder_does_not_start_the_cooldown(

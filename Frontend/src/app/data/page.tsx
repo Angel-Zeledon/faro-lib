@@ -24,6 +24,7 @@ import {
 } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
+import DataTabs from '@/components/layout/DataTabs'
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -1006,7 +1007,11 @@ function DatasetEditorPanel({ source, onCreated }: {
  const [loadErr, setLoadErr] = useState<string | null>(null)
  const [columns, setColumns] = useState<string[]>([])
  const [rows, setRows] = useState<Record<string, unknown>[]>([])
- const [name, setName] = useState(`${source.name} (editado)`)
+ // Through i18n: this becomes the dataset's persisted NAME, so an English user
+ // should not end up with a file called "… (editado)" forever. The backend has
+ // the same fallback for direct API callers, in English — the UI always sends
+ // this one.
+ const [name, setName] = useState(t('data.editor_copy_suffix', { name: source.name }))
  const [saving, setSaving] = useState(false)
 
  useEffect(() => {
@@ -1730,8 +1735,13 @@ export default function DataPage() {
  }
 
  return (
- <div style={{ display: 'flex', height: 'calc(100vh - 52px)', margin: '-24px',
- background: C.bg, color: C.text, overflow: 'hidden' }}>
+ <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)',
+ margin: '-24px', background: C.bg, color: C.text, overflow: 'hidden' }}>
+
+ {/* Same nav entry as /quick-start — the two routes are tabs of each other. */}
+ <DataTabs style={{ background: C.surface, padding: '0 12px', flexShrink: 0 }} />
+
+ <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
  {/* ── Left sidebar ─────────────────────────────────────────────────── */}
  <div style={{ width: 280, flexShrink: 0, borderRight: `1px solid ${C.border}`,
@@ -1740,12 +1750,12 @@ export default function DataPage() {
  {/* Sidebar header */}
  <div style={{ padding: '20px 16px 14px', borderBottom: `1px solid ${C.border}` }}>
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
- <div>
- <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.text }}>{t('data.page_title')}</h1>
- <p style={{ margin: '2px 0 0', fontSize: 12, color: C.muted }}>
+ {/* No page title here: the tab strip above already names this view, and
+     repeating it under the top bar's own title said the same thing three
+     times in the top 90px of the screen. */}
+ <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.text }}>
  {sources.length} {sources.length !== 1 ? t('data.source_plural') : t('data.source_singular')}
  </p>
- </div>
  <button onClick={load} title={t('data.refresh_title')} aria-label={t('data.refresh_title')}
  style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}>
  <RefreshCw size={14} aria-hidden="true" />
@@ -1864,6 +1874,7 @@ export default function DataPage() {
  ) : (
  <EmptyRight onCreate={() => { setCreating('new'); setSelected(null) }} />
  )}
+ </div>
  </div>
  </div>
  )

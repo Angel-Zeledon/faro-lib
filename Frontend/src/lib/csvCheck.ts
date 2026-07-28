@@ -8,6 +8,16 @@
 // kind, each carrying the first few offending rows plus how many were elided
 // ("y 37 más"). The UI renders the groups; the strings drive the block/continue
 // decision.
+//
+// NOTHING in this module is copy: every user-visible sentence travels as an
+// i18n key plus params (per CLAUDE.md, Spanish only ever lives in the `es`
+// values of the i18n catalog). Groups and per-row lines are rendered by
+// `CsvIssueReport`, which has the language context; the two flat string arrays
+// are consumed as plain strings by the upload wizard, so they are resolved here
+// through the optional `t` argument — and, when the caller has none, through
+// the same persisted language the LanguageProvider reads.
+
+import { translations, type Lang } from '@/i18n/translations'
 
 export type CsvIssueKind =
   | 'column_count'
@@ -16,28 +26,32 @@ export type CsvIssueKind =
   | 'negative_qty'
   | 'empty_sku'
 
+/** Same shape as the `t` from `useLanguage()`, passed in rather than hooked. */
+export type CsvTranslate = (key: string, params?: Record<string, unknown>) => string
+
 export interface CsvIssue {
   /** 1-based line number in the file, counting the header as row 1. */
-  row:     number
-  kind:    CsvIssueKind
-  /** Human message in Spanish, already prefixed with "Fila N:". */
-  message: string
+  row:    number
+  kind:   CsvIssueKind
+  /** i18n key for the per-row line, e.g. `csv.row.invalid_date`. */
+  key:    string
+  params: Record<string, string | number>
 }
 
 export interface CsvIssueGroup {
-  kind:  CsvIssueKind
-  /** Short Spanish title for the group, e.g. "Fechas inválidas". */
-  title: string
-  /** What the user should do about it. */
-  hint:  string
+  kind:     CsvIssueKind
+  /** i18n key of the short group title, e.g. `csv.group.invalid_date.title`. */
+  titleKey: string
+  /** i18n key of the "what to do about it" line. */
+  hintKey:  string
   /** Total rows affected (not just the reported sample). */
-  count: number
-  /** First `MAX_PER_GROUP` messages. */
-  samples: string[]
+  count:    number
+  /** First `MAX_PER_GROUP` offending rows, as key+params for the renderer. */
+  samples:  CsvIssue[]
   /** count - samples.length — drives the "y N más" line. */
-  hidden: number
+  hidden:   number
   /** True when this group alone makes the file unusable. */
-  fatal: boolean
+  fatal:    boolean
 }
 
 export interface CsvCheckResult {
@@ -60,6 +74,97 @@ const MAX_PER_GROUP = 5
 // real order: it matches the backend's own per-line cap so the file is
 // rejected here instead of failing later on the server.
 const MAX_REASONABLE_QTY = 1_000_000_000
+
+// ── Copy layer ────────────────────────────────────────────────────────────────
+// Keys are resolved by the caller's `t` wherever there is one. Two safety nets:
+// a built-in English sentence per key, so a build whose catalog has not caught
+// up yet shows a real message instead of "csv.row.invalid_date"; and a
+// context-free resolver for the flat `errors`/`warnings` arrays, whose consumer
+// (the upload wizard) reads them as plain strings.
+
+/** English of last resort. The shipped copy lives in `translations.ts`. */
+const CSV_FALLBACK_COPY: Record<string, string> = {
+  'csv.row.column_count':      'Row {row}: has {found} column(s), the header has {expected}.',
+  'csv.row.invalid_date':      'Row {row}: invalid date "{value}" in column "{column}" — {reason}. Expected YYYY-MM-DD.',
+  'csv.row.empty_qty':         'Row {row}: empty quantity in column "{column}" — a number was expected.',
+  'csv.row.non_numeric_qty':   'Row {row}: non-numeric quantity "{value}" in column "{column}" — a number was expected.',
+  'csv.row.qty_out_of_range':  'Row {row}: quantity out of range "{value}" in column "{column}" — expected a number below {max}.',
+  'csv.row.negative_qty':      'Row {row}: negative quantity "{value}" in column "{column}".',
+  'csv.row.empty_sku':         'Row {row}: the product column "{column}" is empty.',
+
+  'csv.date_reason.empty':            'the cell is empty',
+  'csv.date_reason.unrecognised':     'it is not in a recognisable date format',
+  'csv.date_reason.bad_month':        'month {month} does not exist',
+  'csv.date_reason.bad_day':          'day {day} does not exist',
+  'csv.date_reason.day_not_in_month': 'that day does not exist in that month',
+
+  'csv.group.column_count.title':    'Rows whose column count differs from the header',
+  'csv.group.column_count.hint':     'Usually a cell containing the separator (a comma inside a text). Wrap it in double quotes or remove the comma.',
+  'csv.group.invalid_date.title':    'Invalid dates',
+  'csv.group.invalid_date.hint':     'YYYY-MM-DD is expected (e.g. 2026-01-15). DD/MM/YYYY and DD-MM-YYYY are also accepted.',
+  'csv.group.non_numeric_qty.title': 'Non-numeric quantities',
+  'csv.group.non_numeric_qty.hint':  'The quantity column must contain only numbers. Remove currency symbols, thousands separators and text like "N/A".',
+  'csv.group.negative_qty.title':    'Negative quantities',
+  'csv.group.negative_qty.hint':     'Returns are recorded separately. A negative demand distorts that product\'s forecast.',
+  'csv.group.empty_sku.title':       'Rows with no product',
+  'csv.group.empty_sku.hint':        'Every row needs the product code or name so we can forecast per SKU.',
+
+  'csv.error.empty_file':          'The file is empty or only has a header row.',
+  'csv.error.too_few_columns':     'Only {count} column(s) detected. At least 3 are needed: date, product and quantity. Check that the separator is a comma (,) or a semicolon (;).',
+  'csv.error.too_many_bad_rows':   '{title}: {count} of {rows} row(s).',
+  'csv.warn.no_date_column':       'No date column was identified by its name (e.g. "fecha"). You will be able to pick it by hand in the next step.',
+  'csv.warn.no_qty_column':        'No quantity column was identified by its name (e.g. "demanda" or "cantidad"). You will be able to pick it by hand in the next step.',
+  'csv.warn.no_sku_column':        'No product column was identified by its name (e.g. "sku" or "producto"). You will be able to pick it by hand in the next step.',
+  'csv.warn.rows_skipped':         '{count} row(s) with problems will be skipped while processing. The rest will be used normally.',
+  'csv.warn.few_rows':             'Only {rows} data rows — at least 60 days of history is recommended for a useful forecast.',
+}
+
+function interpolate(text: string, params: Record<string, string | number>): string {
+  return Object.entries(params).reduce(
+    (out, [k, v]) => out.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v)),
+    text,
+  )
+}
+
+/**
+ * Resolver for callers with no React context. Reads the same `lang` the
+ * LanguageProvider persists, so the wizard's plain-string warnings follow the
+ * toggle at the foot of the sidebar instead of being frozen in one language.
+ */
+function catalogTranslate(key: string, params?: Record<string, unknown>): string {
+  let lang: Lang = 'es'
+  if (typeof window !== 'undefined') {
+    const saved = window.localStorage.getItem('lang')
+    if (saved === 'es' || saved === 'en') lang = saved
+  }
+  const dict = translations[lang] as unknown as Record<string, string>
+  const es   = translations.es as unknown as Record<string, string>
+  const text = dict[key] ?? es[key] ?? key
+  return params ? interpolate(text, params as Record<string, string | number>) : text
+}
+
+/**
+ * One csv-check sentence in the active language. `t` returns the raw key when
+ * the catalog has no entry, which is exactly what must never reach the user —
+ * so an unmapped key degrades to the built-in English sentence instead.
+ */
+export function csvText(
+  t: CsvTranslate, key: string, params: Record<string, string | number> = {},
+): string {
+  const rendered = t(key, params)
+  if (rendered !== key) return rendered
+  const fallback = CSV_FALLBACK_COPY[key]
+  return fallback ? interpolate(fallback, params) : ''
+}
+
+/** One offending row as a sentence. The invalid-date line nests a second key
+ *  (the reason the date could not be read), resolved first. */
+export function csvIssueText(t: CsvTranslate, issue: CsvIssue): string {
+  const params = { ...issue.params }
+  const reasonKey = issue.params.reason_key
+  if (typeof reasonKey === 'string') params.reason = csvText(t, reasonKey, params)
+  return csvText(t, issue.key, params)
+}
 
 const DATE_HINTS = ['fecha', 'date', 'dia', 'día', 'day', 'periodo']
 const QTY_HINTS  = ['cantidad', 'demanda', 'venta', 'ventas', 'qty', 'quantity', 'demand', 'sales', 'units', 'unidades']
@@ -171,44 +276,30 @@ function parseableDate(raw: string): boolean {
   return day <= daysInMonth
 }
 
-/** Why this particular date string could not be read — used in the row message. */
-function dateFailureReason(raw: string): string {
-  if (!raw.trim()) return 'la celda está vacía'
+/**
+ * Why this particular date string could not be read, as an i18n key plus the
+ * params it interpolates. Nested inside the `csv.row.invalid_date` line.
+ */
+function dateFailureReason(raw: string): Record<string, string | number> {
+  if (!raw.trim()) return { reason_key: 'csv.date_reason.empty' }
   const m = raw.match(/^(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})$/)
-  if (!m) return 'no tiene un formato de fecha reconocible'
+  if (!m) return { reason_key: 'csv.date_reason.unrecognised' }
   const a = parseInt(m[1]), b = parseInt(m[2]), c = parseInt(m[3])
   const [day, month] = a > 31 ? [c, b] : [a, b]
-  if (month < 1 || month > 12) return `el mes ${month} no existe`
-  if (day < 1 || day > 31)     return `el día ${day} no existe`
-  return 'ese día no existe en ese mes'
-}
-
-const GROUP_META: Record<CsvIssueKind, { title: string; hint: string }> = {
-  column_count: {
-    title: 'Filas con un número de columnas distinto al encabezado',
-    hint:  'Suele pasar cuando una celda contiene el separador (una coma dentro de un texto). Enciérrala entre comillas dobles o quita la coma.',
-  },
-  invalid_date: {
-    title: 'Fechas inválidas',
-    hint:  'Se espera el formato AAAA-MM-DD (ej. 2026-01-15). También se aceptan DD/MM/AAAA y DD-MM-AAAA.',
-  },
-  non_numeric_qty: {
-    title: 'Cantidades no numéricas',
-    hint:  'La columna de cantidad debe contener solo números. Quita símbolos de moneda, separadores de miles y textos como "N/D".',
-  },
-  negative_qty: {
-    title: 'Cantidades negativas',
-    hint:  'Las devoluciones se registran aparte. Una demanda negativa distorsiona el pronóstico de ese producto.',
-  },
-  empty_sku: {
-    title: 'Filas sin producto',
-    hint:  'Cada fila necesita el código o nombre del producto para poder pronosticar por SKU.',
-  },
+  if (month < 1 || month > 12) return { reason_key: 'csv.date_reason.bad_month', month }
+  if (day < 1 || day > 31)     return { reason_key: 'csv.date_reason.bad_day', day }
+  return { reason_key: 'csv.date_reason.day_not_in_month' }
 }
 
 // ── Validator ─────────────────────────────────────────────────────────────────
 
-export function validateSalesCsv(text: string): CsvCheckResult {
+export function validateSalesCsv(text: string, t?: CsvTranslate): CsvCheckResult {
+  // `errors`/`warnings` leave this function as finished sentences because their
+  // consumer renders them verbatim; `tr` is the caller's translator when it has
+  // one, and the persisted-language resolver when it does not.
+  const tr = t ?? catalogTranslate
+  const say = (key: string, params: Record<string, string | number> = {}) => csvText(tr, key, params)
+
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -217,7 +308,7 @@ export function validateSalesCsv(text: string): CsvCheckResult {
   if (lines.length < 2) {
     return {
       ok: false,
-      errors: ['El archivo está vacío o solo tiene encabezado.'],
+      errors: [say('csv.error.empty_file')],
       warnings, rowCount: 0, columns: [], issueGroups: [],
     }
   }
@@ -227,10 +318,7 @@ export function validateSalesCsv(text: string): CsvCheckResult {
   const columns = splitLine(lines[0], sep)
 
   if (header.length < 3) {
-    errors.push(
-      `Solo se detectó ${header.length} columna(s). Se necesitan al menos 3: fecha, producto y cantidad. ` +
-      'Revisa que el separador sea coma (,) o punto y coma (;).'
-    )
+    errors.push(say('csv.error.too_few_columns', { count: header.length }))
     return { ok: false, errors, warnings, rowCount: lines.length - 1, columns, issueGroups: [] }
   }
 
@@ -238,15 +326,9 @@ export function validateSalesCsv(text: string): CsvCheckResult {
   const qtyIdx  = header.findIndex(h => QTY_HINTS.some(k => h.includes(k)))
   const skuIdx  = header.findIndex(h => SKU_HINTS.some(k => h.includes(k)))
 
-  if (dateIdx === -1) {
-    warnings.push('No se identificó una columna de fecha por su nombre (ej: "fecha"). Podrás elegirla manualmente en el siguiente paso.')
-  }
-  if (qtyIdx === -1) {
-    warnings.push('No se identificó una columna de cantidad por su nombre (ej: "demanda" o "cantidad"). Podrás elegirla manualmente en el siguiente paso.')
-  }
-  if (skuIdx === -1) {
-    warnings.push('No se identificó una columna de producto por su nombre (ej: "sku" o "producto"). Podrás elegirla manualmente en el siguiente paso.')
-  }
+  if (dateIdx === -1) warnings.push(say('csv.warn.no_date_column'))
+  if (qtyIdx  === -1) warnings.push(say('csv.warn.no_qty_column'))
+  if (skuIdx  === -1) warnings.push(say('csv.warn.no_sku_column'))
 
   const issues: CsvIssue[] = []
   const rows = lines.length - 1
@@ -257,16 +339,19 @@ export function validateSalesCsv(text: string): CsvCheckResult {
 
     if (cells.length !== header.length) {
       issues.push({
-        row: rowN, kind: 'column_count',
-        message: `Fila ${rowN}: tiene ${cells.length} columna(s) y el encabezado tiene ${header.length}.`,
+        row: rowN, kind: 'column_count', key: 'csv.row.column_count',
+        params: { row: rowN, found: cells.length, expected: header.length },
       })
       continue   // cells are misaligned — per-column checks would be nonsense
     }
 
     if (dateIdx >= 0 && !parseableDate(cells[dateIdx])) {
       issues.push({
-        row: rowN, kind: 'invalid_date',
-        message: `Fila ${rowN}: fecha inválida "${cells[dateIdx]}" en la columna "${columns[dateIdx]}" — ${dateFailureReason(cells[dateIdx])}. Se esperaba AAAA-MM-DD.`,
+        row: rowN, kind: 'invalid_date', key: 'csv.row.invalid_date',
+        params: {
+          row: rowN, value: cells[dateIdx], column: columns[dateIdx],
+          ...dateFailureReason(cells[dateIdx]),
+        },
       })
     }
 
@@ -280,27 +365,29 @@ export function validateSalesCsv(text: string): CsvCheckResult {
       if (v === '' || !Number.isFinite(Number(v))) {
         issues.push({
           row: rowN, kind: 'non_numeric_qty',
-          message: raw === ''
-            ? `Fila ${rowN}: cantidad vacía en la columna "${columns[qtyIdx]}" — se esperaba un número.`
-            : `Fila ${rowN}: cantidad no numérica "${raw}" en la columna "${columns[qtyIdx]}" — se esperaba un número.`,
+          key: raw === '' ? 'csv.row.empty_qty' : 'csv.row.non_numeric_qty',
+          params: { row: rowN, value: raw, column: columns[qtyIdx] },
         })
       } else if (Number(v) > MAX_REASONABLE_QTY) {
         issues.push({
-          row: rowN, kind: 'non_numeric_qty',
-          message: `Fila ${rowN}: cantidad fuera de rango "${raw}" en la columna "${columns[qtyIdx]}" — se esperaba un número menor que ${MAX_REASONABLE_QTY.toLocaleString('es')}.`,
+          row: rowN, kind: 'non_numeric_qty', key: 'csv.row.qty_out_of_range',
+          params: {
+            row: rowN, value: raw, column: columns[qtyIdx],
+            max: MAX_REASONABLE_QTY.toLocaleString(),
+          },
         })
       } else if (Number(v) < 0) {
         issues.push({
-          row: rowN, kind: 'negative_qty',
-          message: `Fila ${rowN}: cantidad negativa "${raw}" en la columna "${columns[qtyIdx]}".`,
+          row: rowN, kind: 'negative_qty', key: 'csv.row.negative_qty',
+          params: { row: rowN, value: raw, column: columns[qtyIdx] },
         })
       }
     }
 
     if (skuIdx >= 0 && cells[skuIdx] === '') {
       issues.push({
-        row: rowN, kind: 'empty_sku',
-        message: `Fila ${rowN}: la columna de producto "${columns[skuIdx]}" está vacía.`,
+        row: rowN, kind: 'empty_sku', key: 'csv.row.empty_sku',
+        params: { row: rowN, column: columns[skuIdx] },
       })
     }
   }
@@ -323,28 +410,30 @@ export function validateSalesCsv(text: string): CsvCheckResult {
   const issueGroups: CsvIssueGroup[] = ORDER.flatMap(kind => {
     const of = issues.filter(it => it.kind === kind)
     if (of.length === 0) return []
-    const samples = of.slice(0, MAX_PER_GROUP).map(it => it.message)
+    const samples = of.slice(0, MAX_PER_GROUP)
     return [{
       kind,
-      title:   GROUP_META[kind].title,
-      hint:    GROUP_META[kind].hint,
-      count:   of.length,
+      titleKey: `csv.group.${kind}.title`,
+      hintKey:  `csv.group.${kind}.hint`,
+      count:    of.length,
       samples,
-      hidden:  of.length - samples.length,
-      fatal:   fatalKinds.has(kind),
+      hidden:   of.length - samples.length,
+      fatal:    fatalKinds.has(kind),
     }]
   })
 
   if (fatal) {
     for (const g of issueGroups.filter(g => g.fatal)) {
-      errors.push(`${g.title}: ${g.count} de ${rows} fila(s).`)
+      errors.push(say('csv.error.too_many_bad_rows', {
+        title: say(g.titleKey), count: g.count, rows,
+      }))
     }
   } else if (issues.length > 0) {
-    warnings.push(`${issues.length} fila(s) con problemas serán ignoradas al procesar. El resto se usará normalmente.`)
+    warnings.push(say('csv.warn.rows_skipped', { count: issues.length }))
   }
 
   if (rows < 30) {
-    warnings.push(`Solo ${rows} filas de datos — se recomienda al menos 60 días de historial para un pronóstico útil.`)
+    warnings.push(say('csv.warn.few_rows', { rows }))
   }
 
   return {
@@ -363,10 +452,9 @@ export function validateSalesCsv(text: string): CsvCheckResult {
 // file gets, reusing the separator sniffing and the quoted-field split above,
 // tuned for a stock export: a product code, a quantity, a cost.
 //
-// Unlike `validateSalesCsv` (whose Spanish messages predate the i18n layer and
-// are consumed as plain strings by the wizard), NOTHING here returns copy:
-// every issue is an i18n KEY plus params, and the component renders it. New
-// user-visible text in this file goes through i18n, per CLAUDE.md.
+// Like `validateSalesCsv`, nothing here returns copy: every issue is an i18n
+// KEY plus params, and the component renders it. All user-visible text in this
+// file goes through i18n, per CLAUDE.md.
 
 export type StockCsvIssueKind =
   | 'column_count'

@@ -6,7 +6,7 @@
 
 import { AlertTriangle, AlertCircle, Download } from 'lucide-react'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
-import { downloadCsvTemplate } from '@/lib/csvCheck'
+import { downloadCsvTemplate, csvText, csvIssueText } from '@/lib/csvCheck'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export function CsvTemplateButton({ compact = false }: { compact?: boolean }) {
@@ -78,7 +78,7 @@ export default function CsvIssueReport({ groups, fileName }: {
               display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap',
               fontSize: 13, fontWeight: 700, color: 'var(--text)',
             }}>
-              <span>{g.title}</span>
+              <span>{csvText(t, g.titleKey)}</span>
               <span style={{
                 fontSize: 11, fontWeight: 700, color: g.fatal ? '#dc2626' : '#d97706',
                 background: g.fatal ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.14)',
@@ -92,12 +92,12 @@ export default function CsvIssueReport({ groups, fileName }: {
               listStyle: 'none', margin: '7px 0 0', padding: 0,
               display: 'flex', flexDirection: 'column', gap: 3,
             }}>
-              {g.samples.map((msg, i) => (
+              {g.samples.map((issue, i) => (
                 <li key={i} style={{
                   fontSize: 12.5, color: 'var(--text)', lineHeight: 1.55,
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                 }}>
-                  {msg}
+                  {csvIssueText(t, issue)}
                 </li>
               ))}
               {g.hidden > 0 && (
@@ -108,7 +108,7 @@ export default function CsvIssueReport({ groups, fileName }: {
             </ul>
 
             <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6, lineHeight: 1.55 }}>
-              {g.hint}
+              {csvText(t, g.hintKey)}
             </div>
           </div>
         ))}

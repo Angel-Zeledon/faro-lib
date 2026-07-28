@@ -20,7 +20,10 @@ interface Notif {
 
 // Titles resolved via i18n so they follow the language toggle.
 const PAGE_TITLE_KEYS: Record<string, string> = {
-  '/data':      'topbar.title_data',
+  // One title for the pair: /quick-start and /data are two tabs of the same
+  // sidebar entry, so the bar names the section and the tabs name the tab.
+  '/data':        'topbar.title_data',
+  '/quick-start': 'topbar.title_data',
   '/analyst':   'topbar.title_analyst',
   '/config':    'topbar.title_config',
   '/users':     'topbar.title_users',

@@ -5,7 +5,9 @@ and JSON body `{"username": ..., "access_key": ...}` returns
 `{"access_token": ...}`; the token is cached on the instance and sent as
 `Authorization: Bearer <token>` (plus `Partner-Id`) on every subsequent read.
 
-Field-shape notes (see `.superpowers/sdd/task-6-report.md` for sources):
+Field-shape notes, with the provider documentation that confirms each cited
+inline — what is confirmed and what is assumed is marked, so a surprise from
+Siigo lands on the right line:
 - `/products` and `/invoices` list responses are wrapped in a pagination
   envelope: `{"pagination": {"page", "page_size", "total_results"}, "results": [...]}`
   (confirmed for `/invoices` against developers.siigo.com's "Listar Facturas"

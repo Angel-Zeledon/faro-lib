@@ -791,11 +791,11 @@ export const setEventMultiplier = (
 ) =>
   request<EventMultiplier>('PUT', `/inventory/events/${eventId}/multipliers`,
     { scope, scope_value: scopeValue, multiplier })
+// Routed through `request` like its siblings so a failure arrives as an
+// ApiError the i18n error layer can render, instead of a hardcoded sentence in
+// one language.
 export const deleteEventMultiplier = (eventId: string, overrideId: string) =>
-  fetch(`${BASE}/inventory/events/${eventId}/multipliers/${overrideId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(r => { if (!r.ok) throw new Error('No se pudo eliminar el multiplicador') })
+  request<void>('DELETE', `/inventory/events/${eventId}/multipliers/${overrideId}`)
 
 // ── LatAm commercial calendar (feature 3.4) ─────────────────────────────────
 export const getCalendarCatalog = (country?: string) =>

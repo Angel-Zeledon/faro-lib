@@ -1,12 +1,12 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { renderExplanation } from '@/lib/explanationCopy'
-import { sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
+import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
 import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
- ChevronDown, ChevronUp, Send, UserX, X, Upload, PlayCircle,
+ ChevronDown, ChevronUp, Send, UserX, X, Upload, PlayCircle, Info,
 } from 'lucide-react'
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
@@ -17,7 +17,7 @@ import type {
  MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
  OptimizationResponse, OptimizationOrder, POLineDecision, OverdueReception, SendPOResult,
  SupplierContactHealthRow, SupplierLeadTimeAlert, Supplier,
- PriceBreakEvaluation, CashCalendar, CashFitResult,
+ PriceBreakEvaluation, CashCalendar, CashFitResult, InventoryStatusItem,
 } from '@/lib/types'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import {
@@ -138,6 +138,22 @@ interface ActionItem {
  // buyer their lead time was "configurado por ti" when nobody had configured it.
  lead_time_source: ValueSource
  lead_time_rule_scope: RuleScope | null
+ // Same question for the other three values that decide the order. The buyer
+ // must be able to tell "I chose 95%" from "Faro assumed 95%" before approving.
+ unit_cost_source: ValueSource
+ service_level:        number | null
+ service_level_source: ValueSource
+ service_level_rule_scope: RuleScope | null
+ moq:              number | null
+ moq_source:       ValueSource
+ moq_rule_scope:   RuleScope | null
+ // State of the lead-time learning for this SKU's supplier: deliveries we have
+ // recorded, and how many the planner needs before the learned average replaces
+ // the configured value. The threshold comes from the payload
+ // (MIN_LEAD_TIME_OBSERVATIONS), never from a literal here.
+ lead_time_observations:        number | null
+ lead_time_observations_needed: number | null
+ lead_time_learned:             number | null
  reorder_point:    number | null
  // English fallback from the backend; the Spanish is rendered here from
  // explanation_code + explanation_params.
@@ -147,6 +163,64 @@ interface ActionItem {
  unit_margin:  number | null   // null = SKU sin price o sin cost
  reason:         string
  status:         ActionStatus
+}
+
+// ── Lead-time learning state ────────────────────────────────────────────────
+// `resolve_lead_time` upgrades a supplier's lead time from their real
+// receptions, but only past MIN_LEAD_TIME_OBSERVATIONS of them — a bar a new
+// tenant never clears, so the fallback stayed silent and permanent-looking.
+// Saying how many deliveries we have and how many we need turns it into a
+// promise the buyer can wait for. The threshold arrives with the data; a
+// literal here would be free to disagree with what the planner applies.
+function LeadTimeLearning({ item }: { item: ActionItem }) {
+ const { t } = useLanguage()
+ const style: React.CSSProperties = {
+  fontSize: 11, color: 'var(--dim)', lineHeight: 1.5,
+  marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--border)',
+ }
+
+ if (!item.supplier) {
+  return (
+   <div style={style}>
+    {tOr(t, 'inventory.lead_time_learning_no_supplier',
+     'This product has no supplier, so we cannot learn its real lead time. Assign one and we start measuring.')}
+   </div>
+  )
+ }
+
+ const needed = item.lead_time_observations_needed
+ // Older backend: say nothing rather than invent a threshold.
+ if (needed == null) return null
+ const seen = item.lead_time_observations ?? 0
+ const supplier = item.supplier
+
+ // 'learned' is the only state where the average is the number the planner
+ // used; below the threshold it exists but is deliberately ignored.
+ if (item.lead_time_source === 'learned' && item.lead_time_learned != null) {
+  return (
+   <div style={{ ...style, color: C.green }}>
+    {tOr(t, 'inventory.lead_time_learning_active',
+     `Learned from ${seen} of your deliveries from ${supplier}: ${item.lead_time_learned} days on average, and that is the number we use.`,
+     { supplier, n: seen, days: item.lead_time_learned })}
+   </div>
+  )
+ }
+ if (seen === 0) {
+  return (
+   <div style={style}>
+    {tOr(t, 'inventory.lead_time_learning_none',
+     `We have no deliveries from ${supplier} yet. Once you record ${needed}, we adjust the lead time on our own.`,
+     { supplier, needed })}
+   </div>
+  )
+ }
+ return (
+  <div style={style}>
+   {tOr(t, 'inventory.lead_time_learning_partial',
+    `${seen} of ${needed} deliveries from ${supplier} recorded. ${needed - seen} more and we adjust the lead time on our own.`,
+    { supplier, n: seen, needed, missing: needed - seen })}
+  </div>
+ )
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
@@ -297,13 +371,55 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
       </div>
       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
        {item.lead_time} {t('hoy.why_days')}
+       <SourceBadge source={item.lead_time_source} />
       </div>
       <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
-       {item.lead_time_source === 'supplier_rule' && item.lead_time_rule_scope
-        ? `${t(sourceLabelKey(item.lead_time_source))} · ${t(`explain.scope_${item.lead_time_rule_scope}`)}`
-        : t(sourceLabelKey(item.lead_time_source))}
+       {provenanceText(t, item.lead_time_source, item.lead_time_rule_scope)}
       </div>
      </div>
+     {/* The other three values the order rests on. Each one the buyer never
+         gave us is badged, so approving is a decision made with the guesses
+         in plain sight instead of buried in the backend. */}
+     {item.service_level != null && (
+      <div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {tOr(t, 'hoy.why_service_level_label', 'Service level')}
+       </div>
+       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+        {Math.round(item.service_level * 100)}%
+        <SourceBadge source={item.service_level_source} />
+       </div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
+        {provenanceText(t, item.service_level_source, item.service_level_rule_scope)}
+       </div>
+      </div>
+     )}
+     <div>
+      <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+       {tOr(t, 'hoy.why_unit_cost_label', 'Unit cost')}
+      </div>
+      <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+       {item.unit_cost != null ? fmtMoney(item.unit_cost) : '—'}
+       <SourceBadge source={item.unit_cost_source} />
+      </div>
+      <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
+       {provenanceText(t, item.unit_cost_source)}
+      </div>
+     </div>
+     {item.moq != null && (
+      <div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        MOQ
+       </div>
+       <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
+        {Math.round(item.moq).toLocaleString('es')}
+        <SourceBadge source={item.moq_source} />
+       </div>
+       <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
+        {provenanceText(t, item.moq_source, item.moq_rule_scope)}
+       </div>
+      </div>
+     )}
      {item.current_stock != null && (
       <div>
        <div style={{ color: 'var(--dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -325,6 +441,8 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
       </div>
      )}
      </div>
+     {/* When the lead time is still ours, say what would make it theirs. */}
+     <LeadTimeLearning item={item} />
     </div>
    )}
 
@@ -461,14 +579,182 @@ function SpikeCard({ s }: { s: DemandSpike }) {
  )
 }
 
+// ── Which of these numbers are ours, not yours? ──────────────────────────────
+// Every planning value now carries a provenance, and 'default' is the one that
+// means "nobody told us — this is Faro's assumption". The buyer approving an
+// order deserves to know how much of it rests on our guesses before they spend
+// the money, and to get one link to the screen that ranks those gaps by money.
+//
+// The count is derived from the recommendations actually on screen. It is never
+// a fixed number and it is never shown when there is nothing to admit.
+const ASSUMPTION_FIELDS: { id: string; source: (i: InventoryStatusItem) => ValueSource | undefined }[] = [
+ { id: 'lead_time',     source: i => i.lead_time_source },
+ { id: 'service_level', source: i => i.service_level_source },
+ { id: 'unit_cost',     source: i => i.unit_cost_source },
+ { id: 'moq',           source: i => i.moq_source },
+]
+
+interface AssumptionSummary {
+ /** Which of the four planning fields we had to assume in at least one SKU. */
+ fields: string[]
+ /** SKUs on this screen resting on at least one assumption. */
+ skus:   number
+ /** SKUs examined, so the sentence can say "N of the M on this screen". Not the
+  *  whole catalogue — the briefing caps each list — and the copy says so. */
+ total:  number
+}
+
+function summarizeAssumptions(briefing: MorningBriefing | null): AssumptionSummary {
+ // Overstock counts too: "you already have enough" is a verdict built on the
+ // same four numbers, and a tenant whose whole catalogue is overstocked would
+ // otherwise never be told their configuration is missing.
+ const items = [
+  ...(briefing?.risks ?? []),
+  ...(briefing?.warnings ?? []),
+  ...(briefing?.overstocked ?? []),
+ ]
+ const fields = new Set<string>()
+ let skus = 0
+ for (const item of items) {
+  let any = false
+  for (const field of ASSUMPTION_FIELDS) {
+   // No source at all means we cannot prove authorship, so it counts as ours —
+   // claiming the buyer chose a number we cannot trace is the failure this
+   // whole provenance change exists to remove. `isAssumed` treats it that way.
+   if (isAssumed(field.source(item))) { fields.add(field.id); any = true }
+  }
+  if (any) skus++
+ }
+ return { fields: ASSUMPTION_FIELDS.map(f => f.id).filter(id => fields.has(id)), skus, total: items.length }
+}
+
+// `t` returns the key itself when the catalog has no entry for it; printing
+// "hoy.assumptions_title" at the buyer is worse than plain English. Same guard
+// `lib/explanationCopy.ts` uses before rendering a copy block.
+function tOr(
+ t: (key: string, params?: Record<string, unknown>) => string,
+ key: string, fallback: string, params?: Record<string, unknown>,
+): string {
+ const text = t(key, params)
+ return text === key ? fallback : text
+}
+
+// English last-resort wording, one per provenance value. Spanish never appears
+// here — it lives in the i18n catalog (CLAUDE.md).
+const SOURCE_FALLBACK_EN: Record<ValueSource, string> = {
+ user:          'you set it',
+ file:          'from your file',
+ supplier_rule: 'rule',
+ learned:       'learned from your deliveries',
+ default:       'estimated',
+}
+
+/** Names where a value came from, across all five sources. A rule hit also
+ *  names the level that won, so the precedence is visible instead of being
+ *  something the buyer has to reverse-engineer. */
+function provenanceText(
+ t: (key: string, params?: Record<string, unknown>) => string,
+ source?: ValueSource | null, scope?: RuleScope | null,
+): string {
+ const value: ValueSource = source || 'default'
+ const label = tOr(t, sourceLabelKey(value), SOURCE_FALLBACK_EN[value])
+ if (value === 'supplier_rule' && scope) {
+  return `${label} · ${tOr(t, `explain.scope_${scope}`, scope)}`
+ }
+ return label
+}
+
+const ASSUMPTION_FIELD_FALLBACK_EN: Record<string, string> = {
+ lead_time:     'the lead time',
+ service_level: 'the service level',
+ unit_cost:     'the unit cost',
+ moq:           'the minimum order',
+}
+
+function AssumptionsBanner({ summary }: { summary: AssumptionSummary }) {
+ const { t } = useLanguage()
+ // Nothing assumed: say nothing. A banner that reports zero is noise, and a
+ // banner with an invented number is a lie.
+ if (summary.fields.length === 0) return null
+
+ const names = summary.fields.map(id => tOr(
+  t, `hoy.assumption_field_${id}`, ASSUMPTION_FIELD_FALLBACK_EN[id] ?? id))
+ const and = tOr(t, 'hoy.assumptions_list_and', 'and')
+ const list = names.length === 1
+  ? names[0]
+  : `${names.slice(0, -1).join(', ')} ${and} ${names[names.length - 1]}`
+
+ return (
+  <Link
+   href="/inventory-setup"
+   style={{
+    display: 'flex', alignItems: 'flex-start', gap: 10, textDecoration: 'none',
+    marginBottom: 20, padding: '12px 16px', borderRadius: 10,
+    background: 'rgba(129,140,248,0.06)', border: '1px dashed rgba(129,140,248,0.4)',
+   }}
+  >
+   <Info size={15} color={C.indigo} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+   <div style={{ flex: 1, minWidth: 0 }}>
+    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+     {tOr(t, 'hoy.assumptions_title',
+      `These recommendations rest on ${summary.fields.length} assumptions of ours — review them`,
+      { n: summary.fields.length })}
+    </div>
+    <div style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>
+     {tOr(t, 'hoy.assumptions_body',
+      `You have not given us ${list} for ${summary.skus} of the ${summary.total} products below, so we used our own values.`,
+      { fields: list, skus: summary.skus, total: summary.total })}
+    </div>
+   </div>
+   <span style={{
+    display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+    fontSize: 12, fontWeight: 600, color: C.indigo, whiteSpace: 'nowrap', marginTop: 2,
+   }}>
+    {tOr(t, 'hoy.assumptions_cta', 'See what to configure first')}
+    <ArrowRight size={12} aria-hidden="true" />
+   </span>
+  </Link>
+ )
+}
+
+// A muted dotted "estimado" badge on a value Faro assumed rather than received.
+// Only assumed values are badged: no badge means the number is the buyer's own
+// (typed, imported, ruled, or learned from their receptions). Mirrors the badge
+// on /inventory so the two screens make the same promise.
+function SourceBadge({ source }: { source?: ValueSource | null }) {
+ const { t } = useLanguage()
+ if (!isAssumed(source)) return null
+ return (
+  <span
+   title={tOr(t, 'inventory.source_assumed_tip',
+    'Faro assumed this value — you have not given us one yet.')}
+   style={{
+    marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+    textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,
+    color: 'var(--dim)', border: '1px dashed var(--border)',
+    background: 'transparent', whiteSpace: 'nowrap',
+   }}
+  >{tOr(t, 'inventory.source_assumed_badge', 'estimated')}</span>
+ )
+}
+
 // ── Build ActionItems from briefing ──────────────────────────────────────────
+// The status rows now also carry the lead-time learning counters. They are
+// declared here rather than in lib/types.ts because that file belongs to
+// another change in flight; both fields are optional, so an older backend
+// simply reports no learning state instead of breaking.
+type BriefingItem = InventoryStatusItem & {
+ lead_time_observations?:        number
+ lead_time_observations_needed?: number
+}
+
 function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionItem[] {
  const items: ActionItem[] = []
  // Coverage figures are in the briefing's active period unit (weeks under a
  // weekly session); lead time is always real calendar days.
  const cu = b.coverage_unit
 
- for (const risk of (b.risks ?? [])) {
+ for (const risk of ((b.risks ?? []) as BriefingItem[])) {
   const d = risk.coverage_days != null ? Math.round(risk.coverage_days) : null
   const reason = d != null
    ? `${t('hoy.reason_stock_left_prefix')} ${d} ${coverageUnitLabel(cu, d, t)} ${t('hoy.reason_stock_left_suffix')} ${risk.lead_time_days} ${dayUnit(risk.lead_time_days, t)}`
@@ -491,6 +777,16 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    // assumption — never as something the user configured.
    lead_time_source: risk.lead_time_source ?? 'default',
    lead_time_rule_scope: risk.lead_time_rule_scope ?? null,
+   unit_cost_source: risk.unit_cost_source ?? 'default',
+   service_level:        risk.service_level ?? null,
+   service_level_source: risk.service_level_source ?? 'default',
+   service_level_rule_scope: risk.service_level_rule_scope ?? null,
+   moq:              risk.moq ?? null,
+   moq_source:       risk.moq_source ?? 'default',
+   moq_rule_scope:   risk.moq_rule_scope ?? null,
+   lead_time_observations:        risk.lead_time_observations ?? null,
+   lead_time_observations_needed: risk.lead_time_observations_needed ?? null,
+   lead_time_learned:             risk.lead_time_learned ?? null,
    reorder_point:    risk.reorder_point ?? null,
    explanation:      risk.explanation ?? null,
    explanation_code:   risk.explanation_code ?? null,
@@ -501,7 +797,7 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
   })
  }
 
- for (const w of (b.warnings ?? [])) {
+ for (const w of ((b.warnings ?? []) as BriefingItem[])) {
   const d = w.coverage_days != null ? Math.round(w.coverage_days) : null
   items.push({
    sku:            w.sku,
@@ -519,6 +815,16 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    current_stock:   w.current_stock ?? null,
    lead_time_source: w.lead_time_source ?? 'default',
    lead_time_rule_scope: w.lead_time_rule_scope ?? null,
+   unit_cost_source: w.unit_cost_source ?? 'default',
+   service_level:        w.service_level ?? null,
+   service_level_source: w.service_level_source ?? 'default',
+   service_level_rule_scope: w.service_level_rule_scope ?? null,
+   moq:              w.moq ?? null,
+   moq_source:       w.moq_source ?? 'default',
+   moq_rule_scope:   w.moq_rule_scope ?? null,
+   lead_time_observations:        w.lead_time_observations ?? null,
+   lead_time_observations_needed: w.lead_time_observations_needed ?? null,
+   lead_time_learned:             w.lead_time_learned ?? null,
    reorder_point:    w.reorder_point ?? null,
    explanation:      w.explanation ?? null,
    explanation_code:   w.explanation_code ?? null,
@@ -1080,6 +1386,11 @@ export default function HoyPage() {
            is the caveat that applies to all of them — the semáforo below was
            computed on stock (or sales) nobody has refreshed. */}
        {freshness && <StaleDataBanner freshness={freshness} />}
+
+       {/* How much of today's advice rests on values nobody gave us. Renders
+           nothing when there is nothing to admit — the count comes from the
+           recommendations on screen, never from a fixed number. */}
+       <AssumptionsBanner summary={summarizeAssumptions(briefing)} />
 
        {/* Feature 3.3 — a supplier's recent lead time drifted significantly
            off its own history. Sits above the overdue nudge because it is the

@@ -14,6 +14,7 @@ from fastapi import UploadFile
 
 from backend.config import settings
 from backend.db.connection import execute, query, query_one, _json
+from backend.errors import AppError
 from backend.utils.ids import generate_id
 
 log = logging.getLogger(__name__)
@@ -22,14 +23,52 @@ ALLOWED_FILE_EXTENSIONS = {".csv", ".xlsx", ".xls", ".parquet", ".json"}
 SQL_ENGINES = {"postgresql", "mysql", "mssql", "oracle"}
 MAX_FILE_MB = 50
 
+# Every rejection a user can trip in this module answers with 400, the status
+# the API's `_service_error` wrapper used before these became AppErrors — the
+# wire contract is unchanged, only `error_code` + `error_params` are added.
+_REJECTED = 400
+
+
+def _mb(size_bytes: float) -> float:
+    """Bytes as megabytes, rounded for display. A param, never baked into prose."""
+    return round(size_bytes / 1024 / 1024, 1)
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _check_file_size(file_path: str) -> None:
     size = Path(file_path).stat().st_size
     if size > MAX_FILE_MB * 1024 * 1024:
-        raise ValueError(
-            f"File too large ({size // (1024 * 1024)} MB). Maximum allowed is {MAX_FILE_MB} MB."
+        raise AppError(
+            "data_source_file_too_large_to_read",
+            f"File too large ({_mb(size)} MB). Maximum allowed is {MAX_FILE_MB} MB.",
+            status_code=_REJECTED,
+            params={"size_mb": _mb(size), "max_mb": MAX_FILE_MB},
+        )
+
+
+def _reject_unsupported_extension(suffix: str) -> None:
+    """Upload/replace guard. The extension and the allowed set travel as params
+    so the frontend can build the sentence in the user's language."""
+    if suffix not in ALLOWED_FILE_EXTENSIONS:
+        allowed = sorted(ALLOWED_FILE_EXTENSIONS)
+        raise AppError(
+            "data_source_file_type_unsupported",
+            f"File type '{suffix}' is not supported. Allowed: {', '.join(allowed)}",
+            status_code=_REJECTED,
+            params={"extension": suffix, "allowed": ", ".join(allowed)},
+        )
+
+
+def _reject_oversized_upload(size_bytes: int) -> None:
+    """Upload/replace size guard, against the configured upload ceiling."""
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if not settings.testing_mode and size_bytes > max_bytes:
+        raise AppError(
+            "data_source_file_too_large",
+            f"File is {_mb(size_bytes)} MB, over the {settings.max_upload_size_mb} MB limit.",
+            status_code=_REJECTED,
+            params={"size_mb": _mb(size_bytes), "max_mb": settings.max_upload_size_mb},
         )
 
 
@@ -93,18 +132,11 @@ async def create_file_source(
     description: Optional[str] = None,
 ) -> dict:
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED_FILE_EXTENSIONS:
-        raise ValueError(
-            f"File type '{suffix}' not supported. Allowed: {sorted(ALLOWED_FILE_EXTENSIONS)}"
-        )
+    _reject_unsupported_extension(suffix)
 
     content = await file.read()
     size_bytes = len(content)
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if not settings.testing_mode and size_bytes > max_bytes:
-        raise ValueError(
-            f"File {size_bytes / 1024 / 1024:.1f} MB exceeds limit of {settings.max_upload_size_mb} MB"
-        )
+    _reject_oversized_upload(size_bytes)
 
     source_id = generate_id("ds")
     from backend.storage import paths
@@ -172,17 +204,18 @@ async def replace_file_source(
     if not existing:
         raise ValueError(f"Data source {source_id} not found")
     if existing.get("source_type") != "file":
-        raise ValueError("Cannot replace file on a SQL data source")
+        raise AppError(
+            "data_source_not_replaceable",
+            "Only file data sources can have their file replaced.",
+            status_code=_REJECTED,
+        )
 
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED_FILE_EXTENSIONS:
-        raise ValueError(f"File type '{suffix}' not supported")
+    _reject_unsupported_extension(suffix)
 
     content = await file.read()
     size_bytes = len(content)
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if not settings.testing_mode and size_bytes > max_bytes:
-        raise ValueError(f"File too large ({size_bytes / 1024 / 1024:.1f} MB)")
+    _reject_oversized_upload(size_bytes)
 
     from backend.storage import paths
     dst_dir = paths.dataset_dir(tenant_id, source_id)
@@ -352,7 +385,11 @@ def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500
     if not existing:
         raise ValueError(f"Data source {source_id} not found")
     if existing.get("connection_status") != "connected":
-        raise ValueError("Data source is not connected. Test connection first.")
+        raise AppError(
+            "data_source_not_connected",
+            "This data source is not connected. Test the connection first.",
+            status_code=_REJECTED,
+        )
     cfg = existing.get("sql_config") or {}
     try:
         import sqlalchemy
@@ -368,8 +405,18 @@ def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500
             "row_count": len(data),
             "truncated": len(data) >= limit,
         }
+    except AppError:
+        raise
     except Exception as e:
-        raise ValueError(f"Query failed: {e}")
+        # The user's own SQL failed. The driver's text is the only useful part
+        # and cannot be localized, so it travels as a param the frontend drops
+        # into its own sentence.
+        raise AppError(
+            "sql_query_failed",
+            f"Query failed: {e}",
+            status_code=_REJECTED,
+            params={"reason": str(e)},
+        )
 
 
 def save_sql_query(tenant_id: str, source_id: str, sql: str) -> dict:
@@ -416,7 +463,11 @@ def get_preview(tenant_id: str, source_id: str, rows: int = 100, sheet: Optional
     # File source
     file_path = src.get("file_path")
     if not file_path or not Path(file_path).exists():
-        raise ValueError("File not found on disk. Please re-upload.")
+        raise AppError(
+            "data_source_file_missing",
+            "The file is no longer on disk. Upload it again.",
+            status_code=_REJECTED,
+        )
 
     suffix = Path(file_path).suffix.lower()
     if suffix in (".xlsx", ".xls"):
@@ -482,6 +533,16 @@ def _safe_cell(value):
         return csv_safe(value)
 
 
+def _not_editable() -> AppError:
+    """Both editor entry points (load + save-as-new) refuse a SQL source with
+    the same code, so the UI shows one sentence for one rule."""
+    return AppError(
+        "data_source_not_editable",
+        "Only file data sources can be edited online.",
+        status_code=_REJECTED,
+    )
+
+
 def load_editable_table(tenant_id: str, source_id: str) -> dict:
     """Load a file dataset's full table for in-browser editing. Enforces the
     size guard from the STORED row_count/size_bytes before touching the file, so
@@ -490,27 +551,37 @@ def load_editable_table(tenant_id: str, source_id: str) -> dict:
     if not src:
         raise ValueError(f"Data source {source_id} not found")
     if src.get("source_type") == "sql":
-        raise ValueError("Only file datasets are editable")
+        raise _not_editable()
 
     max_rows = settings.dataset_editor_max_rows
     max_bytes = settings.dataset_editor_max_mb * 1024 * 1024
     row_count = src.get("row_count")
     size_bytes = src.get("size_bytes")
     if row_count is not None and row_count > max_rows:
-        raise ValueError(
-            f"Dataset too large to edit online ({row_count} rows exceeds the "
-            f"{max_rows}-row limit). Edit it offline and re-upload."
+        raise AppError(
+            "dataset_too_many_rows_to_edit",
+            f"This dataset has {row_count} rows, over the {max_rows}-row online "
+            "editing limit. Edit it offline and upload it again.",
+            status_code=_REJECTED,
+            params={"rows": row_count, "max_rows": max_rows},
         )
     if size_bytes is not None and size_bytes > max_bytes:
-        raise ValueError(
-            f"Dataset too large to edit online "
-            f"({size_bytes / 1024 / 1024:.1f} MB exceeds the "
-            f"{settings.dataset_editor_max_mb} MB limit). Edit it offline and re-upload."
+        raise AppError(
+            "dataset_too_large_to_edit",
+            f"This dataset is {_mb(size_bytes)} MB, over the "
+            f"{settings.dataset_editor_max_mb} MB online editing limit. "
+            "Edit it offline and upload it again.",
+            status_code=_REJECTED,
+            params={"size_mb": _mb(size_bytes), "max_mb": settings.dataset_editor_max_mb},
         )
 
     file_path = src.get("file_path")
     if not file_path or not Path(file_path).exists():
-        raise ValueError("File not found on disk. Please re-upload.")
+        raise AppError(
+            "data_source_file_missing",
+            "The file is no longer on disk. Upload it again.",
+            status_code=_REJECTED,
+        )
 
     from backend.dataframes.io import read_table
     return read_table(file_path)
@@ -531,7 +602,7 @@ def save_edited_as_new(
     if not src:
         raise ValueError(f"Data source {source_id} not found")
     if src.get("source_type") == "sql":
-        raise ValueError("Only file datasets are editable")
+        raise _not_editable()
     if not columns or not isinstance(columns, list):
         raise ValueError("At least one column is required")
 
@@ -565,7 +636,11 @@ def save_edited_as_new(
     size_bytes = file_path.stat().st_size
     row_count = len(rows)
     col_count = len(columns)
-    display_name = name.strip() if (name and name.strip()) else f"{src.get('name')} (editado)"
+    # English fallback on purpose: this string becomes the dataset's persisted
+    # NAME, and a Spanish literal in backend logic breaks CLAUDE.md. The UI
+    # always sends `name` (defaulted from i18n, so a Spanish user still gets
+    # "… (editado)"); this only fires for a direct API caller.
+    display_name = name.strip() if (name and name.strip()) else f"{src.get('name')} (edited)"
 
     execute(
         """INSERT INTO datasets
@@ -639,7 +714,11 @@ def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, 
     if src.get("source_type") == "sql":
         saved_q = src.get("saved_query")
         if not saved_q:
-            raise ValueError("SQL source has no saved query to analyze")
+            raise AppError(
+                "sql_source_no_saved_query",
+                "This SQL data source has no saved query to analyze yet.",
+                status_code=_REJECTED,
+            )
         cfg = src.get("sql_config") or {}
         import sqlalchemy
         eng = _make_sql_engine(cfg, statement_timeout_ms=60_000)
@@ -651,7 +730,11 @@ def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, 
 
     file_path = src.get("file_path")
     if not file_path or not Path(file_path).exists():
-        raise ValueError("File not found on disk. Please re-upload.")
+        raise AppError(
+            "data_source_file_missing",
+            "The file is no longer on disk. Upload it again.",
+            status_code=_REJECTED,
+        )
 
     suffix = Path(file_path).suffix.lower()
     if suffix in (".xlsx", ".xls"):

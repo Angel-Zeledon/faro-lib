@@ -19,6 +19,7 @@ import type {
  InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary,
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
+import DataTabs from '@/components/layout/DataTabs'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 
@@ -723,8 +724,11 @@ function QuickStartPageContent() {
  const previousMapping =
  (previous?.canonical_mapping ?? null) as Record<string, string | null> | null
 
+ // Through i18n: this becomes the run's persisted NAME, so an English user
+ // should not be left with "… (copia)" in their history forever. Same reason
+ // as the dataset editor's copy suffix.
  const session = await createSession(
- sessionName.trim() || `${src.name} (copia)`,
+ sessionName.trim() || t('qs.clone_copy_suffix', { name: src.name }),
  )
  setSessionId(session.session_id)
  await attachDataset(session.session_id, src.dataset_id)
@@ -1069,9 +1073,12 @@ function QuickStartPageContent() {
  display: 'flex',
  flexDirection: 'column',
  alignItems: 'center',
- padding: '48px 20px',
+ padding: '20px 20px 48px',
  }}>
  <div style={{ width: '100%', maxWidth: 580 }}>
+
+ {/* Same nav entry as /data — the two routes are tabs of each other. */}
+ <DataTabs style={{ marginBottom: 32 }} />
 
  {/* Header */}
  <div style={{ textAlign: 'center', marginBottom: 40 }}>

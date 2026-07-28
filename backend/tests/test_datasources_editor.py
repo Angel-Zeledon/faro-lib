@@ -32,6 +32,7 @@ def test_edit_table_loads_small_file(client, analyst_headers):
 
 
 def test_edit_table_rejects_over_row_guard(client, analyst_headers):
+    from backend.config import settings
     from backend.db.connection import execute
     src = _upload_csv(client, analyst_headers, SMALL_CSV)
     # Force the stored row_count over the guard without a huge file: the guard
@@ -39,16 +40,24 @@ def test_edit_table_rejects_over_row_guard(client, analyst_headers):
     execute("UPDATE datasets SET row_count=%s WHERE id=%s", (10_000_000, src["id"]))
     resp = client.get(f"/api/v1/data-sources/{src['id']}/edit-table", headers=analyst_headers)
     assert resp.status_code == 400
-    assert "too large to edit online" in resp.json()["detail"]
+    body = resp.json()
+    # The machine code is the contract; `detail` is only the English fallback.
+    assert body["error_code"] == "dataset_too_many_rows_to_edit"
+    assert body["error_params"]["rows"] == 10_000_000
+    assert body["error_params"]["max_rows"] == settings.dataset_editor_max_rows
 
 
 def test_edit_table_rejects_over_byte_guard(client, analyst_headers):
+    from backend.config import settings
     from backend.db.connection import execute
     src = _upload_csv(client, analyst_headers, SMALL_CSV)
     execute("UPDATE datasets SET size_bytes=%s WHERE id=%s", (999_000_000, src["id"]))
     resp = client.get(f"/api/v1/data-sources/{src['id']}/edit-table", headers=analyst_headers)
     assert resp.status_code == 400
-    assert "too large to edit online" in resp.json()["detail"]
+    body = resp.json()
+    assert body["error_code"] == "dataset_too_large_to_edit"
+    assert body["error_params"]["max_mb"] == settings.dataset_editor_max_mb
+    assert float(body["error_params"]["size_mb"]) > settings.dataset_editor_max_mb
 
 
 def test_save_as_new_creates_distinct_dataset(client, analyst_headers):
@@ -215,7 +224,7 @@ def test_sql_source_rejected(client, analyst_headers):
 
     r1 = client.get(f"/api/v1/data-sources/{sid}/edit-table", headers=analyst_headers)
     assert r1.status_code == 400
-    assert "file datasets are editable" in r1.json()["detail"]
+    assert r1.json()["error_code"] == "data_source_not_editable"
 
     r2 = client.post(
         f"/api/v1/data-sources/{sid}/save-as-new",
@@ -223,4 +232,155 @@ def test_sql_source_rejected(client, analyst_headers):
         headers=analyst_headers,
     )
     assert r2.status_code == 400
-    assert "file datasets are editable" in r2.json()["detail"]
+    assert r2.json()["error_code"] == "data_source_not_editable"
+
+
+class TestUploadRejectionCodes:
+    """The very first thing a user does. Each rejection must reach the client as
+    a machine code with its dynamic values in `error_params` — never as an
+    English sentence the UI would render verbatim to a Spanish speaker."""
+
+    def test_unsupported_extension_carries_code_and_creates_nothing(
+        self, client, analyst_headers, registered_user
+    ):
+        tid = registered_user["tenant"]["id"]
+        before = query_one(
+            "SELECT COUNT(*) AS c FROM datasets WHERE tenant_id=%s", (tid,)
+        )["c"]
+
+        resp = client.post(
+            "/api/v1/data-sources/file",
+            files={"file": ("notes.txt", b"hello", "text/plain")},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        body = resp.json()
+        assert body["error_code"] == "data_source_file_type_unsupported"
+        # The extension is a param, not baked into the sentence.
+        assert body["error_params"]["extension"] == ".txt"
+        assert ".csv" in body["error_params"]["allowed"]
+        # English fallback only — no Spanish in the backend payload.
+        assert "soportado" not in body["detail"].lower()
+
+        after = query_one(
+            "SELECT COUNT(*) AS c FROM datasets WHERE tenant_id=%s", (tid,)
+        )["c"]
+        assert after == before
+
+    def test_replace_with_unsupported_extension_leaves_the_file_alone(
+        self, client, analyst_headers
+    ):
+        src = _upload_csv(client, analyst_headers, SMALL_CSV)
+        row = query_one("SELECT file_path FROM datasets WHERE id=%s", (src["id"],))
+        original_bytes = Path(row["file_path"]).read_bytes()
+
+        resp = client.post(
+            f"/api/v1/data-sources/{src['id']}/file",
+            files={"file": ("bad.txt", b"replacement", "text/plain")},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "data_source_file_type_unsupported"
+        # Guard held: the stored file is byte-for-byte what it was.
+        after = query_one("SELECT file_path FROM datasets WHERE id=%s", (src["id"],))
+        assert after["file_path"] == row["file_path"]
+        assert Path(after["file_path"]).read_bytes() == original_bytes
+
+    def test_oversized_upload_carries_code_and_creates_nothing(
+        self, client, analyst_headers, registered_user, monkeypatch
+    ):
+        """The size guard is bypassed under TESTING_MODE, so this test turns it
+        back on itself and shrinks the ceiling instead of uploading 50 MB."""
+        from backend.config import settings
+
+        monkeypatch.setattr(settings, "testing_mode", False)
+        monkeypatch.setattr(settings, "max_upload_size_mb", 1)
+
+        tid = registered_user["tenant"]["id"]
+        before = query_one(
+            "SELECT COUNT(*) AS c FROM datasets WHERE tenant_id=%s", (tid,)
+        )["c"]
+
+        big = b"sku,qty\n" + b"A,1\n" * 400_000        # ~1.5 MB, over the 1 MB cap
+        resp = client.post(
+            "/api/v1/data-sources/file",
+            files={"file": ("big.csv", big, "text/csv")},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        body = resp.json()
+        assert body["error_code"] == "data_source_file_too_large"
+        assert body["error_params"]["max_mb"] == 1
+        assert float(body["error_params"]["size_mb"]) > 1
+
+        after = query_one(
+            "SELECT COUNT(*) AS c FROM datasets WHERE tenant_id=%s", (tid,)
+        )["c"]
+        assert after == before
+
+    def test_missing_file_on_disk_carries_code_on_preview_and_editor(
+        self, client, analyst_headers
+    ):
+        """The dataset row survives a wiped storage dir; both read paths must say
+        so with the same code so the UI can offer one 'upload it again' action."""
+        src = _upload_csv(client, analyst_headers, SMALL_CSV)
+        path = query_one(
+            "SELECT file_path FROM datasets WHERE id=%s", (src["id"],)
+        )["file_path"]
+        Path(path).unlink()
+
+        preview = client.get(
+            f"/api/v1/data-sources/{src['id']}/preview", headers=analyst_headers
+        )
+        assert preview.status_code == 400, preview.text
+        assert preview.json()["error_code"] == "data_source_file_missing"
+
+        editor = client.get(
+            f"/api/v1/data-sources/{src['id']}/edit-table", headers=analyst_headers
+        )
+        assert editor.status_code == 400, editor.text
+        assert editor.json()["error_code"] == "data_source_file_missing"
+
+    def test_sql_source_without_saved_query_cannot_be_analyzed(
+        self, client, analyst_headers
+    ):
+        from backend.db.connection import execute
+        from backend.utils.ids import generate_id
+
+        tmp = _upload_csv(client, analyst_headers, SMALL_CSV)
+        tid = query_one("SELECT tenant_id FROM datasets WHERE id=%s", (tmp["id"],))["tenant_id"]
+        sid = generate_id("ds")
+        execute(
+            """INSERT INTO datasets
+               (id, tenant_id, name, original_filename, file_type, source_type,
+                connection_status, uploaded_by, uploaded_at, updated_at)
+               VALUES (%s,%s,'noquery','n/a','postgresql','sql','connected','tester',NOW(),NOW())""",
+            (sid, tid),
+        )
+        resp = client.get(f"/api/v1/data-sources/{sid}/analyze", headers=analyst_headers)
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "sql_source_no_saved_query"
+
+    def test_sql_query_on_a_disconnected_source_carries_code(
+        self, client, analyst_headers
+    ):
+        from backend.db.connection import execute
+        from backend.utils.ids import generate_id
+
+        tmp = _upload_csv(client, analyst_headers, SMALL_CSV)
+        tid = query_one("SELECT tenant_id FROM datasets WHERE id=%s", (tmp["id"],))["tenant_id"]
+        sid = generate_id("ds")
+        execute(
+            """INSERT INTO datasets
+               (id, tenant_id, name, original_filename, file_type, source_type,
+                connection_status, uploaded_by, uploaded_at, updated_at)
+               VALUES (%s,%s,'pendingsrc','n/a','postgresql','sql','pending','tester',NOW(),NOW())""",
+            (sid, tid),
+        )
+        resp = client.post(
+            f"/api/v1/data-sources/{sid}/execute-query",
+            json={"sql": "SELECT 1"},
+            headers=analyst_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "data_source_not_connected"

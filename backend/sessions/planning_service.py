@@ -15,6 +15,7 @@ import logging
 from typing import Optional
 
 from backend.db.connection import query, query_one
+from backend.errors import AppError
 from backend.sessions.family_service import GENEROUS_REACH
 from backend.tenants import service as tenant_svc
 
@@ -123,16 +124,26 @@ def get_planning(tenant_id: str) -> dict:
 
 
 def set_planning(tenant_id: str, period: str, horizon: int) -> dict:
-    """Validate + persist the active planning setting. Raises ValueError on an
-    unavailable period or an out-of-reach horizon (the API maps it to 422)."""
+    """Validate + persist the active planning setting. Raises an ``AppError``
+    (422) on an unavailable period or an out-of-reach horizon — an admin reads
+    both of these on the Configuración screen, so the wording is a code the
+    frontend localizes, not English prose."""
     available = _available_periods(tenant_id, _newest_family_id(tenant_id))
     if period not in available:
-        raise ValueError(
-            f"period '{period}' is not available; choose one of {available}")
+        raise AppError(
+            "planning_period_unavailable",
+            f"Period '{period}' is not available for this data; "
+            f"choose one of: {', '.join(available)}.",
+            params={"period": period, "available": available},
+        )
     max_horizon = GENEROUS_REACH.get(period, 90)
     if not (1 <= int(horizon) <= max_horizon):
-        raise ValueError(
-            f"horizon must be between 1 and {max_horizon} for period '{period}'")
+        raise AppError(
+            "planning_horizon_out_of_range",
+            f"Horizon must be between 1 and {max_horizon} for period '{period}'.",
+            params={"period": period, "horizon": int(horizon),
+                    "max_horizon": max_horizon},
+        )
     # `source` is what separates "someone chose this" from "the app defaulted
     # here". Without it a stored period is indistinguishable from an automatic
     # one, and the UI cannot honestly say which of the two it is looking at.

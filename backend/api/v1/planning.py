@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.sessions import planning_service as plan
 
@@ -36,6 +37,11 @@ def put_planning(
 ):
     try:
         data = plan.set_planning(user.tenant_id, body.period, body.horizon)
+    except AppError:
+        # Already carries its status, machine code and params — re-raise it
+        # untouched. Wrapping it in an HTTPException here would flatten it to
+        # English prose and the admin would keep reading English.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return ok(data)

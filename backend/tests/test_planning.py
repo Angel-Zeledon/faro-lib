@@ -148,23 +148,34 @@ class TestSetPlanning:
         assert plan.get_planning(tid)["period"] == "weekly"
 
     def test_invalid_period_rejected(self, client, test_tenant, registered_user):
+        from backend.errors import AppError
+
         tid, uid = test_tenant["id"], registered_user["user"]["id"]
         _make_family(tid, uid, ["daily"], family_id="fam1")
         try:
             plan.set_planning(tid, "weekly", 4)
-            assert False, "expected ValueError"
-        except ValueError:
-            pass
+            assert False, "expected AppError"
+        except AppError as e:
+            # The stable code + params are the contract; the English sentence is
+            # only the fallback the frontend replaces with Spanish.
+            assert e.code == "planning_period_unavailable"
+            assert e.params["period"] == "weekly"
+            assert e.params["available"] == ["daily"]
         assert plan.get_planning(tid)["period"] == "daily"
 
     def test_over_reach_horizon_rejected(self, client, test_tenant, registered_user):
+        from backend.errors import AppError
+
         tid, uid = test_tenant["id"], registered_user["user"]["id"]
         _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
         try:
             plan.set_planning(tid, "weekly", 27)
-            assert False, "expected ValueError"
-        except ValueError:
-            pass
+            assert False, "expected AppError"
+        except AppError as e:
+            assert e.code == "planning_horizon_out_of_range"
+            assert e.params["horizon"] == 27
+            assert e.params["max_horizon"] == 26
+            assert e.params["period"] == "weekly"
 
 
 class TestResolveActiveSession:
@@ -302,13 +313,26 @@ class TestPlanningApi:
         r = client.put("/api/v1/planning", headers=auth_headers,
                        json={"period": "weekly", "horizon": 4})
         assert r.status_code == 422, r.text
+        # The code survives the API's ValueError handler out to the client.
+        body = r.json()
+        assert body["error_code"] == "planning_period_unavailable"
+        assert body["error_params"]["available"] == ["daily"]
+        # Rejected setting was not persisted.
+        assert plan.get_planning(tid)["period"] == "daily"
 
     def test_put_planning_over_reach_422(self, client, auth_headers, test_tenant, registered_user):
+        """40 weeks is inside the request model's 1..90 bound but past weekly's
+        26-bucket reach, so the SERVICE guard is what answers (a horizon of 99
+        never got there — pydantic rejected it first)."""
         tid, uid = test_tenant["id"], registered_user["user"]["id"]
         _make_family(tid, uid, ["daily", "weekly"], family_id="fam1")
         r = client.put("/api/v1/planning", headers=auth_headers,
-                       json={"period": "weekly", "horizon": 99})
+                       json={"period": "weekly", "horizon": 40})
         assert r.status_code == 422, r.text
+        body = r.json()
+        assert body["error_code"] == "planning_horizon_out_of_range"
+        assert body["error_params"]["max_horizon"] == 26
+        assert plan.get_planning(tid)["period"] == "daily"
 
 
 class TestActiveSessionBadgeContract:
