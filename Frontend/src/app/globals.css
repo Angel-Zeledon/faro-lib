@@ -250,11 +250,17 @@
      lives here because pseudo-elements can't be written inline. Hover needs
      !important solely to beat the inline `background: transparent`. */
   .nav-item { position: relative; }
+  /* The beam sweeps into place instead of jumping between items on
+     navigation. This is NOT a new gesture — it is the approved one animating
+     its own arrival. `transform-origin: center` with a scaleY is what makes it
+     read as a lighthouse sweep rather than a wipe. Reverting is four lines. */
   .nav-item-active::before {
     content: '';
     position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px;
     border-radius: 2px;
     background: var(--sidebar-beam);
+    transform-origin: center;
+    animation: beamIn 220ms var(--ease-out);
   }
   .nav-item-active::after {
     content: '';
@@ -262,6 +268,15 @@
     border-radius: 2px;
     background: linear-gradient(90deg, rgba(76,195,181,0.25), rgba(76,195,181,0));
     pointer-events: none;
+    animation: beamWashIn 260ms var(--ease-out);
+  }
+  @keyframes beamIn {
+    from { transform: scaleY(0.25); opacity: 0; }
+    to   { transform: scaleY(1);    opacity: 1; }
+  }
+  @keyframes beamWashIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
   .nav-item-idle:hover {
     background: rgba(255,255,255,0.06) !important;
@@ -378,6 +393,22 @@
   from { opacity: 0; transform: translateY(-4px) scale(0.99); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* Grow in place without knowing the final height. `height: auto` is not
+   animatable and measuring in JS costs a layout pass per row, so the grid row
+   goes 0fr -> 1fr and the child clips instead.
+
+   This is the ONE admitted exception to "no layout shift in a data table",
+   and only because the user causes it themselves, on the row they just
+   clicked: the rows below move either way, and the animation is what makes
+   that movement legible instead of a jump. */
+.reveal-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-3) var(--ease-out);
+}
+.reveal-panel > * { overflow: hidden; min-height: 0; }
+.reveal-panel[data-open="true"] { grid-template-rows: 1fr; }
 
 /* Buttons. An explicit property list, never `all`: `all` also animates the
    padding and the disabled opacity, so a button entering its loading state

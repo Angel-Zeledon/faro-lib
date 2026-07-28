@@ -176,11 +176,24 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
  const [editing, setEditing] = useState(false)
  const [qtyInput, setQtyInput] = useState(String(item.qty))
  const [showWhy, setShowWhy] = useState(false)
+ // Mounted closed, opened one painted frame later, so `.reveal-panel` has a
+ // starting `grid-template-rows: 0fr` to animate away from. Mounting the panel
+ // already open gives the browser nothing to interpolate and it snaps.
+ const [whyOpen, setWhyOpen] = useState(false)
 
  // Keep qtyInput in sync when item.qty changes externally (e.g. after reset)
  useEffect(() => {
   setQtyInput(String(item.qty))
  }, [item.qty])
+
+ useEffect(() => {
+  if (!showWhy) { setWhyOpen(false); return }
+  // Two frames: the first commits the closed state, the second flips it once
+  // the browser has painted it.
+  let inner = 0
+  const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => setWhyOpen(true)) })
+  return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+ }, [showWhy])
 
  const isUrgent  = item.signal === 'PEDIR_YA'
  const accent    = isUrgent ? 'var(--signal-order-now-fg)' : 'var(--signal-order-soon-fg)'
@@ -270,6 +283,8 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
        The explanatory sentence and every number in it come from the backend
        (inventory/service.py); nothing here is computed client-side. */}
    {showWhy && (
+    <div className="reveal-panel" data-open={whyOpen ? 'true' : 'false'}>
+     <div>
     <div style={{
      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
      padding: '10px 12px', marginBottom: 12, fontSize: 12,
@@ -388,6 +403,8 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
      </div>
      {/* When the lead time is still ours, say what would make it theirs. */}
      <LeadTimeLearning item={item} />
+    </div>
+     </div>
     </div>
    )}
 

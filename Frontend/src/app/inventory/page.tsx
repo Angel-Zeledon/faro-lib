@@ -1459,6 +1459,59 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  )
 }
 
+// ── Grow-in-place detail row ─────────────────────────────────────────────────
+// The panel is mounted closed and opened one painted frame later, so the
+// `grid-template-rows: 0fr -> 1fr` transition of `.reveal-panel` has a starting
+// value to animate from. Mounting it already open (the naive
+// `{isExpanded && <panel data-open="true"/>}`) gives the browser nothing to
+// interpolate and the panel snaps.
+//
+// Mount-on-demand rather than "render every row and toggle data-open": only one
+// row is ever expanded, and pre-rendering all of them would put a CalcExplainer,
+// a PlanningValues and a stateful SimulatorPanel inside every one of the 100
+// rows on the page.
+function useOpenAfterMount(): boolean {
+ const [open, setOpen] = useState(false)
+ useEffect(() => {
+  // Two animation frames, not one, and not a forced reflow in a layout effect:
+  // a freshly inserted element has no before-change style, so until the
+  // browser has actually painted it once there is nothing for the transition
+  // to start from and the panel snaps open. (Measured: the layout-effect
+  // variant jumped 0 -> 603px in a single frame.)
+  let inner = 0
+  const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => setOpen(true)) })
+  return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+ }, [])
+ return open
+}
+
+function ExpandedCalcRow({ item, background }: {
+ item: InventoryStatusItem & LeadTimeLearningFields
+ background: string
+}) {
+ const open = useOpenAfterMount()
+ // The cell carries no padding of its own: padding applied at mount would jump
+ // into place before the growth starts. It lives on the clipped content instead
+ // so it grows with everything else.
+ return (
+  <tr>
+   <td colSpan={13} style={{ padding: 0, borderBottom: `1px solid ${C.border}`, background }}>
+    <div className="reveal-panel" data-open={open ? 'true' : 'false'}>
+     <div>
+      <div style={{ padding: '0 16px 12px 48px' }}>
+       <CalcExplainer exp={item.calc_explanation!} moq={item.moq} />
+       {/* Which of the four planning numbers are the buyer's and which are ours,
+           plus what the lead-time learning is waiting for. */}
+       <PlanningValues item={item} />
+       <SimulatorPanel item={item} />
+      </div>
+     </div>
+    </div>
+   </td>
+  </tr>
+ )
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
  const { t } = useLanguage()
@@ -2594,17 +2647,11 @@ export default function InventoryPage() {
  </div>
  </td>
  </tr>
- {/* Expanded explanation row */}
+ {/* Expanded explanation row — grows in place (see ExpandedCalcRow).
+     Only the arrival is animated; collapsing is immediate, because the user
+     already decided to close it. */}
  {isExpanded && item.calc_explanation && (
- <tr>
- <td colSpan={13} style={{ padding: '0 16px 12px 48px', borderBottom: `1px solid ${C.border}`, background: crit ? 'rgba(239,68,68,0.01)' : rowBg }}>
- <CalcExplainer exp={item.calc_explanation} moq={item.moq} />
- {/* Which of the four planning numbers are the buyer's and which are ours,
-     plus what the lead-time learning is waiting for. */}
- <PlanningValues item={item} />
- <SimulatorPanel item={item} />
- </td>
- </tr>
+ <ExpandedCalcRow item={item} background={crit ? 'rgba(239,68,68,0.01)' : rowBg} />
  )}
  </Fragment>
  )
