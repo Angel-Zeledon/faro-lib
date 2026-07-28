@@ -9,8 +9,8 @@ import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
 const _input: React.CSSProperties = {
   width: '100%', padding: '10px 12px', boxSizing: 'border-box',
-  background: '#141520', border: '1px solid #1e2030', borderRadius: 8,
-  color: '#e2e8f0', fontSize: 13, outline: 'none',
+  background: 'var(--bg)', border: '1px solid var(--surface)', borderRadius: 8,
+  color: 'var(--text)', fontSize: 13, outline: 'none',
 }
 
 type Step = 'email' | 'code' | 'password' | 'done'
@@ -106,8 +106,8 @@ export default function ForgotPasswordPage() {
         width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 11, fontWeight: 700,
-        background: done ? '#22c55e' : active ? '#818cf8' : '#1e2030',
-        color: done || active ? '#fff' : '#64748b',
+        background: done ? '#22c55e' : active ? 'var(--accent)' : 'var(--surface)',
+        color: done || active ? '#fff' : 'var(--dim)',
         transition: 'all 0.2s',
       }}>
         {done ? '✓' : n}
@@ -123,15 +123,15 @@ export default function ForgotPasswordPage() {
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 11, margin: '0 auto 10px',
-          background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+          background: 'linear-gradient(135deg, var(--accent), var(--accent))',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Zap size={20} color="#fff" strokeWidth={2.5} />
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
           {t('auth.recover_title')}
         </h1>
-        <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+        <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
           {t('auth.recover_subtitle')}
         </p>
       </div>
@@ -140,21 +140,21 @@ export default function ForgotPasswordPage() {
       {step !== 'done' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
           <StepDot n={1} active={stepIdx === 0} done={stepIdx > 0} />
-          <div style={{ width: 24, height: 1, background: stepIdx > 0 ? '#22c55e' : '#1e2030', transition: 'background 0.2s' }} />
+          <div style={{ width: 24, height: 1, background: stepIdx > 0 ? '#22c55e' : 'var(--surface)', transition: 'background 0.2s' }} />
           <StepDot n={2} active={stepIdx === 1} done={stepIdx > 1} />
-          <div style={{ width: 24, height: 1, background: stepIdx > 1 ? '#22c55e' : '#1e2030', transition: 'background 0.2s' }} />
+          <div style={{ width: 24, height: 1, background: stepIdx > 1 ? '#22c55e' : 'var(--surface)', transition: 'background 0.2s' }} />
           <StepDot n={3} active={stepIdx === 2} done={stepIdx > 2} />
         </div>
       )}
 
-      <div style={{ background: '#0f1015', border: '1px solid #1e2030', borderRadius: 14, padding: '24px 28px' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--surface)', borderRadius: 14, padding: '24px 28px' }}>
 
         {/* ── Done ── */}
         {step === 'done' && (
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={36} color="#22c55e" style={{ margin: '0 auto 12px' }} />
-            <p style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', margin: '0 0 6px' }}>{t('auth.pw_updated')}</p>
-            <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>{t('auth.redirecting_login')}</p>
+            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>{t('auth.pw_updated')}</p>
+            <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>{t('auth.redirecting_login')}</p>
           </div>
         )}
 
@@ -162,21 +162,21 @@ export default function ForgotPasswordPage() {
         {step === 'email' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <Mail size={14} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('auth.recover_step_email')}</span>
+              <Mail size={14} color="var(--accent)" />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{t('auth.recover_step_email')}</span>
             </div>
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label htmlFor="forgot-email" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="forgot-email" style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
                   {t('auth.email_label')}
                 </label>
                 <input
                   id="forgot-email" name="email"
                   type="email" required value={email} onChange={e => setEmail(e.target.value)}
                   placeholder="you@company.com" style={_input}
-                  onFocus={e => (e.target.style.borderColor = '#818cf8')}
-                  onBlur={e => (e.target.style.borderColor = '#1e2030')}
+                  onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                 />
               </div>
               <PrimaryBtn loading={loading} label={t('auth.recover_send_code')} loadingLabel={t('auth.recover_sending')} />
@@ -189,11 +189,11 @@ export default function ForgotPasswordPage() {
         {step === 'code' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <KeyRound size={14} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('auth.recover_step_code')}</span>
+              <KeyRound size={14} color="var(--accent)" />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{t('auth.recover_step_code')}</span>
             </div>
-            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>
-              {t('auth.recover_code_sent_to')} <strong style={{ color: '#94a3b8' }}>{email}</strong>.
+            <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 16px' }}>
+              {t('auth.recover_code_sent_to')} <strong style={{ color: 'var(--muted)' }}>{email}</strong>.
               {' '}{t('auth.recover_code_expires')}
             </p>
             {error && <ErrorBox msg={error} />}
@@ -211,20 +211,20 @@ export default function ForgotPasswordPage() {
                     style={{
                       width: 42, height: 48, textAlign: 'center', fontSize: 20,
                       fontWeight: 700, fontFamily: 'monospace',
-                      background: '#141520', border: `1px solid ${digit ? '#818cf8' : '#1e2030'}`,
-                      borderRadius: 8, color: '#e2e8f0', outline: 'none',
+                      background: 'var(--bg)', border: `1px solid ${digit ? 'var(--accent)' : 'var(--surface)'}`,
+                      borderRadius: 8, color: 'var(--text)', outline: 'none',
                     }}
-                    onFocus={e => (e.target.style.borderColor = '#818cf8')}
-                    onBlur={e => (e.target.style.borderColor = digit ? '#818cf8' : '#1e2030')}
+                    onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
+                    onBlur={e => (e.target.style.borderColor = digit ? 'var(--accent)' : 'var(--surface)')}
                   />
                 ))}
               </div>
               <PrimaryBtn loading={loading} label={t('auth.recover_verify')} loadingLabel={t('auth.recover_verifying')} />
             </form>
-            <div style={{ textAlign: 'center', marginTop: 14, fontSize: 12, color: '#64748b' }}>
+            <div style={{ textAlign: 'center', marginTop: 14, fontSize: 12, color: 'var(--dim)' }}>
               {t('auth.recover_not_received')}{' '}
               <button
-                style={{ all: 'unset', cursor: 'pointer', color: '#818cf8' }}
+                style={{ all: 'unset', cursor: 'pointer', color: 'var(--accent)' }}
                 onClick={() => { setStep('email'); setCode(['','','','','','']); setError(null) }}
               >
                 {t('auth.recover_try_again')}
@@ -237,34 +237,34 @@ export default function ForgotPasswordPage() {
         {step === 'password' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <Lock size={14} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('auth.recover_step_password')}</span>
+              <Lock size={14} color="var(--accent)" />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{t('auth.recover_step_password')}</span>
             </div>
             {error && <ErrorBox msg={error} />}
             <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label htmlFor="forgot-new-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="forgot-new-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
                   {t('auth.new_password_label')}
                 </label>
                 <input
                   id="forgot-new-password" name="new_password"
                   type="password" required value={pw} onChange={e => setPw(e.target.value)}
                   placeholder={t('auth.password_placeholder')} style={_input}
-                  onFocus={e => (e.target.style.borderColor = '#818cf8')}
-                  onBlur={e => (e.target.style.borderColor = '#1e2030')}
+                  onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                 />
               </div>
               <div>
-                <label htmlFor="forgot-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="forgot-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
                   {t('auth.confirm_password_label')}
                 </label>
                 <input
                   id="forgot-confirm-password" name="confirm_password"
                   type="password" required value={pw2} onChange={e => setPw2(e.target.value)}
                   placeholder={t('auth.confirm_password_placeholder')}
-                  style={{ ..._input, borderColor: pw2 && pw !== pw2 ? '#ef4444' : '#1e2030' }}
-                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#818cf8')}
-                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#1e2030')}
+                  style={{ ..._input, borderColor: pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)' }}
+                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--accent)')}
+                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)')}
                 />
               </div>
               <PrimaryBtn loading={loading} label={t('auth.reset_password_btn')} loadingLabel={t('auth.saving')} />
@@ -295,7 +295,7 @@ function PrimaryBtn({ loading, label, loadingLabel }: { loading: boolean; label:
       type="submit" disabled={loading}
       style={{
         width: '100%', padding: '11px', borderRadius: 8, border: 'none',
-        background: loading ? '#4f56b0' : '#818cf8', color: '#fff',
+        background: loading ? 'color-mix(in srgb, var(--accent) 70%, black)' : 'var(--accent)', color: '#fff',
         fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 2,
       }}
     >
@@ -306,8 +306,8 @@ function PrimaryBtn({ loading, label, loadingLabel }: { loading: boolean; label:
 
 function BackToLogin({ label }: { label: string }) {
   return (
-    <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#64748b' }}>
-      <Link href="/login" style={{ color: '#818cf8', textDecoration: 'none' }}>
+    <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--dim)' }}>
+      <Link href="/login" style={{ color: 'var(--accent)', textDecoration: 'none' }}>
         <ArrowLeft size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />
         {label}
       </Link>

@@ -12,6 +12,7 @@ import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion 
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useToast } from '@/contexts/ToastContext'
 import { chatSourceLabel, chatDataSourceLabel } from '@/lib/enumLabels'
 import {
   Plus, Search, Star, Trash2, Bot, User, Send,
@@ -23,8 +24,8 @@ import {
 // Colour only — the badge text comes from `chatSourceLabel`, so the copy the
 // user reads lives in the i18n catalog and not in this map.
 const SOURCE_COLOR: Record<string, string> = {
-  rag:           '#818cf8',
-  rag_retrieved: '#818cf8',
+  rag:           'var(--accent)',
+  rag_retrieved: 'var(--accent)',
   fallback:      '#f59e0b',
   general:       '#22c55e',
   off_topic:     '#f59e0b',
@@ -116,10 +117,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       {/* Avatar */}
       <div style={{
         width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: isUser ? 'rgba(129,140,248,0.15)' : 'rgba(34,197,94,0.12)',
+        background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'rgba(34,197,94,0.12)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {isUser ? <User size={13} color="#818cf8" /> : <Bot size={13} color="#22c55e" />}
+        {isUser ? <User size={13} color="var(--accent)" /> : <Bot size={13} color="#22c55e" />}
       </div>
 
       {/* Bubble */}
@@ -128,8 +129,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         alignItems: isUser ? 'flex-end' : 'flex-start', gap: 3,
       }}>
         <div style={{
-          background: isUser ? 'rgba(99,102,241,0.14)' : 'var(--surface-2)',
-          border: `1px solid ${isUser ? 'rgba(99,102,241,0.22)' : 'var(--border)'}`,
+          background: isUser ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'var(--surface-2)',
+          border: `1px solid ${isUser ? 'color-mix(in srgb, var(--accent) 22%, transparent)' : 'var(--border)'}`,
           borderRadius: isUser ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
           padding: '10px 14px',
         }}>
@@ -190,8 +191,8 @@ function SourcesFilter({
           all: 'unset', cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 5,
           padding: '6px 10px', borderRadius: 7,
-          background: active ? 'rgba(129,140,248,0.1)' : 'var(--surface-2)',
-          border: `1px solid ${active ? 'rgba(129,140,248,0.3)' : 'var(--border)'}`,
+          background: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--surface-2)',
+          border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--border)'}`,
           fontSize: 11, color: active ? 'var(--accent)' : 'var(--muted)',
           transition: 'all 0.15s',
         }}
@@ -225,7 +226,7 @@ function SourcesFilter({
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '7px 12px', cursor: 'pointer', fontSize: 12,
                   color: selected ? 'var(--text)' : 'var(--muted)',
-                  background: selected ? 'rgba(129,140,248,0.06)' : 'transparent',
+                  background: selected ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
                   transition: 'all 0.1s',
                 }}
               >
@@ -277,9 +278,9 @@ function ChatItem({
         position: 'relative', padding: '10px 12px', borderRadius: 8,
         cursor: 'pointer', transition: 'all 0.12s',
         background: active
-          ? 'rgba(129,140,248,0.1)'
+          ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
           : hover ? 'rgba(255,255,255,0.03)' : 'transparent',
-        border: `1px solid ${active ? 'rgba(129,140,248,0.25)' : 'transparent'}`,
+        border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 25%, transparent)' : 'transparent'}`,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
@@ -377,8 +378,8 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
     }}>
       <div style={{
         width: 64, height: 64, borderRadius: '50%',
-        background: 'rgba(129,140,248,0.08)',
-        border: '1px solid rgba(129,140,248,0.15)',
+        background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <Sparkles size={28} color="var(--accent)" strokeWidth={1.5} />
@@ -399,6 +400,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AnalystPage() {
   const { t } = useLanguage()
+  const { undoable, addToast } = useToast()
   const [chats,       setChats]       = useState<Chat[]>([])
   const [activeChatId, setActive]     = useState<string | null>(null)
   const [messages,    setMessages]    = useState<ChatMessage[]>([])
@@ -598,10 +600,36 @@ export default function AnalystPage() {
   }
 
   // ── Delete chat ───────────────────────────────────────────────────────────
-  const handleDelete = async (chatId: string) => {
-    await deleteChat(chatId)
-    setChats(prev => prev.filter(c => c.id !== chatId))
-    if (activeChatId === chatId) setActive(null)
+  // Deleting used to be instant and unrecoverable — one stray click and the
+  // conversation was gone. The row disappears immediately, but the DELETE only
+  // leaves once the undo window closes, so "Deshacer" costs nothing and needs
+  // no second request that could fail.
+  const handleDelete = (chatId: string) => {
+    const chat = chats.find(c => c.id === chatId)
+    if (!chat) return
+    const wasActive = activeChatId === chatId
+    undoable({
+      title:     t('analyst.chat_deleted'),
+      message:   chat.title,
+      undoLabel: t('common.undo'),
+      apply: () => {
+        setChats(prev => prev.filter(c => c.id !== chatId))
+        if (wasActive) setActive(null)
+      },
+      revert: () => {
+        setChats(prev => prev.some(c => c.id === chatId)
+          ? prev
+          // Same ordering the list is built with, so the row comes back where
+          // it was rather than jumping to the top.
+          : [chat, ...prev].sort((a, b) => {
+              if (a.is_favorite !== b.is_favorite) return b.is_favorite ? 1 : -1
+              return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+            }))
+        if (wasActive) setActive(chatId)
+      },
+      commit: () => deleteChat(chatId),
+      onCommitError: () => addToast(t('analyst.chat_delete_failed'), chat.title, 'error'),
+    })
   }
 
   // ── Update sources for active chat ───────────────────────────────────────
@@ -922,7 +950,7 @@ export default function AnalystPage() {
                                 background: 'var(--surface-2)',
                                 transition: 'all 0.15s',
                               }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#818cf8'; (e.currentTarget as HTMLButtonElement).style.color = '#818cf8' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
                               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
                             >
                               {q.text}
@@ -977,7 +1005,7 @@ export default function AnalystPage() {
                       transition: 'border-color 0.15s',
                       opacity: creatingChat ? 0.6 : 1,
                     }}
-                    onFocus={e => { e.currentTarget.style.borderColor = 'rgba(129,140,248,0.4)' }}
+                    onFocus={e => { e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)' }}
                     onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
                   />
 
@@ -986,7 +1014,7 @@ export default function AnalystPage() {
                     disabled={!input.trim() || sending || creatingChat}
                     style={{
                       all: 'unset', width: 40, height: 40, borderRadius: 10,
-                      background: input.trim() && !sending && !creatingChat ? '#6366f1' : 'var(--surface-2)',
+                      background: input.trim() && !sending && !creatingChat ? 'var(--accent)' : 'var(--surface-2)',
                       border: '1px solid var(--border)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       cursor: input.trim() && !sending && !creatingChat ? 'pointer' : 'default',

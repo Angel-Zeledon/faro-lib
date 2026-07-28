@@ -129,10 +129,10 @@ export default function NarrativeCard({
       >
         <div style={{
           width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-          background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.2)',
+          background: 'color-mix(in srgb, var(--accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Sparkles size={13} color="#818cf8" />
+          <Sparkles size={13} color="var(--accent)" />
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -144,7 +144,7 @@ export default function NarrativeCard({
           )}
           {loading && (
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', border: '1.5px solid var(--dim)', borderTopColor: '#818cf8', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+              <span style={{ width: 8, height: 8, borderRadius: '50%', border: '1.5px solid var(--dim)', borderTopColor: 'var(--accent)', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
               {copy('narrative.analyzing', 'Analysing data…')}
             </div>
           )}
@@ -196,10 +196,10 @@ export default function NarrativeCard({
               {analytistLink && (
                 <Link href={analytistLink} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
-                  fontSize: 11, color: '#818cf8', textDecoration: 'none',
+                  fontSize: 11, color: 'var(--accent)', textDecoration: 'none',
                   padding: '2px 8px', borderRadius: 5,
-                  border: '1px solid rgba(129,140,248,0.3)',
-                  background: 'rgba(129,140,248,0.06)',
+                  border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                  background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
                 }}>
                   <ExternalLink size={9} aria-hidden="true" /> {t('narrative.ask_analyst')}
                 </Link>

@@ -7,11 +7,14 @@ import {
 } from '@/lib/api'
 import type { ApiKey, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
 import Button from '@/components/ui/Button'
+import Input, { Select } from '@/components/ui/Input'
+import Card from '@/components/ui/Card'
 import Spinner from '@/components/ui/Spinner'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { webhookEventLabel } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useToast } from '@/contexts/ToastContext'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
@@ -92,9 +95,8 @@ function ApiKeysTab() {
       </div>
 
       {showCreate && (
-        <div style={{ display: 'flex', gap: 8, padding: '14px 16px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <input
-            className="form-input"
+        <Card tone="inset" radius={8} padding="14px 16px" style={{ display: 'flex', gap: 8 }}>
+          <Input
             placeholder={t('settings.key_name_placeholder')}
             value={newName}
             onChange={e => setNewName(e.target.value)}
@@ -107,7 +109,7 @@ function ApiKeysTab() {
           <Button variant="ghost" size="sm" onClick={() => { setShowCreate(false); setNewName('') }}>
             {t('common.cancel')}
           </Button>
-        </div>
+        </Card>
       )}
 
       {newKey && (
@@ -116,9 +118,8 @@ function ApiKeysTab() {
             {t('settings.key_generated')}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
+            <Input
               readOnly value={newKey}
-              className="form-input"
               style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', background: 'var(--surface)' }}
             />
             <Button variant="secondary" size="sm" icon={copied ? <Check size={12} /> : <Copy size={12} />} onClick={copyKey}>
@@ -175,7 +176,7 @@ function ApiKeysTab() {
 // ── Webhooks tab ──────────────────────────────────────────────────────────────
 function WebhooksTab() {
   const { t } = useLanguage()
-  const confirm = useConfirm()
+  const { undoable } = useToast()
   const [hooks,    setHooks]    = useState<Webhook[]>([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
@@ -183,7 +184,6 @@ function WebhooksTab() {
   const [url,      setUrl]      = useState('')
   const [events,   setEvents]   = useState<string[]>([])
   const [saving,   setSaving]   = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
 
   const load = useCallback(() => {
     listWebhooks()
@@ -202,12 +202,27 @@ function WebhooksTab() {
     finally { setSaving(false) }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!(await confirm({ title: t('settings.delete_webhook_confirm'), danger: true }))) return
-    setDeleting(id)
-    try { await deleteWebhook(id); load() }
-    catch (e: any) { setError(e.message) }
-    finally { setDeleting(null) }
+  // Re-adding a webhook is retyping a URL and ticking two boxes, so the modal
+  // was pure friction. The row leaves at once and the DELETE is held back for
+  // the length of the undo window.
+  const handleDelete = (id: string) => {
+    const hook = hooks.find(h => h.id === id)
+    if (!hook) return
+    const index = hooks.findIndex(h => h.id === id)
+    undoable({
+      title:     t('settings.webhook_deleted'),
+      message:   hook.url,
+      undoLabel: t('common.undo'),
+      apply:  () => setHooks(prev => prev.filter(h => h.id !== id)),
+      revert: () => setHooks(prev => {
+        if (prev.some(h => h.id === id)) return prev
+        const next = [...prev]
+        next.splice(index < 0 ? next.length : index, 0, hook)
+        return next
+      }),
+      commit: () => deleteWebhook(id),
+      onCommitError: (e: unknown) => { setError(e instanceof Error ? e.message : t('common.error')); load() },
+    })
   }
 
   const toggleEvent = (id: string) =>
@@ -225,11 +240,10 @@ function WebhooksTab() {
       </div>
 
       {showForm && (
-        <div style={{ padding: '16px 18px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Card tone="inset" radius={8} padding="16px 18px" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
             <label style={{ fontSize: 11, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>{t('settings.endpoint_url')}</label>
-            <input
-              className="form-input"
+            <Input
               placeholder={t('settings.webhook_url_placeholder')}
               value={url}
               onChange={e => setUrl(e.target.value)}
@@ -260,7 +274,7 @@ function WebhooksTab() {
               {t('common.save')}
             </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {error && (
@@ -285,7 +299,7 @@ function WebhooksTab() {
                 <td style={{ fontSize: 11 }}>{h.events.map(e => webhookEventLabel(t, e)).join(', ')}</td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{h.created_at.slice(0, 10)}</td>
                 <td>
-                  <Button variant="danger" size="sm" loading={deleting === h.id} icon={<Trash2 size={11} />} onClick={() => handleDelete(h.id)}>
+                  <Button variant="danger" size="sm" icon={<Trash2 size={11} />} onClick={() => handleDelete(h.id)}>
                     {t('common.delete')}
                   </Button>
                 </td>
@@ -360,35 +374,35 @@ function SchedulesTab() {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <label style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('settings.session_label')}</label>
-        <select
+        <Select
+          chevron
           value={sessionId}
           onChange={e => setSessionId(e.target.value)}
-          className="form-input form-select"
           style={{ fontSize: 12, flex: 1, maxWidth: 340 }}
         >
           {sessions.length === 0 && <option value="">{t('settings.no_completed_sessions')}</option>}
           {sessions.map(s => (
             <option key={s.session_id} value={s.session_id}>{s.name}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spinner /></div>
       ) : sessionId ? (
-        <div style={{ padding: '18px 20px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Card tone="inset" padding="18px 20px" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>{t('settings.frequency')}</label>
-            <select
+            <Select
+              chevron
               value={cronExpr}
               onChange={e => setCron(e.target.value)}
-              className="form-input form-select"
               style={{ fontSize: 12, width: '100%', maxWidth: 320 }}
             >
               {CRON_OPTIONS.map(o => (
                 <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
               ))}
-            </select>
+            </Select>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4, fontFamily: 'monospace' }}>
               {cronExpr}
             </div>
@@ -422,7 +436,7 @@ function SchedulesTab() {
             )}
             {saved && <span style={{ fontSize: 12, color: '#22c55e', alignSelf: 'center' }}>{t('settings.saved')}</span>}
           </div>
-        </div>
+        </Card>
       ) : (
         <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>
           {t('settings.no_sessions_available')}
@@ -477,11 +491,11 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab content */}
-      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '20px 24px' }}>
+      <Card tone="inset" padding="20px 24px">
         {tab === 'api-keys'  && <ApiKeysTab />}
         {tab === 'webhooks'  && <WebhooksTab />}
         {tab === 'schedules' && <SchedulesTab />}
-      </div>
+      </Card>
     </div>
   )
 }

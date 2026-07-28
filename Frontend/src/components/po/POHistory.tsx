@@ -15,7 +15,7 @@ import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: '#818cf8',
+  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
 }
 
 function fmtDateTime(iso: string): string {
@@ -31,7 +31,7 @@ function fmtUnits(n: number): string {
 
 const RECEPTION_LABEL: Record<string, { labelKey: string; color: string; bg: string }> = {
   pending:      { labelKey: 'po.reception_pending',      color: 'var(--signal-order-soon-fg)', bg: 'var(--signal-order-soon-bg)' },
-  partial:      { labelKey: 'po.reception_partial',      color: C.indigo, bg: 'rgba(129,140,248,0.12)' },
+  partial:      { labelKey: 'po.reception_partial',      color: C.indigo, bg: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
   received:     { labelKey: 'po.reception_received',     color: 'var(--signal-ok-fg)',           bg: 'var(--signal-ok-bg)' },
   not_received: { labelKey: 'po.reception_not_received', color: 'var(--signal-order-now-fg)',     bg: 'var(--signal-order-now-bg)' },
 }

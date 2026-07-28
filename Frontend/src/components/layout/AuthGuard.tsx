@@ -36,7 +36,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       <div style={{
         height: '100vh', display: 'flex',
         alignItems: 'center', justifyContent: 'center',
-        background: '#08090d',
+        // Follows the theme: this is the very first paint of every guarded
+        // route, so a hardcoded near-black here was a black flash before
+        // every screen for a light-theme user.
+        background: 'var(--bg)',
       }}>
         <Spinner size={20} />
       </div>

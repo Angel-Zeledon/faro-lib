@@ -1,11 +1,11 @@
 'use client'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   TrendingUp, Package,
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, X,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
   FlaskConical, ListChecks,
 } from 'lucide-react'
@@ -16,6 +16,7 @@ import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useEntitlements } from '@/lib/entitlements'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Nav definition ────────────────────────────────────────────────────────────
 interface NavItem {
@@ -68,9 +69,37 @@ export default function Sidebar() {
   const path    = usePathname()
   const router  = useRouter()
   const user    = getUser()
-  const { collapsed, toggle } = useSidebar()
+  const { collapsed, toggle, drawerOpen, closeDrawer } = useSidebar()
   const { t, lang, setLang } = useLanguage()
   const { has } = useEntitlements()
+
+  // On a phone the rail is not a column of the layout — it is a drawer that
+  // slides over the page. `collapsed` (the icons-only desktop rail) is
+  // meaningless there: a 48px strip of unlabelled icons is worse than either
+  // full nav or no nav, so inside the drawer the sidebar is always expanded.
+  const narrow    = useIsNarrow()
+  const isDrawer  = narrow
+  const collapsedNow = isDrawer ? false : collapsed
+
+  // Navigating closes the drawer. Without this the destination renders behind
+  // the panel that took the user there.
+  useEffect(() => {
+    if (drawerOpen) closeDrawer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path])
+
+  // Escape closes it too — and leaving the narrow viewport (rotating a tablet,
+  // resizing a desktop window) must not strand a fixed panel over the page.
+  useEffect(() => {
+    if (!isDrawer && drawerOpen) closeDrawer()
+  }, [isDrawer, drawerOpen, closeDrawer])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeDrawer() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen, closeDrawer])
 
   function handleLogout() {
     authLogout().catch(() => {})
@@ -93,49 +122,93 @@ export default function Sidebar() {
   // the four padlocks collapse into one deliberate way in.
   const hasLockedFeature = NAV.some(item => item.feature && !has(item.feature))
 
+  // Off-canvas on a phone: taken out of the flex row entirely (so the page gets
+  // the full width) and slid in over it. On desktop this object is empty and
+  // the rail behaves exactly as it always has.
+  const drawerStyle: React.CSSProperties = isDrawer
+    ? {
+      position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 70,
+      width: 260, minWidth: 260, maxWidth: '85vw',
+      transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)',
+      transition: 'transform 0.22s ease',
+      boxShadow: drawerOpen ? '0 0 40px rgba(0,0,0,0.45)' : 'none',
+    }
+    : {}
+
   return (
     <>
-    <aside style={{
-      width: collapsed ? 48 : 220, minWidth: collapsed ? 48 : 220,
-      background: 'var(--surface)', borderRight: '1px solid var(--border)',
-      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      transition: 'width 0.2s ease, min-width 0.2s ease',
-    }}>
+    {/* Overlay: dismisses the drawer and, just as importantly, stops taps
+        landing on the page underneath it. */}
+    {isDrawer && drawerOpen && (
+      <div
+        onClick={closeDrawer}
+        aria-hidden="true"
+        style={{
+          position: 'fixed', inset: 0, zIndex: 69,
+          background: 'rgba(0,0,0,0.5)',
+        }}
+      />
+    )}
+    <aside
+      aria-hidden={isDrawer && !drawerOpen ? true : undefined}
+      style={{
+        width: collapsedNow ? 48 : 220, minWidth: collapsedNow ? 48 : 220,
+        // Brand carrier: petrol in BOTH themes (see --sidebar-* in globals.css)
+        background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        transition: 'width 0.2s ease, min-width 0.2s ease',
+        ...drawerStyle,
+      }}
+    >
 
       {/* Logo */}
       <div style={{
-        padding: collapsed ? '18px 0' : '22px 20px 18px',
-        borderBottom: '1px solid var(--border)',
+        padding: collapsedNow ? '18px 0' : '22px 20px 18px',
+        borderBottom: '1px solid var(--sidebar-border)',
         display: 'flex', alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'flex-start',
+        justifyContent: collapsedNow ? 'center' : 'flex-start',
       }}>
         <div style={{
           width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+          background: 'var(--brand-grad)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Zap size={17} color="#fff" strokeWidth={2.5} />
         </div>
-        {!collapsed && (
+        {!collapsedNow && (
           <div style={{ marginLeft: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em', color: 'var(--text)' }}>Faro</div>
-            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em', color: 'var(--sidebar-text-active)' }}>Faro</div>
+            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 1 }}>
               {t('sidebar.tagline')}
             </div>
           </div>
         )}
+        {isDrawer && (
+          <button
+            onClick={closeDrawer}
+            aria-label={t('common.close')}
+            style={{
+              all: 'unset', boxSizing: 'border-box', cursor: 'pointer',
+              marginLeft: 'auto', width: 40, height: 40, borderRadius: 9,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--sidebar-text)',
+            }}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: collapsed ? '12px 6px' : '12px 10px' }}>
+      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: collapsedNow ? '12px 6px' : '12px 10px' }}>
         {GROUPS.map(group => {
           const items = visibleNav.filter(n => n.group === group)
           if (!items.length) return null
           return (
-            <div key={group} style={{ marginBottom: collapsed ? 12 : 20 }}>
-              {!collapsed && (
+            <div key={group} style={{ marginBottom: collapsedNow ? 12 : 20 }}>
+              {!collapsedNow && (
                 <div style={{
-                  fontSize: 10, fontWeight: 700, color: 'var(--dim)',
+                  fontSize: 10, fontWeight: 700, color: 'var(--sidebar-dim)',
                   textTransform: 'uppercase', letterSpacing: '0.08em',
                   padding: '0 10px', marginBottom: 4,
                 }}>
@@ -148,23 +221,27 @@ export default function Sidebar() {
                 const label = t(labelKey)
 
                 return (
-                  <Link key={href} href={href} style={{ textDecoration: 'none' }} title={collapsed ? label : undefined}>
+                  <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
+                        style={{ textDecoration: 'none' }} title={collapsedNow ? label : undefined}>
                     <div
                       className={clsx('nav-item', active ? 'nav-item-active' : 'nav-item-idle')}
                       style={{
                         display: 'flex', alignItems: 'center',
-                        justifyContent: collapsed ? 'center' : 'flex-start',
-                        gap: collapsed ? 0 : 10,
-                        padding: collapsed ? '8px 0' : '8px 10px',
+                        // A finger, not a mouse pointer: 44px minimum in the
+                        // drawer, unchanged 8px padding on desktop.
+                        minHeight: isDrawer ? 44 : undefined,
+                        justifyContent: collapsedNow ? 'center' : 'flex-start',
+                        gap: collapsedNow ? 0 : 10,
+                        padding: collapsedNow ? '8px 0' : isDrawer ? '8px 12px' : '8px 10px',
                         borderRadius: 7, marginBottom: 1,
-                        background: active ? 'var(--accent-dim)' : 'transparent',
-                        color: active ? 'var(--accent)' : 'var(--muted)',
+                        background: active ? 'var(--sidebar-active-bg)' : 'transparent',
+                        color: active ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
                         fontWeight: active ? 600 : 400, fontSize: 13,
                         transition: 'all 0.15s', cursor: 'pointer',
                       }}
                     >
                       <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
-                      {!collapsed && label}
+                      {!collapsedNow && label}
                     </div>
                   </Link>
                 )
@@ -173,32 +250,35 @@ export default function Sidebar() {
           )
         })}
 
-        {/* Collapse toggle */}
+        {/* Collapse toggle — desktop only. In the drawer there is nothing to
+            collapse to: the panel is either open over the page or gone. */}
+        {!isDrawer && (
         <button
           onClick={toggle}
-          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+          title={collapsedNow ? t('sidebar.expand') : t('sidebar.collapse')}
           style={{
             all: 'unset', cursor: 'pointer', marginTop: 8,
             display: 'flex', alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: collapsed ? 0 : 8, width: '100%',
-            padding: collapsed ? '8px 0' : '8px 10px', borderRadius: 7,
-            color: 'var(--dim)', fontSize: 12, transition: 'all 0.15s',
+            justifyContent: collapsedNow ? 'center' : 'flex-start',
+            gap: collapsedNow ? 0 : 8, width: '100%',
+            padding: collapsedNow ? '8px 0' : '8px 10px', borderRadius: 7,
+            color: 'var(--sidebar-dim)', fontSize: 12, transition: 'all 0.15s',
           }}
         >
-          {collapsed ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>{t('sidebar.collapse')}</span></>}
+          {collapsedNow ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>{t('sidebar.collapse')}</span></>}
         </button>
+        )}
 
         {/* The single remaining way to the plan comparison. */}
-        {!collapsed && hasLockedFeature && (
+        {!collapsedNow && hasLockedFeature && (
           <div style={{ marginTop: 8, padding: '0 10px' }}>
             <Link
               href="/planes"
               style={{
                 display: 'block', textAlign: 'center',
                 padding: '7px 0', borderRadius: 7,
-                border: '1px dashed var(--border)',
-                color: 'var(--dim)', fontSize: 11.5, fontWeight: 600,
+                border: '1px dashed rgba(255,255,255,0.25)',
+                color: 'var(--sidebar-dim)', fontSize: 11.5, fontWeight: 600,
               }}
             >
               {t('sidebar.see_plans')}
@@ -207,9 +287,9 @@ export default function Sidebar() {
         )}
 
         {/* Language switcher */}
-        {!collapsed && (
+        {!collapsedNow && (
           <div style={{ marginTop: 8, padding: '0 10px' }}>
-            <div style={{ display: 'flex', gap: 4, border: '1px solid var(--border)', borderRadius: 7, padding: 3 }}>
+            <div style={{ display: 'flex', gap: 4, border: '1px solid var(--sidebar-border)', borderRadius: 7, padding: 3 }}>
               {(['es', 'en'] as const).map(l => (
                 <button
                   key={l}
@@ -217,8 +297,8 @@ export default function Sidebar() {
                   style={{
                     all: 'unset', cursor: 'pointer', flex: 1, textAlign: 'center',
                     padding: '4px 0', borderRadius: 5, fontSize: 11, fontWeight: 600,
-                    background: lang === l ? 'var(--accent-dim)' : 'transparent',
-                    color: lang === l ? 'var(--accent)' : 'var(--dim)',
+                    background: lang === l ? 'var(--sidebar-active-bg)' : 'transparent',
+                    color: lang === l ? 'var(--sidebar-text-active)' : 'var(--sidebar-dim)',
                     transition: 'all 0.15s',
                   }}
                 >
@@ -231,32 +311,32 @@ export default function Sidebar() {
       </nav>
 
       {/* User footer — no profile selector */}
-      <div style={{ borderTop: '1px solid var(--border)' }}>
+      <div style={{ borderTop: '1px solid var(--sidebar-border)' }}>
         {user && (
           <div style={{
-            padding: collapsed ? '10px 0' : '10px 14px',
+            padding: collapsedNow ? '10px 0' : '10px 14px',
             display: 'flex', alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start', gap: 8,
+            justifyContent: collapsedNow ? 'center' : 'flex-start', gap: 8,
           }}>
             <div style={{
               width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-              background: 'var(--accent-dim)',
+              background: 'var(--sidebar-active-bg)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <User size={12} color="var(--accent)" />
+              <User size={12} color="var(--sidebar-beam)" />
             </div>
-            {!collapsed && (
+            {!collapsedNow && (
               <>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--sidebar-text-active)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.full_name || user.email.split('@')[0]}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--dim)' }}>{roleLabel(t, user.role)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--sidebar-dim)' }}>{roleLabel(t, user.role)}</div>
                 </div>
                 <button
                   onClick={handleLogout}
                   title={t('sidebar.logout')}
-                  style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: 'var(--dim)', display: 'flex', alignItems: 'center' }}
+                  style={{ all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5, color: 'var(--sidebar-dim)', display: 'flex', alignItems: 'center' }}
                 >
                   <LogOut size={13} />
                 </button>
@@ -264,8 +344,8 @@ export default function Sidebar() {
             )}
           </div>
         )}
-        {!collapsed && (
-          <div style={{ padding: '4px 16px 12px', fontSize: 11, color: 'var(--dim)', opacity: 0.6 }}>
+        {!collapsedNow && (
+          <div style={{ padding: '4px 16px 12px', fontSize: 11, color: 'var(--sidebar-dim)', opacity: 0.6 }}>
             v{process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
           </div>
         )}

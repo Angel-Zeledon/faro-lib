@@ -5,12 +5,12 @@ import type { PriceBreak, Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { InlineError } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useToast } from '@/contexts/ToastContext'
 import { Plus, Trash2, Tag } from 'lucide-react'
 
 const C = {
   card: 'var(--surface-2)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8', red: '#ef4444',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', red: '#ef4444',
 }
 
 const inputS: React.CSSProperties = {
@@ -23,7 +23,7 @@ const inputS: React.CSSProperties = {
 // tiers ("from min_qty units on, each unit costs unit_price").
 export default function PriceBreakManager({ supplier }: { supplier: Supplier }) {
   const { t } = useLanguage()
-  const confirm = useConfirm()
+  const { undoable } = useToast()
 
   const [breaks,  setBreaks]  = useState<PriceBreak[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,15 +74,27 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
     }
   }
 
-  async function handleDelete(pb: PriceBreak) {
-    if (!(await confirm({
-      title: `${t('suppliers.pb_delete_confirm_q')} "${pb.sku}"?`,
-      message: t('suppliers.pb_delete_confirm_warn'),
-      danger: true,
-    }))) return
+  // A tier is three numbers off a price list: deleting one is a typo-level
+  // mistake, not a decision worth a modal. The row goes now; the DELETE only
+  // leaves when the undo window closes.
+  function handleDelete(pb: PriceBreak) {
     setError(null)
-    try { await deletePriceBreak(pb.id); await load() }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : t('suppliers.pb_err_deleting')) }
+    undoable({
+      title:     t('suppliers.pb_deleted'),
+      message:   `${pb.sku} · ${pb.min_qty}+`,
+      undoLabel: t('common.undo'),
+      apply:  () => setBreaks(prev => prev.filter(b => b.id !== pb.id)),
+      revert: () => setBreaks(prev => prev.some(b => b.id === pb.id)
+        ? prev
+        // The list has one canonical order; re-sorting puts the tier back in
+        // its own slot instead of at the end.
+        : [...prev, pb].sort((a, b) => a.sku.localeCompare(b.sku) || a.min_qty - b.min_qty)),
+      commit: () => deletePriceBreak(pb.id),
+      onCommitError: (e: unknown) => {
+        setError(e instanceof Error ? e.message : t('suppliers.pb_err_deleting'))
+        load()
+      },
+    })
   }
 
   return (

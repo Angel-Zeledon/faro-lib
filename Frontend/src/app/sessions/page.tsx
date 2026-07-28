@@ -5,6 +5,8 @@ import { Check, History, Pencil, Trash2, X } from 'lucide-react'
 import { deleteSession, getSessionSummaries, patchSession } from '@/lib/api'
 import type { SessionStatus, SessionSummary } from '@/lib/types'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
+import Card from '@/components/ui/Card'
+import Table, { Th, Td } from '@/components/ui/Table'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
@@ -134,7 +136,7 @@ export default function SessionsHistoryPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
-          width: 36, height: 36, borderRadius: 9, background: '#6366f1',
+          width: 36, height: 36, borderRadius: 9, background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <History size={17} color="#fff" strokeWidth={2.5} />
@@ -148,11 +150,11 @@ export default function SessionsHistoryPage() {
       </div>
 
       {loading ? (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 8 }}>
+        <Card padding={8}>
           <LoadingState label={t('common.loading')}>
             <SkeletonTable rows={6} columns={7} />
           </LoadingState>
-        </div>
+        </Card>
       ) : error ? (
         <ErrorState error={error} onRetry={() => load(true)} />
       ) : items.length === 0 ? (
@@ -162,22 +164,15 @@ export default function SessionsHistoryPage() {
           body={t('sessions.empty_hint')}
         />
       ) : (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <Card padding={0} overflow="hidden">
+          <Table>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 {[
                   t('sessions.col_name'), t('sessions.col_status'), t('sessions.col_dataset'),
                   t('sessions.col_created'), t('sessions.col_horizon'),
                   t('sessions.col_granularity'), t('sessions.col_skus'), '',
-                ].map((h, i) => (
-                  <th key={i} style={{
-                    textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700,
-                    color: C.dim, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                  }}>
-                    {h}
-                  </th>
-                ))}
+                ].map((h, i) => <Th key={i}>{h}</Th>)}
               </tr>
             </thead>
             <tbody>
@@ -194,7 +189,8 @@ export default function SessionsHistoryPage() {
                       cursor: clickable && !isEditing ? 'pointer' : 'default',
                     }}
                   >
-                    <td style={{ padding: '10px 14px', color: C.text, fontWeight: 600, minWidth: 180 }}>
+                    {/* The divider is on the <tr>, so the cells do not draw their own. */}
+                    <Td divider={false} style={{ fontWeight: 600, minWidth: 180 }}>
                       {isEditing ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                               onClick={e => e.stopPropagation()}>
@@ -224,18 +220,18 @@ export default function SessionsHistoryPage() {
                           </button>
                         </span>
                       ) : s.name}
-                    </td>
-                    <td style={{ padding: '10px 14px' }}><StatusBadge status={s.status} /></td>
-                    <td style={{ padding: '10px 14px', color: C.muted, whiteSpace: 'nowrap' }}>
+                    </Td>
+                    <Td divider={false}><StatusBadge status={s.status} /></Td>
+                    <Td divider={false} nowrap style={{ color: C.muted }}>
                       {s.dataset_filename ?? s.dataset_name ?? '—'}
-                    </td>
-                    <td style={{ padding: '10px 14px', color: C.muted, whiteSpace: 'nowrap' }}>
+                    </Td>
+                    <Td divider={false} nowrap style={{ color: C.muted }}>
                       {fmtDate(s.created_at)}
-                    </td>
-                    <td style={{ padding: '10px 14px', color: C.muted }}>{s.horizon ?? '—'}</td>
-                    <td style={{ padding: '10px 14px', color: C.muted }}>{granularityLabel(s.granularity)}</td>
-                    <td style={{ padding: '10px 14px', color: C.muted }}>{s.sku_count ?? '—'}</td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', textAlign: 'right' }}
+                    </Td>
+                    <Td divider={false} style={{ color: C.muted }}>{s.horizon ?? '—'}</Td>
+                    <Td divider={false} style={{ color: C.muted }}>{granularityLabel(s.granularity)}</Td>
+                    <Td divider={false} style={{ color: C.muted }}>{s.sku_count ?? '—'}</Td>
+                    <Td divider={false} nowrap align="right"
                         onClick={e => e.stopPropagation()}>
                       {canEdit && !isEditing && (
                         <>
@@ -260,13 +256,13 @@ export default function SessionsHistoryPage() {
                           </button>
                         </>
                       )}
-                    </td>
+                    </Td>
                   </tr>
                 )
               })}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </Card>
       )}
     </div>
   )

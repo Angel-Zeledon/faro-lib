@@ -1376,3 +1376,22 @@ export const importStockFile = (
     'POST', '/inventory/bulk', fd, opts,
   )
 }
+
+// ── Alert history (the bell) ─────────────────────────────────────────────────
+// The 08:00 UTC loop's stockout digests, supplier lead-time warnings and
+// data-freshness reminders leave the building by email/WhatsApp and, until
+// this endpoint, left no trace inside the app: delete the mail and the
+// information was gone. `GET /alerts` reads back the delivery rows the loop
+// already writes to activity_logs — including the ones that FAILED.
+
+export const getAlertHistory = (limit = 20, opts?: RequestOpts) =>
+  request<import('../components/alerts/types').AlertHistory>(
+    'GET', `/alerts?limit=${limit}`, undefined, opts,
+  )
+
+/** Marks every alert up to now as read for the calling user. Mutating, so it
+ *  takes the analyst+ guard — a viewer is never an alert recipient. */
+export const markAlertsRead = (opts?: RequestOpts) =>
+  request<import('../components/alerts/types').MarkAlertsReadResult>(
+    'POST', '/alerts/read', undefined, opts,
+  )

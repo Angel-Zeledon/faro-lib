@@ -12,7 +12,6 @@
  * credential fields, by contract with the backend (which never returns them).
  */
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import {
   Plug, RefreshCw, Trash2, CheckCircle2, XCircle, Clock, Lock,
 } from 'lucide-react'
@@ -23,19 +22,19 @@ import {
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useEntitlements } from '@/lib/entitlements'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
-import { LoadingState, ErrorState, InlineError } from '@/components/ui/States'
+import { LoadingState, ErrorState, InlineError, EmptyState } from '@/components/ui/States'
+import Card from '@/components/ui/Card'
+import Input, { Field } from '@/components/ui/Input'
 
 const C = {
-  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
+  border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  green: '#22c55e', amber: '#f59e0b', red: '#ef4444', indigo: '#818cf8',
+  green: '#22c55e', red: '#ef4444', indigo: 'var(--accent)',
 }
 
-const inputS: React.CSSProperties = {
-  background: 'var(--surface-2)', border: `1px solid var(--border)`,
-  borderRadius: 6, color: 'var(--text)', fontSize: 13, outline: 'none',
-  padding: '7px 10px', width: '100%', boxSizing: 'border-box',
-}
+// This screen's credential labels are one step quieter than the Field default —
+// they sit inside an already-labelled provider card, so they read as captions.
+const CRED_LABEL_STYLE: React.CSSProperties = { fontSize: 11, color: C.dim }
 
 // Human-friendly display name for known providers; falls back to the raw key
 // for any provider the backend registers later that the frontend hasn't
@@ -97,27 +96,29 @@ function ConnectForm({
   const canSubmit = info.fields.every(f => values[f]?.trim().length > 0)
 
   return (
-    <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
-      padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
-    }}>
+    <Card
+      tone="inset"
+      padding="16px 18px"
+      style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+    >
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(info.fields.length, 3)}, 1fr)`, gap: 12 }}>
         {info.fields.map(field => (
-          <div key={field}>
-            <label htmlFor={`integration-${field}`} style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-              {fieldLabel(t, field)}
-            </label>
-            <input
+          <Field
+            key={field}
+            label={fieldLabel(t, field)}
+            htmlFor={`integration-${field}`}
+            labelStyle={CRED_LABEL_STYLE}
+          >
+            <Input
               id={`integration-${field}`}
               name={field}
-              style={inputS}
               type={/token|key|password|secret/i.test(field) ? 'password' : 'text'}
               autoComplete="off"
               value={values[field] ?? ''}
               onChange={e => setValues(v => ({ ...v, [field]: e.target.value }))}
               aria-label={fieldLabel(t, field)}
             />
-          </div>
+          </Field>
         ))}
       </div>
       {error && <InlineError error={new Error(error)} />}
@@ -136,7 +137,7 @@ function ConnectForm({
           {connecting ? t('integrations.connecting') : t('integrations.connect_cta')}
         </button>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -158,15 +159,12 @@ function ProviderCard({
   const lastSync = connection ? fmtDate(connection.last_sync_at, lang) : null
 
   return (
-    <div style={{
-      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
-      padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-    }}>
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 34, height: 34, borderRadius: 9,
-            background: '#6366f1',
+            background: 'var(--accent)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <Plug size={16} color="#fff" strokeWidth={2.5} aria-hidden="true" />
@@ -237,44 +235,22 @@ function ProviderCard({
           error={connectError}
         />
       )}
-    </div>
+    </Card>
   )
 }
 
 // ── Locked / upsell state for tenants without the entitlement ───────────────
+// This was a hand-rolled copy of EmptyState, down to the same 48px icon tile and
+// the same upsell button geometry. It is the shared component now.
 function LockedState() {
   const { t } = useLanguage()
   return (
-    <div style={{
-      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
-      padding: '48px 40px', maxWidth: 560, margin: '0 auto', width: '100%', textAlign: 'center',
-    }}>
-      <div style={{
-        width: 48, height: 48, borderRadius: 13, margin: '0 auto 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.28)',
-        color: C.indigo,
-      }}>
-        <Lock size={22} aria-hidden="true" />
-      </div>
-      <h2 style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: '0 0 8px' }}>
-        {t('integrations.locked_title')}
-      </h2>
-      <p style={{ fontSize: 13, color: C.muted, margin: '0 0 20px', lineHeight: 1.65 }}>
-        {t('integrations.locked_body')}
-      </p>
-      <Link
-        href="/planes"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          padding: '10px 20px', borderRadius: 9,
-          fontSize: 13, fontWeight: 700, textDecoration: 'none',
-          background: C.indigo, color: '#fff',
-        }}
-      >
-        {t('entitlements.upsell_cta')}
-      </Link>
-    </div>
+    <EmptyState
+      icon={<Lock size={22} aria-hidden="true" />}
+      title={t('integrations.locked_title')}
+      body={t('integrations.locked_body')}
+      actions={[{ label: t('entitlements.upsell_cta'), href: '/planes' }]}
+    />
   )
 }
 
@@ -377,7 +353,7 @@ export default function IntegrationsPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 9,
-          background: '#6366f1',
+          background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Plug size={17} color="#fff" strokeWidth={2.5} aria-hidden="true" />

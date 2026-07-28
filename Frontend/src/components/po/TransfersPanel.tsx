@@ -11,7 +11,7 @@ import { ArrowLeftRight, PackageCheck, XCircle } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)',
   green: '#22c55e', amber: '#f59e0b',
 }
 

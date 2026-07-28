@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { getSupplierScorecard, getSupplierLeadTimeAlerts } from '@/lib/api'
 import type { SupplierScorecardRow, SupplierLeadTimeAlert } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
+import Card from '@/components/ui/Card'
+import Table, { Th, Td } from '@/components/ui/Table'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
 import { BarChart3, ArrowLeft, AlertTriangle, Truck, TrendingUp } from 'lucide-react'
@@ -12,7 +14,7 @@ import { BarChart3, ArrowLeft, AlertTriangle, Truck, TrendingUp } from 'lucide-r
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: '#818cf8',
+  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -43,18 +45,10 @@ function ScorecardTable({ rows, alerts }: {
   ]
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+    <Table size="lg">
         <thead>
           <tr style={{ background: C.card }}>
-            {columns.map(h => (
-              <th key={h} style={{
-                padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap',
-                color: C.dim, fontWeight: 600, fontSize: 10,
-                borderBottom: `1px solid ${C.border}`,
-                textTransform: 'uppercase', letterSpacing: '0.06em',
-              }}>{h}</th>
-            ))}
+            {columns.map(h => <Th key={h} size="lg">{h}</Th>)}
           </tr>
         </thead>
         <tbody>
@@ -70,15 +64,16 @@ function ScorecardTable({ rows, alerts }: {
                 background: idx % 2 === 0 ? C.surface : C.card,
                 borderBottom: `1px solid ${C.border}`,
               }}>
-                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 600 }}>{row.supplier}</td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{row.n_recepciones}</td>
-                <td style={{ padding: '11px 14px', color: C.text, fontFamily: 'monospace' }}>
+                {/* The divider is on the <tr>, so the cells do not draw their own. */}
+                <Td size="lg" divider={false} style={{ fontWeight: 600 }}>{row.supplier}</Td>
+                <Td size="lg" divider={false}>{row.n_recepciones}</Td>
+                <Td size="lg" divider={false} mono>
                   {fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
-                </td>
-                <td style={{ padding: '11px 14px', color: C.muted, fontFamily: 'monospace' }}>
+                </Td>
+                <Td size="lg" divider={false} mono style={{ color: C.muted }}>
                   {row.lead_time_declarado != null ? `${row.lead_time_declarado}d` : '—'}
-                </td>
-                <td style={{ padding: '11px 14px' }}>
+                </Td>
+                <Td size="lg" divider={false}>
                   {alert ? (
                     <span
                       title={`${alert.mensaje} (z=${alert.z_score}, ${alert.n_reciente} ${t('scorecard.trend_tooltip_recent')} ${alert.n_baseline} ${t('scorecard.trend_tooltip_historical')})`}
@@ -95,21 +90,20 @@ function ScorecardTable({ rows, alerts }: {
                   ) : (
                     <span style={{ color: C.dim }}>{t('scorecard.stable')}</span>
                   )}
-                </td>
-                <td style={{ padding: '11px 14px', color: onTimeColor, fontWeight: 700 }}>
+                </Td>
+                <Td size="lg" divider={false} style={{ color: onTimeColor, fontWeight: 700 }}>
                   {fmtPct(row.on_time_rate)}
-                </td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{fmtPct(row.fill_rate)}</td>
-                <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace', fontWeight: 600 }}>
+                </Td>
+                <Td size="lg" divider={false}>{fmtPct(row.fill_rate)}</Td>
+                <Td size="lg" divider={false} mono style={{ color: C.green, fontWeight: 600 }}>
                   {formatMoney(row.purchased_value)}
-                </td>
-                <td style={{ padding: '11px 14px', color: C.dim }}>{fmtDate(row.ultima_recepcion, lang)}</td>
+                </Td>
+                <Td size="lg" divider={false} style={{ color: C.dim }}>{fmtDate(row.ultima_recepcion, lang)}</Td>
               </tr>
             )
           })}
         </tbody>
-      </table>
-    </div>
+    </Table>
   )
 }
 
@@ -149,7 +143,7 @@ export default function SupplierScorecardPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 9,
-            background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+            background: 'linear-gradient(135deg, var(--accent), var(--accent))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <BarChart3 size={17} color="#fff" strokeWidth={2.5} aria-hidden="true" />
@@ -217,15 +211,12 @@ export default function SupplierScorecardPage() {
               </div>
             </div>
           )}
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <Card padding={0} overflow="hidden">
             <ScorecardTable rows={rows} alerts={alertsBySupplier} />
-          </div>
+          </Card>
         </>
       ) : (
-        <div style={{
-          padding: '40px 24px', textAlign: 'center', borderRadius: 12,
-          background: C.card, border: `1px solid ${C.border}`,
-        }}>
+        <Card tone="inset" radius={12} padding="40px 24px" style={{ textAlign: 'center' }}>
           <Truck size={32} color={C.dim} style={{ margin: '0 auto 12px', opacity: 0.4 }} aria-hidden="true" />
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
             {t('scorecard.empty_title')}
@@ -236,12 +227,12 @@ export default function SupplierScorecardPage() {
           <Link href="/inventory/suppliers" style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-            background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)',
+            background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
             color: C.indigo, textDecoration: 'none',
           }}>
             <Truck size={13} aria-hidden="true" /> {t('scorecard.empty_cta')}
           </Link>
-        </div>
+        </Card>
       )}
     </div>
   )

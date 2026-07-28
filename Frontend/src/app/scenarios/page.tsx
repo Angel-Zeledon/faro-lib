@@ -16,9 +16,11 @@ import type {
   Scenario, ScenarioChangeRow, ScenarioRule, ScenarioRuleType, ScenarioRunResult,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
+import Card from '@/components/ui/Card'
+import Table, { Th, Td } from '@/components/ui/Table'
+import Input, { FieldLabel, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States'
 import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
@@ -70,19 +72,6 @@ const fmtDelta = (n: number, money = false) => {
 const deltaColor = (n: number) =>
   n === 0 ? C.dim : n > 0 ? 'var(--signal-order-now-fg)' : 'var(--signal-ok-fg)'
 
-const inputStyle: React.CSSProperties = {
-  background: 'var(--bg)', border: `1px solid ${C.border}`, borderRadius: 7,
-  padding: '6px 9px', fontSize: 12, color: C.text, width: '100%',
-}
-const labelStyle: React.CSSProperties = {
-  fontSize: 10, fontWeight: 700, color: C.dim,
-  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
-  display: 'block',
-}
-const cardStyle: React.CSSProperties = {
-  background: C.surface, border: `1px solid ${C.border}`,
-  borderRadius: 12, padding: 18,
-}
 const btnStyle: React.CSSProperties = {
   all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
   gap: 7, padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
@@ -100,21 +89,19 @@ function RuleEditor({ rule, onChange, onRemove }: {
   const isDemand = rule.type === 'demand_multiplier' || rule.type === 'promo'
 
   return (
-    <div style={{
-      border: `1px solid ${C.border}`, borderRadius: 10, padding: 12,
-      marginBottom: 10, background: 'var(--bg)',
-    }}>
+    <Card radius={10} padding={12} style={{ marginBottom: 10, background: 'var(--bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <select
+        <Select
           value={rule.type}
           onChange={e => onChange(blankRule(e.target.value as ScenarioRuleType))}
           aria-label={t('scenarios.rule_type')}
-          style={{ ...inputStyle, width: 'auto', fontWeight: 600 }}
+          size="sm" tone="bg"
+          style={{ width: 'auto', fontWeight: 600 }}
         >
           {RULE_TYPES.map(type => (
             <option key={type} value={type}>{t(`scenarios.type_${type}`)}</option>
           ))}
-        </select>
+        </Select>
         <span style={{ fontSize: 11, color: C.dim, flex: 1 }}>
           {t(`scenarios.help_${rule.type}`)}
         </span>
@@ -132,44 +119,44 @@ function RuleEditor({ rule, onChange, onRemove }: {
         {isDemand && (
           <>
             <div>
-              <label style={labelStyle} htmlFor={`mult-${rule.type}`}>{t('scenarios.field_multiplier')}</label>
-              <input
+              <FieldLabel variant="eyebrow" htmlFor={`mult-${rule.type}`}>{t('scenarios.field_multiplier')}</FieldLabel>
+              <Input
                 id={`mult-${rule.type}`} type="number" step="0.05" min="0.01" max="10"
                 value={rule.multiplier ?? ''}
                 onChange={e => set({ multiplier: Number(e.target.value) })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
             <div>
-              <label style={labelStyle}>{t('scenarios.field_sku')}</label>
-              <input
+              <FieldLabel variant="eyebrow">{t('scenarios.field_sku')}</FieldLabel>
+              <Input
                 value={rule.sku ?? ''} placeholder={t('scenarios.scope_all')}
                 onChange={e => set({ sku: e.target.value, category: '' })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
             <div>
-              <label style={labelStyle}>{t('scenarios.field_category')}</label>
-              <input
+              <FieldLabel variant="eyebrow">{t('scenarios.field_category')}</FieldLabel>
+              <Input
                 value={rule.category ?? ''} placeholder={t('scenarios.scope_all')}
                 onChange={e => set({ category: e.target.value, sku: '' })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
             <div>
-              <label style={labelStyle}>{t('scenarios.field_date_from')}</label>
-              <input
+              <FieldLabel variant="eyebrow">{t('scenarios.field_date_from')}</FieldLabel>
+              <Input
                 type="date" value={rule.date_from ?? ''}
                 onChange={e => set({ date_from: e.target.value })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
             <div>
-              <label style={labelStyle}>{t('scenarios.field_date_to')}</label>
-              <input
+              <FieldLabel variant="eyebrow">{t('scenarios.field_date_to')}</FieldLabel>
+              <Input
                 type="date" value={rule.date_to ?? ''}
                 onChange={e => set({ date_to: e.target.value })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
           </>
@@ -178,20 +165,20 @@ function RuleEditor({ rule, onChange, onRemove }: {
         {rule.type === 'supplier_delay' && (
           <>
             <div>
-              <label style={labelStyle}>{t('scenarios.field_extra_days')}</label>
-              <input
+              <FieldLabel variant="eyebrow">{t('scenarios.field_extra_days')}</FieldLabel>
+              <Input
                 type="number" min="0" max="365" step="1"
                 value={rule.extra_days ?? ''}
                 onChange={e => set({ extra_days: Number(e.target.value) })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
             <div>
-              <label style={labelStyle}>{t('scenarios.field_supplier')}</label>
-              <input
+              <FieldLabel variant="eyebrow">{t('scenarios.field_supplier')}</FieldLabel>
+              <Input
                 value={rule.supplier ?? ''} placeholder={t('scenarios.scope_all')}
                 onChange={e => set({ supplier: e.target.value })}
-                style={inputStyle}
+                size="sm" tone="bg"
               />
             </div>
           </>
@@ -199,16 +186,16 @@ function RuleEditor({ rule, onChange, onRemove }: {
 
         {rule.type === 'safety_stock' && (
           <div>
-            <label style={labelStyle}>{t('scenarios.field_service_level')}</label>
-            <select
+            <FieldLabel variant="eyebrow">{t('scenarios.field_service_level')}</FieldLabel>
+            <Select
               value={String(rule.service_level ?? 0.95)}
               onChange={e => set({ service_level: Number(e.target.value) })}
-              style={inputStyle}
+              size="sm" tone="bg"
             >
               {[0.90, 0.95, 0.97, 0.99].map(level => (
                 <option key={level} value={level}>{Math.round(level * 100)}%</option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
       </div>
@@ -218,7 +205,7 @@ function RuleEditor({ rule, onChange, onRemove }: {
           {t('scenarios.scope_hint')}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -234,24 +221,16 @@ function CompareTable({ result }: { result: ScenarioRunResult }) {
     { labelKey: 'scenarios.metric_order_soon', key: 'order_soon' },
     { labelKey: 'scenarios.metric_overstock',  key: 'overstock' },
   ]
-  const th: React.CSSProperties = {
-    textAlign: 'right', padding: '8px 10px', fontSize: 11, fontWeight: 700,
-    color: C.dim, textTransform: 'uppercase', letterSpacing: '0.05em',
-  }
-  const td: React.CSSProperties = {
-    textAlign: 'right', padding: '9px 10px', fontSize: 13, color: C.text,
-    borderTop: `1px solid ${C.border}`,
-  }
-
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
+    /* Rows are separated by a rule ABOVE, so the header carries no hairline of
+       its own — two rules would stack into a 2px line under it. */
+    <Table minWidth={420}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }} />
-            <th style={th}>{t('scenarios.col_base')}</th>
-            <th style={th}>{t('scenarios.col_scenario')}</th>
-            <th style={th}>{t('scenarios.col_delta')}</th>
+            <Th divider={false} />
+            <Th align="right" divider={false}>{t('scenarios.col_base')}</Th>
+            <Th align="right" divider={false}>{t('scenarios.col_scenario')}</Th>
+            <Th align="right" divider={false}>{t('scenarios.col_delta')}</Th>
           </tr>
         </thead>
         <tbody>
@@ -261,80 +240,71 @@ function CompareTable({ result }: { result: ScenarioRunResult }) {
             const delta = result.delta[key]
             return (
               <tr key={key}>
-                <td style={{ ...td, textAlign: 'left', color: C.muted }}>{t(labelKey)}</td>
-                <td style={td}>{money ? `$${fmtMoney(base)}` : fmtNum(base)}</td>
-                <td style={{ ...td, fontWeight: 600 }}>
+                <Td divider="top" style={{ color: C.muted }}>{t(labelKey)}</Td>
+                <Td align="right" divider="top">{money ? `$${fmtMoney(base)}` : fmtNum(base)}</Td>
+                <Td align="right" divider="top" style={{ fontWeight: 600 }}>
                   {money ? `$${fmtMoney(scenario)}` : fmtNum(scenario)}
-                </td>
-                <td style={{ ...td, fontWeight: 700, color: deltaColor(delta) }}>
+                </Td>
+                <Td align="right" divider="top" style={{ fontWeight: 700, color: deltaColor(delta) }}>
                   {fmtDelta(delta, money)}
-                </td>
+                </Td>
               </tr>
             )
           })}
         </tbody>
-      </table>
-    </div>
+    </Table>
   )
 }
 
 function ChangesTable({ rows }: { rows: ScenarioChangeRow[] }) {
   const { t } = useLanguage()
-  const th: React.CSSProperties = {
-    textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700,
-    color: C.dim, textTransform: 'uppercase', letterSpacing: '0.05em',
-    whiteSpace: 'nowrap',
-  }
-  const td: React.CSSProperties = {
-    padding: '9px 10px', fontSize: 12.5, color: C.text,
-    borderTop: `1px solid ${C.border}`, whiteSpace: 'nowrap',
-  }
+  // 12.5px body type is this table's own: six columns of "before to after"
+  // pairs need the half pixel back to stay on one line.
+  const CELL: React.CSSProperties = { fontSize: 12.5 }
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+    <Table minWidth={720}>
         <thead>
           <tr>
-            <th style={th}>{t('scenarios.col_sku')}</th>
-            <th style={th}>{t('scenarios.col_signal')}</th>
-            <th style={{ ...th, textAlign: 'right' }}>{t('scenarios.col_qty')}</th>
-            <th style={{ ...th, textAlign: 'right' }}>{t('scenarios.col_delta')}</th>
-            <th style={{ ...th, textAlign: 'right' }}>{t('scenarios.col_demand')}</th>
-            <th style={{ ...th, textAlign: 'right' }}>{t('scenarios.col_lead_time')}</th>
+            <Th divider={false}>{t('scenarios.col_sku')}</Th>
+            <Th divider={false}>{t('scenarios.col_signal')}</Th>
+            <Th align="right" divider={false}>{t('scenarios.col_qty')}</Th>
+            <Th align="right" divider={false}>{t('scenarios.col_delta')}</Th>
+            <Th align="right" divider={false}>{t('scenarios.col_demand')}</Th>
+            <Th align="right" divider={false}>{t('scenarios.col_lead_time')}</Th>
           </tr>
         </thead>
         <tbody>
           {rows.map(row => (
             <tr key={row.sku}>
-              <td style={td}>
+              <Td divider="top" nowrap style={CELL}>
                 <div style={{ fontWeight: 600 }}>{row.display_name || row.sku}</div>
                 {row.display_name && (
                   <div style={{ fontSize: 11, color: C.dim }}>{row.sku}</div>
                 )}
-              </td>
-              <td style={td}>
+              </Td>
+              <Td divider="top" nowrap style={CELL}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <SignalBadge signal={row.base_signal} />
                   <span style={{ color: C.dim }}>→</span>
                   <SignalBadge signal={row.scenario_signal} />
                 </span>
-              </td>
-              <td style={{ ...td, textAlign: 'right' }}>
+              </Td>
+              <Td align="right" divider="top" nowrap style={CELL}>
                 {fmtNum(row.base_qty)} → <strong>{fmtNum(row.scenario_qty)}</strong>
-              </td>
-              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: deltaColor(row.delta_qty) }}>
+              </Td>
+              <Td align="right" divider="top" nowrap style={{ ...CELL, fontWeight: 700, color: deltaColor(row.delta_qty) }}>
                 {fmtDelta(row.delta_qty)}
-              </td>
-              <td style={{ ...td, textAlign: 'right', color: C.muted }}>
+              </Td>
+              <Td align="right" divider="top" nowrap style={{ ...CELL, color: C.muted }}>
                 {row.base_daily_demand ?? '—'} → {row.scenario_daily_demand ?? '—'}
-              </td>
-              <td style={{ ...td, textAlign: 'right', color: C.muted }}>
+              </Td>
+              <Td align="right" divider="top" nowrap style={{ ...CELL, color: C.muted }}>
                 {row.base_lead_time_days ?? '—'} → {row.scenario_lead_time_days ?? '—'}
-              </td>
+              </Td>
             </tr>
           ))}
         </tbody>
-      </table>
-    </div>
+    </Table>
   )
 }
 
@@ -342,8 +312,7 @@ function ChangesTable({ rows }: { rows: ScenarioChangeRow[] }) {
 
 export default function ScenariosPage() {
   const { t }       = useLanguage()
-  const { addToast } = useToast()
-  const confirm     = useConfirm()
+  const { addToast, undoable } = useToast()
   const user        = getUser()
   const canEdit     = user?.role === 'admin' || user?.role === 'analyst'
   const {
@@ -411,18 +380,26 @@ export default function ScenariosPage() {
     }
   }
 
-  const remove = async (scenario: Scenario) => {
-    const okToDelete = await confirm({
-      title:   t('scenarios.delete_confirm_title'),
-      message: t('scenarios.delete_confirm_body', { name: scenario.name }),
-      danger:  true,
+  // A saved scenario is a handful of parameters the user can retype, and the
+  // list is right there — a modal asking "are you sure?" bought nothing. The
+  // row goes, the DELETE waits out the undo window, and "Deshacer" simply
+  // cancels it.
+  const remove = (scenario: Scenario) => {
+    const index = saved.findIndex(s => s.id === scenario.id)
+    undoable({
+      title:     t('scenarios.deleted'),
+      message:   scenario.name,
+      undoLabel: t('common.undo'),
+      apply:  () => setSaved(prev => prev.filter(s => s.id !== scenario.id)),
+      revert: () => setSaved(prev => {
+        if (prev.some(s => s.id === scenario.id)) return prev
+        const next = [...prev]
+        next.splice(index < 0 ? next.length : index, 0, scenario)
+        return next
+      }),
+      commit: () => deleteScenario(scenario.id),
+      onCommitError: () => { addToast(t('scenarios.delete_failed'), scenario.name, 'error'); reloadSaved(sessionId) },
     })
-    if (!okToDelete) return
-    try {
-      await deleteScenario(scenario.id)
-      addToast(t('scenarios.deleted'), scenario.name, 'success')
-      reloadSaved(sessionId)
-    } catch { /* interceptor toasts */ }
   }
 
   if (sessionsError) return <ErrorState error={sessionsError} />
@@ -457,24 +434,25 @@ export default function ScenariosPage() {
           </p>
         </div>
         <div>
-          <label style={labelStyle} htmlFor="scenario-session">{t('scenarios.session_label')}</label>
-          <select
+          <FieldLabel variant="eyebrow" htmlFor="scenario-session">{t('scenarios.session_label')}</FieldLabel>
+          <Select
             id="scenario-session"
             value={sessionId}
             onChange={e => setSessionId(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: 220 }}
+            size="sm" tone="bg"
+            style={{ width: 'auto', minWidth: 220 }}
           >
             {completedSessions.map(s => (
               <option key={s.session_id} value={s.session_id}>{s.name}</option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 18, alignItems: 'start' }}>
         {/* Builder */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={cardStyle}>
+          <Card padding={18}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 12px' }}>
               {t('scenarios.builder_title')}
             </h2>
@@ -514,21 +492,21 @@ export default function ScenariosPage() {
                 {running ? t('scenarios.running') : result ? t('scenarios.rerun') : t('scenarios.run')}
               </button>
             </div>
-          </div>
+          </Card>
 
           {/* Save */}
           {canEdit && (
-            <div style={cardStyle}>
+            <Card padding={18}>
               <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 12px' }}>
                 {t('scenarios.save_title')}
               </h2>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input
+                <Input
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder={t('scenarios.save_name_placeholder')}
                   aria-label={t('scenarios.save_title')}
-                  style={inputStyle}
+                  size="sm" tone="bg"
                 />
                 <button
                   onClick={save}
@@ -547,11 +525,11 @@ export default function ScenariosPage() {
                   {t('scenarios.no_rules_hint')}
                 </p>
               )}
-            </div>
+            </Card>
           )}
 
           {/* Saved list */}
-          <div style={cardStyle}>
+          <Card padding={18}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 12px' }}>
               {t('scenarios.saved_list_title')}
             </h2>
@@ -596,7 +574,7 @@ export default function ScenariosPage() {
                 )}
               </div>
             ))}
-          </div>
+          </Card>
         </div>
 
         {/* Comparison */}
@@ -613,7 +591,7 @@ export default function ScenariosPage() {
             />
           ) : (
             <>
-              <div style={cardStyle}>
+              <Card padding={18}>
                 <div style={{
                   display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
                   gap: 10, marginBottom: 8, flexWrap: 'wrap',
@@ -626,9 +604,9 @@ export default function ScenariosPage() {
                   </span>
                 </div>
                 <CompareTable result={result} />
-              </div>
+              </Card>
 
-              <div style={cardStyle}>
+              <Card padding={18}>
                 <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 8px' }}>
                   {t('scenarios.changes_title')}
                 </h2>
@@ -639,7 +617,7 @@ export default function ScenariosPage() {
                 ) : (
                   <ChangesTable rows={result.changes} />
                 )}
-              </div>
+              </Card>
             </>
           )}
         </div>

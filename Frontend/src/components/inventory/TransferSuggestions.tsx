@@ -17,7 +17,7 @@ import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8', green: '#22c55e',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#22c55e',
 }
 
 export function TransferSuggestions({ suggestions }: {
@@ -93,7 +93,7 @@ export function TransferSuggestions({ suggestions }: {
             ) : (
               <button onClick={() => approve(row)} disabled={busyKey === key}
                       style={{ all: 'unset', cursor: 'pointer', padding: '6px 14px',
-                               borderRadius: 8, background: 'rgba(129,140,248,0.12)',
+                               borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
                                color: C.indigo, fontSize: 12, fontWeight: 700 }}>
                 {t('hoy.transfers_approve')}
               </button>

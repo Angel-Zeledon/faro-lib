@@ -3,19 +3,70 @@
 @tailwind utilities;
 
 @layer base {
+  /* Brand constants — identical in both themes. The sidebar is the brand
+     carrier (the Slack move): it stays Petróleo whether the content area is
+     light or dark, so these are deliberately NOT redefined per theme. */
+  :root {
+    --sidebar-bg:          #0C3A40;
+    --sidebar-border:      rgba(255,255,255,0.10);
+    --sidebar-text:        rgba(255,255,255,0.80);
+    --sidebar-text-active: #ffffff;
+    --sidebar-active-bg:   rgba(255,255,255,0.10);
+    --sidebar-dim:         rgba(255,255,255,0.45);
+    --sidebar-beam:        #4CC3B5;
+    --brand-grad:          linear-gradient(135deg, #4CC3B5, #0F766E);
+  }
+
+  /* Light is the default: for this audience (distribuidor SMB, luz de oficina
+     o bodega) light reads as trustworthy work software. Dark stays as an
+     explicit choice via the toggle. */
   :root,
+  [data-theme="light"] {
+    --bg:            #F5F7F6;
+    --surface:       #ffffff;
+    --surface-2:     #EEF2F1;
+    --surface-3:     #E4EAE9;
+    --border:        #DFE6E4;
+    --border-strong: #C2CFCC;
+    --accent:        #0F766E;   /* Faro teal — 4.7:1 as text on --bg, 4.8:1 under white text */
+    --accent-dim:    rgba(15,118,110,0.10);
+    --text:          #16262A;
+    --muted:         #465A5D;
+    --dim:           #7A8D8F;
+    --success:       #16a34a;
+    --warning:       #d97706;
+    --danger:        #dc2626;
+    --info:          #0284c7;
+
+    /* Semáforo — unchanged values (see the dark-theme block for the rationale);
+       these are data colors, already tuned to >=4.5:1 on their tinted badges. */
+    --signal-order-now-fg:      #b91c1c;   /* 6.4:1 on white */
+    --signal-order-now-bg:      rgba(185,28,28,0.10);
+    --signal-order-soon-fg:  #a16207;   /* 5.1:1 on white */
+    --signal-order-soon-bg:  rgba(161,98,7,0.10);
+    --signal-ok-fg:            #15803d;   /* 4.9:1 on white */
+    --signal-ok-bg:            rgba(21,128,61,0.10);
+    --signal-overstock-fg:    #1d4ed8;   /* 7.0:1 on white */
+    --signal-overstock-bg:    rgba(29,78,216,0.10);
+    --signal-sin-datos-fg:     #475569;   /* 7.4:1 on white */
+    --signal-sin-datos-bg:     rgba(71,85,105,0.10);
+  }
+
   [data-theme="dark"] {
-    --bg:            #08090d;
-    --surface:       #0f1015;
-    --surface-2:     #141520;
-    --surface-3:     #1a1d2e;
-    --border:        #1e2030;
-    --border-strong: #2d3048;
-    --accent:        #818cf8;
-    --accent-dim:    rgba(129,140,248,0.12);
-    --text:          #e2e8f0;
-    --muted:         #94a3b8;
-    --dim:           #64748b;
+    /* Petrol-tinted darks — the old set was indigo-tinted to match the old
+       accent; the neutrals shift hue with the brand so the teal reads as
+       belonging rather than pasted on. */
+    --bg:            #0A1517;
+    --surface:       #101D20;
+    --surface-2:     #152528;
+    --surface-3:     #1B2F33;
+    --border:        #1E3236;
+    --border-strong: #2C464B;
+    --accent:        #2BA79A;   /* 6.3:1 as text on --bg; same white-text tradeoff the old indigo had */
+    --accent-dim:    rgba(43,167,154,0.13);
+    --text:          #E3EBEA;
+    --muted:         #93A8A6;
+    --dim:           #62797B;
     --success:       #22c55e;
     --warning:       #f59e0b;
     --danger:        #ef4444;
@@ -35,38 +86,6 @@
     --signal-overstock-bg:    rgba(96,165,250,0.14);
     --signal-sin-datos-fg:     #94a3b8;
     --signal-sin-datos-bg:     rgba(148,163,184,0.14);
-  }
-
-  [data-theme="light"] {
-    --bg:            #f4f5f7;
-    --surface:       #ffffff;
-    --surface-2:     #f0f1f5;
-    --surface-3:     #e8eaf0;
-    --border:        #e2e4eb;
-    --border-strong: #c8cad6;
-    --accent:        #6366f1;
-    --accent-dim:    rgba(99,102,241,0.10);
-    --text:          #1a1d2e;
-    --muted:         #4b5263;
-    --dim:           #8891a8;
-    --success:       #16a34a;
-    --warning:       #d97706;
-    --danger:        #dc2626;
-    --info:          #0284c7;
-
-    /* Darker on light: #f59e0b on white is only 2.1:1 and #16a34a 3.4:1 —
-       both fail AA, so the light theme drops a shade rather than reusing the
-       dark-theme values. */
-    --signal-order-now-fg:      #b91c1c;   /* 6.4:1 on white */
-    --signal-order-now-bg:      rgba(185,28,28,0.10);
-    --signal-order-soon-fg:  #a16207;   /* 5.1:1 on white */
-    --signal-order-soon-bg:  rgba(161,98,7,0.10);
-    --signal-ok-fg:            #15803d;   /* 4.9:1 on white */
-    --signal-ok-bg:            rgba(21,128,61,0.10);
-    --signal-overstock-fg:    #1d4ed8;   /* 7.0:1 on white */
-    --signal-overstock-bg:    rgba(29,78,216,0.10);
-    --signal-sin-datos-fg:     #475569;   /* 7.4:1 on white */
-    --signal-sin-datos-bg:     rgba(71,85,105,0.10);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -132,6 +151,18 @@
     -webkit-box-shadow: 0 0 0 1000px var(--surface-2) inset;
     -webkit-text-fill-color: var(--text);
     transition: background-color 5000s;
+  }
+
+  /* In an app where tables decide money, digits are the display type: every
+     table gets tabular figures so columns of numbers align vertically. */
+  table { font-variant-numeric: tabular-nums; }
+
+  /* The global focus ring uses --accent, which is invisible against the
+     petrol sidebar — inside the rail the ring switches to the beam color. */
+  aside a:focus-visible,
+  aside button:focus-visible,
+  aside [role="button"]:focus-visible {
+    outline-color: var(--sidebar-beam);
   }
 }
 
@@ -200,6 +231,29 @@
   }
   .form-input:focus { border-color: var(--accent); }
   .form-input::placeholder { color: var(--dim); }
+
+  /* Sidebar nav — "el haz": the active item carries a thin beam that fades to
+     the right, the lighthouse sweep. This is the single brand gesture; it
+     lives here because pseudo-elements can't be written inline. Hover needs
+     !important solely to beat the inline `background: transparent`. */
+  .nav-item { position: relative; }
+  .nav-item-active::before {
+    content: '';
+    position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px;
+    border-radius: 2px;
+    background: var(--sidebar-beam);
+  }
+  .nav-item-active::after {
+    content: '';
+    position: absolute; left: 3px; top: 6px; bottom: 6px; width: 44px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, rgba(76,195,181,0.25), rgba(76,195,181,0));
+    pointer-events: none;
+  }
+  .nav-item-idle:hover {
+    background: rgba(255,255,255,0.06) !important;
+    color: var(--sidebar-text-active) !important;
+  }
 
   .form-select {
     appearance: none;

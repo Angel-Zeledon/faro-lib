@@ -9,13 +9,15 @@ interface ThemeCtx {
   toggle:    () => void
 }
 
-const Ctx = createContext<ThemeCtx>({ theme: 'dark', setTheme: () => {}, toggle: () => {} })
+const Ctx = createContext<ThemeCtx>({ theme: 'light', setTheme: () => {}, toggle: () => {} })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('dark')
+  // Light is the default for this audience — see the token comment in
+  // globals.css. Users who chose dark keep it via localStorage.
+  const [theme, setThemeState] = useState<Theme>('light')
 
   useEffect(() => {
-    const saved = (localStorage.getItem('theme') as Theme | null) ?? 'dark'
+    const saved = (localStorage.getItem('theme') as Theme | null) ?? 'light'
     setThemeState(saved)
     document.documentElement.setAttribute('data-theme', saved)
   }, [])

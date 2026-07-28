@@ -19,6 +19,7 @@ import {
   EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
 import Button from '@/components/ui/Button'
+import Pagination, { usePage } from '@/components/table/Pagination'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { granularityLabel, seriesTypeLabel } from '@/lib/enumLabels'
@@ -38,7 +39,7 @@ const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false })
 
 const SERIES_COLOR: Record<string, string> = {
   stable:       '#22c55e',
-  seasonal:     '#818cf8',
+  seasonal:     'var(--accent)',
   volatile:     '#f59e0b',
   intermittent: '#f97316',
   short:        '#06b6d4',
@@ -53,6 +54,10 @@ const ACTION_SIGNAL: Record<string, InventorySignal> = {
   OVERSTOCK: 'SOBRESTOCK',
   OK:        'OK',
 }
+
+// Stable identity, so a SKU with no metric rows does not hand SkuCard a fresh
+// array on every render.
+const EMPTY_METRICS: MetricRow[] = []
 
 const GRANULARITY_LABELS: Record<string, string> = {
   daily:     'D',
@@ -75,7 +80,7 @@ interface CIBand {
 
 // The single confidence band shown on the chart (one on/off toggle in the
 // toolbar). Only rendered when exactly one model is selected.
-const CI_BAND: CIBand = { key: 'p10p90', lower: 'q10', upper: 'q90', label: 'P10–P90', color: '#818cf8', opacity: 0.11 }
+const CI_BAND: CIBand = { key: 'p10p90', lower: 'q10', upper: 'q90', label: 'P10–P90', color: 'var(--accent)', opacity: 0.11 }
 
 // Primary (first selected) model keeps the classic forecast green; additional
 // overlaid models get a stable color from this palette, indexed by the model's
@@ -84,6 +89,14 @@ const PRIMARY_FORECAST_COLOR = '#22c55e'
 const OVERLAY_COLORS = ['#f59e0b', '#06b6d4', '#f472b6', '#a78bfa', '#f97316', '#84cc16', '#e879f9', '#fbbf24']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// `t` returns the key itself when the catalog has no entry, so a build whose
+// copy has not landed yet would print "skus.metrics_table_caption" at the user.
+type Translate = (key: string, params?: Record<string, unknown>) => string
+function tOr(t: Translate, key: string, fallback: string, params?: Record<string, unknown>): string {
+  const text = t(key, params)
+  return text === key ? fallback : text
+}
 
 function pct(n: number | null | undefined) {
   if (n == null || isNaN(n)) return '—'
@@ -186,7 +199,7 @@ function detectOutliers(points: { date: string; value: number }[]): number[] {
 
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 
-function Sparkline({ values, color = '#818cf8', width = 80, height = 28 }: {
+function Sparkline({ values, color = 'var(--accent)', width = 80, height = 28 }: {
   values: number[]; color?: string; width?: number; height?: number
 }) {
   if (values.length < 2) return null
@@ -464,7 +477,7 @@ function buildChartOption(
   const tooltipBg   = isDark ? '#0f1015' : '#ffffff'
   const tooltipBdr  = isDark ? '#1e2030' : '#e2e8f0'
   const tooltipText = isDark ? '#e2e8f0' : '#1e293b'
-  const histColor   = '#818cf8'
+  const histColor   = 'var(--accent)'
   const fcastColor  = PRIMARY_FORECAST_COLOR
   // When several models are overlaid, name the primary series by its model so
   // the legend/tooltip distinguish it from the overlays.
@@ -1296,6 +1309,8 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
 
   const sorted = [...rows].sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))
   const best   = sorted[0]
+  const caption = tOr(t, 'skus.metrics_table_caption',
+    `Model accuracy for ${sku}, ordered by WAPE, best first.`, { sku })
 
   const numVals = (col: keyof MetricRow) =>
     sorted.map(r => r[col]).filter((v): v is number => typeof v === 'number')
@@ -1351,24 +1366,28 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
               {t('skus.color_scale_label')}: <span style={{ color: '#22c55e' }}>{t('skus.color_scale_green')}</span> → <span style={{ color: '#ef4444' }}>{t('skus.color_scale_red')}</span>
             </div>
             <table className="data-table" style={{ tableLayout: 'fixed' }}>
+              <caption className="sr-only">{caption}</caption>
               <thead>
                 <tr>
-                  <th style={{ width: '20%' }}>{t('skus.col_model')}</th>
-                  <th style={{ width: '10%' }}>{t('skus.col_type')}</th>
-                  <th style={{ width: '15%' }}>{t('skus.col_mae')}</th>
-                  <th style={{ width: '15%' }}>{t('skus.col_rmse')}</th>
-                  <th style={{ width: '15%' }}>{t('skus.col_wape')}</th>
-                  <th style={{ width: '15%' }}>{t('skus.col_bias')}</th>
-                  <th style={{ width: '10%' }}>{t('skus.col_folds')}</th>
+                  <th scope="col" style={{ width: '20%' }}>{t('skus.col_model')}</th>
+                  <th scope="col" style={{ width: '10%' }}>{t('skus.col_type')}</th>
+                  <th scope="col" style={{ width: '15%' }}>{t('skus.col_mae')}</th>
+                  <th scope="col" style={{ width: '15%' }}>{t('skus.col_rmse')}</th>
+                  {/* The table is always ordered by WAPE, best first. Saying so
+                      is the only way a screen-reader user learns why the rows
+                      are in this order. */}
+                  <th scope="col" aria-sort="ascending" style={{ width: '15%' }}>{t('skus.col_wape')}</th>
+                  <th scope="col" style={{ width: '15%' }}>{t('skus.col_bias')}</th>
+                  <th scope="col" style={{ width: '10%' }}>{t('skus.col_folds')}</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((r, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight: r === best ? 600 : 400 }}>
+                    <th scope="row" style={{ fontWeight: r === best ? 600 : 400, textAlign: 'left' }}>
                       {r.model}
-                      {r === best && <span style={{ fontSize: 9, color: '#818cf8', marginLeft: 5 }}>{t('skus.badge_best')}</span>}
-                    </td>
+                      {r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 5 }}>{t('skus.badge_best')}</span>}
+                    </th>
                     <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
                     <td style={{ fontFamily: 'monospace', background: heatCell(r.mae,  stats.mae.min,  stats.mae.max),  borderRadius: 4 }}>{fmt(r.mae)}</td>
                     <td style={{ fontFamily: 'monospace', background: heatCell(r.rmse, stats.rmse.min, stats.rmse.max), borderRadius: 4 }}>{fmt(r.rmse)}</td>
@@ -1382,15 +1401,24 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
           </div>
         ) : (
           <table className="data-table">
+            <caption className="sr-only">{caption}</caption>
             <thead>
-              <tr><th>{t('skus.col_model')}</th><th>{t('skus.col_type')}</th><th>{t('skus.col_mae')}</th><th>{t('skus.col_rmse')}</th><th>{t('skus.col_wape')}</th><th>{t('skus.col_bias')}</th><th>{t('skus.col_folds')}</th></tr>
+              <tr>
+                <th scope="col">{t('skus.col_model')}</th>
+                <th scope="col">{t('skus.col_type')}</th>
+                <th scope="col">{t('skus.col_mae')}</th>
+                <th scope="col">{t('skus.col_rmse')}</th>
+                <th scope="col" aria-sort="ascending">{t('skus.col_wape')}</th>
+                <th scope="col">{t('skus.col_bias')}</th>
+                <th scope="col">{t('skus.col_folds')}</th>
+              </tr>
             </thead>
             <tbody>
               {sorted.map((r, i) => (
-                <tr key={i} style={{ background: r === best ? 'rgba(129,140,248,0.06)' : undefined }}>
-                  <td style={{ fontWeight: r === best ? 600 : 400 }}>
-                    {r.model}{r === best && <span style={{ fontSize: 9, color: '#818cf8', marginLeft: 6 }}>{t('skus.badge_best')}</span>}
-                  </td>
+                <tr key={i} style={{ background: r === best ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined }}>
+                  <th scope="row" style={{ fontWeight: r === best ? 600 : 400, textAlign: 'left' }}>
+                    {r.model}{r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 6 }}>{t('skus.badge_best')}</span>}
+                  </th>
                   <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
                   <td style={{ fontFamily: 'monospace' }}>{fmt(r.mae)}</td>
                   <td style={{ fontFamily: 'monospace' }}>{fmt(r.rmse)}</td>
@@ -1485,7 +1513,7 @@ function InventoryPanel({ inv, live, coverageUnit }: {
       color: signalColor(signal),
     })
   }
-  cards.push({ label: t('skus.inv_reorder_point'), value: fmtNum(inv.reorder_point), color: '#818cf8' })
+  cards.push({ label: t('skus.inv_reorder_point'), value: fmtNum(inv.reorder_point), color: 'var(--accent)' })
   cards.push({ label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),  color: '#06b6d4' })
   cards.push({ label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),    color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' })
   if (inv.holding_cost != null) {
@@ -1591,6 +1619,7 @@ export default function SkusPage() {
   const [quality,        setQuality]        = useState<QualityReport>({})
   const [loading,        setLoading]        = useState(false)
   const [search,         setSearch]         = useState('')
+  const [skuListPage,    setSkuListPage]    = useState(1)
   const [selectedSku,    setSelectedSku]    = useState<string | null>(null)
   const [tab,            setTab]            = useState('Forecast')
   const [sessLoading,    setSessLoading]    = useState(true)
@@ -1711,6 +1740,30 @@ export default function SkusPage() {
       .filter(s => s.toLowerCase().includes(search.toLowerCase()))
   , [metrics, search])
 
+  // One pass instead of one full scan of `metrics` per card. With 2.000 SKUs
+  // and ~4 rows each, the per-card `metrics.filter(...)` was 2.000 × 8.000
+  // comparisons on every keystroke in the search box — before React had even
+  // started rendering.
+  const metricsBySku = useMemo(() => {
+    const map = new Map<string, MetricRow[]>()
+    for (const row of metrics) {
+      if (!row.sku) continue
+      const list = map.get(row.sku)
+      if (list) list.push(row)
+      else map.set(row.sku, [row])
+    }
+    return map
+  }, [metrics])
+
+  const recBySku = useMemo(
+    () => new Map(inventory.map(r => [r.sku, r])),
+    [inventory],
+  )
+
+  const skuPage = usePage(skus, skuListPage, setSkuListPage)
+  // Any change to what is being listed sends you back to the first page.
+  useEffect(() => { setSkuListPage(1) }, [search, sessionId])
+
   const cmpSkus = useMemo(() =>
     Array.from(new Set(cmpMetrics.map(r => r.sku).filter(Boolean) as string[]))
   , [cmpMetrics])
@@ -1725,9 +1778,9 @@ export default function SkusPage() {
   const signalForSku = useCallback((sku: string): InventorySignal | undefined => {
     const live = statusBySku.get(sku)
     if (live) return live.signal
-    const rec = inventory.find(r => r.sku === sku)
+    const rec = recBySku.get(sku)
     return rec ? ACTION_SIGNAL[rec.action] : undefined
-  }, [statusBySku, inventory])
+  }, [statusBySku, recBySku])
   const seriesType   = skuQuality?.series_type ?? 'unknown'
   const skuColor     = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
   // Best non-baseline model accuracy (1 − WAPE) for the selected SKU — the
@@ -1850,7 +1903,7 @@ export default function SkusPage() {
                 padding: '4px 10px', borderRadius: 7, fontSize: 11,
                 border: `1px solid ${compareMode ? 'var(--accent)' : 'var(--border)'}`,
                 color: compareMode ? 'var(--accent)' : 'var(--dim)',
-                background: compareMode ? 'rgba(129,140,248,0.08)' : 'var(--surface)',
+                background: compareMode ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'var(--surface)',
               }}
             >
               <GitCompare size={11} /> {t('skus.btn_compare')}
@@ -1875,7 +1928,7 @@ export default function SkusPage() {
       {compareMode && sessionId && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
-          background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.2)',
+          background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
           borderRadius: 8, marginBottom: 12, flexWrap: 'wrap',
         }}>
           <GitCompare size={12} color="var(--accent)" />
@@ -1971,12 +2024,12 @@ export default function SkusPage() {
             ) : skus.length === 0 ? (
               <PanelPlaceholder message={t('skus.empty_no_skus_found')} />
             ) : (
-              skus.map(sku => (
+              skuPage.rows.map(sku => (
                 <SkuCard
                   key={sku}
                   sku={sku}
                   quality={quality[sku]}
-                  metrics={metrics.filter(r => r.sku === sku)}
+                  metrics={metricsBySku.get(sku) ?? EMPTY_METRICS}
                   signal={signalForSku(sku)}
                   selected={sku === selectedSku}
                   onClick={() => { setSelectedSku(sku); setTab('Forecast') }}
@@ -1984,6 +2037,17 @@ export default function SkusPage() {
               ))
             )}
           </div>
+          {/* One page of cards at a time: a 2.000-SKU catalogue rendered every
+              card at once, and each card carries an SVG sparkline and a badge. */}
+          <Pagination
+            page={skuPage.page}
+            pageCount={skuPage.pageCount}
+            offset={skuPage.offset}
+            total={skuPage.total}
+            rowsOnPage={skuPage.rows.length}
+            onPage={setSkuListPage}
+            label="SKU"
+          />
         </div>
 
         {/* Detail panel */}
@@ -2055,7 +2119,7 @@ export default function SkusPage() {
                         <div style={{
                           position: 'absolute', top: 6, left: 12, zIndex: 5,
                           fontSize: 10, fontWeight: 600, color: 'var(--accent)',
-                          background: 'rgba(129,140,248,0.12)', padding: '2px 7px', borderRadius: 4,
+                          background: 'color-mix(in srgb, var(--accent) 12%, transparent)', padding: '2px 7px', borderRadius: 4,
                         }}>
                           A · {sessions.find(s => s.session_id === sessionId)?.name ?? sessionId}
                         </div>

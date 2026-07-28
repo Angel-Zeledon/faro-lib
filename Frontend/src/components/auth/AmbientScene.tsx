@@ -22,8 +22,8 @@ import { useEffect, useRef } from 'react'
 // The lighthouse itself stays pure black.
 const C = {
   ink:    '9,9,11',        // the tower, and any true-black detail
-  cool:   '99,102,241',    // indigo — sky, sea, far details
-  coolDeep: '67,76,128',   // slate-indigo — nearer water lines
+  cool:   '43,167,154',    // teal — sky, sea, far details
+  coolDeep: '44,84,88',   // slate-petrol — nearer water lines
   warm:   '245,158,11',    // amber — lamp, rings, reflection
 }
 
@@ -80,7 +80,7 @@ const BEARINGS = Array.from({ length: 36 }, (_, i) => i * 10)
 // rather than marks on the page.
 //
 // `warm` is assigned by proximity to the lamp: motes on the lit side pick up
-// its amber, ones further left stay cool indigo. `start` is the % up from the
+// its amber, ones further left stay cool teal. `start` is the % up from the
 // bottom they begin at, so they don't all launch off the same line.
 const MOTES = [
   { left: 88, start: 4,  size: 7,  warm: true,  dur: 26, delay: 0,    v: 'a' },
