@@ -24,7 +24,7 @@ import { translations, type TranslationKey } from '@/i18n/translations'
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', indigo: '#818cf8',
+  red: '#ef4444', indigo: 'var(--accent)',
 }
 
 /* ── Error copy ────────────────────────────────────────────────────────────── */
@@ -207,7 +207,7 @@ export function EmptyState({ icon, title, body, bullets, actions, compact }: {
         <div style={{
           width: 48, height: 48, borderRadius: 13, margin: '0 auto 16px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.28)',
+          background: 'color-mix(in srgb, var(--accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 28%, transparent)',
           color: C.indigo,
         }}>
           {icon}

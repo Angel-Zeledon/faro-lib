@@ -11,6 +11,7 @@ import {
 } from '@/components/suppliers/SupplierHealthBanners'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { ClipboardList, Plus, ShoppingCart } from 'lucide-react'
+import Card from '@/components/ui/Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 
@@ -47,6 +48,16 @@ export default function OrdersPage() {
 
   useEffect(() => { load(true) }, [load])
 
+  // Opened from the command palette (Ctrl-K → "Nueva orden"): the modal is
+  // local state here, so the intent can only travel in the URL. Read once and
+  // scrub the query string, or a refresh would reopen the modal by itself.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('new') !== '1') return
+    window.history.replaceState(null, '', window.location.pathname)
+    if (canCreate) setCreatingPO(true)
+  }, [canCreate])
+
   // Supplier health signals (features 2.5 / 3.3) — server-computed.
   useEffect(() => {
     getSupplierContactHealth().then(setContactHealth).catch(() => {})
@@ -70,7 +81,7 @@ export default function OrdersPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 9,
-            background: '#6366f1',
+            background: 'var(--accent)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <ClipboardList size={17} color="#fff" strokeWidth={2.5} />
@@ -97,7 +108,7 @@ export default function OrdersPage() {
               style={{
                 all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
                 gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                background: '#6366f1', color: '#fff',
+                background: 'var(--accent)', color: '#fff',
               }}
             >
               <Plus size={13} aria-hidden="true" />
@@ -125,11 +136,11 @@ export default function OrdersPage() {
 
       {/* The three states: loading -> error -> empty -> data. */}
       {loading ? (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 8 }}>
+        <Card padding={8}>
           <LoadingState label={t('orders.loading_label')}>
             <SkeletonTable rows={6} columns={5} />
           </LoadingState>
-        </div>
+        </Card>
       ) : error ? (
         <ErrorState error={error} onRetry={() => load(true)} />
       ) : history.length === 0 ? (
@@ -145,13 +156,13 @@ export default function OrdersPage() {
           actions={[{ label: t('orders.go_to_hoy'), href: '/hoy', icon: <ShoppingCart size={14} /> }]}
         />
       ) : (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+        <Card padding={0} overflow="hidden">
           <POHistoryTable
             entries={history}
             onReceive={setReceivingPO}
             suppliersWithoutContact={contactHealth.map(r => r.supplier)}
           />
-        </div>
+        </Card>
       )}
 
       {receivingPO && (
@@ -177,6 +188,6 @@ export default function OrdersPage() {
 const tabStyle = (active: boolean): React.CSSProperties => ({
   all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,
   fontSize: 11.5, fontWeight: 600,
-  background: active ? 'rgba(129,140,248,0.12)' : 'transparent',
-  color: active ? '#818cf8' : C.dim,
+  background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+  color: active ? 'var(--accent)' : C.dim,
 })

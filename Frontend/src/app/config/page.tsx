@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
+import BaseCard from '@/components/ui/Card'
+import Input, { FieldLabel } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel, modelCategoryLabel, activityActionLabel, modelDescription } from '@/lib/enumLabels'
 import { getUser } from '@/lib/auth'
@@ -34,7 +36,7 @@ function formatDate(iso: string, lang: 'es' | 'en') {
 }
 
 const CAT_COLOR: Record<string, string> = {
-  'ML':            '#818cf8',
+  'ML':            'var(--accent)',
   'Statistical':   '#22c55e',
   'Deep Learning': '#f59e0b',
 }
@@ -69,16 +71,25 @@ function SectionTitle({ icon: Icon, color, title, subtitle }: {
 
 // ── Card wrapper ──────────────────────────────────────────────────────────────
 
+// A local preset, not a fork: /config is a settings screen of large panels, so
+// its cards are one step rounder and roomier than the list screens' default.
+// The shape itself still comes from the shared primitive.
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 14, padding: '24px',
-      ...style,
-    }}>
-      {children}
-    </div>
-  )
+  return <BaseCard radius={14} padding="24px" style={style}>{children}</BaseCard>
+}
+
+// /config labels its fields with a slightly larger, wider-tracked eyebrow than
+// the FieldLabel default.
+const EYEBROW_STYLE: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
+}
+
+// One confirmation-code field, spelled once instead of twice: wide tracking and
+// monospace figures so a six-digit code reads as six separate digits.
+const OTP_STYLE: React.CSSProperties = {
+  width: 160, padding: '10px 14px',
+  fontSize: 22, fontWeight: 700, letterSpacing: 8,
+  fontFamily: 'monospace', textAlign: 'center',
 }
 
 // ── Toggle switch ─────────────────────────────────────────────────────────────
@@ -135,12 +146,12 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
 
   return (
     <Card>
-      <SectionTitle icon={User} color="#818cf8" title={t('user_profile')} subtitle={t('email')} />
+      <SectionTitle icon={User} color="var(--accent)" title={t('user_profile')} subtitle={t('email')} />
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
         {/* Avatar */}
         <div style={{
           width: 64, height: 64, borderRadius: 16, flexShrink: 0,
-          background: '#6366f1',
+          background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 22, fontWeight: 700, color: '#fff',
         }}>
@@ -152,13 +163,12 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
 
           {/* Full name */}
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <FieldLabel variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 0 }}>
               {t('full_name')}
-            </label>
+            </FieldLabel>
             {editing ? (
               <div style={{ display: 'flex', gap: 8, marginTop: 5 }}>
-                <input
-                  className="form-input"
+                <Input
                   value={name}
                   onChange={e => setName(e.target.value)}
                   autoFocus
@@ -216,30 +226,30 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
 
           {/* Email (read-only) */}
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <FieldLabel variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 0 }}>
               {t('email')}
-            </label>
+            </FieldLabel>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{me?.email}</div>
           </div>
 
           {/* Role + Status */}
           <div style={{ display: 'flex', gap: 16 }}>
             <div>
-              <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <FieldLabel variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 0 }}>
                 {t('role')}
-              </label>
+              </FieldLabel>
               <div style={{
                 marginTop: 5, display: 'inline-block',
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                background: 'rgba(129,140,248,0.12)', color: 'var(--accent)',
+                background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)',
               }}>
                 {me?.role ? roleLabel(t, me.role) : '—'}
               </div>
             </div>
             <div>
-              <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <FieldLabel variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 0 }}>
                 {t('account_status')}
-              </label>
+              </FieldLabel>
               <div style={{
                 marginTop: 5, display: 'inline-block',
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
@@ -327,10 +337,10 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 32, height: 32, borderRadius: 8,
-              background: 'rgba(129,140,248,0.1)',
+              background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {theme === 'dark' ? <Moon size={14} color="#818cf8" /> : <Sun size={14} color="#818cf8" />}
+              {theme === 'dark' ? <Moon size={14} color="var(--accent)" /> : <Sun size={14} color="var(--accent)" />}
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('theme')}</div>
@@ -401,7 +411,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
   return (
     <Card>
       <SectionTitle
-        icon={CalendarClock} color="#6366f1"
+        icon={CalendarClock} color="var(--accent)"
         title={t('planning.section_title')}
         subtitle={t('planning.section_subtitle')}
       />
@@ -430,9 +440,9 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
               all: 'unset',
               cursor: !isAdmin || busy || p === state.period ? 'default' : 'pointer',
               padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-              border: `1px solid ${p === state.period ? '#6366f1' : 'var(--border)'}`,
-              background: p === state.period ? 'rgba(99,102,241,0.12)' : 'transparent',
-              color: p === state.period ? '#6366f1' : 'var(--muted)',
+              border: `1px solid ${p === state.period ? 'var(--accent)' : 'var(--border)'}`,
+              background: p === state.period ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+              color: p === state.period ? 'var(--accent)' : 'var(--muted)',
               opacity: !isAdmin && p !== state.period ? 0.45 : 1,
             }}
           >
@@ -795,21 +805,17 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('pw_form_desc')}</div>
           <div style={{ position: 'relative' }}>
-            <input
+            <Input
+              size="lg"
+              invalid={Boolean(error)}
               type={showPw ? 'text' : 'password'}
               value={newPw}
               onChange={e => { setNewPw(e.target.value); if (error) setError(null) }}
               placeholder={t('pw_placeholder')}
               autoFocus
               onKeyDown={e => e.key === 'Enter' && handleRequestCode()}
-              style={{
-                width: '100%', background: 'var(--surface-2)',
-                border: `1px solid ${error ? 'var(--danger)' : 'var(--border)'}`,
-                borderRadius: 8, padding: '9px 40px 9px 12px',
-                fontSize: 13, color: 'var(--text)',
-                outline: 'none', boxSizing: 'border-box',
-                transition: 'border-color 0.15s',
-              }}
+              /* Extra right padding clears the reveal button sitting on top. */
+              style={{ paddingRight: 40 }}
             />
             <button
               onClick={() => setShowPw(v => !v)}
@@ -865,10 +871,10 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
             <span style={{ marginLeft: 4 }}>{t('code_expires')}</span>
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
+            <FieldLabel variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 8 }}>
               {t('six_digit_code')}
-            </label>
-            <input
+            </FieldLabel>
+            <Input
               type="text"
               inputMode="numeric"
               maxLength={6}
@@ -877,14 +883,8 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
               placeholder="000000"
               autoFocus
               onKeyDown={e => e.key === 'Enter' && handleConfirm()}
-              style={{
-                width: 160, background: 'var(--surface-2)',
-                border: `1px solid ${code.length === 6 ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 8, padding: '10px 14px',
-                fontSize: 22, fontWeight: 700, letterSpacing: 8,
-                color: 'var(--text)', outline: 'none', fontFamily: 'monospace',
-                textAlign: 'center', transition: 'border-color 0.15s',
-              }}
+              size="lg"
+              style={{ ...OTP_STYLE, borderColor: code.length === 6 ? 'var(--accent)' : 'var(--border)' }}
             />
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
@@ -1041,15 +1041,14 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('config.wa_intro')}</div>
           <div>
-            <label htmlFor="wa-number" style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+            <FieldLabel htmlFor="wa-number" variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 6 }}>
               {t('config.wa_number_label')}
-            </label>
-            <input
+            </FieldLabel>
+            <Input
               id="wa-number"
               name="whatsapp_number"
               type="tel"
               inputMode="tel"
-              className="form-input"
               placeholder="+50688888888"
               value={number}
               onChange={e => { setNumber(e.target.value); if (error) setError(null) }}
@@ -1095,10 +1094,10 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             </div>
           )}
           <div>
-            <label htmlFor="wa-code" style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
+            <FieldLabel htmlFor="wa-code" variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 8 }}>
               {t('config.wa_code_label')}
-            </label>
-            <input
+            </FieldLabel>
+            <Input
               id="wa-code"
               name="whatsapp_code"
               type="text"
@@ -1109,14 +1108,8 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
               placeholder="000000"
               autoFocus
               onKeyDown={e => e.key === 'Enter' && handleConfirm()}
-              style={{
-                width: 160, background: 'var(--surface-2)',
-                border: `1px solid ${code.length === 6 ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 8, padding: '10px 14px',
-                fontSize: 22, fontWeight: 700, letterSpacing: 8,
-                color: 'var(--text)', outline: 'none', fontFamily: 'monospace',
-                textAlign: 'center', transition: 'border-color 0.15s',
-              }}
+              size="lg"
+              style={{ ...OTP_STYLE, borderColor: code.length === 6 ? 'var(--accent)' : 'var(--border)' }}
             />
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
@@ -1246,7 +1239,7 @@ export default function ConfigPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 9,
-          background: '#6366f1',
+          background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
         }}>

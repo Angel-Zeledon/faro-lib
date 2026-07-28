@@ -14,7 +14,7 @@ import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8', green: '#22c55e',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#22c55e',
 }
 
 export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }: {

@@ -17,7 +17,7 @@ import { ClipboardList, Plus, Trash2, X } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8', red: '#ef4444',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', red: '#ef4444',
 }
 
 interface LineDraft {
@@ -300,7 +300,7 @@ export function ManualPOModal({ onClose, onSaved }: {
                 style={{
                   all: 'unset', cursor: canSave ? 'pointer' : 'not-allowed',
                   padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                  background: canSave ? '#6366f1' : 'rgba(99,102,241,0.35)', color: '#fff',
+                  background: canSave ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 35%, transparent)', color: '#fff',
                 }}
               >
                 {saving ? t('po.manual_saving') : t('po.manual_confirm')}

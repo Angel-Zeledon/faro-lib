@@ -1,13 +1,18 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Search, X, Package, AlertTriangle, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Search, X, Package, AlertTriangle, CornerDownLeft, ArrowUp, ArrowDown, ChevronRight } from 'lucide-react'
 import { getSessions, getInventoryStatus, getSkuIntelligence, listInventoryStock } from '@/lib/api'
 import type { InventoryStatusItem, InventorySignal, InventoryStock, SkuIntelligenceData } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import SignalBadge, { SIGNAL_ORDER } from '@/components/ui/SignalBadge'
 import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useTheme } from '@/contexts/ThemeContext'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
+import { useEntitlements } from '@/lib/entitlements'
+import { getUser } from '@/lib/auth'
+import { visibleCommands, scoreCommand, scoreSku, type Command } from '@/components/command/commands'
 
 
 // ── Signal presentation ──────────────────────────────────────────────────────
@@ -51,7 +56,7 @@ function MiniForecastChart({ historical, forecast }: {
   return (
     <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
       {histPath && (
-        <path d={histPath} fill="none" stroke="#818cf8" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={histPath} fill="none" stroke="var(--accent)" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
       )}
       {fcastVals.length > 0 && fcastPath && (
         <path d={fcastPath} fill="none" stroke="#22c55e" strokeWidth={1.75} strokeDasharray="3,3" strokeLinecap="round" strokeLinejoin="round" />
@@ -99,11 +104,58 @@ function ResultRow({ item, active, onClick, onMouseEnter }: {
   )
 }
 
+// ── Command row ───────────────────────────────────────────────────────────────
+
+function CommandRow({ cmd, active, onClick, onMouseEnter }: {
+  cmd: Command
+  active: boolean
+  onClick: () => void
+  onMouseEnter: () => void
+}) {
+  const { t } = useLanguage()
+  const { Icon } = cmd
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      style={{
+        all: 'unset', cursor: 'pointer', display: 'flex', width: '100%', boxSizing: 'border-box',
+        alignItems: 'center', gap: 9, padding: '9px 14px',
+        background: active ? 'var(--surface-2)' : 'transparent',
+        borderLeft: `3px solid ${active ? 'var(--accent)' : 'transparent'}`,
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <Icon size={13} style={{ flexShrink: 0, color: active ? 'var(--accent)' : 'var(--dim)' }} />
+      <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {t(cmd.labelKey)}
+      </span>
+      {cmd.href && (
+        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--dim)', display: 'flex', alignItems: 'center', gap: 2 }}>
+          {cmd.href.split('?')[0]}
+          <ChevronRight size={11} />
+        </span>
+      )}
+    </button>
+  )
+}
+
 // ── Main overlay ──────────────────────────────────────────────────────────────
+
+/** One navigable line: either a command or a SKU. Headers are drawn between
+ *  entries at render time, so they never consume an arrow-key position. */
+type Entry =
+  | { kind: 'command'; key: string; cmd: Command }
+  | { kind: 'sku';     key: string; item: InventoryStatusItem }
+
 
 export default function SkuSearchOverlay() {
   const { isOpen, close, toggle } = useSkuSearch()
-  const { t } = useLanguage()
+  const { t, lang, setLang } = useLanguage()
+  const { toggle: toggleTheme } = useTheme()
+  const { ent, has } = useEntitlements()
+  const router = useRouter()
+  const role = getUser()?.role
 
   const [sessionId,   setSessionId]   = useState<string | null>(null)
   const [items,        setItems]      = useState<InventoryStatusItem[] | null>(null)
@@ -123,6 +175,9 @@ export default function SkuSearchOverlay() {
   const [stockRows, setStockRows] = useState<InventoryStock[] | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef  = useRef<HTMLDivElement>(null)
+  // Where the keyboard was before Ctrl-K, so Esc puts it back.
+  const returnFocusRef = useRef<HTMLElement | null>(null)
 
   // ── Global Ctrl/Cmd-K shortcut (always listening, regardless of open state) ─
   useEffect(() => {
@@ -145,9 +200,18 @@ export default function SkuSearchOverlay() {
       setSelectedSku(null)
       setIntel(null)
       setIntelError(null)
+      returnFocusRef.current = document.activeElement as HTMLElement | null
       // Autofocus after the panel has mounted.
       const id = setTimeout(() => inputRef.current?.focus(), 30)
-      return () => clearTimeout(id)
+      return () => {
+        clearTimeout(id)
+        // Hand the keyboard back to whatever had it. After a command that
+        // navigated, that element is gone — then focus just stays at the
+        // document root rather than jumping somewhere arbitrary.
+        const el = returnFocusRef.current
+        returnFocusRef.current = null
+        if (el && document.contains(el)) el.focus()
+      }
     }
   }, [isOpen])
 
@@ -199,25 +263,65 @@ export default function SkuSearchOverlay() {
       .finally(() => setLoadingList(false))
   }, [sessionId, t])
 
-  // ── Filtering ──────────────────────────────────────────────────────────────
-  const results = useMemo(() => {
-    if (!items) return []
-    const q = query.trim().toLowerCase()
-    const sorted = [...items].sort((a, b) => SIGNAL_ORDER.indexOf(a.signal) - SIGNAL_ORDER.indexOf(b.signal))
-    if (!q) return sorted.slice(0, 8)
-    return items
-      .filter(i =>
-        i.sku.toLowerCase().includes(q) ||
-        (i.display_name ?? '').toLowerCase().includes(q) ||
-        (i.category ?? '').toLowerCase().includes(q) ||
-        (i.brand ?? '').toLowerCase().includes(q) ||
-        (i.barcode ?? '').toLowerCase().includes(q) ||
-        (i.supplier ?? '').toLowerCase().includes(q),
-      )
-      .slice(0, 30)
-  }, [items, query])
+  // ── Commands available to this tenant/role ─────────────────────────────────
+  // `has` is a fresh closure on every entitlements render, so the memo keys off
+  // the entitlements payload itself — which settles once, right after login.
+  const commands = useMemo(
+    () => visibleCommands(has, role),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ent, role],
+  )
+
+  // ── Ranking ────────────────────────────────────────────────────────────────
+  // Commands and SKUs are scored on one scale and then shown as two blocks,
+  // whichever block owns the best match first. So "ped" opens on Pedidos while
+  // "PED-4471" opens on the product, and the other block is one arrow away.
+  const entries = useMemo<Entry[]>(() => {
+    const q = query.trim()
+
+    if (!q) {
+      // Cold open: what you can do, then what needs you today.
+      const suggested = [...commands]
+        .sort((a, b) => (a.group === b.group ? 0 : a.group === 'action' ? -1 : 1))
+        .slice(0, 6)
+      const priority = (items ?? [])
+        .slice()
+        .sort((a, b) => SIGNAL_ORDER.indexOf(a.signal) - SIGNAL_ORDER.indexOf(b.signal))
+        .slice(0, 6)
+      return [
+        ...suggested.map((cmd): Entry => ({ kind: 'command', key: cmd.id, cmd })),
+        ...priority.map((item): Entry => ({ kind: 'sku', key: item.sku, item })),
+      ]
+    }
+
+    const cmdHits = commands
+      .map(cmd => ({ cmd, score: scoreCommand(cmd, q, t) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+
+    const skuHits = (items ?? [])
+      .map(item => ({ item, score: scoreSku(item, q) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) =>
+        b.score - a.score ||
+        SIGNAL_ORDER.indexOf(a.item.signal) - SIGNAL_ORDER.indexOf(b.item.signal))
+      .slice(0, 20)
+
+    const cmdRows = cmdHits.map(({ cmd }): Entry => ({ kind: 'command', key: cmd.id, cmd }))
+    const skuRows = skuHits.map(({ item }): Entry => ({ kind: 'sku', key: item.sku, item }))
+    const bestCmd = cmdHits[0]?.score ?? 0
+    const bestSku = skuHits[0]?.score ?? 0
+    return bestSku > bestCmd ? [...skuRows, ...cmdRows] : [...cmdRows, ...skuRows]
+  }, [query, commands, items, t])
 
   useEffect(() => { setActiveIndex(0) }, [query])
+
+  // Arrow keys must be able to walk past the bottom of the visible panel.
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-entry-index="${activeIndex}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex, entries])
 
   const selectedItem = items?.find(i => i.sku === selectedSku) ?? null
 
@@ -254,21 +358,39 @@ export default function SkuSearchOverlay() {
     return [...rows].sort((a, b) => (b.current_stock ?? 0) - (a.current_stock ?? 0))
   }, [multi, selectedSku, stockRows])
 
+  // ── Running a command ─────────────────────────────────────────────────────
+  const runCommand = useCallback((cmd: Command) => {
+    close()
+    if (cmd.href) { router.push(cmd.href); return }
+    cmd.run?.({ navigate: (href: string) => router.push(href), toggleTheme, lang, setLang })
+  }, [close, router, toggleTheme, lang, setLang])
+
+  const activate = useCallback((entry: Entry) => {
+    if (entry.kind === 'command') runCommand(entry.cmd)
+    else selectSku(entry.item.sku)
+  }, [runCommand, selectSku])
+
   // ── List keyboard navigation (only while no SKU is selected) ──────────────────
   const onInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (selectedSku) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActiveIndex(i => Math.min(i + 1, results.length - 1))
+      setActiveIndex(i => Math.min(i + 1, entries.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setActiveIndex(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      setActiveIndex(0)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      setActiveIndex(Math.max(entries.length - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const hit = results[activeIndex]
-      if (hit) selectSku(hit.sku)
+      const hit = entries[activeIndex]
+      if (hit) activate(hit)
     }
-  }, [selectedSku, results, activeIndex, selectSku])
+  }, [selectedSku, entries, activeIndex, activate])
 
   if (!isOpen) return null
 
@@ -286,7 +408,7 @@ export default function SkuSearchOverlay() {
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={t('search.placeholder')}
+        aria-label={t('cmd.placeholder')}
         style={{
           width: '100%', maxWidth: 640,
           background: 'var(--surface)',
@@ -308,11 +430,11 @@ export default function SkuSearchOverlay() {
             ref={inputRef}
             type="search"
             name="sku_search"
-            aria-label={t('search.placeholder')}
+            aria-label={t('cmd.placeholder')}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onInputKeyDown}
-            placeholder={t('search.placeholder')}
+            placeholder={t('cmd.placeholder')}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               fontSize: 14, color: 'var(--fg)',
@@ -339,37 +461,52 @@ export default function SkuSearchOverlay() {
             onBack={() => setSelectedSku(null)}
           />
         ) : (
-          <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-            {listError ? (
-              <div style={{ padding: '28px 16px', textAlign: 'center', color: '#ef4444', fontSize: 12.5, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={18} />
-                {listError}
-              </div>
-            ) : !items && loadingList ? (
+          <div ref={listRef} style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+            {entries.length === 0 ? (
               <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--dim)', fontSize: 12.5 }}>
-                {t('search.loading')}
-              </div>
-            ) : results.length === 0 ? (
-              <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--dim)', fontSize: 12.5 }}>
-                {query ? t('search.no_results') : t('search.empty_hint')}
+                {query ? t('search.no_results') : t('cmd.empty_hint')}
               </div>
             ) : (
-              <>
-                {!query && (
-                  <div style={{ padding: '8px 16px 2px', fontSize: 10.5, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    {t('search.suggestions_label')}
-                  </div>
-                )}
-                {results.map((item, i) => (
-                  <ResultRow
-                    key={item.sku}
-                    item={item}
-                    active={i === activeIndex}
-                    onClick={() => selectSku(item.sku)}
-                    onMouseEnter={() => setActiveIndex(i)}
-                  />
-                ))}
-              </>
+              entries.map((entry, i) => (
+                <div key={`${entry.kind}:${entry.key}`} data-entry-index={i}>
+                  {(i === 0 || entries[i - 1].kind !== entry.kind) && (
+                    <div style={{ padding: '8px 16px 2px', fontSize: 10.5, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      {entry.kind === 'command'
+                        ? t('cmd.section_commands')
+                        : query ? t('cmd.section_products') : t('search.suggestions_label')}
+                    </div>
+                  )}
+                  {entry.kind === 'command' ? (
+                    <CommandRow
+                      cmd={entry.cmd}
+                      active={i === activeIndex}
+                      onClick={() => runCommand(entry.cmd)}
+                      onMouseEnter={() => setActiveIndex(i)}
+                    />
+                  ) : (
+                    <ResultRow
+                      item={entry.item}
+                      active={i === activeIndex}
+                      onClick={() => selectSku(entry.item.sku)}
+                      onMouseEnter={() => setActiveIndex(i)}
+                    />
+                  )}
+                </div>
+              ))
+            )}
+
+            {/* The SKU half can fail on its own (no trained session yet, a
+                dead request) without taking the commands down with it. */}
+            {listError && (
+              <div style={{ padding: '10px 16px', color: 'var(--dim)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={13} style={{ flexShrink: 0, color: '#f59e0b' }} />
+                {listError}
+              </div>
+            )}
+            {!items && !listError && loadingList && (
+              <div style={{ padding: '10px 16px', color: 'var(--dim)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Spinner size={12} /> {t('search.loading')}
+              </div>
             )}
           </div>
         )}
@@ -473,7 +610,7 @@ function SkuDetail({ item, intel, loading, error, warehouseBreakdown, onBack }: 
             <MiniForecastChart historical={intel.historical} forecast={intel.forecast} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 10, height: 2, background: '#818cf8', display: 'inline-block' }} />
+                <span style={{ width: 10, height: 2, background: 'var(--accent)', display: 'inline-block' }} />
                 {t('search.legend_historical')}
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

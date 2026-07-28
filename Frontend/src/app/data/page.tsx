@@ -17,6 +17,7 @@ import {
  Play, Save, Link2, Table2, AlertTriangle, Eye,
  Layers, ArrowLeft, BarChart2, ChevronUp, ChevronDown,
 } from 'lucide-react'
+import Input, { FieldLabel, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import {
   seasonalityClassLabel, trendDirectionLabel, stationarityLabel,
@@ -271,60 +272,54 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  const [form, setForm] = useState<SqlFormData>({ ...SQL_DEFAULTS, ...initial })
  const set = (k: keyof SqlFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
  setForm(f => ({ ...f, [k]: e.target.value }))
- const inputStyle: React.CSSProperties = {
- width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
- borderRadius: 8, padding: '9px 12px', color: C.text, fontSize: 13,
- outline: 'none', boxSizing: 'border-box',
- }
- const labelStyle: React.CSSProperties = { color: C.muted, fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }
 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
  {!isEdit && (
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
  <div>
- <label htmlFor={fid('name')} style={labelStyle}>{t('data.field_source_name')} *</label>
- <input id={fid('name')} name="name" style={inputStyle} value={form.name} onChange={set('name')} placeholder={t('data.field_source_name_ph')} />
+ <FieldLabel htmlFor={fid('name')}>{t('data.field_source_name')} *</FieldLabel>
+ <Input id={fid('name')} name="name" size="lg" tone="surface" border="strong" value={form.name} onChange={set('name')} placeholder={t('data.field_source_name_ph')} />
  </div>
  <div>
- <label htmlFor={fid('description')} style={labelStyle}>{t('data.field_description')}</label>
- <input id={fid('description')} name="description" style={inputStyle} value={form.description} onChange={set('description')} placeholder={t('data.field_optional_ph')} />
+ <FieldLabel htmlFor={fid('description')}>{t('data.field_description')}</FieldLabel>
+ <Input id={fid('description')} name="description" size="lg" tone="surface" border="strong" value={form.description} onChange={set('description')} placeholder={t('data.field_optional_ph')} />
  </div>
  </div>
  )}
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
  <div>
- <label htmlFor={fid('engine')} style={labelStyle}>{t('data.field_engine')} *</label>
- <select id={fid('engine')} name="engine" style={inputStyle} value={form.engine} onChange={e => {
+ <FieldLabel htmlFor={fid('engine')}>{t('data.field_engine')} *</FieldLabel>
+ <Select id={fid('engine')} name="engine" size="lg" tone="surface" border="strong" value={form.engine} onChange={e => {
  const eng = e.target.value as SqlEngine
  setForm(f => ({ ...f, engine: eng, port: ENGINE_PORTS[eng] || f.port }))
  }}>
  {['postgresql', 'mysql', 'mssql', 'oracle'].map(e => (
  <option key={e} value={e}>{e}</option>
  ))}
- </select>
+ </Select>
  </div>
  <div>
- <label htmlFor={fid('host')} style={labelStyle}>{t('data.field_host')} *</label>
- <input id={fid('host')} name="host" style={inputStyle} value={form.host} onChange={set('host')} placeholder="localhost" />
+ <FieldLabel htmlFor={fid('host')}>{t('data.field_host')} *</FieldLabel>
+ <Input id={fid('host')} name="host" size="lg" tone="surface" border="strong" value={form.host} onChange={set('host')} placeholder="localhost" />
  </div>
  <div>
- <label htmlFor={fid('port')} style={labelStyle}>{t('data.field_port')} *</label>
- <input id={fid('port')} name="port" style={inputStyle} value={form.port} onChange={set('port')} type="number" />
+ <FieldLabel htmlFor={fid('port')}>{t('data.field_port')} *</FieldLabel>
+ <Input id={fid('port')} name="port" size="lg" tone="surface" border="strong" value={form.port} onChange={set('port')} type="number" />
  </div>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
  <div>
- <label htmlFor={fid('database')} style={labelStyle}>{t('data.field_database')} *</label>
- <input id={fid('database')} name="database" style={inputStyle} value={form.database} onChange={set('database')} placeholder={t('data.field_database_ph')} />
+ <FieldLabel htmlFor={fid('database')}>{t('data.field_database')} *</FieldLabel>
+ <Input id={fid('database')} name="database" size="lg" tone="surface" border="strong" value={form.database} onChange={set('database')} placeholder={t('data.field_database_ph')} />
  </div>
  <div>
- <label htmlFor={fid('username')} style={labelStyle}>{t('data.field_username')} *</label>
- <input id={fid('username')} name="username" style={inputStyle} value={form.username} onChange={set('username')} placeholder={t('data.field_username_ph')} />
+ <FieldLabel htmlFor={fid('username')}>{t('data.field_username')} *</FieldLabel>
+ <Input id={fid('username')} name="username" size="lg" tone="surface" border="strong" value={form.username} onChange={set('username')} placeholder={t('data.field_username_ph')} />
  </div>
  <div>
- <label htmlFor={fid('password')} style={labelStyle}>{t('data.field_password')} {isEdit && <span style={{ fontWeight: 400 }}>{t('data.field_password_keep')}</span>}</label>
- <input id={fid('password')} name="password" style={inputStyle} type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
+ <FieldLabel htmlFor={fid('password')}>{t('data.field_password')} {isEdit && <span style={{ fontWeight: 400 }}>{t('data.field_password_keep')}</span>}</FieldLabel>
+ <Input id={fid('password')} name="password" size="lg" tone="surface" border="strong" type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
  </div>
  </div>
  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -878,15 +873,6 @@ function AnalysisTab({ source, columns, activeSheet }: {
  )
  }
 
- const selStyle: React.CSSProperties = {
- width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
- borderRadius: 8, padding: '8px 10px', color: C.text, fontSize: 13,
- outline: 'none', boxSizing: 'border-box',
- }
- const lblStyle: React.CSSProperties = {
- color: C.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
- marginBottom: 4, display: 'block', letterSpacing: '0.05em',
- }
 
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -899,36 +885,36 @@ function AnalysisTab({ source, columns, activeSheet }: {
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
  <div>
- <label htmlFor="analysis-date-col" style={lblStyle}>{t('data.field_date_column')} *</label>
- <select id="analysis-date-col" name="date_column" style={selStyle} value={dateCol} onChange={e => setDateCol(e.target.value)}>
+ <FieldLabel htmlFor="analysis-date-col" variant="eyebrow" style={{ color: C.muted }}>{t('data.field_date_column')} *</FieldLabel>
+ <Select id="analysis-date-col" name="date_column" size="lg" tone="surface" border="strong" value={dateCol} onChange={e => setDateCol(e.target.value)}>
  <option value="">{t('data.select_placeholder')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
- </select>
+ </Select>
  </div>
  <div>
- <label htmlFor="analysis-target-col" style={lblStyle}>{t('data.field_target_column')} *</label>
- <select id="analysis-target-col" name="target_column" style={selStyle} value={targetCol} onChange={e => setTargetCol(e.target.value)}>
+ <FieldLabel htmlFor="analysis-target-col" variant="eyebrow" style={{ color: C.muted }}>{t('data.field_target_column')} *</FieldLabel>
+ <Select id="analysis-target-col" name="target_column" size="lg" tone="surface" border="strong" value={targetCol} onChange={e => setTargetCol(e.target.value)}>
  <option value="">{t('data.select_placeholder')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
- </select>
+ </Select>
  </div>
  <div>
- <label htmlFor="analysis-sku-col" style={lblStyle}>{t('data.field_group_sku_column')}</label>
- <select id="analysis-sku-col" name="sku_column" style={selStyle} value={skuCol} onChange={e => setSkuCol(e.target.value)}>
+ <FieldLabel htmlFor="analysis-sku-col" variant="eyebrow" style={{ color: C.muted }}>{t('data.field_group_sku_column')}</FieldLabel>
+ <Select id="analysis-sku-col" name="sku_column" size="lg" tone="surface" border="strong" value={skuCol} onChange={e => setSkuCol(e.target.value)}>
  <option value="">{t('data.option_none_single_series')}</option>
  {columns.map(c => <option key={c} value={c}>{c}</option>)}
- </select>
+ </Select>
  </div>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
  <div>
- <label htmlFor="analysis-date-from" style={lblStyle}>{t('data.field_date_from')}</label>
- <input id="analysis-date-from" name="date_from" type="date" style={selStyle} value={dateFrom}
+ <FieldLabel htmlFor="analysis-date-from" variant="eyebrow" style={{ color: C.muted }}>{t('data.field_date_from')}</FieldLabel>
+ <Input id="analysis-date-from" name="date_from" type="date" size="lg" tone="surface" border="strong" value={dateFrom}
  onChange={e => setDateFrom(e.target.value)} />
  </div>
  <div>
- <label htmlFor="analysis-date-to" style={lblStyle}>{t('data.field_date_to')}</label>
- <input id="analysis-date-to" name="date_to" type="date" style={selStyle} value={dateTo}
+ <FieldLabel htmlFor="analysis-date-to" variant="eyebrow" style={{ color: C.muted }}>{t('data.field_date_to')}</FieldLabel>
+ <Input id="analysis-date-to" name="date_to" type="date" size="lg" tone="surface" border="strong" value={dateTo}
  onChange={e => setDateTo(e.target.value)} />
  </div>
  <button onClick={runAnalysis} disabled={loading || !dateCol || !targetCol}
@@ -1595,23 +1581,19 @@ function NewSourcePanel({ onCreated, onCancel }:
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
  <div>
- <label htmlFor="upload-source-name" style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+ <FieldLabel htmlFor="upload-source-name">
  {t('data.field_name_optional')}
- </label>
- <input id="upload-source-name" name="name" value={name} onChange={e => setName(e.target.value)}
+ </FieldLabel>
+ <Input id="upload-source-name" name="name" value={name} onChange={e => setName(e.target.value)}
  placeholder={file.name.replace(/\.[^.]+$/, '')}
- style={{ width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
- borderRadius: 8, padding: '9px 12px', color: C.text, fontSize: 13,
- outline: 'none', boxSizing: 'border-box' }} />
+ size="lg" tone="surface" border="strong" />
  </div>
  <div>
- <label htmlFor="upload-source-description" style={{ color: C.muted, fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+ <FieldLabel htmlFor="upload-source-description">
  {t('data.field_description_optional')}
- </label>
- <input id="upload-source-description" name="description" value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('data.desc_example_ph')}
- style={{ width: '100%', background: C.surface, border: `1px solid ${C.border2}`,
- borderRadius: 8, padding: '9px 12px', color: C.text, fontSize: 13,
- outline: 'none', boxSizing: 'border-box' }} />
+ </FieldLabel>
+ <Input id="upload-source-description" name="description" value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('data.desc_example_ph')}
+ size="lg" tone="surface" border="strong" />
  </div>
  </div>
  <button onClick={uploadFile} disabled={busy}

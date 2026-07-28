@@ -2,21 +2,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Bell, CheckCircle2, AlertTriangle, Clock, X, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
+import AlertBell from '@/components/alerts/AlertBell'
+import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
-
-interface Notif {
-  id:    string
-  title: string
-  body:  string
-  type:  'success' | 'error' | 'info'
-  time:  Date
-  read:  boolean
-}
 
 // Titles resolved via i18n so they follow the language toggle.
 const PAGE_TITLE_KEYS: Record<string, string> = {
@@ -61,8 +54,7 @@ export default function TopBar() {
   const planning = usePlanning()?.planning ?? null
 
   const [time,        setTime]        = useState('')
-  const [notifs,      setNotifs]      = useState<Notif[]>([])
-  const [showPanel,   setShowPanel]   = useState(false)
+  const [notifs,      setNotifs]      = useState<LocalNotice[]>([])
   const [sessions,    setSessions]    = useState<SessionInfo[]>([])
 
   const prevStatus  = useRef<Map<string, string>>(new Map())
@@ -80,7 +72,7 @@ export default function TopBar() {
     try {
       const list: SessionInfo[] = await getSessions()
       setSessions(list)
-      const fresh: Notif[] = []
+      const fresh: LocalNotice[] = []
 
       list.forEach(s => {
         const prev = prevStatus.current.get(s.session_id)
@@ -120,11 +112,14 @@ export default function TopBar() {
     }
   }, [poll])
 
-  const unread = notifs.filter(n => !n.read).length
-  function openPanel() {
-    setShowPanel(true)
-    setNotifs(prev => prev.map(n => ({ ...n, read: true })))
-  }
+  // The bell itself lives in components/alerts/AlertBell: it owns the durable,
+  // server-side alert history (`GET /alerts` — what the 08:00 UTC loop sent,
+  // failed deliveries included) and takes these in-session training notices as
+  // a second, clearly separate source. They are not the same thing: these are
+  // gone on reload and have no server record.
+  const markLocalRead = useCallback(
+    () => setNotifs(prev => prev.map(n => ({ ...n, read: true }))), [])
+  const clearLocal = useCallback(() => setNotifs([]), [])
 
   // Resolve the badge against the list this bar already polls — no extra fetch.
   // Stays null when the tenant has no completed session, when planning has not
@@ -207,90 +202,13 @@ export default function TopBar() {
           {time}
         </span>
 
-        {/* Notification bell */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => showPanel ? setShowPanel(false) : openPanel()}
-            title={t('topbar.notifications')}
-            aria-label={t('topbar.notifications')}
-            style={{
-              position: 'relative', padding: 6, borderRadius: 7,
-              background: 'transparent',
-              border: `1px solid ${unread > 0 ? 'var(--accent)' : 'var(--border)'}`,
-              cursor: 'pointer',
-              color: unread > 0 ? 'var(--accent)' : 'var(--muted)',
-              display: 'flex', alignItems: 'center',
-              transition: 'all 0.15s',
-            }}
-          >
-            <Bell size={14} />
-            {unread > 0 && (
-              <span style={{
-                position: 'absolute', top: -5, right: -5,
-                minWidth: 16, height: 16, borderRadius: 8,
-                background: '#ef4444', color: '#fff',
-                fontSize: 9, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '2px solid var(--surface)', padding: '0 3px',
-              }}>
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
-          </button>
+        {/* Notification bell — durable alert history + this session's notices */}
+        <AlertBell
+          localNotices={notifs}
+          onLocalRead={markLocalRead}
+          onClearLocal={clearLocal}
+        />
 
-          {showPanel && (
-            <>
-              <div onClick={() => setShowPanel(false)} style={{ position: 'fixed', inset: 0, zIndex: 98 }} />
-              <div style={{
-                position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-                width: 300, zIndex: 99,
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-                overflow: 'hidden',
-              }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{t('topbar.notifications')}</span>
-                  <button onClick={() => setShowPanel(false)} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex' }}>
-                    <X size={13} />
-                  </button>
-                </div>
-                <div style={{ maxHeight: 380, overflowY: 'auto' }}>
-                  {notifs.length === 0 ? (
-                    <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--dim)', fontSize: 12 }}>
-                      <Bell size={24} style={{ margin: '0 auto 10px', opacity: 0.25, display: 'block' }} />
-                      {t('topbar.no_notifications')}
-                      <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>{t('topbar.no_notifications_hint')}</div>
-                    </div>
-                  ) : notifs.map(n => (
-                    <div key={n.id} style={{
-                      padding: '10px 16px', borderBottom: '1px solid var(--border)',
-                      display: 'flex', gap: 10, alignItems: 'flex-start',
-                      background: n.type === 'success' ? 'rgba(34,197,94,0.04)' : n.type === 'error' ? 'rgba(239,68,68,0.04)' : 'transparent',
-                    }}>
-                      {n.type === 'success' ? <CheckCircle2 size={14} color="#22c55e" style={{ marginTop: 1, flexShrink: 0 }} />
-                        : n.type === 'error' ? <AlertTriangle size={14} color="#ef4444" style={{ marginTop: 1, flexShrink: 0 }} />
-                        : <Clock size={14} color="#f59e0b" style={{ marginTop: 1, flexShrink: 0 }} />}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{n.title}</div>
-                        <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.body}</div>
-                        <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 3 }}>{n.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {notifs.length > 0 && (
-                  <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
-                    <button onClick={() => setNotifs([])} style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)' }}>
-                      {t('topbar.clear_all')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
       </div>
     </header>
   )

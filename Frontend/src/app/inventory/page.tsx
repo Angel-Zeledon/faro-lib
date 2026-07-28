@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
@@ -17,6 +17,7 @@ import type {
  EventMultiplier,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
+import Pagination, { usePage } from '@/components/table/Pagination'
 import { useWarehouses, WarehouseSelector } from '@/components/inventory/WarehouseControls'
 import { WarehouseStatusTable } from '@/components/inventory/WarehouseStatusTable'
 import DataFreshness from '@/components/ui/DataFreshness'
@@ -49,7 +50,7 @@ function localeFor(lang: string): string {
 const C = {
  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
  text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
- red: '#ef4444', amber: '#f59e0b', green: '#22c55e', blue: '#3b82f6', indigo: '#818cf8',
+ red: '#ef4444', amber: '#f59e0b', green: '#22c55e', blue: '#3b82f6', indigo: 'var(--accent)',
 }
 
 // ── Signal config ─────────────────────────────────────────────────────────────
@@ -96,17 +97,101 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
  )
 }
 
-function ThTip({ label, tip }: { label: string; tip: string }) {
+// ── Sorting ───────────────────────────────────────────────────────────────────
+// The full table now shows one page at a time, so "scroll until I find it" is
+// no longer how you reach a row: the columns have to be sortable, and the sort
+// has to be announced (aria-sort) rather than left to the arrow glyph.
+type SortKey = 'signal' | 'sku' | 'stock' | 'coverage' | 'demand_lt' | 'qty'
+             | 'lead_time' | 'moq' | 'abc_xyz' | 'value'
+type SortDir = 'asc' | 'desc'
+interface SortState { key: SortKey; dir: SortDir }
+
+const SIGNAL_ORDER: Record<string, number> = {
+ PEDIR_YA: 0, PEDIR_PRONTO: 1, OK: 2, SOBRESTOCK: 3, SIN_DATOS: 4,
+}
+
+function sortValue(item: InventoryStatusItem, key: SortKey): number | string {
+ switch (key) {
+  case 'signal':    return SIGNAL_ORDER[item.signal] ?? 99
+  case 'sku':       return (item.display_name || item.sku).toLowerCase()
+  case 'stock':     return item.current_stock ?? -Infinity
+  case 'coverage':  return item.coverage_days ?? -Infinity
+  case 'demand_lt': return item.lead_time_demand ?? -Infinity
+  case 'qty':       return item.recommended_qty ?? -Infinity
+  case 'lead_time': return item.lead_time_days ?? -Infinity
+  case 'moq':       return item.moq ?? -Infinity
+  case 'abc_xyz':   return item.abc_xyz || 'ZZ'
+  case 'value':     return item.inventory_value ?? -Infinity
+ }
+}
+
+function sortItems(items: InventoryStatusItem[], sort: SortState): InventoryStatusItem[] {
+ const factor = sort.dir === 'asc' ? 1 : -1
+ return [...items].sort((a, b) => {
+  const va = sortValue(a, sort.key), vb = sortValue(b, sort.key)
+  if (typeof va === 'string' || typeof vb === 'string') {
+   return String(va).localeCompare(String(vb)) * factor
+  }
+  return (va - vb) * factor || a.sku.localeCompare(b.sku)
+ })
+}
+
+const thStyle: React.CSSProperties = {
+ padding: '9px 12px', textAlign: 'left', whiteSpace: 'nowrap', color: C.dim,
+ fontWeight: 600, fontSize: 10, borderBottom: `1px solid ${C.border}`,
+ textTransform: 'uppercase' as const, letterSpacing: '0.06em',
+}
+
+function ThTip({ label, tip, sortKey, sort, onSort }: {
+ label: string
+ tip: string
+ sortKey?: SortKey
+ sort?: SortState | null
+ onSort?: (key: SortKey) => void
+}) {
+ const { t } = useLanguage()
+ const active = sortKey != null && sort?.key === sortKey
+ const ariaSort: 'ascending' | 'descending' | 'none' | undefined =
+  sortKey == null ? undefined : active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'
+
+ const inner = <Tooltip text={tip}><span>{label}</span><Info size={9} color={C.dim} style={{ opacity: 0.5, flexShrink: 0 }} /></Tooltip>
+
+ if (sortKey == null || !onSort) {
+  return <th scope="col" style={thStyle}>{inner}</th>
+ }
+
+ // The next state this button produces, spelled out — an arrow glyph alone
+ // tells a screen-reader user nothing about what activating it will do.
+ const nextDir: SortDir = active && sort!.dir === 'asc' ? 'desc' : 'asc'
+ const actionLabel = tOr(t,
+  nextDir === 'asc' ? 'table.sort_ascending_by' : 'table.sort_descending_by',
+  nextDir === 'asc' ? `Sort ascending by ${label}` : `Sort descending by ${label}`,
+  { column: label })
+
  return (
- <th style={{ padding: '9px 12px', textAlign: 'left', whiteSpace: 'nowrap', color: C.dim, fontWeight: 600, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>
- <Tooltip text={tip}><span>{label}</span><Info size={9} color={C.dim} style={{ opacity: 0.5, flexShrink: 0 }} /></Tooltip>
- </th>
+  <th scope="col" aria-sort={ariaSort} style={{ ...thStyle, color: active ? 'var(--accent)' : C.dim }}>
+   <button
+    type="button"
+    onClick={() => onSort(sortKey)}
+    aria-label={actionLabel}
+    title={actionLabel}
+    style={{
+     all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+     font: 'inherit', color: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit',
+    }}
+   >
+    {inner}
+    <span aria-hidden="true" style={{ fontSize: 9, opacity: active ? 1 : 0.35 }}>
+     {active ? (sort!.dir === 'asc' ? '▲' : '▼') : '↕'}
+    </span>
+   </button>
+  </th>
  )
 }
 
 // ── ABC-XYZ badge ─────────────────────────────────────────────────────────────
 const ABC_COLOR: Record<string, string> = { A: '#22c55e', B: '#f59e0b', C: '#64748b', '?': '#334155' }
-const XYZ_COLOR: Record<string, string> = { X: '#818cf8', Y: '#f59e0b', Z: '#ef4444', '?': '#334155' }
+const XYZ_COLOR: Record<string, string> = { X: 'var(--accent)', Y: '#f59e0b', Z: '#ef4444', '?': '#334155' }
 function AbcXyzBadge({ value }: { value: string }) {
  if (!value || value === '?') return <span style={{ color: C.dim }}>—</span>
  const abc = value[0], xyz = value[1] || ''
@@ -361,7 +446,7 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
 
  return (
  <div style={{
- background: 'rgba(129,140,248,0.04)', border: '1px solid rgba(129,140,248,0.15)',
+ background: 'color-mix(in srgb, var(--accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
  borderRadius: 8, padding: '12px 16px', marginTop: 2,
  }}>
  <div style={{ fontSize: 11, fontWeight: 700, color: C.indigo, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -378,7 +463,7 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  </div>
  ))}
  </div>
- <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid rgba(129,140,248,0.15)`, fontSize: 11, color: C.dim }}>
+ <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)`, fontSize: 11, color: C.dim }}>
  {t('inventory.calc_footer_safety_stock')}
  </div>
  </div>
@@ -438,7 +523,7 @@ function MultiplierChip({ value, origin }: { value: number; origin: string }) {
     display: 'inline-flex', alignItems: 'center', gap: 4,
     fontFamily: 'monospace', fontWeight: 700, fontSize: 11,
     padding: '2px 7px', borderRadius: 5,
-    background: custom ? 'rgba(129,140,248,0.12)' : 'transparent',
+    background: custom ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
     color: custom ? C.indigo : C.muted,
    }}
   >
@@ -705,17 +790,17 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <thead>
  <tr>
  {[t('inventory.sim_col_product'), t('inventory.sim_col_multiplier'), t('inventory.sim_col_event_demand'), t('inventory.sim_col_stock_at_start'), t('inventory.sim_col_shortfall'), t('inventory.sim_col_order'), t('inventory.sim_col_order_before')].map(h => (
- <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: C.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+ <th key={h} scope="col" style={{ textAlign: 'left', padding: '6px 8px', color: C.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
  ))}
  </tr>
  </thead>
  <tbody>
  {result.items.map(r => (
  <tr key={r.sku} style={{ borderBottom: `1px solid ${C.border}`, background: r.en_risk ? 'rgba(245,158,11,0.04)' : undefined }}>
- <td style={{ padding: '8px' }}>
+ <th scope="row" style={{ padding: '8px', textAlign: 'left', fontWeight: 400 }}>
  <div style={{ fontWeight: 600, color: C.text }}>{r.display_name || r.sku}</div>
  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{r.sku}</div>
- </td>
+ </th>
  <td style={{ padding: '8px' }}>
  <MultiplierChip value={r.multiplier} origin={r.multiplier_source} />
  </td>
@@ -1048,7 +1133,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  const tabS = (active: boolean): React.CSSProperties => ({
   all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,
   fontSize: 11.5, fontWeight: 600,
-  background: active ? 'rgba(129,140,248,0.12)' : 'transparent',
+  background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
   color: active ? C.indigo : C.dim,
  })
 
@@ -1080,7 +1165,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  {until && <span style={{ marginLeft: 8, color: isClose ? C.amber : C.dim }}>({until})</span>}
  </div>
  </div>
- <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(129,140,248,0.1)', color: C.indigo, flexShrink: 0 }}>
+ <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: C.indigo, flexShrink: 0 }}>
  ×{ev.multiplier.toFixed(1)}
  </span>
  <button
@@ -1278,14 +1363,14 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const delta          = simRecommended - originalRec
  const deltaColor     = delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.muted
 
- const sliderS: React.CSSProperties = { width: '100%', cursor: 'pointer', accentColor: '#818cf8' }
+ const sliderS: React.CSSProperties = { width: '100%', cursor: 'pointer', accentColor: 'var(--accent)' }
 
  return (
   <div style={{
-   background: 'rgba(129,140,248,0.04)', border: '1px solid rgba(129,140,248,0.15)',
+   background: 'color-mix(in srgb, var(--accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
    borderRadius: 8, padding: '16px 18px', marginTop: 8,
   }}>
-   <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', marginBottom: 14,
+   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 14,
     textTransform: 'uppercase', letterSpacing: '0.07em' }}>
     {t('inventory.sim_title')}
    </div>
@@ -1387,6 +1472,9 @@ export default function InventoryPage() {
  const [error, setError] = useState<unknown>(null)
  const [signalFilter, setSignalFilter] = useState<InventorySignal | ''>('')
  const [search, setSearch] = useState('')
+ const [sort, setSort] = useState<SortState | null>(null)
+ const [page, setPage] = useState(1)
+ const [deadPage, setDeadPage] = useState(1)
  const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'dead'>(() =>
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
@@ -1401,7 +1489,11 @@ export default function InventoryPage() {
  const [showEvents, setShowEvents] = useState(false)
  const [simEvent, setSimEvent] = useState<InventoryEvent | null>(null)
  const [updateDraft, setUpdateDraft] = useState<Record<string, { current_stock: string; lead_time_days: string; supplier: string }>>({})
+ const [rowBaseline, setRowBaseline] = useState<Record<string, { current_stock: string; lead_time_days: string; supplier: string }>>({})
  const [updateSaving, setUpdateSaving] = useState(false)
+ const [savingRow, setSavingRow] = useState<string | null>(null)
+ const [rowStatus, setRowStatus] = useState<{ sku: string; kind: 'saved' | 'discarded' | 'error' } | null>(null)
+ const savingRowRef = useRef<string | null>(null)
  const [updatedSkus, setUpdatedSkus] = useState<Set<string>>(new Set())
  const [suppliers, setSuppliers] = useState<Supplier[]>([])
  const importRef = useRef<HTMLInputElement>(null)
@@ -1464,6 +1556,10 @@ export default function InventoryPage() {
  }
  })
  setUpdateDraft(draft)
+ // What each row looked like the last time it was in sync with the server.
+ // Esc restores from here and a per-row save refreshes it, so discarding
+ // after saving one row does not resurrect the pre-save value.
+ setRowBaseline(draft)
  setUpdatedSkus(new Set())
  }
  }, [viewMode, data])
@@ -1473,16 +1569,69 @@ export default function InventoryPage() {
  setUpdatedSkus(prev => { const next = new Set(prev); next.add(sku); return next })
  }
 
+ // ── Per-row keyboard commit / discard (bulk-edit view) ─────────────────────
+ // Tab already reached the inputs, but there was no way to commit or abandon a
+ // single row without leaving the keyboard for the "save all" button, which
+ // saves every row at once. Enter saves this row and moves to the same field
+ // one row down (spreadsheet behaviour); Esc puts the row back.
+
+ function discardRow(sku: string) {
+ const base = rowBaseline[sku]
+ if (!base) return
+ setUpdateDraft(prev => ({ ...prev, [sku]: { ...base } }))
+ setUpdatedSkus(prev => { const next = new Set(prev); next.delete(sku); return next })
+ setRowStatus({ sku, kind: 'discarded' })
+ }
+
+ async function saveRow(sku: string) {
+ const draft = updateDraft[sku]
+ if (!draft || savingRowRef.current) return
+ savingRowRef.current = sku
+ setSavingRow(sku)
+ setRowStatus(null)
+ try {
+ await upsertInventoryStock(sku, {
+ current_stock: parseFloat(draft.current_stock) || 0,
+ lead_time_days: parseInt(draft.lead_time_days) || DEFAULT_LEAD_TIME_DAYS,
+ supplier: draft.supplier || undefined,
+ })
+ setRowBaseline(prev => ({ ...prev, [sku]: { ...draft } }))
+ setUpdatedSkus(prev => { const next = new Set(prev); next.delete(sku); return next })
+ setRowStatus({ sku, kind: 'saved' })
+ } catch (e) {
+ console.error(`Error saving ${sku}:`, e)
+ setRowStatus({ sku, kind: 'error' })
+ } finally {
+ savingRowRef.current = null
+ setSavingRow(null)
+ }
+ }
+
+ /** Enter → save this row, then land on the same column of the next row.
+  *  Esc → restore this row. Anything else is left to the input. */
+ function handleRowKeyDown(e: React.KeyboardEvent<HTMLInputElement>, sku: string, field: string) {
+ if (e.key === 'Enter') {
+ e.preventDefault()
+ void saveRow(sku)
+ const inputs = Array.from(document.querySelectorAll<HTMLInputElement>(`[data-bulk-field="${field}"]`))
+ const at = inputs.indexOf(e.target as HTMLInputElement)
+ if (at >= 0 && at < inputs.length - 1) inputs[at + 1].focus()
+ } else if (e.key === 'Escape') {
+ e.preventDefault()
+ discardRow(sku)
+ }
+ }
+
  async function handleSaveAll() {
  if (!sessionId) return
  setUpdateSaving(true)
  const toSave = Object.entries(updateDraft).filter(([sku, draft]) => {
- const original = data?.items.find(i => i.sku === sku)
+ const original = rowBaseline[sku]
  if (!original) return true
  return (
- parseFloat(draft.current_stock) !== (original.current_stock ?? 0) ||
- parseInt(draft.lead_time_days) !== original.lead_time_days ||
- draft.supplier !== (original.supplier ?? '')
+ draft.current_stock !== original.current_stock ||
+ draft.lead_time_days !== original.lead_time_days ||
+ draft.supplier !== original.supplier
  )
  })
  let saved = 0
@@ -1519,16 +1668,46 @@ export default function InventoryPage() {
  return true
  }), [data, signalFilter, search])
 
+ // The order the rows are paged in. It differs per view — the simple view puts
+ // everything that needs a decision first — so it has to be resolved before
+ // slicing, or page 1 would be an arbitrary window of the wrong sequence.
+ const orderedItems = useMemo(() => {
+ if (viewMode === 'simple') {
+ return [
+ ...items.filter(i => i.signal !== 'OK' && i.signal !== 'SIN_DATOS'),
+ ...items.filter(i => i.signal === 'OK' || i.signal === 'SIN_DATOS'),
+ ]
+ }
+ if (viewMode === 'table' && sort) return sortItems(items, sort)
+ return items
+ }, [items, viewMode, sort])
+
+ const paged = usePage(orderedItems, page, setPage)
+ const pageItems = paged.rows
+ const deadItems = useMemo(() => deadStock?.items ?? [], [deadStock])
+ const deadPaged = usePage(deadItems, deadPage, setDeadPage)
+ useEffect(() => { setDeadPage(1) }, [deadStock])
+
+ // Any change to what is being listed sends you back to the first page:
+ // staying on page 14 of a list that now has 2 pages is never what you meant.
+ useEffect(() => { setPage(1) }, [search, signalFilter, viewMode, sessionId, sort])
+
+ function toggleSort(key: SortKey) {
+ setSort(prev => prev?.key === key
+ ? (prev.dir === 'asc' ? { key, dir: 'desc' } : null)
+ : { key, dir: 'asc' })
+ }
+
  const byProvider = useMemo(() => {
  const groups: Record<string, InventoryStatusItem[]> = {}
- for (const item of items) { const k = item.supplier || ''; if (!groups[k]) groups[k] = []; groups[k].push(item) }
+ for (const item of pageItems) { const k = item.supplier || ''; if (!groups[k]) groups[k] = []; groups[k].push(item) }
  const PRIO = ['PEDIR_YA', 'PEDIR_PRONTO', 'OK', 'SOBRESTOCK', 'SIN_DATOS']
  return Object.entries(groups).sort((a, b) => {
  const sa = Math.min(...a[1].map(i => PRIO.indexOf(i.signal)))
  const sb = Math.min(...b[1].map(i => PRIO.indexOf(i.signal)))
  return sa - sb || a[0].localeCompare(b[0])
  })
- }, [items])
+ }, [pageItems])
 
  // Upcoming events within 30 days
  const upcomingAlerts = useMemo(() => events.filter(e => {
@@ -1683,10 +1862,10 @@ export default function InventoryPage() {
  <button onClick={handleExport} disabled={exporting || !sessionId} style={{ all: 'unset', cursor: exporting || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, opacity: exporting || !sessionId ? 0.5 : 1 }}>
  {exporting ? <Spinner size={12} /> : <Download size={12} />} {t('inventory.btn_export_po')}
  </button>
- <button onClick={exportEditedPO} disabled={!sessionId} style={{ all: 'unset', cursor: !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)', color: C.indigo, opacity: !sessionId ? 0.5 : 1 }}>
+ <button onClick={exportEditedPO} disabled={!sessionId} style={{ all: 'unset', cursor: !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', color: C.indigo, opacity: !sessionId ? 0.5 : 1 }}>
  <Download size={12} /> {t('inventory.btn_export_edited')}
  </button>
- <button onClick={handlePDF} disabled={pdfLoading || !sessionId} title={t('inventory.title_download_pdf')} style={{ all: 'unset', cursor: pdfLoading || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)', color: C.indigo, opacity: pdfLoading || !sessionId ? 0.5 : 1 }}>
+ <button onClick={handlePDF} disabled={pdfLoading || !sessionId} title={t('inventory.title_download_pdf')} style={{ all: 'unset', cursor: pdfLoading || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', color: C.indigo, opacity: pdfLoading || !sessionId ? 0.5 : 1 }}>
  {pdfLoading ? <Spinner size={12} /> : <FileText size={12} />} PDF
  </button>
  <Link href="/inventory/roi" style={{
@@ -1772,9 +1951,9 @@ export default function InventoryPage() {
 
  {/* SKUs sin stock banner */}
  {!loading && sessionId && skusSinStock > 0 && (
- <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 8, background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.2)', color: C.indigo, fontSize: 13 }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', color: C.indigo, fontSize: 13 }}>
  <Info size={14} style={{ flexShrink: 0 }} />
- <span><strong>{skusSinStock} {t('inventory.skus_of_label')} {skusConForecast} SKUs</strong> {t('inventory.skus_no_stock_hint')} <code style={{ fontSize: 11, background: 'rgba(129,140,248,0.1)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code></span>
+ <span><strong>{skusSinStock} {t('inventory.skus_of_label')} {skusConForecast} SKUs</strong> {t('inventory.skus_no_stock_hint')} <code style={{ fontSize: 11, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code></span>
  </div>
  )}
 
@@ -1852,7 +2031,7 @@ export default function InventoryPage() {
  { n: '3', title: t('inventory.onboarding_step3_title'), desc: t('inventory.onboarding_step3_desc') },
  ].map(({ n, title, desc }) => (
  <div key={n} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
- <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.3)', color: C.indigo, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>
+ <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: 'color-mix(in srgb, var(--accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', color: C.indigo, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>
  <div><div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{title}</div><div style={{ fontSize: 12, color: C.dim, marginTop: 3, lineHeight: 1.6 }}>{desc}</div></div>
  </div>
  ))}
@@ -1888,15 +2067,18 @@ export default function InventoryPage() {
  )}
  </div>
  ) : viewMode === 'provider' ? (
+ <>
  <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} coverageUnit={data?.coverage_unit} />)}</div>
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
+ </>
 
  ) : viewMode === 'update' ? (
  /* ── Vista actualización rápida ───────────────────────────── */
  <div>
  {/* CSV import hint */}
- <div style={{ padding: '10px 16px', background: 'rgba(129,140,248,0.04)', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+ <div style={{ padding: '10px 16px', background: 'color-mix(in srgb, var(--accent) 4%, transparent)', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
  <span style={{ fontSize: 12, color: C.dim, flex: 1 }}>
- {t('inventory.csv_hint_prefix')} <code style={{ fontSize: 11, background: 'rgba(129,140,248,0.1)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code>
+ {t('inventory.csv_hint_prefix')} <code style={{ fontSize: 11, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', padding: '1px 5px', borderRadius: 4 }}>sku, current_stock, lead_time_days</code>
  </span>
  <button onClick={() => importRef.current?.click()} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted }}>
  <Upload size={11} /> {t('inventory.btn_import_csv_arrow')}
@@ -1915,6 +2097,7 @@ export default function InventoryPage() {
  draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), supplier: item.supplier ?? '' }
  })
  setUpdateDraft(draft)
+ setRowBaseline(draft)
  setUpdatedSkus(new Set())
  }
  }}
@@ -1932,82 +2115,128 @@ export default function InventoryPage() {
  {updateSaving ? t('inventory.saving_ellipsis') : `${t('inventory.btn_save_prefix')} ${updatedSkus.size > 0 ? updatedSkus.size : ''} ${updatedSkus.size !== 1 ? t('inventory.changes_plural') : t('inventory.changes_singular')}`}
  </button>
  </div>
+ {/* Per-row keyboard contract, stated where the typing happens. Also the
+     accessible description every editable cell points at, so it is read
+     out the first time focus lands in the row. */}
+ <div
+ id="bulk-edit-keys"
+ style={{ padding: '7px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.dim }}
+ >
+ {tOr(t, 'inventory.bulk_keyboard_hint',
+  'Enter saves this row and moves to the next · Esc discards this row')}
+ </div>
+ {/* Row-level outcome, announced. Without it a keyboard user pressing Enter
+     had no way to know whether the row was saved. */}
+ <div aria-live="polite" className="sr-only">
+ {rowStatus && (
+  rowStatus.kind === 'saved'
+   ? tOr(t, 'inventory.bulk_row_saved', `Row ${rowStatus.sku} saved`, { sku: rowStatus.sku })
+   : rowStatus.kind === 'discarded'
+    ? tOr(t, 'inventory.bulk_row_discarded', `Changes to row ${rowStatus.sku} discarded`, { sku: rowStatus.sku })
+    : tOr(t, 'inventory.bulk_row_error', `Row ${rowStatus.sku} could not be saved`, { sku: rowStatus.sku })
+ )}
+ </div>
  {/* Table */}
  <div style={{ overflowY: 'auto', maxHeight: 500 }}>
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+ <caption className="sr-only">
+ {tOr(t, 'inventory.bulk_table_caption',
+  'Stock, lead time and supplier per product. Enter saves the row, Esc discards it.')}
+ </caption>
  <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
  <tr style={{ background: C.card }}>
- <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em', width: 8 }} />
- <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>SKU</th>
- <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_name')}</th>
- <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_current_stock')}</th>
- <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_lead_time_days')}</th>
- <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_provider')}</th>
+ <th scope="col" style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em', width: 8 }}>
+ <span className="sr-only">{tOr(t, 'inventory.bulk_col_modified', 'Modified')}</span>
+ </th>
+ <th scope="col" style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>SKU</th>
+ <th scope="col" style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_name')}</th>
+ <th scope="col" style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_current_stock')}</th>
+ <th scope="col" style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_lead_time_days')}</th>
+ <th scope="col" style={{ padding: '8px 12px', textAlign: 'left', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{t('inventory.col_provider')}</th>
  </tr>
  </thead>
  <tbody>
- {items.map((item, idx) => {
+ {pageItems.map((item, idx) => {
  const draft = updateDraft[item.sku]
  const isModified = updatedSkus.has(item.sku)
- const rowBg = idx % 2 === 0 ? C.surface : C.card
+ const rowBg = (paged.offset + idx) % 2 === 0 ? C.surface : C.card
+ const isSavingThis = savingRow === item.sku
  const inputUpd: React.CSSProperties = {
  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5,
  color: C.text, fontSize: 12, outline: 'none',
  padding: '5px 8px', width: '100%', boxSizing: 'border-box' as const,
  transition: 'border-color 0.15s',
+ opacity: isSavingThis ? 0.6 : 1,
  }
+ // Every cell in the row names its SKU: 100 identically-labelled
+ // "Stock actual" fields tell a screen-reader user nothing about
+ // which product they are typing into.
+ const fieldLabel = (col: string) => `${col} — ${item.display_name || item.sku}`
  return (
- <tr key={item.sku} style={{ background: isModified ? 'rgba(245,158,11,0.04)' : rowBg }}>
+ <tr
+ key={item.sku}
+ style={{ background: isModified ? 'rgba(245,158,11,0.04)' : rowBg }}
+ >
  {/* Modified indicator */}
  <td style={{ padding: '0 0 0 8px', borderBottom: `1px solid ${C.border}`, width: 8 }}>
- {isModified && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: C.amber }} />}
+ {isModified && (
+ <span
+ title={tOr(t, 'inventory.bulk_row_unsaved', 'Unsaved changes')}
+ style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: C.amber }}
+ >
+ <span className="sr-only">{tOr(t, 'inventory.bulk_row_unsaved', 'Unsaved changes')}</span>
+ </span>
+ )}
  </td>
- <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, fontFamily: 'monospace', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
+ {/* The SKU is this row's header — announcing it before each cell is
+     the whole point of a row header. */}
+ <th scope="row" style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, fontFamily: 'monospace', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap', textAlign: 'left', color: C.text }}>
  {item.sku}
- </td>
+ </th>
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, color: C.muted, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
  {item.display_name || <span style={{ color: C.dim }}>—</span>}
  </td>
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, minWidth: 110 }}>
  <input
  style={inputUpd}
- name={`bulk-current-stock-${item.sku}`} aria-label={t('inventory.col_current_stock')}
+ name={`bulk-current-stock-${item.sku}`} aria-label={fieldLabel(t('inventory.col_current_stock'))}
+ aria-describedby="bulk-edit-keys" aria-keyshortcuts="Enter Escape"
  type="number" min={0}
  value={draft?.current_stock ?? ''}
  onChange={e => handleDraftChange(item.sku, 'current_stock', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
  onBlur={e => { e.target.style.borderColor = C.border }}
- onKeyDown={e => {
- if (e.key === 'Enter') {
- e.preventDefault()
- const rows = document.querySelectorAll<HTMLInputElement>('[data-stock-input]')
- const idx2 = Array.from(rows).indexOf(e.currentTarget)
- if (idx2 >= 0 && idx2 < rows.length - 1) rows[idx2 + 1].focus()
- }
- }}
+ onKeyDown={e => handleRowKeyDown(e, item.sku, 'current_stock')}
+ data-bulk-field="current_stock"
  data-stock-input=""
  />
  </td>
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, minWidth: 130 }}>
  <input
  style={inputUpd}
- name={`bulk-lead-time-${item.sku}`} aria-label={t('inventory.col_lead_time_days')}
+ name={`bulk-lead-time-${item.sku}`} aria-label={fieldLabel(t('inventory.col_lead_time_days'))}
+ aria-describedby="bulk-edit-keys" aria-keyshortcuts="Enter Escape"
  type="number" min={1} max={365}
  value={draft?.lead_time_days ?? ''}
  onChange={e => handleDraftChange(item.sku, 'lead_time_days', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
  onBlur={e => { e.target.style.borderColor = C.border }}
+ onKeyDown={e => handleRowKeyDown(e, item.sku, 'lead_time_days')}
+ data-bulk-field="lead_time_days"
  />
  </td>
  <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, minWidth: 150 }}>
  <input
  style={inputUpd}
- name={`bulk-supplier-${item.sku}`} aria-label={t('inventory.col_provider')}
+ name={`bulk-supplier-${item.sku}`} aria-label={fieldLabel(t('inventory.col_provider'))}
+ aria-describedby="bulk-edit-keys" aria-keyshortcuts="Enter Escape"
  type="text"
  value={draft?.supplier ?? ''}
  onChange={e => handleDraftChange(item.sku, 'supplier', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
  onBlur={e => { e.target.style.borderColor = C.border }}
+ onKeyDown={e => handleRowKeyDown(e, item.sku, 'supplier')}
+ data-bulk-field="supplier"
  />
  </td>
  </tr>
@@ -2016,6 +2245,7 @@ export default function InventoryPage() {
  </tbody>
  </table>
  </div>
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </div>
 
  ) : viewMode === 'simple' ? (
@@ -2024,8 +2254,9 @@ export default function InventoryPage() {
  <div style={{ padding: '10px 16px', background: C.card, borderBottom: `1px solid ${C.border}`, display: 'grid', gridTemplateColumns: '1fr 160px 120px 160px', gap: 16, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
  <span>{t('inventory.col_sku_product')}</span><span>{t('inventory.col_signal')}</span><span style={{ textAlign: 'right' }}>{t('inventory.col_qty_to_order')}</span><span>{t('inventory.col_provider')}</span>
  </div>
- {items.filter(i => i.signal !== 'OK' && i.signal !== 'SIN_DATOS').concat(items.filter(i => i.signal === 'OK' || i.signal === 'SIN_DATOS')).map((item, idx) => (
- <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 160px', gap: 16, padding: '14px 16px', alignItems: 'center', borderBottom: `1px solid ${C.border}`, background: idx % 2 === 0 ? C.surface : C.card, borderLeft: `3px solid ${item.signal === 'PEDIR_YA' || item.signal === 'PEDIR_PRONTO' ? signalColor(item.signal) : 'transparent'}` }}>
+ {/* Already ordered "needs a decision first" by `orderedItems`, before paging. */}
+ {pageItems.map((item, idx) => (
+ <div key={item.sku} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 160px', gap: 16, padding: '14px 16px', alignItems: 'center', borderBottom: `1px solid ${C.border}`, background: (paged.offset + idx) % 2 === 0 ? C.surface : C.card, borderLeft: `3px solid ${item.signal === 'PEDIR_YA' || item.signal === 'PEDIR_PRONTO' ? signalColor(item.signal) : 'transparent'}` }}>
  <div>
  <div style={{ fontWeight: 600, fontSize: 13 }}>{item.display_name || item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>}
@@ -2039,6 +2270,7 @@ export default function InventoryPage() {
  <span style={{ fontSize: 12, color: C.muted }}>{item.supplier || '—'}</span>
  </div>
  ))}
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </div>
 
  ) : viewMode === 'dead' ? (
@@ -2088,7 +2320,7 @@ export default function InventoryPage() {
       <thead>
        <tr style={{ background: C.card }}>
         {[t('inventory.dead_col_product'), t('inventory.dead_col_days_stalled'), t('inventory.dead_col_stock'), t('inventory.dead_col_capital_trapped'), t('inventory.dead_col_cost_per_month'), t('inventory.dead_col_category'), t('inventory.dead_col_suggested_action')].map(h => (
-         <th key={h} style={{
+         <th key={h} scope="col" style={{
           padding: '9px 12px', textAlign: 'left',
           color: C.dim, fontWeight: 600, fontSize: 10,
           borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
@@ -2098,16 +2330,16 @@ export default function InventoryPage() {
        </tr>
       </thead>
       <tbody>
-       {deadStock.items.map((item, i: number) => (
+       {deadPaged.rows.map((item, i: number) => (
         <tr key={item.sku} style={{
-         background: i % 2 === 0 ? C.surface : C.card,
+         background: (deadPaged.offset + i) % 2 === 0 ? C.surface : C.card,
          borderBottom: `1px solid ${C.border}`,
         }}>
-         <td style={{ padding: '10px 12px' }}>
+         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text }}>
           <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
           <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
           {item.supplier && <div style={{ fontSize: 10, color: C.muted }}>{item.supplier}</div>}
-         </td>
+         </th>
          <td style={{ padding: '10px 12px', color: C.red, fontWeight: 700 }}>
           {item.days_without_movement}d
          </td>
@@ -2136,6 +2368,8 @@ export default function InventoryPage() {
      </table>
     </div>
 
+    <Pagination page={deadPaged.page} pageCount={deadPaged.pageCount} offset={deadPaged.offset} total={deadPaged.total} rowsOnPage={deadPaged.rows.length} onPage={setDeadPage} label="SKU" />
+
     <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>
      {t('inventory.dead_footer_note_1')}
      {t('inventory.dead_footer_note_2')}
@@ -2150,30 +2384,34 @@ export default function InventoryPage() {
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
  <thead>
  <tr style={{ background: C.card }}>
- <th style={{ padding: '9px 12px', width: 28, borderBottom: `1px solid ${C.border}` }} />
- <ThTip label={t('inventory.col_signal')} tip={t('inventory.tip_signal')} />
- <ThTip label={t('inventory.col_sku_name')} tip={t('inventory.tip_sku_name')} />
- <ThTip label={t('inventory.col_stock')} tip={t('inventory.tip_stock')} />
+ <th scope="col" style={{ padding: '9px 12px', width: 28, borderBottom: `1px solid ${C.border}` }}>
+ <span className="sr-only">{tOr(t, 'inventory.col_expand', 'Show calculation')}</span>
+ </th>
+ <ThTip label={t('inventory.col_signal')} tip={t('inventory.tip_signal')} sortKey="signal" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_sku_name')} tip={t('inventory.tip_sku_name')} sortKey="sku" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_stock')} tip={t('inventory.tip_stock')} sortKey="stock" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_trend')} tip={t('inventory.tip_trend')} />
- <ThTip label={`${t('inventory.wh_col_coverage')} (${coverageUnitShort(data?.coverage_unit, t)})`} tip={t('inventory.tip_days_coverage')} />
- <ThTip label={t('inventory.col_demand_lt')} tip={t('inventory.tip_demand_lt')} />
- <ThTip label={t('inventory.col_qty_to_order')} tip={t('inventory.tip_qty_to_order')} />
- <ThTip label={t('inventory.col_lead_time')} tip={t('inventory.tip_lead_time')} />
- <ThTip label="MOQ" tip={t('inventory.tip_moq')} />
- <ThTip label="ABC-XYZ" tip={t('inventory.tip_abc_xyz')} />
- <ThTip label={t('inventory.col_warehouse_value')} tip={t('inventory.tip_warehouse_value')} />
- <th style={{ padding: '9px 12px', borderBottom: `1px solid ${C.border}` }} />
+ <ThTip label={`${t('inventory.wh_col_coverage')} (${coverageUnitShort(data?.coverage_unit, t)})`} tip={t('inventory.tip_days_coverage')} sortKey="coverage" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_demand_lt')} tip={t('inventory.tip_demand_lt')} sortKey="demand_lt" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_qty_to_order')} tip={t('inventory.tip_qty_to_order')} sortKey="qty" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_lead_time')} tip={t('inventory.tip_lead_time')} sortKey="lead_time" sort={sort} onSort={toggleSort} />
+ <ThTip label="MOQ" tip={t('inventory.tip_moq')} sortKey="moq" sort={sort} onSort={toggleSort} />
+ <ThTip label="ABC-XYZ" tip={t('inventory.tip_abc_xyz')} sortKey="abc_xyz" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_warehouse_value')} tip={t('inventory.tip_warehouse_value')} sortKey="value" sort={sort} onSort={toggleSort} />
+ <th scope="col" style={{ padding: '9px 12px', borderBottom: `1px solid ${C.border}` }}>
+ <span className="sr-only">{tOr(t, 'inventory.col_actions', 'Actions')}</span>
+ </th>
  </tr>
  </thead>
  <tbody>
- {items.map((item, idx) => {
+ {pageItems.map((item, idx) => {
  const isEditing = editId === item.sku
  const isExpanded = expandedSku === item.sku && !isEditing
- const rowBg = idx % 2 === 0 ? C.surface : C.card
+ const rowBg = (paged.offset + idx) % 2 === 0 ? C.surface : C.card
  const crit = item.signal === 'PEDIR_YA'
 
  if (isEditing && editState) return (
- <tr key={item.sku} style={{ background: 'rgba(129,140,248,0.04)' }}>
+ <tr key={item.sku} style={{ background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
  <td style={{ padding: '8px 6px', borderBottom: `1px solid ${C.border}` }} />
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}><SignalBadge s={item.signal} /></td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
@@ -2252,10 +2490,13 @@ export default function InventoryPage() {
  )
 
  return (
- <>
- <tr key={item.sku}
+ // The row and its expanded explanation are two <tr>s from one iteration:
+ // the key belongs on the fragment, not on the first child, or React sees an
+ // unkeyed list item and re-creates both on every reorder.
+ <Fragment key={item.sku}>
+ <tr
  style={{ background: crit ? 'rgba(239,68,68,0.02)' : rowBg, borderLeft: `3px solid ${crit ? C.red : 'transparent'}`, transition: 'background 0.1s' }}
- onMouseEnter={e => (e.currentTarget.style.background = 'rgba(129,140,248,0.04)')}
+ onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 4%, transparent)')}
  onMouseLeave={e => (e.currentTarget.style.background = crit ? 'rgba(239,68,68,0.02)' : rowBg)}
  >
  {/* Expand button */}
@@ -2273,11 +2514,13 @@ export default function InventoryPage() {
  )}
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}><SignalBadge s={item.signal} /></td>
- <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
+ {/* The product names the row: every other cell is only meaningful once you
+     know which SKU it belongs to. */}
+ <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text, borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{item.display_name}</div>}
  {item.supplier && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.supplier}</div>}
- </td>
+ </th>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  {item.has_stock ? <span style={{ fontWeight: 600 }}>{fmt(item.current_stock, 0)}</span> : <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.no_record')}</span>}
  </td>
@@ -2345,7 +2588,7 @@ export default function InventoryPage() {
  </tr>
  {/* Expanded explanation row */}
  {isExpanded && item.calc_explanation && (
- <tr key={`${item.sku}-exp`}>
+ <tr>
  <td colSpan={13} style={{ padding: '0 16px 12px 48px', borderBottom: `1px solid ${C.border}`, background: crit ? 'rgba(239,68,68,0.01)' : rowBg }}>
  <CalcExplainer exp={item.calc_explanation} moq={item.moq} />
  {/* Which of the four planning numbers are the buyer's and which are ours,
@@ -2355,11 +2598,12 @@ export default function InventoryPage() {
  </td>
  </tr>
  )}
- </>
+ </Fragment>
  )
  })}
  </tbody>
  </table>
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </div>
  )}
  </div>

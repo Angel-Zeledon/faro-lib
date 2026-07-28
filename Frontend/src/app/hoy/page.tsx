@@ -1,12 +1,11 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { renderExplanation } from '@/lib/explanationCopy'
-import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
 import Link from 'next/link'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
- ChevronDown, ChevronUp, Send, UserX, X, Upload, PlayCircle, Info,
+ ChevronDown, ChevronUp, Send, X, Upload, PlayCircle,
 } from 'lucide-react'
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
@@ -30,7 +29,7 @@ import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import DataFreshness from '@/components/ui/DataFreshness'
-import StaleDataBanner, { StaleSignalChip } from '@/components/ui/StaleDataBanner'
+import StaleDataBanner from '@/components/ui/StaleDataBanner'
 import { useDataFreshness } from '@/hooks/useDataFreshness'
 import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
@@ -44,22 +43,15 @@ import { ReceptionModal } from '@/components/po/POHistory'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
-
-// ── Colour palette ────────────────────────────────────────────────────────────
-const C = {
- bg: 'var(--bg)',
- surface: 'var(--surface)',
- card: 'var(--surface-2)',
- border: 'var(--border)',
- text: 'var(--text)',
- muted: 'var(--muted)',
- dim: 'var(--dim)',
- red: '#ef4444',
- amber: '#f59e0b',
- green: '#22c55e',
- blue: '#3b82f6',
- indigo: '#818cf8',
-}
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+// The honesty layer (assumptions banner, "estimado" badges, provenance wording,
+// the unverified all-clear) and the cart's item shape live in ./shared so the
+// narrow-screen card list below makes exactly the same promises as this table.
+import {
+  C, AllClear, AssumptionsBanner, SourceBadge, provenanceText, summarizeAssumptions,
+  tOr, type ActionItem, type ActionStatus,
+} from './shared'
+import HoyMobile from './HoyMobile'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 // Money formatting lives in lib/currency.ts — one source of truth for the whole
@@ -111,58 +103,6 @@ function RecIcon({ rec_type }: { rec_type: BriefingRecommendation['rec_type'] })
   case 'DEMAND_DOWN': return <TrendingDown size={16} color={C.red} />
   case 'OVERSTOCK': return <Archive size={16} color={C.blue} />
  }
-}
-
-// ── Cart types ────────────────────────────────────────────────────────────────
-type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected'
-
-interface ActionItem {
- sku:            string
- name:           string
- supplier:      string | null
- // Set when the supplier came from the SKU's configured primary, or when the
- // buyer picked one in the cart. Free-text names from the SKU card have none.
- supplier_id:   string | null
- qty:            number
- recommended:    number   // original quantity Faro suggested (immutable)
- unit_cost:      number | null
- sale_price:   number | null   // sale price — for the margin-protected summary
- signal:         string
- days:           number | null
- lead_time:      number
- daily_demand: number | null   // forecasted daily demand — for the "why" panel
- current_stock:   number | null   // current stock — for the "why" panel
- // "Por qué" — every value below is computed by the backend, never here
- // user | file | supplier_rule | learned | default. 'default' is the case the
- // old 'learned' | 'configured' pair could not express, so this panel told the
- // buyer their lead time was "configurado por ti" when nobody had configured it.
- lead_time_source: ValueSource
- lead_time_rule_scope: RuleScope | null
- // Same question for the other three values that decide the order. The buyer
- // must be able to tell "I chose 95%" from "Faro assumed 95%" before approving.
- unit_cost_source: ValueSource
- service_level:        number | null
- service_level_source: ValueSource
- service_level_rule_scope: RuleScope | null
- moq:              number | null
- moq_source:       ValueSource
- moq_rule_scope:   RuleScope | null
- // State of the lead-time learning for this SKU's supplier: deliveries we have
- // recorded, and how many the planner needs before the learned average replaces
- // the configured value. The threshold comes from the payload
- // (MIN_LEAD_TIME_OBSERVATIONS), never from a literal here.
- lead_time_observations:        number | null
- lead_time_observations_needed: number | null
- lead_time_learned:             number | null
- reorder_point:    number | null
- // English fallback from the backend; the Spanish is rendered here from
- // explanation_code + explanation_params.
- explanation:      string | null
- explanation_code:   string | null
- explanation_params: Record<string, unknown> | null
- unit_margin:  number | null   // null = SKU sin price o sin cost
- reason:         string
- status:         ActionStatus
 }
 
 // ── Lead-time learning state ────────────────────────────────────────────────
@@ -579,165 +519,6 @@ function SpikeCard({ s }: { s: DemandSpike }) {
  )
 }
 
-// ── Which of these numbers are ours, not yours? ──────────────────────────────
-// Every planning value now carries a provenance, and 'default' is the one that
-// means "nobody told us — this is Faro's assumption". The buyer approving an
-// order deserves to know how much of it rests on our guesses before they spend
-// the money, and to get one link to the screen that ranks those gaps by money.
-//
-// The count is derived from the recommendations actually on screen. It is never
-// a fixed number and it is never shown when there is nothing to admit.
-const ASSUMPTION_FIELDS: { id: string; source: (i: InventoryStatusItem) => ValueSource | undefined }[] = [
- { id: 'lead_time',     source: i => i.lead_time_source },
- { id: 'service_level', source: i => i.service_level_source },
- { id: 'unit_cost',     source: i => i.unit_cost_source },
- { id: 'moq',           source: i => i.moq_source },
-]
-
-interface AssumptionSummary {
- /** Which of the four planning fields we had to assume in at least one SKU. */
- fields: string[]
- /** SKUs on this screen resting on at least one assumption. */
- skus:   number
- /** SKUs examined, so the sentence can say "N of the M on this screen". Not the
-  *  whole catalogue — the briefing caps each list — and the copy says so. */
- total:  number
-}
-
-function summarizeAssumptions(briefing: MorningBriefing | null): AssumptionSummary {
- // Overstock counts too: "you already have enough" is a verdict built on the
- // same four numbers, and a tenant whose whole catalogue is overstocked would
- // otherwise never be told their configuration is missing.
- const items = [
-  ...(briefing?.risks ?? []),
-  ...(briefing?.warnings ?? []),
-  ...(briefing?.overstocked ?? []),
- ]
- const fields = new Set<string>()
- let skus = 0
- for (const item of items) {
-  let any = false
-  for (const field of ASSUMPTION_FIELDS) {
-   // No source at all means we cannot prove authorship, so it counts as ours —
-   // claiming the buyer chose a number we cannot trace is the failure this
-   // whole provenance change exists to remove. `isAssumed` treats it that way.
-   if (isAssumed(field.source(item))) { fields.add(field.id); any = true }
-  }
-  if (any) skus++
- }
- return { fields: ASSUMPTION_FIELDS.map(f => f.id).filter(id => fields.has(id)), skus, total: items.length }
-}
-
-// `t` returns the key itself when the catalog has no entry for it; printing
-// "hoy.assumptions_title" at the buyer is worse than plain English. Same guard
-// `lib/explanationCopy.ts` uses before rendering a copy block.
-function tOr(
- t: (key: string, params?: Record<string, unknown>) => string,
- key: string, fallback: string, params?: Record<string, unknown>,
-): string {
- const text = t(key, params)
- return text === key ? fallback : text
-}
-
-// English last-resort wording, one per provenance value. Spanish never appears
-// here — it lives in the i18n catalog (CLAUDE.md).
-const SOURCE_FALLBACK_EN: Record<ValueSource, string> = {
- user:          'you set it',
- file:          'from your file',
- supplier_rule: 'rule',
- learned:       'learned from your deliveries',
- default:       'estimated',
-}
-
-/** Names where a value came from, across all five sources. A rule hit also
- *  names the level that won, so the precedence is visible instead of being
- *  something the buyer has to reverse-engineer. */
-function provenanceText(
- t: (key: string, params?: Record<string, unknown>) => string,
- source?: ValueSource | null, scope?: RuleScope | null,
-): string {
- const value: ValueSource = source || 'default'
- const label = tOr(t, sourceLabelKey(value), SOURCE_FALLBACK_EN[value])
- if (value === 'supplier_rule' && scope) {
-  return `${label} · ${tOr(t, `explain.scope_${scope}`, scope)}`
- }
- return label
-}
-
-const ASSUMPTION_FIELD_FALLBACK_EN: Record<string, string> = {
- lead_time:     'the lead time',
- service_level: 'the service level',
- unit_cost:     'the unit cost',
- moq:           'the minimum order',
-}
-
-function AssumptionsBanner({ summary }: { summary: AssumptionSummary }) {
- const { t } = useLanguage()
- // Nothing assumed: say nothing. A banner that reports zero is noise, and a
- // banner with an invented number is a lie.
- if (summary.fields.length === 0) return null
-
- const names = summary.fields.map(id => tOr(
-  t, `hoy.assumption_field_${id}`, ASSUMPTION_FIELD_FALLBACK_EN[id] ?? id))
- const and = tOr(t, 'hoy.assumptions_list_and', 'and')
- const list = names.length === 1
-  ? names[0]
-  : `${names.slice(0, -1).join(', ')} ${and} ${names[names.length - 1]}`
-
- return (
-  <Link
-   href="/inventory-setup"
-   style={{
-    display: 'flex', alignItems: 'flex-start', gap: 10, textDecoration: 'none',
-    marginBottom: 20, padding: '12px 16px', borderRadius: 10,
-    background: 'rgba(129,140,248,0.06)', border: '1px dashed rgba(129,140,248,0.4)',
-   }}
-  >
-   <Info size={15} color={C.indigo} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
-   <div style={{ flex: 1, minWidth: 0 }}>
-    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-     {tOr(t, 'hoy.assumptions_title',
-      `These recommendations rest on ${summary.fields.length} assumptions of ours — review them`,
-      { n: summary.fields.length })}
-    </div>
-    <div style={{ fontSize: 12, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>
-     {tOr(t, 'hoy.assumptions_body',
-      `You have not given us ${list} for ${summary.skus} of the ${summary.total} products below, so we used our own values.`,
-      { fields: list, skus: summary.skus, total: summary.total })}
-    </div>
-   </div>
-   <span style={{
-    display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
-    fontSize: 12, fontWeight: 600, color: C.indigo, whiteSpace: 'nowrap', marginTop: 2,
-   }}>
-    {tOr(t, 'hoy.assumptions_cta', 'See what to configure first')}
-    <ArrowRight size={12} aria-hidden="true" />
-   </span>
-  </Link>
- )
-}
-
-// A muted dotted "estimado" badge on a value Faro assumed rather than received.
-// Only assumed values are badged: no badge means the number is the buyer's own
-// (typed, imported, ruled, or learned from their receptions). Mirrors the badge
-// on /inventory so the two screens make the same promise.
-function SourceBadge({ source }: { source?: ValueSource | null }) {
- const { t } = useLanguage()
- if (!isAssumed(source)) return null
- return (
-  <span
-   title={tOr(t, 'inventory.source_assumed_tip',
-    'Faro assumed this value — you have not given us one yet.')}
-   style={{
-    marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
-    textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,
-    color: 'var(--dim)', border: '1px dashed var(--border)',
-    background: 'transparent', whiteSpace: 'nowrap',
-   }}
-  >{tOr(t, 'inventory.source_assumed_badge', 'estimated')}</span>
- )
-}
-
 // ── Build ActionItems from briefing ──────────────────────────────────────────
 // The status rows now also carry the lead-time learning counters. They are
 // declared here rather than in lib/types.ts because that file belongs to
@@ -879,27 +660,6 @@ function HoyEmptyState({ variant }: { variant: 'no_session' | 'no_inventory' }) 
  )
 }
 
-// ── "Nothing to do today" ─────────────────────────────────────────────────────
-// The most confident thing this page ever says — and the exact claim stale data
-// invalidates. Over a stock table nobody has touched in a month, the absence of
-// a red signal is not evidence that nothing is wrong: it is evidence that we
-// cannot see. So the green all-clear becomes an explicit "no lo podemos
-// confirmar" instead of quietly reassuring the buyer.
-function AllClear({ stale }: { stale: boolean }) {
- const { t } = useLanguage()
- return (
-  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)' }}>
-   {stale && <div style={{ marginBottom: 10 }}><StaleSignalChip /></div>}
-   <div style={{ fontSize: 15, marginBottom: 8 }}>
-    {t(stale ? 'hoy.no_pending_actions_unverified' : 'hoy.no_pending_actions')}
-   </div>
-   <div style={{ fontSize: 13, color: 'var(--dim)' }}>
-    {t(stale ? 'hoy.inventory_unverified' : 'hoy.inventory_under_control')}
-   </div>
-  </div>
- )
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function HoyPage() {
  const { t, lang } = useLanguage()
@@ -972,6 +732,10 @@ export default function HoyPage() {
  // refreshed in a month.
  const { freshness } = useDataFreshness()
  const semaphoreStale = freshness?.semaphore === 'degraded'
+
+ // Phone or desktop. Declared with the other hooks so the hook order is stable
+ // whichever tree ends up rendering (see the fork below the early returns).
+ const isNarrow = useIsNarrow()
 
  // Load briefing when session changes
  const load = useCallback(async (sid: string) => {
@@ -1083,6 +847,18 @@ export default function HoyPage() {
     ? { ...i, status: (i.status === 'approved' ? 'pending' : 'approved') as ActionStatus }
     : i,
   ))
+ }
+
+ // Take a line back OUT of the order without rejecting it.
+ //
+ // The mobile card has one button that toggles, and `approveItem` cannot serve
+ // as its "remove": it only toggles 'approved' ⇄ 'pending', so a line the buyer
+ // had put in the cart by editing its quantity ('modified') would stay in the
+ // cart on the second tap. Rejecting it instead would be wrong too — the buyer
+ // is undoing their own tap, not telling us the recommendation was bad, and
+ // rejections are logged as adoption feedback.
+ function unapproveItem(sku: string) {
+  setCart(prev => prev.map(i => i.sku === sku ? { ...i, status: 'pending' as ActionStatus } : i))
  }
 
  function rejectItem(sku: string) {
@@ -1312,6 +1088,44 @@ export default function HoyPage() {
   return <HoyEmptyState variant="no_session" />
  }
 
+ // ── Phone: a card list, not this table ────────────────────────────────────
+ // The buyer checks what to order standing in the warehouse. Everything above
+ // this line — the data loading, the cart state, the decisions logged on
+ // download — is shared; only the presentation forks, so the two views cannot
+ // disagree about what was approved or what the semáforo says.
+ //
+ // `isNarrow` is false on the first render (SSR has no viewport), so the
+ // desktop tree is what hydrates and the swap happens one paint later.
+ if (isNarrow) {
+  return (
+   <HoyMobile
+    loading={loading}
+    error={error}
+    onRetry={() => load(sessionId)}
+    briefing={briefing}
+    firstName={user?.full_name ? user.full_name.split(' ')[0] : null}
+    freshness={freshness ?? null}
+    semaphoreStale={semaphoreStale}
+    cart={cart}
+    approved={approved}
+    onApprove={approveItem}
+    onRemove={unapproveItem}
+    onChangeQty={changeQty}
+    onClearCart={() => setCart(prev => prev.map(i =>
+     i.status === 'approved' || i.status === 'modified'
+      ? { ...i, status: 'pending' as ActionStatus }
+      : i,
+    ))}
+    onGenerate={downloadOC}
+    generatedPO={generatedPO}
+    onDismissGenerated={dismissGeneratedPO}
+    pendingReceptions={pendingPOs.length}
+    overduePOs={overduePOs}
+    noInventory={<HoyEmptyState variant="no_inventory" />}
+   />
+  )
+ }
+
  return (
   <div style={{ background: C.bg, minHeight: '100vh', padding: '32px 40px', position: 'relative' }}>
 
@@ -1320,7 +1134,7 @@ export default function HoyPage() {
     <span style={{
      fontSize: 10, fontWeight: 700, color: C.indigo,
      padding: '2px 8px', borderRadius: 20,
-     background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.2)',
+     background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
      textTransform: 'uppercase' as const, letterSpacing: '0.07em',
     }}>
      {t('hoy.tagline_badge')}
@@ -1443,7 +1257,7 @@ export default function HoyPage() {
          <div style={{
           display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20,
           padding: '12px 16px', borderRadius: 10,
-          background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.25)',
+          background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
          }}>
           <Truck size={15} color={C.indigo} style={{ flexShrink: 0 }} />
           <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
@@ -1678,7 +1492,7 @@ export default function HoyPage() {
             send it to its suppliers without navigating away to /orders. */}
         {generatedPO && (
          <div style={{
-          marginTop: 12, background: 'var(--surface)', border: '1px solid rgba(129,140,248,0.4)',
+          marginTop: 12, background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
           borderRadius: 12, padding: '16px 20px',
          }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>

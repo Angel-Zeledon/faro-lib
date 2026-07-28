@@ -13,7 +13,7 @@ import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight } from 'lu
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: '#818cf8',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)',
 }
 
 // The tenant default warehouse is a REAL row, not a synthetic entry: the
@@ -339,7 +339,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   const pill = (active: boolean): React.CSSProperties => ({
     all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,
     fontSize: 11.5, fontWeight: 600,
-    background: active ? 'rgba(129,140,248,0.12)' : 'transparent',
+    background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
     color: active ? C.indigo : C.dim,
   })
 

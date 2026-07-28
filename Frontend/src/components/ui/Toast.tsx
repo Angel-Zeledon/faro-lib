@@ -1,5 +1,5 @@
 'use client'
-import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Info, X, Undo2 } from 'lucide-react'
 import { useToast, type ToastItem } from '@/contexts/ToastContext'
 
 const ICONS = {
@@ -14,7 +14,7 @@ const BORDER: Record<string, string> = {
 }
 
 function ToastRow({ t }: { t: ToastItem }) {
-  const { dismiss } = useToast()
+  const { dismiss, runAction } = useToast()
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -23,15 +23,29 @@ function ToastRow({ t }: { t: ToastItem }) {
       border: `1px solid ${BORDER[t.type]}`,
       borderRadius: 10,
       boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
-      minWidth: 280, maxWidth: 360,
+      minWidth: 280, maxWidth: 400,
       animation: t.exiting ? 'toast-out 0.3s ease-in forwards' : 'toast-in 0.25s ease-out',
       pointerEvents: 'auto',
     }}>
       {ICONS[t.type]}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{t.title}</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{t.message}</div>
+        {t.message && <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{t.message}</div>}
       </div>
+      {t.actionLabel && (
+        <button
+          onClick={() => runAction(t.id)}
+          style={{
+            all: 'unset', cursor: 'pointer', flexShrink: 0,
+            padding: '4px 10px', borderRadius: 7,
+            border: '1px solid var(--border)',
+            fontSize: 12, fontWeight: 700, color: 'var(--accent)',
+          }}
+        >
+          <Undo2 size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
+          {t.actionLabel}
+        </button>
+      )}
       <button
         onClick={() => dismiss(t.id)}
         style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex', padding: 2, marginTop: -1 }}
@@ -46,7 +60,7 @@ export default function ToastContainer() {
   const { toasts } = useToast()
   if (!toasts.length) return null
   return (
-    <div style={{
+    <div role="status" aria-live="polite" style={{
       position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
       display: 'flex', flexDirection: 'column', gap: 8,
       pointerEvents: 'none',

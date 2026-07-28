@@ -39,8 +39,8 @@ function ResetPasswordForm() {
 
   const inputStyle = {
     width: '100%', padding: '10px 12px', boxSizing: 'border-box' as const,
-    background: '#141520', border: '1px solid #1e2030', borderRadius: 8,
-    color: '#e2e8f0', fontSize: 13, outline: 'none',
+    background: 'var(--bg)', border: '1px solid var(--surface)', borderRadius: 8,
+    color: 'var(--text)', fontSize: 13, outline: 'none',
   }
 
   return (
@@ -48,21 +48,21 @@ function ResetPasswordForm() {
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 11, margin: '0 auto 10px',
-          background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+          background: 'linear-gradient(135deg, var(--accent), var(--accent))',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Zap size={20} color="#fff" strokeWidth={2.5} />
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', margin: '0 0 4px' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
           {t('auth.set_new_password_title')}
         </h1>
       </div>
 
-      <div style={{ background: '#0f1015', border: '1px solid #1e2030', borderRadius: 14, padding: '24px 28px' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--surface)', borderRadius: 14, padding: '24px 28px' }}>
         {done ? (
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={32} color="#22c55e" style={{ margin: '0 auto 12px' }} />
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
               {t('auth.pw_updated')} {t('auth.redirecting_login')}
             </p>
           </div>
@@ -71,7 +71,7 @@ function ResetPasswordForm() {
             {!token && (
               <div style={{ fontSize: 13, color: '#ef4444', marginBottom: 16 }}>
                 {t('auth.reset_token_missing')}{' '}
-                <Link href="/forgot-password" style={{ color: '#818cf8' }}>{t('auth.reset_request_new_link')}</Link>.
+                <Link href="/forgot-password" style={{ color: 'var(--accent)' }}>{t('auth.reset_request_new_link')}</Link>.
               </div>
             )}
             {error && (
@@ -86,7 +86,7 @@ function ResetPasswordForm() {
             )}
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label htmlFor="reset-new-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="reset-new-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
                   {t('auth.new_password_label')}
                 </label>
                 <div style={{ position: 'relative' }}>
@@ -96,19 +96,19 @@ function ResetPasswordForm() {
                     onChange={e => setPw(e.target.value)}
                     placeholder={t('auth.password_placeholder')}
                     style={{ ...inputStyle, paddingRight: 36 }}
-                    onFocus={e => (e.target.style.borderColor = '#818cf8')}
-                    onBlur={e => (e.target.style.borderColor = '#1e2030')}
+                    onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
+                    onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                   />
                   <button type="button" onClick={() => setShowPw(v => !v)} style={{
                     all: 'unset', position: 'absolute', right: 10, top: '50%',
-                    transform: 'translateY(-50%)', cursor: 'pointer', color: '#64748b',
+                    transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--dim)',
                   }}>
                     {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
               </div>
               <div>
-                <label htmlFor="reset-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 6 }}>
+                <label htmlFor="reset-confirm-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
                   {t('auth.confirm_password_label')}
                 </label>
                 <input
@@ -116,16 +116,16 @@ function ResetPasswordForm() {
                   type={showPw ? 'text' : 'password'} required value={pw2}
                   onChange={e => setPw2(e.target.value)}
                   placeholder={t('auth.confirm_password_placeholder')}
-                  style={{ ...inputStyle, borderColor: pw2 && pw !== pw2 ? '#ef4444' : '#1e2030' }}
-                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#818cf8')}
-                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : '#1e2030')}
+                  style={{ ...inputStyle, borderColor: pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)' }}
+                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--accent)')}
+                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)')}
                 />
               </div>
               <button
                 type="submit" disabled={loading || !token}
                 style={{
                   width: '100%', padding: '11px', borderRadius: 8, border: 'none',
-                  background: loading ? '#4f56b0' : '#818cf8', color: '#fff',
+                  background: loading ? 'color-mix(in srgb, var(--accent) 70%, black)' : 'var(--accent)', color: '#fff',
                   fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 4,
                 }}
               >
@@ -143,7 +143,7 @@ export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
       <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
-        <Loader2 size={24} color="#818cf8" style={{ animation: 'spin 1s linear infinite' }} />
+        <Loader2 size={24} color="var(--accent)" style={{ animation: 'spin 1s linear infinite' }} />
       </div>
     }>
       <ResetPasswordForm />

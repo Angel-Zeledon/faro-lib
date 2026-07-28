@@ -17,7 +17,11 @@ export default function ConditionalShell({ children }: { children: React.ReactNo
       <div style={{
         minHeight: '100vh', display: 'flex',
         alignItems: 'center', justifyContent: 'center',
-        background: '#08090d',
+        // Follows the theme. This was a hardcoded near-black, so with light as
+        // the default a user went from a light login straight into a black
+        // reset-password screen. /login and /signup paint their own canvas
+        // over this in (auth)/layout.tsx, so they are unaffected either way.
+        background: 'var(--bg)',
       }}>
         {children}
       </div>

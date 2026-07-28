@@ -5,6 +5,8 @@ import { getInventoryROI, getROIMonthly, getROIMonthReport } from '@/lib/api'
 import type { InventoryROISummary, ROIMonthlyRow, ROIMonthReport } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
+import Card, { CardHeader } from '@/components/ui/Card'
+import Table, { Th, Td } from '@/components/ui/Table'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
 
@@ -12,7 +14,7 @@ import { formatMoney } from '@/lib/currency'
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: '#818cf8',
+  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -45,11 +47,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
   const hasValue = roi.estimated_value_protected > 0
 
   return (
-    <div style={{
-      background: C.surface, border: `1px solid ${C.border}`,
-      borderRadius: 14, padding: '28px 32px',
-      borderTop: `4px solid ${C.indigo}`,
-    }}>
+    <Card radius={14} padding="28px 32px" style={{ borderTop: `4px solid ${C.indigo}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.indigo, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 20 }}>
         {t('roi.hero_eyebrow')}
       </div>
@@ -67,7 +65,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
             <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
               {t('roi.since_prefix')} {fmtDate(roi.first_po_at, lang)}
               {roi.active_days > 0 && (
-                <span style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 20, background: 'rgba(129,140,248,0.1)', color: C.indigo, fontSize: 11 }}>
+                <span style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 20, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: C.indigo, fontSize: 11 }}>
                   {roi.active_days} {t('roi.active_days_suffix')}
                 </span>
               )}
@@ -117,7 +115,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
           )}
         </div>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -130,10 +128,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
   const color = pct >= 70 ? C.green : pct >= 40 ? C.amber : C.red
 
   return (
-    <div style={{
-      background: C.surface, border: `1px solid ${C.border}`,
-      borderRadius: 14, padding: '24px 28px', borderTop: `4px solid ${color}`,
-    }}>
+    <Card radius={14} padding="24px 28px" style={{ borderTop: `4px solid ${color}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
         {t('roi.adoption_eyebrow')}
       </div>
@@ -160,7 +155,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
           )}
         </div>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -173,63 +168,52 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   const { t, lang } = useLanguage()
 
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{
-        padding: '14px 18px', borderBottom: `1px solid ${C.border}`,
-        background: C.card, display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        <TrendingUp size={14} color={C.indigo} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-          {t('roi.monthly_evolution_title')}
-        </span>
-      </div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+    <Card padding={0} overflow="hidden">
+      <CardHeader
+        icon={<TrendingUp size={14} color={C.indigo} />}
+        title={t('roi.monthly_evolution_title')}
+        style={{ background: C.card }}
+      />
+      <Table size="lg">
           <thead>
             <tr style={{ background: C.card }}>
               {[
                 t('roi.col_month'), t('roi.col_orders'), t('roi.col_stockouts_handled'),
                 t('roi.col_value_managed'), t('roi.col_adoption'), t('roi.col_capital_freed'),
-              ].map(h => (
-                <th key={h} style={{
-                  padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap',
-                  color: C.dim, fontWeight: 600, fontSize: 10,
-                  borderBottom: `1px solid ${C.border}`,
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                }}>{h}</th>
-              ))}
+              ].map(h => <Th key={h} size="lg">{h}</Th>)}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, idx) => (
+              /* The zebra stripe and the divider both live on the <tr>, so the
+                 cells do not draw dividers of their own. */
               <tr key={row.month} style={{
                 background: idx % 2 === 0 ? C.surface : C.card,
                 borderBottom: `1px solid ${C.border}`,
               }}>
-                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 600, textTransform: 'capitalize' }}>
+                <Td size="lg" divider={false} style={{ fontWeight: 600, textTransform: 'capitalize' }}>
                   {fmtMonthLabel(row.month, lang)}
-                </td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{row.pos_count}</td>
-                <td style={{ padding: '11px 14px', color: row.skus_order_now > 0 ? C.red : C.dim, fontWeight: row.skus_order_now > 0 ? 700 : 400 }}>
+                </Td>
+                <Td size="lg" divider={false}>{row.pos_count}</Td>
+                <Td size="lg" divider={false} style={{ color: row.skus_order_now > 0 ? C.red : C.dim, fontWeight: row.skus_order_now > 0 ? 700 : 400 }}>
                   {row.skus_order_now}
-                </td>
-                <td style={{ padding: '11px 14px', color: C.green, fontFamily: 'monospace' }}>
+                </Td>
+                <Td size="lg" divider={false} mono style={{ color: C.green }}>
                   {formatMoney(row.total_value)}
-                </td>
-                <td style={{ padding: '11px 14px', color: C.text }}>
+                </Td>
+                <Td size="lg" divider={false}>
                   {row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—'}
-                </td>
-                <td style={{ padding: '11px 14px', color: row.capital_liberado != null ? C.green : C.dim, fontFamily: 'monospace', fontWeight: row.capital_liberado != null ? 600 : 400 }}>
+                </Td>
+                <Td size="lg" divider={false} mono style={{ color: row.capital_liberado != null ? C.green : C.dim, fontWeight: row.capital_liberado != null ? 600 : 400 }}>
                   {row.capital_liberado != null
                     ? formatMoney(row.capital_liberado)
                     : t('roi.capital_freed_pending')}
-                </td>
+                </Td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
+      </Table>
+    </Card>
   )
 }
 
@@ -259,20 +243,17 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
   const monthLabel = fmtMonthLabel(report.month, lang)
 
   const header = (
-    <div style={{
-      padding: '14px 18px', borderBottom: `1px solid ${C.border}`,
-      background: C.card, display: 'flex', alignItems: 'center', gap: 8,
-    }}>
-      <Calendar size={14} color={C.indigo} />
-      <span style={{ fontSize: 13, fontWeight: 600, color: C.text, textTransform: 'capitalize' }}>
-        {t('recap.month_of')} {monthLabel}
-      </span>
-    </div>
+    <CardHeader
+      icon={<Calendar size={14} color={C.indigo} />}
+      title={`${t('recap.month_of')} ${monthLabel}`}
+      style={{ background: C.card }}
+      titleStyle={{ textTransform: 'capitalize' }}
+    />
   )
 
   if (!report.has_sufficient_history) {
     return (
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      <Card padding={0} overflow="hidden">
         {header}
         <div style={{ padding: '28px 26px', textAlign: 'center' }}>
           <AlertTriangle size={26} color={C.amber} style={{ opacity: 0.7, marginBottom: 12 }} />
@@ -283,7 +264,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
             {t('recap.insufficient_body')}
           </p>
         </div>
-      </div>
+      </Card>
     )
   }
 
@@ -292,7 +273,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
     : t('recap.headline_no_amount')
 
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+    <Card padding={0} overflow="hidden">
       {header}
       <div style={{ padding: '20px 22px' }}>
         <p style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 600, color: C.text }}>
@@ -350,7 +331,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
         <div style={{
           marginTop: 18, padding: '14px 16px', borderRadius: 10,
-          background: 'rgba(129,140,248,0.04)', border: '1px solid rgba(129,140,248,0.18)',
+          background: 'color-mix(in srgb, var(--accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 18%, transparent)',
         }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.indigo, marginBottom: 6 }}>
             {t('recap.provenance_title')}
@@ -363,7 +344,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
           </p>
         </div>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -371,8 +352,8 @@ function WhyItMattersCard() {
   const { t } = useLanguage()
   return (
     <div style={{
-      background: 'rgba(129,140,248,0.04)',
-      border: `1px solid rgba(129,140,248,0.18)`,
+      background: 'color-mix(in srgb, var(--accent) 4%, transparent)',
+      border: `1px solid color-mix(in srgb, var(--accent) 18%, transparent)`,
       borderRadius: 12, padding: '22px 26px',
     }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: C.indigo, marginBottom: 12 }}>
@@ -426,7 +407,7 @@ export default function ROIPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 9,
-            background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+            background: 'linear-gradient(135deg, var(--accent), var(--accent))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <TrendingUp size={17} color="#fff" strokeWidth={2.5} />
@@ -508,7 +489,7 @@ export default function ROIPage() {
               <Link href="/inventory" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.3)',
+                background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
                 color: C.indigo, textDecoration: 'none',
               }}>
                 <ShoppingCart size={13} /> {t('roi.go_to_inventory')}

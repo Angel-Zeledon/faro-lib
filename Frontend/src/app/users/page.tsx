@@ -13,6 +13,9 @@ import {
   resendVerification,
   type AdminUser,
 } from '@/lib/api'
+import Card from '@/components/ui/Card'
+import { thStyle } from '@/components/ui/Table'
+import Input, { Field, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 
@@ -46,7 +49,7 @@ const PERM_LABEL_KEY: Record<string, string> = {
 const STATUS_META: Record<string, { labelKey: string; color: string; bg: string }> = {
   active:               { labelKey: 'users.status_active',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
   pending_confirmation: { labelKey: 'users.status_pending',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  inactive:             { labelKey: 'users.status_inactive',  color: '#64748b', bg: 'rgba(100,116,139,0.1)'},
+  inactive:             { labelKey: 'users.status_inactive',  color: 'var(--dim)', bg: 'rgba(100,116,139,0.1)'},
   suspended:            { labelKey: 'users.status_suspended', color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
 }
 
@@ -57,7 +60,7 @@ function StatusBadge({ status }: { status: string }) {
   const known = STATUS_META[status]
   const m = known ?? {
     labelKey: status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    color: '#94a3b8',
+    color: 'var(--muted)',
     bg: 'rgba(148,163,184,0.1)',
   }
   return (
@@ -76,7 +79,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function RoleBadge({ role }: { role: string }) {
   const { t } = useLanguage()
-  const color = role === 'admin' ? '#818cf8' : role === 'analyst' ? '#06b6d4' : '#94a3b8'
+  const color = role === 'admin' ? 'var(--accent)' : role === 'analyst' ? '#06b6d4' : 'var(--muted)'
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: 99,
@@ -114,7 +117,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
     }} onClick={onClose}>
       <div
         style={{
-          background: '#0f1015', border: '1px solid #1e2030',
+          background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 14, padding: '28px', width: '100%', maxWidth: 480,
           maxHeight: '90vh', overflowY: 'auto',
         }}
@@ -126,10 +129,10 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
   )
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', boxSizing: 'border-box',
-  background: '#141520', border: '1px solid #1e2030', borderRadius: 8,
-  color: '#e2e8f0', fontSize: 13, outline: 'none',
+// The modal's own label rhythm: lighter and one step smaller than the Field
+// default, because these sit inside an already-titled dialog.
+const MODAL_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 11, fontWeight: 500, marginBottom: 5,
 }
 
 // ── Create/Edit Modal ────────────────────────────────────────────────────────
@@ -177,10 +180,10 @@ function UserFormModal({
   return (
     <Modal onClose={onClose}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
           {isCreate ? t('users.create_user') : t('users.edit_user_title')}
         </h2>
-        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
+        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
           <X size={16} aria-hidden="true" />
         </button>
       </div>
@@ -197,54 +200,51 @@ function UserFormModal({
       )}
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label htmlFor="user-full-name" style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
-            {t('users.full_name_optional')}
-          </label>
-          <input
+        <Field
+          label={t('users.full_name_optional')}
+          htmlFor="user-full-name"
+          labelStyle={MODAL_LABEL_STYLE}
+        >
+          <Input
+            size="lg"
             id="user-full-name" name="full_name"
             value={fullName} onChange={e => setFullName(e.target.value)}
-            placeholder={t('users.full_name_placeholder')} style={inputStyle}
-            onFocus={e => (e.target.style.borderColor = '#818cf8')}
-            onBlur={e => (e.target.style.borderColor = '#1e2030')}
+            placeholder={t('users.full_name_placeholder')}
           />
-        </div>
-        <div>
-          <label htmlFor="user-email" style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
-            {t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}
-          </label>
-          <input
+        </Field>
+        <Field
+          label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}</>}
+          htmlFor="user-email"
+          labelStyle={MODAL_LABEL_STYLE}
+        >
+          <Input
+            size="lg"
             id="user-email" name="email"
             type="email" required value={email} onChange={e => setEmail(e.target.value)}
-            placeholder={t('users.email_placeholder')} style={inputStyle}
-            onFocus={e => (e.target.style.borderColor = '#818cf8')}
-            onBlur={e => (e.target.style.borderColor = '#1e2030')}
+            placeholder={t('users.email_placeholder')}
           />
           {!isCreate && email !== target?.email && (
             <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
               {t('users.email_reverify')}
             </p>
           )}
-        </div>
-        <div>
-          <label htmlFor="user-role" style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', display: 'block', marginBottom: 5 }}>
-            {t('users.role')}
-          </label>
-          <select
+        </Field>
+        <Field label={t('users.role')} htmlFor="user-role" labelStyle={MODAL_LABEL_STYLE}>
+          <Select
+            size="lg"
             id="user-role" name="role"
             value={role} onChange={e => setRole(e.target.value)}
-            style={{ ...inputStyle, cursor: 'pointer' }}
-            onFocus={e => (e.target.style.borderColor = '#818cf8')}
-            onBlur={e => (e.target.style.borderColor = '#1e2030')}
           >
-            {ROLES.map(r => <option key={r} value={r} style={{ background: '#141520' }}>{roleLabel(t, r)}</option>)}
-          </select>
-        </div>
+            {ROLES.map(r => (
+              <option key={r} value={r} style={{ background: 'var(--surface-2)' }}>{roleLabel(t, r)}</option>
+            ))}
+          </Select>
+        </Field>
 
         {isCreate && (
           <div style={{
             display: 'flex', gap: 8, padding: '10px 12px', borderRadius: 8,
-            background: 'rgba(129,140,248,0.08)', border: '1px solid rgba(129,140,248,0.2)',
+            background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
             fontSize: 12, color: '#a5b4fc',
           }}>
             <Mail size={12} style={{ marginTop: 1, flexShrink: 0 }} />
@@ -254,14 +254,14 @@ function UserFormModal({
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
           <button type="button" onClick={onClose} style={{
-            padding: '8px 16px', borderRadius: 7, border: '1px solid #1e2030',
-            background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
+            padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
+            background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
           }}>
             {t('common.cancel')}
           </button>
           <button type="submit" disabled={loading} style={{
             padding: '8px 20px', borderRadius: 7, border: 'none',
-            background: loading ? '#4f56b0' : '#818cf8', color: '#fff',
+            background: loading ? 'color-mix(in srgb, var(--accent) 70%, black)' : 'var(--accent)', color: '#fff',
             fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -311,14 +311,14 @@ function DeleteModal({
         }}>
           <Trash2 size={20} color="#ef4444" />
         </div>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0', margin: '0 0 8px' }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>
           {t('users.delete_user_q')}
         </h2>
-        <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 6px' }}>
+        <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 6px' }}>
           {t('users.delete_perm_prefix')}{' '}
-          <strong style={{ color: '#e2e8f0' }}>{target.full_name || target.email}</strong>.
+          <strong style={{ color: 'var(--text)' }}>{target.full_name || target.email}</strong>.
         </p>
-        <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 20px' }}>
+        <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 20px' }}>
           {t('users.delete_perm_detail')}
         </p>
         {error && (
@@ -332,8 +332,8 @@ function DeleteModal({
         )}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
           <button onClick={onClose} style={{
-            padding: '8px 20px', borderRadius: 7, border: '1px solid #1e2030',
-            background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
+            padding: '8px 20px', borderRadius: 7, border: '1px solid var(--border)',
+            background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
           }}>
             {t('common.cancel')}
           </button>
@@ -394,20 +394,20 @@ function PermissionsModal({
     <Modal onClose={onClose}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', margin: '0 0 2px' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px' }}>
             {t('users.permissions')}
           </h2>
-          <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
+          <p style={{ fontSize: 11, color: 'var(--dim)', margin: 0 }}>
             {target.full_name || target.email} · <span>{roleLabel(t, target.role)}</span>
           </p>
         </div>
-        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: '#64748b' }}>
+        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
           <X size={16} aria-hidden="true" />
         </button>
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 24, color: '#64748b', fontSize: 13 }}>{t('users.loading_generic')}</div>
+        <div style={{ textAlign: 'center', padding: 24, color: 'var(--dim)', fontSize: 13 }}>{t('users.loading_generic')}</div>
       ) : (
         <>
           {error && (
@@ -422,7 +422,7 @@ function PermissionsModal({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {PERMISSION_GROUPS.map(group => (
               <div key={group.labelKey}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
                   {t(group.labelKey)}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -433,9 +433,9 @@ function PermissionsModal({
                         name={`perm-${perm}`}
                         checked={perms.includes(perm)}
                         onChange={() => toggle(perm)}
-                        style={{ accentColor: '#818cf8', width: 14, height: 14, cursor: 'pointer' }}
+                        style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
                       />
-                      <span style={{ fontSize: 13, color: '#e2e8f0' }}>{t(PERM_LABEL_KEY[perm] ?? perm)}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text)' }}>{t(PERM_LABEL_KEY[perm] ?? perm)}</span>
                     </label>
                   ))}
                 </div>
@@ -445,14 +445,14 @@ function PermissionsModal({
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
             <button onClick={onClose} style={{
-              padding: '8px 16px', borderRadius: 7, border: '1px solid #1e2030',
-              background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer',
+              padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
+              background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
             }}>
               {t('common.cancel')}
             </button>
             <button onClick={handleSave} disabled={saving} style={{
               padding: '8px 20px', borderRadius: 7, border: 'none',
-              background: saving ? '#4f56b0' : '#818cf8', color: '#fff',
+              background: saving ? 'color-mix(in srgb, var(--accent) 70%, black)' : 'var(--accent)', color: '#fff',
               fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
@@ -547,8 +547,8 @@ function StatusDropdown({
         disabled={loading}
         style={{
           display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px',
-          borderRadius: 6, border: '1px solid #1e2030', background: '#141520',
-          color: '#94a3b8', fontSize: 11, cursor: loading ? 'wait' : 'pointer',
+          borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)',
+          color: 'var(--muted)', fontSize: 11, cursor: loading ? 'wait' : 'pointer',
         }}
         title={t('users.change_status')}
         aria-label={t('users.change_status')}
@@ -568,7 +568,7 @@ function StatusDropdown({
       {open && (
         <div style={{
           position: 'absolute', right: 0, top: 28, zIndex: 20,
-          background: '#0f1015', border: '1px solid #1e2030', borderRadius: 8,
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
           minWidth: 130, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
         }}>
           {OPTIONS.map(o => {
@@ -581,7 +581,7 @@ function StatusDropdown({
                   display: 'flex', alignItems: 'center', gap: 8,
                   width: '100%', padding: '8px 12px', border: 'none',
                   background: target.status === o.status ? m.bg : 'transparent',
-                  color: target.status === o.status ? m.color : '#94a3b8',
+                  color: target.status === o.status ? m.color : 'var(--muted)',
                   fontSize: 12, cursor: 'pointer', textAlign: 'left',
                 }}
               >
@@ -636,7 +636,7 @@ export default function UsersPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 }}>
         <XCircle size={32} color="#ef4444" />
-        <p style={{ fontSize: 14, color: '#64748b' }}>{t('users.no_permission')}</p>
+        <p style={{ fontSize: 14, color: 'var(--dim)' }}>{t('users.no_permission')}</p>
       </div>
     )
   }
@@ -653,10 +653,10 @@ export default function UsersPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 40, height: 40, borderRadius: 10,
-            background: 'rgba(129,140,248,0.12)',
+            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <Users size={18} color="#818cf8" />
+            <Users size={18} color="var(--accent)" />
           </div>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.02em' }}>
@@ -684,7 +684,7 @@ export default function UsersPage() {
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 16px', borderRadius: 7, border: 'none',
-              background: '#818cf8', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
             }}
           >
             <Plus size={14} />
@@ -700,7 +700,7 @@ export default function UsersPage() {
         borderRadius: 10, padding: '12px 16px', alignItems: 'center',
       }}>
         <div style={{ position: 'relative', flex: 1 }}>
-          <Search size={13} color="#64748b" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+          <Search size={13} color="var(--dim)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
           <input
             type="search" name="user_search"
             value={search} onChange={e => { setSearch(e.target.value); setOffset(0) }}
@@ -708,29 +708,31 @@ export default function UsersPage() {
             aria-label={t('users.search_placeholder')}
             style={{
               width: '100%', padding: '8px 10px 8px 30px', boxSizing: 'border-box',
-              background: '#141520', border: '1px solid var(--border)', borderRadius: 7,
+              background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 7,
               color: 'var(--text)', fontSize: 12, outline: 'none',
             }}
           />
         </div>
-        <select
+        <Select
+          size="md"
           name="filter_status"
           value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setOffset(0) }}
           aria-label={t('users.col_status')}
-          style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
+          style={{ padding: '8px 10px', color: 'var(--dim)', fontSize: 12, width: 'auto' }}
         >
           <option value="">{t('users.all_statuses')}</option>
           {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{t(v.labelKey)}</option>)}
-        </select>
-        <select
+        </Select>
+        <Select
+          size="md"
           name="filter_role"
           value={filterRole} onChange={e => { setFilterRole(e.target.value); setOffset(0) }}
           aria-label={t('users.col_role')}
-          style={{ padding: '8px 10px', background: '#141520', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--dim)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
+          style={{ padding: '8px 10px', color: 'var(--dim)', fontSize: 12, width: 'auto' }}
         >
           <option value="">{t('users.all_roles')}</option>
           {ROLES.map(r => <option key={r} value={r}>{roleLabel(t, r)}</option>)}
-        </select>
+        </Select>
       </div>
 
       {/* Load error */}
@@ -747,14 +749,14 @@ export default function UsersPage() {
       )}
 
       {/* Table */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+      <Card padding={0} overflow="hidden">
         {/* Table header */}
+        {/* A CSS grid, not a <table> — so it borrows the header treatment as a
+            style object. Same trick a virtualized row grid needs. */}
         <div style={{
+          ...thStyle(),
           display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 1fr 1fr auto',
           gap: 0, padding: '10px 16px',
-          borderBottom: '1px solid var(--border)',
-          fontSize: 11, fontWeight: 600, color: 'var(--dim)',
-          textTransform: 'uppercase', letterSpacing: '0.06em',
         }}>
           <div>{t('users.col_name_email')}</div>
           <div>{t('users.col_status')}</div>
@@ -779,14 +781,14 @@ export default function UsersPage() {
               display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 1fr 1fr auto',
               gap: 0, padding: '12px 16px', alignItems: 'center',
               borderBottom: idx < users.length - 1 ? '1px solid var(--border)' : 'none',
-              background: u.id === currentUser?.id ? 'rgba(129,140,248,0.03)' : 'transparent',
+              background: u.id === currentUser?.id ? 'color-mix(in srgb, var(--accent) 3%, transparent)' : 'transparent',
             }}
           >
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                 {u.full_name || '—'}
                 {u.id === currentUser?.id && (
-                  <span style={{ fontSize: 10, color: '#818cf8', marginLeft: 6, fontWeight: 400 }}>{t('users.you')}</span>
+                  <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 6, fontWeight: 400 }}>{t('users.you')}</span>
                 )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{u.email}</div>
@@ -804,7 +806,7 @@ export default function UsersPage() {
                 onClick={() => setPermsUser(u)}
                 title={t('users.permissions_title')}
                 aria-label={t('users.permissions_title')}
-                style={{ all: 'unset', cursor: 'pointer', color: '#64748b', padding: 5 }}
+                style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
               >
                 <ShieldCheck size={14} aria-hidden="true" />
               </button>
@@ -812,7 +814,7 @@ export default function UsersPage() {
                 onClick={() => setEditUser(u)}
                 title={t('users.edit_title')}
                 aria-label={t('users.edit_title')}
-                style={{ all: 'unset', cursor: 'pointer', color: '#64748b', padding: 5 }}
+                style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
               >
                 <Edit2 size={14} aria-hidden="true" />
               </button>
@@ -821,7 +823,7 @@ export default function UsersPage() {
                   onClick={() => setDeleteUser(u)}
                   title={t('users.delete_title')}
                   aria-label={t('users.delete_title')}
-                  style={{ all: 'unset', cursor: 'pointer', color: '#64748b', padding: 5 }}
+                  style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
                 >
                   <Trash2 size={14} aria-hidden="true" />
                 </button>
@@ -829,7 +831,7 @@ export default function UsersPage() {
             </div>
           </div>
         ))}
-      </div>
+      </Card>
 
       {/* Pagination */}
       {pages > 1 && (
@@ -844,7 +846,7 @@ export default function UsersPage() {
                 onClick={() => setOffset(i * limit)}
                 style={{
                   padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                  background: page === i + 1 ? '#818cf8' : 'transparent',
+                  background: page === i + 1 ? 'var(--accent)' : 'transparent',
                   color: page === i + 1 ? '#fff' : 'var(--dim)',
                   fontSize: 12, cursor: 'pointer',
                 }}

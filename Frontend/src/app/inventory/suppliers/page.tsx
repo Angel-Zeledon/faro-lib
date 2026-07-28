@@ -11,6 +11,9 @@ import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable } from
 import { useLanguage } from '@/contexts/LanguageContext'
 import { DEFAULT_LEAD_TIME_DAYS } from '@/lib/inventoryDefaults'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import Card from '@/components/ui/Card'
+import Input, { Field, Select, Textarea } from '@/components/ui/Input'
+import Table, { Th, Td } from '@/components/ui/Table'
 import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
 import {
   Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, ChevronRight, BarChart3, Tag,
@@ -20,7 +23,7 @@ import {
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  green: '#22c55e', amber: '#f59e0b', red: '#ef4444', indigo: '#818cf8',
+  green: '#22c55e', amber: '#f59e0b', red: '#ef4444', indigo: 'var(--accent)',
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
@@ -116,12 +119,9 @@ function LeadTimeLearning({ supplier }: { supplier: SupplierWithLearning }) {
   )
 }
 
-// ── Shared input style ────────────────────────────────────────────────────────
-const inputS: React.CSSProperties = {
-  background: 'var(--surface-2)', border: `1px solid var(--border)`,
-  borderRadius: 6, color: 'var(--text)', fontSize: 13, outline: 'none',
-  padding: '7px 10px', width: '100%', boxSizing: 'border-box',
-}
+// Labels inside the supplier form sit below a panel heading, so they read one
+// step quieter than the Field default.
+const FORM_LABEL_STYLE: React.CSSProperties = { fontSize: 11, color: 'var(--dim)' }
 
 const PAYMENT_TERMS = ['Contado', '15 días', '30 días', '60 días', '90 días', 'Otro']
 
@@ -176,104 +176,87 @@ function SupplierFormPanel({
   const canSave = form.name.trim().length > 0
 
   return (
-    <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
-      padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16,
-    }}>
+    <Card tone="inset" padding="20px 24px" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
         {initial ? t('suppliers.form_edit_title') : t('suppliers.form_new_title')}
       </div>
 
       {/* Name */}
-      <div>
-        <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-          {t('suppliers.form_name_label')} *
-        </label>
-        <input style={inputS} name="supplier_name" aria-label={t('suppliers.form_name_label')} placeholder={t('suppliers.form_name_placeholder')} value={form.name} onChange={set('name')} autoFocus />
-      </div>
+      <Field label={`${t('suppliers.form_name_label')} *`} labelStyle={FORM_LABEL_STYLE}>
+        <Input name="supplier_name" aria-label={t('suppliers.form_name_label')} placeholder={t('suppliers.form_name_placeholder')} value={form.name} onChange={set('name')} autoFocus />
+      </Field>
 
       {/* Email + Phone */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            {t('suppliers.form_email_label')}
-          </label>
-          <input style={inputS} name="supplier_email" aria-label={t('suppliers.form_email_label')} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            {t('suppliers.form_phone_label')}
-          </label>
-          <input style={inputS} name="supplier_phone" aria-label={t('suppliers.form_phone_label')} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
-        </div>
+        <Field label={t('suppliers.form_email_label')} labelStyle={FORM_LABEL_STYLE}>
+          <Input name="supplier_email" aria-label={t('suppliers.form_email_label')} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
+        </Field>
+        <Field label={t('suppliers.form_phone_label')} labelStyle={FORM_LABEL_STYLE}>
+          <Input name="supplier_phone" aria-label={t('suppliers.form_phone_label')} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
+        </Field>
       </div>
 
       {/* WhatsApp + Payment Terms */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            {t('suppliers.form_whatsapp_label')}
-          </label>
-          <input style={inputS} name="supplier_whatsapp" aria-label={t('suppliers.form_whatsapp_label')} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-            {t('suppliers.form_payment_terms_label')}
-          </label>
+        <Field label={t('suppliers.form_whatsapp_label')} labelStyle={FORM_LABEL_STYLE}>
+          <Input name="supplier_whatsapp" aria-label={t('suppliers.form_whatsapp_label')} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
+        </Field>
+        <Field label={t('suppliers.form_payment_terms_label')} labelStyle={FORM_LABEL_STYLE}>
+          {/* The chevron is drawn here rather than via `chevron`, because it has
+              to sit inside the relative wrapper this layout already uses. */}
           <div style={{ position: 'relative' }}>
-            <select style={{ ...inputS, paddingRight: 28, appearance: 'none' as const }} name="supplier_payment_terms" value={form.payment_terms} onChange={set('payment_terms')} aria-label={t('suppliers.form_payment_terms_label')}>
+            <Select style={{ paddingRight: 28, appearance: 'none' }} name="supplier_payment_terms" value={form.payment_terms} onChange={set('payment_terms')} aria-label={t('suppliers.form_payment_terms_label')}>
               <option value="">{t('suppliers.form_select_placeholder')}</option>
               {PAYMENT_TERMS.map(term => <option key={term} value={term}>{term}</option>)}
-            </select>
+            </Select>
             <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: C.dim }} aria-hidden="true" />
           </div>
-        </div>
+        </Field>
       </div>
 
       {/* Lead time + Variability */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
+        {/* The hint below this field states the precedence explicitly (the lesson
+            from the event multipliers): this value governs every SKU of the
+            supplier that has no lead time of its own — a distributor has 12
+            suppliers, not 2.000 lead times — and a SKU set by hand keeps its own. */}
+        <Field
+          label={
             <Tooltip text={t('suppliers.form_lead_time_tip')}>
               <span>{t('suppliers.form_lead_time_label')} *</span>
               <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
-          </label>
-          <input style={inputS} name="supplier_lead_time_days" type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
-          {/* This field now governs every SKU of this supplier that has no lead
-              time of its own — a distributor has 12 suppliers, not 2.000 lead
-              times. State the precedence explicitly (the lesson from the event
-              multipliers): the buyer must be able to tell why a given SKU got
-              the number it got, and that a SKU they set by hand keeps theirs. */}
-          <div style={{ fontSize: 10, color: C.dim, marginTop: 4, lineHeight: 1.5 }}>
-            {t('suppliers.lead_time_applies_to_catalog')}
-          </div>
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
+          }
+          labelStyle={FORM_LABEL_STYLE}
+          hint={t('suppliers.lead_time_applies_to_catalog')}
+          hintStyle={{ fontSize: 10, lineHeight: 1.5 }}
+        >
+          <Input name="supplier_lead_time_days" type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
+        </Field>
+        <Field
+          label={
             <Tooltip text={t('suppliers.form_variability_tip')}>
               <span>{t('suppliers.form_variability_label')}</span>
               <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
-          </label>
-          <input style={inputS} name="supplier_lead_time_std" type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} aria-label={t('suppliers.form_variability_label')} />
-        </div>
+          }
+          labelStyle={FORM_LABEL_STYLE}
+        >
+          <Input name="supplier_lead_time_std" type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} aria-label={t('suppliers.form_variability_label')} />
+        </Field>
       </div>
 
       {/* Notes */}
-      <div>
-        <label style={{ fontSize: 11, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 4 }}>
-          {t('suppliers.form_notes_label')}
-        </label>
-        <textarea
-          style={{ ...inputS, resize: 'vertical', minHeight: 64 }}
+      <Field label={t('suppliers.form_notes_label')} labelStyle={FORM_LABEL_STYLE}>
+        <Textarea
+          style={{ minHeight: 64 }}
           name="supplier_notes"
           placeholder={t('suppliers.form_notes_placeholder')}
           value={form.notes}
           onChange={set('notes')}
           aria-label={t('suppliers.form_notes_label')}
         />
-      </div>
+      </Field>
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -297,7 +280,7 @@ function SupplierFormPanel({
           {initial ? t('suppliers.form_submit_update') : t('suppliers.form_submit_create')}
         </button>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -320,36 +303,38 @@ function SupplierRow({
     <>
       <tr
         style={{ borderBottom: expanded ? 'none' : `1px solid ${C.border}` }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(129,140,248,0.03)')}
+        onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 3%, transparent)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
-        <td style={{ padding: '12px 16px', fontWeight: 600, fontSize: 13, color: C.text }}>{supplier.name}</td>
-        <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: C.indigo, fontWeight: 700 }}>
+        {/* The row divider lives on the <tr> here, because an expanded row has
+            to suppress it — hence `divider={false}` on every cell. */}
+        <Td size="lg" divider={false} style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{supplier.name}</Td>
+        <Td size="lg" divider={false} mono style={{ color: C.indigo, fontWeight: 700 }}>
           {supplier.lead_time_days}d
-        </td>
-        <td style={{ padding: '12px 16px', fontSize: 12, color: C.dim }}>
+        </Td>
+        <Td size="lg" divider={false} style={{ color: C.dim }}>
           ±{supplier.lead_time_std}d
-        </td>
+        </Td>
         {/* What the lead-time learning is waiting for. A default nobody chose
             stops being silent the moment the screen says when it will stop
             being a default. */}
-        <td style={{ padding: '12px 16px', fontSize: 11, lineHeight: 1.5, minWidth: 230 }}>
+        <Td size="lg" divider={false} style={{ fontSize: 11, lineHeight: 1.5, minWidth: 230 }}>
           <LeadTimeLearning supplier={supplier} />
-        </td>
-        <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
+        </Td>
+        <Td size="lg" divider={false} style={{ color: C.muted }}>
           {supplier.payment_terms || <span style={{ color: C.dim }}>—</span>}
-        </td>
-        <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
+        </Td>
+        <Td size="lg" divider={false} style={{ color: C.muted }}>
           {supplier.email
             ? <a href={`mailto:${supplier.email}`} style={{ color: C.indigo, textDecoration: 'none' }}>{supplier.email}</a>
             : <span style={{ color: C.dim }}>—</span>}
-        </td>
-        <td style={{ padding: '12px 16px', fontSize: 12, color: C.muted }}>
+        </Td>
+        <Td size="lg" divider={false} style={{ color: C.muted }}>
           {supplier.phone || supplier.whatsapp
             ? <>{supplier.phone || ''}{supplier.phone && supplier.whatsapp ? ' / ' : ''}{supplier.whatsapp || ''}</>
             : <span style={{ color: C.dim }}>—</span>}
-        </td>
-        <td style={{ padding: '12px 16px' }}>
+        </Td>
+        <Td size="lg" divider={false}>
           <div style={{ display: 'flex', gap: 4 }}>
             <button
               onClick={() => onToggleExpand(supplier.id)}
@@ -384,7 +369,7 @@ function SupplierRow({
               <Trash2 size={13} aria-hidden="true" />
             </button>
           </div>
-        </td>
+        </Td>
       </tr>
       {expanded && (
         <tr style={{ borderBottom: `1px solid ${C.border}` }}>
@@ -501,7 +486,7 @@ function SuppliersPageInner() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 9,
-            background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+            background: 'linear-gradient(135deg, var(--accent), var(--accent))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <Truck size={17} color="#fff" strokeWidth={2.5} aria-hidden="true" />
@@ -557,11 +542,11 @@ function SuppliersPageInner() {
 
       {/* Content */}
       {loading ? (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 8 }}>
+        <Card padding={8}>
           <LoadingState label={t('suppliers.loading_label')}>
             <SkeletonTable rows={5} columns={4} />
           </LoadingState>
-        </div>
+        </Card>
       ) : loadError ? (
         <ErrorState error={loadError} onRetry={load} />
       ) : suppliers.length === 0 && !isFormOpen ? (
@@ -583,9 +568,8 @@ function SuppliersPageInner() {
         />
       ) : suppliers.length > 0 ? (
         /* ── Table ───────────────────────────────────────────────── */
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <Card padding={0} overflow="hidden">
+          <Table size="lg">
               <thead>
                 <tr style={{ background: C.card }}>
                   {[
@@ -600,22 +584,14 @@ function SuppliersPageInner() {
                     [t('suppliers.table_contact'), ''],
                     [t('suppliers.table_actions'), ''],
                   ].map(([label, tip]) => (
-                    <th
-                      key={label}
-                      style={{
-                        padding: '9px 16px', textAlign: 'left', whiteSpace: 'nowrap',
-                        color: C.dim, fontWeight: 600, fontSize: 10,
-                        borderBottom: `1px solid ${C.border}`,
-                        textTransform: 'uppercase', letterSpacing: '0.06em',
-                      }}
-                    >
+                    <Th key={label} size="lg">
                       {tip ? (
                         <Tooltip text={tip}>
                           <span>{label}</span>
                           <Info size={9} color={C.dim} style={{ opacity: 0.5 }} />
                         </Tooltip>
                       ) : label}
-                    </th>
+                    </Th>
                   ))}
                 </tr>
               </thead>
@@ -631,9 +607,8 @@ function SuppliersPageInner() {
                   />
                 ))}
               </tbody>
-            </table>
-          </div>
-        </div>
+          </Table>
+        </Card>
       ) : null}
 
     </div>

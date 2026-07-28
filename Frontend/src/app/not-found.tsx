@@ -20,10 +20,10 @@ export default function NotFound() {
     }}>
       <div style={{
         width: 48, height: 48, borderRadius: 12,
-        background: 'rgba(129,140,248,0.1)',
+        background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <SearchX size={22} color="#818cf8" />
+        <SearchX size={22} color="var(--accent)" />
       </div>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>

@@ -11,6 +11,14 @@ import { useLanguage } from '@/contexts/LanguageContext'
  *   if (!(await confirm({ title, message, danger: true }))) return
  *
  * Themed via CSS vars so it matches light/dark like the rest of the app.
+ *
+ * Reach for this only when the action is genuinely irreversible — deleting a
+ * dataset or a session, cancelling an order that already went to the supplier,
+ * revoking a key someone may be authenticating with. For anything the user can
+ * get back, `useToast().undoable(...)` is the better trade: the change happens
+ * at once and a "Deshacer" toast holds the irreversible half until the window
+ * closes. A modal in front of a reversible action buys nothing and gets
+ * click-through-ed within a week.
  */
 
 export interface ConfirmOptions {
