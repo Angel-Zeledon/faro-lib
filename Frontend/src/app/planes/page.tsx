@@ -1,9 +1,18 @@
 'use client'
 /**
- * Plan comparison page. Reached from the nav-lock UpsellModal ("Ver planes")
- * and from the read-only banner when a trial has expired. Shows the three
- * plans, highlights the tenant's current one, and — since automated billing
- * lands later — routes upgrades to a contact action instead of a checkout.
+ * Plan comparison page. Reached from the "Ver planes" entry at the foot of the
+ * sidebar, from the gate on /integraciones, and from the read-only banner when
+ * a trial has expired. Shows the three plans, highlights the tenant's current
+ * one, and — since automated billing lands later — routes upgrades to a
+ * contact action instead of a checkout.
+ *
+ * It used to be reached through a modal opened by the padlocked nav items.
+ * Those padlocks are gone (four of fourteen nav entries taught a new tenant
+ * mainly about what they could not use), and with them the modal's only
+ * trigger, so the modal went too rather than sit unreferenced. Contextual
+ * upsell — offering the plan at the moment someone reaches for the feature —
+ * is worth building deliberately, with a real trigger, not by keeping a
+ * component alive in the hope of one.
  */
 import { useEntitlements } from '@/lib/entitlements'
 import { useLanguage } from '@/contexts/LanguageContext'

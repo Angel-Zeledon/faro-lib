@@ -1384,8 +1384,10 @@ export default function InventoryPage() {
  const orderItems = data.items
   .filter(i => (i.signal === 'PEDIR_YA' || i.signal === 'PEDIR_PRONTO') && effectiveQty(i) > 0)
  if (orderItems.length === 0) return
- // CSV
- const rows = ['SKU,Producto,Cantidad,Proveedor,Valor estimado']
+ // Same artifact as the export on /hoy — same filename, same columns — so it
+ // must use the same header keys. This one hardcoded Spanish, so an English
+ // user got Spanish headers here and English ones there, from one product.
+ const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
  for (const i of orderItems) {
   const qty = effectiveQty(i)
   const val = qty * (i.unit_cost ?? 0)
