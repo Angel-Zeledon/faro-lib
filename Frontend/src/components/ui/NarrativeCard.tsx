@@ -216,13 +216,13 @@ export default function NarrativeCard({
             <div key={i} style={{
               height: 11, borderRadius: 4, marginBottom: 8,
               width: `${w}%`, background: 'var(--surface-2)',
-              animation: `pulse 1.5s ease-in-out ${i * 0.1}s infinite`,
+              animation: `narrative-pulse 1.5s ease-in-out ${i * 0.1}s infinite`,
             }} />
           ))}
-          {/* `spin` is global (globals.css); only `pulse` is local to this card. */}
-          <style>{`
-            @keyframes pulse { 0%,100% { opacity:0.4 } 50% { opacity:0.8 } }
-          `}</style>
+          {/* Both keyframes live in globals.css. This card used to inject a
+              `pulse` of its own, and so did the analyst screen — with a
+              different shape under the same name, so one silently overrode
+              the other document-wide. */}
         </div>
       )}
     </div>

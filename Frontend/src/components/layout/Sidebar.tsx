@@ -130,7 +130,9 @@ export default function Sidebar() {
       position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 70,
       width: 260, minWidth: 260, maxWidth: '85vw',
       transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)',
-      transition: 'transform 0.22s ease',
+      // On the shared timing scale so the panel and its veil move as one
+      // gesture instead of two hand-tuned durations that drift apart.
+      transition: 'transform var(--dur-4) var(--ease-out)',
       boxShadow: drawerOpen ? '0 0 40px rgba(0,0,0,0.45)' : 'none',
     }
     : {}
@@ -138,11 +140,14 @@ export default function Sidebar() {
   return (
     <>
     {/* Overlay: dismisses the drawer and, just as importantly, stops taps
-        landing on the page underneath it. */}
+        landing on the page underneath it. It fades in rather than snapping to
+        black, so it reads as part of the drawer arriving and not as a second,
+        harsher event on top of it. */}
     {isDrawer && drawerOpen && (
       <div
         onClick={closeDrawer}
         aria-hidden="true"
+        className="modal-backdrop-enter"
         style={{
           position: 'fixed', inset: 0, zIndex: 69,
           background: 'rgba(0,0,0,0.5)',

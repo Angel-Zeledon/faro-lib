@@ -289,7 +289,9 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 98 }} />
-          <div style={{
+          {/* The short fade-and-drop is what says this panel hangs off the
+              bell, rather than being a new surface that just appeared. */}
+          <div className="popover-enter" style={{
             position: 'absolute', top: 'calc(100% + 8px)', right: 0,
             width: 340, zIndex: 99,
             background: 'var(--surface)',

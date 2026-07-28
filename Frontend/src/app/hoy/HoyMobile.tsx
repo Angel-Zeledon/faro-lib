@@ -649,8 +649,11 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
   const unpriced = approved.filter(i => i.unit_margin == null || i.sale_price == null)
   const marginProtected = priced.reduce((s, i) => s + i.qty * (i.unit_margin ?? 0), 0)
 
+  // The bar is fixed to the bottom edge, so on a phone it appears entirely
+  // outside the buyer's field of view when they tap Approve mid-screen. It
+  // slides up from its own edge to connect the two. Enter only.
   return (
-    <div style={{
+    <div className="cart-bar-enter" style={{
       position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40,
       background: 'var(--surface)', borderTop: '1px solid rgba(34,197,94,0.45)',
       boxShadow: '0 -6px 24px rgba(0,0,0,0.25)',
@@ -664,8 +667,11 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#22c55e' }}>
             {approved.length} {t('hoy.cart_products_approved')}
           </div>
+          {/* Background flash on change, never a count-up: the digits are the
+              amount being committed and must be true in every frame. `key` is
+              the value, so the animation re-runs whenever it changes. */}
           {total > 0 && (
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>
+            <div key={total} className="value-changed" style={{ fontSize: 12, color: C.muted, marginTop: 1, borderRadius: 4, padding: '0 3px' }}>
               {t('hoy.cart_total_label')}: {formatMoney(total)}
             </div>
           )}

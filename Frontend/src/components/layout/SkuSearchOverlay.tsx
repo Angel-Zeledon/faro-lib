@@ -395,8 +395,12 @@ export default function SkuSearchOverlay() {
   if (!isOpen) return null
 
   return (
+    // The palette covers the whole app, so with no entrance the screen simply
+    // blinks to something else. The veil fades in to place it as a layer on
+    // top. Closing stays instant — nothing may delay a click already made.
     <div
       onClick={close}
+      className="modal-backdrop-enter"
       style={{
         position: 'fixed', inset: 0, zIndex: 300,
         background: 'rgba(8,9,13,0.55)',
@@ -404,11 +408,15 @@ export default function SkuSearchOverlay() {
         padding: '10vh 16px 16px',
       }}
     >
+      {/* The panel drops 6px as it arrives, which reads as a surface settling
+          over the page instead of a route swapping underneath it. It is
+          shorter than the veil so the layer lands before its contents do. */}
       <div
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={t('cmd.placeholder')}
+        className="palette-enter"
         style={{
           width: '100%', maxWidth: 640,
           background: 'var(--surface)',

@@ -136,7 +136,7 @@ export default function SupplierScorecardPage() {
   const alertsBySupplier = new Map(alerts.map(a => [a.supplier.toLowerCase(), a]))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>

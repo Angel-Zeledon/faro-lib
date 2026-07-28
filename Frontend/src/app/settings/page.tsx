@@ -458,7 +458,7 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('api-keys')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, animation: 'fadeIn 0.3s ease-out' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
         <div style={{ fontSize: 20, fontWeight: 700 }}>{t('settings.title')}</div>
         <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>

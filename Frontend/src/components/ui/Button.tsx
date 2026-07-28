@@ -27,9 +27,14 @@ export default function Button({
   variant = 'secondary', size = 'md', loading, icon,
   children, disabled, style, ...props
 }: ButtonProps) {
+  // `.btn` transitions colour only, never `all`: animating `all` also caught
+  // `padding` and the disabled `opacity`, so a button entering its loading state
+  // faded oddly. It also carries the :active press, CSS-only so the tap
+  // acknowledgement can never delay the click.
   return (
     <button
       {...props}
+      className={clsx('btn', props.className)}
       disabled={disabled || loading}
       style={{
         ...VARIANT_STYLES[variant],
@@ -37,7 +42,7 @@ export default function Button({
         display: 'inline-flex', alignItems: 'center', gap: 7,
         fontWeight: 500, cursor: disabled || loading ? 'not-allowed' : 'pointer',
         opacity: disabled || loading ? 0.6 : 1,
-        transition: 'all 0.15s', outline: 'none', userSelect: 'none',
+        outline: 'none', userSelect: 'none',
         ...style,
       }}
     >

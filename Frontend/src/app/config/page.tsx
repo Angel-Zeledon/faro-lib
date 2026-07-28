@@ -1233,7 +1233,7 @@ export default function ConfigPage() {
   }, [setTheme, setLang])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.25s ease-out' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

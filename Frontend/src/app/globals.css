@@ -15,6 +15,19 @@
     --sidebar-dim:         rgba(255,255,255,0.45);
     --sidebar-beam:        #4CC3B5;
     --brand-grad:          linear-gradient(135deg, #4CC3B5, #0F766E);
+
+    /* Motion. One scale for the whole app: 90ms answers the cursor, 140ms
+       answers a click, 200ms introduces or removes a surface, 260ms is the
+       ceiling and belongs to the mobile drawer alone. Without these the app
+       drifts back to eight hand-written durations. The expressive
+       cubic-bezier(0.16,1,0.3,1) is deliberately NOT here: it is the voice of
+       the auth scene, and inside the tool that overshoot reads as lag. */
+    --dur-1:    90ms;
+    --dur-2:    140ms;
+    --dur-3:    200ms;
+    --dur-4:    260ms;
+    --ease-out: cubic-bezier(0.2, 0, 0.2, 1);
+    --ease-in:  cubic-bezier(0.4, 0, 1, 1);
   }
 
   /* Light is the default: for this audience (distribuidor SMB, luz de oficina
@@ -274,6 +287,110 @@
   to { transform: rotate(360deg); }
 }
 
+/* Two DIFFERENT animations were both injected under the name `pulse` — the
+   narrative card's opacity breath and the analyst's bouncing typing dots.
+   Being local <style> tags did not make them local: whichever mounted last
+   silently overrode the other for the whole document. Distinct names, declared
+   once. */
+
+/* Placeholder text lines breathing while a narrative is generated. */
+@keyframes narrative-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 0.8; }
+}
+
+/* The analyst's three typing dots. */
+@keyframes typing-dot {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+  40%           { transform: scale(1); opacity: 1;   }
+}
+
+/* Panel that grows in place from just below its final position. */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Motion vocabulary ───────────────────────────────────────────────────────
+   Every class below answers exactly one question the user just asked: where
+   did this come from, where did it go, is it still working. Nothing here
+   animates a semáforo state, a figure, or anything that would delay a click
+   the buyer already made. */
+
+/* Route change: opacity only, never translate. A page the user is about to
+   read must not move under their eyes — translate forces a re-fixation and
+   costs more reading time than the animation saves in orientation. */
+.page-enter { animation: pageEnter var(--dur-2) var(--ease-out); }
+@keyframes pageEnter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* The commitment bar on /hoy. It materialises far from the button that
+   summoned it — bottom of the screen on desktop, off-viewport on mobile — so
+   it arrives from its own edge: the travel is what ties the approval to the
+   total. Enter only; clearing the cart must feel instant. */
+.cart-bar-enter { animation: cartBarEnter var(--dur-3) var(--ease-out); }
+@keyframes cartBarEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* A value the user was not looking at just changed. Background only: the
+   digits are correct from the very first frame. This is the honest
+   alternative to a count-up, which shows a false number for half a second —
+   unacceptable when the number is what the buyer is about to commit. */
+.value-changed { animation: valueChanged 420ms var(--ease-out); }
+@keyframes valueChanged {
+  from { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  to   { background: transparent; }
+}
+
+/* Modal backdrop, shared by the confirm dialog, the command palette and the
+   mobile drawer veil. */
+.modal-backdrop-enter { animation: modalBackdrop var(--dur-3) var(--ease-out); }
+@keyframes modalBackdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 0.98, not 0.9: a larger scale reads as a bouncy toy, and this is the last
+   gate before something irreversible. */
+.modal-panel-enter { animation: modalPanel var(--dur-2) var(--ease-out); }
+@keyframes modalPanel {
+  from { opacity: 0; transform: scale(0.98) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* The command palette lands as a layer on top, not as a navigation. */
+.palette-enter { animation: paletteEnter var(--dur-2) var(--ease-out); }
+@keyframes paletteEnter {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Anchored popovers: the small drop is the tether to the trigger. */
+.popover-enter {
+  animation: popoverEnter var(--dur-2) var(--ease-out);
+  transform-origin: top right;
+}
+@keyframes popoverEnter {
+  from { opacity: 0; transform: translateY(-4px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Buttons. An explicit property list, never `all`: `all` also animates the
+   padding and the disabled opacity, so a button entering its loading state
+   faded oddly. */
+.btn {
+  transition: background-color var(--dur-1) var(--ease-out),
+              border-color     var(--dur-1) var(--ease-out),
+              color            var(--dur-1) var(--ease-out);
+}
+/* 1px, and only while held: the acknowledgement that a tap landed. It ends
+   the moment the finger lifts, so it can never delay the action. */
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -432,7 +549,58 @@
 }
 .auth-link:hover::after { right: 0; }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Reduced motion. One rule for the whole app, deliberately blunt.
+
+   This block used to cover only the `auth-*` classes, so every other moving
+   thing — the skeleton shimmer, the spinners, the toasts, the global
+   scroll-behavior — ignored the system preference entirely.
+
+   1ms, not 0s: an animation of zero duration never fires `animationend` /
+   `transitionend`, so any code awaiting one would hang forever. 1ms fires on
+   the next frame and is imperceptible.
+
+   `scroll-behavior: auto` covers the `smooth` set on html (line 93), which
+   governs page-level scrolling and anchor jumps. It is deliberately applied to
+   `*` as well, for any scroll container that opts into smooth of its own —
+   note that scroll-behavior does NOT inherit, so the command palette's
+   arrow-key scrollIntoView was never affected by the html rule in the first
+   place, and is already instant.
+   ───────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:        1ms !important;
+    animation-iteration-count: 1   !important;
+    animation-delay:           0ms !important;
+    transition-duration:       1ms !important;
+    transition-delay:          0ms !important;
+  }
+  html, * { scroll-behavior: auto !important; }
+
+  /* Two exceptions the blanket rule gets wrong on its own. */
+
+  /* A shimmer frozen at 1ms leaves the gradient at a random position across
+     the placeholder — a diagonal smear that reads as a rendering bug. */
+  .skeleton {
+    animation: none !important;
+    background: var(--surface-2) !important;
+  }
+
+  /* Indeterminate progress is not decoration: it is the only signal that the
+     app is still working. Slowed to a crawl rather than stopped, because a
+     stationary spinner means "crashed".
+
+     The attribute selector is doing the real work here. Every spinner in this
+     app declares its animation in an INLINE style — `animation: spin 1s ...`,
+     `integrations-spin`, `qs-spin` — so a class-based selector would match
+     none of them and the blanket 1ms rule above would freeze all of them.
+     `[style*="spin"]` catches the lot, whatever the keyframe name. */
+  [style*="spin"], [class*="spinner"], svg[data-spinner] {
+    animation-duration:        2.4s     !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  /* Ambient auth scene: kill outright, it carries no information. */
   .auth-ring, .auth-wash, .auth-dot, .auth-drift,
   .auth-swell, .auth-reflection, .auth-bearing,
   .auth-cloud, .auth-bird, .auth-boat, .auth-lampglow, .auth-mote,

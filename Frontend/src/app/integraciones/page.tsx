@@ -337,7 +337,7 @@ export default function IntegrationsPage() {
 
   if (!has('integrations')) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         <LockedState />
       </div>
     )
@@ -346,7 +346,7 @@ export default function IntegrationsPage() {
   const connectionByProvider = Object.fromEntries(connections.map(c => [c.provider, c]))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <style>{`@keyframes integrations-spin { to { transform: rotate(360deg) } }`}</style>
 
       {/* Header */}

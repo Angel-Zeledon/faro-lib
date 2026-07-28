@@ -1,4 +1,5 @@
 'use client'
+import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import AuthGuard from './AuthGuard'
@@ -57,7 +58,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
  * `TopBar` itself is untouched — it is shared with four other screens.
  */
 function Shell({ children }: { children: React.ReactNode }) {
-  const narrow = useIsNarrow()
+  const narrow   = useIsNarrow()
+  const pathname = usePathname()
 
   return (
     <div className="app-shell">
@@ -76,7 +78,12 @@ function Shell({ children }: { children: React.ReactNode }) {
           <ReadOnlyBanner />
           <VerifyEmailBanner />
           <DesktopOnlyNotice />
-          {children}
+          {/* One entrance for every route, instead of the four screens that
+              each hand-rolled their own fade at a different duration. Keyed on
+              the pathname so it runs on navigation and not on every state
+              update inside a screen. The banners stay outside: they are
+              persistent chrome, not route content. */}
+          <div key={pathname} className="page-enter">{children}</div>
         </div>
       </div>
     </div>

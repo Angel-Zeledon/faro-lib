@@ -201,7 +201,12 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
    marginBottom: 10,
    background:   isApproved ? 'rgba(34,197,94,0.03)' : isRejected ? 'var(--surface-2)' : 'var(--surface)',
    opacity:      isRejected ? 0.5 : 1,
-   transition:   'all 0.2s',
+   // Explicit list, never `all`: `all` also animates padding and border-width,
+   // so the card juddered while the "why" panel expanded underneath it. These
+   // three are the only properties that actually change on approve/reject.
+   // The approval green is the colour of a decision taken — it is NOT a
+   // semáforo token, and the SignalBadge inside is untouched by this.
+   transition:   'border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out), opacity var(--dur-2) var(--ease-out)',
   }}>
 
    {/* Header */}
@@ -1405,9 +1410,13 @@ export default function HoyPage() {
          />
         )}
 
-        {/* Sticky cart */}
+        {/* Sticky cart. It materialises far from the Approve button that
+            summoned it — bottom of the screen, sometimes a full viewport away —
+            so it arrives from its own edge: that short travel is what ties the
+            approval to the total being committed. Enter only; clearing the cart
+            must feel instant. */}
         {approved.length > 0 && (
-         <div style={{
+         <div className="cart-bar-enter" style={{
           position: 'sticky', bottom: 16,
           background: 'var(--surface)', border: '1px solid rgba(34,197,94,0.4)',
           borderRadius: 12, padding: '14px 20px',
@@ -1421,7 +1430,17 @@ export default function HoyPage() {
            </div>
            <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
             {approved.map(i => `${i.name}: ${i.qty.toLocaleString('es')} ${t('hoy.cart_unit_abbrev')}`).join(' · ')}
-            {totalValue > 0 && ` · ${t('hoy.cart_total_label')}: ${fmtMoney(totalValue)}`}
+            {/* The eye is on the card that was just approved, not down here.
+                A background flash points at the figure that changed; `key` is
+                the value itself, so React remounts the span and the animation
+                re-runs on every change. The digits are never animated — during
+                a count-up the screen would show a total the buyer is not
+                actually committing. */}
+            {totalValue > 0 && (
+             <span key={totalValue} className="value-changed" style={{ borderRadius: 4, padding: '0 3px' }}>
+              {` · ${t('hoy.cart_total_label')}: ${fmtMoney(totalValue)}`}
+             </span>
+            )}
            </div>
            {/* Margen visible en el carrito (2.10) */}
            {salesProtected > 0 && (

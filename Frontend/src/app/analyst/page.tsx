@@ -90,7 +90,7 @@ function TypingBubble() {
           <span key={i} style={{
             display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
             background: 'var(--dim)',
-            animation: 'pulse 1.4s ease-in-out infinite',
+            animation: 'typing-dot 1.4s ease-in-out infinite',
             animationDelay: `${i * 0.2}s`,
           }} />
         ))}
@@ -649,16 +649,11 @@ export default function AnalystPage() {
 
   return (
     <>
-      {/* Inject keyframe animation */}
+      {/* `slideUp` and the typing dots live in globals.css now. They were
+          injected here under the name `pulse`, which NarrativeCard also
+          injected with a different shape — same name, one document, so
+          whichever mounted last won. */}
       <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
-          40% { transform: scale(1); opacity: 1; }
-        }
         .chat-item-hover:hover { background: rgba(255,255,255,0.03) !important; }
       `}</style>
 

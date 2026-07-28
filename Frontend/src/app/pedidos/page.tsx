@@ -73,8 +73,10 @@ export default function OrdersPage() {
   // reach the supplier.
   const relevantContactHealth = contactHealth.filter(r => r.has_open_pos)
 
+  // No page-level entrance on this root: the route fade is applied once by
+  // AppShell, and a second one here would double-animate the same screen.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
@@ -156,7 +158,9 @@ export default function OrdersPage() {
           actions={[{ label: t('orders.go_to_hoy'), href: '/hoy', icon: <ShoppingCart size={14} /> }]}
         />
       ) : (
-        <Card padding={0} overflow="hidden">
+        // The skeleton above already has the shape of this table, so fading the
+        // rows in reads as the placeholder becoming the data, not as a blink.
+        <Card className="page-enter" padding={0} overflow="hidden">
           <POHistoryTable
             entries={history}
             onReceive={setReceivingPO}

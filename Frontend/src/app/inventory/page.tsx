@@ -1817,8 +1817,10 @@ export default function InventoryPage() {
  const skusWithoutStock = data ? data.items.filter(i => !i.has_stock).length : 0
  const skusWithForecast = data ? data.items.filter(i => i.has_forecast).length : 0
 
+ // No page-level entrance on this root: the route fade is applied once by
+ // AppShell, and a second one here would double-animate the same screen.
  return (
- <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.3s ease-out' }}>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
  {/* Header */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
@@ -1960,7 +1962,9 @@ export default function InventoryPage() {
  {/* KPIs — skeleton first so the row does not pop in. */}
  {loading && !summary && <SkeletonCards count={6} height={74} />}
  {summary && (
- <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
+ // Fades in over the skeleton cards it replaces: same shape, so the
+ // transition reads as the placeholders resolving into numbers.
+ <div className="page-enter" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
  <KPICard label={t('inventory.kpi_total_skus')} value={summary.total_skus} color={C.indigo} onClick={() => setSignalFilter('')} active={!signalFilter} />
  <KPICard label={t('inventory.signal_order_now')} value={summary.order_now} color={C.red} onClick={() => setSignalFilter(signalFilter === 'PEDIR_YA' ? '' : 'PEDIR_YA')} active={signalFilter === 'PEDIR_YA'} sub={summary.order_now > 0 ? t('inventory.kpi_immediate_risk') : undefined} />
  <KPICard label={t('inventory.signal_order_soon')} value={summary.order_soon} color={C.amber} onClick={() => setSignalFilter(signalFilter === 'PEDIR_PRONTO' ? '' : 'PEDIR_PRONTO')} active={signalFilter === 'PEDIR_PRONTO'} />
@@ -2250,7 +2254,9 @@ export default function InventoryPage() {
 
  ) : viewMode === 'simple' ? (
  /* ── Vista simple ─────────────────────────────────────────── */
- <div>
+ /* One of the two views the page can land on, so it is what replaces the
+    skeleton table: 140 ms of fade instead of a same-frame swap. */
+ <div className="page-enter">
  <div style={{ padding: '10px 16px', background: C.card, borderBottom: `1px solid ${C.border}`, display: 'grid', gridTemplateColumns: '1fr 160px 120px 160px', gap: 16, fontSize: 10, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
  <span>{t('inventory.col_sku_product')}</span><span>{t('inventory.col_signal')}</span><span style={{ textAlign: 'right' }}>{t('inventory.col_qty_to_order')}</span><span>{t('inventory.col_provider')}</span>
  </div>
@@ -2380,7 +2386,9 @@ export default function InventoryPage() {
 
  ) : (
  /* ── Tabla completa ───────────────────────────────────────── */
- <div style={{ overflowX: 'auto' }}>
+ /* The other landing view, and the one the skeleton table is shaped after:
+    it fades in so the placeholder appears to turn into the rows. */
+ <div className="page-enter" style={{ overflowX: 'auto' }}>
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
  <thead>
  <tr style={{ background: C.card }}>
