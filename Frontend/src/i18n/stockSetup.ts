@@ -13,6 +13,9 @@ export const stockSetupEs = {
   // ── Page ────────────────────────────────────────────────────────────────
   'setupStock.page.title': 'Configurar mi inventario',
   'setupStock.page.subtitle': 'Empieza por los productos que mueven tu plata. No necesitas configurarlos todos.',
+  // Why the screen exists at all. Without stock, costo y días de entrega no hay
+  // semáforo: Faro sabe cuánto vas a vender, pero no con qué lo comparás.
+  'setupStock.page.why': 'Faro ya sabe cuánto vas a vender de cada producto. Para decirte qué pedir necesita tres datos más por producto: cuánto tienes hoy, cuánto te cuesta y cuántos días tarda en llegar. Mientras falten, ese producto no aparece en el semáforo.',
 
   // ── Pareto gaps ─────────────────────────────────────────────────────────
   'setupStock.gaps.title': 'Empieza por estos',
@@ -40,6 +43,20 @@ export const stockSetupEs = {
   'setupStock.gaps.field_stock': 'Stock',
   'setupStock.gaps.field_cost': 'Costo',
   'setupStock.gaps.field_lead_time': 'Días de entrega',
+
+  // What each column was derived from. A heading like "Vale" or "Acumulado"
+  // is a label, not an explanation.
+  'setupStock.gaps.col_demand_tip': 'Cuántas unidades de este producto esperamos que vendas en el período, según tu propio historial. Es un pronóstico, no una meta.',
+  'setupStock.gaps.col_spend_tip': 'Lo que te va a costar reponer esa venta: las unidades proyectadas por lo que pagas por unidad. Es la cifra por la que ordenamos la lista.',
+  'setupStock.gaps.col_share_tip': 'Cuánto pesa este producto dentro de toda tu compra del período. Un producto con 12 % se lleva doce de cada cien colones que vas a invertir.',
+  'setupStock.gaps.col_cumulative_tip': 'Sumando este producto y todos los de arriba, qué porcentaje de tu compra del período ya llevas cubierto. Cuando llegues al 80 % puedes parar: el resto son productos que casi no mueven plata.',
+  'setupStock.gaps.col_missing_tip': 'Los datos que todavía no nos has dado de este producto. Mientras le falte alguno, no puede entrar al semáforo.',
+
+  // The three boxes at the end of each row, explained once above the table.
+  'setupStock.gaps.legend_title': 'Qué va en cada casilla',
+  'setupStock.gaps.legend_stock': 'cuántas unidades tienes hoy físicamente en bodega, sin contar lo que está por llegar.',
+  'setupStock.gaps.legend_cost': 'lo que TÚ pagas por una unidad a tu proveedor — no el precio al que la vendes.',
+  'setupStock.gaps.legend_lead_time': 'cuántos días pasan desde que le haces el pedido a tu proveedor hasta que la mercadería está en tu bodega.',
   'setupStock.gaps.save': 'Guardar',
   'setupStock.gaps.saved': 'Guardado',
   'setupStock.gaps.save_error': 'No se pudo guardar. Revisa los valores e inténtalo de nuevo.',
@@ -125,6 +142,7 @@ export const stockSetupEs = {
 export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
   'setupStock.page.title': 'Set up my inventory',
   'setupStock.page.subtitle': 'Start with the products that move your money. You do not need to configure them all.',
+  'setupStock.page.why': 'Faro already knows how much of each product you will sell. To tell you what to order it needs three more things per product: how much you hold today, what it costs you, and how many days it takes to arrive. Until those are there, that product cannot appear in the traffic light.',
 
   'setupStock.gaps.title': 'Start with these',
   'setupStock.gaps.headline': 'With {count} of your {total} products you cover {pct}% of this month\'s purchase.',
@@ -151,6 +169,18 @@ export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
   'setupStock.gaps.field_stock': 'Stock',
   'setupStock.gaps.field_cost': 'Cost',
   'setupStock.gaps.field_lead_time': 'Lead time (days)',
+
+  'setupStock.gaps.col_demand_tip': 'How many units of this product we expect you to sell in the period, from your own history. It is a forecast, not a target.',
+  'setupStock.gaps.col_spend_tip': 'What replacing those sales will cost you: projected units times what you pay per unit. This is the figure the list is ranked by.',
+  'setupStock.gaps.col_share_tip': 'How much this one product weighs inside your whole purchase for the period. A product at 12% takes twelve of every hundred you are about to invest.',
+  'setupStock.gaps.col_cumulative_tip': 'Counting this product and everything above it, how much of your purchase for the period you have covered. Once you reach 80% you can stop: the rest barely move money.',
+  'setupStock.gaps.col_missing_tip': 'What we still do not know about this product. While anything is missing it cannot enter the traffic light.',
+
+  'setupStock.gaps.legend_title': 'What goes in each box',
+  'setupStock.gaps.legend_stock': 'how many units you physically hold today, not counting anything in transit.',
+  'setupStock.gaps.legend_cost': 'what YOU pay your supplier per unit — not the price you sell it at.',
+  'setupStock.gaps.legend_lead_time': 'how many days pass between placing the order with your supplier and the goods being in your warehouse.',
+
   'setupStock.gaps.save': 'Save',
   'setupStock.gaps.saved': 'Saved',
   'setupStock.gaps.save_error': 'Could not save. Check the values and try again.',

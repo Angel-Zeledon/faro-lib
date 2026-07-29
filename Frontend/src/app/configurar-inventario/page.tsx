@@ -30,8 +30,22 @@ export default function InventorySetupPage() {
       <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
         {c('setupStock.page.title')}
       </h1>
-      <p style={{ fontSize: 13, color: 'var(--dim)', margin: '6px 0 18px', lineHeight: 1.5 }}>
+      <p style={{ fontSize: 13, color: 'var(--dim)', margin: '6px 0 12px', lineHeight: 1.5 }}>
         {c('setupStock.page.subtitle')}
+      </p>
+
+      {/* Why the screen exists. It used to open straight onto two panels that
+          asked for stock, cost and lead time without ever saying what they were
+          for — so the honest reading was "more forms", when the actual answer is
+          that a product missing any of the three cannot enter the traffic light
+          at all. */}
+      <p style={{
+        fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7,
+        margin: '0 0 18px', padding: '11px 13px', maxWidth: 760,
+        background: 'var(--surface-2)', border: '1px solid var(--border)',
+        borderRadius: 9,
+      }}>
+        {c('setupStock.page.why')}
       </p>
 
       {/* Tour anchors sit on wrappers, not on the panels: both are shared

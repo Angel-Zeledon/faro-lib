@@ -14,6 +14,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import Card from '@/components/ui/Card'
 import Input, { Field, Select, Textarea } from '@/components/ui/Input'
 import Table, { Th, Td } from '@/components/ui/Table'
+import Tooltip from '@/components/ui/Tooltip'
 import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
 import {
   Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, ChevronRight, BarChart3, Tag,
@@ -24,36 +25,6 @@ const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
   green: '#22c55e', amber: '#f59e0b', red: '#ef4444', indigo: 'var(--accent)',
-}
-
-// ── Tooltip ───────────────────────────────────────────────────────────────────
-function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
-  const [show, setShow] = useState(false)
-  return (
-    <span
-      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      {children}
-      {show && (
-        <span style={{
-          position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
-          background: '#1e293b', color: '#e2e8f0', fontSize: 11, lineHeight: 1.55,
-          padding: '8px 11px', borderRadius: 7, width: 240, zIndex: 200,
-          border: '1px solid #334155', boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
-          pointerEvents: 'none', whiteSpace: 'normal',
-        }}>
-          {text}
-          <span style={{
-            position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
-            borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
-            borderTop: '5px solid #1e293b',
-          }} />
-        </span>
-      )}
-    </span>
-  )
 }
 
 // ── Lead-time learning ────────────────────────────────────────────────────────

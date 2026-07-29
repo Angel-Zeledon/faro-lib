@@ -14,10 +14,11 @@
  * is the same abandonment by another route.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Check, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, Info, RefreshCw } from 'lucide-react'
 
 import Button from '@/components/ui/Button'
 import Spinner from '@/components/ui/Spinner'
+import Tooltip from '@/components/ui/Tooltip'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
 import { getSetupGaps, patchInventoryStock, upsertInventoryStock } from '@/lib/api'
 import type { SetupGapItem, SetupGapsResponse } from '@/lib/stockSetupTypes'
@@ -167,18 +168,66 @@ export default function SetupGapsPanel({
         </div>
       )}
 
+      {/* What the three boxes at the end of each row want. Said once, above the
+          table, rather than as a tooltip repeated on every row: three columns
+          times thirty rows of question marks is noise, and the answer is the
+          same every time. The cost one is spelled out because entering the sale
+          price there is the mistake people actually make. */}
+      {data.items.length > 0 && (
+        <div style={{
+          marginTop: 14, padding: '10px 12px', borderRadius: 8,
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+          fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.65,
+        }}>
+          <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 3 }}>
+            {c('setupStock.gaps.legend_title')}
+          </div>
+          <div><b>{c('setupStock.gaps.field_stock')}</b> — {c('setupStock.gaps.legend_stock')}</div>
+          <div><b>{c('setupStock.gaps.field_cost')}</b> — {c('setupStock.gaps.legend_cost')}</div>
+          <div><b>{c('setupStock.gaps.field_lead_time')}</b> — {c('setupStock.gaps.legend_lead_time')}</div>
+        </div>
+      )}
+
       {data.items.length > 0 && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 720 }}>
             <thead>
               <tr style={{ color: 'var(--dim)', textAlign: 'left' }}>
+                {/* Every column except # and Producto is a derived number, and
+                    a heading like "Vale" or "Acumulado" does not say what it
+                    was derived from. The tooltip does. */}
                 <th style={{ padding: '6px 8px', fontWeight: 600 }}>#</th>
                 <th style={{ padding: '6px 8px', fontWeight: 600 }}>{c('setupStock.gaps.col_product')}</th>
-                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>{c('setupStock.gaps.col_demand')}</th>
-                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>{c('setupStock.gaps.col_spend')}</th>
-                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>{c('setupStock.gaps.col_share')}</th>
-                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>{c('setupStock.gaps.col_cumulative')}</th>
-                <th style={{ padding: '6px 8px', fontWeight: 600 }}>{c('setupStock.gaps.col_missing')}</th>
+                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>
+                  <Tooltip text={c('setupStock.gaps.col_demand_tip')} width={250}>
+                    <span>{c('setupStock.gaps.col_demand')}</span>
+                    <Info size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  </Tooltip>
+                </th>
+                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>
+                  <Tooltip text={c('setupStock.gaps.col_spend_tip')} width={250}>
+                    <span>{c('setupStock.gaps.col_spend')}</span>
+                    <Info size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  </Tooltip>
+                </th>
+                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>
+                  <Tooltip text={c('setupStock.gaps.col_share_tip')} width={250}>
+                    <span>{c('setupStock.gaps.col_share')}</span>
+                    <Info size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  </Tooltip>
+                </th>
+                <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>
+                  <Tooltip text={c('setupStock.gaps.col_cumulative_tip')} width={260}>
+                    <span>{c('setupStock.gaps.col_cumulative')}</span>
+                    <Info size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  </Tooltip>
+                </th>
+                <th style={{ padding: '6px 8px', fontWeight: 600 }}>
+                  <Tooltip text={c('setupStock.gaps.col_missing_tip')} width={250}>
+                    <span>{c('setupStock.gaps.col_missing')}</span>
+                    <Info size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  </Tooltip>
+                </th>
                 <th style={{ padding: '6px 8px', fontWeight: 600 }}>{c('setupStock.gaps.col_fill')}</th>
               </tr>
             </thead>
@@ -226,10 +275,15 @@ export default function SetupGapsPanel({
                     </td>
                     <td style={{ padding: '7px 8px' }}>
                       <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                        {/* A placeholder alone does not say what the number
+                            means, and it disappears the moment you type. The
+                            legend above the table carries the explanation once;
+                            these carry it to a screen reader per row. */}
                         <input
                           value={state.stock}
                           onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, stock: e.target.value, saved: false } }))}
                           placeholder={c('setupStock.gaps.field_stock')}
+                          aria-label={`${item.sku} — ${c('setupStock.gaps.legend_stock')}`}
                           inputMode="decimal"
                           style={inputStyle}
                         />
@@ -237,6 +291,7 @@ export default function SetupGapsPanel({
                           value={state.cost}
                           onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, cost: e.target.value, saved: false } }))}
                           placeholder={c('setupStock.gaps.field_cost')}
+                          aria-label={`${item.sku} — ${c('setupStock.gaps.legend_cost')}`}
                           inputMode="decimal"
                           style={inputStyle}
                         />
@@ -244,6 +299,7 @@ export default function SetupGapsPanel({
                           value={state.lead}
                           onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, lead: e.target.value, saved: false } }))}
                           placeholder={c('setupStock.gaps.field_lead_time')}
+                          aria-label={`${item.sku} — ${c('setupStock.gaps.legend_lead_time')}`}
                           inputMode="numeric"
                           style={{ ...inputStyle, width: 62 }}
                         />

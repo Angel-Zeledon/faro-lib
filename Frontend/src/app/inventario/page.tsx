@@ -27,6 +27,7 @@ import HelpTip from '@/components/ui/HelpTip'
 import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
+import Tooltip from '@/components/ui/Tooltip'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import { coverageUnitShort } from '@/lib/period'
 import {
@@ -59,42 +60,6 @@ const C = {
 // SkuSearchOverlay, with colours that failed contrast in the light theme.
 function SignalBadge({ s }: { s: InventorySignal }) {
  return <SharedSignalBadge signal={s} />
-}
-
-// ── Tooltip ───────────────────────────────────────────────────────────────────
-function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
- const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-
- return (
- <span
- style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4 }}
- onMouseEnter={e => {
- const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
- setPos({ x: rect.left + rect.width / 2, y: rect.top })
- }}
- onMouseLeave={() => setPos(null)}
- >
- {children}
- {pos && (
- <span style={{
- position: 'fixed',
- left: pos.x, top: pos.y - 8,
- transform: 'translate(-50%, -100%)',
- background: '#1e293b', color: '#e2e8f0', fontSize: 11, lineHeight: 1.55,
- padding: '8px 11px', borderRadius: 7, width: 230, zIndex: 9999,
- border: '1px solid #334155', boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
- pointerEvents: 'none', whiteSpace: 'normal',
- }}>
- {text}
- <span style={{
- position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
- borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
- borderTop: '5px solid #1e293b',
- }} />
- </span>
- )}
- </span>
- )
 }
 
 // ── Sorting ───────────────────────────────────────────────────────────────────

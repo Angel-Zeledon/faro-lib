@@ -311,7 +311,11 @@ export const translations = {
     'data.no_source_selected':        'Ninguna fuente seleccionada',
     'data.no_source_selected_hint':   'Elige una fuente de datos en la barra lateral, o crea una nueva para empezar.',
     // ── Data sources page ──
-    'data.page_title':                'Mis archivos',
+    // Not "Mis archivos": half of what this screen holds is a live connection
+    // to a Postgres or MySQL database, and calling a database a file is simply
+    // wrong. The rest of the screen already counts these as "fuentes"; the
+    // title was the one place that disagreed.
+    'data.page_title':                'Fuentes de datos',
     'data.source_singular':           'fuente',
     'data.source_plural':             'fuentes',
     'data.search_sources_ph':         'Buscar fuentes…',
@@ -738,7 +742,7 @@ export const translations = {
     'qs.confirm_desc':     'Detectamos las siguientes columnas en tu archivo. Confirma cuál es cuál.',
     'qs.q_date':           '¿Cuál columna es la fecha?',
     'qs.select_column':    '— Selecciona una columna —',
-    'qs.no_date':          'No detectamos ninguna columna con formato de fecha en tu archivo. Revisa que tengas una columna de fecha en formato AAAA-MM-DD (ej. 2024-01-15) y vuelve a subir el archivo, o ábrelo en «Mis archivos» para revisar las columnas a mano.',
+    'qs.no_date':          'No detectamos ninguna columna con formato de fecha en tu archivo. Revisa que tengas una columna de fecha en formato AAAA-MM-DD (ej. 2024-01-15) y vuelve a subir el archivo, o ábrelo en «Fuentes de datos» para revisar las columnas a mano.',
     'qs.q_target':         '¿Cuál columna es la cantidad vendida?',
     'qs.no_target':        'No detectamos ninguna columna numérica en tu archivo para usar como cantidad vendida. Verifica que tu archivo tenga una columna con valores numéricos (ej. unidades vendidas) y vuelve a subir el archivo.',
     'qs.q_sku':            '¿Tienes una columna de producto / SKU?',
@@ -3208,7 +3212,7 @@ export const translations = {
     'data.no_source_selected':        'No source selected',
     'data.no_source_selected_hint':   'Select a data source from the sidebar, or create a new one to get started.',
     // ── Data sources page ──
-    'data.page_title':                'My files',
+    'data.page_title':                'Data sources',
     'data.source_singular':           'source',
     'data.source_plural':             'sources',
     'data.search_sources_ph':         'Search sources…',
@@ -3630,7 +3634,7 @@ export const translations = {
     'qs.confirm_desc':     'We detected the following columns in your file. Confirm which is which.',
     'qs.q_date':           'Which column is the date?',
     'qs.select_column':    '— Select a column —',
-    'qs.no_date':          'We could not detect any date-formatted column in your file. Make sure you have a date column in YYYY-MM-DD format (e.g. 2024-01-15) and re-upload the file, or open it under "My files" to check the columns by hand.',
+    'qs.no_date':          'We could not detect any date-formatted column in your file. Make sure you have a date column in YYYY-MM-DD format (e.g. 2024-01-15) and re-upload the file, or open it under "Data sources" to check the columns by hand.',
     'qs.q_target':         'Which column is the quantity sold?',
     'qs.no_target':        'We could not detect any numeric column in your file to use as quantity sold. Make sure your file has a column with numeric values (e.g. units sold) and re-upload the file.',
     'qs.q_sku':            'Do you have a product / SKU column?',
