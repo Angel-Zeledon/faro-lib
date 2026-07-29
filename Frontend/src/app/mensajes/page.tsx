@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageSquare, Send, ArrowLeft, Plus, X } from 'lucide-react'
+import { MessageSquare, Send, ArrowLeft, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import {
   getDmContacts, getDmConversations, getDmThread, sendDm, markDmRead,
@@ -44,7 +44,12 @@ export default function MessagesPage() {
   const [threadLoading, setThreadLoading] = useState(false)
   const [draft,         setDraft]         = useState('')
   const [sending,       setSending]       = useState(false)
-  const [pickerOpen,    setPickerOpen]    = useState(false)
+  // A search box that is always on screen, rather than a panel that expands.
+  // The old "+" toggle inserted a 220px list ABOVE the conversations, so the
+  // moment you opened it every conversation slid five rows down — and a click
+  // aimed at a name landed on whichever row had moved into that spot. The
+  // search field never moves, so nothing moves under the cursor.
+  const [search, setSearch] = useState('')
 
   const scrollRef  = useRef<HTMLDivElement>(null)
   const activeRef  = useRef<string | null>(null)
@@ -100,8 +105,22 @@ export default function MessagesPage() {
     setMessages([])
     setActiveName(name)
     setActiveId(userId)
-    setPickerOpen(false)
+    setSearch('')
   }
+
+  // Everyone this person can write to, whether or not they have talked before.
+  // A colleague you have never messaged is exactly who you need the search for,
+  // so the two lists are merged rather than kept in separate places: matches
+  // you already have a thread with come first, everybody else after.
+  const q = search.trim().toLowerCase()
+  const matches = (c: { full_name: string | null; email: string }) =>
+    !q || displayName(c).toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
+
+  const shownConversations = (conversations ?? []).filter(matches)
+  const talkedTo = new Set((conversations ?? []).map(c => c.counterpart_id))
+  const newContacts = q
+    ? contacts.filter(c => !talkedTo.has(c.id) && matches(c))
+    : []
 
   async function handleSend() {
     const text = draft.trim()
@@ -131,71 +150,38 @@ export default function MessagesPage() {
             borderRight: narrow ? 'none' : '1px solid var(--border)',
             display: 'flex', flexDirection: 'column', minHeight: 0,
           }}>
-            <div style={{
-              padding: '14px 16px', borderBottom: '1px solid var(--border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-                {t('messages.page_title')}
-              </span>
-              <button
-                onClick={() => setPickerOpen(v => !v)}
-                title={t('messages.new')}
-                aria-label={t('messages.new')}
-                style={{
-                  all: 'unset', cursor: 'pointer', width: 28, height: 28, borderRadius: 7,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'var(--accent-dim)', color: 'var(--accent)',
-                }}
-              >
-                {pickerOpen ? <X size={14} /> : <Plus size={14} />}
-              </button>
-            </div>
-
-            {/* New-conversation picker */}
-            {pickerOpen && (
-              <div style={{ borderBottom: '1px solid var(--border)', maxHeight: 220, overflowY: 'auto' }}>
-                {contacts.length === 0 && (
-                  <div style={{ padding: 14, fontSize: 12, color: 'var(--dim)' }}>
-                    {t('messages.no_contacts')}
-                  </div>
-                )}
-                {contacts.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => openThread(c.id, displayName(c))}
-                    style={{
-                      all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: '100%',
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
-                    }}
-                    className="nav-item-idle"
-                  >
-                    <div style={{
-                      width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                      background: 'var(--accent-dim)', color: 'var(--accent)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700,
-                    }}>
-                      {initial(c)}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {displayName(c)}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.email}
-                      </div>
-                    </div>
-                  </button>
-                ))}
+            <div style={{ padding: '14px 16px 12px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                  {t('messages.page_title')}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>
+                  {t('messages.people_count', { n: contacts.length })}
+                </span>
               </div>
-            )}
+              <div style={{ position: 'relative' }}>
+                <Search
+                  size={13}
+                  style={{
+                    position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)',
+                    color: 'var(--dim)', pointerEvents: 'none',
+                  }}
+                />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={t('messages.search_people')}
+                  aria-label={t('messages.search_people')}
+                  style={{ paddingLeft: 28, fontSize: 12.5 }}
+                />
+              </div>
+            </div>
 
             <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
               {conversations === null && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={16} /></div>
               )}
-              {conversations !== null && conversations.length === 0 && (
+              {conversations !== null && conversations.length === 0 && !q && (
                 <div style={{ padding: '28px 20px', textAlign: 'center' }}>
                   <MessageSquare size={22} color="var(--dim)" style={{ marginBottom: 8 }} />
                   <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 500 }}>
@@ -206,7 +192,12 @@ export default function MessagesPage() {
                   </div>
                 </div>
               )}
-              {conversations?.map(c => {
+              {q && shownConversations.length === 0 && newContacts.length === 0 && (
+                <div style={{ padding: '24px 20px', textAlign: 'center', fontSize: 12, color: 'var(--dim)' }}>
+                  {t('messages.no_search_results', { q: search.trim() })}
+                </div>
+              )}
+              {shownConversations.map(c => {
                 const active = c.counterpart_id === activeId
                 return (
                   <button
@@ -261,6 +252,49 @@ export default function MessagesPage() {
                   </button>
                 )
               })}
+
+              {/* Colleagues with no conversation yet. Only while searching:
+                  the point of the search is to reach someone you have not
+                  written to before, and listing the whole company by default
+                  would bury the threads you actually use. */}
+              {newContacts.length > 0 && (
+                <>
+                  <div style={{
+                    padding: '12px 16px 6px', fontSize: 10.5, fontWeight: 700,
+                    letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--dim)',
+                  }}>
+                    {t('messages.start_new_with')}
+                  </div>
+                  {newContacts.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => openThread(c.id, displayName(c))}
+                      className="nav-item-idle"
+                      style={{
+                        all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: '100%',
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
+                      }}
+                    >
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                        background: 'var(--surface-3)', color: 'var(--muted)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 13, fontWeight: 700,
+                      }}>
+                        {initial(c)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {displayName(c)}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.email}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         )}

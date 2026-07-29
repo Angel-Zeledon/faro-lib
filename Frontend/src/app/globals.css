@@ -190,7 +190,19 @@
   /* Layout */
   .app-shell { @apply flex h-screen overflow-hidden; background: var(--bg); }
   .main-content { @apply flex-1 flex flex-col overflow-hidden; }
-  .page-content { @apply flex-1 overflow-y-auto p-6; }
+  /* A flex column, so a screen that wants to fill the viewport can say so.
+     `.page-enter` is the wrapper every route renders inside; it used to have no
+     height of its own, so a page asking for `height: 100%` resolved against
+     nothing and collapsed to its content. That is why the chat screens sat
+     short at the top of the page instead of filling it, and why /asistente
+     ended up hardcoding `calc(100vh - 52px - 21px)` to work around it.
+     Content taller than the viewport still scrolls: this container keeps its
+     `overflow-y: auto`, and `flex: 1` only sets the floor. */
+  .page-content { @apply flex-1 overflow-y-auto p-6; display: flex; flex-direction: column; }
+  /* `1 0 auto`, not `1`: grow into the free space so a short page fills the
+     viewport, but never shrink below the content, so a long page measures its
+     real height instead of reporting a box smaller than what it paints. */
+  .page-content > .page-enter { flex: 1 0 auto; }
 
   /* Card */
   .card {
