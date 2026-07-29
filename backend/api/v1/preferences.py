@@ -16,6 +16,7 @@ _VALID_THEME = {"dark", "light"}
 class PreferencesUpdate(BaseModel):
     language: Optional[str] = None
     theme:    Optional[str] = None
+    dm_sms_enabled: Optional[bool] = None
 
 
 @router.get("")
@@ -29,4 +30,6 @@ def update_preferences(body: PreferencesUpdate, user: CurrentUser = Depends(get_
         raise HTTPException(400, f"Invalid language. Options: {sorted(_VALID_LANG)}")
     if body.theme is not None and body.theme not in _VALID_THEME:
         raise HTTPException(400, f"Invalid theme. Options: {sorted(_VALID_THEME)}")
-    return ok(pref_svc.update_preferences(user.tenant_id, user.user_id, body.language, body.theme))
+    return ok(pref_svc.update_preferences(
+        user.tenant_id, user.user_id, body.language, body.theme, body.dm_sms_enabled,
+    ))

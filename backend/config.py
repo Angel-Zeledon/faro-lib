@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886" (Twilio sandbox)
+    twilio_sms_from: str = ""       # plain E.164 sender, e.g. "+14155238886" — SMS cannot reuse the whatsapp: sender
     # Public external base URL Twilio POSTs the inbound webhook to (scheme + host,
     # e.g. "https://app.faro.com"). Twilio computes X-Twilio-Signature over the
     # PUBLIC url; behind the frontend proxy / TLS termination the backend sees an

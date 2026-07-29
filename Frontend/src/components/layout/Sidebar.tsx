@@ -7,7 +7,7 @@ import {
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight, X,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
-  FlaskConical, ListChecks,
+  FlaskConical, ListChecks, MessageSquare,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -37,6 +37,7 @@ const NAV: NavItem[] = [
   { href: '/hoy',                 labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
   { href: '/pedidos',             labelKey: 'nav.orders',     Icon: ClipboardList,   group: 'operation' },
   { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'operation' },
+  { href: '/mensajes',            labelKey: 'nav.messages',    Icon: MessageSquare,   group: 'operation', feature: 'team_messaging' },
 
   // One door, not two. "Subir mis ventas" and "mis archivos" are the same
   // errand to the person doing it, so the nav carries a single entry and the

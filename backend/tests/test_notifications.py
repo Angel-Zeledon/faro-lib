@@ -58,6 +58,7 @@ class TestSendWhatsAppMediaUrl:
 
         class FakeResponse:
             def raise_for_status(self): pass
+            def json(self): return {"sid": "SMtest"}
 
         def fake_post(url, auth=None, data=None, timeout=None):
             captured["data"] = data
@@ -82,6 +83,7 @@ class TestSendWhatsAppMediaUrl:
 
         class FakeResponse:
             def raise_for_status(self): pass
+            def json(self): return {"sid": "SMtest"}
 
         def fake_post(url, auth=None, data=None, timeout=None):
             captured["data"] = data

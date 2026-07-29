@@ -26,6 +26,7 @@ class Feature(str, Enum):
     MILP_OPTIMIZER = "milp_optimizer"
     SCHEDULED_REPORTS = "scheduled_reports"
     MULTI_LOCATION = "multi_location"
+    TEAM_MESSAGING = "team_messaging"
     # Enterprise
     BOM = "bom"
     API_ACCESS = "api_access"
@@ -52,7 +53,7 @@ _CORE = frozenset({
 _PRO_EXTRA = frozenset({
     Feature.ABC_XYZ, Feature.WHATSAPP_ALERTS, Feature.AI_ANALYST,
     Feature.DOCUMENTS_RAG, Feature.EVENT_SIMULATOR, Feature.MILP_OPTIMIZER,
-    Feature.SCHEDULED_REPORTS, Feature.MULTI_LOCATION,
+    Feature.SCHEDULED_REPORTS, Feature.MULTI_LOCATION, Feature.TEAM_MESSAGING,
 })
 
 _ENT_EXTRA = frozenset({Feature.BOM, Feature.API_ACCESS, Feature.WEBHOOKS, Feature.INTEGRATIONS})

@@ -32,8 +32,9 @@ def failure_reason() -> str:
     return "transport_error" if is_configured() else "not_configured"
 
 
-def _transport_send(to_number: str, body: str, media_url: str | None) -> None:
-    """Raw Twilio HTTP call. Raises on failure. Independently testable."""
+def _transport_send(to_number: str, body: str, media_url: str | None) -> str | None:
+    """Raw Twilio HTTP call. Raises on failure. Independently testable.
+    Returns the Twilio message SID so callers can confirm delivery later."""
     import httpx
 
     sid = settings.twilio_account_sid
@@ -52,6 +53,7 @@ def _transport_send(to_number: str, body: str, media_url: str | None) -> None:
         timeout=15,
     )
     resp.raise_for_status()
+    return resp.json().get("sid")
 
 
 def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bool:
@@ -75,11 +77,63 @@ def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bo
         return False
 
 
-def _send(to_number: str, body: str, media_url: str | None) -> None:
+def _send(to_number: str, body: str, media_url: str | None) -> str | None:
     # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
     # while the dispatch logic in _transport_send stays independently testable —
     # same convention as notifications/email.py.
-    _transport_send(to_number, body, media_url)
+    return _transport_send(to_number, body, media_url)
+
+
+def fetch_message_status(message_sid: str) -> str | None:
+    """Current Twilio delivery status of a sent message ('delivered', 'failed',
+    'undelivered', …), or None when the lookup itself fails."""
+    import httpx
+
+    sid = settings.twilio_account_sid
+    try:
+        resp = httpx.get(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages/{message_sid}.json",
+            auth=(sid, settings.twilio_auth_token),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get("status")
+    except Exception as exc:
+        log.warning("WhatsApp status lookup failed for %s: %s", message_sid, exc)
+        return None
+
+
+def send_whatsapp_and_confirm(to_number: str, body: str, wait_seconds: float = 8.0) -> bool:
+    """
+    Send a WhatsApp text and confirm Twilio actually delivered it.
+
+    Twilio ACCEPTS the API call and fails asynchronously (e.g. error 63015 when
+    the recipient's sandbox opt-in expired), so a plain send_whatsapp() returns
+    True for messages that never arrive. This variant polls the message status
+    once after `wait_seconds` and returns False on failed/undelivered, letting
+    the caller fall back to another channel. Blocking — call it from a
+    background task, never inline in a request. Never raises.
+    """
+    if not is_configured() or not to_number:
+        return False
+    try:
+        message_sid = _send(to_number, body, None)
+    except Exception as exc:
+        log.error("WhatsApp send failed to %s: %s", to_number, exc)
+        return False
+
+    # A patched/mocked transport (tests) yields no real SID — treat as accepted.
+    if not isinstance(message_sid, str) or not message_sid:
+        return True
+
+    import time
+    time.sleep(wait_seconds)
+    status = fetch_message_status(message_sid)
+    if status in ("failed", "undelivered"):
+        log.warning("WhatsApp %s to %s not delivered (status=%s)", message_sid, to_number, status)
+        return False
+    log.info("WhatsApp sent → %s (status=%s)", to_number, status or "unknown")
+    return True
 
 
 def build_inventory_alert_text(

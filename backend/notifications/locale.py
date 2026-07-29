@@ -11,6 +11,10 @@ from __future__ import annotations
 
 _ES: dict[str, str] = {
     "whatsapp_verification_code": "Tu código de verificación de Faro es: {code}",
+    # Team-messaging heads-up (WhatsApp first, SMS fallback): intentionally
+    # omits the message body (SMS is unencrypted and billed per segment), so it
+    # only names the sender.
+    "dm_new_message_heads_up": "Faro: tienes un mensaje nuevo de {sender}. Léelo en {url}",
     # Daily stockout digest: the rows a channel could not fit are announced, so
     # the listed rows are never mistaken for the full count.
     "alert_email_more_row":  "… y {n} producto{s} más en la misma condición — velos en el tablero",

@@ -6,6 +6,7 @@ import { ChevronRight } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import AlertBell from '@/components/alerts/AlertBell'
+import MessagesBadge from '@/components/messages/MessagesBadge'
 import TourLauncher from '@/components/tour/TourLauncher'
 import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
@@ -24,6 +25,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/settings':  'topbar.title_settings',
   '/skus':      'skus.page_title',
   '/pedidos':   'orders.page_title',
+  '/mensajes':  'messages.page_title',
   '/sessions':  'sessions.page_title',
 }
 
@@ -202,6 +204,9 @@ export default function TopBar() {
         <span style={{ fontSize: 12, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
           {time}
         </span>
+
+        {/* Unread direct messages — renders nothing on plans without messaging */}
+        <MessagesBadge />
 
         {/* Replay the guided tour. Only appears on screens that have one, so
             it is never a dead control, and it is how someone who dismissed the

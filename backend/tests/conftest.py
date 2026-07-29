@@ -136,7 +136,8 @@ def client(app):
     target `whatsapp._transport_send`, mirroring the email convention.
     """
     with mock.patch("backend.notifications.email._send"), \
-         mock.patch("backend.notifications.whatsapp._send"):
+         mock.patch("backend.notifications.whatsapp._send"), \
+         mock.patch("backend.notifications.sms._send"):
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c
 

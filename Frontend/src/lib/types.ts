@@ -473,6 +473,41 @@ export interface ForecastSeries {
 export interface UserPreferences {
   language:         'es' | 'en'
   theme:            'dark' | 'light'
+  /** Forward new direct messages as an SMS to the user's linked number. */
+  dm_sms_enabled:   boolean
+}
+
+// ── Team messaging (GET/POST /messages/*) ─────────────────────────────────────
+export interface DmContact {
+  id:        string
+  full_name: string | null
+  email:     string
+  role:      string
+}
+
+export interface DmConversation {
+  counterpart_id: string
+  full_name:      string | null
+  email:          string
+  last_body:      string
+  last_at:        string
+  last_is_mine:   boolean
+  unread_count:   number
+}
+
+export interface DirectMessage {
+  id:           number
+  sender_id:    string
+  recipient_id: string
+  body:         string
+  read_at?:     string | null
+  created_at:   string
+}
+
+export interface DmThread {
+  counterpart: { id: string; full_name: string | null; email: string }
+  messages:    DirectMessage[]
+  has_more:    boolean
 }
 
 // ── Authenticated user (GET /users/me) ────────────────────────────────────────

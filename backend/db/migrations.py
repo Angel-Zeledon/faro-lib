@@ -1115,6 +1115,35 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("create_stock_defaults_idx",
      "CREATE INDEX IF NOT EXISTS stock_defaults_tenant_idx "
      "ON stock_defaults (tenant_id, scope_type)"),
+
+    # ── Team messaging (Professional plan) ────────────────────────────────────
+    # 1-to-1 chat between users of the same tenant. Conversations are derived
+    # from the (sender, recipient) pair — no thread table. `chats` /
+    # `chat_messages` are the AI-analyst chat and stay untouched.
+    ("create_direct_messages",
+     """CREATE TABLE IF NOT EXISTS direct_messages (
+         id           BIGSERIAL PRIMARY KEY,
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         sender_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         recipient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         body         TEXT NOT NULL,
+         read_at      TIMESTAMPTZ,
+         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    # Unread badge: recipient scans their own unread rows.
+    ("create_direct_messages_unread_idx",
+     "CREATE INDEX IF NOT EXISTS direct_messages_unread_idx "
+     "ON direct_messages (tenant_id, recipient_id) WHERE read_at IS NULL"),
+    # Thread view and conversation list both walk messages touching one user,
+    # newest first.
+    ("create_direct_messages_thread_idx",
+     "CREATE INDEX IF NOT EXISTS direct_messages_thread_idx "
+     "ON direct_messages (tenant_id, sender_id, recipient_id, id DESC)"),
+    # Opt-in per user: forward new direct messages as an SMS to
+    # users.whatsapp_number. Lives in user_preferences next to language/theme.
+    ("add_user_preferences_dm_sms_enabled",
+     "ALTER TABLE user_preferences "
+     "ADD COLUMN IF NOT EXISTS dm_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

@@ -1036,6 +1036,27 @@ export const getPreferences = () =>
 export const updatePreferences = (body: Partial<import('./types').UserPreferences>) =>
   request<import('./types').UserPreferences>('PATCH', '/me/preferences', body)
 
+// ── Team messaging (direct messages between users of the tenant) ──────────────
+export const getDmContacts = () =>
+  request<import('./types').DmContact[]>('GET', '/messages/contacts')
+
+export const getDmConversations = () =>
+  request<import('./types').DmConversation[]>('GET', '/messages/conversations')
+
+export const getDmUnreadCount = () =>
+  request<{ unread: number }>('GET', '/messages/unread-count', undefined, { silent: true })
+
+export const getDmThread = (withUser: string, before?: number) =>
+  request<import('./types').DmThread>(
+    'GET', `/messages/thread?with_user=${encodeURIComponent(withUser)}${before ? `&before=${before}` : ''}`,
+  )
+
+export const sendDm = (recipientId: string, body: string) =>
+  request<import('./types').DirectMessage>('POST', '/messages', { recipient_id: recipientId, body })
+
+export const markDmRead = (withUser: string) =>
+  request<{ read: boolean }>('POST', '/messages/read', { with_user: withUser })
+
 // ── Activity Logs ─────────────────────────────────────────────────────────────
 export const getActivityLogs = (params?: { limit?: number; offset?: number; action?: string }) => {
   const q = new URLSearchParams()

@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router
+from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router
 from backend.errors import AppError
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
@@ -212,6 +212,7 @@ app.include_router(integrations_router.router, prefix=_PREFIX)
 app.include_router(whatsapp_router.router, prefix=_PREFIX)
 app.include_router(freshness_router.router, prefix=_PREFIX)
 app.include_router(alerts_router.router,    prefix=_PREFIX)
+app.include_router(messages_router.router,  prefix=_PREFIX)
 app.include_router(ws_router)
 
 
