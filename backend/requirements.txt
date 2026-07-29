@@ -48,3 +48,6 @@ websockets==16.0
 # SQL data-source drivers (postgresql uses psycopg2 above)
 PyMySQL==2.2.8
 pyodbc==5.3.0
+# Billing. Imported lazily inside backend/billing/service.py, so the app still
+# boots and every non-billing route still works if this is ever missing.
+stripe==12.5.1

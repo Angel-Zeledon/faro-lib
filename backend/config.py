@@ -55,6 +55,27 @@ class Settings(BaseSettings):
     dataset_editor_max_rows: int = 50_000
     dataset_editor_max_mb: int = 10
 
+    # ── Billing (Stripe) ────────────────────────────────────────────────────
+    # All optional: with no secret key the billing endpoints report that billing
+    # is not configured and every other part of the app is unaffected, exactly
+    # like RESEND_API_KEY and the notification senders.
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    # Without this, webhook signatures cannot be verified — and an unverified
+    # webhook is an open endpoint for raising your own plan, so the handler
+    # REFUSES to run rather than trusting the body.
+    stripe_webhook_secret: str = ""
+    # Price IDs live in configuration, not in code: they differ between test and
+    # live mode, and the plan they map to is a commercial decision, not a
+    # deployable one. Empty means that plan cannot be bought yet.
+    stripe_price_professional_monthly: str = ""
+    stripe_price_professional_yearly: str = ""
+    # Enterprise is quoted per operation, so there is deliberately no price here.
+
+    @property
+    def billing_enabled(self) -> bool:
+        return bool(self.stripe_secret_key)
+
     # ── Testing mode ────────────────────────────────────────────────────────
     # When True, ALL commercial/business restrictions are bypassed: plan quotas,
     # rate limits, concurrent-job caps, upload-size caps and length caps. Intended

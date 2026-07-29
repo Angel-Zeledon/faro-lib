@@ -789,6 +789,40 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # already has the tenants table — only an explicit ALTER does.
     ("alter_tenants_plan_default_starter",
      "ALTER TABLE tenants ALTER COLUMN plan SET DEFAULT 'starter'"),
+
+    # ── Billing (Stripe) ─────────────────────────────────────────────────────
+    # `plan` stays the single source of truth for what a tenant may DO — every
+    # entitlement already reads it. These columns only record who the tenant is
+    # over at Stripe and what its subscription is doing, so a plan change can be
+    # traced back to the event that caused it.
+    ("add_tenants_stripe_customer_id",
+     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT"),
+    ("add_tenants_stripe_subscription_id",
+     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT"),
+    # Stripe's own vocabulary (trialing/active/past_due/canceled/unpaid), stored
+    # verbatim rather than mapped, so a support question can be answered against
+    # what the dashboard shows.
+    ("add_tenants_subscription_status",
+     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status TEXT"),
+    ("create_tenants_stripe_customer_uniq",
+     """CREATE UNIQUE INDEX IF NOT EXISTS tenants_stripe_customer_uniq
+        ON tenants (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL"""),
+
+    # Stripe retries a webhook until it gets a 2xx, and it may deliver the same
+    # event more than once even after success. Every delivery is recorded here
+    # BEFORE it is applied, so a repeat is a no-op instead of a second plan
+    # change — the primary key is the whole guard.
+    ("create_stripe_events",
+     """CREATE TABLE IF NOT EXISTS stripe_events (
+            id           TEXT PRIMARY KEY,
+            type         TEXT        NOT NULL,
+            tenant_id    TEXT,
+            received_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            applied_at   TIMESTAMPTZ,
+            payload      JSONB
+        )"""),
+    ("create_stripe_events_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS stripe_events_tenant_idx ON stripe_events (tenant_id)"),
     ("create_integration_connections",
      """CREATE TABLE IF NOT EXISTS integration_connections (
          id           TEXT PRIMARY KEY,

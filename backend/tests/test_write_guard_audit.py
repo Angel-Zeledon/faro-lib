@@ -70,6 +70,11 @@ INFRA = {
     # Not a user at all: Twilio posting an inbound WhatsApp message. Authorised
     # by request signature, so a role guard here would reject the only caller.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
+    # Stripe's callback, and the only path that changes tenants.plan. A role
+    # guard here would reject the only legitimate caller, so its authorisation
+    # is the signature instead — see test_billing.py, which asserts an unsigned,
+    # wrongly-signed or tampered body is refused and changes nothing.
+    "POST /api/v1/billing/webhook": "Stripe webhook, verified by signature",
 }
 
 # POSTs that read. HTTP makes you POST anything with a body, so a query, an
