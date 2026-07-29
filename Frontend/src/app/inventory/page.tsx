@@ -55,8 +55,8 @@ const C = {
 
 // ── Signal config ─────────────────────────────────────────────────────────────
 // The signal presentation (icon + label + accessible colour) lives in
-// components/ui/SignalBadge — antes estaba duplicada aquí y en
-// SkuSearchOverlay, con colores que fallaban contraste en tema claro.
+// components/ui/SignalBadge — it used to be duplicated here and in
+// SkuSearchOverlay, with colours that failed contrast in the light theme.
 function SignalBadge({ s }: { s: InventorySignal }) {
  return <SharedSignalBadge signal={s} />
 }
@@ -2130,7 +2130,7 @@ export default function InventoryPage() {
  </>
 
  ) : viewMode === 'update' ? (
- /* ── Vista actualización rápida ───────────────────────────── */
+ /* ── Quick update view ────────────────────────────────────── */
  <div>
  {/* CSV import hint */}
  <div style={{ padding: '10px 16px', background: 'color-mix(in srgb, var(--accent) 4%, transparent)', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

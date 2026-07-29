@@ -111,6 +111,13 @@ _SPANISH_SWEEP = (
              IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'inventory_mermas_sku_idx') THEN
                  ALTER INDEX inventory_mermas_sku_idx RENAME TO inventory_shrinkage_sku_idx;
              END IF;
+             -- The primary key index was missed by the original sweep: ALTER
+             -- TABLE ... RENAME leaves the PK index on its old name, and unlike
+             -- the two above it was never listed here. It is the last Spanish
+             -- object name left in the schema.
+             IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'inventory_mermas_pkey') THEN
+                 ALTER INDEX inventory_mermas_pkey RENAME TO inventory_shrinkage_pkey;
+             END IF;
            END $$"""),
         ("rename_inventory_stock_bodega_constraint",
          """DO $$ BEGIN

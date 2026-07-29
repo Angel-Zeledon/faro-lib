@@ -1097,10 +1097,10 @@ export const translations = {
 
     'skus.metrics_table_caption':    'Precisión de cada modelo para {sku}, del mejor al peor.',
 
-    // Historial de alertas en la app. El backend manda valores máquina (kind,
-    // status, channel, failure_reason); las frases viven aquí. Los envíos
-    // FALLIDOS se muestran igual que los entregados — ocultarlos sería repetir
-    // el fallo que el contrato de entrega existe para evitar.
+    // In-app alert history. The backend sends machine values (kind, status,
+    // channel, failure_reason); the sentences live here. FAILED sends are
+    // shown exactly like delivered ones — hiding them would repeat the very
+    // failure the delivery contract exists to prevent.
     'alerts.section_sent':      'Enviadas por Faro',
     'alerts.section_session':   'En esta sesión',
     'alerts.empty_hint':        'Aquí verás las alertas que Faro te envía cada día.',
@@ -1149,8 +1149,8 @@ export const translations = {
     'inventory.planning_days_unit':            'días',
     'inventory.planning_service_level_label':  'Nivel de servicio',
     'inventory.planning_unit_cost_label':      'Costo unitario',
-    // Aprendizaje del tiempo de entrega. {needed} sale del backend
-    // (MIN_LEAD_TIME_OBSERVATIONS), nunca de un número escrito en el front.
+    // Lead-time learning. {needed} comes from the backend
+    // (MIN_LEAD_TIME_OBSERVATIONS), never from a number typed in the frontend.
     'inventory.lead_time_learning_no_supplier': 'Este producto no tiene proveedor, así que no puedo aprender su tiempo de entrega real. Asígnale uno y empiezo a medir.',
     'inventory.lead_time_learning_none':        'Todavía no tengo entregas tuyas de {supplier}. Cuando registres {needed} recepciones, ajusto el tiempo de entrega solo.',
     'inventory.lead_time_learning_partial':     'Llevo {n} de {needed} entregas registradas de {supplier}. Con {missing} más ajusto el tiempo de entrega solo.',
@@ -1258,9 +1258,10 @@ export const translations = {
     'qs.mapping_reused':      'Usamos las mismas columnas que en «{session}», así que no tienes que configurar nada: revisa que se vean bien y continúa.',
     'qs.mapping_reuse_failed': 'Tu archivo cambió de formato desde «{session}»: ya no trae {columns}. Elegimos las columnas por ti, pero conviene que las revises.',
 
-    // Por qué recomendamos lo que recomendamos. El backend manda el código y
-    // los números; la frase vive aquí. La cláusula que importa es `lead_default`:
-    // antes decía «lead time configurado» sobre un número que nadie configuró.
+    // Why we recommend what we recommend. The backend sends the code and the
+    // numbers; the sentence lives here. The clause that matters is
+    // `lead_default`: it used to say "configured lead time" about a number
+    // nobody had configured.
     'explain.day_one':                  'un día',
     'explain.day_many':                 '{n} días',
     'explain.base':                     'Te quedan {stock} unidades y vendes {demand} al día, así que {coverage}. Como {lead}, el punto de reorden queda en {reorder} unidades',
