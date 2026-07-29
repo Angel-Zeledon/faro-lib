@@ -54,7 +54,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 28 }}>
         {/* POs generated */}
-        <div>
+        <div data-tour="roi.hero_orders">
           <div style={{ fontSize: 48, fontWeight: 900, color: C.indigo, lineHeight: 1 }}>
             {roi.total_pos_generated}
           </div>
@@ -74,7 +74,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
         </div>
 
         {/* Urgent stockout risks actually acted on */}
-        <div>
+        <div data-tour="roi.hero_risks">
           <div style={{ fontSize: 48, fontWeight: 900, color: C.red, lineHeight: 1 }}>
             {fmtUnits(roi.total_skus_protected)}
           </div>
@@ -87,7 +87,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
         </div>
 
         {/* Value or units */}
-        <div>
+        <div data-tour="roi.hero_value">
           {hasValue ? (
             <>
               <div style={{ fontSize: 42, fontWeight: 900, color: C.green, lineHeight: 1 }}>
@@ -184,7 +184,7 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
       />
       <Table size="lg">
           <thead>
-            <tr style={{ background: C.card }}>
+            <tr data-tour="roi.monthly_cols" style={{ background: C.card }}>
               {[
                 t('roi.col_month'), t('roi.col_orders'), t('roi.col_stockouts_handled'),
                 t('roi.col_value_managed'), t('roi.col_adoption'), t('roi.col_capital_freed'),
@@ -231,11 +231,13 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
 // Mirrors the monthly email exactly. A null metric is rendered as explicitly
 // unavailable with the reason, never as a zero that could read as an outcome.
 
-function RecapTile({ value, label, note, color, muted }: {
+function RecapTile({ value, label, note, color, muted, dataTour }: {
   value: string; label: string; note: string; color: string; muted?: boolean
+  /** `data-tour` anchor, so a guided-tour step can point at one tile. */
+  dataTour?: string
 }) {
   return (
-    <div style={{ padding: '16px 18px', background: C.card, borderRadius: 10, minWidth: 0 }}>
+    <div data-tour={dataTour} style={{ padding: '16px 18px', background: C.card, borderRadius: 10, minWidth: 0 }}>
       <div style={{
         fontSize: muted ? 15 : 30, fontWeight: muted ? 600 : 800,
         color, lineHeight: 1.15, wordBreak: 'break-word',
@@ -293,6 +295,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           <RecapTile
+            dataTour="roi.recap_orders"
             value={`${report.orders_generated}`}
             label={report.orders_generated === 1
               ? t('recap.metric_orders_singular')
@@ -303,6 +306,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
           {report.adoption_rate != null && (
             <RecapTile
+              dataTour="roi.recap_adoption"
               value={`${Math.round(report.adoption_rate * 100)}%`}
               label={t('recap.metric_adoption')}
               note={t('recap.metric_adoption_note')
@@ -314,6 +318,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
           {report.stockout_risks_handled != null && (
             <RecapTile
+              dataTour="roi.recap_risks"
               value={`${report.stockout_risks_handled}`}
               label={t('recap.metric_risks')}
               note={t('recap.metric_risks_note')}
@@ -322,6 +327,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
           )}
 
           <RecapTile
+            dataTour="roi.recap_capital"
             value={report.capital_freed != null ? formatMoney(report.capital_freed) : t('recap.unavailable')}
             label={t('recap.metric_capital')}
             note={report.capital_freed != null ? t('recap.metric_capital_note') : t('recap.unavailable_capital')}
@@ -330,6 +336,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
           />
 
           <RecapTile
+            dataTour="roi.recap_managed"
             value={report.managed_purchase_value != null
               ? formatMoney(report.managed_purchase_value)
               : t('recap.unavailable')}
@@ -434,7 +441,7 @@ export default function ROIPage() {
             </p>
           </div>
         </div>
-        <Link href="/inventory" style={{
+        <Link href="/inventory" data-tour="roi.back" style={{
           display: 'flex', alignItems: 'center', gap: 6,
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
@@ -474,7 +481,7 @@ export default function ROIPage() {
           <MonthlyEvolutionTable rows={monthly} />
 
           {/* Orders now live in /orders */}
-          <Link href="/pedidos" style={{
+          <Link href="/pedidos" data-tour="roi.orders" style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '14px 18px', borderRadius: 12, textDecoration: 'none',
             background: C.surface, border: `1px solid ${C.border}`,

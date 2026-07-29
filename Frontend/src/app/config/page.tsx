@@ -160,7 +160,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
         </div>
 
         {/* Fields */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div data-tour="config.profile" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* Full name */}
           <div>
@@ -289,7 +289,7 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
     <Card>
       <SectionTitle icon={Settings2} color="#22c55e" title={t('app_settings')} subtitle={`${t('language')} · ${t('theme')}`} />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div data-tour="config.appearance" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
         {/* Language */}
         <div style={{
@@ -1260,7 +1260,7 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
         icon={MessageSquare} color="var(--accent)"
         title={t('config.dm_sms_title')} subtitle={t('config.dm_sms_subtitle')}
       />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <div data-tour="config.dm_sms" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
             {t('config.dm_sms_toggle_label')}

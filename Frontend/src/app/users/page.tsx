@@ -709,7 +709,7 @@ export default function UsersPage() {
       </div>
 
       {/* Filters */}
-      <div style={{
+      <div data-tour="users.filters" style={{
         display: 'flex', gap: 10, marginBottom: 16,
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 10, padding: '12px 16px', alignItems: 'center',
@@ -812,7 +812,7 @@ export default function UsersPage() {
             <div data-tour={idx === 0 ? 'users.role' : undefined}><RoleBadge role={u.role} /></div>
             <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.created_at, lang)}</div>
             <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.last_login_at, lang)}</div>
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+            <div data-tour={idx === 0 ? 'users.actions' : undefined} style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
               <StatusDropdown user={u} currentUser={currentUser} onChanged={load} />
               {u.status === 'pending_confirmation' && (
                 <ResendButton userId={u.id} email={u.email} />

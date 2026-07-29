@@ -372,7 +372,7 @@ function SchedulesTab() {
         {t('settings.schedules_desc')}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div data-tour="settings.session" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <label style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('settings.session_label')}</label>
         <Select
           chevron
@@ -391,7 +391,7 @@ function SchedulesTab() {
         <div style={{ textAlign: 'center', padding: 32 }}><Spinner /></div>
       ) : sessionId ? (
         <Card tone="inset" padding="18px 20px" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div>
+          <div data-tour="settings.frequency">
             <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>{t('settings.frequency')}</label>
             <Select
               chevron
@@ -408,7 +408,7 @@ function SchedulesTab() {
             </div>
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+          <label data-tour="settings.enabled" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
             <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
             {t('settings.schedule_enabled')}
           </label>
@@ -425,7 +425,7 @@ function SchedulesTab() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div data-tour="settings.save" style={{ display: 'flex', gap: 8 }}>
             <Button variant="primary" size="sm" loading={saving} onClick={handleSave}>
               {schedule ? t('settings.update_schedule') : t('settings.save_schedule')}
             </Button>

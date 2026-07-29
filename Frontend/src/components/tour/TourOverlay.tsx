@@ -41,7 +41,7 @@ export default function TourOverlay() {
   const { t, lang } = useLanguage()
   const narrow = useIsNarrow()
   const [rect, setRect] = useState<Rect | null>(null)
-  const [nudgeUp, setNudgeUp] = useState(0)
+  const [topOverride, setTopOverride] = useState<number | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
   const step = active?.steps[stepIndex]
@@ -70,19 +70,25 @@ export default function TourOverlay() {
   }, [step])
 
   // A step's body is a short paragraph, so the card's height is not knowable
-  // until it renders. Placing it below a low anchor could push Next and Back
-  // off the bottom of the screen — the tour became unusable exactly on the
-  // steps that explain the most. Measure once painted and lift it back inside.
+  // until it renders. Placed below a low anchor it could push Next and Back off
+  // the bottom — the tour failing hardest on the steps that explain the most.
+  // So the final vertical position is decided here, from the measured height:
+  // an un-anchored card is centred, and any card is clamped inside the
+  // viewport. Runs in a layout effect, before paint, so nothing is seen to jump.
   useLayoutEffect(() => {
-    setNudgeUp(0)
+    setTopOverride(null)
   }, [step])
 
   useLayoutEffect(() => {
     const el = cardRef.current
-    if (!el || nudgeUp !== 0) return
-    const overflow = el.getBoundingClientRect().bottom - (window.innerHeight - 12)
-    if (overflow > 0) setNudgeUp(overflow)
-  }, [step, rect, nudgeUp, narrow])
+    if (!el || narrow || topOverride !== null) return
+    const r = el.getBoundingClientRect()
+    const max = Math.max(12, window.innerHeight - 12 - r.height)
+    const wanted = rect
+      ? Math.min(r.top, max)                                  // anchored: clamp
+      : Math.max(12, Math.round((window.innerHeight - r.height) / 2))  // centre
+    if (Math.abs(wanted - r.top) > 1) setTopOverride(wanted)
+  }, [step, rect, topOverride, narrow])
 
   // Keyboard: Escape leaves, arrows navigate. A tour is optional by
   // definition, so leaving must always be one key away.
@@ -108,9 +114,21 @@ export default function TourOverlay() {
   // visible above it.
   let cardStyle: React.CSSProperties
   if (narrow || !rect) {
+    // The centred panel is positioned with NUMBERS, not `50%` plus a
+    // translate. Two reasons, both learned the hard way: `.modal-panel-enter`
+    // animates `transform`, which clobbers a centring translate for the length
+    // of the animation; and the overflow correction below can only move a card
+    // whose `top` is a number, so a percentage silently opted this case out of
+    // the one guard meant to keep it on screen. Measured on a 520px-tall
+    // viewport, that combination put the last step's buttons 55px below the
+    // fold with no way to reach them.
     cardStyle = narrow
       ? { left: 12, right: 12, bottom: 12, width: 'auto' }
-      : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: PANEL_W }
+      : {
+          left: Math.max(12, Math.round((window.innerWidth - PANEL_W) / 2)),
+          top: 12,
+          width: PANEL_W,
+        }
   } else {
     const below = rect.top + rect.height + GAP
     const roomBelow  = window.innerHeight - below > 200
@@ -168,9 +186,7 @@ export default function TourOverlay() {
         className="modal-panel-enter"
         style={{
           position: 'fixed', ...cardStyle,
-          ...(nudgeUp > 0 && typeof cardStyle.top === 'number'
-            ? { top: Math.max(12, (cardStyle.top as number) - nudgeUp) }
-            : null),
+          ...(topOverride !== null && !narrow ? { top: topOverride } : null),
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 12, padding: '16px 18px', outline: 'none',
           boxShadow: '0 24px 60px -20px rgba(0,0,0,0.5)',

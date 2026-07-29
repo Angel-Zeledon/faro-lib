@@ -157,11 +157,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
 // ── Sources filter popover ─────────────────────────────────────────────────────
 function SourcesFilter({
-  sources, allTypes, onChange,
+  sources, allTypes, onChange, dataTour,
 }: {
   sources: string[]
   allTypes: ChatSourceType[]
   onChange: (v: string[]) => void
+  /** `data-tour` anchor. Only the header copy carries it, so it resolves once. */
+  dataTour?: string
 }) {
   const { t } = useLanguage()
   const [open, setOpen] = useState(false)
@@ -183,7 +185,7 @@ function SourcesFilter({
   const active = sources.length > 0
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} data-tour={dataTour} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(o => !o)}
         title={t('analyst.filter_data_sources_title')}
@@ -810,7 +812,7 @@ export default function AnalystPage() {
 
                 {/* Session picker */}
                 {completedSessions.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div data-tour="an.session" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('analyst.session_label')}</span>
                     <select
                       name="chat_session"
@@ -848,6 +850,7 @@ export default function AnalystPage() {
                 {/* Sources filter */}
                 {sourceTypes.length > 0 && activeChat?.session_id && (
                   <SourcesFilter
+                    dataTour="an.sources"
                     sources={activeChat?.data_sources ?? []}
                     allTypes={sourceTypes}
                     onChange={handleSourcesChange}
@@ -858,6 +861,7 @@ export default function AnalystPage() {
               {/* Messages area */}
               <div
                 ref={msgsRef}
+                data-tour="an.thread"
                 onScroll={handleScroll}
                 style={{
                   flex: 1, overflowY: 'auto',
@@ -970,7 +974,7 @@ export default function AnalystPage() {
                 padding: '12px 20px', borderTop: '1px solid var(--border)',
                 background: 'var(--surface)', flexShrink: 0,
               }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <div data-tour="an.input" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                   {/* Sources filter (mobile-friendly placement) */}
                   {sourceTypes.length > 0 && activeChat?.session_id && (
                     <div style={{ flexShrink: 0 }}>

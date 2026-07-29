@@ -191,7 +191,8 @@ export default function SessionsHistoryPage() {
                     }}
                   >
                     {/* The divider is on the <tr>, so the cells do not draw their own. */}
-                    <Td divider={false} style={{ fontWeight: 600, minWidth: 180 }}>
+                    <Td divider={false} style={{ fontWeight: 600, minWidth: 180 }}
+                        data-tour={idx === 0 ? 'ses.name' : undefined}>
                       {isEditing ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                               onClick={e => e.stopPropagation()}>
@@ -229,23 +230,29 @@ export default function SessionsHistoryPage() {
                         data-tour={idx === 0 ? 'ses.dataset' : undefined}>
                       {s.dataset_filename ?? s.dataset_name ?? '—'}
                     </Td>
-                    <Td divider={false} nowrap style={{ color: C.muted }}>
+                    <Td divider={false} nowrap style={{ color: C.muted }}
+                        data-tour={idx === 0 ? 'ses.created' : undefined}>
                       {fmtDate(s.created_at)}
                     </Td>
-                    <Td divider={false} style={{ color: C.muted }}>{s.horizon ?? '—'}</Td>
-                    <Td divider={false} style={{ color: C.muted }}>{granularityLabel(s.granularity)}</Td>
-                    <Td divider={false} style={{ color: C.muted }}>{s.sku_count ?? '—'}</Td>
+                    <Td divider={false} style={{ color: C.muted }}
+                        data-tour={idx === 0 ? 'ses.horizon' : undefined}>{s.horizon ?? '—'}</Td>
+                    <Td divider={false} style={{ color: C.muted }}
+                        data-tour={idx === 0 ? 'ses.granularity' : undefined}>{granularityLabel(s.granularity)}</Td>
+                    <Td divider={false} style={{ color: C.muted }}
+                        data-tour={idx === 0 ? 'ses.skus' : undefined}>{s.sku_count ?? '—'}</Td>
                     <Td divider={false} nowrap align="right"
                         data-tour={idx === 0 ? 'ses.actions' : undefined}
                         onClick={e => e.stopPropagation()}>
                       {canEdit && !isEditing && (
                         <>
                           <button onClick={() => startRename(s)}
+                                  data-tour={idx === 0 ? 'ses.rename' : undefined}
                                   title={t('sessions.rename_action')} style={iconBtnStyle}>
                             <Pencil size={14} />
                           </button>
                           <button
                             onClick={() => removeSession(s)}
+                            data-tour={idx === 0 ? 'ses.delete' : undefined}
                             disabled={s.status === 'RUNNING'}
                             title={s.status === 'RUNNING'
                               ? t('sessions.delete_running_hint')
