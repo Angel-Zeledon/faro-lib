@@ -141,11 +141,21 @@ class FeatureEngineer:
         for l in self.cfg.lags:
             df[f"lag_{l}"] = (g[self.target].shift(l) if g is not None
                               else df[self.target].shift(l))
+        # Diffs are taken on the shift(1) series: an unshifted diff contains the
+        # row's own target (y[t] = lag_1[t] + diff_1[t]), which hands the model
+        # the answer and makes forecasts extrapolate the last observed slope.
         for d in self.cfg.diffs:
-            df[f"diff_{d}"]       = (g[self.target].diff(d)       if g is not None
-                                     else df[self.target].diff(d))
-            df[f"pct_change_{d}"] = (g[self.target].pct_change(d) if g is not None
-                                     else df[self.target].pct_change(d))
+            if g is not None:
+                df[f"diff_{d}"] = g[self.target].transform(
+                    lambda x: x.shift(1).diff(d)
+                )
+                df[f"pct_change_{d}"] = g[self.target].transform(
+                    lambda x: x.shift(1).pct_change(d)
+                )
+            else:
+                shifted = df[self.target].shift(1)
+                df[f"diff_{d}"]       = shifted.diff(d)
+                df[f"pct_change_{d}"] = shifted.pct_change(d)
         return df
 
     def _rolling(self, df):

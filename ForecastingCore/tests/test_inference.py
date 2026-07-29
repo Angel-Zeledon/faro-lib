@@ -294,6 +294,99 @@ class TestRecursiveMLPredict:
 
 
 # ---------------------------------------------------------------------------
+# Train/serve feature parity
+# ---------------------------------------------------------------------------
+
+def _capture_model(store, value=50.0):
+    """Model that records every feature row it is asked to predict on."""
+    class _CaptureModel:
+        def predict(self, X):
+            store.append(X.iloc[0].to_dict())
+            return np.full(len(X), value)
+    return _CaptureModel()
+
+
+class TestInferenceFeatureParity:
+
+    def _first_step_features(self, history, **cfg_kwargs):
+        cfg = _mock_features_cfg(calendar=False, **cfg_kwargs)
+        captured = []
+        recursive_ml_predict(
+            fitted_model=_capture_model(captured),
+            feature_names=_feature_names_for_cfg(cfg),
+            residuals=np.zeros(5),
+            history=list(history),
+            features_cfg=cfg,
+            horizon=1,
+            future_dates=[pd.Timestamp("2024-01-02")],
+        )
+        return captured[0]
+
+    def test_rolling_window_includes_last_observed_value(self):
+        # Training: roll_mean_w at row t = mean(y[t-w] .. y[t-1]) (shift(1) then
+        # rolling). For the first future step that window is the last w observed
+        # values INCLUDING the newest one: mean(8, 9, 10) = 9.
+        row = self._first_step_features(
+            [float(v) for v in range(1, 11)], lags=(1,), rolling=(3,), diffs=())
+        assert row["roll_mean_3"] == pytest.approx(9.0)
+
+    def test_rolling_std_matches_training_ddof(self):
+        # pandas rolling().std() uses ddof=1; inference must match.
+        history = [2.0, 4.0, 8.0, 16.0, 32.0]
+        expected = pd.Series(history).rolling(3).std().iloc[-1]
+        row = self._first_step_features(history, lags=(1,), rolling=(3,), diffs=())
+        assert row["roll_std_3"] == pytest.approx(float(expected))
+
+    def test_ewm_includes_last_observed_value(self):
+        history = [float(v) for v in range(1, 11)]
+        expected = pd.Series(history).ewm(span=3).mean().iloc[-1]
+        row = self._first_step_features(
+            history, lags=(1,), rolling=(), diffs=(), ewm_spans=(3,))
+        assert row["ewm_3"] == pytest.approx(float(expected))
+
+    def test_first_step_features_match_feature_engineer(self):
+        # Gold parity test: the feature row built for the first future step must
+        # equal the row FeatureEngineer produces for that date. A dummy target
+        # on the appended future row must not influence any feature — if it
+        # does, training saw the answer (leakage).
+        from forecasting_core.features.engineer import FeatureEngineer
+        from forecasting_core.config.config import FeaturesConfig
+
+        rng = np.random.default_rng(7)
+        history = list(rng.normal(50, 10, 40))
+        dates = pd.date_range("2024-01-01", periods=40, freq="D")
+        cfg = FeaturesConfig(lags=[1, 7], diffs=[1, 7], rolling=[7],
+                             calendar=False, ewm_spans=[3])
+
+        future_date = dates[-1] + pd.Timedelta(days=1)
+        train_df = pd.DataFrame({"date": dates, "sales": history})
+        appended = pd.concat([
+            train_df,
+            pd.DataFrame({"date": [future_date], "sales": [999999.0]}),  # dummy
+        ], ignore_index=True)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+        expected_row = eng.transform(appended).iloc[-1]
+
+        captured = []
+        recursive_ml_predict(
+            fitted_model=_capture_model(captured),
+            feature_names=_feature_names_for_cfg(cfg),
+            residuals=np.zeros(5),
+            history=history,
+            features_cfg=cfg,
+            horizon=1,
+            future_dates=[future_date],
+        )
+        inference_row = captured[0]
+
+        for feat in ["lag_1", "lag_7", "diff_1", "diff_7", "pct_change_1",
+                     "roll_mean_7", "roll_std_7", "roll_min_7", "roll_max_7",
+                     "ewm_3"]:
+            assert inference_row[feat] == pytest.approx(
+                float(expected_row[feat]), rel=1e-6), f"mismatch on {feat}"
+
+
+# ---------------------------------------------------------------------------
 # predict_all_skus
 # ---------------------------------------------------------------------------
 

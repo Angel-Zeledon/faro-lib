@@ -121,6 +121,64 @@ class TestFeatureEngineerTransform:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Leakage: diff/pct_change must never contain the current target value
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNoTargetLeakageInDiffs:
+
+    def test_diff_uses_only_past_values(self):
+        # Geometric series makes shifted vs unshifted unambiguous:
+        # at the row where sales == 80, diff_1 must be 40 - 20 = 20
+        # (yesterday minus the day before), NOT 80 - 40 = 40.
+        df = pd.DataFrame({
+            "date": pd.date_range("2022-01-01", periods=6, freq="D"),
+            "sales": [10.0, 20.0, 40.0, 80.0, 160.0, 320.0],
+        })
+        cfg = _make_cfg(lags=[1], diffs=[1], rolling=[], calendar=False)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+        out = eng.transform(df)
+        row = out[out["sales"] == 80.0].iloc[0]
+        assert row["diff_1"] == pytest.approx(20.0)
+
+    def test_pct_change_uses_only_past_values(self):
+        # at the row where sales == 240, pct_change_1 must be (60-20)/20 = 2.0,
+        # NOT (240-60)/60 = 3.0.
+        df = pd.DataFrame({
+            "date": pd.date_range("2022-01-01", periods=4, freq="D"),
+            "sales": [10.0, 20.0, 60.0, 240.0],
+        })
+        cfg = _make_cfg(lags=[1], diffs=[1], rolling=[], calendar=False)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+        out = eng.transform(df)
+        row = out[out["sales"] == 240.0].iloc[0]
+        assert row["pct_change_1"] == pytest.approx(2.0)
+
+    def test_target_not_reconstructible_from_lag_plus_diff(self):
+        # With unshifted diffs, y[t] == lag_1[t] + diff_1[t] exactly — the model
+        # is handed the answer and learns to extrapolate the last slope.
+        df = _make_df(n=80, with_sku=False)
+        cfg = _make_cfg(lags=[1], diffs=[1], rolling=[], calendar=False)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+        out = eng.transform(df)
+        reconstructed = out["lag_1"] + out["diff_1"]
+        assert not np.allclose(reconstructed.values, out["sales"].values)
+
+    def test_diff_respects_group_boundaries(self):
+        rows = []
+        for sku, base in (("A", 1.0), ("B", 100.0)):
+            for i, d in enumerate(pd.date_range("2022-01-01", periods=4, freq="D")):
+                rows.append({"date": d, "sku": sku, "sales": base * (i + 1)})
+        df = pd.DataFrame(rows)
+        cfg = _make_cfg(lags=[1], diffs=[1], rolling=[], calendar=False)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=["sku"])
+        out = eng.transform(df)
+        # B's third row (sales=300): diff_1 = 200 - 100 within the group,
+        # never contaminated by A's values.
+        row = out[(out["sku"] == "B") & (out["sales"] == 300.0)].iloc[0]
+        assert row["diff_1"] == pytest.approx(100.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Calendar feature correctness
 # ─────────────────────────────────────────────────────────────────────────────
 

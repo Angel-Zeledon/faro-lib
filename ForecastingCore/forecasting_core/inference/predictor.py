@@ -185,13 +185,15 @@ def recursive_ml_predict(
                 row[f"diff_{d}"] = 0.0
                 row[f"pct_change_{d}"] = 0.0
 
-        # Rolling features (shift(1) then window — mirrors FeatureEngineer._rolling)
+        # Rolling features — mirrors FeatureEngineer._rolling: shift(1).rolling(w)
+        # at the step being predicted means the window is the w most recent
+        # values in buf, INCLUDING the newest one. std uses ddof=1 like pandas.
         for w in features_cfg.rolling:
-            window_vals = buf[-(w + 1):-1] if len(buf) >= w + 1 else buf[:-1]
+            window_vals = buf[-w:]
             if window_vals:
-                arr = np.array(window_vals[-w:], dtype=float)
+                arr = np.array(window_vals, dtype=float)
                 mean_v = float(np.mean(arr))
-                std_v = float(np.std(arr)) if len(arr) > 1 else 0.0
+                std_v = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
                 row[f"roll_mean_{w}"] = mean_v
                 row[f"roll_std_{w}"] = std_v
                 row[f"roll_min_{w}"] = float(np.min(arr))
@@ -202,14 +204,15 @@ def recursive_ml_predict(
                             f"roll_max_{w}", f"cv_{w}"):
                     row[col] = 0.0
 
-        # EWM features
+        # EWM features — shift(1).ewm at the step being predicted covers every
+        # value in buf, including the newest one.
         for span in features_cfg.ewm_spans:
-            if len(buf) >= 2:
+            if buf:
                 ewm_val = float(
-                    pd.Series(buf[:-1], dtype=float).ewm(span=span).mean().iloc[-1]
+                    pd.Series(buf, dtype=float).ewm(span=span).mean().iloc[-1]
                 )
             else:
-                ewm_val = float(buf[-1]) if buf else 0.0
+                ewm_val = 0.0
             row[f"ewm_{span}"] = ewm_val
 
         # Align to model's expected feature order; fill any missing column with 0
@@ -298,10 +301,11 @@ def predict_all_skus(
         if len(sub) < 2:
             continue
 
-        # Buffer size: enough for all lag and rolling lookbacks
+        # Buffer size: enough for all lag, diff and rolling lookbacks
         lags = config.features.lags or [1]
         rolling = config.features.rolling or [1]
-        max_lookback = max(max(lags), max(rolling)) + 2
+        diffs = config.features.diffs or [1]
+        max_lookback = max(max(lags), max(rolling), max(diffs)) + 2
         history = list(sub[c.target].astype(float).values[-max_lookback:])
 
         # Future dates
