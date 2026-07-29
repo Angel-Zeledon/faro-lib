@@ -431,9 +431,18 @@ async def bulk_import(
     unit_cost, sale_price, moq, supplier, notes.
     """
     content = await file.read()
-    fmt, columns, raw_rows, _sep = _read_upload(file.filename, content)
-    used, detected = _resolve_mapping(columns, mapping)
-    rows, errors, skipped_no_sku = _parse_stock_rows(raw_rows, used)
+
+    # Parsing is CPU-bound over the whole file — a 3k-row sheet is thousands of
+    # coercions — and it ran on the event loop, so every other request in the
+    # process waited for it. 72a8ec4 offloaded the WRITES and stopped there;
+    # this is the other half of the same defect.
+    def _parse():
+        fmt_, columns_, raw_rows_, _sep_ = _read_upload(file.filename, content)
+        used_, detected_ = _resolve_mapping(columns_, mapping)
+        rows_, errors_, skipped_ = _parse_stock_rows(raw_rows_, used_)
+        return fmt_, columns_, used_, detected_, rows_, errors_, skipped_
+
+    fmt, columns, used, detected, rows, errors, skipped_no_sku = await asyncio.to_thread(_parse)
 
     if not rows:
         # The whole file was rejected — a user event, not API misuse, so it
@@ -452,38 +461,49 @@ async def bulk_import(
             },
         )
 
-    # Resolve every distinct warehouse spelling in the CSV to its canonical
-    # form BEFORE the limit pre-checks and the writes: 'norte' rows must land
-    # on an existing 'Norte' location instead of counting as (and creating) a
-    # new one. One lookup per distinct name, not per row.
-    resolved_wh = {
-        raw: wh_svc.resolve_canonical_name(user.tenant_id, raw)
-        for raw in {r.get("warehouse") for r in rows}
-    }
-    for r in rows:
-        r["warehouse"] = resolved_wh[r.get("warehouse")]
-
-    existing_keys = svc.list_stock_keys(user.tenant_id)
-    new_keys = {(r["sku"], r["warehouse"]) for r in rows} - existing_keys
+    # Everything from here to the write is blocking DB work — five round-trips
+    # plus the per-warehouse lookups — so it goes to the same thread as the
+    # write rather than the event loop. Keeping the checks and the write
+    # together also preserves the property the comments below depend on: no row
+    # is written until every limit has been enforced.
+    #
+    # This is what the stress test caught. bulk_upsert was already offloaded,
+    # but /health still stalled 5.4s against a 0.02s baseline during a 3k-row
+    # import, because the loop was waiting on these.
     from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id), adding=len(new_keys))
 
-    # Same bypass risk as PUT /stock: a CSV with N distinct new warehouse
-    # names would otherwise create all N for free via
-    # svc.upsert_stock -> _ensure_warehouse inside bulk_upsert's loop.
-    # Compute the DISTINCT new names up front and enforce max_locations
-    # against (current count + new names) BEFORE bulk_upsert writes anything,
-    # so a blocked import never partially creates stock/warehouse rows.
-    existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
-    new_wh_names = {r["warehouse"] for r in rows} - existing_wh_names
-    enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id), adding=len(new_wh_names))
+    def _check_and_write() -> int:
+        # Resolve every distinct warehouse spelling in the CSV to its canonical
+        # form BEFORE the limit pre-checks and the writes: 'norte' rows must
+        # land on an existing 'Norte' location instead of counting as (and
+        # creating) a new one. One lookup per distinct name, not per row.
+        resolved_wh = {
+            raw: wh_svc.resolve_canonical_name(user.tenant_id, raw)
+            for raw in {r.get("warehouse") for r in rows}
+        }
+        for r in rows:
+            r["warehouse"] = resolved_wh[r.get("warehouse")]
 
-    # bulk_upsert does one synchronous (blocking) DB round-trip per row. Without
-    # offloading to a thread, a large CSV freezes the asyncio event loop — and
-    # with it the entire backend, for every tenant — for the whole duration of
-    # the import (confirmed: a 10k-row file blocked even the unrelated /health
-    # endpoint for other tenants).
-    count = await asyncio.to_thread(svc.bulk_upsert, user.tenant_id, rows)
+        existing_keys = svc.list_stock_keys(user.tenant_id)
+        new_keys = {(r["sku"], r["warehouse"]) for r in rows} - existing_keys
+        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id),
+                      adding=len(new_keys))
+
+        # Same bypass risk as PUT /stock: a CSV with N distinct new warehouse
+        # names would otherwise create all N for free via
+        # svc.upsert_stock -> _ensure_warehouse inside bulk_upsert's loop.
+        # Compute the DISTINCT new names up front and enforce max_locations
+        # against (current count + new names) BEFORE bulk_upsert writes
+        # anything, so a blocked import never partially creates stock rows.
+        existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
+        new_wh_names = {r["warehouse"] for r in rows} - existing_wh_names
+        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id),
+                      adding=len(new_wh_names))
+
+        # bulk_upsert does one synchronous DB round-trip per row.
+        return svc.bulk_upsert(user.tenant_id, rows)
+
+    count = await asyncio.to_thread(_check_and_write)
     result = {
         "imported": count,
         "total_rows": len(rows),
