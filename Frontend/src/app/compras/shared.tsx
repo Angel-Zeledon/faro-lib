@@ -197,7 +197,7 @@ export function AssumptionsBanner({ summary, stacked = false }: {
 
  return (
   <Link
-   href="/inventory-setup"
+   href="/configurar-inventario"
    style={{
     display: 'flex',
     flexDirection: stacked ? 'column' : 'row',

@@ -79,7 +79,7 @@ export default function DataFreshness({ currentSession, loading }: {
             : t('freshness.no_data')}
         </span>
         <span style={{ color: 'var(--border)' }}>|</span>
-        <Link href="/quick-start" style={{
+        <Link href="/ventas" style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
           color: 'var(--accent)', fontWeight: 600, textDecoration: 'none',
         }}>
@@ -90,7 +90,7 @@ export default function DataFreshness({ currentSession, loading }: {
       {/* Stock chip — only once the stock clock itself is late. */}
       {stockLate && stockDays != null && (
         <Link
-          href="/inventory"
+          href="/inventario"
           title={t(stockState === 'blind'
             ? 'freshness.stock_blind_warning'
             : 'freshness.stock_stale_warning', { days: stockDays })}

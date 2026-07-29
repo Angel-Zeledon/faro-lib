@@ -33,7 +33,7 @@ export default function NotFound() {
           {copy('notfound.body', 'The page you are looking for does not exist or was moved.')}
         </div>
       </div>
-      <Link href="/hoy" style={{ textDecoration: 'none' }}>
+      <Link href="/compras" style={{ textDecoration: 'none' }}>
         <Button variant="primary" icon={<ArrowLeft size={13} />}>
           {copy('notfound.back', 'Back to the dashboard')}
         </Button>

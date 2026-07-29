@@ -157,7 +157,7 @@ export default function SupplierScorecardPage() {
             </p>
           </div>
         </div>
-        <Link href="/inventory/suppliers" style={{
+        <Link href="/proveedores" style={{
           display: 'flex', alignItems: 'center', gap: 6,
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
@@ -224,7 +224,7 @@ export default function SupplierScorecardPage() {
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
             {t('scorecard.empty_body')}
           </div>
-          <Link href="/inventory/suppliers" style={{
+          <Link href="/proveedores" style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
             background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',

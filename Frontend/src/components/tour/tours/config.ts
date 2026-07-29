@@ -8,7 +8,7 @@ import type { TourDefinition } from '../types'
  */
 export const configTour: TourDefinition = {
   id: 'config-v2',
-  route: '/config',
+  route: '/mi-cuenta',
   name: 'name',
   autoStart: false,
   steps: [

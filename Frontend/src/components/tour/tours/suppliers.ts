@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const suppliersTour: TourDefinition = {
   id: 'suppliers-v2',
-  route: '/inventory/suppliers',
+  route: '/proveedores',
   name: 'name',
   steps: [
     { title: 'intro_title', body: 'intro_body' },

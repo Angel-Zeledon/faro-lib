@@ -145,7 +145,7 @@ export const translations = {
     records_count:   'registros',
 
     // ── Navigation labels ──
-    'nav.hoy':            'Panel de Compras',
+    'nav.hoy':            'Panel de compras',
     'nav.orders':               'Pedidos',
     'nav.quick_start':    'Cargar ventas',
     'nav.data':           'Mis ventas',
@@ -153,7 +153,14 @@ export const translations = {
     'nav.suppliers':      'Proveedores',
     'nav.roi':            'Impacto',
     'nav.analyst':        'Asistente IA',
-    'nav.skus':           'Predicciones',
+    // "Pronósticos", not "Predicciones": the screen forecasts demand, and
+    // pronóstico is the word the rest of the product already uses for it.
+    'nav.skus':           'Pronósticos',
+    // /config held your profile while being called Configuración, and /settings
+    // held scheduled recalculation while being called Tareas programadas. Both
+    // now say what they are.
+    'nav.account':        'Mi cuenta',
+    'nav.automation':     'Automatización',
     'nav.messages':       'Mensajes',
     'nav.users':          'Usuarios',
     'nav.integrations':   'Integraciones',
@@ -517,7 +524,15 @@ export const translations = {
     'messages.new':               'Nuevo mensaje',
     'messages.no_contacts':       'No hay otros usuarios en tu equipo',
     'messages.no_conversations':  'Aún no tienes conversaciones',
-    'messages.start_hint':        'Toca + para escribirle a alguien de tu equipo',
+    // The "+" it used to tell you to tap is gone: it opened a panel above the
+    // conversations that pushed them 220px down, so a click aimed at a name
+    // landed on whichever row had slid into that spot. There is a search box
+    // in its place now, and the hint points at that.
+    'messages.start_hint':        'Busca a alguien de tu equipo arriba para escribirle',
+    'messages.search_people':     'Buscar persona…',
+    'messages.people_count':      '{n} en tu equipo',
+    'messages.start_new_with':    'Escribirle por primera vez',
+    'messages.no_search_results': 'Nadie coincide con “{q}”',
     'messages.pick_conversation': 'Elige una conversación',
     'messages.thread_empty':      'Este es el inicio de la conversación',
     'messages.placeholder':       'Escribe un mensaje…',
@@ -3041,7 +3056,9 @@ export const translations = {
     'nav.suppliers':      'Suppliers',
     'nav.roi':            'Impact',
     'nav.analyst':        'AI Assistant',
-    'nav.skus':           'Predictions',
+    'nav.skus':           'Forecasts',
+    'nav.account':        'My account',
+    'nav.automation':     'Automation',
     'nav.messages':       'Messages',
     'nav.users':          'Users',
     'nav.integrations':   'Integrations',
@@ -3404,7 +3421,11 @@ export const translations = {
     'messages.new':               'New message',
     'messages.no_contacts':       'No other users in your team',
     'messages.no_conversations':  'No conversations yet',
-    'messages.start_hint':        'Tap + to write to someone on your team',
+    'messages.start_hint':        'Search for a teammate above to write to them',
+    'messages.search_people':     'Search for a person…',
+    'messages.people_count':      '{n} on your team',
+    'messages.start_new_with':    'Write to them for the first time',
+    'messages.no_search_results': 'Nobody matches “{q}”',
     'messages.pick_conversation': 'Pick a conversation',
     'messages.thread_empty':      'This is the start of the conversation',
     'messages.placeholder':       'Write a message…',

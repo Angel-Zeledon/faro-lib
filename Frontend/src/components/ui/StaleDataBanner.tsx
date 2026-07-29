@@ -62,12 +62,12 @@ export default function StaleDataBanner({ freshness }: { freshness: DataFreshnes
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           {staleSales && (
-            <Link href="/quick-start" style={cta}>
+            <Link href="/ventas" style={cta}>
               <Upload size={12} /> {t('freshness.banner_cta_sales')}
             </Link>
           )}
           {staleStock && (
-            <Link href="/inventory" style={cta}>
+            <Link href="/inventario" style={cta}>
               <Upload size={12} /> {t('freshness.banner_cta_stock')}
             </Link>
           )}

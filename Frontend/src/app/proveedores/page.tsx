@@ -506,7 +506,7 @@ function SuppliersPageInner() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Link href="/inventory/suppliers/scorecard" data-tour="sup.scorecard" style={{
+          <Link href="/proveedores/scorecard" data-tour="sup.scorecard" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             fontSize: 12, color: C.dim, textDecoration: 'none',
             padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,

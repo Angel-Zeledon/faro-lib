@@ -441,7 +441,7 @@ export default function ROIPage() {
             </p>
           </div>
         </div>
-        <Link href="/inventory" data-tour="roi.back" style={{
+        <Link href="/inventario" data-tour="roi.back" style={{
           display: 'flex', alignItems: 'center', gap: 6,
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
@@ -506,7 +506,7 @@ export default function ROIPage() {
               <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
                 {t('roi.no_orders_registered_hint')}
               </div>
-              <Link href="/inventory" style={{
+              <Link href="/inventario" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',

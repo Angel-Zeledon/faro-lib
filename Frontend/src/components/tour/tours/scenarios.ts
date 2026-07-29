@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const scenariosTour: TourDefinition = {
   id: 'scenarios-v4',
-  route: '/scenarios',
+  route: '/escenarios',
   name: 'name',
   autoStart: true,
   steps: [

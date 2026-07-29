@@ -2808,7 +2808,7 @@ export default function SkusPage() {
                   icon={<Package size={20} />}
                   title={t('skus.empty_title')}
                   body={t('skus.empty_body')}
-                  actions={[{ label: t('skus.empty_cta'), href: '/quick-start' }]}
+                  actions={[{ label: t('skus.empty_cta'), href: '/ventas' }]}
                 />
               </div>
             ) : loading ? (

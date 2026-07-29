@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const skusTour: TourDefinition = {
   id: 'skus-v2',
-  route: '/skus',
+  route: '/pronosticos',
   name: 'name',
   steps: [
     { title: 'intro_title', body: 'intro_body' },

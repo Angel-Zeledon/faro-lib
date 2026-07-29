@@ -943,7 +943,7 @@ function QuickStartPageContent() {
  // just-finished run: the app is never re-pointed at a session that finished
  // in the background while the user was mid-task somewhere else.
  await planningCtx?.reload()
- router.push('/hoy')
+ router.push('/compras')
  return
  }
  if (baseJob?.status === 'FAILED') {

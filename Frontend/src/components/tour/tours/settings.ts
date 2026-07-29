@@ -11,7 +11,7 @@ import type { TourDefinition } from '../types'
  */
 export const settingsTour: TourDefinition = {
   id: 'settings-v3',
-  route: '/settings',
+  route: '/automatizacion',
   name: 'name',
   autoStart: false,
   steps: [

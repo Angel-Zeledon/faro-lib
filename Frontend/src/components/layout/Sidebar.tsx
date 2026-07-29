@@ -7,7 +7,7 @@ import {
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight, X,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
-  FlaskConical, ListChecks, MessageSquare,
+  FlaskConical, ListChecks, MessageSquare, Target, Clock,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -34,38 +34,45 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { href: '/hoy',                 labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
-  { href: '/pedidos',             labelKey: 'nav.orders',     Icon: ClipboardList,   group: 'operation' },
-  { href: '/skus',                labelKey: 'nav.skus',        Icon: Package,         group: 'operation' },
+  { href: '/compras',             labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
+  { href: '/pedidos',             labelKey: 'nav.orders',      Icon: ClipboardList,   group: 'operation' },
   { href: '/mensajes',            labelKey: 'nav.messages',    Icon: MessageSquare,   group: 'operation', feature: 'team_messaging' },
 
   // One door, not two. "Subir mis ventas" and "mis archivos" are the same
   // errand to the person doing it, so the nav carries a single entry and the
   // two routes are tabs of each other (see components/layout/DataTabs.tsx).
-  { href: '/quick-start',         labelKey: 'nav.data',        Icon: Upload,          group: 'data',
-    alsoActive: ['/data'] },
+  { href: '/ventas',              labelKey: 'nav.data',        Icon: Upload,          group: 'data',
+    alsoActive: ['/archivos'] },
 
-  { href: '/inventory',           labelKey: 'nav.inventory',   Icon: Package,         group: 'purchasing' },
+  { href: '/inventario',          labelKey: 'nav.inventory',   Icon: Package,         group: 'purchasing' },
   // Ahead of the full inventory list on purpose: a tenant with 2.000
   // unconfigured products needs the 40 that carry 82% of the spend, not the
-  // 2.000. The route is /inventory-setup rather than /inventory/setup because
-  // the latter would nest under the inventory tree's own layout.
-  { href: '/inventory-setup',     labelKey: 'nav.inventory_setup', Icon: ListChecks,  group: 'purchasing' },
-  { href: '/inventory/suppliers', labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
+  // 2.000. Kept flat as /configurar-inventario rather than nested under
+  // /inventario, so it can never inherit a layout that screen does not want.
+  { href: '/configurar-inventario', labelKey: 'nav.inventory_setup', Icon: ListChecks, group: 'purchasing' },
+  { href: '/proveedores',         labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
 
-  { href: '/inventory/roi',       labelKey: 'nav.roi',         Icon: TrendingUp,      group: 'analysis' },
-  { href: '/sessions',            labelKey: 'nav.sessions',    Icon: History,         group: 'analysis' },
-  { href: '/analyst',             labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
-  { href: '/scenarios',           labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis', feature: 'event_simulator' },
+  // Forecasts belong here, not under Operación. Nobody opens this screen to
+  // get today's work done — they open it to understand a product.
+  { href: '/pronosticos',         labelKey: 'nav.skus',        Icon: TrendingUp,      group: 'analysis' },
+  { href: '/impacto',             labelKey: 'nav.roi',         Icon: Target,          group: 'analysis' },
+  { href: '/historial',           labelKey: 'nav.sessions',    Icon: History,         group: 'analysis' },
+  { href: '/asistente',           labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
+  { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis', feature: 'event_simulator' },
 
-  { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
+  { href: '/usuarios',            labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
   // Integraciones is hidden for now, for the same reason as the API-keys and
   // webhooks tabs: connecting Alegra or Siigo works, but whether it is sold —
   // and to which plan — is an open business decision, so today it is an
   // entitlement lock that upsells a thing nobody has priced. The route and its
   // page still exist; restore this line to bring it back.
-  { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
-  { href: '/settings',            labelKey: 'nav.settings',    Icon: KeyRound,        group: 'system',  adminOnly: true, feature: 'api_access' },
+  //
+  // These two used to be crossed: /config held your own profile while being
+  // called "Configuración", and /settings held scheduled recalculation while
+  // being called "Tareas programadas". Both routes said "settings" and neither
+  // matched its screen.
+  { href: '/mi-cuenta',           labelKey: 'nav.account',     Icon: User,            group: 'system' },
+  { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true, feature: 'api_access' },
 ]
 
 const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']

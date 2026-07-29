@@ -46,26 +46,26 @@ export interface Command {
 
 export const COMMANDS: Command[] = [
   // ── Go to ──────────────────────────────────────────────────────────────────
-  { id: 'go.hoy',          group: 'navigate', href: '/hoy',                 labelKey: 'nav.hoy',           aliasKey: 'cmd.alias.hoy',        Icon: ShoppingCart },
+  { id: 'go.hoy',          group: 'navigate', href: '/compras',                 labelKey: 'nav.hoy',           aliasKey: 'cmd.alias.hoy',        Icon: ShoppingCart },
   { id: 'go.orders',       group: 'navigate', href: '/pedidos',             labelKey: 'nav.orders',        aliasKey: 'cmd.alias.orders',     Icon: ClipboardList },
-  { id: 'go.skus',         group: 'navigate', href: '/skus',                labelKey: 'nav.skus',          aliasKey: 'cmd.alias.skus',       Icon: Package },
-  { id: 'go.inventory',    group: 'navigate', href: '/inventory',           labelKey: 'nav.inventory',     aliasKey: 'cmd.alias.inventory',  Icon: Boxes },
-  { id: 'go.suppliers',    group: 'navigate', href: '/inventory/suppliers', labelKey: 'nav.suppliers',     aliasKey: 'cmd.alias.suppliers',  Icon: Truck },
-  { id: 'go.roi',          group: 'navigate', href: '/inventory/roi',       labelKey: 'nav.roi',           aliasKey: 'cmd.alias.roi',        Icon: TrendingUp },
-  { id: 'go.data',         group: 'navigate', href: '/data',                labelKey: 'nav.data',          aliasKey: 'cmd.alias.data',       Icon: Database },
-  { id: 'go.sessions',     group: 'navigate', href: '/sessions',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
-  { id: 'go.analyst',      group: 'navigate', href: '/analyst',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: BrainCircuit, feature: 'ai_analyst' },
-  { id: 'go.scenarios',    group: 'navigate', href: '/scenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical, feature: 'event_simulator' },
+  { id: 'go.skus',         group: 'navigate', href: '/pronosticos',                labelKey: 'nav.skus',          aliasKey: 'cmd.alias.skus',       Icon: Package },
+  { id: 'go.inventory',    group: 'navigate', href: '/inventario',           labelKey: 'nav.inventory',     aliasKey: 'cmd.alias.inventory',  Icon: Boxes },
+  { id: 'go.suppliers',    group: 'navigate', href: '/proveedores', labelKey: 'nav.suppliers',     aliasKey: 'cmd.alias.suppliers',  Icon: Truck },
+  { id: 'go.roi',          group: 'navigate', href: '/impacto',       labelKey: 'nav.roi',           aliasKey: 'cmd.alias.roi',        Icon: TrendingUp },
+  { id: 'go.data',         group: 'navigate', href: '/archivos',                labelKey: 'nav.data',          aliasKey: 'cmd.alias.data',       Icon: Database },
+  { id: 'go.sessions',     group: 'navigate', href: '/historial',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
+  { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: BrainCircuit, feature: 'ai_analyst' },
+  { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical, feature: 'event_simulator' },
   // Integraciones is hidden from the sidebar for now (see the note there), so
   // it must not be reachable from the palette either — a command palette that
   // navigates somewhere the nav deliberately hides is a back door, not a
   // shortcut.
-  { id: 'go.config',       group: 'navigate', href: '/config',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
-  { id: 'go.users',        group: 'navigate', href: '/users',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
-  { id: 'go.api',          group: 'navigate', href: '/settings',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true, feature: 'api_access' },
+  { id: 'go.config',       group: 'navigate', href: '/mi-cuenta',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
+  { id: 'go.users',        group: 'navigate', href: '/usuarios',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
+  { id: 'go.api',          group: 'navigate', href: '/automatizacion',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true, feature: 'api_access' },
 
   // ── Do ─────────────────────────────────────────────────────────────────────
-  { id: 'act.upload',    group: 'action', href: '/quick-start',   labelKey: 'cmd.upload_sales',    aliasKey: 'cmd.alias.upload',       Icon: Upload,    writerOnly: true },
+  { id: 'act.upload',    group: 'action', href: '/ventas',   labelKey: 'cmd.upload_sales',    aliasKey: 'cmd.alias.upload',       Icon: Upload,    writerOnly: true },
   // The manual-PO modal is local state on /pedidos, so the intent travels in
   // the URL; the page opens the modal and cleans the query string up.
   { id: 'act.new_order', group: 'action', href: '/pedidos?new=1', labelKey: 'cmd.create_order',    aliasKey: 'cmd.alias.create_order', Icon: Plus,      writerOnly: true },

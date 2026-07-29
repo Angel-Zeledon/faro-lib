@@ -673,10 +673,10 @@ function HoyEmptyState({ variant }: { variant: 'no_session' | 'no_inventory' }) 
      t('hoy.empty_bullet_3'),
     ] : undefined}
     actions={isNoSession ? [
-     { label: t('hoy.empty_cta_primary'), href: '/quick-start', icon: <Upload size={15} /> },
-     { label: t('hoy.empty_cta_demo'), href: '/quick-start?demo=1', icon: <PlayCircle size={15} />, variant: 'secondary' },
+     { label: t('hoy.empty_cta_primary'), href: '/ventas', icon: <Upload size={15} /> },
+     { label: t('hoy.empty_cta_demo'), href: '/ventas?demo=1', icon: <PlayCircle size={15} />, variant: 'secondary' },
     ] : [
-     { label: t('hoy.link_go_inventory'), href: '/inventory', icon: <Upload size={15} /> },
+     { label: t('hoy.link_go_inventory'), href: '/inventario', icon: <Upload size={15} /> },
     ]}
    />
 
@@ -1883,7 +1883,7 @@ export default function HoyPage() {
        {/* Inventory link */}
        <div style={{ marginTop: 8 }}>
         <Link
-         href="/inventory"
+         href="/inventario"
          style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           fontSize: 13, color: C.indigo, textDecoration: 'none',

@@ -64,7 +64,7 @@ export default function DesktopOnlyNotice() {
             : t('mobile.desktop_only_notice')}
         </div>
         <Link
-          href="/hoy"
+          href="/compras"
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6,
             fontSize: 12, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none',

@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const hoyTour: TourDefinition = {
   id: 'hoy-v4',
-  route: '/hoy',
+  route: '/compras',
   name: 'name',
   steps: [
     { title: 'intro_title', body: 'intro_body' },

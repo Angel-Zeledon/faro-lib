@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const dataTour: TourDefinition = {
   id: 'data-v2',
-  route: '/data',
+  route: '/archivos',
   name: 'name',
   autoStart: true,
   steps: [

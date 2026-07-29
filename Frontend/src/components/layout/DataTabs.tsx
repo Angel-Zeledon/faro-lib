@@ -15,8 +15,8 @@ import { Upload, Database } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 const TABS = [
-  { href: '/quick-start', labelKey: 'nav.quick_start', Icon: Upload },
-  { href: '/data',        labelKey: 'data.page_title', Icon: Database },
+  { href: '/ventas', labelKey: 'nav.quick_start', Icon: Upload },
+  { href: '/archivos',        labelKey: 'data.page_title', Icon: Database },
 ]
 
 export default function DataTabs({ style }: { style?: React.CSSProperties }) {

@@ -1932,7 +1932,7 @@ export default function InventoryPage() {
  {pdfLoading ? <Spinner size={12} /> : <FileText size={12} />} PDF
  </button>
  </div>
- <Link href="/inventory/roi" style={{
+ <Link href="/impacto" style={{
  display: 'flex', alignItems: 'center', gap: 5,
  fontSize: 11, color: C.dim, textDecoration: 'none',
  padding: '7px 10px', border: `1px solid ${C.border}`,
@@ -1940,7 +1940,7 @@ export default function InventoryPage() {
  }} title={t('inventory.title_view_impact')}>
  <TrendingUp size={12} /> {t('inventory.btn_impact')}
  </Link>
- <Link href="/inventory/suppliers" style={{
+ <Link href="/proveedores" style={{
  display: 'flex', alignItems: 'center', gap: 5,
  fontSize: 11, color: C.dim, textDecoration: 'none',
  padding: '7px 10px', border: `1px solid ${C.border}`,

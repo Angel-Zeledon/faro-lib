@@ -113,7 +113,7 @@ export default function SessionsHistoryPage() {
 
   const openResults = (s: SessionSummary) => {
     if (s.status !== 'COMPLETED') return
-    router.push(`/skus?session=${encodeURIComponent(s.session_id)}`)
+    router.push(`/pronosticos?session=${encodeURIComponent(s.session_id)}`)
   }
 
   const fmtDate = (iso: string) => {

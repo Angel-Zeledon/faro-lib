@@ -201,7 +201,7 @@ export default function OrdersPage() {
             t('orders.empty_bullet_2'),
             t('orders.empty_bullet_3'),
           ]}
-          actions={[{ label: t('orders.go_to_hoy'), href: '/hoy', icon: <ShoppingCart size={14} /> }]}
+          actions={[{ label: t('orders.go_to_hoy'), href: '/compras', icon: <ShoppingCart size={14} /> }]}
         />
       ) : (
         // The skeleton above already has the shape of this table, so fading the

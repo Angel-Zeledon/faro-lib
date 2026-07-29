@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const quickStartTour: TourDefinition = {
   id: 'quickStart-v4',
-  route: '/quick-start',
+  route: '/ventas',
   name: 'name',
   autoStart: true,
   steps: [

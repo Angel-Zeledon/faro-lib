@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const roiTour: TourDefinition = {
   id: 'roi-v2',
-  route: '/inventory/roi',
+  route: '/impacto',
   name: 'name',
   steps: [
     { title: 'intro_title', body: 'intro_body' },

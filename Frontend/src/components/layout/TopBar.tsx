@@ -165,7 +165,7 @@ export default function TopBar() {
             {/* Status indicator, not a control: it links to the session history
                 so switching happens there instead of in a second switcher. */}
             <Link
-              href="/sessions"
+              href="/historial"
               title={t('topbar.active_session_title')}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,

@@ -137,7 +137,7 @@ export default function PedidosMobile(props: PedidosMobileProps) {
               icon={<ClipboardList size={22} />}
               title={t('orders.empty_title')}
               body={t('orders.empty_hint')}
-              actions={[{ label: t('orders.go_to_hoy'), href: '/hoy', icon: <ShoppingCart size={14} /> }]}
+              actions={[{ label: t('orders.go_to_hoy'), href: '/compras', icon: <ShoppingCart size={14} /> }]}
             />
           ) : (
             // The skeleton above already has this shape, so fading the cards in

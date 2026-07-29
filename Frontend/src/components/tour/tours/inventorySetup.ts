@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const inventorySetupTour: TourDefinition = {
   id: 'inventory-setup-v2',
-  route: '/inventory-setup',
+  route: '/configurar-inventario',
   name: 'name',
   // The one screen someone lands on with nothing to do yet: two empty panels
   // and no idea that they are allowed to stop early. That is what the tour is

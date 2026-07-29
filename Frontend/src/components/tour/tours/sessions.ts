@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const sessionsTour: TourDefinition = {
   id: 'sessions-v2',
-  route: '/sessions',
+  route: '/historial',
   name: 'name',
   steps: [
     { title: 'intro_title', body: 'intro_body' },

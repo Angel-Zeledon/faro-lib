@@ -51,6 +51,36 @@ const nextConfig = {
       },
     ]
   },
+  // The routes were renamed so each one says what its screen is, and so the
+  // set stops being half Spanish and half English. Every old URL still works:
+  // people bookmark these and paste them to each other, and a 404 on a link a
+  // colleague sent an hour ago is a worse bug than the naming ever was.
+  //
+  // Permanent (308), because the old names are not coming back. Auth routes are
+  // deliberately absent — /verify-email and /reset-password are already sitting
+  // in people's inboxes and must resolve exactly as sent.
+  async redirects() {
+    const MOVED = [
+      ['/hoy',                          '/compras'],
+      ['/skus',                         '/pronosticos'],
+      ['/quick-start',                  '/ventas'],
+      ['/data',                         '/archivos'],
+      ['/inventory',                    '/inventario'],
+      ['/inventory-setup',              '/configurar-inventario'],
+      ['/inventory/suppliers',          '/proveedores'],
+      ['/inventory/suppliers/scorecard', '/proveedores/scorecard'],
+      ['/inventory/roi',                '/impacto'],
+      ['/sessions',                     '/historial'],
+      ['/analyst',                      '/asistente'],
+      ['/scenarios',                    '/escenarios'],
+      ['/users',                        '/usuarios'],
+      ['/config',                       '/mi-cuenta'],
+      ['/settings',                     '/automatizacion'],
+    ]
+    return MOVED.map(([source, destination]) => ({
+      source, destination, permanent: true,
+    }))
+  },
   async headers() {
     return [
       { source: '/(.*)', headers: SECURITY_HEADERS },

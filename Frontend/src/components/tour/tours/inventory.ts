@@ -2,7 +2,7 @@ import type { TourDefinition } from '../types'
 
 export const inventoryTour: TourDefinition = {
   id: 'inventory-v4',
-  route: '/inventory',
+  route: '/inventario',
   name: 'name',
   steps: [
     { title: 'intro_title', body: 'intro_body' },

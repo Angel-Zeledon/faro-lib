@@ -74,7 +74,7 @@ export function SupplierLeadTimeAlertBanner({ alerts }: { alerts: SupplierLeadTi
         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1 }}>
           {t('suppliers.leadtime_title')}
         </span>
-        <Link href="/inventory/suppliers/scorecard" style={ctaStyle(color)}>
+        <Link href="/proveedores/scorecard" style={ctaStyle(color)}>
           {t('suppliers.leadtime_cta')}
         </Link>
       </div>

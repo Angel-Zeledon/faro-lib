@@ -12,7 +12,7 @@ import type { TourDefinition } from '../types'
  */
 export const usersTour: TourDefinition = {
   id: 'users-v3',
-  route: '/users',
+  route: '/usuarios',
   name: 'name',
   autoStart: false,
   steps: [
