@@ -25,6 +25,7 @@ import {
   crostonClassLabel, distributionLabel,
 } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useErrorDetail } from '@/components/ui/States'
 import { useToast } from '@/contexts/ToastContext'
 import DataTabs from '@/components/layout/DataTabs'
 
@@ -343,9 +344,14 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
 }
 
 // ── SQL Editor Panel ──────────────────────────────────────────────────────────
-function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: DataSource) => void }) {
+function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
+ source: DataSource
+ onSaved: (s: DataSource) => void
+ onDatasetCreated?: (ds: DataSource) => void
+}) {
  const { t } = useLanguage()
  const { addToast } = useToast()
+ const errorDetail = useErrorDetail()
  const [sql, setSql] = useState(source.saved_query || '')
  const [result, setResult] = useState<SqlQueryResult | null>(null)
  const [running, setRunning] = useState(false)
@@ -360,7 +366,7 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  try {
  const r = await executeSqlQuery(source.id, sql)
  setResult(r)
- } catch (e: any) { setErr(e.message) }
+ } catch (e: unknown) { setErr(errorDetail(e)) }
  finally { setRunning(false) }
  }
 
@@ -370,7 +376,7 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  try {
  const updated = await saveSqlQuery(source.id, sql)
  onSaved(updated)
- } catch (e: any) { setErr(e.message) }
+ } catch (e: unknown) { setErr(errorDetail(e)) }
  finally { setSaving(false) }
  }
 
@@ -380,7 +386,7 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  setExporting(true); setErr(null)
  try {
  await exportSqlQueryXlsx(source.id, sql, `${source.name}.xlsx`)
- } catch (e: any) { setErr(e.message) }
+ } catch (e: unknown) { setErr(errorDetail(e)) }
  finally { setExporting(false) }
  }
 
@@ -396,7 +402,10 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  `"${ds.name}" — ${t('data.materialize_done_body')}`,
  'success',
  )
- } catch (e: any) { setErr(e.message) }
+ onDatasetCreated?.(ds)
+ // The snapshot's shape lands on the source row too — refresh its card.
+ try { onSaved(await getDataSource(source.id)) } catch { /* card refresh only */ }
+ } catch (e: unknown) { setErr(errorDetail(e)) }
  finally { setMaterializing(false) }
  }
 
@@ -1184,8 +1193,9 @@ function DatasetEditorPanel({ source, onCreated }: {
 }
 
 // ── Right panel: detail for a selected source ─────────────────────────────────
-function SourceDetail({ source, onUpdated, onDeleted, onBack }:
- { source: DataSource; onUpdated: (s: DataSource) => void; onDeleted: () => void; onBack?: () => void }
+function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }:
+ { source: DataSource; onUpdated: (s: DataSource) => void; onDeleted: () => void; onBack?: () => void
+   onDatasetCreated?: (ds: DataSource) => void }
 ) {
  const { t } = useLanguage()
  const confirm = useConfirm()
@@ -1498,7 +1508,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack }:
  </button>
  </div>
  ) : (
- <SqlEditorPanel source={source} onSaved={onUpdated} />
+ <SqlEditorPanel source={source} onSaved={onUpdated} onDatasetCreated={onDatasetCreated} />
  )
  )}
 
@@ -1903,6 +1913,7 @@ export default function DataPage() {
  source={selected}
  onUpdated={handleUpdated}
  onDeleted={handleDeleted}
+ onDatasetCreated={ds => setSources(prev => [ds, ...prev])}
  />
  ) : (
  <EmptyRight onCreate={() => { setCreating('new'); setSelected(null) }} />

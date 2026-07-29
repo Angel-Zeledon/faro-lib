@@ -100,9 +100,15 @@ class TestMaterialize:
         # Formula-injection guard: the malicious cell must be quote-prefixed.
         assert "'=SUM(A1:A9)" in content
 
-        # The query that produced the snapshot is remembered on the source.
-        src_row = query_one("SELECT saved_query FROM datasets WHERE id = %s", (sql_source["id"],))
+        # The query that produced the snapshot is remembered on the source,
+        # and the snapshot's shape fills the source's metadata card.
+        src_row = query_one(
+            "SELECT saved_query, row_count, column_count FROM datasets WHERE id = %s",
+            (sql_source["id"],),
+        )
         assert sales_table in src_row["saved_query"]
+        assert src_row["row_count"] == 3
+        assert src_row["column_count"] == 3
 
     def test_materialized_dataset_previews_like_a_file(
         self, client, auth_headers, sql_source, sales_table,

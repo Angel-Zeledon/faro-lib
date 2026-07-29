@@ -558,10 +558,13 @@ def materialize_sql_source(
         ),
     )
     # Remember the query that produced the snapshot, so re-materializing after
-    # fresh rows land in the customer's DB is one click, not a rewrite.
+    # fresh rows land in the customer's DB is one click, not a rewrite. The
+    # row/column counts land on the SOURCE too: its metadata card would
+    # otherwise show dashes forever, since a connection has no file to measure.
     execute(
-        "UPDATE datasets SET saved_query=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
-        (query_sql, source_id, tenant_id),
+        "UPDATE datasets SET saved_query=%s, row_count=%s, column_count=%s, "
+        "updated_at=NOW() WHERE id=%s AND tenant_id=%s",
+        (query_sql, row_count, len(columns), source_id, tenant_id),
     )
     return _public(get_source(tenant_id, new_id))
 

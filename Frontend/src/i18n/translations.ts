@@ -1297,6 +1297,9 @@ export const translations = {
     'errors.data_source_not_connected':          'Esta fuente todavía no está conectada. Prueba la conexión primero.',
     'errors.sql_query_failed':                   'La consulta falló: {reason}',
     'errors.sql_source_no_saved_query':          'Esta fuente SQL todavía no tiene una consulta guardada para analizar.',
+    'errors.sql_result_too_large':               'La consulta devolvió más de {max_rows} filas, el límite para guardarla. Acótala con WHERE o LIMIT.',
+    'errors.sql_result_empty':                   'La consulta no devolvió filas — no hay nada que guardar.',
+    'errors.data_source_not_sql':                'Esta acción solo aplica a fuentes de tipo base de datos.',
     'errors.planning_period_unavailable':        'El período «{period}» no está disponible para tus datos. Elige uno de los períodos disponibles.',
     'errors.planning_horizon_out_of_range':      'El horizonte tiene que estar entre 1 y {max_horizon} para el período «{period}».',
 
@@ -4108,6 +4111,9 @@ export const translations = {
     'errors.data_source_not_connected':          'This data source is not connected yet. Test the connection first.',
     'errors.sql_query_failed':                   'The query failed: {reason}',
     'errors.sql_source_no_saved_query':          'This SQL source has no saved query to analyze yet.',
+    'errors.sql_result_too_large':               'The query returned more than {max_rows} rows, the save limit. Narrow it with WHERE or LIMIT.',
+    'errors.sql_result_empty':                   'The query returned no rows — there is nothing to save.',
+    'errors.data_source_not_sql':                'This action only applies to database sources.',
     'errors.planning_period_unavailable':        'The "{period}" period is not available for your data. Pick one of the available periods.',
     'errors.planning_horizon_out_of_range':      'The horizon has to be between 1 and {max_horizon} for the "{period}" period.',
 
