@@ -1759,6 +1759,7 @@ export default function DataPage() {
  {/* New item button */}
  <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}` }}>
  <button
+ data-tour="data.new"
  onClick={() => { setCreating(creating ? null : 'new'); setSelected(null) }}
  style={{
  width: '100%', padding: '8px 12px', borderRadius: 8,
@@ -1787,11 +1788,13 @@ export default function DataPage() {
  {search ? t('data.no_matches') : t('data.no_sources_yet')}
  </div>
  ) : (
- filtered.map(src => {
+ filtered.map((src, idx) => {
  const isActive = selected?.id === src.id && !creating
  return (
  <button
  key={src.id}
+ /* First row only: a tour anchor has to resolve to a single element. */
+ data-tour={idx === 0 ? 'data.item' : undefined}
  onClick={() => { setSelected(src); setCreating(null) }}
  style={{
  width: '100%', textAlign: 'left', padding: '12px 14px',
@@ -1839,7 +1842,7 @@ export default function DataPage() {
  </div>
 
  {/* ── Right panel ──────────────────────────────────────────────────── */}
- <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+ <div data-tour="data.panel" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
  background: C.card, overflow: 'hidden' }}>
  {creating ? (
  <NewSourcePanel

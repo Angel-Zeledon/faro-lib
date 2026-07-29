@@ -291,12 +291,15 @@ function SupplierRow({
   onDelete,
   expanded,
   onToggleExpand,
+  first,
 }: {
   supplier: SupplierWithLearning
   onEdit: (s: Supplier) => void
   onDelete: (id: string) => void
   expanded: boolean
   onToggleExpand: (id: string) => void
+  /** Carries the tour anchors, so each resolves to exactly one cell. */
+  first?: boolean
 }) {
   const { t } = useLanguage()
   return (
@@ -309,7 +312,7 @@ function SupplierRow({
         {/* The row divider lives on the <tr> here, because an expanded row has
             to suppress it — hence `divider={false}` on every cell. */}
         <Td size="lg" divider={false} style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{supplier.name}</Td>
-        <Td size="lg" divider={false} mono style={{ color: C.indigo, fontWeight: 700 }}>
+        <Td size="lg" divider={false} mono data-tour={first ? 'sup.leadtime' : undefined} style={{ color: C.indigo, fontWeight: 700 }}>
           {supplier.lead_time_days}d
         </Td>
         <Td size="lg" divider={false} style={{ color: C.dim }}>
@@ -318,13 +321,13 @@ function SupplierRow({
         {/* What the lead-time learning is waiting for. A default nobody chose
             stops being silent the moment the screen says when it will stop
             being a default. */}
-        <Td size="lg" divider={false} style={{ fontSize: 11, lineHeight: 1.5, minWidth: 230 }}>
+        <Td size="lg" divider={false} data-tour={first ? 'sup.learning' : undefined} style={{ fontSize: 11, lineHeight: 1.5, minWidth: 230 }}>
           <LeadTimeLearning supplier={supplier} />
         </Td>
         <Td size="lg" divider={false} style={{ color: C.muted }}>
           {supplier.payment_terms || <span style={{ color: C.dim }}>—</span>}
         </Td>
-        <Td size="lg" divider={false} style={{ color: C.muted }}>
+        <Td size="lg" divider={false} data-tour={first ? 'sup.contact' : undefined} style={{ color: C.muted }}>
           {supplier.email
             ? <a href={`mailto:${supplier.email}`} style={{ color: C.indigo, textDecoration: 'none' }}>{supplier.email}</a>
             : <span style={{ color: C.dim }}>—</span>}
@@ -338,6 +341,7 @@ function SupplierRow({
           <div style={{ display: 'flex', gap: 4 }}>
             <button
               onClick={() => onToggleExpand(supplier.id)}
+              data-tour={first ? 'sup.pricebreaks' : undefined}
               title={t('suppliers.pb_toggle')}
               aria-label={`${t('suppliers.pb_toggle')}: ${supplier.name}`}
               aria-expanded={expanded}
@@ -502,7 +506,7 @@ function SuppliersPageInner() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Link href="/inventory/suppliers/scorecard" style={{
+          <Link href="/inventory/suppliers/scorecard" data-tour="sup.scorecard" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             fontSize: 12, color: C.dim, textDecoration: 'none',
             padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
@@ -596,10 +600,11 @@ function SuppliersPageInner() {
                 </tr>
               </thead>
               <tbody>
-                {suppliers.map(s => (
+                {suppliers.map((s, idx) => (
                   <SupplierRow
                     key={s.id}
                     supplier={s}
+                    first={idx === 0}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     expanded={expandedId === s.id}

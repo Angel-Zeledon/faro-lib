@@ -142,7 +142,7 @@ export default function OrdersPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {pendingCount > 0 && (
-            <span style={{
+            <span data-tour="pedidos.pending" style={{
               fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
               background: 'rgba(245,158,11,0.1)', color: C.amber,
             }}>
@@ -151,6 +151,7 @@ export default function OrdersPage() {
           )}
           {canCreate && (
             <button
+              data-tour="pedidos.manual"
               onClick={() => setCreatingPO(true)}
               style={{
                 all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
@@ -167,7 +168,7 @@ export default function OrdersPage() {
 
       {/* Orders vs. transfers (feature 5.4) — tab bar only for multi-warehouse tenants */}
       {multiWarehouse && (
-        <div role="tablist" aria-label={t('transfers.tablist_aria')} style={{ display: 'flex', gap: 4 }}>
+        <div data-tour="pedidos.tabs" role="tablist" aria-label={t('transfers.tablist_aria')} style={{ display: 'flex', gap: 4 }}>
           <button role="tab" aria-selected={tab === 'orders'} onClick={() => setTab('orders')}
                   style={tabStyle(tab === 'orders')}>{t('transfers.tab_orders')}</button>
           <button role="tab" aria-selected={tab === 'transfers'} onClick={() => setTab('transfers')}
@@ -205,7 +206,7 @@ export default function OrdersPage() {
       ) : (
         // The skeleton above already has the shape of this table, so fading the
         // rows in reads as the placeholder becoming the data, not as a blink.
-        <Card className="page-enter" padding={0} overflow="hidden">
+        <Card data-tour="pedidos.table" className="page-enter" padding={0} overflow="hidden">
           <POHistoryTable
             entries={history}
             onReceive={setReceivingPO}

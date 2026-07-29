@@ -1,0 +1,47 @@
+import type { TourDefinition } from '../types'
+
+export const pedidosTour: TourDefinition = {
+  id: 'pedidos-v1',
+  route: '/pedidos',
+  name: 'name',
+  steps: [
+    { title: 'intro_title', body: 'intro_body' },
+    { anchor: 'pedidos.pending', title: 'pending_title', body: 'pending_body' },
+    { anchor: 'pedidos.table', title: 'row_title', body: 'row_body' },
+    { anchor: 'pedidos.table', title: 'receive_title', body: 'receive_body' },
+    { anchor: 'pedidos.manual', title: 'manual_title', body: 'manual_body' },
+    { anchor: 'pedidos.tabs', title: 'transfers_title', body: 'transfers_body' },
+  ],
+  copy: {
+    es: {
+      name: 'Cómo cerrar el ciclo de un pedido',
+      intro_title: 'Lo que ya pediste, hasta que entra a bodega',
+      intro_body: 'El Panel de Compras decide qué pedir. Esta pantalla vigila lo que ya pediste hasta que llega.\n\nExiste por una razón concreta: mientras un pedido viaja, esas unidades no están en tu bodega ni en la del proveedor, no las ve nadie. Si al llegar no las registra nadie, la app sigue creyendo que te falta producto y te lo recomienda otra vez. Aquí es donde ese ciclo se cierra.',
+      pending_title: 'Los pedidos que siguen abiertos',
+      pending_body: 'Este contador son las órdenes que salieron y que todavía nadie marcó como recibidas.\n\nUn número que crece semana a semana casi nunca significa que los proveedores se atrasaron: significa que la mercadería llegó y no se registró. Eso te cuesta dos veces — compras de más porque tu stock real es mayor del que vemos, y nunca aprendemos cuánto tarda de verdad ese proveedor, que es el dato que más mueve tus cantidades.',
+      row_title: 'Cada fila es una decisión congelada en el tiempo',
+      row_body: 'La fila guarda lo que sabías cuando decidiste: cuántos productos entraron, cuántos ya estaban en rojo y cuántos a punto de estarlo, las unidades y la plata comprometida. No se recalcula después, y por eso sirve para revisar una compra vieja con el contexto de ese día y no con el de hoy.\n\nA la derecha están las salidas: enviarla al proveedor, o reenviarla en PDF o WhatsApp. Generar la orden no la manda — hasta que la envías, el proveedor no sabe nada.',
+      receive_title: 'Registrar la llegada, aunque llegue incompleta',
+      receive_body: 'Tienes dos caminos: marcar que llegó todo, o anotar cuánto llegó de cada producto. Si te mandaron 60 de 100, anota 60: el pedido queda parcial y las 40 que faltan siguen esperando en vez de desaparecer.\n\nMarcar «llegó todo» cuando no llegó todo es peor que no registrar nada, porque le sumas a tu stock unidades que no existen y lo vas a descubrir el día que un cliente las pida.\n\nCada recepción, además, mide cuánto tardó de verdad ese proveedor.',
+      manual_title: 'Los pedidos que hiciste por fuera',
+      manual_body: 'Buena parte de las compras reales se hacen por teléfono o por WhatsApp, sin pasar por la app. Cargarlas aquí no es burocracia: es lo que evita que mañana te recomendemos comprar otra vez algo que ya viene en camino.\n\nY una vez cargada, esa orden también se recibe como cualquier otra, así que el tiempo de entrega de ese proveedor también aprende de ella.',
+      transfers_title: 'Mover en vez de comprar',
+      transfers_body: 'Con más de una bodega, aquí ves los traslados que están en camino y registras su llegada igual que un pedido.\n\nVan aparte de las compras porque no son lo mismo: un traslado no le suma stock a la empresa, sólo lo cambia de lugar. Mezclarlos haría que el mismo producto se contara dos veces en lo que compraste este mes — y una transferencia bien hecha es justamente una compra que no hiciste.',
+    },
+    en: {
+      name: 'How to close the loop on an order',
+      intro_title: 'What you already ordered, until it reaches the warehouse',
+      intro_body: 'The purchasing panel decides what to order. This screen watches what you already ordered until it arrives.\n\nIt exists for a concrete reason: while an order is in transit, those units are neither in your warehouse nor in the supplier\'s — nobody sees them. If nobody records them on arrival, the app keeps believing you are short and recommends the product again. This is where that loop is closed.',
+      pending_title: 'The orders still open',
+      pending_body: 'This counter is the orders that went out and that nobody has marked as received yet.\n\nA number that grows week after week almost never means the suppliers are late: it means the goods arrived and were never recorded. That costs you twice — you buy too much because your real stock is higher than we can see, and we never learn how long that supplier actually takes, which is the input that moves your quantities most.',
+      row_title: 'Every row is a decision frozen in time',
+      row_body: 'The row keeps what you knew when you decided: how many products went in, how many were already in the red and how many were about to be, the units and the money committed. It is not recomputed later, which is what lets you review an old purchase with that day\'s context instead of today\'s.\n\nOn the right are the ways out: send it to the supplier, or forward it as PDF or WhatsApp. Generating the order does not send it — until you do, the supplier knows nothing.',
+      receive_title: 'Record the arrival, even when it arrives incomplete',
+      receive_body: 'Two ways: mark that everything arrived, or write down how much of each product did. If they sent 60 of 100, put 60 — the order stays partial and the missing 40 keep waiting instead of disappearing.\n\nMarking "all arrived" when it did not is worse than recording nothing, because you add units to your stock that do not exist, and you will find out the day a customer asks for them.\n\nEvery reception also measures how long that supplier really took.',
+      manual_title: 'The orders you placed outside the app',
+      manual_body: 'A good share of real purchasing happens by phone or WhatsApp, never touching the app. Entering those here is not paperwork: it is what stops us from recommending tomorrow that you buy again something already on its way.\n\nAnd once entered, that order is received like any other, so the supplier\'s lead time learns from it too.',
+      transfers_title: 'Moving instead of buying',
+      transfers_body: 'With more than one warehouse, this is where you see the transfers in transit and record their arrival exactly like an order.\n\nThey sit apart from purchases because they are not the same thing: a transfer adds no stock to the company, it only moves it. Mixing them would count the same product twice in what you bought this month — and a transfer done right is precisely a purchase you did not make.',
+    },
+  },
+}

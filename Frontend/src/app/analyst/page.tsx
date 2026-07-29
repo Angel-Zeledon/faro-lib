@@ -371,7 +371,7 @@ function ChatItem({
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   const { t } = useLanguage()
   return (
-    <div style={{
+    <div data-tour="an.start" style={{
       flex: 1, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       gap: 16, padding: '40px 32px', textAlign: 'center',
@@ -682,6 +682,7 @@ export default function AnalystPage() {
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.title')}</span>
               </div>
               <button
+                data-tour="an.new"
                 onClick={() => handleNewChat()}
                 title={t('analyst.new_chat_title')}
                 style={{
@@ -727,7 +728,7 @@ export default function AnalystPage() {
           </div>
 
           {/* Chat list */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
+          <div data-tour="an.chats" style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
             {chatsError ? (
               <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: '#ef4444' }}>
                 {chatsError}

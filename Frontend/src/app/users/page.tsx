@@ -679,6 +679,7 @@ export default function UsersPage() {
           </button>
           <button
             onClick={() => setShowCreate(true)}
+            data-tour="users.invite"
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 16px', borderRadius: 7, border: 'none',
@@ -791,8 +792,8 @@ export default function UsersPage() {
               </div>
               <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{u.email}</div>
             </div>
-            <div><StatusBadge status={u.status} /></div>
-            <div><RoleBadge role={u.role} /></div>
+            <div data-tour={idx === 0 ? 'users.status' : undefined}><StatusBadge status={u.status} /></div>
+            <div data-tour={idx === 0 ? 'users.role' : undefined}><RoleBadge role={u.role} /></div>
             <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.created_at, lang)}</div>
             <div style={{ fontSize: 12, color: 'var(--dim)' }}>{fmtDate(u.last_login_at, lang)}</div>
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -802,6 +803,7 @@ export default function UsersPage() {
               )}
               <button
                 onClick={() => setPermsUser(u)}
+                data-tour={idx === 0 ? 'users.permissions' : undefined}
                 title={t('users.permissions_title')}
                 aria-label={t('users.permissions_title')}
                 style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}

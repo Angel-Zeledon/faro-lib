@@ -47,7 +47,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
   const hasValue = roi.estimated_value_protected > 0
 
   return (
-    <Card radius={14} padding="28px 32px" style={{ borderTop: `4px solid ${C.indigo}` }}>
+    <Card radius={14} padding="28px 32px" data-tour="roi.hero" style={{ borderTop: `4px solid ${C.indigo}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.indigo, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 20 }}>
         {t('roi.hero_eyebrow')}
       </div>
@@ -128,7 +128,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
   const color = pct >= 70 ? C.green : pct >= 40 ? C.amber : C.red
 
   return (
-    <Card radius={14} padding="24px 28px" style={{ borderTop: `4px solid ${color}` }}>
+    <Card radius={14} padding="24px 28px" data-tour="roi.adoption" style={{ borderTop: `4px solid ${color}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
         {t('roi.adoption_eyebrow')}
       </div>
@@ -176,7 +176,7 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   const { t, lang } = useLanguage()
 
   return (
-    <Card padding={0} overflow="hidden">
+    <Card padding={0} overflow="hidden" data-tour="roi.monthly">
       <CardHeader
         icon={<TrendingUp size={14} color={C.indigo} />}
         title={t('roi.monthly_evolution_title')}
@@ -262,7 +262,9 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
   if (!report.has_sufficient_history) {
     return (
-      <Card padding={0} overflow="hidden">
+      /* The two branches are mutually exclusive, so the anchor still resolves
+         to exactly one element. */
+      <Card padding={0} overflow="hidden" data-tour="roi.recap">
         {header}
         <div style={{ padding: '28px 26px', textAlign: 'center' }}>
           <AlertTriangle size={26} color={C.amber} style={{ opacity: 0.7, marginBottom: 12 }} />
@@ -282,7 +284,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
     : t('recap.headline_no_amount')
 
   return (
-    <Card padding={0} overflow="hidden">
+    <Card padding={0} overflow="hidden" data-tour="roi.recap">
       {header}
       <div style={{ padding: '20px 22px' }}>
         <p style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 600, color: C.text }}>
@@ -362,7 +364,7 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 function WhyItMattersCard() {
   const { t } = useLanguage()
   return (
-    <div style={{
+    <div data-tour="roi.why" style={{
       background: 'color-mix(in srgb, var(--accent) 4%, transparent)',
       border: `1px solid color-mix(in srgb, var(--accent) 18%, transparent)`,
       borderRadius: 12, padding: '22px 26px',

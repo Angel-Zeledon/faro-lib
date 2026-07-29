@@ -4,7 +4,15 @@ import { X, ArrowLeft, ArrowRight } from 'lucide-react'
 import { useTour } from '@/contexts/TourContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
-import type { TourStep } from './types'
+import type { TourDefinition, TourStep } from './types'
+
+/** Copy for a tour comes from the tour's own module — see types.ts on why.
+ *  Falls back to Spanish, then to the key itself, so a missing translation
+ *  shows readable text instead of a raw identifier. */
+function copyOf(tour: TourDefinition, lang: string, key: string): string {
+  const table = lang === 'en' ? tour.copy.en : tour.copy.es
+  return table[key] ?? tour.copy.es[key] ?? key
+}
 
 const CARD_W = 340
 // An un-anchored step is a title card for the whole screen, not a pointer at
@@ -30,7 +38,7 @@ function anchorRect(step: TourStep): Rect | null {
 
 export default function TourOverlay() {
   const { active, stepIndex, next, back, stop } = useTour()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const narrow = useIsNarrow()
   const [rect, setRect] = useState<Rect | null>(null)
   const [nudgeUp, setNudgeUp] = useState(0)
@@ -141,7 +149,7 @@ export default function TourOverlay() {
   ] : [{ inset: 0 }]
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={t(active.nameKey)} style={{ position: 'fixed', inset: 0, zIndex: 9000 }}>
+    <div role="dialog" aria-modal="true" aria-label={copyOf(active, lang, active.name)} style={{ position: 'fixed', inset: 0, zIndex: 9000 }}>
       {panels.map((p, i) => (
         <div key={i} onClick={stop} style={{ position: 'fixed', background: shade, ...p }} />
       ))}
@@ -173,7 +181,7 @@ export default function TourOverlay() {
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', flex: 1 }}>
-            {t(step.titleKey)}
+            {copyOf(active, lang, step.title)}
           </div>
           <button
             onClick={stop}
@@ -191,7 +199,7 @@ export default function TourOverlay() {
           margin: '0 0 14px', fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)',
           overflowY: 'auto', minHeight: 0, whiteSpace: 'pre-line',
         }}>
-          {t(step.bodyKey)}
+          {copyOf(active, lang, step.body)}
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

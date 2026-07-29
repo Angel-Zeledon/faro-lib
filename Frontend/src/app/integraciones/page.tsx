@@ -81,13 +81,15 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Connect form for one provider ────────────────────────────────────────────
 function ConnectForm({
-  provider, info, onConnect, connecting, error,
+  provider, info, onConnect, connecting, error, tourAnchors,
 }: {
   provider: string
   info: ProviderInfo
   onConnect: (provider: string, creds: Record<string, string>) => void
   connecting: boolean
   error: string | null
+  /** `data-tour` anchors, set on the first provider only so each resolves once. */
+  tourAnchors?: { form?: string; connect?: string }
 }) {
   const { t } = useLanguage()
   const [values, setValues] = useState<Record<string, string>>(
@@ -99,6 +101,7 @@ function ConnectForm({
     <Card
       tone="inset"
       padding="16px 18px"
+      data-tour={tourAnchors?.form}
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(info.fields.length, 3)}, 1fr)`, gap: 12 }}>
@@ -124,6 +127,7 @@ function ConnectForm({
       {error && <InlineError error={new Error(error)} />}
       <div>
         <button
+          data-tour={tourAnchors?.connect}
           onClick={() => canSubmit && onConnect(provider, values)}
           disabled={!canSubmit || connecting}
           style={{
@@ -144,6 +148,7 @@ function ConnectForm({
 // ── One provider card: shows connection state or the connect form ───────────
 function ProviderCard({
   provider, info, connection, onConnect, onSync, onDelete, connecting, connectError, syncingId,
+  tourAnchors,
 }: {
   provider: string
   info: ProviderInfo
@@ -154,12 +159,14 @@ function ProviderCard({
   connecting: boolean
   connectError: string | null
   syncingId: string | null
+  /** `data-tour` anchors, set on the first provider only so each resolves once. */
+  tourAnchors?: { card?: string; form?: string; connect?: string }
 }) {
   const { t, lang } = useLanguage()
   const lastSync = connection ? fmtDate(connection.last_sync_at, lang) : null
 
   return (
-    <Card style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <Card data-tour={tourAnchors?.card} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
@@ -233,6 +240,7 @@ function ProviderCard({
           onConnect={onConnect}
           connecting={connecting}
           error={connectError}
+          tourAnchors={tourAnchors}
         />
       )}
     </Card>
@@ -378,7 +386,7 @@ export default function IntegrationsPage() {
         <ErrorState error={loadError} onRetry={load} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {Object.entries(providers).map(([provider, info]) => (
+          {Object.entries(providers).map(([provider, info], idx) => (
             <ProviderCard
               key={provider}
               provider={provider}
@@ -390,6 +398,9 @@ export default function IntegrationsPage() {
               connecting={connectingProvider === provider}
               connectError={connectError[provider] ?? null}
               syncingId={syncingId}
+              tourAnchors={idx === 0
+                ? { card: 'int.provider', form: 'int.credentials', connect: 'int.connect' }
+                : undefined}
             />
           ))}
           {Object.keys(providers).length === 0 && (

@@ -474,6 +474,7 @@ export default function SettingsPage() {
             <button
               key={id}
               onClick={() => setTab(id)}
+              data-tour={`settings.${id}`}
               style={{
                 all: 'unset', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 7,

@@ -4,8 +4,9 @@ import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
-  MessageCircle, Unlink, CalendarClock,
+  MessageCircle, Unlink, CalendarClock, MessageSquare,
 } from 'lucide-react'
+import { useEntitlements } from '@/lib/entitlements'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
 import BaseCard from '@/components/ui/Card'
@@ -480,7 +481,7 @@ function ModelsSection({ t }: { t: (k: string) => string }) {
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner size={18} /></div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+        <div data-tour="config.models" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
           {models.map(m => {
             const catColor    = CAT_COLOR[m.category]    ?? '#64748b'
             const statusColor = STATUS_COLOR[m.status]   ?? '#64748b'
@@ -643,12 +644,12 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner size={20} /></div>
       ) : logs.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--dim)', fontSize: 13 }}>
+        <div data-tour="config.activity" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--dim)', fontSize: 13 }}>
           <Clock size={28} style={{ marginBottom: 8, opacity: 0.4 }} />
           <div>{t('no_activity')}</div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <div data-tour="config.activity" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {/* Header */}
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 140px 80px 150px',
@@ -777,7 +778,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       <SectionTitle icon={Lock} color="#f59e0b" title={t('security')} subtitle={t('change_password')} />
 
       {step === 'idle' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div data-tour="config.security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{t('password_label')}</div>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
@@ -802,7 +803,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       )}
 
       {step === 'form' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div data-tour="config.security" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('pw_form_desc')}</div>
           <div style={{ position: 'relative' }}>
             <Input
@@ -860,7 +861,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       )}
 
       {step === 'code' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div data-tour="config.security" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
             background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
@@ -1038,7 +1039,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
       )}
 
       {step === 'form' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div data-tour="config.whatsapp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('config.wa_intro')}</div>
           <div>
             <FieldLabel htmlFor="wa-number" variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 6 }}>
@@ -1079,7 +1080,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
       )}
 
       {step === 'code' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div data-tour="config.whatsapp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '10px 14px',
             background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
@@ -1158,7 +1159,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
       )}
 
       {step === 'verified' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div data-tour="config.whatsapp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '12px 16px',
@@ -1216,6 +1217,84 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
   )
 }
 
+// ── Section: SMS heads-up for team messages ──────────────────────────────────
+//
+// Professional-plan companion to /mensajes: when someone writes to you and you
+// are away, Faro sends one short SMS to the number linked above. Hidden (not
+// padlocked) on plans without team_messaging, same policy as the sidebar.
+
+function DmSmsSection({ t }: { t: (k: string) => string }) {
+  const { has } = useEntitlements()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [hasNumber, setHasNumber] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!has('team_messaging')) return
+    getPreferences().then(p => setEnabled(p.dm_sms_enabled)).catch(() => setEnabled(false))
+    getMe().then(u => setHasNumber(!!u.whatsapp_number)).catch(() => {})
+  }, [has])
+
+  if (!has('team_messaging')) return null
+
+  const on = enabled === true
+  const blocked = !hasNumber
+
+  async function handleToggle() {
+    if (enabled === null || saving || blocked) return
+    const next = !on
+    setEnabled(next)
+    setSaving(true)
+    try {
+      await updatePreferences({ dm_sms_enabled: next })
+    } catch {
+      setEnabled(!next)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <SectionTitle
+        icon={MessageSquare} color="var(--accent)"
+        title={t('config.dm_sms_title')} subtitle={t('config.dm_sms_subtitle')}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+            {t('config.dm_sms_toggle_label')}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+            {blocked ? t('config.dm_sms_needs_number') : t('config.dm_sms_hint')}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={on}
+          aria-label={t('config.dm_sms_toggle_label')}
+          onClick={handleToggle}
+          disabled={enabled === null || saving || blocked}
+          style={{
+            all: 'unset', boxSizing: 'border-box',
+            cursor: enabled === null || saving || blocked ? 'default' : 'pointer',
+            width: 38, height: 22, borderRadius: 12, flexShrink: 0,
+            background: on ? 'var(--accent)' : 'var(--border-strong)',
+            position: 'relative', transition: 'background 0.15s',
+            opacity: blocked ? 0.5 : 1,
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: 3, left: on ? 19 : 3,
+            width: 16, height: 16, borderRadius: '50%',
+            background: '#fff', transition: 'left 0.15s',
+          }} />
+        </button>
+      </div>
+    </Card>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
@@ -1259,6 +1338,7 @@ export default function ConfigPage() {
           <AppConfigSection t={t} />
           <PlanningSection t={t} />
           <WhatsAppSection t={t} />
+          <DmSmsSection t={t} />
           <SecuritySection t={t} />
         </div>
       </div>

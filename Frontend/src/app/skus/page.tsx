@@ -217,14 +217,16 @@ function Sparkline({ values, color = 'var(--accent)', width = 80, height = 28 }:
 
 // ── Session selector ──────────────────────────────────────────────────────────
 
-function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-session-select', name = 'skus_session' }: {
+function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-session-select', name = 'skus_session', tourAnchor }: {
   sessions: SessionInfo[]; selected: string | null; onSelect: (id: string) => void
   selectId?: string; name?: string
+  /** Set on the primary selector only — a tour anchor has to be unique in the DOM. */
+  tourAnchor?: string
 }) {
   const { t } = useLanguage()
   const trained = sessions.filter(s => s.status === 'COMPLETED')
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div data-tour={tourAnchor} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('skus.session_label')}</span>
       <div style={{ position: 'relative' }}>
         <select
@@ -247,7 +249,7 @@ function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-sessio
 
 // ── SKU card ──────────────────────────────────────────────────────────────────
 
-function SkuCard({ sku, quality, metrics, signal, selected, onClick }: {
+function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor }: {
   sku: string
   quality?: QualityReport[string]
   metrics: MetricRow[]
@@ -255,6 +257,8 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick }: {
   signal?: InventorySignal
   selected: boolean
   onClick: () => void
+  /** Set on the first card only — a tour anchor has to be unique in the DOM. */
+  tourAnchor?: string
 }) {
   const { t } = useLanguage()
   const best = metrics.reduce<MetricRow | null>((b, r) =>
@@ -266,6 +270,7 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick }: {
 
   return (
     <button
+      data-tour={tourAnchor}
       onClick={onClick}
       style={{
         all: 'unset', cursor: 'pointer', display: 'block', width: '100%',
@@ -770,8 +775,11 @@ function buildChartOption(
 
 // ── Main chart panel ──────────────────────────────────────────────────────────
 
-function ChartPanel({ sessionId, sku, isDark }: {
+function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
   sessionId: string; sku: string; isDark: boolean
+  /** Set on the single-session panel only — in compare mode two of these are
+   *  on screen, and a tour anchor has to be unique in the DOM. */
+  tourAnchor?: string
 }) {
   const { t } = useLanguage()
   const [data,        setData]        = useState<SkuIntelligenceData | null>(null)
@@ -1095,7 +1103,7 @@ function ChartPanel({ sessionId, sku, isDark }: {
       ? { position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column', background: 'var(--surface)' }
       : { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
-      <div style={{
+      <div data-tour={tourAnchor} style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
         flexWrap: 'wrap', borderBottom: '1px solid var(--border)', background: 'var(--surface)',
       }}>
@@ -1578,9 +1586,9 @@ function PanelPlaceholder({ message }: { message: string }) {
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-function TabBar({ tabs, active, onChange, labelFor }: { tabs: string[]; active: string; onChange: (tab: string) => void; labelFor?: (tab: string) => string }) {
+function TabBar({ tabs, active, onChange, labelFor, tourAnchor }: { tabs: string[]; active: string; onChange: (tab: string) => void; labelFor?: (tab: string) => string; tourAnchor?: string }) {
   return (
-    <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', padding: '0 16px', background: 'var(--surface)' }}>
+    <div data-tour={tourAnchor} style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', padding: '0 16px', background: 'var(--surface)' }}>
       {tabs.map(tabKey => (
         <button
           key={tabKey}
@@ -1911,7 +1919,7 @@ export default function SkusPage() {
           )}
 
           {sessLoading ? <Spinner size={13} /> : (
-            <SessionSelector sessions={sessions} selected={sessionId} onSelect={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false) }} />
+            <SessionSelector tourAnchor="skus.session" sessions={sessions} selected={sessionId} onSelect={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false) }} />
           )}
           {sessionId && (
             <Button
@@ -2024,9 +2032,10 @@ export default function SkusPage() {
             ) : skus.length === 0 ? (
               <PanelPlaceholder message={t('skus.empty_no_skus_found')} />
             ) : (
-              skuPage.rows.map(sku => (
+              skuPage.rows.map((sku, idx) => (
                 <SkuCard
                   key={sku}
+                  tourAnchor={idx === 0 ? 'skus.card' : undefined}
                   sku={sku}
                   quality={quality[sku]}
                   metrics={metricsBySku.get(sku) ?? EMPTY_METRICS}
@@ -2060,7 +2069,7 @@ export default function SkusPage() {
           ) : (
             <>
               {/* SKU header */}
-              <div style={{
+              <div data-tour="skus.header" style={{
                 padding: '14px 16px', borderBottom: '1px solid var(--border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               }}>
@@ -2098,6 +2107,7 @@ export default function SkusPage() {
               </div>
 
               <TabBar
+                tourAnchor="skus.tabs"
                 tabs={['Forecast', 'Metrics', 'Quality', 'Inventory']}
                 active={tab}
                 onChange={setTab}
@@ -2138,7 +2148,7 @@ export default function SkusPage() {
                       </div>
                     </div>
                   ) : (
-                    <ChartPanel key={`${sessionId}-${selectedSku}`} sessionId={sessionId} sku={selectedSku} isDark={isDark} />
+                    <ChartPanel key={`${sessionId}-${selectedSku}`} tourAnchor="skus.chart" sessionId={sessionId} sku={selectedSku} isDark={isDark} />
                   )
                 )}
                 {tab === 'Metrics' && <MetricsTable rows={skuMetrics} sku={selectedSku} />}

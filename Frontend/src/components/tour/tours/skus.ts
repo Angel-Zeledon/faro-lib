@@ -1,0 +1,47 @@
+import type { TourDefinition } from '../types'
+
+export const skusTour: TourDefinition = {
+  id: 'skus-v1',
+  route: '/skus',
+  name: 'name',
+  steps: [
+    { title: 'intro_title', body: 'intro_body' },
+    { anchor: 'skus.session', title: 'session_title', body: 'session_body' },
+    { anchor: 'skus.card', title: 'card_title', body: 'card_body' },
+    { anchor: 'skus.header', title: 'accuracy_title', body: 'accuracy_body' },
+    { anchor: 'skus.chart', title: 'chart_title', body: 'chart_body' },
+    { anchor: 'skus.tabs', title: 'tabs_title', body: 'tabs_body' },
+  ],
+  copy: {
+    es: {
+      name: 'Cómo auditar el pronóstico de un producto',
+      intro_title: 'Un producto, de cerca',
+      intro_body: 'Las otras pantallas te dicen qué comprar. Esta te deja auditar de dónde salió: la historia de ventas de un producto, lo que se predijo para él y qué tan bien acertó antes.\n\nEs a donde vienes cuando una recomendación no te cuadra y necesitas decidir si el problema está en el pronóstico o en tu propia intuición. Una de las dos se equivoca, y aquí se ve cuál.',
+      session_title: 'Todo lo que ves cuelga de este entrenamiento',
+      session_body: 'Un entrenamiento es una foto: se hizo con las ventas que existían ese día y con la configuración de ese momento. Cambiarlo aquí cambia de golpe el gráfico, la precisión y las métricas — no estás viendo «la verdad» del producto, sino la de esa corrida.\n\nPor eso se elige a la vista y no se esconde. Y comparar dos entrenamientos del mismo producto es la forma de distinguir si mejoró el modelo o si lo que cambió fue tu negocio.',
+      card_title: 'Lo que la ficha te dice antes de abrirla',
+      card_body: 'Cada producto trae dos avisos que valen más que cualquier número: su tipo de serie y su confiabilidad.\n\nUn producto intermitente — el que vende tres veces al mes y el resto son ceros — no se pronostica con una curva por más modelos que le eches: se compra con una regla y un colchón más grande. Y confiabilidad baja significa historia corta o sucia; el pronóstico existe igual, pero no comprometas plata apoyándote sólo en él.',
+      accuracy_title: 'La precisión, y qué promete de verdad',
+      accuracy_body: 'Ese porcentaje es cuánto acertó el modelo contra pedazos de tu propia historia que no vio mientras entrenaba. Es un historial de aciertos, no una garantía: un producto con 85% puede fallar feo justo el mes en que hagas una promoción, porque esa promoción no está en la historia.\n\nAl lado va el semáforo, el mismo de todas las pantallas. Así no pierdes el hilo: juzgas si el pronóstico es creíble y ves de una vez si además hay que hacer algo hoy.',
+      chart_title: 'El gráfico: la banda dice más que la línea',
+      chart_body: 'La línea es el escenario central; la banda es el rango donde la demanda puede caer de verdad. Cuanto más ancha, menos sentido tiene planear contra la línea: en un producto crítico compras mirando el borde de arriba y aceptas el inventario extra a cambio de no quedarte sin.\n\nLa granularidad cambia la pregunta: el día trae ruido que no puedes comprar; la semana o el mes se parecen a cómo pides de verdad.\n\nY con varios modelos encendidos, cuando se separan entre sí es que ninguno sabe.',
+      tabs_title: 'Las pestañas que pueden cambiar tu decisión',
+      tabs_body: 'Calidad: huecos y valores raros de la historia. Cuidado con los huecos — un quiebre de stock queda grabado como «vendí cero», y un modelo que aprende eso te va a recomendar comprar menos justo del producto que se te agotó.\n\nMétricas: cada modelo contra la referencia tonta de «lo mismo que el periodo pasado». Si ninguno le gana, no hay nada aprendido y decides tú.\n\nInventario: en qué se convierte todo esto — cobertura y cuánto pedir.',
+    },
+    en: {
+      name: 'How to audit a product\'s forecast',
+      intro_title: 'One product, up close',
+      intro_body: 'The other screens tell you what to buy. This one lets you audit where that came from: a product\'s sales history, what was predicted for it, and how well it hit before.\n\nIt is where you come when a recommendation does not look right and you need to decide whether the problem is the forecast or your own gut. One of the two is wrong, and this is where you see which.',
+      session_title: 'Everything here hangs off this training run',
+      session_body: 'A training run is a snapshot: made with the sales that existed that day and the configuration of that moment. Changing it here changes the chart, the accuracy and the metrics at once — you are not looking at "the truth" about the product, but at that run\'s version of it.\n\nThat is why it is picked in plain sight rather than hidden. And comparing two runs of the same product is how you tell whether the model improved or your business changed.',
+      card_title: 'What the card tells you before you open it',
+      card_body: 'Every product carries two warnings worth more than any number: its series type and its reliability.\n\nAn intermittent product — the one that sells three times a month and is zeros the rest of the time — cannot be forecast with a curve no matter how many models you throw at it: you buy it with a rule and a bigger buffer. And low reliability means a short or dirty history; the forecast still exists, but do not commit money leaning on it alone.',
+      accuracy_title: 'Accuracy, and what it actually promises',
+      accuracy_body: 'That percentage is how well the model did against slices of your own history it never saw while training. It is a track record, not a guarantee: a product at 85% can miss badly in exactly the month you run a promotion, because that promotion is not in the history.\n\nNext to it sits the stock signal, the same one as everywhere else. So you do not lose the thread: you judge whether the forecast is credible and see at once whether something also has to be done today.',
+      chart_title: 'The chart: the band says more than the line',
+      chart_body: 'The line is the central scenario; the band is the range demand can realistically land in. The wider it is, the less sense it makes to plan against the line: on a critical product you buy looking at the upper edge and accept the extra inventory in exchange for not running out.\n\nGranularity changes the question: a day carries noise you cannot buy; a week or a month looks like how you actually order.\n\nAnd with several models on, when they diverge it means none of them knows.',
+      tabs_title: 'The tabs that can change your decision',
+      tabs_body: 'Quality: gaps and odd values in the history. Watch the gaps — a stockout is recorded as "sold zero", and a model that learns that will recommend buying less of exactly the product that ran out on you.\n\nMetrics: every model against the dumb reference of "the same as last period". If none of them beats it, nothing was learned and the call is yours.\n\nInventory: what all of this turns into — coverage and how much to order.',
+    },
+  },
+}

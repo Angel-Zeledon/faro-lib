@@ -34,9 +34,15 @@ export default function InventorySetupPage() {
         {c('setupStock.page.subtitle')}
       </p>
 
+      {/* Tour anchors sit on wrappers, not on the panels: both are shared
+          components that do not forward unknown props to the DOM. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <StockImportWizard onImported={refresh} />
-        <SetupGapsPanel key={version} onChanged={refresh} />
+        <div data-tour="setup.import">
+          <StockImportWizard onImported={refresh} />
+        </div>
+        <div data-tour="setup.gaps">
+          <SetupGapsPanel key={version} onChanged={refresh} />
+        </div>
       </div>
     </div>
   )

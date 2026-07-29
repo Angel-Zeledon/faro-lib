@@ -176,12 +176,13 @@ export default function SessionsHistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map(s => {
+              {items.map((s, idx) => {
                 const clickable = s.status === 'COMPLETED'
                 const isEditing = editingId === s.session_id
                 return (
                   <tr
                     key={s.session_id}
+                    data-tour={idx === 0 ? 'ses.row' : undefined}
                     onClick={() => { if (!isEditing) openResults(s) }}
                     title={clickable ? t('sessions.view_results') : undefined}
                     style={{
@@ -221,8 +222,11 @@ export default function SessionsHistoryPage() {
                         </span>
                       ) : s.name}
                     </Td>
-                    <Td divider={false}><StatusBadge status={s.status} /></Td>
-                    <Td divider={false} nowrap style={{ color: C.muted }}>
+                    <Td divider={false} data-tour={idx === 0 ? 'ses.status' : undefined}>
+                      <StatusBadge status={s.status} />
+                    </Td>
+                    <Td divider={false} nowrap style={{ color: C.muted }}
+                        data-tour={idx === 0 ? 'ses.dataset' : undefined}>
                       {s.dataset_filename ?? s.dataset_name ?? '—'}
                     </Td>
                     <Td divider={false} nowrap style={{ color: C.muted }}>
@@ -232,6 +236,7 @@ export default function SessionsHistoryPage() {
                     <Td divider={false} style={{ color: C.muted }}>{granularityLabel(s.granularity)}</Td>
                     <Td divider={false} style={{ color: C.muted }}>{s.sku_count ?? '—'}</Td>
                     <Td divider={false} nowrap align="right"
+                        data-tour={idx === 0 ? 'ses.actions' : undefined}
                         onClick={e => e.stopPropagation()}>
                       {canEdit && !isEditing && (
                         <>

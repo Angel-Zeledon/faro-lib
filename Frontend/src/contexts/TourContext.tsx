@@ -3,7 +3,7 @@ import { createContext, useContext, useCallback, useEffect, useMemo, useState } 
 import { usePathname } from 'next/navigation'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import type { TourDefinition } from '@/components/tour/types'
-import { TOURS } from '@/components/tour/tours'
+import { TOURS, tourForRoute } from '@/components/tour/tours'
 
 /**
  * Which tours exist, which one is running, and which the user has already
@@ -58,15 +58,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { setSeen(readSeen()) }, [])
 
-  const available = useMemo(() => {
-    if (!pathname) return null
-    // Longest matching route wins, so /inventory/roi can have its own tour
-    // without /inventory's shadowing it.
-    const matches = TOURS.filter(
-      t => pathname === t.route || pathname.startsWith(`${t.route}/`),
-    ).sort((a, b) => b.route.length - a.route.length)
-    return matches[0] ?? null
-  }, [pathname])
+  // Longest matching route wins, so /inventory/roi can have its own tour
+  // without /inventory's shadowing it.
+  const available = useMemo(() => tourForRoute(pathname), [pathname])
 
   const active = useMemo(
     () => (activeId ? TOURS.find(t => t.id === activeId) ?? null : null),

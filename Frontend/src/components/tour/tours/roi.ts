@@ -1,0 +1,47 @@
+import type { TourDefinition } from '../types'
+
+export const roiTour: TourDefinition = {
+  id: 'roi-v1',
+  route: '/inventory/roi',
+  name: 'name',
+  steps: [
+    { title: 'intro_title', body: 'intro_body' },
+    { anchor: 'roi.recap', title: 'recap_title', body: 'recap_body' },
+    { anchor: 'roi.hero', title: 'hero_title', body: 'hero_body' },
+    { anchor: 'roi.adoption', title: 'adoption_title', body: 'adoption_body' },
+    { anchor: 'roi.monthly', title: 'monthly_title', body: 'monthly_body' },
+    { anchor: 'roi.why', title: 'why_title', body: 'why_body' },
+  ],
+  copy: {
+    es: {
+      name: 'Qué se cuenta aquí, y qué no',
+      intro_title: 'Sólo lo que quedó registrado',
+      intro_body: 'Casi cualquier herramienta de inventario te promete un ahorro. Nosotros no podemos medirlo: nadie sabe qué habría pasado si no hubieras pedido, así que un número de «quiebres evitados» o «plata ahorrada» sería inventado con buena letra.\n\nLo que ves aquí son hechos: órdenes que generaste, riesgos sobre los que actuaste, plata que movieron esas compras. Menos vistoso que una promesa, pero es lo que sí podemos sostener frente a ti.',
+      recap_title: 'El mes cerrado, idéntico al del correo',
+      recap_body: 'Este es el resumen del último mes completo, y es exactamente el que te llega por correo el primer día del mes. No hay una versión bonita para la pantalla y otra para el correo.\n\nCuando una cifra no se puede calcular decimos que no está disponible y por qué, en vez de poner un cero. Un cero se lee como «no pasó nada»; «no disponible» se lee como lo que de verdad es: todavía no tenemos con qué.',
+      hero_title: 'Los tres contadores de arriba',
+      hero_body: 'Órdenes generadas: cuántas veces esto se convirtió en un pedido de verdad, no en una recomendación mirada de reojo.\n\nRiesgos de quiebre atendidos: productos que estaban en Pedir YA y sobre los que sí ordenaste. No son quiebres que «se evitaron» — son decisiones que tomaste.\n\nPlata gestionada: lo que suman esas compras. Si te aparece en unidades en vez de en dinero, es que faltan costos unitarios, y ahí sí hay algo concreto que arreglar en tu configuración.',
+      adoption_title: 'La cifra que de verdad te sirve',
+      adoption_body: 'De cada cien recomendaciones que te pusimos enfrente, cuántas seguiste.\n\nAlta significa que te está ahorrando trabajo: revisas y aceptas. Baja no significa que seas desobediente — significa que las recomendaciones no te cuadran, y la causa casi siempre son tiempos de entrega o niveles de servicio mal puestos.\n\nAsí que si esto va en rojo, la respuesta no es ignorar la app: es ir a corregir esos parámetros y volver a mirar.',
+      monthly_title: 'Mes a mes, para ver la tendencia',
+      monthly_body: 'La misma cuenta repetida por mes. Sirve para una pregunta que sí tiene respuesta honesta: ¿estás pidiendo más a tiempo que antes, y estás confiando más en lo que te sugiere?\n\nLa columna de capital liberado queda pendiente hasta que haya con qué comparar: necesita dos mediciones mensuales seguidas de tu inventario para saber cuánta plata tenías parada antes. Preferimos dejarla pendiente a rellenarla con una estimación que se vería igual de convincente.',
+      why_title: 'Por qué no te prometemos un ahorro',
+      why_body: 'Un quiebre evitado no se puede medir: habría que saber cuánto habrías vendido con un stock que nunca existió. Quien te da ese número lo está modelando, no midiendo — y te lo cobra igual.\n\nLo que sí puedes hacer con esta pantalla es una comparación honesta contigo mismo: si tu adopción sube y tus riesgos atendidos suben, estás comprando mejor. Si no, la pantalla te lo dice sin maquillaje, que es para lo que existe.',
+    },
+    en: {
+      name: 'What is counted here, and what is not',
+      intro_title: 'Only what was actually recorded',
+      intro_body: 'Almost every inventory tool promises you a saving. We cannot measure one: nobody knows what would have happened if you had not ordered, so a "stockouts avoided" or "money saved" figure would be invented in neat handwriting.\n\nWhat you see here are facts: orders you generated, risks you acted on, money those purchases moved. Less impressive than a promise, but it is what we can defend to your face.',
+      recap_title: 'The closed month, identical to the email',
+      recap_body: 'This is the summary of the last complete month, and it is exactly the one that reaches you by email on the first day of the month. There is no pretty version for the screen and another for the mail.\n\nWhen a figure cannot be calculated we say it is unavailable and why, instead of printing a zero. A zero reads as "nothing happened"; "unavailable" reads as what it really is: we do not have the basis yet.',
+      hero_title: 'The three counters at the top',
+      hero_body: 'Orders generated: how many times this became a real order, not a recommendation glanced at.\n\nStockout risks handled: products that were on Order NOW and that you did order. They are not stockouts that "were avoided" — they are decisions you made.\n\nManaged purchase value: what those orders add up to. If it shows units instead of money, unit costs are missing, and there is something concrete to fix in your configuration.',
+      adoption_title: 'The figure that is actually useful',
+      adoption_body: 'Out of every hundred recommendations we put in front of you, how many you followed.\n\nHigh means it is saving you work: you review and accept. Low does not mean you are disobedient — it means the recommendations do not add up for you, and the cause is almost always lead times or service levels that are set wrong.\n\nSo if this runs red, the answer is not to ignore the app: it is to go and fix those parameters, then look again.',
+      monthly_title: 'Month by month, for the trend',
+      monthly_body: 'The same count repeated per month. It answers a question that does have an honest answer: are you ordering on time more than you used to, and are you trusting the suggestions more?\n\nThe capital-freed column stays pending until there is something to compare against: it needs two consecutive monthly measurements of your inventory to know how much money was sitting idle before. We would rather leave it pending than fill it with an estimate that would look just as convincing.',
+      why_title: 'Why we do not promise you a saving',
+      why_body: 'An avoided stockout cannot be measured: it would require knowing what you would have sold with stock that never existed. Anyone who hands you that number is modelling it, not measuring it — and charging you for it all the same.\n\nWhat this screen does let you do is an honest comparison with yourself: if your adoption rises and your handled risks rise, you are buying better. If not, the screen says so without make-up, which is what it is for.',
+    },
+  },
+}

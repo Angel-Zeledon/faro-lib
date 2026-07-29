@@ -1,0 +1,47 @@
+import type { TourDefinition } from '../types'
+
+export const suppliersTour: TourDefinition = {
+  id: 'suppliers-v1',
+  route: '/inventory/suppliers',
+  name: 'name',
+  steps: [
+    { title: 'intro_title', body: 'intro_body' },
+    { anchor: 'sup.leadtime', title: 'leadtime_title', body: 'leadtime_body' },
+    { anchor: 'sup.learning', title: 'learning_title', body: 'learning_body' },
+    { anchor: 'sup.contact', title: 'contact_title', body: 'contact_body' },
+    { anchor: 'sup.pricebreaks', title: 'breaks_title', body: 'breaks_body' },
+    { anchor: 'sup.scorecard', title: 'scorecard_title', body: 'scorecard_body' },
+  ],
+  copy: {
+    es: {
+      name: 'Por qué el proveedor manda',
+      intro_title: 'Doce fichas que gobiernan dos mil productos',
+      intro_body: 'El tiempo de entrega es el dato que más mueve tus compras, y casi nunca lo tienes producto por producto: lo tienes por proveedor. Por eso se configura una vez aquí y rige todo el catálogo de ese proveedor.\n\nSi a un producto le pusiste su propio tiempo de entrega a mano, ese gana. Lo de esta pantalla es el valor de fondo para todos los demás — que suelen ser casi todos.',
+      leadtime_title: 'Los días, y qué tan puntual es',
+      leadtime_body: 'Los días entran dos veces en el cálculo: en lo que vas a vender mientras el pedido viaja, y en el tamaño del colchón. Ponerlos cortos te deja sin producto; ponerlos largos te llena la bodega de plata parada.\n\nLa columna de al lado es la variabilidad. ±2 días es un proveedor con el que puedes planear. ±10 te obliga a cargar colchón aunque su promedio se vea bien, y eso lo pagas tú: un proveedor impuntual sale caro aunque su precio sea el mejor.',
+      learning_title: 'Lo que aprendemos de las llegadas',
+      learning_body: 'Cada vez que registras la recepción de un pedido medimos cuánto tardó de verdad. Cuando juntamos suficientes, dejamos de usar el número que escribiste y planeamos con el que se ve en tus entregas.\n\nEsta columna te dice en qué punto va: cuántas llevamos, cuántas faltan, y cuál es el promedio aprendido cuando ya manda.\n\nEs la razón para registrar recepciones aunque cueste el minuto: es lo único que convierte un supuesto en un dato tuyo.',
+      contact_title: 'Sin correo ni WhatsApp, el pedido no sale',
+      contact_body: 'Cuando envías una orden desde Faro, viaja por correo o por WhatsApp. Un proveedor que no tenga ninguno de los dos queda fuera del envío: te avisamos que se omitió, pero la orden de ese proveedor no llegó a ninguna parte.\n\nEs un dato que parece administrativo y no lo es. Si un proveedor te importa, déjale al menos un canal lleno — o pedirás por otro lado sin darte cuenta de que lo estás haciendo a mano otra vez.',
+      breaks_title: 'Escalas de precio por volumen',
+      breaks_body: 'Aquí registras los escalones de ese proveedor: «de 500 unidades en adelante, cada una cuesta X».\n\nSirven para que la sugerencia sepa cuándo pedir un poco más sale más barato por unidad, en vez de tratar el precio como si fuera fijo, pidas lo que pidas.\n\nSi no se los das, no podemos verlos por ti: la app pedirá la cantidad correcta, pero al precio de lista, y el descuento que ya negociaste se queda sin usar.',
+      scorecard_title: 'Cómo se ha portado, con números',
+      scorecard_body: 'La ficha comparativa mide a cada proveedor por lo que hizo: recepciones registradas, tiempo de entrega real contra el declarado, puntualidad, qué tan completas llegaron las entregas y cuánto le compraste.\n\nTambién marca las desviaciones: cuando sus últimas entregas se salen de su propio historial, te lo dice antes de que lo sientas en la bodega.\n\nEs con lo que se entra a negociar precio, y con lo que decides a quién le confías el producto que no te puedes dar el lujo de que falte.',
+    },
+    en: {
+      name: 'Why the supplier decides',
+      intro_title: 'A dozen records that govern two thousand products',
+      intro_body: 'Lead time is the input that moves your purchasing most, and you almost never have it product by product: you have it per supplier. So it is set once here and governs that supplier\'s whole catalogue.\n\nIf you set a lead time by hand on a product, that one wins. What lives on this screen is the underlying value for everything else — which is usually almost everything.',
+      leadtime_title: 'The days, and how punctual they are',
+      leadtime_body: 'The days enter the calculation twice: in what you will sell while the order is in transit, and in the size of the buffer. Set them too short and you run out; set them too long and the warehouse fills up with idle money.\n\nThe column beside it is variability. ±2 days is a supplier you can plan around. ±10 forces you to carry buffer even when their average looks fine, and you are the one who pays for it: an unreliable supplier is expensive even at the best price.',
+      learning_title: 'What we learn from arrivals',
+      learning_body: 'Every time you record the reception of an order we measure how long it actually took. Once we have enough, we stop using the number you typed and plan with the one your deliveries show.\n\nThis column tells you where that stands: how many we have, how many are missing, and the learned average once it is in charge.\n\nIt is the reason to record receptions even when it costs you the minute: it is the only thing that turns an assumption into a figure of your own.',
+      contact_title: 'With no email and no WhatsApp, the order never leaves',
+      contact_body: 'When you send an order from Faro it travels by email or by WhatsApp. A supplier with neither is left out of the send: we tell you it was skipped, but that supplier\'s order went nowhere.\n\nIt looks like an administrative field and it is not. If a supplier matters to you, leave at least one channel filled in — otherwise you will order through some other route without noticing you are back to doing it by hand.',
+      breaks_title: 'Volume price breaks',
+      breaks_body: 'Here you record that supplier\'s tiers: "from 500 units on, each one costs X".\n\nThey let the suggestion know when ordering a little more is cheaper per unit, instead of treating the price as fixed no matter how much you order.\n\nIf you do not give them to us, we cannot see them for you: the app will order the right quantity, but at list price, and the discount you already negotiated goes unused.',
+      scorecard_title: 'How they have behaved, in numbers',
+      scorecard_body: 'The comparison sheet measures each supplier by what they did: receptions recorded, real lead time against the declared one, punctuality, how complete the deliveries arrived and how much you bought from them.\n\nIt also flags deviations: when their recent deliveries drift out of their own history, it says so before you feel it in the warehouse.\n\nThat is what you walk into a price negotiation with, and what you use to decide who gets the product you cannot afford to be out of.',
+    },
+  },
+}

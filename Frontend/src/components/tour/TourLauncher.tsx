@@ -12,7 +12,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
  */
 export default function TourLauncher() {
   const { available, active, start, stop } = useTour()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
 
   if (!available) return null
 
@@ -26,7 +26,9 @@ export default function TourLauncher() {
     <button
       onClick={() => (running ? stop() : start())}
       title={running ? t('tour.close') : t('tour.launch')}
-      aria-label={running ? t('tour.close') : `${t('tour.launch')}: ${t(available.nameKey)}`}
+      aria-label={running
+        ? t('tour.close')
+        : `${t('tour.launch')}: ${(lang === 'en' ? available.copy.en : available.copy.es)[available.name] ?? ''}`}
       aria-pressed={running}
       className="btn"
       style={{
