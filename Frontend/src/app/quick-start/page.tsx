@@ -96,7 +96,7 @@ function CsvExample() {
  { sku: 'SKU-002', date: '2026-01-01', demand: '15' },
  ]
  return (
- <div style={{ marginTop: 20, overflowX: 'auto' }}>
+ <div data-tour="qs.example" style={{ marginTop: 20, overflowX: 'auto' }}>
  <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>
  {t('qs.csv_example')}
  </p>
@@ -1221,7 +1221,7 @@ function QuickStartPageContent() {
  )}
 
  {/* Demo de un clic: ver el semáforo sin preparar ningún archivo */}
- <div style={{
+ <div data-tour="qs.demo" style={{
  marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)',
  textAlign: 'center',
  }}>

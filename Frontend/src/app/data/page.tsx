@@ -1292,7 +1292,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
  {/* Header */}
  <div style={{ padding: '20px 24px 0', borderBottom: `1px solid ${C.border}` }}>
- <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+ <div data-tour="data.header" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
  {onBack && (
  <button onClick={onBack} aria-label={t('common.back')} style={{ background: 'transparent', border: 'none',
  color: C.muted, cursor: 'pointer', padding: 4, marginTop: 2 }}>
@@ -1372,7 +1372,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  )}
 
  {/* Stats strip */}
- <div style={{ display: 'flex', gap: 24, paddingBottom: 12 }}>
+ <div data-tour="data.stats" style={{ display: 'flex', gap: 24, paddingBottom: 12 }}>
  {[
  { label: t('data.stat_size'), value: fmt(source.size_bytes) },
  { label: t('data.stat_rows'), value: source.row_count?.toLocaleString() ?? '—' },
@@ -1400,7 +1400,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  )}
 
  {/* Tabs */}
- <div style={{ display: 'flex', gap: 2 }}>
+ <div data-tour="data.tabs" style={{ display: 'flex', gap: 2 }}>
  {tabs.map(t => (
  <button key={t.id} onClick={() => setTab(t.id as any)}
  style={{
@@ -1417,7 +1417,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  </div>
 
  {/* Tab content */}
- <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+ <div data-tour="data.content" style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
 
  {/* File preview tab */}
  {tab === 'preview' && !isSql && (
@@ -1802,6 +1802,7 @@ export default function DataPage() {
  </button>
  </div>
  <input
+ data-tour="data.search"
  type="search"
  name="source_search"
  aria-label={t('data.search_sources_ph')}

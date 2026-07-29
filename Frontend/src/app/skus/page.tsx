@@ -321,12 +321,14 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
 
 // ── Chip button group ─────────────────────────────────────────────────────────
 
-function ChipGroup<T extends string>({ options, value, onChange, label }: {
+function ChipGroup<T extends string>({ options, value, onChange, label, tourAnchor }: {
   options: { value: T; label: string; icon?: React.ReactNode; title?: string }[]
   value: T; onChange: (v: T) => void; label?: string
+  /** Set on the single-session panel only — a tour anchor has to be unique. */
+  tourAnchor?: string
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+    <div data-tour={tourAnchor} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {label && <span style={{ fontSize: 11, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{label}</span>}
       <div style={{ display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 8, padding: 3, border: '1px solid var(--border)' }}>
         {options.map(o => (
@@ -392,15 +394,17 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
 
 // ── Confidence band toggle ────────────────────────────────────────────────────
 
-function BandToggle({ active, onToggle, hasQuantiles }: {
+function BandToggle({ active, onToggle, hasQuantiles, tourAnchor }: {
   active: boolean
   onToggle: () => void
   hasQuantiles: boolean
+  /** Set on the single-session panel only — a tour anchor has to be unique. */
+  tourAnchor?: string
 }) {
   const { t } = useLanguage()
   const on = active && hasQuantiles
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div data-tour={tourAnchor} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <button
         title={hasQuantiles ? t('skus.band_confidence') : t('skus.no_quantile_data_title')}
         onClick={() => hasQuantiles && onToggle()}
@@ -1109,6 +1113,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       }}>
         {/* Granularity */}
         <ChipGroup
+          tourAnchor={tourAnchor ? 'skus.granularity' : undefined}
           label={t('skus.chip_granularity')}
           value={granularity ?? data.applied_granularity}
           onChange={g => setGranularity(g)}
@@ -1137,7 +1142,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
         {/* Model selection — multi-select chips; each selected model renders
             its own colored series on the same axis. */}
         {data.available_models.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <div data-tour={tourAnchor ? 'skus.models' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('skus.model_label')}</span>
             <div style={{ display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 8, padding: 3, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
               {data.available_models.map(m => {
@@ -1168,7 +1173,10 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
 
         {/* Confidence band — only meaningful with a single model selected */}
         {singleModel && (
-          <BandToggle active={showBand} onToggle={() => setShowBand(v => !v)} hasQuantiles={hasQuantiles} />
+          <BandToggle
+            tourAnchor={tourAnchor ? 'skus.band' : undefined}
+            active={showBand} onToggle={() => setShowBand(v => !v)} hasQuantiles={hasQuantiles}
+          />
         )}
 
         {/* Right side controls */}
@@ -1176,7 +1184,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
           {fetching && <Spinner size={13} />}
 
           {/* Export dropdown */}
-          <div style={{ position: 'relative' }}>
+          <div data-tour={tourAnchor ? 'skus.export' : undefined} style={{ position: 'relative' }}>
             <button
               onClick={() => setShowExportMenu(v => !v)}
               style={{
@@ -1253,7 +1261,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       <StatsStrip data={data} />
 
       {/* Chart */}
-      <div style={{ flex: 1, minHeight: 0, padding: '8px 0 0' }}>
+      <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={{ flex: 1, minHeight: 0, padding: '8px 0 0' }}>
         {data.historical.length === 0 && data.forecast.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--dim)', fontSize: 13 }}>
             {t('skus.no_series_data')}
@@ -1903,6 +1911,7 @@ export default function SkusPage() {
           {/* Compare toggle */}
           {sessionId && (
             <button
+              data-tour="skus.compare"
               onClick={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionId(null) }}
               title={t('skus.compare_sessions_title')}
               style={{
@@ -2002,6 +2011,7 @@ export default function SkusPage() {
             <div style={{ position: 'relative' }}>
               <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />
               <input
+                data-tour="skus.search"
                 type="text"
                 placeholder={t('skus.search_placeholder')}
                 value={search}
