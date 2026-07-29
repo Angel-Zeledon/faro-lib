@@ -56,7 +56,10 @@ export const COMMANDS: Command[] = [
   { id: 'go.sessions',     group: 'navigate', href: '/sessions',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
   { id: 'go.analyst',      group: 'navigate', href: '/analyst',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: BrainCircuit, feature: 'ai_analyst' },
   { id: 'go.scenarios',    group: 'navigate', href: '/scenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical, feature: 'event_simulator' },
-  { id: 'go.integrations', group: 'navigate', href: '/integraciones',       labelKey: 'nav.integrations',                                    Icon: Plug,         feature: 'integrations' },
+  // Integraciones is hidden from the sidebar for now (see the note there), so
+  // it must not be reachable from the palette either — a command palette that
+  // navigates somewhere the nav deliberately hides is a back door, not a
+  // shortcut.
   { id: 'go.config',       group: 'navigate', href: '/config',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
   { id: 'go.users',        group: 'navigate', href: '/users',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
   { id: 'go.api',          group: 'navigate', href: '/settings',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true, feature: 'api_access' },

@@ -6,7 +6,6 @@ import { configTour } from './config'
 import { hoyTour } from './hoy'
 import { inventoryTour } from './inventory'
 import { pedidosTour } from './pedidos'
-import { integrationsTour } from './integrations'
 import { inventorySetupTour } from './inventorySetup'
 import { quickStartTour } from './quickStart'
 import { roiTour } from './roi'
@@ -44,7 +43,6 @@ export const TOURS: TourDefinition[] = [
   settingsTour,
   analystTour,
   sessionsTour,
-  integrationsTour,
 ]
 
 /** The tour whose route best matches `pathname`, or null. */

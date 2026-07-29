@@ -59,7 +59,11 @@ const NAV: NavItem[] = [
   { href: '/scenarios',           labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis', feature: 'event_simulator' },
 
   { href: '/users',               labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
-  { href: '/integraciones',       labelKey: 'nav.integrations', Icon: Plug,           group: 'system',  feature: 'integrations' },
+  // Integraciones is hidden for now, for the same reason as the API-keys and
+  // webhooks tabs: connecting Alegra or Siigo works, but whether it is sold —
+  // and to which plan — is an open business decision, so today it is an
+  // entitlement lock that upsells a thing nobody has priced. The route and its
+  // page still exist; restore this line to bring it back.
   { href: '/config',              labelKey: 'nav.config',      Icon: Settings,        group: 'system' },
   { href: '/settings',            labelKey: 'nav.settings',    Icon: KeyRound,        group: 'system',  adminOnly: true, feature: 'api_access' },
 ]
