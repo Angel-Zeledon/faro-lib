@@ -366,7 +366,8 @@ function DropZone({ onFile, compact }: { onFile: (f: File) => void; compact?: bo
  <p style={{ color: drag ? C.green : C.text, fontWeight: 600, fontSize: 13.5, margin: '0 0 5px' }}>
  {drag ? t('data.drop_to_upload') : t('data.drag_or_browse')}
  </p>
- <p style={{ color: C.muted, fontSize: 11.5, margin: 0, fontFamily: MONO }}>{t('data.file_types_hint')}</p>
+ {/* A sentence telling you which formats are accepted is prose, not code. */}
+ <p style={{ color: C.muted, fontSize: 11.5, margin: 0 }}>{t('data.file_types_hint')}</p>
  </div>
  )
 }
@@ -1330,7 +1331,8 @@ function DatasetEditorPanel({ source, onCreated }: {
     </button>
    </div>
    <div style={{ color: C.muted, fontSize: 12 }}>
-    <span style={{ fontFamily: MONO, color: C.text, fontWeight: 600 }}>{rows.length}</span> {t('data.editor_rows_count')}
+    {/* Inside a sentence, so it stays in the sentence's typeface. */}
+    <span style={{ color: C.text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{rows.length}</span> {t('data.editor_rows_count')}
    </div>
    {/* Same grid chrome as the read-only ones, so switching to the Edit tab does
        not feel like switching to a different application. */}
@@ -1667,7 +1669,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
  <Eye size={13} color={C.muted} aria-hidden="true" />
  <span style={{ color: C.muted, fontSize: 12 }}>
- {t('data.showing')} <span style={{ fontFamily: MONO, color: C.text, fontWeight: 600 }}>{preview.row_count}</span> {preview.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{preview.truncated ? ` ${t('data.first_100')}` : ''}
+ {t('data.showing')} <span style={{ color: C.text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{preview.row_count}</span> {preview.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{preview.truncated ? ` ${t('data.first_100')}` : ''}
  {preview.active_sheet ? ` — ${t('data.sheet_label')}: ${preview.active_sheet}` : ''}
  </span>
  <button className="btn"
@@ -1848,7 +1850,10 @@ function NewSourcePanel({ onCreated, onCancel }:
  <FileSpreadsheet size={15} color={C.green} aria-hidden="true" style={{ flexShrink: 0 }} />
  <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600, fontFamily: MONO,
  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
- <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO, flexShrink: 0 }}>({fmt(file.size)})</span>
+ {/* The filename above keeps the code voice; its size does not — "28.9 KB"
+     is a number and a unit, and the unit is a word. */}
+ <span style={{ color: C.muted, fontSize: 11.5, flexShrink: 0,
+ fontVariantNumeric: 'tabular-nums' }}>({fmt(file.size)})</span>
  <button onClick={() => setFile(null)} style={{ marginLeft: 'auto', background: 'transparent',
  border: 'none', color: C.muted, cursor: 'pointer', display: 'flex', flexShrink: 0 }}>
  <X size={13} />
@@ -2012,10 +2017,13 @@ export default function DataPage() {
  {/* No page title here: the tab strip above already names this view, and
      repeating it under the top bar's own title said the same thing three
      times in the top 90px of the screen. */}
-                 {/* The count reads as the object-browser caption it is: the figure in the
-     code voice, the noun beside it as a quiet label. */}
+                 {/* "5 FUENTES" is one caption, so it is set in one typeface. The
+     figure used to be monospace while the noun beside it was not, and
+     two families inside three characters reads as a rendering fault
+     rather than as emphasis. Weight carries the figure instead. */}
  <p style={{ margin: 0, ...EYEBROW, display: 'flex', alignItems: 'baseline', gap: 5 }}>
- <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: 0 }}>{sources.length}</span>
+ <span style={{ fontSize: 12, fontWeight: 700, color: C.text, letterSpacing: 0,
+ fontVariantNumeric: 'tabular-nums' }}>{sources.length}</span>
  {sources.length !== 1 ? t('data.source_plural') : t('data.source_singular')}
  </p>
  <button className="btn" onClick={load} title={t('data.refresh_title')} aria-label={t('data.refresh_title')}
@@ -2114,11 +2122,19 @@ export default function DataPage() {
  {src.description}
  </p>
  )}
- {/* Host / engine / size are machine facts, so they take the code voice —
-     which is also what separates them at a glance from the name above. */}
+ {/* The whole line used to be monospace, which put "123 filas" and
+     "28.9 KB" — a number followed by a WORD — into the code voice. A
+     unit is prose, and at 10.5px monospace it read cramped and
+     technical for something that is just a caption. Only the engine
+     and host stay in code voice, because those are identifiers you
+     might have to copy; the rest is the app's own type with tabular
+     figures, so the digits still line up down the column. */}
  <div style={{ margin: '5px 0 0 24px', display: 'flex', gap: 9, alignItems: 'baseline',
- fontFamily: MONO, fontSize: 10.5, color: C.muted, minWidth: 0 }}>
- <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ fontSize: 11, color: C.muted, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}>
+ <span style={{
+ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+ ...(src.source_type === 'sql' ? { fontFamily: MONO, fontSize: 10.5 } : null),
+ }}>
  {src.source_type === 'sql'
  ? `${src.sql_config?.engine} · ${src.sql_config?.host}`
  : fmt(src.size_bytes)}
