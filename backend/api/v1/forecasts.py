@@ -34,6 +34,47 @@ def _enrich_forecast_points(pts: list) -> list:
     return out
 
 
+def _historical_for_sku(tenant_id: str, session_id: str, sku: str) -> list:
+    """Historical series for one SKU: the inspection blob first, the raw dataset
+    file second.
+
+    Single source of truth on purpose. The forecast chart, the SKU-intelligence
+    panel and the decomposition all draw the same history; a second way to build
+    it is a second answer to "what did this SKU actually sell", and the two
+    would drift.
+
+    Returns [] (never raises) when the session has no usable history.
+    """
+    inspection = session_store.get_field(tenant_id, session_id, "inspection") or {}
+    historical = list(inspection.get("historical_series", {}).get(sku, []))
+    if historical:
+        return historical
+
+    s = session_svc.get_session(tenant_id, session_id)
+    dataset_id = s.get("dataset_id") if s else None
+    col_info = session_store.get_field(tenant_id, session_id, "columns_cfg") or {}
+    if not dataset_id or not col_info:
+        return []
+    ds_meta = get_dataset(tenant_id, dataset_id)
+    data_path = ds_meta.get("file_path") if ds_meta else None
+    if not data_path:
+        return []
+    try:
+        from backend.dataframes.series import historical_series
+        dt_col     = col_info.get("date_column")   or col_info.get("date")
+        target_col = col_info.get("target_column") or col_info.get("target")
+        sku_col    = col_info.get("sku_column")    or col_info.get("sku") or col_info.get("group")
+        if not (dt_col and target_col and sku_col):
+            return []
+        return [
+            pt for pt in historical_series(data_path, dt_col, target_col, sku_col, sku=sku)
+            if pt["value"] is not None
+        ]
+    except Exception as exc:
+        log.warning("Could not build historical series for %s: %s", sku, exc)
+        return []
+
+
 def _require_completed(tenant_id: str, session_id: str) -> dict:
     s = session_svc.get_session(tenant_id, session_id)
     if not s:
@@ -379,31 +420,8 @@ def get_forecast_series(
 
     forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
 
-    # Pull historical series from inspection blob
-    inspection = session_store.get_field(user.tenant_id, session_id, "inspection") or {}
-    historical_raw = inspection.get("historical_series", {}).get(sku, [])
-
-    # Fallback: extract historical from raw dataset file
-    if not historical_raw:
-        s = session_svc.get_session(user.tenant_id, session_id)
-        dataset_id = s.get("dataset_id") if s else None
-        col_info = session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {}
-        if dataset_id and col_info:
-            ds_meta = get_dataset(user.tenant_id, dataset_id)
-            data_path = ds_meta.get("file_path") if ds_meta else None
-            if data_path:
-                try:
-                    from backend.dataframes.series import historical_series
-                    dt_col = col_info.get("date_column") or col_info.get("date")
-                    target_col = col_info.get("target_column") or col_info.get("target")
-                    sku_col = col_info.get("sku_column") or col_info.get("sku") or col_info.get("group")
-                    if dt_col and target_col and sku_col:
-                        historical_raw = [
-                            pt for pt in historical_series(data_path, dt_col, target_col, sku_col, sku=sku)
-                            if pt["value"] is not None
-                        ]
-                except Exception as e:
-                    log.warning("Could not build historical series for %s: %s", sku, e)
+    # Historical series: inspection blob, then the raw dataset file.
+    historical_raw = _historical_for_sku(user.tenant_id, session_id, sku)
 
     # Pull forecast
     sku_forecasts = forecasts_data.get(sku, {})
@@ -453,29 +471,7 @@ def get_sku_intelligence(
 
     forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
 
-    inspection = session_store.get_field(user.tenant_id, session_id, "inspection") or {}
-    historical_raw = list(inspection.get("historical_series", {}).get(sku, []))
-
-    if not historical_raw:
-        s = session_svc.get_session(user.tenant_id, session_id)
-        dataset_id = s.get("dataset_id") if s else None
-        col_info = session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {}
-        if dataset_id and col_info:
-            ds_meta = get_dataset(user.tenant_id, dataset_id)
-            data_path = ds_meta.get("file_path") if ds_meta else None
-            if data_path:
-                try:
-                    from backend.dataframes.series import historical_series
-                    dt_col     = col_info.get("date_column")   or col_info.get("date")
-                    target_col = col_info.get("target_column") or col_info.get("target")
-                    sku_col    = col_info.get("sku_column")    or col_info.get("sku") or col_info.get("group")
-                    if dt_col and target_col and sku_col:
-                        historical_raw = [
-                            pt for pt in historical_series(data_path, dt_col, target_col, sku_col, sku=sku)
-                            if pt["value"] is not None
-                        ]
-                except Exception as exc:
-                    log.warning("Could not load historical for %s: %s", sku, exc)
+    historical_raw = _historical_for_sku(user.tenant_id, session_id, sku)
 
     sku_forecasts = forecasts_data.get(sku, {})
     chosen_model  = model or next(iter(sku_forecasts.keys()), None)
@@ -539,6 +535,174 @@ def get_sku_intelligence(
         "metrics":                 sku_metrics,
         "quality":                 sku_quality,
         "stats":                   stats or None,
+    })
+
+
+# ── Series decomposition ───────────────────────────────────────────────────────
+
+def _session_granularity(tenant_id: str, session_id: str, session: dict) -> Optional[str]:
+    """The grain this session is expressed at, or None if it trains natively.
+
+    Family runs stamp `sessions.granularity` ('daily'/'weekly'/'monthly');
+    older/aggregating sessions only carry `granularity_cfg.target_freq`.
+    """
+    from backend.utils.seasonality import granularity_from_target_freq
+
+    grain = (session or {}).get("granularity")
+    if grain:
+        return str(grain)
+    gcfg = session_store.get_field(tenant_id, session_id, "granularity_cfg") or {}
+    return granularity_from_target_freq(gcfg.get("target_freq"))
+
+
+@router.get("/sessions/{session_id}/decomposition/{sku:path}")
+def get_series_decomposition(
+    session_id: str,
+    sku: str,
+    granularity: Optional[str] = Query(
+        None, description="Grain to decompose at; floored at the data's native grain",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """STL trend / seasonal / residual split of one SKU's history.
+
+    This is the chart that answers "is this product really growing, or is it
+    just December again?" — the trend panel is the growth, the seasonal panel
+    is December. The engine owns the maths (`forecasting_core.analysis.
+    decomposition`); this endpoint only picks the grain and the period, and
+    refuses when the history cannot support either. A plausible-looking wrong
+    decomposition is worse than an empty state, so every failure is an error
+    code, never a degraded split.
+    """
+    s = _require_completed(user.tenant_id, session_id)
+
+    from backend.utils.seasonality import (
+        SEASONAL_CYCLE, MIN_CYCLES, min_points, seasonal_period,
+    )
+    from backend.utils.temporal_agg import (
+        _FREQ_ORDER, aggregate_historical, bucket_count, detect_frequency,
+    )
+
+    # Same history as the forecast chart — never a second derivation of it.
+    historical = _historical_for_sku(user.tenant_id, session_id, sku)
+    if not historical:
+        # Last resort, mirroring get_forecast_series: the forecasts blob keeps
+        # its own copy of the history the model was fitted on.
+        forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
+        sku_forecasts = forecasts_data.get(sku) or {}
+        if isinstance(sku_forecasts, dict):
+            for raw in sku_forecasts.values():
+                if isinstance(raw, dict) and raw.get("historical"):
+                    historical = list(raw["historical"])
+                    break
+
+    historical = [
+        p for p in historical
+        if isinstance(p, dict) and p.get("date") and isinstance(p.get("value"), (int, float))
+    ]
+    if not historical:
+        raise AppError(
+            "decomposition_no_history",
+            f"No historical series for SKU '{sku}' in this session",
+            status_code=404,
+            params={"sku": sku},
+        )
+
+    dates = [p["date"] for p in historical]
+    base_freq = detect_frequency(dates)
+
+    # Grain: the caller's chip, else the session's own grain, else what the
+    # dates say. Never finer than the data — resampling upward would invent
+    # observations, and the seasonal panel would be drawing noise.
+    requested = granularity or _session_granularity(user.tenant_id, session_id, s) or base_freq
+    if requested in _FREQ_ORDER and _FREQ_ORDER.index(requested) >= _FREQ_ORDER.index(base_freq):
+        grain = requested
+    else:
+        grain = base_freq
+
+    period = seasonal_period(grain)
+    if period is None:
+        raise AppError(
+            "decomposition_unsupported_granularity",
+            f"A '{grain}' series has no seasonal cycle left to separate",
+            status_code=422,
+            params={"sku": sku, "granularity": grain},
+        )
+
+    # Resample onto a regular grid: STL assumes evenly spaced observations, and
+    # a raw upload can skip days. Gap buckets sum to 0, which for demand is the
+    # truthful reading (nothing sold), not an imputation.
+    points = aggregate_historical(historical, grain, agg="sum")
+    points = [p for p in points if p.get("value") is not None]
+
+    required = min_points(grain)
+    if len(points) < required:
+        raise AppError(
+            "decomposition_history_too_short",
+            f"Decomposition needs at least {required} {grain} points "
+            f"({MIN_CYCLES} full cycles of {period}); this SKU has {len(points)}.",
+            status_code=422,
+            params={
+                "sku": sku,
+                "granularity": grain,
+                "period": period,
+                "cycles": MIN_CYCLES,
+                "required": required,
+                "available": len(points),
+            },
+        )
+
+    values = [float(p["value"]) for p in points]
+    try:
+        from forecasting_core.analysis.decomposition import decompose
+    except ImportError:
+        raise HTTPException(status_code=503, detail="ML library not available")
+    try:
+        parts = decompose(values, period)
+    except Exception as exc:
+        log.exception("Decomposition failed session=%s sku=%s", session_id, sku)
+        raise AppError(
+            "decomposition_failed",
+            f"Could not decompose the series for SKU '{sku}'",
+            status_code=422,
+            params={"sku": sku, "reason": str(exc)},
+        )
+
+    # One row per bucket: aligned by construction, so a three-panel chart can
+    # bind trend/seasonal/residual straight off the same array.
+    series = [
+        {
+            "date":     p["date"],
+            "observed": round(v, 4),
+            "trend":    t,
+            "seasonal": se,
+            "residual": r,
+        }
+        for p, v, t, se, r in zip(
+            points, values, parts["trend"], parts["seasonal"], parts["residual"],
+        )
+    ]
+
+    # Only offer grains a decomposition would actually succeed at, so the chip
+    # can never lead the user into an error state.
+    available = [
+        g for g in _FREQ_ORDER[_FREQ_ORDER.index(base_freq):]
+        if min_points(g) is not None
+        and (bucket_count(dates, g) >= min_points(g) or g == grain)
+    ]
+
+    return ok({
+        "sku":                     sku,
+        "granularity":             grain,
+        "original_granularity":    base_freq,
+        "available_granularities": available,
+        "period":                  period,
+        "seasonal_cycle":          SEASONAL_CYCLE[grain],
+        "cycles_covered":          round(len(series) / period, 2),
+        "n_points":                len(series),
+        "series":                  series,
+        "trend_strength":          parts["trend_strength"],
+        "seasonal_strength":       parts["seasonal_strength"],
     })
 
 
