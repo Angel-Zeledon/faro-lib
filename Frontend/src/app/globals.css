@@ -581,6 +581,138 @@
 .auth-link:hover::after { right: 0; }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   Auth fields.
+
+   The auth card paints ONE fixed light palette in both themes — white card,
+   near-black ink, see (auth)/layout.tsx, which hardcodes `background: #fff`.
+   It deliberately does not follow --surface/--text, so nothing inside it may
+   resolve a theme token either.
+
+   The global `input:-webkit-autofill` rule near the top of this file did
+   exactly that. It masks the browser's autofill background with
+   `box-shadow: 0 0 0 1000px var(--surface-2) inset` and repaints the text
+   with `-webkit-text-fill-color: var(--text)`. Correct for the app shell,
+   wrong here: under the dark theme --text is #E3EBEA, so the moment Chrome
+   filled a saved credential the login field got near-white ink on the white
+   card. `-webkit-text-fill-color` overrides `color`, so the page's own
+   near-black `color` could never win it back — measured 1.17:1.
+
+   It survived review because the masking inset made it *look* fine on load
+   (dark box, light ink). What broke it was the second half: the page set the
+   focus ring as an INLINE `box-shadow`, and an inline style beats any
+   stylesheet rule, so clicking into the field dropped the mask and left the
+   near-white ink on the now-white background. Blur then set inline
+   `box-shadow: none`, so the field never recovered. Hence the report: the
+   text disappears when you enter the field.
+
+   Both halves are fixed below: the auth palette is pinned to literals rather
+   than tokens, and the field's own states live in CSS instead of inline
+   handlers so the cascade — not inline-style precedence — decides.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Resting / hover / focus for the auth fields, shared by /login and /signup.
+   Both used to carry an inline style plus onFocus/onBlur handlers that set
+   boxShadow directly; an inline style outranks every stylesheet rule, so
+   focusing a field erased the `:-webkit-autofill` mask that paints its
+   background. The class exists (rather than a bare `.auth-field input`) so
+   these rules can outrank the app-wide autofill rule without !important. */
+.auth-field input.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: rgba(250,250,250,0.9);
+  border: 1px solid rgba(9,9,11,0.085);
+  border-radius: 11px;
+  color: #0a0a0a;
+  -webkit-text-fill-color: #0a0a0a;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.22s ease, box-shadow 0.22s ease,
+              background 0.22s ease, transform 0.22s ease;
+}
+/* The eye toggle sits over the right edge of the password field. */
+.auth-field input.auth-input-affix { padding-right: 40px; }
+
+.auth-field input.auth-input::placeholder {
+  color: #a1a1aa;
+  -webkit-text-fill-color: #a1a1aa;
+  opacity: 1;
+}
+
+/* Hover only reaches for the border — never the fill or the ink, which is how
+   a hover rule turns a field unreadable in the first place. */
+.auth-field input.auth-input:hover:not(:focus) { border-color: rgba(9,9,11,0.28); }
+
+.auth-field input.auth-input:focus {
+  border-color: rgba(9,9,11,0.55);
+  background: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3.5px rgba(9,9,11,0.045), 0 6px 14px -8px rgba(9,9,11,0.22);
+  outline: none;
+}
+
+/* Keyboard focus keeps a real outline. The app-wide `:focus-visible` ring uses
+   var(--accent), which is a theme token this card does not follow — and the
+   dark theme's teal only reaches 2.9:1 on white, under the 3:1 that a focus
+   indicator needs. So the ring joins the rest of the auth palette and is
+   drawn in the card's own ink. Declared after :focus so it wins the tie. */
+.auth-field input.auth-input:focus-visible {
+  outline: 2px solid #0a0a0a;
+  outline-offset: 2px;
+}
+
+/* A disabled field still has to be read, so it dims the chrome, not the text. */
+.auth-field input.auth-input:disabled {
+  background: rgba(244,244,245,0.9);
+  color: #0a0a0a;
+  -webkit-text-fill-color: #0a0a0a;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+/* Autofill — deliberately LAST, and carrying the two selector strengths it
+   needs. `.auth-field input:-webkit-autofill` (0,2,1) beats the app-wide
+   `input:-webkit-autofill` (0,1,1) and covers /signup, which still styles its
+   fields inline. `.auth-field input.auth-input:-webkit-autofill…` (0,4,1)
+   additionally beats this file's own `.auth-input:focus` / `:hover:not(:focus)`
+   rules (0,3,1 / 0,4,1) — without it the autofilled+focused field would fall
+   back to the plain focus rule and lose its mask. No !important anywhere: the
+   selectors simply say what they mean. */
+.auth-field input:-webkit-autofill,
+.auth-field input:-webkit-autofill:hover,
+.auth-field input:-webkit-autofill:focus,
+.auth-field input:-webkit-autofill:active,
+.auth-field input.auth-input:-webkit-autofill,
+.auth-field input.auth-input:-webkit-autofill:hover,
+.auth-field input.auth-input:-webkit-autofill:active {
+  /* Chrome ignores `background-color` on an autofilled input, so the field
+     background has to be painted as a large inset shadow. Matching the field's
+     own resting fill means an autofilled field looks like a typed one. */
+  -webkit-box-shadow: 0 0 0 1000px #fafafa inset;
+  box-shadow: 0 0 0 1000px #fafafa inset;
+  -webkit-text-fill-color: #0a0a0a;
+  caret-color: #0a0a0a;
+  /* Belt and braces: even if the inset above is ever overridden again, the UA's
+     own fill colour never gets to animate in. And because the ink is pinned
+     dark, the field stays readable even against Chrome's pale autofill wash. */
+  transition: background-color 100000s ease-in-out 0s,
+              border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+
+/* Focused-and-autofilled has to restate the mask: box-shadow is a single
+   property, so listing only the ring would drop the background back to the UA's. */
+.auth-field input:-webkit-autofill:focus,
+.auth-field input.auth-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #fff inset,
+                      0 0 0 3.5px rgba(9,9,11,0.045),
+                      0 6px 14px -8px rgba(9,9,11,0.22);
+  box-shadow: 0 0 0 1000px #fff inset,
+              0 0 0 3.5px rgba(9,9,11,0.045),
+              0 6px 14px -8px rgba(9,9,11,0.22);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
    Reduced motion. One rule for the whole app, deliberately blunt.
 
    This block used to cover only the `auth-*` classes, so every other moving

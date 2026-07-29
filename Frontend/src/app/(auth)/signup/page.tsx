@@ -105,24 +105,13 @@ function SignupPageContent() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', boxSizing: 'border-box', padding: '11px 13px',
-    background: 'rgba(250,250,250,0.9)', border: '1px solid rgba(9,9,11,0.085)', borderRadius: 11,
-    color: '#0a0a0a', fontSize: 13.5, outline: 'none',
-    transition: 'border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease, transform 0.22s ease',
-  }
-  const focusIn = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.style.borderColor = 'rgba(9,9,11,0.55)'
-    e.target.style.background  = '#fff'
-    e.target.style.transform   = 'translateY(-1px)'
-    e.target.style.boxShadow   = '0 0 0 3.5px rgba(9,9,11,0.045), 0 6px 14px -8px rgba(9,9,11,0.22)'
-  }
-  const focusOut = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.style.borderColor = 'rgba(9,9,11,0.085)'
-    e.target.style.background  = 'rgba(250,250,250,0.9)'
-    e.target.style.transform   = 'translateY(0)'
-    e.target.style.boxShadow   = 'none'
-  }
+  // Resting, hover and focus for these fields live in globals.css as
+  // `.auth-field input.auth-input`, shared with /login. They used to be an
+  // inline style plus onFocus/onBlur handlers that set boxShadow directly —
+  // and an inline style outranks every stylesheet rule, including the
+  // `:-webkit-autofill` mask that paints the field background. Focusing an
+  // autofilled field therefore erased its own background and left Chrome's
+  // wash showing through. Letting the cascade decide is the fix.
 
   const cardStyle: React.CSSProperties = {
     background: '#fff',
@@ -233,7 +222,7 @@ function SignupPageContent() {
                       type="text" value={form.full_name}
                       onChange={e => set('full_name', e.target.value)}
                       placeholder="Jane Smith"
-                      style={inputStyle} onFocus={focusIn} onBlur={focusOut}
+                      className="auth-input"
                     />
                   </div>
                   <div className="auth-field">
@@ -245,7 +234,7 @@ function SignupPageContent() {
                       type="text" value={form.tenant_name} required
                       onChange={e => set('tenant_name', e.target.value)}
                       placeholder="Acme Corp"
-                      style={inputStyle} onFocus={focusIn} onBlur={focusOut}
+                      className="auth-input"
                     />
                   </div>
                 </div>
@@ -259,7 +248,7 @@ function SignupPageContent() {
                     type="email" value={form.email} required
                     onChange={e => set('email', e.target.value)}
                     placeholder="you@company.com"
-                    style={inputStyle} onFocus={focusIn} onBlur={focusOut}
+                    className="auth-input"
                   />
                 </div>
 
@@ -272,7 +261,7 @@ function SignupPageContent() {
                     type="tel" value={form.whatsapp_number} required
                     onChange={e => set('whatsapp_number', e.target.value)}
                     placeholder="+50688887777"
-                    style={inputStyle} onFocus={focusIn} onBlur={focusOut}
+                    className="auth-input"
                   />
                   <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#71717a', lineHeight: 1.45 }}>
                     {t('auth.whatsapp_hint')}
@@ -289,8 +278,7 @@ function SignupPageContent() {
                       type={showPw ? 'text' : 'password'} value={form.password} required
                       onChange={e => set('password', e.target.value)}
                       placeholder={t('auth.password_placeholder')}
-                      style={{ ...inputStyle, paddingRight: 38 }}
-                      onFocus={focusIn} onBlur={focusOut}
+                      className="auth-input auth-input-affix"
                     />
                     <button
                       type="button" onClick={() => setShowPw(v => !v)}

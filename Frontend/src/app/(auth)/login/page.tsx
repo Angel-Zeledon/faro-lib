@@ -80,25 +80,13 @@ function LoginPageContent() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', boxSizing: 'border-box',
-    padding: '12px 14px',
-    background: 'rgba(250,250,250,0.9)', border: '1px solid rgba(9,9,11,0.085)', borderRadius: 11,
-    color: '#0a0a0a', fontSize: 14, outline: 'none',
-    transition: 'border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease, transform 0.22s ease',
-  }
-  const focusIn = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.style.borderColor = 'rgba(9,9,11,0.55)'
-    e.target.style.background  = '#fff'
-    e.target.style.transform   = 'translateY(-1px)'
-    e.target.style.boxShadow   = '0 0 0 3.5px rgba(9,9,11,0.045), 0 6px 14px -8px rgba(9,9,11,0.22)'
-  }
-  const focusOut = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.style.borderColor = 'rgba(9,9,11,0.085)'
-    e.target.style.background  = 'rgba(250,250,250,0.9)'
-    e.target.style.transform   = 'translateY(0)'
-    e.target.style.boxShadow   = 'none'
-  }
+  // The field's resting/hover/focus/autofill styling lives in globals.css
+  // under `.auth-field input.auth-input`, NOT in inline onFocus/onBlur
+  // handlers. It used to be inline, and that was the contrast bug: an inline
+  // `box-shadow` outranks any stylesheet rule, so focusing a field wiped the
+  // `0 0 0 1000px … inset` that masks Chrome's autofill background, leaving
+  // the autofill text colour stranded on a white field. Styling states in CSS
+  // keeps the browser's own pseudo-classes in the same cascade as ours.
 
   return (
     <div style={{
@@ -175,11 +163,10 @@ function LoginPageContent() {
                 {t('auth.email_label')}
               </label>
               <input
-                id="login-email" name="email"
+                id="login-email" name="email" className="auth-input"
                 type="email" value={email} required autoComplete="email"
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@company.com"
-                style={inputStyle} onFocus={focusIn} onBlur={focusOut}
               />
             </div>
 
@@ -192,12 +179,10 @@ function LoginPageContent() {
               </div>
               <div style={{ position: 'relative' }}>
                 <input
-                  id="login-password" name="password"
+                  id="login-password" name="password" className="auth-input auth-input-affix"
                   type={showPw ? 'text' : 'password'} value={password} required autoComplete="current-password"
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  style={{ ...inputStyle, padding: '12px 40px 12px 14px' }}
-                  onFocus={focusIn} onBlur={focusOut}
                 />
                 <button
                   type="button" onClick={() => setShowPw(v => !v)}
