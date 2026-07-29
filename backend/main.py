@@ -34,29 +34,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def _recover_running_jobs() -> None:
-    """On startup, mark any jobs left in RUNNING state as FAILED (orphaned by unclean shutdown)."""
-    from backend.db.connection import query, execute
-    from backend.sessions.service import force_status
-
-    stuck = query(
-        "SELECT id, tenant_id, session_id FROM jobs WHERE status = 'RUNNING'"
-    )
-    for job in stuck:
-        execute(
-            "UPDATE jobs SET status = 'FAILED', completed_at = NOW(), error = %s WHERE id = %s",
-            ("Server restarted — job aborted", job["id"]),
-        )
-        try:
-            force_status(job["tenant_id"], job["session_id"], "FAILED")
-        except Exception:
-            pass
-        log.warning(f"Recovered stuck job {job['id']} for session {job['session_id']} → FAILED")
-
-    if stuck:
-        log.info(f"Recovered {len(stuck)} stuck RUNNING job(s) on startup")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────────────────
@@ -124,10 +101,12 @@ async def lifespan(app: FastAPI):
             exc, settings.environment,
         )
 
-    _recover_running_jobs()
-
+    # Orphan recovery moved into worker.start(): it belongs to the instance
+    # that RAN the jobs, so an API redeploy cannot fail a separate worker's
+    # live trainings. Which loops start here is governed by WORKER_ENABLED /
+    # SCHEDULER_ENABLED — both default true, preserving single-process dev.
     worker.start()
-    log.info(f"Job worker started (max_concurrent={settings.max_concurrent_jobs})")
+    log.info(f"Worker components: {worker.enabled_components() or 'none (API-only instance)'}")
 
     yield
 

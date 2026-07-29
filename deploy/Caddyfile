@@ -1,0 +1,7 @@
+# TLS is automatic (Let's Encrypt) for the domain in $DOMAIN.
+# Everything goes to the Next.js server, which proxies /api/* to the backend
+# in-network — the API container is never exposed publicly.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy frontend:5000
+}

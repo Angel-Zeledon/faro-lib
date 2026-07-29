@@ -1,4 +1,13 @@
-# Python
+# Context for backend/Dockerfile is the repo root — keep it lean.
+.git
+.gitignore
+.claude
+docs/
+deploy/
+Frontend/
+storage/
+scripts/
+*.md
 **/__pycache__
 **/*.pyc
 **/*.pyo
@@ -6,21 +15,7 @@
 **/*.egg-info
 **/.venv
 **/venv
-**/.eggs
-
-# Node
-Frontend/node_modules
-Frontend/.next
-
-# Git / IDE
-.git
-.gitignore
 **/.DS_Store
-
-# Docs / scripts
-docs/
-scripts/
-*.md
-
-# Storage (mounted as volume)
-storage/
+**/.env
+**/.env.*
+!**/.env.example

@@ -156,7 +156,7 @@ MOCK_TENANT = {
 
 _STARTUP_PATCHES = [
     mock.patch("backend.db.connection.init_pool"),
-    mock.patch("backend.main._recover_running_jobs"),
+    # worker.start covers orphan recovery too — it now runs inside the worker
     mock.patch("backend.workers.worker.start"),
     mock.patch("backend.auth.blocklist.is_revoked",    return_value=False),
     mock.patch("backend.auth.blocklist.ensure_table"),
@@ -172,10 +172,16 @@ _STARTUP_PATCHES = [
 
 @pytest.fixture(scope="module")
 def offline_app():
+    # Import BEFORE the patches start. Modules that do
+    # `from backend.db.connection import query_one` at import time must bind
+    # the REAL functions — importing under the module-scoped DB mocks would
+    # freeze the mock into their namespace and leak into every later test
+    # file. (The app's lifespan doesn't run at import, so the patches still
+    # cover startup, which happens when TestClient enters.)
+    from backend.main import app as _app
     for p in _STARTUP_PATCHES:
         p.start()
     try:
-        from backend.main import app as _app
         yield _app
     finally:
         for p in _STARTUP_PATCHES:

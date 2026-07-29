@@ -93,7 +93,7 @@ MOCK_INSPECTION_FOR_CFG = {
 
 _STARTUP_PATCHES = [
     mock.patch("backend.db.connection.init_pool"),
-    mock.patch("backend.main._recover_running_jobs"),
+    # worker.start covers orphan recovery too — it now runs inside the worker
     mock.patch("backend.workers.worker.start"),
     mock.patch("backend.auth.blocklist.is_revoked",    return_value=False),
     mock.patch("backend.auth.blocklist.ensure_table"),
@@ -108,10 +108,14 @@ _STARTUP_PATCHES = [
 
 @pytest.fixture(scope="module")
 def can_app():
+    # Import BEFORE the patches start — see offline_app in
+    # test_endpoints_offline.py: importing under the module-scoped DB mocks
+    # binds the mock into `from backend.db.connection import ...` namespaces
+    # and leaks it into every later test file.
+    from backend.main import app as _app
     for p in _STARTUP_PATCHES:
         p.start()
     try:
-        from backend.main import app as _app
         yield _app
     finally:
         for p in _STARTUP_PATCHES:

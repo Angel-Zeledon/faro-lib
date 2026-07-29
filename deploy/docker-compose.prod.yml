@@ -1,0 +1,162 @@
+# Faro — production stack.
+#
+#   cd deploy
+#   cp .env.example .env        # fill in secrets
+#   docker compose -f docker-compose.prod.yml --profile bundled-db up -d --build --wait
+#
+# Topology (the three growth paths are pre-wired):
+#   1. Worker is a separate container from day one: training CPU is capped and
+#      an API redeploy cannot kill a running training (orphan recovery is
+#      scoped by WORKER_ID).
+#   2. Postgres is a compose PROFILE: drop `--profile bundled-db` and point
+#      DATABASE_URL at a managed instance — nothing else changes.
+#   3. More workers: `--profile scale` adds claim-only workers (the job queue
+#      uses FOR UPDATE SKIP LOCKED; SCHEDULER_ENABLED stays true on exactly
+#      one worker so daily emails never duplicate).
+
+name: faro
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+  frontend:
+    build:
+      context: ../Frontend
+      args:
+        BACKEND_URL: http://api:8010
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO/dev/null", "http://127.0.0.1:5000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: faro-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      WORKER_ENABLED: "false"
+      SCHEDULER_ENABLED: "false"
+      STORAGE_PATH: /app/storage
+    volumes:
+      - storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=4)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  # The training + cron instance. WORKER_ID is FIXED so its orphaned RUNNING
+  # jobs are still recognized after the container is recreated on deploy.
+  worker:
+    image: faro-backend
+    restart: unless-stopped
+    command: ["python", "-m", "backend.workers"]
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      WORKER_ENABLED: "true"
+      SCHEDULER_ENABLED: "true"
+      WORKER_ID: worker-1
+      STORAGE_PATH: /app/storage
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      api:
+        condition: service_healthy   # API owns schema migrations
+      db:
+        condition: service_healthy
+        required: false
+    deploy:
+      resources:
+        limits:
+          cpus: "3.0"
+          memory: 5G
+
+  # Claim-only extra workers: docker compose --profile scale up -d --scale worker-extra=2
+  # SCHEDULER_ENABLED must stay false here — the cron loops live in `worker`.
+  worker-extra:
+    image: faro-backend
+    profiles: ["scale"]
+    restart: unless-stopped
+    command: ["python", "-m", "backend.workers"]
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      WORKER_ENABLED: "true"
+      SCHEDULER_ENABLED: "false"
+      STORAGE_PATH: /app/storage
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "3.0"
+          memory: 5G
+
+  # Bundled Postgres — for the single-VPS deployment. To move to a managed
+  # database: stop using --profile bundled-db and set DATABASE_URL in .env.
+  db:
+    image: postgres:16-alpine
+    profiles: ["bundled-db"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: faro
+      POSTGRES_USER: faro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faro -d faro"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+volumes:
+  storage:
+  pgdata:
+  caddy_data:
+  caddy_config:

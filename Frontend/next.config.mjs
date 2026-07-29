@@ -34,6 +34,12 @@ const SECURITY_HEADERS = [
 ]
 
 const nextConfig = {
+  // Self-contained server bundle for the Docker image (node server.js, no
+  // node_modules). Ignored by `next dev`. NOTE: rewrites() is evaluated at
+  // BUILD time, so the production image must be built with BACKEND_URL set
+  // to the in-network API address (the Dockerfile defaults it to the compose
+  // service name).
+  output: 'standalone',
   env: {
     NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version ?? '1.0.0',
   },

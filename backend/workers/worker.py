@@ -5,6 +5,7 @@ in a thread pool so they don't block the FastAPI event loop.
 
 import asyncio
 import logging
+import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +26,49 @@ _executor = ThreadPoolExecutor(
     thread_name_prefix="forecast-worker",
 )
 _running_jobs: set[str] = set()
-_WORKER_ID = "worker-1"
+
+
+def worker_id() -> str:
+    """This instance's identity for job claiming and orphan recovery.
+
+    WORKER_ID env when set (give long-lived workers a fixed one, so recovery
+    still recognizes their orphans after the container is recreated);
+    otherwise the host/container name.
+    """
+    return settings.worker_id.strip() or socket.gethostname()
+
+
+def recover_orphaned_jobs() -> int:
+    """Fail RUNNING jobs that THIS worker abandoned in a crash/restart.
+
+    Runs at worker startup, not API startup: in a split deployment an API
+    redeploy must not kill jobs a healthy worker is actively training. Scoped
+    to this instance's worker_id — plus legacy NULL rows claimed before ids
+    were recorded — so one worker's restart never fails a sibling's live job.
+
+    Returns the number of jobs recovered.
+    """
+    from backend.sessions.service import force_status
+
+    stuck = query(
+        "SELECT id, tenant_id, session_id FROM jobs "
+        "WHERE status = 'RUNNING' AND (worker_id = %s OR worker_id IS NULL)",
+        (worker_id(),),
+    )
+    for job in stuck:
+        execute(
+            "UPDATE jobs SET status = 'FAILED', completed_at = NOW(), error = %s WHERE id = %s",
+            ("Worker restarted — job aborted", job["id"]),
+        )
+        try:
+            force_status(job["tenant_id"], job["session_id"], "FAILED")
+        except Exception:
+            pass
+        log.warning(f"Recovered stuck job {job['id']} for session {job['session_id']} → FAILED")
+
+    if stuck:
+        log.info(f"Recovered {len(stuck)} stuck RUNNING job(s) on worker startup")
+    return len(stuck)
 
 
 def _tenant_at_concurrent_job_limit(tenant_id: str) -> bool:
@@ -64,7 +107,7 @@ def _execute(tenant_id: str, session_id: str, job_id: str) -> None:
 
 
 async def _loop() -> None:
-    log.info(f"Worker {_WORKER_ID} started (max_concurrent={settings.max_concurrent_jobs})")
+    log.info(f"Worker {worker_id()} started (max_concurrent={settings.max_concurrent_jobs})")
     consecutive_errors = 0
     while True:
         try:
@@ -73,7 +116,7 @@ async def _loop() -> None:
                 # dequeue -> get_job -> mark_running sequence let two workers
                 # both see the same QUEUED row and both dispatch it.
                 item = job_queue.claim(
-                    _WORKER_ID, is_tenant_blocked=_tenant_at_concurrent_job_limit)
+                    worker_id(), is_tenant_blocked=_tenant_at_concurrent_job_limit)
                 if item:
                     job_id = item["job_id"]
                     session_id = item["session_id"]
@@ -310,10 +353,46 @@ def _monthly_overstock_snapshot_loop() -> None:
             log.error("Monthly ROI recap error: %s", e, exc_info=True)
 
 
-def start() -> threading.Thread:
-    """Start the worker loop, job scheduler, inventory alert scheduler, monthly
-    overstock snapshot scheduler, and daily integration sync scheduler."""
+def enabled_components() -> list[str]:
+    """Thread names start() will launch under the current settings.
+
+    The job-claim loop runs when worker_enabled; the cron loops (scheduled
+    jobs, daily alerts, monthly snapshot, integration sync) when
+    scheduler_enabled — they are split so a scaled-out deployment can run
+    many claim loops but exactly one scheduler.
+    """
+    components: list[str] = []
+    if settings.worker_enabled:
+        components.append("job-worker")
+    if settings.scheduler_enabled:
+        components += [
+            "job-scheduler", "inventory-alerts",
+            "overstock-snapshot", "integration-sync",
+        ]
+    return components
+
+
+_COMPONENT_TARGETS = {
+    "job-scheduler":      _scheduler_loop,
+    "inventory-alerts":   _inventory_alert_loop,
+    "overstock-snapshot": _monthly_overstock_snapshot_loop,
+    "integration-sync":   _integration_sync_loop,
+}
+
+
+def start() -> list[threading.Thread]:
+    """Start the components this instance is configured to run.
+
+    With worker_enabled: the job-claim loop, preceded by recovery of this
+    instance's orphaned RUNNING jobs. With scheduler_enabled: the cron loops.
+    Both default on (single-process dev); a split deployment turns them off in
+    the API and on in the dedicated worker.
+    """
     def _run():
+        try:
+            recover_orphaned_jobs()
+        except Exception as e:
+            log.error(f"Orphan recovery failed (continuing): {e}", exc_info=True)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -321,23 +400,15 @@ def start() -> threading.Thread:
         except Exception as e:
             log.critical(f"Worker loop terminated unexpectedly: {e}", exc_info=True)
 
-    worker_thread = threading.Thread(target=_run, daemon=True, name="job-worker")
-    worker_thread.start()
+    threads: list[threading.Thread] = []
+    for name in enabled_components():
+        target = _run if name == "job-worker" else _COMPONENT_TARGETS[name]
+        t = threading.Thread(target=target, daemon=True, name=name)
+        t.start()
+        threads.append(t)
 
-    scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True, name="job-scheduler")
-    scheduler_thread.start()
-
-    alert_thread = threading.Thread(target=_inventory_alert_loop, daemon=True, name="inventory-alerts")
-    alert_thread.start()
-
-    overstock_thread = threading.Thread(
-        target=_monthly_overstock_snapshot_loop, daemon=True, name="overstock-snapshot",
-    )
-    overstock_thread.start()
-
-    integration_sync_thread = threading.Thread(
-        target=_integration_sync_loop, daemon=True, name="integration-sync",
-    )
-    integration_sync_thread.start()
-
-    return worker_thread
+    if threads:
+        log.info(f"Started components: {[t.name for t in threads]} (id={worker_id()})")
+    else:
+        log.info("No worker components enabled in this instance")
+    return threads
