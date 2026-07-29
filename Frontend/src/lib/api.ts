@@ -1160,6 +1160,18 @@ export const getSkuDecomposition = (
   )
 }
 
+// ── Currency (the customer's own money, not what Faro costs) ─────────────────
+export const getTenantCurrency = (opts?: RequestOpts) =>
+  request<{
+    current: import('./currency').CurrencyInfo
+    supported: import('./currency').CurrencyInfo[]
+  }>('GET', '/tenant/currency', undefined, opts)
+
+/** Admin only. Relabels existing figures; it does not convert them. */
+export const setTenantCurrency = (code: string) =>
+  request<{ current: import('./currency').CurrencyInfo }>(
+    'PATCH', '/tenant/currency', { code })
+
 // ── Billing ───────────────────────────────────────────────────────────────────
 export const getSubscription = (opts?: RequestOpts) =>
   request<import('./types').SubscriptionState>('GET', '/billing/subscription',

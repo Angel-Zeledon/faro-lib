@@ -4,9 +4,10 @@ import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
-  MessageCircle, Unlink, CalendarClock, MessageSquare, CreditCard,
+  MessageCircle, Unlink, CalendarClock, MessageSquare, CreditCard, Coins,
 } from 'lucide-react'
 import BillingPanel from '@/components/billing/BillingPanel'
+import CurrencySection from '@/components/billing/CurrencySection'
 import { useEntitlements } from '@/lib/entitlements'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -1346,6 +1347,18 @@ export default function ConfigPage() {
               subtitle={t('billing.section_subtitle')}
             />
             <BillingPanel />
+          </Card>
+          {/* Separate card on purpose: what Faro costs (above, always USD) and
+              what the customer's own figures are worth (here, their choice) are
+              two different things, and merging them invites the reading that
+              picking colones changes the price of the plan. */}
+          <Card>
+            <SectionTitle
+              icon={Coins} color="var(--accent)"
+              title={t('currency.section_title')}
+              subtitle={t('currency.section_subtitle')}
+            />
+            <CurrencySection />
           </Card>
           <AppConfigSection t={t} />
           <PlanningSection t={t} />

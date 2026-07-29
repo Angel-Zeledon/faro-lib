@@ -1,5 +1,8 @@
 'use client'
+import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import { getTenantCurrency } from '@/lib/api'
+import { setActiveCurrency } from '@/lib/currency'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import AuthGuard from './AuthGuard'
@@ -65,12 +68,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
  *     horizontal scrollbar.
  * `TopBar` itself is untouched — it is shared with four other screens.
  */
+/**
+ * Loads the tenant's currency once, for the whole app.
+ *
+ * `formatMoney` reads a module-level value rather than a hook, because it is
+ * called from chart builders and export helpers that are not components. Without
+ * this, every screen would render the default (colones) until the user happened
+ * to open Mi cuenta, and a dollar tenant would see the wrong symbol everywhere.
+ *
+ * Renders nothing and never blocks: the figures start in the default symbol and
+ * settle a moment later, which beats holding the whole shell on one request.
+ */
+function CurrencyBoot() {
+  useEffect(() => {
+    getTenantCurrency({ silent: true })
+      .then(d => setActiveCurrency(d.current))
+      .catch(() => { /* keep the default rather than surfacing a toast */ })
+  }, [])
+  return null
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   const narrow   = useIsNarrow()
   const pathname = usePathname()
 
   return (
     <div className="app-shell">
+      <CurrencyBoot />
       <Sidebar />
       <div className="main-content" style={narrow ? { minWidth: 0 } : undefined}>
         <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, minWidth: 0 }}>
