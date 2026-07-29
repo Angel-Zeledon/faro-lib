@@ -69,23 +69,47 @@ const GRANULARITY_LABELS: Record<string, string> = {
 
 // Full granularity names are localized — see `granularityLabel`.
 
-interface CIBand {
-  key:    string
-  lower:  string
-  upper:  string
-  label:  string
-  color:  string
-  opacity: number
+interface FanBand {
+  key:      string
+  lower:    string
+  upper:    string
+  /** Plain-language name. Only the `legend` band is named on the chart. */
+  labelKey: string
+  /** Alpha of THIS ring alone. The rings are nested and stack visually, so the
+   *  centre ends up at roughly the sum — see FAN_BANDS. */
+  opacity:  number
+  /** The one ring that earns a legend entry and the tooltip's headline range. */
+  legend?:  boolean
+  /** Sessions trained before the engine stored quantiles carry only
+   *  lower/upper. Exactly one ring is allowed to fall back to them, so a legacy
+   *  session degrades to the single band it has instead of drawing it three
+   *  times at triple opacity. */
+  fallback?: boolean
 }
 
-// The single confidence band shown on the chart (one on/off toggle in the
-// toolbar). Only rendered when exactly one model is selected.
-const CI_BAND: CIBand = { key: 'p10p90', lower: 'q10', upper: 'q90', label: 'P10–P90', color: 'var(--accent)', opacity: 0.11 }
+// The forecast's uncertainty, as nested rings rather than one flat band: a
+// single band implies a confidence the forecast does not have. Faintest
+// outermost, so the eye reads the centre as most likely without being told.
+// The per-ring alphas are deliberately tiny because the rings overlap — the
+// centre lands near 0.05+0.07+0.09 ≈ 0.2, which is still quiet enough that the
+// forecast line stays the most legible thing on the chart. Opacity does all the
+// work; there is no new colour here, the rings are the forecast's own green.
+const FAN_BANDS: FanBand[] = [
+  { key: 'fan_wide',   lower: 'q5',  upper: 'q95', labelKey: 'skus.band_range_wide',   opacity: 0.05 },
+  { key: 'fan_likely', lower: 'q10', upper: 'q90', labelKey: 'skus.band_range_likely', opacity: 0.07, legend: true, fallback: true },
+  { key: 'fan_core',   lower: 'q25', upper: 'q75', labelKey: 'skus.band_range_core',   opacity: 0.09 },
+]
+const FAN_LIKELY = FAN_BANDS.find(b => b.legend)!
 
 // Primary (first selected) model keeps the classic forecast green; additional
 // overlaid models get a stable color from this palette, indexed by the model's
 // position in available_models so colors don't shift as selection changes.
 const PRIMARY_FORECAST_COLOR = '#22c55e'
+
+// The fan is the forecast's own shadow, so it takes the forecast's colour.
+// (A `var(--accent)` here would not survive: ECharts paints onto a canvas,
+// where a CSS custom property is not a colour the 2D context can resolve.)
+const FAN_COLOR = PRIMARY_FORECAST_COLOR
 const OVERLAY_COLORS = ['#f59e0b', '#06b6d4', '#f472b6', '#a78bfa', '#f97316', '#84cc16', '#e879f9', '#fbbf24']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -527,9 +551,9 @@ function BandToggle({ active, onToggle, hasQuantiles, tourAnchor }: {
           all: 'unset', cursor: hasQuantiles ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', gap: 4,
           padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500,
-          border: `1px solid ${on ? CI_BAND.color : 'var(--border)'}`,
-          background: on ? CI_BAND.color + '22' : 'transparent',
-          color: on ? CI_BAND.color : 'var(--dim)',
+          border: `1px solid ${on ? FAN_COLOR : 'var(--border)'}`,
+          background: on ? FAN_COLOR + '22' : 'transparent',
+          color: on ? FAN_COLOR : 'var(--dim)',
           opacity: hasQuantiles ? 1 : 0.45,
           transition: 'all 0.12s',
         }}
@@ -587,6 +611,7 @@ function buildChartOption(
   outlierIndices: number[] = [],
   t: Translate = (k) => k,
   overlays: ModelOverlay[] = [],
+  accent = '#0F766E',
 ) {
   const { historical, forecast } = data
 
@@ -601,7 +626,12 @@ function buildChartOption(
   const tooltipBg   = isDark ? '#0f1015' : '#ffffff'
   const tooltipBdr  = isDark ? '#1e2030' : '#e2e8f0'
   const tooltipText = isDark ? '#e2e8f0' : '#1e293b'
-  const histColor   = 'var(--accent)'
+  // Resolved, not `var(--accent)`: ECharts paints onto a canvas, where a CSS
+  // custom property is not a colour the 2D context can resolve. It silently
+  // fell through to whatever ECharts had left in the palette slot, which is why
+  // this line used to come out green — and why it disappeared outright once the
+  // fan changed how many series precede it.
+  const histColor   = accent
   const fcastColor  = PRIMARY_FORECAST_COLOR
   // When several models are overlaid, name the primary series by its model so
   // the legend/tooltip distinguish it from the overlays.
@@ -609,41 +639,47 @@ function buildChartOption(
     ? modelLabel(t, data.model)
     : t('skus.series_forecast_p50')
 
-  // Retrieve a quantile value from a forecast point.
-  // Falls back to lower/upper for backends that don't return full quantile sets.
-  function getQ(p: ForecastPoint, qKey: string): number | null {
+  // Retrieve a quantile value from a forecast point. `allowFallback` is granted
+  // to exactly one ring of the fan, so a session stored before quantiles
+  // existed degrades to its single lower/upper band instead of painting the
+  // same band three times.
+  function getQ(p: ForecastPoint, qKey: string, allowFallback = false): number | null {
     const rec = p as unknown as Record<string, number | null | undefined>
     const v = rec[qKey]
     if (typeof v === 'number') return v
-    // Lower-bound quantiles → use lower (or derive symmetrically from upper)
-    if ((qKey === 'q5' || qKey === 'q10' || qKey === 'q20' || qKey === 'q25') && typeof p.lower === 'number') return p.lower
-    // Upper-bound quantiles → use upper
-    if ((qKey === 'q75' || qKey === 'q80' || qKey === 'q90' || qKey === 'q95') && typeof p.upper === 'number') return p.upper
+    if (!allowFallback) return null
+    const n = Number(qKey.slice(1))
+    if (n < 50 && typeof p.lower === 'number') return p.lower
+    if (n > 50 && typeof p.upper === 'number') return p.upper
     return null
   }
 
   const series: object[] = []
 
-  // ── Confidence band (rendered first so the P50 line sits on top) ───────────
+  // ── Uncertainty fan (rendered first so the P50 line sits on top) ───────────
   const renderedBandLabels: string[] = []
 
   if (showBand) {
-    const band = CI_BAND
+    // Widest first: each ring is painted over the previous one, so the alphas
+    // add up towards the centre and the nesting reads without a legend.
+    for (const band of FAN_BANDS) {
+      // Aligned data arrays (null over historical dates — the fan only exists
+      // in the forecast zone).
+      const lowerVals: (number | null)[] = [
+        ...historical.map(() => null),
+        ...forecast.map(p => getQ(p, band.lower, band.fallback)),
+      ]
+      const fillVals: (number | null)[] = lowerVals.map((lo, i) => {
+        if (i < historical.length) return null
+        const hi = getQ(forecast[i - historical.length], band.upper, band.fallback)
+        if (lo === null || hi === null) return null
+        return Math.max(0, hi - lo)
+      })
+      // A ring whose quantiles this session never stored simply isn't drawn.
+      if (!fillVals.some(v => v !== null)) continue
 
-    // Build aligned data arrays (null for historical dates = band only in forecast zone)
-    const lowerVals: (number | null)[] = [
-      ...historical.map(() => null),
-      ...forecast.map(p => getQ(p, band.lower)),
-    ]
-    const fillVals: (number | null)[] = lowerVals.map((lo, i) => {
-      if (i < historical.length) return null
-      const hi = getQ(forecast[i - historical.length], band.upper)
-      if (lo === null || hi === null) return null
-      return Math.max(0, hi - lo)
-    })
-
-    if (fillVals.some(v => v !== null)) {
-      renderedBandLabels.push(band.label)
+      const fillName = band.legend ? t(band.labelKey) : band.key
+      if (band.legend) renderedBandLabels.push(fillName)
 
       // Invisible base at lower bound (stacked area anchoring technique)
       series.push({
@@ -661,14 +697,18 @@ function buildChartOption(
 
       // Visible fill = (upper − lower) stacked on the invisible base
       series.push({
-        name:            band.label,
+        name:            fillName,
         type:            'line',
         data:            fillVals,
         lineStyle:       { opacity: 0 },
-        areaStyle:       { color: band.color, opacity: band.opacity + 0.04 },
+        areaStyle:       { color: FAN_COLOR, opacity: band.opacity },
+        // Without this the legend swatch would be handed the next colour off
+        // ECharts' default palette — a pink dot standing for a green band.
+        itemStyle:       { color: FAN_COLOR, opacity: 0.35 },
         stack:           band.key,
         symbol:          'none',
-        legendHoverLink: true,
+        silent:          !band.legend,
+        legendHoverLink: !!band.legend,
         tooltip:         { show: false },
       })
     }
@@ -725,6 +765,11 @@ function buildChartOption(
   series.push(histSeries)
 
   // ── Forecast (P50) series — rendered on top of CI bands ──────────────────
+  // Past this many points the per-point markers stop being readable dots and
+  // become a texture, so they are dropped. A 90-day daily horizon is well over
+  // it; a 12-month one is not, and there the dots do help.
+  const isDenseForecast = forecast.length > 30
+
   const fcastData: (number | null)[] = [
     ...historical.map(() => null),
     ...forecast.map(p => p.value),
@@ -735,12 +780,36 @@ function buildChartOption(
   const fcastSeries: Record<string, unknown> = {
     name:       primaryName,
     data:       fcastData,
-    lineStyle:  { color: fcastColor, width: 2.5, type: 'dashed' },
+    // Solid, and no per-point dots on a long horizon. This line used to be
+    // dashed with a marker on every point: on a 90-day daily forecast that
+    // oscillates with the weekday cycle, the dashes never join up and the
+    // whole thing reads as scattered confetti instead of a line. What it was
+    // trying to say — "past this point it is a prediction" — is now said by
+    // the divider below, which costs one thin line instead of the legibility
+    // of the main series.
+    lineStyle:  { color: fcastColor, width: 2.5 },
     itemStyle:  { color: fcastColor },
-    symbol:     chartType === 'bar' ? undefined : 'circle',
+    symbol:     chartType === 'bar' || isDenseForecast ? 'none' : 'circle',
     symbolSize: 4,
     smooth:     true,
     z:          10,
+  }
+  // Where history ends and the forecast begins. Drawn on the forecast series so
+  // it disappears with it, and kept deliberately quiet: 1px, dimmed, no arrow.
+  if (chartType !== 'bar' && historical.length > 0 && forecast.length > 0) {
+    fcastSeries['markLine'] = {
+      silent: true,
+      symbol: 'none',
+      lineStyle: { color: dim, type: 'dashed', width: 1, opacity: 0.55 },
+      label: {
+        show: true, position: 'insideEndTop', color: dim, fontSize: 10,
+        // ECharts rotates a markLine label to follow the line, which on a
+        // vertical divider means the caption reads bottom-to-top. Force it flat.
+        rotate: 0, align: 'left', padding: [0, 0, 4, 6],
+        formatter: t('skus.forecast_starts_here'),
+      },
+      data: [{ xAxis: historical[historical.length - 1].date }],
+    }
   }
   if (chartType === 'bar') {
     fcastSeries['type'] = 'bar'; fcastSeries['barMaxWidth'] = 12
@@ -771,9 +840,12 @@ function buildChartOption(
       s['itemStyle'] = { color: ov.color, opacity: 0.85 }
     } else {
       s['type'] = 'line'
-      s['lineStyle']  = { color: ov.color, width: 2, type: 'dashed' }
+      // Solid too, for the same reason as the primary forecast. Overlays are
+      // told apart by colour, which survives a jagged series; a dash pattern
+      // does not.
+      s['lineStyle']  = { color: ov.color, width: 2 }
       s['itemStyle']  = { color: ov.color }
-      s['symbol']     = 'circle'
+      s['symbol']     = isDenseForecast ? 'none' : 'circle'
       s['symbolSize'] = 3
       s['smooth']     = true
       s['z']          = 9
@@ -807,13 +879,24 @@ function buildChartOption(
     if (fp) {
       lines.push(row(dot(fcastColor), primaryName, fp.value.toFixed(2)))
       if (showBand) {
-        const lo = getQ(fp, CI_BAND.lower)
-        const hi = getQ(fp, CI_BAND.upper)
+        // Two rows at most. The likely range is what the buyer plans against;
+        // the wide one is the tail they are choosing to cover. The innermost
+        // ring is left to the picture — a third number here would be noise.
+        const bandDot = (alpha: number) =>
+          `<span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${FAN_COLOR};opacity:${alpha};flex-shrink:0"></span>`
+        const range = (lo: number | null, hi: number | null) =>
+          `${lo !== null ? lo.toFixed(2) : '—'} – ${hi !== null ? hi.toFixed(2) : '—'}`
+
+        const lo = getQ(fp, FAN_LIKELY.lower, true)
+        const hi = getQ(fp, FAN_LIKELY.upper, true)
         if (lo !== null || hi !== null) {
-          const bandDot = `<span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${CI_BAND.color};opacity:0.7;flex-shrink:0"></span>`
-          const loStr = lo !== null ? lo.toFixed(2) : '—'
-          const hiStr = hi !== null ? hi.toFixed(2) : '—'
-          lines.push(row(bandDot, CI_BAND.label, `${loStr} – ${hiStr}`))
+          lines.push(row(bandDot(0.8), t(FAN_LIKELY.labelKey), range(lo, hi)))
+        }
+        const wide = FAN_BANDS[0]
+        const wLo = getQ(fp, wide.lower)
+        const wHi = getQ(fp, wide.upper)
+        if (wLo !== null && wHi !== null) {
+          lines.push(row(bandDot(0.4), t(wide.labelKey), range(wLo, wHi)))
         }
       }
       for (const ov of overlayByDate) {
@@ -916,6 +999,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
   const [fullscreen,  setFullscreen]  = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const echartsRef = useRef<any>(null)
+  const accent = useCssToken('--accent', isDark ? '#2BA79A' : '#0F766E', isDark)
 
   // Cache results by (sku|gran|model) to avoid redundant API calls.
   // Aggregation is fixed to 'sum' — the backend default (forecasts.py
@@ -1190,8 +1274,8 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
 
   const option = useMemo(() => {
     if (!data) return {}
-    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList)
-  }, [data, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList])
+    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList, accent)
+  }, [data, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent])
 
   if (loading && !data) return (
     <div style={{ flex: 1, padding: '16px', minHeight: 360 }} role="status" aria-busy="true">
@@ -1412,6 +1496,441 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
           </span>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Sales pattern ─────────────────────────────────────────────────────────────
+//
+// Two views of the user's OWN sales history. No model is involved and nothing
+// here is a prediction — the copy says so, because a bar chart sitting one tab
+// away from a forecast will otherwise be read as one.
+//
+// Both views live on their own tab rather than under the forecast chart: the
+// forecast needs the height it has, and two large charts with room to breathe
+// get read where four squeezed ones get ignored.
+
+/** Monday-first — the week a distributor actually plans against. */
+const WEEKDAY_KEYS = [
+  'skus.dow_mon', 'skus.dow_tue', 'skus.dow_wed',
+  'skus.dow_thu', 'skus.dow_fri', 'skus.dow_sat', 'skus.dow_sun',
+]
+const MONTH_KEYS = [
+  'skus.month_1', 'skus.month_2',  'skus.month_3',  'skus.month_4',
+  'skus.month_5', 'skus.month_6',  'skus.month_7',  'skus.month_8',
+  'skus.month_9', 'skus.month_10', 'skus.month_11', 'skus.month_12',
+]
+
+// A bar resting on one or two observations is noise drawn as a pattern. Below
+// this it is dropped, and the panel says how many were dropped.
+const MIN_OBS_PER_BAR = 3
+// Under these the view itself is misleading, not just a bar of it.
+const MIN_WEEKS_FOR_WEEKDAY   = 8
+const MIN_MONTHS_FOR_MONTH    = 12
+const MIN_POINTS_FOR_SPREAD   = 12
+// Weekly (or coarser) series land on the same weekday every time, so a
+// "weekday profile" of them is one tall bar and six empty ones.
+const MIN_DISTINCT_WEEKDAYS   = 5
+
+// The noun for one point of the series, so the copy says "días" on a daily
+// session and "semanas" on a weekly one rather than an abstract "período".
+// A granularity outside this map gets the generic wording instead of a unit
+// that would be quietly wrong — four quarters are not four months.
+const SERIES_UNIT: Record<string, 'day' | 'week' | 'month'> = {
+  daily: 'day', weekly: 'week', monthly: 'month',
+}
+function seriesUnitLabel(gran: string, n: number, t: Translate): string | null {
+  const unit = SERIES_UNIT[gran]
+  if (!unit) return null
+  return t(n === 1 ? `period.${unit}_singular` : `period.${unit}_plural`)
+}
+
+/** Parses `YYYY-MM-DD` in UTC, so the local timezone can't shift the weekday. */
+function parseSeriesDate(d: string): { ym: string; month: number; dow: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d)
+  if (!m) return null
+  const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+  if (isNaN(dt.getTime())) return null
+  return { ym: `${m[1]}-${m[2]}`, month: Number(m[2]), dow: (dt.getUTCDay() + 6) % 7 }
+}
+
+interface AvgBar { label: string; avg: number; n: number }
+interface AvgProfile { bars: AvgBar[]; dropped: number; eligible: boolean }
+
+type HistPoint = { date: string; value: number }
+
+/** Average — never sum. A month with more observations would otherwise look
+ *  bigger for a reason that has nothing to do with how much sells. */
+function averageProfile(
+  points: HistPoint[],
+  slots: number,
+  slotOf: (p: NonNullable<ReturnType<typeof parseSeriesDate>>) => number,
+  labelOf: (slot: number) => string,
+): AvgProfile {
+  const sum = new Array<number>(slots).fill(0)
+  const n   = new Array<number>(slots).fill(0)
+  for (const p of points) {
+    const d = parseSeriesDate(p.date)
+    if (!d || typeof p.value !== 'number' || isNaN(p.value)) continue
+    const slot = slotOf(d)
+    sum[slot] += p.value
+    n[slot]   += 1
+  }
+  const bars: AvgBar[] = []
+  let dropped = 0
+  for (let i = 0; i < slots; i++) {
+    if (n[i] === 0) continue
+    if (n[i] < MIN_OBS_PER_BAR) { dropped++; continue }
+    bars.push({ label: labelOf(i), avg: sum[i] / n[i], n: n[i] })
+  }
+  return { bars, dropped, eligible: bars.length > 1 }
+}
+
+function weekdayProfile(points: HistPoint[], t: Translate): AvgProfile {
+  return averageProfile(points, 7, d => d.dow, i => t(WEEKDAY_KEYS[i]))
+}
+function monthProfile(points: HistPoint[], t: Translate): AvgProfile {
+  return averageProfile(points, 12, d => d.month - 1, i => t(MONTH_KEYS[i]))
+}
+
+/** Rounds a raw bucket width up to 1, 2 or 5 × a power of ten, so the axis
+ *  labels are numbers a person would say out loud. Keeps the bucketing honest
+ *  on a SKU that sells 3 a week and on one that sells 8.000. */
+function niceStep(raw: number): number {
+  if (!(raw > 0) || !isFinite(raw)) return 1
+  const base = Math.pow(10, Math.floor(Math.log10(raw)))
+  const f = raw / base
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * base
+}
+
+interface Spread { labels: string[]; counts: number[]; meanIndex: number; mean: number }
+
+function buildSpread(points: HistPoint[]): Spread | null {
+  const values = points.map(p => p.value).filter(v => typeof v === 'number' && !isNaN(v))
+  if (values.length < MIN_POINTS_FOR_SPREAD) return null
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  if (!(max > min)) return null
+
+  const target = Math.min(12, Math.max(6, Math.round(Math.sqrt(values.length))))
+  const step   = niceStep((max - min) / target)
+  const start  = Math.floor(min / step) * step
+  const bins   = Math.max(1, Math.ceil((max - start) / step + 1e-9))
+
+  const counts = new Array<number>(bins).fill(0)
+  for (const v of values) {
+    const i = Math.min(bins - 1, Math.floor((v - start) / step + 1e-9))
+    counts[i] += 1
+  }
+
+  // Whole-number steps get a single number per bucket ("18"), not a range
+  // ("18,0–19,0") that says the same thing twice as wide.
+  const num = (v: number) => Number.isInteger(step) && Number.isInteger(v)
+    ? v.toLocaleString()
+    : v.toLocaleString(undefined, { maximumFractionDigits: 1 })
+  const labels = counts.map((_, i) => {
+    const lo = start + i * step
+    return step === 1 ? num(lo) : `${num(lo)}–${num(lo + step)}`
+  })
+
+  const mean = values.reduce((a, b) => a + b, 0) / values.length
+  return { labels, counts, mean, meanIndex: (mean - start) / step - 0.5 }
+}
+
+/** ECharts paints onto a canvas, where `var(--accent)` is not a colour the 2D
+ *  context can resolve. The token has to be read off the document and handed
+ *  over as a concrete value — re-read whenever the theme flips. */
+function useCssToken(name: string, fallback: string, themeKey: unknown): string {
+  const [value, setValue] = useState(fallback)
+  useEffect(() => {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    setValue(v || fallback)
+  }, [name, fallback, themeKey])
+  return value
+}
+
+function chartChrome(isDark: boolean) {
+  return {
+    dim:         '#64748b',
+    gridLine:    isDark ? '#1e2030' : '#e2e8f0',
+    tooltipBg:   isDark ? '#0f1015' : '#ffffff',
+    tooltipBdr:  isDark ? '#1e2030' : '#e2e8f0',
+    tooltipText: isDark ? '#e2e8f0' : '#1e293b',
+  }
+}
+
+function buildProfileOption(profile: AvgProfile, accent: string, isDark: boolean, obsLabel: (n: number) => string) {
+  const c = chartChrome(isDark)
+  return {
+    backgroundColor: 'transparent',
+    animation: false,
+    grid: { top: 12, bottom: 4, left: 4, right: 8, containLabel: true },
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.tooltipBdr,
+      borderWidth: 1,
+      textStyle: { color: c.tooltipText, fontSize: 11 },
+      extraCssText: 'padding:8px 10px;border-radius:8px;',
+      formatter: (p: { dataIndex: number; name: string }) => {
+        const bar = profile.bars[p.dataIndex]
+        if (!bar) return ''
+        return `<div style="font-size:11px"><b>${bar.label}</b><br/>${fmtK(bar.avg)}<br/>
+          <span style="opacity:0.6">${obsLabel(bar.n)}</span></div>`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: profile.bars.map(b => b.label),
+      axisLine: { lineStyle: { color: c.gridLine } },
+      axisTick: { show: false },
+      axisLabel: { color: c.dim, fontSize: 10, hideOverlap: true },
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: c.dim, fontSize: 10, formatter: (v: number) => fmtK(v) },
+      splitLine: { lineStyle: { color: c.gridLine, type: 'dashed' } },
+    },
+    series: [{
+      type: 'bar',
+      data: profile.bars.map(b => b.avg),
+      barMaxWidth: 52,
+      itemStyle: { color: accent, borderRadius: [3, 3, 0, 0] },
+    }],
+  }
+}
+
+function buildSpreadOption(spread: Spread, accent: string, isDark: boolean, meanLabel: string, daysLabel: (n: number) => string) {
+  const c = chartChrome(isDark)
+  return {
+    backgroundColor: 'transparent',
+    animation: false,
+    grid: { top: 18, bottom: 4, left: 4, right: 8, containLabel: true },
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.tooltipBdr,
+      borderWidth: 1,
+      textStyle: { color: c.tooltipText, fontSize: 11 },
+      extraCssText: 'padding:8px 10px;border-radius:8px;',
+      formatter: (p: { dataIndex: number }) =>
+        `<div style="font-size:11px"><b>${spread.labels[p.dataIndex]}</b><br/>
+          <span style="opacity:0.6">${daysLabel(spread.counts[p.dataIndex])}</span></div>`,
+    },
+    xAxis: {
+      type: 'category',
+      data: spread.labels,
+      axisLine: { lineStyle: { color: c.gridLine } },
+      axisTick: { show: false },
+      axisLabel: { color: c.dim, fontSize: 10, hideOverlap: true },
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      // The y-axis counts periods, so it is whole numbers — "150.0" would
+      // invite the reader to look for a decimal that cannot exist.
+      minInterval: 1,
+      axisLabel: { color: c.dim, fontSize: 10, formatter: (v: number) => String(Math.round(v)) },
+      splitLine: { lineStyle: { color: c.gridLine, type: 'dashed' } },
+    },
+    series: [{
+      type: 'bar',
+      data: spread.counts,
+      barMaxWidth: 46,
+      barCategoryGap: '8%',
+      itemStyle: { color: accent, borderRadius: [3, 3, 0, 0] },
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        precision: 2,
+        lineStyle: { color: c.dim, type: 'dashed', width: 1 },
+        // ECharts rotates a vertical mark line's label to match the line;
+        // `rotate: 0` keeps the word horizontal and readable.
+        label: {
+          formatter: meanLabel, color: c.dim, fontSize: 10,
+          position: 'end', rotate: 0, distance: 6,
+        },
+        data: [{ xAxis: spread.meanIndex }],
+      },
+    }],
+  }
+}
+
+function PatternNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: 120, padding: '20px 24px', textAlign: 'center',
+      fontSize: 12, color: 'var(--dim)', lineHeight: 1.6,
+      border: '1px dashed var(--border)', borderRadius: 10,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+type PatternView = 'weekday' | 'month'
+
+function SalesPatternPanel({ sessionId, sku, isDark }: {
+  sessionId: string; sku: string; isDark: boolean
+}) {
+  const { t } = useLanguage()
+  const [data,    setData]    = useState<SkuIntelligenceData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<unknown>(null)
+  const [view,    setView]    = useState<PatternView | null>(null)
+
+  const accent = useCssToken('--accent', isDark ? '#2BA79A' : '#0F766E', isDark)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    getSkuIntelligence(sessionId, sku, { agg: 'sum' }, { silent: true })
+      .then(d => setData(d))
+      .catch((e: unknown) => setError(e))
+      .finally(() => setLoading(false))
+  }, [sessionId, sku])
+
+  useEffect(() => { setData(null); setView(null); load() }, [load])
+
+  const points = data?.historical ?? []
+
+  // How much history there is, in the units each view needs.
+  const coverage = useMemo(() => {
+    const parsed = points.map(p => parseSeriesDate(p.date)).filter(Boolean) as
+      NonNullable<ReturnType<typeof parseSeriesDate>>[]
+    return {
+      months:   new Set(parsed.map(d => d.ym)).size,
+      weekdays: new Set(parsed.map(d => d.dow)).size,
+      weeks:    points.length >= 2
+        ? (Date.parse(points[points.length - 1].date) - Date.parse(points[0].date)) / (7 * 86_400_000)
+        : 0,
+    }
+  }, [points])
+
+  const weekdayOk = coverage.weeks >= MIN_WEEKS_FOR_WEEKDAY && coverage.weekdays >= MIN_DISTINCT_WEEKDAYS
+  const monthOk   = coverage.months >= MIN_MONTHS_FOR_MONTH
+
+  // Land on a view that can actually be drawn instead of on an apology.
+  useEffect(() => {
+    if (view !== null || !data) return
+    setView(weekdayOk ? 'weekday' : monthOk ? 'month' : 'weekday')
+  }, [view, data, weekdayOk, monthOk])
+
+  const profile = useMemo(() => {
+    if (!points.length) return null
+    return view === 'month' ? monthProfile(points, t) : weekdayProfile(points, t)
+  }, [points, view, t])
+
+  const spread = useMemo(() => buildSpread(points), [points])
+
+  // Both charts count points of the SERIES, whatever its granularity — a month
+  // bar on a daily session rests on ~30 days, not on 1 month. Saying which unit
+  // is what keeps "average of 47" from being read as 47 months.
+  const gran = data?.applied_granularity ?? ''
+  const countLabel = useCallback((n: number) => {
+    const unit = seriesUnitLabel(gran, n, t)
+    return unit
+      ? t('skus.pattern_based_on', { n, unit })
+      : t('skus.pattern_based_on_generic', { n })
+  }, [t, gran])
+  const periodsLabel = useCallback((n: number) => {
+    const unit = seriesUnitLabel(gran, n, t)
+    return unit ? `${n} ${unit}` : t('skus.spread_periods_generic', { n })
+  }, [t, gran])
+  const spreadTitle = (() => {
+    const unit = seriesUnitLabel(gran, 1, t)
+    return unit ? t('skus.spread_title', { unit }) : t('skus.spread_title_generic')
+  })()
+
+  if (loading) return (
+    <div style={{ padding: 20 }} role="status" aria-busy="true">
+      <div className="skeleton" style={{ height: 220, borderRadius: 10, marginBottom: 24 }} />
+      <div className="skeleton" style={{ height: 220, borderRadius: 10 }} />
+    </div>
+  )
+  if (error != null) return (
+    <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
+      <ErrorState error={error} onRetry={load} />
+    </div>
+  )
+  if (!points.length) return <PanelPlaceholder message={t('skus.pattern_no_history')} />
+
+  const viewOk = view === 'month' ? monthOk : weekdayOk
+
+  return (
+    <div style={{ padding: '18px 20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+      {/* ── Average by weekday / by month ── */}
+      <section>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {view === 'month' ? t('skus.pattern_month_title') : t('skus.pattern_weekday_title')}
+          </div>
+          <ChipGroup
+            value={view ?? 'weekday'}
+            onChange={(v: PatternView) => setView(v)}
+            options={[
+              { value: 'weekday' as PatternView, label: t('skus.pattern_by_weekday') },
+              { value: 'month'   as PatternView, label: t('skus.pattern_by_month') },
+            ]}
+          />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 12px', maxWidth: 620, lineHeight: 1.6 }}>
+          {view === 'month' ? t('skus.pattern_month_caption') : t('skus.pattern_weekday_caption')}
+        </div>
+
+        {!viewOk ? (
+          <PatternNote>
+            {view === 'month'
+              ? t('skus.pattern_month_too_short', { months: coverage.months, min: MIN_MONTHS_FOR_MONTH })
+              : coverage.weekdays < MIN_DISTINCT_WEEKDAYS
+                ? t('skus.pattern_weekday_not_daily')
+                : t('skus.pattern_weekday_too_short', { weeks: Math.floor(coverage.weeks), min: MIN_WEEKS_FOR_WEEKDAY })}
+          </PatternNote>
+        ) : !profile || !profile.eligible ? (
+          <PatternNote>{t('skus.pattern_not_enough_bars')}</PatternNote>
+        ) : (
+          <>
+            <ReactECharts
+              option={buildProfileOption(profile, accent, isDark, countLabel)}
+              style={{ height: 200, width: '100%' }}
+              theme={isDark ? 'dark' : undefined}
+              opts={{ renderer: 'canvas' }}
+              notMerge
+            />
+            {profile.dropped > 0 && (
+              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 4 }}>
+                {t('skus.pattern_dropped_bars', { n: profile.dropped, min: MIN_OBS_PER_BAR })}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <div style={{ height: 1, background: 'var(--border)' }} />
+
+      {/* ── How much a period sells ── */}
+      <section>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>{spreadTitle}</div>
+        <div style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 12px', maxWidth: 620, lineHeight: 1.6 }}>
+          {t('skus.spread_caption')}
+        </div>
+        {!spread ? (
+          <PatternNote>{t('skus.spread_too_short')}</PatternNote>
+        ) : (
+          <ReactECharts
+            option={buildSpreadOption(spread, accent, isDark, t('skus.spread_average_marker'), periodsLabel)}
+            style={{ height: 200, width: '100%' }}
+            theme={isDark ? 'dark' : undefined}
+            opts={{ renderer: 'canvas' }}
+            notMerge
+          />
+        )}
+      </section>
     </div>
   )
 }
@@ -2234,11 +2753,12 @@ export default function SkusPage() {
 
               <TabBar
                 tourAnchor="skus.tabs"
-                tabs={['Forecast', 'Metrics', 'Quality', 'Inventory']}
+                tabs={['Forecast', 'Pattern', 'Metrics', 'Quality', 'Inventory']}
                 active={tab}
                 onChange={setTab}
                 labelFor={tabKey => ({
                   Forecast: t('skus.tab_forecast'),
+                  Pattern: t('skus.tab_pattern'),
                   Metrics: t('skus.tab_metrics'),
                   Quality: t('skus.tab_quality'),
                   Inventory: t('skus.tab_inventory'),
@@ -2276,6 +2796,14 @@ export default function SkusPage() {
                   ) : (
                     <ChartPanel key={`${sessionId}-${selectedSku}`} tourAnchor="skus.chart" sessionId={sessionId} sku={selectedSku} isDark={isDark} />
                   )
+                )}
+                {tab === 'Pattern' && sessionId && (
+                  <SalesPatternPanel
+                    key={`${sessionId}-${selectedSku}`}
+                    sessionId={sessionId}
+                    sku={selectedSku}
+                    isDark={isDark}
+                  />
                 )}
                 {tab === 'Metrics' && <MetricsTable rows={skuMetrics} sku={selectedSku} />}
                 {tab === 'Quality' && (
