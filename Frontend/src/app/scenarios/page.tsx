@@ -79,17 +79,19 @@ const btnStyle: React.CSSProperties = {
 
 // ── Rule editor ──────────────────────────────────────────────────────────────
 
-function RuleEditor({ rule, onChange, onRemove }: {
+function RuleEditor({ rule, onChange, onRemove, tourAnchor }: {
   rule: ScenarioRule
   onChange: (r: ScenarioRule) => void
   onRemove: () => void
+  /** Set on the first row only — a tour anchor has to be unique in the DOM. */
+  tourAnchor?: string
 }) {
   const { t } = useLanguage()
   const set = (patch: Partial<ScenarioRule>) => onChange({ ...rule, ...patch })
   const isDemand = rule.type === 'demand_multiplier' || rule.type === 'promo'
 
   return (
-    <Card radius={10} padding={12} style={{ marginBottom: 10, background: 'var(--bg)' }}>
+    <Card data-tour={tourAnchor} radius={10} padding={12} style={{ marginBottom: 10, background: 'var(--bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <Select
           value={rule.type}
@@ -433,7 +435,7 @@ export default function ScenariosPage() {
             {t('scenarios.subtitle')}
           </p>
         </div>
-        <div>
+        <div data-tour="sc.session">
           <FieldLabel variant="eyebrow" htmlFor="scenario-session">{t('scenarios.session_label')}</FieldLabel>
           <Select
             id="scenario-session"
@@ -466,6 +468,7 @@ export default function ScenariosPage() {
             {rules.map((rule, i) => (
               <RuleEditor
                 key={i}
+                tourAnchor={i === 0 ? 'sc.rule' : undefined}
                 rule={rule}
                 onChange={next => setRules(rules.map((r, j) => (j === i ? next : r)))}
                 onRemove={() => setRules(rules.filter((_, j) => j !== i))}
@@ -497,7 +500,7 @@ export default function ScenariosPage() {
 
           {/* Save */}
           {canEdit && (
-            <Card padding={18}>
+            <Card padding={18} data-tour="sc.save">
               <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 12px' }}>
                 {t('scenarios.save_title')}
               </h2>
@@ -592,7 +595,7 @@ export default function ScenariosPage() {
             />
           ) : (
             <>
-              <Card padding={18}>
+              <Card padding={18} data-tour="sc.compare">
                 <div style={{
                   display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
                   gap: 10, marginBottom: 8, flexWrap: 'wrap',

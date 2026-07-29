@@ -164,13 +164,16 @@ function LeadTimeLearning({ item }: { item: ActionItem }) {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier }: {
+function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier, tourAnchor }: {
  item:        ActionItem
  onApprove:   () => void
  onReject:    () => void
  onChangeQty: (qty: number) => void
  suppliers:   Supplier[]
  onChangeSupplier: (supplierId: string) => void
+ /** Set on the first card only — a tour anchor has to be unique in the DOM,
+  *  and this used to repeat once per recommendation. */
+ tourAnchor?: string
 }) {
  const { t } = useLanguage()
  const [editing, setEditing] = useState(false)
@@ -267,7 +270,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
     </div>
     {hasWhyData && (
      <button
-      data-tour="hoy.why"
+      data-tour={tourAnchor}
       onClick={() => setShowWhy(v => !v)}
       style={{
        all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
@@ -1079,6 +1082,10 @@ export default function HoyPage() {
 
  const kpis = briefing?.kpis
 
+ // What today's advice rests on that nobody gave us. Computed here so the
+ // banner and its tour anchor agree on when there is anything to admit.
+ const assumptions = summarizeAssumptions(briefing)
+
  // Total pending actions for greeting
  const totalPending = cart.filter(i => i.status === 'pending' && i.qty > 0).length
 
@@ -1191,7 +1198,12 @@ export default function HoyPage() {
      )}
     </div>
 
-    <DataFreshness currentSession={currentSession} loading={sessionsLoading} />
+    {/* The tour anchor sits on this wrapper, not inside DataFreshness: that
+        component is shared with /inventory and does not forward unknown props
+        to the DOM. */}
+    <div data-tour="hoy.freshness">
+     <DataFreshness currentSession={currentSession} loading={sessionsLoading} />
+    </div>
    </div>
 
    {/* ── Loading state: shaped like the briefing it replaces ── */}
@@ -1227,7 +1239,14 @@ export default function HoyPage() {
        {/* How much of today's advice rests on values nobody gave us. Renders
            nothing when there is nothing to admit — the count comes from the
            recommendations on screen, never from a fixed number. */}
-       <AssumptionsBanner summary={summarizeAssumptions(briefing)} />
+       {/* The anchor is on a wrapper (AssumptionsBanner lives in ./shared and
+           does not forward unknown props), and only when the banner actually
+           renders — an anchor over nothing would make the tour point at air. */}
+       {assumptions.fields.length > 0 && (
+        <div data-tour="hoy.assumptions">
+         <AssumptionsBanner summary={assumptions} />
+        </div>
+       )}
 
        {/* Feature 3.3 — a supplier's recent lead time drifted significantly
            off its own history. Sits above the overdue nudge because it is the
@@ -1241,7 +1260,7 @@ export default function HoyPage() {
        {/* Overdue-reception alerts: expected arrival (learned supplier lead
            time) has passed with no reception recorded. */}
        {overduePOs.length > 0 && (
-        <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div data-tour="hoy.receptions" style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
          <div style={{
           fontSize: 11, fontWeight: 700, color: C.red,
           textTransform: 'uppercase', letterSpacing: '0.08em',
@@ -1319,7 +1338,7 @@ export default function HoyPage() {
 
         {/* AI Narrative */}
         {(narrative || loadingNarrative) && (
-         <div style={{ marginBottom: 20 }}>
+         <div data-tour="hoy.narrative" style={{ marginBottom: 20 }}>
           <NarrativeCard
            title={t('hoy.narrative_card_title')}
            narrative={narrative?.narrative ?? null}
@@ -1342,7 +1361,14 @@ export default function HoyPage() {
             Rendered before the urgent purchases: moving boxes is free. The
             suggestions arrive with the morning briefing (no extra request);
             the component renders null when there is nothing to transfer. */}
-        <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} />
+        {/* Wrapper carries the tour anchor (TransferSuggestions is shared and
+            does not forward unknown props), and only when there is something to
+            transfer — the component renders null otherwise. */}
+        {(briefing?.transfer_suggestions?.length ?? 0) > 0 && (
+         <div data-tour="hoy.transfers">
+          <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} />
+         </div>
+        )}
 
         {/* URGENTE section */}
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
@@ -1355,10 +1381,11 @@ export default function HoyPage() {
            <AlertTriangle size={12} aria-hidden="true" />
            {t('hoy.section_urgent')}
           </div>
-          {cart.filter(i => i.signal === 'PEDIR_YA').map(item => (
+          {cart.filter(i => i.signal === 'PEDIR_YA').map((item, idx) => (
            <ActionCard
             key={item.sku}
             item={item}
+            tourAnchor={idx === 0 ? 'hoy.why' : undefined}
             onApprove={() => approveItem(item.sku)}
             onReject={() => rejectItem(item.sku)}
             onChangeQty={qty => changeQty(item.sku, qty)}
@@ -1434,7 +1461,7 @@ export default function HoyPage() {
             approval to the total being committed. Enter only; clearing the cart
             must feel instant. */}
         {approved.length > 0 && (
-         <div className="cart-bar-enter" style={{
+         <div className="cart-bar-enter" data-tour="hoy.cart" style={{
           position: 'sticky', bottom: 16,
           background: 'var(--surface)', border: '1px solid rgba(34,197,94,0.4)',
           borderRadius: 12, padding: '14px 20px',

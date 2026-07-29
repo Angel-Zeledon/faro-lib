@@ -1889,12 +1889,15 @@ export default function InventoryPage() {
  </div>
  </div>
 
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+ {/* `inv.export` anchors this whole toolbar: the export controls (CSV, plantilla,
+     Exportar OC, PDF) are direct flex children here with no container of their
+     own, and wrapping them would change where the row wraps. */}
+ <div data-tour="inv.export" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
  {/* Session freshness */}
  <DataFreshness currentSession={currentSession} />
 
  {/* View toggle */}
- <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+ <div data-tour="inv.views" style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
  {([
  ['table', <List size={13} />, t('inventory.view_table')],
  ['simple', <Package size={13} />, t('inventory.view_simple')],
@@ -2454,10 +2457,10 @@ export default function InventoryPage() {
  <ThTip label={t('inventory.col_sku_name')} tip={t('inventory.tip_sku_name')} sortKey="sku" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_stock')} tip={t('inventory.tip_stock')} sortKey="stock" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_trend')} tip={t('inventory.tip_trend')} />
- <ThTip label={`${t('inventory.wh_col_coverage')} (${coverageUnitShort(data?.coverage_unit, t)})`} tip={t('inventory.tip_days_coverage')} sortKey="coverage" sort={sort} onSort={toggleSort} />
+ <ThTip label={`${t('inventory.wh_col_coverage')} (${coverageUnitShort(data?.coverage_unit, t)})`} tip={t('inventory.tip_days_coverage')} sortKey="coverage" sort={sort} onSort={toggleSort} dataTour="inv.coverage" />
  <ThTip label={t('inventory.col_demand_lt')} tip={t('inventory.tip_demand_lt')} sortKey="demand_lt" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_qty_to_order')} tip={t('inventory.tip_qty_to_order')} sortKey="qty" sort={sort} onSort={toggleSort} dataTour="inv.suggest" />
- <ThTip label={t('inventory.col_lead_time')} tip={t('inventory.tip_lead_time')} sortKey="lead_time" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_lead_time')} tip={t('inventory.tip_lead_time')} sortKey="lead_time" sort={sort} onSort={toggleSort} dataTour="inv.leadtime" />
  <ThTip label="MOQ" tip={t('inventory.tip_moq')} sortKey="moq" sort={sort} onSort={toggleSort} />
  <ThTip label="ABC-XYZ" tip={t('inventory.tip_abc_xyz')} sortKey="abc_xyz" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_warehouse_value')} tip={t('inventory.tip_warehouse_value')} sortKey="value" sort={sort} onSort={toggleSort} />
@@ -2566,6 +2569,8 @@ export default function InventoryPage() {
  <td style={{ padding: '10px 6px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  {item.calc_explanation && (
  <button
+ /* First row only: a tour anchor has to be unique to be findable. */
+ data-tour={idx === 0 ? 'inv.expand' : undefined}
  onClick={() => setExpandedSku(isExpanded ? null : item.sku)}
  title={t('inventory.title_see_calculation')}
  style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}

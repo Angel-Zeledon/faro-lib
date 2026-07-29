@@ -6,7 +6,12 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import type { TourStep } from './types'
 
-const CARD_W = 320
+const CARD_W = 340
+// An un-anchored step is a title card for the whole screen, not a pointer at
+// one control. Rendered small and floating it read as a tooltip that had lost
+// its target and was covering content at random; at this width, centred, it
+// reads as something deliberate.
+const PANEL_W = 460
 const PAD = 8          // breathing room between the cut-out and the element
 const GAP = 12         // between the cut-out and the card
 
@@ -28,6 +33,7 @@ export default function TourOverlay() {
   const { t } = useLanguage()
   const narrow = useIsNarrow()
   const [rect, setRect] = useState<Rect | null>(null)
+  const [nudgeUp, setNudgeUp] = useState(0)
   const cardRef = useRef<HTMLDivElement>(null)
 
   const step = active?.steps[stepIndex]
@@ -55,6 +61,21 @@ export default function TourOverlay() {
     }
   }, [step])
 
+  // A step's body is a short paragraph, so the card's height is not knowable
+  // until it renders. Placing it below a low anchor could push Next and Back
+  // off the bottom of the screen — the tour became unusable exactly on the
+  // steps that explain the most. Measure once painted and lift it back inside.
+  useLayoutEffect(() => {
+    setNudgeUp(0)
+  }, [step])
+
+  useLayoutEffect(() => {
+    const el = cardRef.current
+    if (!el || nudgeUp !== 0) return
+    const overflow = el.getBoundingClientRect().bottom - (window.innerHeight - 12)
+    if (overflow > 0) setNudgeUp(overflow)
+  }, [step, rect, nudgeUp, narrow])
+
   // Keyboard: Escape leaves, arrows navigate. A tour is optional by
   // definition, so leaving must always be one key away.
   useEffect(() => {
@@ -81,7 +102,7 @@ export default function TourOverlay() {
   if (narrow || !rect) {
     cardStyle = narrow
       ? { left: 12, right: 12, bottom: 12, width: 'auto' }
-      : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: CARD_W }
+      : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: PANEL_W }
   } else {
     const below = rect.top + rect.height + GAP
     const roomBelow  = window.innerHeight - below > 200
@@ -139,9 +160,15 @@ export default function TourOverlay() {
         className="modal-panel-enter"
         style={{
           position: 'fixed', ...cardStyle,
+          ...(nudgeUp > 0 && typeof cardStyle.top === 'number'
+            ? { top: Math.max(12, (cardStyle.top as number) - nudgeUp) }
+            : null),
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 12, padding: '16px 18px', outline: 'none',
           boxShadow: '0 24px 60px -20px rgba(0,0,0,0.5)',
+          // Never taller than the screen, whatever the copy says.
+          maxHeight: 'calc(100vh - 24px)',
+          display: 'flex', flexDirection: 'column',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
@@ -157,7 +184,13 @@ export default function TourOverlay() {
           </button>
         </div>
 
-        <p style={{ margin: '0 0 14px', fontSize: 12.5, lineHeight: 1.6, color: 'var(--muted)' }}>
+        {/* Steps explain WHY a thing exists, so bodies run to a short
+            paragraph. Capped and scrollable rather than allowed to grow off a
+            laptop screen, which would push the buttons out of reach. */}
+        <p style={{
+          margin: '0 0 14px', fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)',
+          overflowY: 'auto', minHeight: 0, whiteSpace: 'pre-line',
+        }}>
           {t(step.bodyKey)}
         </p>
 

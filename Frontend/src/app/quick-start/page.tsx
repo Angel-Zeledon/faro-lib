@@ -68,7 +68,7 @@ function StepBar({ step }: { step: number }) {
  { n: 3, label: t('qs.step3') },
  ]
  return (
- <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: 40 }}>
+ <div data-tour="qs.steps" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: 40 }}>
  {steps.map((s, i) => (
  <div key={s.n} style={{ display: 'flex', alignItems: 'center' }}>
  <StepBubble n={s.n} label={s.label} active={step === s.n} done={step > s.n} />
@@ -431,7 +431,7 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  }
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
- <div>
+ <div data-tour="qs.name">
  <label htmlFor="qs-session-name" style={labelStyle}>
  {t('qs.plan_name_label')}
  </label>
@@ -1129,7 +1129,7 @@ function QuickStartPageContent() {
  {/* Source selector: upload a new file vs reuse a previously uploaded
  dataset. The reuse tab only exists once the tenant has datasets. */}
  {(datasets.length > 0 || clonableSessions.length > 0) && (
- <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+ <div data-tour="qs.tabs" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
  {([
  { value: 'upload',   labelKey: 'qs.reuse_tab_upload' },
  ...(datasets.length > 0
