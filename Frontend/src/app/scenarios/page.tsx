@@ -120,7 +120,7 @@ function RuleEditor({ rule, onChange, onRemove, tourAnchor }: {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         {isDemand && (
           <>
-            <div>
+            <div data-tour={tourAnchor ? 'sc.multiplier' : undefined}>
               <FieldLabel variant="eyebrow" htmlFor={`mult-${rule.type}`}>{t('scenarios.field_multiplier')}</FieldLabel>
               <Input
                 id={`mult-${rule.type}`} type="number" step="0.05" min="0.01" max="10"
@@ -137,7 +137,10 @@ function RuleEditor({ rule, onChange, onRemove, tourAnchor }: {
                 size="sm" tone="bg"
               />
             </div>
-            <div>
+            {/* The scope/date anchors sit on the SECOND field of each pair, so the
+                tour card — which opens below the highlight — never hides the
+                other half of the pair the step is talking about. */}
+            <div data-tour={tourAnchor ? 'sc.scope' : undefined}>
               <FieldLabel variant="eyebrow">{t('scenarios.field_category')}</FieldLabel>
               <Input
                 value={rule.category ?? ''} placeholder={t('scenarios.scope_all')}
@@ -153,7 +156,7 @@ function RuleEditor({ rule, onChange, onRemove, tourAnchor }: {
                 size="sm" tone="bg"
               />
             </div>
-            <div>
+            <div data-tour={tourAnchor ? 'sc.dates' : undefined}>
               <FieldLabel variant="eyebrow">{t('scenarios.field_date_to')}</FieldLabel>
               <Input
                 type="date" value={rule.date_to ?? ''}
@@ -477,6 +480,7 @@ export default function ScenariosPage() {
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
               <button
+                data-tour="sc.add_rule"
                 onClick={() => setRules([...rules, blankRule('demand_multiplier')])}
                 style={{ ...btnStyle, border: `1px solid ${C.border}`, color: C.muted }}
               >
@@ -533,7 +537,7 @@ export default function ScenariosPage() {
           )}
 
           {/* Saved list */}
-          <Card padding={18}>
+          <Card padding={18} data-tour="sc.saved">
             <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 12px' }}>
               {t('scenarios.saved_list_title')}
             </h2>

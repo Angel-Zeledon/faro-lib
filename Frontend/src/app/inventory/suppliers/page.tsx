@@ -515,6 +515,7 @@ function SuppliersPageInner() {
           </Link>
           {!isFormOpen && (
             <button
+              data-tour="sup.add"
               onClick={() => { setEditing(null); setShowForm(true) }}
               style={{
                 all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
