@@ -83,10 +83,34 @@ export default function TourOverlay() {
     const el = cardRef.current
     if (!el || narrow || topOverride !== null) return
     const r = el.getBoundingClientRect()
-    const max = Math.max(12, window.innerHeight - 12 - r.height)
-    const wanted = rect
-      ? Math.min(r.top, max)                                  // anchored: clamp
-      : Math.max(12, Math.round((window.innerHeight - r.height) / 2))  // centre
+    const vh = window.innerHeight
+    const h = r.height
+
+    if (!rect) {
+      const centred = Math.max(12, Math.round((vh - h) / 2))
+      if (Math.abs(centred - r.top) > 1) setTopOverride(centred)
+      return
+    }
+
+    // Placement before this ran used a fixed 200px guess for the card's
+    // height, which is wrong as soon as a step says anything substantial: a
+    // 400px card "placed above" a low anchor still ran down over it, so the
+    // tour covered the very control it was pointing at. Now that the real
+    // height is known, prefer whichever side the card actually fits in.
+    const above = rect.top - GAP - h
+    const below = rect.top + rect.height + GAP
+    let wanted: number
+    if (above >= 12) {
+      wanted = above
+    } else if (below + h <= vh - 12) {
+      wanted = below
+    } else {
+      // Neither side fits. Overlap is unavoidable, so cover the smaller part
+      // of the anchor: sit at whichever edge leaves more of it visible.
+      wanted = rect.top > vh - rect.top - rect.height
+        ? 12
+        : Math.max(12, vh - 12 - h)
+    }
     if (Math.abs(wanted - r.top) > 1) setTopOverride(wanted)
   }, [step, rect, topOverride, narrow])
 

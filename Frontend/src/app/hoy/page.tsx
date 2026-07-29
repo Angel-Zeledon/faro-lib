@@ -164,7 +164,7 @@ function LeadTimeLearning({ item }: { item: ActionItem }) {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier, tourAnchor }: {
+function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier, tourAnchor, tourAnchors }: {
  item:        ActionItem
  onApprove:   () => void
  onReject:    () => void
@@ -174,6 +174,9 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
  /** Set on the first card only — a tour anchor has to be unique in the DOM,
   *  and this used to repeat once per recommendation. */
  tourAnchor?: string
+ /** Same rule, for the three controls inside the card the tour explains one
+  *  by one. Undefined on every card but the first. */
+ tourAnchors?: { supplier?: string; qty?: string; decide?: string }
 }) {
  const { t } = useLanguage()
  const [editing, setEditing] = useState(false)
@@ -248,7 +251,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
      {/* Supplier is a decision, not a label: the buyer can send this line to
          whoever they want before the order is generated. */}
      {suppliers.length > 0 ? (
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+      <label data-tour={tourAnchors?.supplier} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('hoy.cart_supplier_label')}</span>
        <select
         value={item.supplier_id ?? (suppliers.find(s => s.name === item.supplier)?.id ?? '')}
@@ -415,7 +418,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
    {/* Quantity + Value + Actions */}
    {!isRejected && (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+     <div data-tour={tourAnchors?.qty} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.label_order_qty')}</span>
       {editing ? (
        <input
@@ -453,7 +456,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
 
      {/* Action buttons */}
      {!isApproved ? (
-      <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
+      <div data-tour={tourAnchors?.decide} style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
        {canOrder ? (
         <>
          <button onClick={onApprove} style={{
@@ -1267,7 +1270,7 @@ export default function HoyPage() {
          }}>
           {t('hoy.overdue_section_title')}
          </div>
-         {overduePOs.map(o => (
+         {overduePOs.map((o, idx) => (
           <div key={`${o.po_log_id}-${o.supplier}`} style={{
            display: 'flex', alignItems: 'center', gap: 10,
            padding: '12px 16px', borderRadius: 10,
@@ -1279,6 +1282,8 @@ export default function HoyPage() {
             {t('hoy.overdue_line_suffix')} <strong>{o.days_overdue}</strong> {t('hoy.overdue_days_ago_suffix')}
            </span>
            <button
+            /* First row only: a tour anchor has to be unique to be findable. */
+            data-tour={idx === 0 ? 'hoy.receive' : undefined}
             onClick={() => setReceivingPO(o.po_log_id)}
             style={{
              all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -1386,6 +1391,7 @@ export default function HoyPage() {
             key={item.sku}
             item={item}
             tourAnchor={idx === 0 ? 'hoy.why' : undefined}
+            tourAnchors={idx === 0 ? { supplier: 'hoy.supplier', qty: 'hoy.qty', decide: 'hoy.decide' } : undefined}
             onApprove={() => approveItem(item.sku)}
             onReject={() => rejectItem(item.sku)}
             onChangeQty={qty => changeQty(item.sku, qty)}
@@ -1524,7 +1530,7 @@ export default function HoyPage() {
           {/* Destination warehouse (5.4) — only rendered for multi-warehouse
               tenants; mono-warehouse tenants see the cart exactly as before. */}
           {multi && (
-           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--dim)' }}>
+           <label data-tour="hoy.cart_warehouse" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--dim)' }}>
             {t('hoy.cart_destination')}
             <select
              name="cart_destination"
@@ -1542,7 +1548,7 @@ export default function HoyPage() {
             </select>
            </label>
           )}
-          <button onClick={downloadOC} style={{
+          <button data-tour="hoy.download" onClick={downloadOC} style={{
            all: 'unset', cursor: 'pointer', padding: '10px 20px', borderRadius: 8,
            background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 700,
            display: 'flex', alignItems: 'center', gap: 8,
