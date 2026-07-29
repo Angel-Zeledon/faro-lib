@@ -113,7 +113,14 @@
     -moz-osx-font-smoothing: grayscale;
     line-height: 1.5;
     min-height: 100vh;
-    overflow: hidden;
+    /* No `overflow: hidden` here. When <html> is `overflow: visible`, the body's
+       overflow propagates to the viewport, so hiding it here made the whole
+       document unscrollable — the wheel did nothing and the scrollbar never
+       appeared. Inside the app that went unnoticed, because `.app-shell` is
+       `h-screen overflow-hidden` and does its own clipping; every route outside
+       the shell (landing, login, signup) simply could not be scrolled past the
+       first viewport. The shell keeps clipping itself, so removing this costs
+       the app nothing. */
   }
 
   /* Custom scrollbar */

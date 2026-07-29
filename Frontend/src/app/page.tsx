@@ -152,17 +152,39 @@ function useScrollReveal() {
  if (armed.length === 0) return
 
  const show = (el: HTMLElement) => el.classList.add('reveal-in')
+ let observerWorks = false
  const observer = new IntersectionObserver((entries, obs) => {
+ observerWorks = true
  entries.forEach(entry => {
  if (!entry.isIntersecting) return
  show(entry.target as HTMLElement)
  obs.unobserve(entry.target) // reveal once; never re-animate on the way back up
  })
- }, { threshold: 0.04, rootMargin: '0px 0px -6% 0px' })
+ }, {
+ threshold: 0.04,
+ // Bottom is pulled in slightly so a block reveals just after it enters rather
+ // than the instant its first pixel shows.
+ //
+ // The top is expanded by the whole document, which makes "already scrolled
+ // past" count as intersecting. This is not padding for looks: a fast scroll —
+ // a trackpad fling, PageDown, dragging the scrollbar — can carry a short card
+ // from below the viewport to above it between two frames, and an observer
+ // watching only the viewport never sees it, so it stays invisible forever.
+ // Two cards in the Profesional grid did exactly that, reproducibly, and a
+ // single fling past the whole page left twenty behind. The document's own
+ // height is the largest jump that can exist, so nothing can outrun it.
+ rootMargin: `${Math.ceil(document.documentElement.scrollHeight)}px 0px -6% 0px`,
+ })
 
  armed.forEach(el => observer.observe(el))
- // Failsafe: if the observer somehow never fires, nothing stays invisible.
- const failsafe = window.setTimeout(() => armed.forEach(show), 3000)
+ // Failsafe for an observer that never fires at all — not a deadline the reader
+ // has to beat. It used to reveal everything unconditionally after 3s, which on
+ // a page this tall meant the whole thing had already appeared while the reader
+ // was still near the top, and nothing was left to animate. An observer that has
+ // delivered even one entry is working, so the timer stands down.
+ const failsafe = window.setTimeout(() => {
+ if (!observerWorks) armed.forEach(show)
+ }, 3000)
 
  return () => {
  observer.disconnect()
