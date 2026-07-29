@@ -14,9 +14,10 @@ import type {
 import Spinner from '@/components/ui/Spinner'
 import {
  Database, FileSpreadsheet, Upload, Plus, Trash2, RefreshCw,
- CheckCircle2, XCircle, Clock, Edit2, X,
+ CheckCircle2, XCircle, Edit2, X,
  Play, Save, Link2, Table2, AlertTriangle, Eye,
  Layers, ArrowLeft, BarChart2, ChevronUp, ChevronDown,
+ Terminal, Search,
 } from 'lucide-react'
 import Input, { FieldLabel, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -30,23 +31,83 @@ import { useToast } from '@/contexts/ToastContext'
 import DataTabs from '@/components/layout/DataTabs'
 
 // ── Palette ──────────────────────────────────────────────────────────────────
+/**
+ * A token at partial strength. `var(--x)` cannot take the 8-digit hex suffix a
+ * literal can — `var(--accent)18` is not a colour, it is silently dropped — so
+ * every tint on this screen goes through color-mix instead.
+ */
+const alpha = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`
+
+/**
+ * Tokens only.
+ *
+ * This screen used to carry its own hex set — #10b981 green, #3b82f6 blue,
+ * #ef4444 red, #f59e0b amber — which did two bad things at once: it read as a
+ * different product from the rest of Faro (the app's accent is the petrol teal
+ * `--accent`, not an emerald), and it failed WCAG AA as text. #10b981 on the
+ * white surface is 2.5:1, and it was the colour of the active tab label, the
+ * "connected" badge and the SKU column. Everything now points at globals.css,
+ * so the screen follows the theme instead of fighting it.
+ */
 const C = {
  bg: 'var(--bg)',
  surface: 'var(--surface)',
  card: 'var(--surface-2)',
+ inset: 'var(--surface-3)',
  border: 'var(--border)',
  border2: 'var(--border-strong)',
- green: '#10b981',
- greenDim: '#10b98120',
- greenHov: '#059669',
- blue: '#3b82f6',
- blueDim: '#3b82f615',
- amber: '#f59e0b',
- red: '#ef4444',
- redDim: '#ef444418',
+ green: 'var(--accent)',
+ greenDim: 'var(--accent-dim)',
+ blue: 'var(--info)',
+ blueDim: alpha('var(--info)', 12),
+ amber: 'var(--warning)',
+ red: 'var(--danger)',
+ redDim: alpha('var(--danger)', 10),
  text: 'var(--text)',
  muted: 'var(--muted)',
- muted2: 'var(--surface-3)',
+ dim: 'var(--dim)',
+}
+
+/**
+ * One monospace stack for the whole screen — the SQL surface and every value in
+ * a result grid. This is the only new font family the visual pass introduces,
+ * and it is what makes a query read as code and a column of figures read as
+ * data rather than as prose.
+ */
+const MONO = "ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, 'Liberation Mono', monospace"
+
+/**
+ * The error block, shared by every failure this screen can show.
+ *
+ * The fill is `--surface`, not a danger wash. `--danger` text on its own 10%
+ * tint measures 4.1:1 on the light theme and 4.2:1 on the dark one — both short
+ * of AA, and an error message is the last text in the app that should be hard
+ * to read. On the plain surface it is 4.8:1 / 4.6:1, and the 3px left rule
+ * carries the alarm the fill used to.
+ */
+const errorBlock: React.CSSProperties = {
+ background: 'var(--surface)',
+ border: `1px solid ${alpha('var(--danger)', 38)}`,
+ borderLeft: '3px solid var(--danger)',
+ borderRadius: 8, padding: '11px 14px',
+ color: 'var(--danger)', fontSize: 12.5, lineHeight: 1.55,
+}
+
+/**
+ * Whether a grid value should sit against the right edge.
+ *
+ * A database client aligns numerics right so the decimal points stack and the
+ * eye can compare magnitudes down a column. Dates stay left: they are fixed
+ * width, and right-aligning them only detaches them from their header.
+ */
+function isNumeric(v: unknown): boolean {
+ if (typeof v === 'number') return Number.isFinite(v)
+ if (typeof v !== 'string') return false
+ const s = v.trim()
+ if (!s) return false
+ // Reject anything date-shaped (2026-06-01, 01/06/2026) before the number test.
+ if (/[-/:]/.test(s.slice(1))) return false
+ return !Number.isNaN(Number(s.replace(/,/g, '')))
 }
 
 // ── Column auto-detection heuristic ──────────────────────────────────────────
@@ -67,19 +128,32 @@ function guessColumns(cols: string[]): { dateCol: string; targetCol: string; sku
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
+/**
+ * A quiet connection-status marker, the way a database client shows it: the
+ * colour lives in a small dot, the label stays neutral text.
+ *
+ * The label used to be tinted the same colour as the badge fill, which is where
+ * the contrast went — amber "pendiente" text on an amber wash is 2.9:1 on the
+ * light theme. A dot is a non-text UI component (3:1 threshold, which all three
+ * states clear comfortably) and the label now rides `--muted`, 6.5:1 or better
+ * on every surface this badge lands on.
+ */
 function StatusBadge({ status }: { status: string }) {
  const { t } = useLanguage()
  const cfg = {
- connected: { icon: CheckCircle2, color: C.green, label: t('data.status_connected') },
- pending: { icon: Clock, color: C.amber, label: t('data.status_pending') },
- error: { icon: XCircle, color: C.red, label: t('data.status_error') },
- }[status] ?? { icon: Clock, color: C.muted, label: status }
- const Icon = cfg.icon
+ connected: { color: C.green, label: t('data.status_connected') },
+ pending: { color: C.amber, label: t('data.status_pending') },
+ error: { color: C.red, label: t('data.status_error') },
+ }[status] ?? { color: C.dim, label: status }
  return (
- <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
- padding: '2px 8px', borderRadius: 20, background: cfg.color + '18',
- color: cfg.color, fontSize: 11, fontWeight: 600 }}>
- <Icon size={10} /> {cfg.label}
+ <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+ padding: '2px 8px 2px 7px', borderRadius: 20,
+ background: C.card, border: `1px solid ${C.border}`,
+ color: C.muted, fontSize: 10.5, fontWeight: 600,
+ letterSpacing: '0.01em', whiteSpace: 'nowrap', flexShrink: 0 }}>
+ <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%',
+ background: cfg.color, flexShrink: 0 }} />
+ {cfg.label}
  </span>
  )
 }
@@ -100,34 +174,76 @@ function fmt(bytes: number | null) {
 }
 
 // ── Data grid ─────────────────────────────────────────────────────────────────
+/**
+ * Shared chrome for every result grid on this screen (query results, file
+ * preview, spreadsheet editor). A result set should read as data, not as a
+ * document: monospace values so glyph widths line up, a header that is visibly
+ * a header rather than a first row, tight rows, and hairlines instead of a
+ * boxed border on every cell.
+ */
+const GRID_SHELL: React.CSSProperties = {
+ overflow: 'auto', maxHeight: 380, borderRadius: 10,
+ border: `1px solid ${C.border}`, background: C.surface,
+}
+
+/** Header cell: uppercase, tracked out, and sticky so it survives the scroll. */
+const gridTh = (align: 'left' | 'right' = 'left'): React.CSSProperties => ({
+ padding: '9px 12px', textAlign: align, whiteSpace: 'nowrap',
+ background: C.card, color: C.muted, fontWeight: 600, fontSize: 10,
+ textTransform: 'uppercase', letterSpacing: '0.06em',
+ borderBottom: `1px solid ${C.border2}`, position: 'sticky', top: 0, zIndex: 1,
+})
+
+/** The zebra: `--surface` base, `--surface-2` on odd rows. Barely there on
+ *  purpose — it should guide the eye across a wide row, not stripe the panel. */
+const gridRowBg = (i: number) => (i % 2 === 1 ? C.card : C.surface)
+
 function DataGrid({ columns, rows }: { columns: string[]; rows: Record<string, unknown>[] }) {
  const { t } = useLanguage()
  if (!columns.length) return <p style={{ color: C.muted, padding: 20 }}>{t('common.no_data')}</p>
+
+ // Align a column by what it actually holds, decided once from the first
+ // non-null value rather than per cell, so one stray string cannot make a
+ // numeric column jump sides halfway down.
+ const alignOf = new Map(columns.map(c => {
+  const sample = rows.find(r => r[c] != null)?.[c]
+  return [c, isNumeric(sample) ? 'right' as const : 'left' as const]
+ }))
+
  return (
- <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 380, borderRadius: 8,
- border: `1px solid ${C.border}` }}>
+ <div style={GRID_SHELL}>
  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
  <thead>
  <tr>
  {columns.map(c => (
- <th key={c} style={{ padding: '8px 12px', textAlign: 'left', whiteSpace: 'nowrap',
- background: 'var(--surface-2)', color: C.muted, fontWeight: 600, fontSize: 11,
- borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0 }}>
- {c}
- </th>
+ <th key={c} style={gridTh(alignOf.get(c))}>{c}</th>
  ))}
+ {/* Slack column. Without it a three-column result stretches each column
+     to a third of the panel and the values drift apart; a database client
+     sizes columns to their content and leaves the remainder empty. */}
+ <th aria-hidden="true" style={{ ...gridTh(), width: '100%' }} />
  </tr>
  </thead>
  <tbody>
  {rows.map((row, i) => (
- <tr key={i} style={{ background: i % 2 === 0 ? C.card : C.surface }}>
+ <tr key={i} style={{ background: gridRowBg(i), transition: `background var(--dur-1) var(--ease-out)` }}
+ onMouseEnter={e => (e.currentTarget.style.background = C.inset)}
+ onMouseLeave={e => (e.currentTarget.style.background = gridRowBg(i))}>
  {columns.map(c => (
- <td key={c} style={{ padding: '6px 12px', color: C.text, whiteSpace: 'nowrap',
- borderBottom: `1px solid ${C.border}`, maxWidth: 220,
+ <td key={c} style={{ padding: '5px 12px', color: C.text, whiteSpace: 'nowrap',
+ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.7,
+ textAlign: alignOf.get(c), borderBottom: `1px solid ${C.border}`, maxWidth: 260,
  overflow: 'hidden', textOverflow: 'ellipsis' }}>
- {row[c] == null ? <span style={{ color: C.muted }}>null</span> : String(row[c])}
+ {/* NULL is a value, not missing text — italic dim is the convention every
+     database client uses, and it keeps it from reading as the literal string
+     "null". Italic carries the distinction; the colour stays `--muted` rather
+     than `--dim`, which is only 3.5:1 on the light surface. */}
+ {row[c] == null
+ ? <span style={{ color: C.muted, fontStyle: 'italic' }}>null</span>
+ : String(row[c])}
  </td>
  ))}
+ <td aria-hidden="true" style={{ borderBottom: `1px solid ${C.border}` }} />
  </tr>
  ))}
  </tbody>
@@ -205,7 +321,7 @@ function LineChart({ data, color = C.green, height = 130, outliers, showOutliers
  if (!outlierMap.has(d.date)) return null
  return (
  <g key={`o-${d.date}`}>
- <circle cx={X(i)} cy={Y(d.value)} r={7} fill={`${C.red}20`} />
+ <circle cx={X(i)} cy={Y(d.value)} r={7} fill={alpha(C.red, 20)} />
  <circle cx={X(i)} cy={Y(d.value)} r={3.5} fill={C.red} opacity={0.9} />
  </g>
  )
@@ -234,20 +350,23 @@ function DropZone({ onFile, compact }: { onFile: (f: File) => void; compact?: bo
  onDrop={onDrop}
  onClick={() => ref.current?.click()}
  style={{
- border: `2px dashed ${drag ? C.green : C.border2}`,
- borderRadius: 12, padding: compact ? '24px 20px' : '40px 20px',
- textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
- background: drag ? C.greenDim : 'transparent',
+ border: `1.5px dashed ${drag ? C.green : C.border2}`,
+ borderRadius: 12, padding: compact ? '26px 20px' : '44px 20px',
+ textAlign: 'center', cursor: 'pointer',
+ transition: `border-color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out)`,
+                 // `--surface`, a step above the panel behind it, so the drop target reads
+ // as a place to put something rather than as a hole in the page.
+ background: drag ? C.greenDim : C.surface,
  }}
  >
  <input ref={ref} type="file" name="dataset_file" aria-label={t('data.drag_or_browse')} accept=".csv,.xlsx,.xls,.parquet,.json"
  style={{ display: 'none' }}
  onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }} />
- <Upload size={compact ? 24 : 32} color={drag ? C.green : C.muted} style={{ margin: '0 auto 8px' }} />
- <p style={{ color: drag ? C.green : C.text, fontWeight: 600, margin: '0 0 4px' }}>
+ <Upload size={compact ? 22 : 28} color={drag ? C.green : C.dim} style={{ margin: '0 auto 10px' }} aria-hidden="true" />
+ <p style={{ color: drag ? C.green : C.text, fontWeight: 600, fontSize: 13.5, margin: '0 0 5px' }}>
  {drag ? t('data.drop_to_upload') : t('data.drag_or_browse')}
  </p>
- <p style={{ color: C.muted, fontSize: 12, margin: 0 }}>{t('data.file_types_hint')}</p>
+ <p style={{ color: C.muted, fontSize: 11.5, margin: 0, fontFamily: MONO }}>{t('data.file_types_hint')}</p>
  </div>
  )
 }
@@ -324,16 +443,17 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
  <Input id={fid('password')} name="password" size="lg" tone="surface" border="strong" type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
  </div>
  </div>
- <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+ <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 2 }}>
  {onCancel && (
- <button onClick={onCancel} style={{ padding: '9px 18px', borderRadius: 8,
- background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer' }}>
+ <button className="btn" onClick={onCancel} style={{ padding: '9px 18px', borderRadius: 8,
+ background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted,
+ fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
  {t('common.cancel')}
  </button>
  )}
- <button onClick={() => onSave(form)} disabled={saving}
+ <button className="btn" onClick={() => onSave(form)} disabled={saving}
  style={{ padding: '9px 20px', borderRadius: 8, background: C.green,
- border: 'none', color: '#fff', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+ border: 'none', color: '#fff', fontWeight: 600, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer',
  opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
  {saving ? <Spinner size={14} /> : <Save size={14} />}
  {isEdit ? t('data.btn_save_changes') : t('data.btn_create_connection')}
@@ -410,17 +530,29 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  }
 
  return (
- <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
- <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
- <span style={{ color: C.muted, fontSize: 12, fontWeight: 600 }}>{t('data.sql_editor_label')}</span>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+ {/* The editor is one framed object — toolbar welded to the code surface by a
+     shared border — instead of a floating label, a floating button row and a
+     boxed textarea. That frame is what makes it read as a query pane rather
+     than as a form field that happens to be monospace. */}
+ <div style={{ border: `1px solid ${C.border2}`, borderRadius: 10, overflow: 'hidden',
+ background: C.inset }}>
+ <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+ gap: 12, padding: '8px 10px 8px 14px', background: C.surface,
+ borderBottom: `1px solid ${C.border}` }}>
+ <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
+ color: C.muted, fontSize: 10, fontWeight: 700,
+ textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+ <Terminal size={12} aria-hidden="true" /> {t('data.sql_editor_label')}
+ </span>
  <div style={{ display: 'flex', gap: 8 }}>
- <button onClick={save} disabled={saving || !sql.trim()}
+ <button className="btn" onClick={save} disabled={saving || !sql.trim()}
  style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent',
  border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer',
- display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600 }}>
  {saving ? <Spinner size={12} /> : <Save size={12} />} {t('data.btn_save_query')}
  </button>
- <button onClick={run} disabled={running || !sql.trim()}
+ <button className="btn" onClick={run} disabled={running || !sql.trim()}
  style={{ padding: '6px 16px', borderRadius: 7, background: C.green,
  border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
@@ -438,26 +570,37 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  spellCheck={false}
  placeholder={t('data.query_placeholder')}
  style={{
- width: '100%', minHeight: 140, background: 'var(--surface-2)', border: `1px solid ${C.border2}`,
- borderRadius: 8, padding: '12px 14px',
- fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 13, color: C.text,
- lineHeight: 1.6, resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+ // `--surface-3`, one step below the panel it sits on, so the code
+ // surface reads as inset rather than as more page. No border of its
+ // own (the frame draws one), and the roomier line height a query needs.
+ display: 'block', width: '100%', minHeight: 180,
+ background: C.inset, border: 'none', borderRadius: 0,
+ padding: '14px 16px',
+ fontFamily: MONO, fontSize: 12.5, color: C.text,
+ lineHeight: 1.75, tabSize: 2,
+ resize: 'vertical', outline: 'none', boxSizing: 'border-box',
  }}
  />
+ </div>
+                 {/* A database error is the server talking, so it keeps the code voice. */}
  {err && (
- <div style={{ background: C.redDim, border: `1px solid ${C.red}30`,
- borderRadius: 8, padding: '10px 14px', color: C.red, fontSize: 13 }}>
+ <div style={{ ...errorBlock, fontFamily: MONO, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
  {err}
  </div>
  )}
  {result && (
  <div>
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
- <Table2 size={14} color={C.green} />
- <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>
- {result.row_count} {result.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{result.truncated ? ` ${t('data.truncated_suffix')}` : ''}
+ {/* Result-set status line: the row count is the fact, so it reads as a
+     figure in the code voice; the two exports stay where they were. */}
+ <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+ <Table2 size={13} color={C.muted} aria-hidden="true" />
+ <span style={{ color: C.text, fontSize: 12, fontWeight: 600, fontFamily: MONO }}>
+ {result.row_count}
  </span>
- <button onClick={exportXlsx} disabled={exporting}
+ <span style={{ color: C.muted, fontSize: 12 }}>
+ {result.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{result.truncated ? ` ${t('data.truncated_suffix')}` : ''}
+ </span>
+ <button className="btn" onClick={exportXlsx} disabled={exporting}
  title={t('data.btn_export_xlsx_hint')}
  style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 7,
  background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted,
@@ -466,10 +609,10 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  opacity: exporting ? 0.6 : 1 }}>
  {exporting ? <Spinner size={12} /> : <FileSpreadsheet size={12} />} {t('data.btn_export_xlsx')}
  </button>
- <button onClick={materialize} disabled={materializing}
+ <button className="btn" onClick={materialize} disabled={materializing}
  title={t('data.btn_materialize_hint')}
  style={{ padding: '6px 14px', borderRadius: 7,
- background: 'transparent', border: `1px solid ${C.green}`, color: C.green,
+ background: C.greenDim, border: `1px solid ${alpha(C.green, 45)}`, color: C.green,
  fontWeight: 600, cursor: materializing ? 'default' : 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
  opacity: materializing ? 0.6 : 1 }}>
@@ -485,7 +628,41 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
 
 // ── Analysis: SKU Summary Table ───────────────────────────────────────────────
 const TD: React.CSSProperties = {
- padding: '7px 12px', color: 'var(--text)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
+ padding: '6px 12px', color: 'var(--text)', borderBottom: '1px solid var(--border)',
+ whiteSpace: 'nowrap', lineHeight: 1.7,
+}
+
+/**
+ * The section caption. Six near-identical copies of this used to sit inline and
+ * disagreed on tracking (0.05em, 0.06em, none at all); one declaration is what
+ * "one type scale" actually costs.
+ */
+const EYEBROW: React.CSSProperties = {
+ color: 'var(--muted)', fontSize: 10, fontWeight: 700,
+ textTransform: 'uppercase', letterSpacing: '0.06em',
+}
+
+/** The panel every statistic on this screen sits in. */
+const PANEL: React.CSSProperties = {
+ background: 'var(--surface)', borderRadius: 10,
+ border: '1px solid var(--border)', padding: '13px 15px',
+}
+
+/** Figures in a table are display type: monospace so the columns line up. */
+const TD_NUM: React.CSSProperties = { ...TD, fontFamily: MONO, fontSize: 11.5, textAlign: 'right' }
+
+/**
+ * A classification's colour, carried by a dot instead of by the word itself.
+ *
+ * The words used to be tinted directly, which is where the contrast went: amber
+ * on the light surface is 3.2:1 and the old #f59e0b was 2.2:1. A 6px dot is a
+ * non-text UI component (3:1), the label rides `--text`, and the signal is
+ * identical — this is the same move the status badge makes.
+ */
+function Dot({ color }: { color: string }) {
+ return <span aria-hidden="true" style={{ display: 'inline-block', width: 6, height: 6,
+  borderRadius: '50%', background: color, marginRight: 6, verticalAlign: 'middle',
+  position: 'relative', top: -1 }} />
 }
 
 function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
@@ -497,14 +674,12 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  const { t } = useLanguage()
  if (!rows.length) return <p style={{ color: C.muted, padding: 20 }}>{t('data.no_skus_analysed')}</p>
 
- const Hdr = ({ label, col }: { label: string; col: string }) => {
+ const Hdr = ({ label, col, align = 'left' }: { label: string; col: string; align?: 'left' | 'right' }) => {
  const active = sortCol === col
  return (
  <th onClick={() => onSort(col)}
- style={{ padding: '9px 12px', textAlign: 'left', whiteSpace: 'nowrap',
- background: 'var(--surface-2)', color: active ? C.green : C.muted, fontWeight: 600,
- fontSize: 11, borderBottom: `1px solid ${C.border}`, cursor: 'pointer',
- position: 'sticky', top: 0, userSelect: 'none' }}>
+ style={{ ...gridTh(align), color: active ? C.green : C.muted,
+ cursor: 'pointer', userSelect: 'none' }}>
  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
  {label}
  {active ? (sortDir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />) : null}
@@ -514,17 +689,16 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  }
 
  return (
- <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 460,
- borderRadius: 8, border: `1px solid ${C.border}` }}>
+ <div style={{ ...GRID_SHELL, maxHeight: 460 }}>
  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
  <thead>
  <tr>
  <Hdr label={t('data.col_sku')} col="sku" />
- <Hdr label={t('data.col_n')} col="n" />
- <Hdr label={t('data.col_mean')} col="mean" />
- <Hdr label={t('data.col_cv')} col="cv" />
+ <Hdr label={t('data.col_n')} col="n" align="right" />
+ <Hdr label={t('data.col_mean')} col="mean" align="right" />
+ <Hdr label={t('data.col_cv')} col="cv" align="right" />
  <Hdr label={t('data.col_seasonality')} col="seasonality_class" />
- <Hdr label={t('data.col_period')} col="dominant_period" />
+ <Hdr label={t('data.col_period')} col="dominant_period" align="right" />
  <Hdr label={t('data.col_trend')} col="trend_direction" />
  <Hdr label={t('data.col_stationarity')} col="stationarity" />
  <Hdr label={t('data.col_demand_type')} col="croston_class" />
@@ -532,37 +706,43 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  </thead>
  <tbody>
  {rows.map((row, i) => {
- const bg = i % 2 === 0 ? C.card : C.surface
+ const bg = gridRowBg(i)
  const trendColor = row.trend_direction === 'increasing' ? C.green
- : row.trend_direction === 'decreasing' ? C.red : C.muted
+ : row.trend_direction === 'decreasing' ? C.red : C.dim
  const seasColor = row.seasonality_class === 'strong' ? C.green
- : row.seasonality_class === 'moderate' ? C.amber : C.muted
+ : row.seasonality_class === 'moderate' ? C.amber : C.dim
  const statColor = row.stationarity === 'stationary' ? C.green
- : row.stationarity ? C.amber : C.muted
+ : row.stationarity ? C.amber : C.dim
  return (
  <tr key={row.sku ?? i}
  onClick={() => row.sku && !row.error && onSelect(row.sku)}
  onMouseEnter={e => (e.currentTarget.style.background = C.greenDim)}
  onMouseLeave={e => (e.currentTarget.style.background = bg)}
- style={{ background: bg, cursor: row.error ? 'default' : 'pointer', transition: 'background 0.1s' }}>
- <td style={{ ...TD, color: C.green, fontWeight: 600 }}>
+ style={{ background: bg, cursor: row.error ? 'default' : 'pointer',
+ transition: `background var(--dur-1) var(--ease-out)` }}>
+ <td style={{ ...TD, color: C.green, fontWeight: 600, fontFamily: MONO, fontSize: 11.5 }}>
  {row.sku ?? '__all__'}
  {row.error && <span style={{ color: C.red, fontSize: 10, marginLeft: 6 }}>⚠ {t('data.error_short')}</span>}
  </td>
- <td style={TD}>{row.n?.toLocaleString() ?? '—'}</td>
- <td style={TD}>{row.mean != null ? row.mean.toFixed(1) : '—'}</td>
- <td style={{ ...TD, color: row.cv != null && row.cv > 1 ? C.amber : C.text }}>
+ <td style={TD_NUM}>{row.n?.toLocaleString() ?? '—'}</td>
+ <td style={TD_NUM}>{row.mean != null ? row.mean.toFixed(1) : '—'}</td>
+ {/* A CV above 1 is the one flag in this row whose colour is not also
+     spelled out in words, so it keeps its marker — as a dot, next to a
+     figure that stays readable. */}
+ <td style={{ ...TD_NUM, fontWeight: row.cv != null && row.cv > 1 ? 700 : 400 }}>
+ {row.cv != null && row.cv > 1 && <Dot color={C.amber} />}
  {row.cv != null ? row.cv.toFixed(2) : '—'}
  </td>
- <td style={{ ...TD, color: seasColor }}>
- {seasonalityClassLabel(t, row.seasonality_class)}
+ <td style={TD}>
+ <Dot color={seasColor} />{seasonalityClassLabel(t, row.seasonality_class)}
  </td>
- <td style={TD}>{row.dominant_period ?? '—'}</td>
- <td style={{ ...TD, color: trendColor }}>
+ <td style={TD_NUM}>{row.dominant_period ?? '—'}</td>
+ <td style={TD}>
+ <Dot color={trendColor} />
  {row.trend_direction === 'increasing' ? '↑ ' : row.trend_direction === 'decreasing' ? '↓ ' : row.trend_direction ? '→ ' : ''}
  {trendDirectionLabel(t, row.trend_direction)}
  </td>
- <td style={{ ...TD, color: statColor }}>{stationarityLabel(t, row.stationarity)}</td>
+ <td style={TD}><Dot color={statColor} />{stationarityLabel(t, row.stationarity)}</td>
  <td style={{ ...TD, color: C.muted, fontSize: 11 }}>{crostonClassLabel(t, row.croston_class)}</td>
  </tr>
  )
@@ -666,8 +846,13 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  <ArrowLeft size={13} /> {t('common.back')}
  </button>
  <div>
- <h3 style={{ margin: 0, color: C.text, fontSize: 15, fontWeight: 700 }}>{sku === '__all__' ? t('data.full_dataset') : sku}</h3>
- <span style={{ color: C.muted, fontSize: 12 }}>
+ <h3 style={{ margin: 0, color: C.text, fontSize: 15, fontWeight: 700,
+ fontFamily: sku === '__all__' ? undefined : MONO, letterSpacing: '-0.01em' }}>
+ {sku === '__all__' ? t('data.full_dataset') : sku}
+ </h3>
+ {/* Range and cadence are machine facts about the series, so they keep the
+     code voice the identifier above them already speaks. */}
+ <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO }}>
  {dr.start ? `${dr.start} → ${dr.end}` : ''}
  {dr.n_days != null ? ` · ${dr.n_days} ${Number(dr.n_days) === 1 ? t('data.days_singular') : t('data.days_plural')}` : ''}
  {dr.freq_detected ? ` · ${dr.freq_detected}` : ''}
@@ -678,10 +863,9 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 
  {/* Series chart */}
  {detail.series.length > 1 && (
- <div style={{ background: C.surface, borderRadius: 10, padding: '14px 14px 10px',
- border: `1px solid ${C.border}` }}>
+ <div style={{ ...PANEL, padding: '14px 14px 10px' }}>
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
- <div style={{ color: C.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
+ <div style={EYEBROW}>
  {t('data.section_time_series')}
  </div>
  {(detail.outliers?.length ?? 0) > 0 && (
@@ -690,10 +874,13 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  style={{
  display: 'flex', alignItems: 'center', gap: 5,
  padding: '3px 10px', borderRadius: 6,
- background: showOutliers ? `${C.red}15` : 'transparent',
- border: `1px solid ${showOutliers ? C.red + '40' : C.border2}`,
+                 // The toggle reads as "on" through its border and dot, not through a
+ // wash behind its own label: `--danger` over a danger tint is 4.1:1.
+ background: C.surface,
+ border: `1px solid ${showOutliers ? alpha(C.red, 45) : C.border2}`,
  color: showOutliers ? C.red : C.muted,
- fontSize: 11, cursor: 'pointer', transition: 'all 0.15s',
+ fontSize: 11, cursor: 'pointer',
+ transition: `border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out)`,
  }}
  >
  <AlertTriangle size={10} />
@@ -709,48 +896,54 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  {(detail.outliers?.length ?? 0) > 0 && (
  <div style={{
  background: C.surface, borderRadius: 10, padding: '14px 16px',
- border: `1px solid ${C.red}30`,
+ border: `1px solid ${alpha(C.red, 30)}`,
  }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
- <AlertTriangle size={13} color={C.red} />
- <span style={{ color: C.red, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+ <AlertTriangle size={13} color={C.red} aria-hidden="true" />
+ <span style={{ color: C.red, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
  {detail.outliers!.length} {detail.outliers!.length !== 1 ? t('data.outliers_detected_plural') : t('data.outliers_detected_singular')}
  </span>
  <span style={{ color: C.muted, fontSize: 11 }}>{t('data.iqr_method')}</span>
  </div>
- <div style={{ overflowX: 'auto' }}>
+ <div style={{ ...GRID_SHELL, maxHeight: 300 }}>
  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
  <thead>
  <tr>
- {[t('data.col_date'), t('data.col_value'), t('data.col_zscore'), t('data.col_direction'), t('data.col_reason')].map(h => (
- <th key={h} style={{
- padding: '6px 12px', textAlign: 'left', background: 'var(--surface-2)',
- color: C.muted, fontWeight: 600, fontSize: 11,
- borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap',
- }}>{h}</th>
+ {[
+ [t('data.col_date'), 'left'], [t('data.col_value'), 'right'],
+ [t('data.col_zscore'), 'right'], [t('data.col_direction'), 'left'],
+ [t('data.col_reason'), 'left'],
+ ].map(([h, a]) => (
+ <th key={h} style={gridTh(a as 'left' | 'right')}>{h}</th>
  ))}
  </tr>
  </thead>
  <tbody>
- {detail.outliers!.map((o, i) => (
- <tr key={o.date} style={{ background: i % 2 === 0 ? C.card : C.surface }}>
- <td style={{ padding: '6px 12px', color: C.muted, borderBottom: `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11 }}>
+ {detail.outliers!.map((o, i) => {
+ // High vs low is spelled out in the direction column, so the severity
+ // colour rides a dot and the figures stay at full contrast.
+ const sev = o.value > o.upper_bound ? C.red : C.amber
+ return (
+ <tr key={o.date} style={{ background: gridRowBg(i) }}>
+ <td style={{ ...TD, color: C.muted, fontFamily: MONO, fontSize: 11 }}>
  {o.date}
  </td>
- <td style={{ padding: '6px 12px', fontWeight: 700, borderBottom: `1px solid ${C.border}`, color: o.value > o.upper_bound ? C.red : C.amber }}>
+ <td style={{ ...TD_NUM, fontWeight: 700 }}>
  {o.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
  </td>
- <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, color: Math.abs(o.z_score) > 3 ? C.red : C.amber }}>
+ <td style={{ ...TD_NUM, fontWeight: Math.abs(o.z_score) > 3 ? 700 : 400 }}>
  {o.z_score > 0 ? '+' : ''}{o.z_score}σ
  </td>
- <td style={{ padding: '6px 12px', borderBottom: `1px solid ${C.border}`, color: o.value > o.upper_bound ? C.red : C.amber, whiteSpace: 'nowrap' }}>
+ <td style={{ ...TD, whiteSpace: 'nowrap' }}>
+ <Dot color={sev} />
  {o.value > o.upper_bound ? t('data.direction_high') : t('data.direction_low')}
  </td>
- <td style={{ padding: '6px 12px', color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>
+ <td style={{ ...TD, color: C.muted, fontSize: 11 }}>
  {o.reason}
  </td>
  </tr>
- ))}
+ )
+ })}
  </tbody>
  </table>
  </div>
@@ -759,19 +952,21 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 
  {/* Stat panels */}
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                 {/* Four panels, four different title colours — one of which (#f59e0b) was
+     2.2:1 on white. The colour moves to a 2px rule under the caption, where
+     it still tells the panels apart but no longer has to be legible type. */}
  {panels.map(p => (
- <div key={p.title} style={{ background: C.surface, borderRadius: 10,
- border: `1px solid ${C.border}`, padding: '12px 14px' }}>
- <div style={{ color: p.color, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
+ <div key={p.title} style={PANEL}>
+ <div style={{ ...EYEBROW, paddingBottom: 7, marginBottom: 9,
+ borderBottom: `2px solid ${alpha(p.color, 55)}` }}>
  {p.title}
  </div>
  {p.rows.map(([label, val]) => (
  <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between',
- alignItems: 'center', marginBottom: 5, gap: 8 }}>
+ alignItems: 'baseline', marginBottom: 5, gap: 8 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{label}</span>
- <span style={{ color: C.text, fontSize: 11, fontWeight: 600,
- maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
+ <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontFamily: MONO,
+ maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
  {String(val)}
  </span>
  </div>
@@ -782,10 +977,8 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 
  {/* STL Decomposition sparklines */}
  {decTrend.length > 2 && (
- <div style={{ background: C.surface, borderRadius: 10, padding: '14px 16px',
- border: `1px solid ${C.border}` }}>
- <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 14, letterSpacing: '0.05em' }}>
+ <div style={PANEL}>
+ <div style={{ ...EYEBROW, marginBottom: 14 }}>
  {t('data.section_stl')}
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
@@ -807,27 +1000,23 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 
  {/* Autocorrelation + Demand classification */}
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
- <div style={{ background: C.surface, borderRadius: 10, padding: '12px 14px',
- border: `1px solid ${C.border}` }}>
- <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 10 }}>{t('data.section_autocorrelation')}</div>
+ <div style={PANEL}>
+ <div style={{ ...EYEBROW, marginBottom: 10 }}>{t('data.section_autocorrelation')}</div>
  {[
  [t('data.ac_suggested_ar'), String(acf.suggested_ar_order ?? '—')],
  [t('data.ac_suggested_ma'), String(acf.suggested_ma_order ?? '—')],
  [t('data.ac_white_noise'), lb.is_white_noise != null ? (lb.is_white_noise ? t('common.yes') : t('common.no')) : '—'],
  [t('data.ac_ljung_box_p'), pf(lb.pvalue)],
  ].map(([l, v]) => (
- <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+ <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{l}</span>
- <span style={{ color: C.text, fontSize: 11, fontWeight: 600 }}>{v}</span>
+ <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontFamily: MONO }}>{v}</span>
  </div>
  ))}
  </div>
 
- <div style={{ background: C.surface, borderRadius: 10, padding: '12px 14px',
- border: `1px solid ${C.border}` }}>
- <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 10 }}>{t('data.section_demand_class')}</div>
+ <div style={PANEL}>
+ <div style={{ ...EYEBROW, marginBottom: 10 }}>{t('data.section_demand_class')}</div>
  {[
  [t('data.dc_croston_class'), crostonClassLabel(t, croston.classification as string | null)],
  [t('data.dc_adi'), n(croston.adi)],
@@ -835,9 +1024,9 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  [t('data.dc_best_fit_dist'), distributionLabel(t, dist.best_distribution as string | null)],
  [t('data.dc_is_normal'), norm.is_normal != null ? (norm.is_normal ? t('common.yes') : t('common.no')) : '—'],
  ].map(([l, v]) => (
- <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+ <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{l}</span>
- <span style={{ color: C.text, fontSize: 11, fontWeight: 600 }}>{String(v)}</span>
+ <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontFamily: MONO }}>{String(v)}</span>
  </div>
  ))}
  </div>
@@ -934,10 +1123,8 @@ function AnalysisTab({ source, columns, activeSheet }: {
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
  {/* Column mapping */}
- <div style={{ background: C.surface, borderRadius: 10, padding: '14px 16px',
- border: `1px solid ${C.border}` }}>
- <div style={{ color: C.muted, fontSize: 10, fontWeight: 700,
- textTransform: 'uppercase', marginBottom: 14, letterSpacing: '0.05em' }}>
+ <div style={{ ...PANEL, padding: '14px 16px' }}>
+ <div style={{ ...EYEBROW, marginBottom: 14 }}>
  {t('data.section_column_mapping')}
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -984,19 +1171,18 @@ function AnalysisTab({ source, columns, activeSheet }: {
  {loading ? t('data.btn_analyzing') : t('data.btn_analyze')}
  </button>
  </div>
+                 {/* Warning copy stays on `--text` with an amber marker: `--warning` as
+     small type is 3.2:1 on the light surface. */}
  {columns.length === 0 && (
- <p style={{ margin: '10px 0 0', color: C.amber, fontSize: 12 }}>
+ <p style={{ margin: '10px 0 0', color: C.text, fontSize: 12,
+ display: 'flex', alignItems: 'center', gap: 7 }}>
+ <AlertTriangle size={13} color={C.amber} aria-hidden="true" style={{ flexShrink: 0 }} />
  {t('data.warn_preview_not_loaded')}
  </p>
  )}
  </div>
 
- {err && (
- <div style={{ background: C.redDim, border: `1px solid ${C.red}30`,
- borderRadius: 8, padding: '10px 14px', color: C.red, fontSize: 13 }}>
- {err}
- </div>
- )}
+ {err && <div style={errorBlock}>{err}</div>}
 
  {loading && (
  <div style={{ display: 'flex', gap: 12, alignItems: 'center',
@@ -1008,23 +1194,27 @@ function AnalysisTab({ source, columns, activeSheet }: {
 
  {result && !loading && (
  <>
- {/* Summary info bar */}
+                 {/* What the run was actually bound to — the caption above, the bound
+     column name below it in the code voice, hairline-separated like a
+     database client's object properties. */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
- padding: '10px 14px', background: C.surface, borderRadius: 8, border: `1px solid ${C.border}` }}>
- <div style={{ display: 'flex', gap: 20 }}>
+ gap: 16, padding: '9px 14px', background: C.surface, borderRadius: 8,
+ border: `1px solid ${C.border}` }}>
+ <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
  {[
  [t('data.summary_skus'), String(result.summary.length)],
  [t('data.summary_date_col'), result.date_col],
  [t('data.summary_target_col'), result.target_col],
  ...(result.sku_col ? [[t('data.summary_group_col'), result.sku_col]] : []),
- ].map(([label, val]) => (
- <div key={label}>
- <span style={{ color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>{label} </span>
- <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>{val}</span>
+ ].map(([label, val], i) => (
+ <div key={label} style={{ paddingLeft: i === 0 ? 0 : 16, paddingRight: 16,
+ borderLeft: i === 0 ? 'none' : `1px solid ${C.border}` }}>
+ <div style={EYEBROW}>{label}</div>
+ <div style={{ color: C.text, fontSize: 12, fontWeight: 600, fontFamily: MONO, marginTop: 2 }}>{val}</div>
  </div>
  ))}
  </div>
- <span style={{ color: C.muted, fontSize: 11 }}>{t('data.click_row_for_detail')}</span>
+ <span style={{ color: C.muted, fontSize: 11, flexShrink: 0 }}>{t('data.click_row_for_detail')}</span>
  </div>
 
  <AnalysisSummaryTable
@@ -1107,9 +1297,8 @@ function DatasetEditorPanel({ source, onCreated }: {
   </div>
  )
  if (loadErr) return (
-  <div style={{ background: C.redDim, border: `1px solid ${C.red}30`, borderRadius: 8,
-   padding: '14px 16px', color: C.red, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-   <AlertTriangle size={14} /> {loadErr}
+  <div style={{ ...errorBlock, display: 'flex', alignItems: 'center', gap: 8 }}>
+   <AlertTriangle size={14} aria-hidden="true" style={{ flexShrink: 0 }} /> {loadErr}
   </div>
  )
 
@@ -1140,18 +1329,21 @@ function DatasetEditorPanel({ source, onCreated }: {
      {saving ? <Spinner size={12} /> : <Save size={12} />} {saving ? t('data.editor_saving') : t('data.editor_save_as_new')}
     </button>
    </div>
-   <div style={{ color: C.muted, fontSize: 12 }}>{rows.length} {t('data.editor_rows_count')}</div>
-   <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, borderRadius: 8, border: `1px solid ${C.border}` }}>
+   <div style={{ color: C.muted, fontSize: 12 }}>
+    <span style={{ fontFamily: MONO, color: C.text, fontWeight: 600 }}>{rows.length}</span> {t('data.editor_rows_count')}
+   </div>
+   {/* Same grid chrome as the read-only ones, so switching to the Edit tab does
+       not feel like switching to a different application. */}
+   <div style={{ ...GRID_SHELL, maxHeight: 420 }}>
     <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
      <thead>
       <tr>
-       <th style={{ padding: '6px 8px', background: 'var(--surface-2)', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0 }} />
+       <th style={{ ...gridTh(), padding: '9px 8px', width: 1 }} />
        {columns.map(c => (
-        <th key={c} style={{ padding: '6px 10px', textAlign: 'left', whiteSpace: 'nowrap',
-         background: 'var(--surface-2)', color: C.muted, fontWeight: 600, fontSize: 11,
-         borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0 }}>
+        <th key={c} style={gridTh()}>
          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          {c}
+          <span style={{ fontFamily: MONO, textTransform: 'none', letterSpacing: 0,
+           fontSize: 11, color: C.text }}>{c}</span>
           <button onClick={() => renameColumn(c)} title={t('data.editor_rename_column')}
            style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 0 }}>
            <Edit2 size={11} />
@@ -1167,10 +1359,10 @@ function DatasetEditorPanel({ source, onCreated }: {
      </thead>
      <tbody>
       {rows.map((row, ri) => (
-       <tr key={ri} style={{ background: ri % 2 === 0 ? C.card : C.surface }}>
+       <tr key={ri} style={{ background: gridRowBg(ri) }}>
         <td style={{ padding: '2px 6px', borderBottom: `1px solid ${C.border}` }}>
          <button onClick={() => deleteRow(ri)} title={t('data.editor_delete_row')}
-          style={{ background: 'transparent', border: 'none', color: C.red, cursor: 'pointer', padding: 2 }}>
+          style={{ background: 'transparent', border: 'none', color: C.red, cursor: 'pointer', padding: 2, display: 'flex' }}>
           <Trash2 size={12} />
          </button>
         </td>
@@ -1180,7 +1372,8 @@ function DatasetEditorPanel({ source, onCreated }: {
            name={`cell-${ri}-${c}`} aria-label={c}
            onChange={e => setCell(ri, c, e.target.value)}
            style={{ width: '100%', minWidth: 90, background: 'transparent', border: 'none',
-            padding: '6px 10px', color: C.text, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+            padding: '6px 12px', color: C.text, fontSize: 11.5, fontFamily: MONO, lineHeight: 1.7,
+            outline: 'none', boxSizing: 'border-box' }} />
          </td>
         ))}
        </tr>
@@ -1299,7 +1492,14 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <ArrowLeft size={16} aria-hidden="true" />
  </button>
  )}
- <SourceIcon type={source.source_type} size={24} />
+                 {/* The icon sits in a tile rather than floating next to the title: it is
+     the object's type marker, the way a database client shows a connection
+     node, and the tile is what keeps it from reading as a stray glyph. */}
+ <div style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+ display: 'flex', alignItems: 'center', justifyContent: 'center',
+ background: C.surface, border: `1px solid ${C.border}` }}>
+ <SourceIcon type={source.source_type} size={18} />
+ </div>
  <div style={{ flex: 1, minWidth: 0 }}>
  {editName ? (
  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1322,23 +1522,29 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  ) : (
  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
  <h2 style={{ margin: 0, color: C.text, fontSize: 18, fontWeight: 700,
+ letterSpacing: '-0.015em',
  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
  {source.name}
  </h2>
  <button onClick={() => setEditName(true)}
  style={{ background: 'transparent', border: 'none', color: C.muted,
- cursor: 'pointer', padding: 2, opacity: 0.6 }}>
+ cursor: 'pointer', padding: 2, opacity: 0.6, display: 'flex' }}>
  <Edit2 size={13} />
  </button>
  </div>
  )}
- <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+ {/* Filename and DSN are machine identifiers, not prose — monospace. */}
+ <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 7, minWidth: 0 }}>
  <StatusBadge status={source.connection_status} />
  {source.original_filename && (
- <span style={{ color: C.muted, fontSize: 12 }}>{source.original_filename}</span>
+ <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO,
+ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ {source.original_filename}
+ </span>
  )}
  {source.sql_config && (
- <span style={{ color: C.muted, fontSize: 12 }}>
+ <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO,
+ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
  {source.sql_config.host}:{source.sql_config.port}/{source.sql_config.database}
  </span>
  )}
@@ -1346,55 +1552,63 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  </div>
  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
  {isSql && (
- <button onClick={testConn} disabled={testing}
+ <button className="btn" onClick={testConn} disabled={testing}
  style={{ padding: '7px 14px', borderRadius: 8, background: C.blueDim,
- border: `1px solid ${C.blue}40`, color: C.blue, cursor: 'pointer',
+ border: `1px solid ${alpha(C.blue, 40)}`, color: C.blue, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600 }}>
  {testing ? <Spinner size={12} /> : <Link2 size={12} />}
  {t('data.btn_test_connection')}
  </button>
  )}
- <button onClick={doDelete} disabled={deletingId}
+ <button className="btn" onClick={doDelete} disabled={deletingId}
  aria-label={t('common.delete')} title={t('common.delete')}
  style={{ padding: '7px 12px', borderRadius: 8, background: C.redDim,
- border: `1px solid ${C.red}30`, color: C.red, cursor: 'pointer' }}>
+ border: `1px solid ${alpha(C.red, 30)}`, color: C.red, cursor: 'pointer', display: 'flex' }}>
  <Trash2 size={14} aria-hidden="true" />
  </button>
  </div>
  </div>
 
  {deleteErr && (
- <div style={{ margin: '0 0 8px', padding: '8px 12px', borderRadius: 7,
- background: C.redDim, border: `1px solid ${C.red}40`, color: C.red, fontSize: 12,
+ <div style={{ ...errorBlock, margin: '0 0 8px', padding: '8px 12px', fontSize: 12,
  display: 'flex', alignItems: 'center', gap: 6 }}>
- <AlertTriangle size={12} /> {deleteErr}
+ <AlertTriangle size={12} aria-hidden="true" style={{ flexShrink: 0 }} /> {deleteErr}
  </div>
  )}
 
- {/* Stats strip */}
- <div data-tour="data.stats" style={{ display: 'flex', gap: 24, paddingBottom: 12 }}>
+ {/* Stats strip — the object's properties, hairline-separated, figures in the
+     code voice so size / rows / columns line up as a column of facts. */}
+ <div data-tour="data.stats" style={{ display: 'flex', paddingBottom: 14 }}>
  {[
  { label: t('data.stat_size'), value: fmt(source.size_bytes) },
  { label: t('data.stat_rows'), value: source.row_count?.toLocaleString() ?? '—' },
  { label: t('data.stat_columns'), value: source.column_count?.toLocaleString() ?? '—' },
  { label: t('data.stat_type'), value: source.file_type || source.sql_config?.engine || '—' },
- ].map(s => (
- <div key={s.label}>
- <div style={{ color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>{s.label}</div>
- <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{s.value}</div>
+ ].map((s, i) => (
+ <div key={s.label} style={{ paddingLeft: i === 0 ? 0 : 18, paddingRight: 18,
+ borderLeft: i === 0 ? 'none' : `1px solid ${C.border}` }}>
+ <div style={EYEBROW}>{s.label}</div>
+ <div style={{ color: C.text, fontSize: 13.5, fontWeight: 600, fontFamily: MONO, marginTop: 3 }}>{s.value}</div>
  </div>
  ))}
  </div>
 
+ {/* Test result. Both outcomes sit on `--surface` with a coloured left rule:
+     `--danger` on its own tint is 4.1:1, which an outcome message cannot
+     afford. Success is 4.8:1 on the tint and would have passed, but the two
+     states share a shape so they read as the same control answering. */}
  {testResult && (
  <div style={{
- marginBottom: 12, padding: '8px 14px', borderRadius: 8,
- background: testResult.ok ? C.greenDim : C.redDim,
- border: `1px solid ${testResult.ok ? C.green : C.red}30`,
- color: testResult.ok ? C.green : C.red, fontSize: 13,
- display: 'flex', alignItems: 'center', gap: 6,
+ marginBottom: 12, padding: '9px 14px', borderRadius: 8,
+ background: C.surface,
+ border: `1px solid ${alpha(testResult.ok ? C.green : C.red, 35)}`,
+ borderLeft: `3px solid ${testResult.ok ? C.green : C.red}`,
+ color: testResult.ok ? C.green : C.red, fontSize: 12.5, lineHeight: 1.55,
+ display: 'flex', alignItems: 'center', gap: 7,
  }}>
- {testResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+ {testResult.ok
+ ? <CheckCircle2 size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
+ : <XCircle size={14} aria-hidden="true" style={{ flexShrink: 0 }} />}
  {testResult.ok ? t('data.connection_successful') : `${t('data.connection_failed')}: ${testResult.error}`}
  </div>
  )}
@@ -1402,11 +1616,11 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {/* Tabs */}
  <div data-tour="data.tabs" style={{ display: 'flex', gap: 2 }}>
  {tabs.map(t => (
- <button key={t.id} onClick={() => setTab(t.id as any)}
+ <button key={t.id} className="btn" onClick={() => setTab(t.id as any)}
  style={{
- padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+ padding: '9px 14px', border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
  background: 'transparent', borderBottom: `2px solid ${tab === t.id ? C.green : 'transparent'}`,
- color: tab === t.id ? C.green : C.muted, transition: 'all 0.15s',
+ color: tab === t.id ? C.green : C.muted,
  display: 'flex', alignItems: 'center', gap: 6,
  }}>
  {t.id === 'analysis' && <BarChart2 size={12} />}
@@ -1431,8 +1645,10 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  const ok = await loadPreview(s)
  if (!ok) setActiveSheet(prev)
  }}
- style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
- cursor: 'pointer', border: `1px solid ${activeSheet === s ? C.green : C.border2}`,
+                 className="btn"
+ style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11.5, fontWeight: 600,
+ fontFamily: MONO,
+ cursor: 'pointer', border: `1px solid ${activeSheet === s ? alpha(C.green, 55) : C.border2}`,
  background: activeSheet === s ? C.greenDim : 'transparent',
  color: activeSheet === s ? C.green : C.muted }}>
  {s}
@@ -1445,21 +1661,22 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <Spinner size={20} /> <span style={{ color: C.muted }}>{t('data.loading_preview')}</span>
  </div>
  ) : previewErr ? (
- <div style={{ color: C.red, padding: 20 }}>{previewErr}</div>
+ <div style={errorBlock}>{previewErr}</div>
  ) : preview ? (
  <>
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
- <Eye size={14} color={C.muted} />
+ <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+ <Eye size={13} color={C.muted} aria-hidden="true" />
  <span style={{ color: C.muted, fontSize: 12 }}>
- {t('data.showing')} {preview.row_count} {preview.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{preview.truncated ? ` ${t('data.first_100')}` : ''}
+ {t('data.showing')} <span style={{ fontFamily: MONO, color: C.text, fontWeight: 600 }}>{preview.row_count}</span> {preview.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{preview.truncated ? ` ${t('data.first_100')}` : ''}
  {preview.active_sheet ? ` — ${t('data.sheet_label')}: ${preview.active_sheet}` : ''}
  </span>
- <button
+ <button className="btn"
  onClick={() => { if (!loadingPreview) loadPreview(activeSheet) }}
  disabled={loadingPreview}
- style={{ marginLeft: 'auto', background: 'transparent', border: 'none',
+ style={{ marginLeft: 'auto', background: 'transparent',
+ border: `1px solid ${C.border}`, borderRadius: 7, padding: '5px 11px',
  color: C.muted, cursor: loadingPreview ? 'default' : 'pointer',
- display: 'flex', alignItems: 'center', gap: 4, fontSize: 12,
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
  opacity: loadingPreview ? 0.5 : 1 }}>
  {loadingPreview ? <Spinner size={12} /> : <RefreshCw size={12} />} {t('common.refresh')}
  </button>
@@ -1496,12 +1713,14 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {/* SQL editor tab */}
  {tab === 'sql-editor' && isSql && (
  source.connection_status !== 'connected' ? (
- <div style={{ textAlign: 'center', padding: '40px 0' }}>
- <AlertTriangle size={32} color={C.amber} style={{ marginBottom: 12 }} />
- <p style={{ color: C.amber, fontWeight: 600 }}>{t('data.connection_not_established')}</p>
- <p style={{ color: C.muted, fontSize: 13 }}>{t('data.test_connection_first')}</p>
- <button onClick={testConn} disabled={testing}
- style={{ marginTop: 12, padding: '9px 20px', borderRadius: 8, background: C.green,
+                 // The headline moves to `--text` with the amber left in the icon:
+ // `--warning` at 14px is 3.2:1 on the light surface.
+ <div style={{ textAlign: 'center', padding: '48px 0' }}>
+ <AlertTriangle size={30} color={C.amber} style={{ marginBottom: 14 }} aria-hidden="true" />
+ <p style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{t('data.connection_not_established')}</p>
+ <p style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{t('data.test_connection_first')}</p>
+ <button className="btn" onClick={testConn} disabled={testing}
+ style={{ marginTop: 16, padding: '9px 20px', borderRadius: 8, background: C.green,
  border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer',
  display: 'inline-flex', alignItems: 'center', gap: 6 }}>
  {testing ? <Spinner size={14} /> : <Link2 size={14} />} {t('data.btn_test_connection')}
@@ -1519,10 +1738,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {t('data.replace_file_hint')}
  </p>
  {replaceErr && (
- <div style={{ background: C.redDim, border: `1px solid ${C.red}30`,
- borderRadius: 8, padding: '10px 14px', color: C.red, fontSize: 13, marginBottom: 12 }}>
- {replaceErr}
- </div>
+ <div style={{ ...errorBlock, marginBottom: 12 }}>{replaceErr}</div>
  )}
  {replacing ? (
  <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '20px 0' }}>
@@ -1593,13 +1809,16 @@ function NewSourcePanel({ onCreated, onCancel }:
  finally { setBusy(false) }
  }
 
+                 // A segmented control: the chosen half is filled and outlined, the other
+ // half is bare. `--info` as a label is 4.1:1 on white, so the selected
+ // label rides `--text` and the tint plus the icon carry which one is on.
  const typeTabStyle = (active: boolean, color: string): React.CSSProperties => ({
- flex: 1, padding: '8px 12px', borderRadius: 7, cursor: 'pointer',
- background: active ? color + '18' : 'transparent',
- border: `1px solid ${active ? color + '50' : C.border}`,
- color: active ? color : C.muted,
+ flex: 1, padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
+ background: active ? alpha(color, 12) : 'transparent',
+ border: `1px solid ${active ? alpha(color, 50) : C.border}`,
+ color: active ? C.text : C.muted,
  fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center',
- justifyContent: 'center', gap: 6, transition: 'all 0.15s',
+ justifyContent: 'center', gap: 6,
  })
 
  if (mode === 'file') {
@@ -1619,22 +1838,20 @@ function NewSourcePanel({ onCreated, onCancel }:
  <Database size={13} /> {t('data.sql_database')}
  </button>
  </div>
- {err && (
- <div style={{ background: C.redDim, border: `1px solid ${C.red}30`,
- borderRadius: 8, padding: '10px 14px', color: C.red, fontSize: 13 }}>
- {err}
- </div>
- )}
+ {err && <div style={errorBlock}>{err}</div>}
  {file ? (
  <div>
- <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
- background: C.greenDim, border: `1px solid ${C.green}30`, borderRadius: 8, marginBottom: 14 }}>
- <FileSpreadsheet size={16} color={C.green} />
- <span style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>{file.name}</span>
- <span style={{ color: C.muted, fontSize: 12 }}>({fmt(file.size)})</span>
+                 {/* The staged file, as a chip: name in the code voice because it is a
+     filename, size beside it as secondary metadata. */}
+ <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px',
+ background: C.greenDim, border: `1px solid ${alpha(C.green, 35)}`, borderRadius: 9, marginBottom: 14 }}>
+ <FileSpreadsheet size={15} color={C.green} aria-hidden="true" style={{ flexShrink: 0 }} />
+ <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600, fontFamily: MONO,
+ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+ <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO, flexShrink: 0 }}>({fmt(file.size)})</span>
  <button onClick={() => setFile(null)} style={{ marginLeft: 'auto', background: 'transparent',
- border: 'none', color: C.muted, cursor: 'pointer' }}>
- <X size={12} />
+ border: 'none', color: C.muted, cursor: 'pointer', display: 'flex', flexShrink: 0 }}>
+ <X size={13} />
  </button>
  </div>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -1685,12 +1902,7 @@ function NewSourcePanel({ onCreated, onCancel }:
  <Database size={13} /> {t('data.sql_database')}
  </button>
  </div>
- {err && (
- <div style={{ background: C.redDim, border: `1px solid ${C.red}30`,
- borderRadius: 8, padding: '10px 14px', color: C.red, fontSize: 13 }}>
- {err}
- </div>
- )}
+ {err && <div style={errorBlock}>{err}</div>}
  <SqlForm
  saving={busy}
  onCancel={onCancel}
@@ -1716,15 +1928,22 @@ function EmptyRight({ onCreate }: { onCreate: () => void }) {
  return (
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
  justifyContent: 'center', height: '100%', padding: 40, textAlign: 'center' }}>
- <Layers size={48} color={C.border2} style={{ marginBottom: 20 }} />
- <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>{t('data.no_source_selected')}</h2>
- <p style={{ color: C.muted, fontSize: 14, margin: '0 0 32px', maxWidth: 340 }}>
+                 {/* The glyph sits in the same tile the selected source's icon gets, so the
+     empty panel and the filled one share a silhouette. */}
+ <div style={{ width: 64, height: 64, borderRadius: 16, marginBottom: 22,
+ display: 'flex', alignItems: 'center', justifyContent: 'center',
+ background: C.surface, border: `1px solid ${C.border}` }}>
+ <Layers size={28} color={C.dim} aria-hidden="true" />
+ </div>
+ <h2 style={{ color: C.text, fontSize: 18, fontWeight: 700, margin: '0 0 8px',
+ letterSpacing: '-0.015em' }}>{t('data.no_source_selected')}</h2>
+ <p style={{ color: C.muted, fontSize: 13.5, margin: '0 0 28px', maxWidth: 340, lineHeight: 1.6 }}>
  {t('data.no_source_selected_hint')}
  </p>
- <button onClick={onCreate}
- style={{ padding: '12px 24px', borderRadius: 10, background: C.greenDim,
- border: `1px solid ${C.green}40`, color: C.green, fontWeight: 700, cursor: 'pointer',
- display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+ <button className="btn" onClick={onCreate}
+ style={{ padding: '11px 22px', borderRadius: 10, background: C.greenDim,
+ border: `1px solid ${alpha(C.green, 45)}`, color: C.green, fontWeight: 700, cursor: 'pointer',
+ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}>
  <Plus size={16} /> {t('data.new_data_source')}
  </button>
  </div>
@@ -1793,14 +2012,22 @@ export default function DataPage() {
  {/* No page title here: the tab strip above already names this view, and
      repeating it under the top bar's own title said the same thing three
      times in the top 90px of the screen. */}
- <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.text }}>
- {sources.length} {sources.length !== 1 ? t('data.source_plural') : t('data.source_singular')}
+                 {/* The count reads as the object-browser caption it is: the figure in the
+     code voice, the noun beside it as a quiet label. */}
+ <p style={{ margin: 0, ...EYEBROW, display: 'flex', alignItems: 'baseline', gap: 5 }}>
+ <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: 0 }}>{sources.length}</span>
+ {sources.length !== 1 ? t('data.source_plural') : t('data.source_singular')}
  </p>
- <button onClick={load} title={t('data.refresh_title')} aria-label={t('data.refresh_title')}
- style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}>
+ <button className="btn" onClick={load} title={t('data.refresh_title')} aria-label={t('data.refresh_title')}
+ style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 4, display: 'flex' }}>
  <RefreshCw size={14} aria-hidden="true" />
  </button>
  </div>
+ {/* The magnifier is what makes a bare rounded box read as a filter rather
+     than as one more text field; the input keeps its own tour anchor. */}
+ <div style={{ position: 'relative' }}>
+ <Search size={13} aria-hidden="true" style={{ position: 'absolute', left: 10,
+ top: '50%', transform: 'translateY(-50%)', color: C.dim, pointerEvents: 'none' }} />
  <input
  data-tour="data.search"
  type="search"
@@ -1809,25 +2036,28 @@ export default function DataPage() {
  value={search}
  onChange={e => setSearch(e.target.value)}
  placeholder={t('data.search_sources_ph')}
+ className="form-input"
  style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`,
- borderRadius: 8, padding: '8px 12px', color: C.text, fontSize: 13,
+ borderRadius: 8, padding: '8px 12px 8px 30px', color: C.text, fontSize: 12.5,
  outline: 'none', boxSizing: 'border-box' }}
  />
+ </div>
  </div>
 
  {/* New item button */}
  <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}` }}>
  <button
  data-tour="data.new"
+ className="btn"
  onClick={() => { setCreating(creating ? null : 'new'); setSelected(null) }}
  style={{
  width: '100%', padding: '8px 12px', borderRadius: 8,
  background: creating ? C.greenDim : 'transparent',
- border: `1px solid ${creating ? C.green : C.border}`,
+ border: `1px solid ${creating ? alpha(C.green, 55) : C.border}`,
  color: creating ? C.green : C.muted,
  cursor: 'pointer', display: 'flex', alignItems: 'center',
  justifyContent: 'center', gap: 6,
- fontSize: 12, fontWeight: 600, transition: 'all 0.15s',
+ fontSize: 12, fontWeight: 600,
  }}
  >
  <Plus size={13} /> {t('data.btn_new_item')}
@@ -1841,45 +2071,54 @@ export default function DataPage() {
  <Spinner size={20} />
  </div>
  ) : loadErr ? (
- <div style={{ padding: 16, color: C.red, fontSize: 13 }}>{loadErr}</div>
+ <div style={{ ...errorBlock, margin: 12 }}>{loadErr}</div>
  ) : filtered.length === 0 ? (
- <div style={{ padding: '24px 16px', textAlign: 'center', color: C.muted, fontSize: 13 }}>
+ <div style={{ padding: '28px 16px', textAlign: 'center', color: C.muted, fontSize: 12.5 }}>
  {search ? t('data.no_matches') : t('data.no_sources_yet')}
  </div>
  ) : (
  filtered.map((src, idx) => {
  const isActive = selected?.id === src.id && !creating
  return (
+ /* One connection entry: type icon, name, quiet status, then the host or
+    the file size as secondary metadata — the shape a database client's
+    object browser uses. */
  <button
  key={src.id}
  /* First row only: a tour anchor has to resolve to a single element. */
  data-tour={idx === 0 ? 'data.item' : undefined}
  onClick={() => { setSelected(src); setCreating(null) }}
+ onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = C.card }}
+ onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
  style={{
- width: '100%', textAlign: 'left', padding: '12px 14px',
+ width: '100%', textAlign: 'left', padding: '11px 14px 11px 12px',
  background: isActive ? C.greenDim : 'transparent',
  border: 'none', borderLeft: `3px solid ${isActive ? C.green : 'transparent'}`,
- cursor: 'pointer', transition: 'all 0.15s',
+ cursor: 'pointer',
+ transition: `background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out)`,
  borderBottom: `1px solid ${C.border}`,
  }}
  >
- <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
  <SourceIcon type={src.source_type} size={15} />
- <span style={{ flex: 1, color: isActive ? C.green : C.text,
- fontSize: 13, fontWeight: 600, overflow: 'hidden',
+ <span style={{ flex: 1, minWidth: 0, color: isActive ? C.green : C.text,
+ fontSize: 12.5, fontWeight: 600, overflow: 'hidden',
  textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
  {src.name}
  </span>
  <StatusBadge status={src.connection_status} />
  </div>
  {src.description && (
- <p style={{ margin: '4px 0 0 23px', color: C.muted, fontSize: 11,
+ <p style={{ margin: '5px 0 0 24px', color: C.muted, fontSize: 11, lineHeight: 1.45,
  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
  {src.description}
  </p>
  )}
- <div style={{ margin: '4px 0 0 23px', display: 'flex', gap: 10 }}>
- <span style={{ color: C.muted, fontSize: 11 }}>
+ {/* Host / engine / size are machine facts, so they take the code voice —
+     which is also what separates them at a glance from the name above. */}
+ <div style={{ margin: '5px 0 0 24px', display: 'flex', gap: 9, alignItems: 'baseline',
+ fontFamily: MONO, fontSize: 10.5, color: C.muted, minWidth: 0 }}>
+ <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
  {src.source_type === 'sql'
  ? `${src.sql_config?.engine} · ${src.sql_config?.host}`
  : fmt(src.size_bytes)}
@@ -1888,7 +2127,7 @@ export default function DataPage() {
      NUMBER 0, which React happily renders as a bare "0" next to the file
      size. An empty file should show nothing, not a stray zero. */}
  {src.row_count ? (
- <span style={{ color: C.muted, fontSize: 11 }}>
+ <span style={{ flexShrink: 0 }}>
  {src.row_count.toLocaleString()} {src.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}
  </span>
  ) : null}
