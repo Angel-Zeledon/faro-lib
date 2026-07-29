@@ -97,6 +97,20 @@ def _button(text: str, url: str) -> str:
     )
 
 
+def _strong(text: str) -> str:
+    """Emphasise a fragment inside a sentence without moving markup into the catalog."""
+    return f'<strong style="color:{_TEXT};">{text}</strong>'
+
+
+# How long a verification code / setup link stays valid. The number lives in
+# code; only the unit word comes from the locale catalog.
+_CODE_TTL_HOURS = 30
+
+
+def _code_ttl_label() -> str:
+    return render_es("hours_duration", hours=_CODE_TTL_HOURS)
+
+
 def _send_resend(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
     """Send via the Resend HTTP API. Raises on failure."""
     import httpx
@@ -238,12 +252,13 @@ def send_password_reset_email(to: str, reset_url: str) -> bool:
 def send_change_password_code(to: str, code: str) -> bool:
     """Send a 6-digit password-change verification code. Returns True if sent."""
     html = _base_html(
-        "Código de verificación",
+        render_es("change_password_email_title"),
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Cambio de contraseña</p>
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">
+          {render_es("change_password_email_heading")}
+        </p>
         <p style="color:{_DIM};margin:0 0 24px;">
-          Alguien solicitó cambiar la contraseña de tu cuenta en {_APP_NAME}.
-          Usa el siguiente código para confirmar el cambio:
+          {render_es("change_password_email_intro", app=_APP_NAME)}
         </p>
         <div style="text-align:center;margin:24px 0;">
           <span style="display:inline-block;letter-spacing:10px;font-size:36px;
@@ -252,13 +267,12 @@ def send_change_password_code(to: str, code: str) -> bool:
                        padding:14px 24px;font-family:monospace;">{code}</span>
         </div>
         <p style="color:{_DIM};font-size:12px;margin:0;">
-          Este código expira en <strong style="color:{_TEXT};">30 horas</strong>.
-          Si no solicitaste este cambio, ignora este correo.
+          {render_es("change_password_email_expiry", duration=_strong(_code_ttl_label()))}
         </p>
         """,
     )
     try:
-        _send(to, "Código de verificación para cambio de contraseña", html)
+        _send(to, render_es("change_password_email_subject"), html)
         return True
     except Exception as exc:
         log.error("Failed to send password-change code to %s: %s", to, exc)
@@ -268,12 +282,13 @@ def send_change_password_code(to: str, code: str) -> bool:
 def send_password_reset_otp(to: str, code: str) -> bool:
     """Send a 6-digit OTP for forgot-password flow. Returns True if sent."""
     html = _base_html(
-        "Recuperar contraseña",
+        render_es("password_reset_otp_email_title"),
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Recupera tu contraseña</p>
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">
+          {render_es("password_reset_otp_email_heading")}
+        </p>
         <p style="color:{_DIM};margin:0 0 24px;">
-          Recibimos una solicitud para restablecer la contraseña de tu cuenta en {_APP_NAME}.
-          Usa el siguiente código de verificación para continuar:
+          {render_es("password_reset_otp_email_intro", app=_APP_NAME)}
         </p>
         <div style="text-align:center;margin:24px 0;">
           <span style="display:inline-block;letter-spacing:10px;font-size:36px;
@@ -282,13 +297,12 @@ def send_password_reset_otp(to: str, code: str) -> bool:
                        padding:14px 24px;font-family:monospace;">{code}</span>
         </div>
         <p style="color:{_DIM};font-size:12px;margin:0;">
-          Este código expira en <strong style="color:{_TEXT};">30 horas</strong>.
-          Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+          {render_es("password_reset_otp_email_expiry", duration=_strong(_code_ttl_label()))}
         </p>
         """,
     )
     try:
-        _send(to, "Código de verificación para recuperar contraseña", html)
+        _send(to, render_es("password_reset_otp_email_subject"), html)
         return True
     except Exception as exc:
         log.error("Failed to send password-reset OTP to %s: %s", to, exc)
@@ -299,21 +313,22 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
     """Sent to a user created by an admin — prompts them to verify via link. Returns True on success."""
     name = full_name or to.split("@")[0]
     html = _base_html(
-        "Activa tu cuenta",
+        render_es("account_setup_email_title"),
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Bienvenido a {_APP_NAME}, {name}!</p>
-        <p style="color:{_DIM};margin:0 0 20px;">
-          Un administrador ha creado una cuenta para ti en {_APP_NAME}.
-          Haz clic en el botón de abajo para verificar tu correo y activar tu cuenta.
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">
+          {render_es("account_setup_email_heading", app=_APP_NAME, name=name)}
         </p>
-        {_button("Activar mi cuenta", setup_url)}
+        <p style="color:{_DIM};margin:0 0 20px;">
+          {render_es("account_setup_email_intro", app=_APP_NAME)}
+        </p>
+        {_button(render_es("account_setup_email_cta"), setup_url)}
         <p style="color:{_DIM};font-size:12px;">
-          Este enlace expira en 30 horas. Si no esperabas esta invitación, puedes ignorar este correo.
+          {render_es("account_setup_email_expiry", duration=_code_ttl_label())}
         </p>
         """,
     )
     try:
-        _send(to, "Activa tu cuenta en " + _APP_NAME, html)
+        _send(to, render_es("account_setup_email_subject", app=_APP_NAME), html)
         return True
     except Exception as exc:
         log.error("Failed to send account setup email to %s: %s", to, exc)
@@ -344,7 +359,10 @@ def send_inventory_alert_email(
         days  = item.get("coverage_days")
         recom = item.get("recommended_qty")
         prov  = item.get("supplier") or "—"
-        days_str  = f"{days:.0f} días" if days is not None else "—"
+        days_str  = (
+            render_es("alert_email_coverage_days", days=f"{days:.0f}")
+            if days is not None else "—"
+        )
         recom_str = f"{recom:,.0f}" if recom else "—"
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
@@ -371,41 +389,64 @@ def send_inventory_alert_email(
     n_critical = len(critical_items)
     n_warning  = len(warning_items)
 
-    all_items = [_row(i, _RED, "🔴 PEDIR YA") for i in critical_items[:_ALERT_MAX_CRITICAL_ROWS]]
+    badge_critical = render_es("alert_email_badge_critical")
+    badge_warning  = render_es("alert_email_badge_warning")
+    all_items = [_row(i, _RED, badge_critical) for i in critical_items[:_ALERT_MAX_CRITICAL_ROWS]]
     if n_critical > _ALERT_MAX_CRITICAL_ROWS:
         all_items.append(_more_row(n_critical - _ALERT_MAX_CRITICAL_ROWS))
-    all_items += [_row(i, _AMB, "🟡 PEDIR PRONTO") for i in warning_items[:_ALERT_MAX_WARNING_ROWS]]
+    all_items += [_row(i, _AMB, badge_warning) for i in warning_items[:_ALERT_MAX_WARNING_ROWS]]
     if n_warning > _ALERT_MAX_WARNING_ROWS:
         all_items.append(_more_row(n_warning - _ALERT_MAX_WARNING_ROWS))
 
-    subject_prefix = f"🔴 {n_critical} SKU{'s' if n_critical > 1 else ''} en riesgo de stockout" if n_critical else f"🟡 {n_warning} SKU{'s' if n_warning > 1 else ''} por reabastecer"
+    subject_prefix = (
+        render_es("alert_email_subject_critical",
+                  n=n_critical, s="s" if n_critical > 1 else "")
+        if n_critical else
+        render_es("alert_email_subject_warning",
+                  n=n_warning, s="s" if n_warning > 1 else "")
+    )
+
+    def _th(label: str) -> str:
+        return (
+            f'<th style="padding:8px 12px;text-align:left;color:{_DIM};'
+            f'font-size:10px;text-transform:uppercase;">{label}</th>'
+        )
 
     table_html = (
         '<table width="100%" style="border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#13141e;">'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">SKU</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Nombre</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Señal</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Cobertura</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Pedir</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Proveedor</th>'
-        '</tr></thead><tbody>'
+        + "".join(_th(render_es(k)) for k in (
+            "alert_email_col_sku", "alert_email_col_name", "alert_email_col_signal",
+            "alert_email_col_coverage", "alert_email_col_order", "alert_email_col_supplier",
+        ))
+        + '</tr></thead><tbody>'
         + "".join(all_items) +
         '</tbody></table>'
     )
 
+    summary_critical = (
+        f'<span style="color:#ef4444;font-weight:600;">'
+        f'{render_es("alert_email_summary_critical", n=n_critical, s="s" if n_critical > 1 else "")}'
+        f'</span> '
+    ) if n_critical else ''
+    summary_warning = (
+        f'<span style="color:#f59e0b;">'
+        f'{render_es("alert_email_summary_warning", n=n_warning, s="s" if n_warning > 1 else "")}'
+        f'</span>'
+    ) if n_warning else ''
+
     html = _base_html(
-        "Alerta de inventario",
+        render_es("alert_email_title"),
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 4px;">Alerta de inventario</p>
+        <p style="font-size:20px;font-weight:700;margin:0 0 4px;">{render_es("alert_email_title")}</p>
         <p style="color:{_DIM};margin:0 0 24px;font-size:13px;">
-          {'<span style="color:#ef4444;font-weight:600;">' + str(n_critical) + ' producto' + ('s' if n_critical > 1 else '') + ' en riesgo inmediato de stockout.</span> ' if n_critical else ''}
-          {'<span style="color:#f59e0b;">' + str(n_warning) + ' producto' + ('s' if n_warning > 1 else '') + ' deben reabastecerse pronto.</span>' if n_warning else ''}
+          {summary_critical}
+          {summary_warning}
         </p>
         {table_html}
-        {_button("Ver tablero de inventario", inventory_url)}
+        {_button(render_es("alert_email_cta"), inventory_url)}
         <p style="color:{_DIM};font-size:11px;margin:0;">
-          Esta alerta se genera automáticamente cuando hay productos en riesgo de stockout.
+          {render_es("alert_email_footer")}
         </p>
         """,
     )
@@ -431,53 +472,58 @@ def send_supplier_lead_time_alert_email(
     _AMB = "#f59e0b"
 
     def _row(d: dict) -> str:
+        # `severidad` / `lead_time_reciente` / `n_reciente` are payload keys owned
+        # by supplier_health_service, not user-facing copy — read, never rendered.
         color = _RED if d.get("severidad") == "alta" else _AMB
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
             f'<td style="padding:10px 12px;font-size:13px;font-weight:600;">{d.get("supplier", "")}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:700;">'
-            f'  {d.get("lead_time_reciente")} días</td>'
+            f'  {render_es("lead_time_email_days", days=d.get("lead_time_reciente"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
-            f'  {d.get("lead_time_historico")} días</td>'
+            f'  {render_es("lead_time_email_days", days=d.get("lead_time_historico"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">'
-            f'  +{d.get("deviation_days")} días</td>'
+            f'  {render_es("lead_time_email_deviation_days", days=d.get("deviation_days"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
-            f'  {d.get("n_reciente")} de {d.get("n_baseline")}</td>'
+            f'  {render_es("lead_time_email_receptions_ratio", recent=d.get("n_reciente"), baseline=d.get("n_baseline"))}</td>'
             f'</tr>'
         )
 
     n = len(deviations)
-    subject = (
-        f"⏱️ {n} proveedor{'es' if n > 1 else ''} tardando más de lo habitual"
-    )
+    subject = render_es("lead_time_email_subject", n=n, s="es" if n > 1 else "")
+
+    def _th(label: str) -> str:
+        return (
+            f'<th style="padding:8px 12px;text-align:left;color:{_DIM};'
+            f'font-size:10px;text-transform:uppercase;">{label}</th>'
+        )
 
     table_html = (
         '<table width="100%" style="border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#13141e;">'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Proveedor</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Ahora</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Histórico</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Desviación</th>'
-        f'<th style="padding:8px 12px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Recepciones</th>'
-        '</tr></thead><tbody>'
+        + "".join(_th(render_es(k)) for k in (
+            "lead_time_email_col_supplier", "lead_time_email_col_current",
+            "lead_time_email_col_historical", "lead_time_email_col_deviation",
+            "lead_time_email_col_receptions",
+        ))
+        + '</tr></thead><tbody>'
         + "".join(_row(d) for d in deviations)
         + '</tbody></table>'
     )
 
     html = _base_html(
-        "Desviación de lead time",
+        render_es("lead_time_email_title"),
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 4px;">Tus proveedores están tardando más</p>
+        <p style="font-size:20px;font-weight:700;margin:0 0 4px;">
+          {render_es("lead_time_email_heading")}
+        </p>
         <p style="color:{_DIM};margin:0 0 24px;font-size:13px;">
-          {n} proveedor{'es se han desviado' if n > 1 else ' se ha desviado'} de su lead time
-          histórico. Si sigues pidiendo con el plazo anterior, el stock puede
-          agotarse antes de que llegue la reposición.
+          {render_es("lead_time_email_body_many" if n > 1 else "lead_time_email_body_one", n=n)}
         </p>
         {table_html}
-        {_button("Ver scorecard de proveedores", scorecard_url)}
+        {_button(render_es("lead_time_email_cta"), scorecard_url)}
         <p style="color:{_DIM};font-size:11px;margin:0;">
-          Detectado comparando las últimas recepciones contra el historial propio
-          de cada proveedor (regla de control estadístico de 3 sigma).
+          {render_es("lead_time_email_footer")}
         </p>
         """,
     )
@@ -587,31 +633,36 @@ def send_po_to_supplier_email(
             f'</tr>'
         )
 
+    def _th(label: str) -> str:
+        return (
+            f'<th style="padding:8px 10px;text-align:left;color:{_DIM};'
+            f'font-size:10px;text-transform:uppercase;">{label}</th>'
+        )
+
     table_html = (
         '<table width="100%" style="border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#13141e;">'
-        f'<th style="padding:8px 10px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">SKU</th>'
-        f'<th style="padding:8px 10px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Producto</th>'
-        f'<th style="padding:8px 10px;text-align:left;color:{_DIM};font-size:10px;text-transform:uppercase;">Cantidad</th>'
-        '</tr></thead><tbody>' + "".join(_row(i) for i in items) + '</tbody></table>'
+        + "".join(_th(render_es(k)) for k in (
+            "po_email_col_sku", "po_email_col_product", "po_email_col_qty",
+        ))
+        + '</tr></thead><tbody>' + "".join(_row(i) for i in items) + '</tbody></table>'
     )
 
     html = _base_html(
-        "Nueva orden de compra",
+        render_es("po_email_title"),
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Nueva orden de compra</p>
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">{render_es("po_email_title")}</p>
         <p style="color:{_DIM};margin:0 0 20px;">
-          Hola {supplier_name}, adjuntamos una nueva orden de compra. El detalle completo
-          está en el PDF adjunto.
+          {render_es("po_email_body", supplier=supplier_name)}
         </p>
         {table_html}
         <p style="color:{_DIM};font-size:11px;margin:20px 0 0;">
-          Referencia: {ref}
+          {render_es("po_email_reference", reference=ref)}
         </p>
         """,
     )
     try:
-        _send(to, f"Orden de compra {ref}", html,
+        _send(to, render_es("po_email_subject", reference=ref), html,
               attachment={"filename": pdf_filename, "content_bytes": pdf_bytes})
         return True
     except Exception as exc:
@@ -622,9 +673,9 @@ def send_po_to_supplier_email(
 # ── Monthly recap ─────────────────────────────────────────────────────────────
 # Target market is Costa Rica, so amounts render as colones (CRC). CR uses the
 # period as thousands separator.
-_MONTH_NAMES_ES = (
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+_MONTH_KEYS = (
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
 )
 
 
@@ -632,10 +683,14 @@ def _fmt_crc(value: float) -> str:
     return "₡" + f"{value:,.0f}".replace(",", ".")
 
 
-def _month_label_es(month_key: str) -> str:
-    """'2026-06' -> 'junio de 2026'."""
+def _month_label(month_key: str) -> str:
+    """'2026-06' -> 'junio de 2026' (month name and joiner come from the catalog)."""
     year, month = (int(p) for p in month_key.split("-"))
-    return f"{_MONTH_NAMES_ES[month - 1]} de {year}"
+    return render_es(
+        "month_label",
+        month=render_es(f"month_name_{_MONTH_KEYS[month - 1]}"),
+        year=year,
+    )
 
 
 def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:
@@ -659,7 +714,7 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     """
     _GRN = "#22c55e"
     _RED = "#ef4444"
-    month_label = _month_label_es(report["month"])
+    month_label = _month_label(report["month"])
 
     tiles: list[str] = []
 
@@ -667,9 +722,10 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     if adoption is not None:
         tiles.append(_recap_metric_block(
             f"{round(adoption * 100)}%",
-            "de las recomendaciones que seguiste",
-            f'Seguiste {report["recommendations_followed"]} de '
-            f'{report["recommendations_shown"]} líneas que Faro te propuso.',
+            render_es("roi_email_metric_adoption_label"),
+            render_es("roi_email_metric_adoption_note",
+                      followed=report["recommendations_followed"],
+                      shown=report["recommendations_shown"]),
             _PRIMARY,
         ))
 
@@ -677,9 +733,8 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     if risks:
         tiles.append(_recap_metric_block(
             f"{risks}",
-            "riesgos de quiebre atendidos",
-            "Productos marcados “Pedir ya” que sí ordenaste en el mes. "
-            "Es lo que hiciste, no una estimación de quiebres evitados.",
+            render_es("roi_email_metric_risks_label"),
+            render_es("roi_email_metric_risks_note"),
             _RED,
         ))
 
@@ -687,9 +742,8 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     if capital is not None:
         tiles.append(_recap_metric_block(
             _fmt_crc(capital),
-            "capital liberado de sobrestock",
-            "Diferencia medida entre el valor de tu inventario en sobrestock "
-            "al inicio y al final del mes.",
+            render_es("roi_email_metric_capital_label"),
+            render_es("roi_email_metric_capital_note"),
             _GRN,
         ))
 
@@ -697,8 +751,8 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     if managed is not None:
         tiles.append(_recap_metric_block(
             _fmt_crc(managed),
-            "en compras gestionadas",
-            "Unidades ordenadas × costo unitario de tus propios datos.",
+            render_es("roi_email_metric_purchases_label"),
+            render_es("roi_email_metric_purchases_note"),
             _TEXT,
         ))
 
@@ -712,31 +766,31 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     )
 
     headline = (
-        f"En {month_label} liberaste {_fmt_crc(capital)} de inventario detenido."
+        render_es("roi_email_headline_capital",
+                  month=month_label, amount=_fmt_crc(capital))
         if capital is not None
-        else f"Esto es lo que hiciste con Faro en {month_label}."
+        else render_es("roi_email_headline_default", month=month_label)
     )
+    title = render_es("roi_email_title", month=month_label)
 
     html = _base_html(
-        f"Tu resumen de {month_label}",
+        title,
         f"""
-        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Tu resumen de {month_label}</p>
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">{title}</p>
         <p style="color:{_DIM};margin:0 0 20px;font-size:13px;">{headline}</p>
         {tiles_html}
-        {_button("Ver el resumen completo", roi_url)}
+        {_button(render_es("roi_email_cta"), roi_url)}
         <p style="color:{_DIM};font-size:11px;margin:0;line-height:1.6;">
-          Cada cifra sale de tus propios registros en Faro: las órdenes que generaste y
-          las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos
-          quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos
-          lo que quedó registrado.
+          {render_es("roi_email_footer")}
         </p>
         """,
     )
 
     subject = (
-        f"Faro — liberaste {_fmt_crc(capital)} en {month_label}"
+        render_es("roi_email_subject_capital",
+                  month=month_label, amount=_fmt_crc(capital))
         if capital is not None
-        else f"Faro — tu resumen de {month_label}"
+        else render_es("roi_email_subject_default", month=month_label)
     )
     try:
         _send(to, subject, html)

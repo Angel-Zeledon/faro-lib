@@ -10,6 +10,7 @@ import { formatMoney } from '@/lib/currency'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
 const C = {
@@ -43,6 +44,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
 }) {
   const { t } = useLanguage()
   const errorDetail = useErrorDetail()
+  const narrow = useIsNarrow()
   const [items,   setItems]   = useState<POItemLine[] | null>(null)
   const [qty,     setQty]     = useState<Record<string, string>>({})
   const [saving,  setSaving]  = useState(false)
@@ -118,8 +120,59 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
 
         {!items && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
 
-        {items && (
+        {/* Recording a delivery is warehouse work: the person doing it is at a
+            pallet with a phone. A five-column table cannot shrink into that —
+            it just scrolls sideways inside the modal, hiding the quantity box
+            that is the entire point. On a narrow viewport each line becomes a
+            stacked card with a full-width input instead. */}
+        {items && narrow && (
           <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {items.map(i => (
+                <div key={i.sku} style={{
+                  border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px',
+                  background: C.card,
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: C.text }}>
+                    {i.display_name || i.sku}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace', marginBottom: 6 }}>
+                    {i.sku}{i.supplier ? ` · ${i.supplier}` : ''}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
+                    {t('po.reception_col_ordered')}:{' '}
+                    <strong style={{ color: C.text, fontFamily: 'monospace' }}>
+                      {i.final_qty.toLocaleString()}
+                    </strong>
+                    {(i.received_qty || 0) > 0 && (
+                      <> · {t('po.reception_col_received_before')}:{' '}
+                        <span style={{ fontFamily: 'monospace' }}>
+                          {(i.received_qty || 0).toLocaleString()}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <label style={{ display: 'block', fontSize: 11, color: C.dim, marginBottom: 4 }}>
+                    {t('po.reception_col_arriving')}
+                  </label>
+                  <input
+                    type="number" min={0} inputMode="numeric"
+                    name={`reception-qty-${i.sku}`} aria-label={`${t('po.reception_col_arriving')} — ${i.display_name || i.sku}`}
+                    value={qty[i.sku] ?? ''}
+                    onChange={e => setQty(prev => ({ ...prev, [i.sku]: e.target.value }))}
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: 8,
+                      border: `1px solid ${C.border}`, background: C.surface,
+                      color: C.text, fontSize: 15, fontFamily: 'monospace',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {items && !narrow && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
@@ -163,14 +216,23 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
                 ))}
               </tbody>
             </table>
+        )}
 
+        {items && (
+          <>
             {error && (
               <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>
                 {error}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
+            {/* On a phone the two actions stack full-width: side-by-side at
+                375px leaves each below the 44px touch target. */}
+            <div style={{
+              display: 'flex', gap: 10, marginTop: 18,
+              flexDirection: narrow ? 'column-reverse' : 'row',
+              justifyContent: 'flex-end',
+            }}>
               <button
                 onClick={() => save(false)}
                 disabled={saving}

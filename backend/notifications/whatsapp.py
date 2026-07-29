@@ -99,26 +99,30 @@ def build_inventory_alert_text(
     lines: list[str] = []
     n_crit = len(critical_items)
     if n_crit:
-        lines.append(f"🔴 *Faro*: {n_crit} producto{'s' if n_crit != 1 else ''} se agota{'n' if n_crit != 1 else ''} antes de tu próximo pedido")
+        lines.append(render_es(
+            "alert_whatsapp_critical_one" if n_crit == 1 else "alert_whatsapp_critical_many",
+            n=n_crit,
+        ))
         for i in critical_items[:_ALERT_MAX_CRITICAL_LINES]:
             days = i.get("coverage_days")
+            # "d" is the language-neutral day symbol, not copy.
             days_str = f"{days:.0f}d" if days is not None else "—"
             qty = i.get("recommended_qty")
-            qty_str = f" · pedir {qty:,.0f}" if qty else ""
+            qty_str = render_es("alert_whatsapp_order_qty", qty=f"{qty:,.0f}") if qty else ""
             lines.append(f"  • {i.get('display_name') or i.get('sku')} ({days_str}{qty_str})")
         if n_crit > _ALERT_MAX_CRITICAL_LINES:
             lines.append(render_es("alert_whatsapp_more", n=n_crit - _ALERT_MAX_CRITICAL_LINES))
     n_warn = len(warning_items)
     if n_warn:
-        lines.append(f"🟡 {n_warn} por reabastecer esta semana")
+        lines.append(render_es("alert_whatsapp_warning", n=n_warn))
     if transfer_count > 0:
         # Network-aware suggestion (feature 5.4): stock exists, it's just in
         # the wrong warehouse — no money needs to be spent.
-        lines.append(
-            f"🔁 {transfer_count} producto{'s' if transfer_count != 1 else ''} "
-            f"se resuelve{'n' if transfer_count != 1 else ''} moviendo stock, sin comprar"
-        )
-    lines.append(f"Ver y aprobar: {inventory_url}")
+        lines.append(render_es(
+            "alert_whatsapp_transfer_one" if transfer_count == 1 else "alert_whatsapp_transfer_many",
+            n=transfer_count,
+        ))
+    lines.append(render_es("alert_whatsapp_cta", url=inventory_url))
     return "\n".join(lines)
 
 

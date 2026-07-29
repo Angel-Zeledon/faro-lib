@@ -9,19 +9,21 @@ import { useLanguage } from '@/contexts/LanguageContext'
 /**
  * "Esta vista está pensada para computadora."
  *
- * Only `/hoy` has a screen built for a phone. Every other page is a dense
- * table laid out with fixed inline widths, and on a 390px viewport it does not
- * degrade — it breaks. Saying so costs one line and is the honest move; the
- * alternative is letting someone in a warehouse wrestle a table that was never
- * going to work, and conclude the product is broken.
+ * Only the routes in MOBILE_READY have a screen built for a phone. Every other
+ * page is a dense table laid out with fixed inline widths, and on a 390px
+ * viewport it does not degrade — it breaks. Saying so costs one line and is the
+ * honest move; the alternative is letting someone in a warehouse wrestle a
+ * table that was never going to work, and conclude the product is broken.
  *
- * It names the one screen that DOES work, so the notice is a way out rather
- * than an apology, and it is dismissible for the session — a warning that
- * cannot be silenced becomes furniture people stop reading.
+ * It names a screen that DOES work, so the notice is a way out rather than an
+ * apology, and it is dismissible for the session — a warning that cannot be
+ * silenced becomes furniture people stop reading.
  */
 
-/** Routes with a real narrow-screen implementation. */
-const MOBILE_READY = ['/hoy']
+/** Routes with a real narrow-screen implementation.
+ *  `/pedidos` earned its place here because registering a delivery is warehouse
+ *  work — see app/pedidos/PedidosMobile.tsx. */
+const MOBILE_READY = ['/hoy', '/pedidos']
 
 const DISMISS_KEY = 'fp_mobile_notice_dismissed'
 

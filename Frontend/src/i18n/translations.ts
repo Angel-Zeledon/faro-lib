@@ -1070,6 +1070,22 @@ export const translations = {
     'mobile.hoy_desktop_hint':     'Esta es la versión corta para tu celular. Los cambios de demanda, el sobrestock y el inventario completo están en la pantalla de computadora.',
     'mobile.desktop_only_notice':  'Esta vista está pensada para computadora. En el celular la tabla no te va a caber.',
     'mobile.desktop_only_cta':     'Ir a qué comprar hoy',
+
+    // Vista de celular de /pedidos. Registrar una llegada se hace de pie
+    // frente a la tarima, no en el escritorio.
+    'mobile.pedidos_awaiting_title': 'Por recibir',
+    'mobile.pedidos_awaiting_none':  'No tienes nada por recibir: ya registraste la llegada de todos tus pedidos.',
+    'mobile.pedidos_history_title':  'Ya registrados',
+    'mobile.pedidos_card_skus_one':  '1 SKU',
+    'mobile.pedidos_card_skus':      '{n} SKUs',
+    'mobile.pedidos_card_units_one': '1 unidad',
+    'mobile.pedidos_card_units':     '{n} unidades',
+    'mobile.pedidos_chip_urgent_one': '1 urgente',
+    'mobile.pedidos_chip_urgent':     '{n} urgentes',
+    'mobile.pedidos_chip_soon_one':   '1 próximo',
+    'mobile.pedidos_chip_soon':       '{n} próximos',
+    'mobile.pedidos_share_toggle':   'Reenviar este pedido',
+    'mobile.pedidos_desktop_hint':   'Esta es la versión para tu celular: registrar llegadas y reenviar pedidos. Crear una orden a mano y enviarla a tus proveedores están en la pantalla de computadora.',
     'sidebar.open_menu':           'Abrir el menú',
 
     // Paginación y accesibilidad de tablas. Con 2.000 SKUs la tabla ponía
@@ -3867,6 +3883,22 @@ export const translations = {
     'mobile.hoy_desktop_hint':     'This is the short version for your phone. Demand changes, overstock and the full inventory are on the desktop screen.',
     'mobile.desktop_only_notice':  'This screen is designed for a computer. On a phone the table will not fit.',
     'mobile.desktop_only_cta':     'Go to what to order today',
+
+    // Phone view of /pedidos. Recording an arrival is done standing at the
+    // pallet, not at a desk.
+    'mobile.pedidos_awaiting_title': 'Awaiting arrival',
+    'mobile.pedidos_awaiting_none':  'Nothing to receive: you have already recorded the arrival of every order.',
+    'mobile.pedidos_history_title':  'Already recorded',
+    'mobile.pedidos_card_skus_one':  '1 SKU',
+    'mobile.pedidos_card_skus':      '{n} SKUs',
+    'mobile.pedidos_card_units_one': '1 unit',
+    'mobile.pedidos_card_units':     '{n} units',
+    'mobile.pedidos_chip_urgent_one': '1 urgent',
+    'mobile.pedidos_chip_urgent':     '{n} urgent',
+    'mobile.pedidos_chip_soon_one':   '1 upcoming',
+    'mobile.pedidos_chip_soon':       '{n} upcoming',
+    'mobile.pedidos_share_toggle':   'Forward this order',
+    'mobile.pedidos_desktop_hint':   'This is the phone version: record arrivals and forward orders. Creating an order by hand and sending it to your suppliers are on the desktop screen.',
     'sidebar.open_menu':           'Open menu',
 
     // In-app alert history. The backend sends machine values (kind, status,

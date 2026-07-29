@@ -14,6 +14,12 @@ import { ClipboardList, Plus, ShoppingCart } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+// Which orders are still waiting for goods, and which suppliers are worth
+// warning about, live in ./shared so the phone card list below cannot answer
+// either question differently from this table.
+import { countAwaitingReception, suppliersOnOpenOrders } from './shared'
+import PedidosMobile from './PedidosMobile'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -35,6 +41,9 @@ export default function OrdersPage() {
   // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
   const { multi: multiWarehouse } = useWarehouses()
   const [tab, setTab] = useState<'orders' | 'transfers'>('orders')
+  // Phone or desktop. Declared with the other hooks so the hook order is stable
+  // whichever tree ends up rendering (see the fork below).
+  const isNarrow = useIsNarrow()
 
   // `silent: true` — this screen renders the failure itself as a full ErrorState,
   // so the interceptor's toast would say the same thing twice.
@@ -64,14 +73,50 @@ export default function OrdersPage() {
     getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
   }, [])
 
-  const pendingCount = history.filter(p =>
-    ['pending', 'partial'].includes(p.reception_status ?? 'pending'),
-  ).length
+  const pendingCount = countAwaitingReception(history)
 
   // On this screen there is no cart, so relevance is exactly "named on an
   // order that is still open" — those are the orders that still need to
   // reach the supplier.
-  const relevantContactHealth = contactHealth.filter(r => r.has_open_pos)
+  const relevantContactHealth = suppliersOnOpenOrders(contactHealth)
+
+  // ── Phone: a card list, not this table ────────────────────────────────────
+  // Recording a delivery is done standing at the pallet. Everything above this
+  // line — the loading, the history, the supplier-health filtering, the
+  // reception modal below — is shared; only the presentation forks, so the two
+  // views cannot disagree about which order is still open.
+  //
+  // `isNarrow` is false on the first render (SSR has no viewport), so the
+  // desktop tree is what hydrates and the swap happens one paint later.
+  if (isNarrow) {
+    return (
+      <>
+        <PedidosMobile
+          loading={loading}
+          error={error}
+          onRetry={() => load(true)}
+          entries={history}
+          contactHealth={relevantContactHealth}
+          leadTimeAlerts={leadTimeAlerts}
+          onReceive={setReceivingPO}
+          multiWarehouse={multiWarehouse}
+          tab={tab}
+          onTab={setTab}
+          transfers={<TransfersPanel />}
+        />
+        {/* The same modal the desktop table opens. Reception writes stock and
+            teaches the supplier's real lead time — one implementation of that
+            mutation, or the two screens could record different things. */}
+        {receivingPO && (
+          <ReceptionModal
+            poId={receivingPO}
+            onClose={() => setReceivingPO(null)}
+            onSaved={() => { setReceivingPO(null); load() }}
+          />
+        )}
+      </>
+    )
+  }
 
   // No page-level entrance on this root: the route fade is applied once by
   // AppShell, and a second one here would double-animate the same screen.
