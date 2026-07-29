@@ -267,6 +267,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
     </div>
     {hasWhyData && (
      <button
+      data-tour="hoy.why"
       onClick={() => setShowWhy(v => !v)}
       style={{
        all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
@@ -1297,7 +1298,7 @@ export default function HoyPage() {
        )}
 
        {/* KPI row */}
-       <div style={{ display: 'flex', gap: 12, marginBottom: semaphoreStale ? 8 : 28, flexWrap: 'wrap' }}>
+       <div data-tour="hoy.kpis" style={{ display: 'flex', gap: 12, marginBottom: semaphoreStale ? 8 : 28, flexWrap: 'wrap' }}>
         <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
         <KpiCard label={t('hoy.kpi_risk_today')}        value={String(kpis!.order_now)}         color={kpis!.order_now > 0 ? C.red : C.text} />
         <KpiCard label={t('hoy.kpi_this_week')}         value={String(kpis!.order_soon)}      color={kpis!.order_soon > 0 ? C.amber : C.text} />
@@ -1345,7 +1346,7 @@ export default function HoyPage() {
 
         {/* URGENTE section */}
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
-         <div style={{ marginBottom: 24 }}>
+         <div data-tour="hoy.actions" style={{ marginBottom: 24 }}>
           <div style={{
            fontSize: 11, fontWeight: 700, color: 'var(--signal-order-now-fg)',
            textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,

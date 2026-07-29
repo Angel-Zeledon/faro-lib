@@ -151,6 +151,7 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
 
  return (
  <div
+ data-tour="qs.upload"
  onDragOver={e => { e.preventDefault(); setDragging(true) }}
  onDragLeave={() => setDragging(false)}
  onDrop={handleDrop}
@@ -449,7 +450,7 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  }}
  />
  </div>
- <div>
+ <div data-tour="qs.horizon">
  <span style={labelStyle}>{t('qs.plan_horizon_label')}</span>
  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
  {HORIZON_PRESETS.map(p => (
@@ -463,7 +464,7 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  ))}
  </div>
  </div>
- <div>
+ <div data-tour="qs.granularity">
  <span style={labelStyle}>{t('qs.plan_granularity_label')}</span>
  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
  {GRANULARITY_OPTIONS.map(o => (

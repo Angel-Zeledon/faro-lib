@@ -451,7 +451,7 @@ export default function ScenariosPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 18, alignItems: 'start' }}>
         {/* Builder */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div data-tour="sc.builder" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <Card padding={18}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 12px' }}>
               {t('scenarios.builder_title')}
@@ -480,6 +480,7 @@ export default function ScenariosPage() {
                 <Plus size={14} /> {t('scenarios.add_rule')}
               </button>
               <button
+                data-tour="sc.run"
                 onClick={simulate}
                 disabled={running || !sessionId}
                 style={{
@@ -606,7 +607,7 @@ export default function ScenariosPage() {
                 <CompareTable result={result} />
               </Card>
 
-              <Card padding={18}>
+              <Card padding={18} data-tour="sc.changes">
                 <h2 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 8px' }}>
                   {t('scenarios.changes_title')}
                 </h2>

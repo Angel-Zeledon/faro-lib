@@ -6,6 +6,7 @@ import { ChevronRight } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import AlertBell from '@/components/alerts/AlertBell'
+import TourLauncher from '@/components/tour/TourLauncher'
 import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
@@ -201,6 +202,11 @@ export default function TopBar() {
         <span style={{ fontSize: 12, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
           {time}
         </span>
+
+        {/* Replay the guided tour. Only appears on screens that have one, so
+            it is never a dead control, and it is how someone who dismissed the
+            tour on their first visit gets it back. */}
+        <TourLauncher />
 
         {/* Notification bell — durable alert history + this session's notices */}
         <AlertBell

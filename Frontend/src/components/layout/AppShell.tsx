@@ -10,6 +10,8 @@ import { SkuSearchProvider } from '@/contexts/SkuSearchContext'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import { WarehousesProvider } from '@/components/inventory/WarehouseControls'
 import { PlanningProvider } from '@/contexts/PlanningContext'
+import { TourProvider } from '@/contexts/TourContext'
+import TourOverlay from '@/components/tour/TourOverlay'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
 import { EntitlementsProvider } from '@/lib/entitlements'
@@ -29,10 +31,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <ConfirmProvider>
           <SidebarProvider>
             <SkuSearchProvider>
-              <Shell>{children}</Shell>
-              <ToastContainer />
-              <ApiErrorBridge />
-              <SkuSearchOverlay />
+              <TourProvider>
+                <Shell>{children}</Shell>
+                <ToastContainer />
+                <ApiErrorBridge />
+                <SkuSearchOverlay />
+                {/* Last child, so its overlay sits above the app chrome but
+                    below nothing that matters — it must never cover a toast
+                    reporting that something failed. */}
+                <TourOverlay />
+              </TourProvider>
             </SkuSearchProvider>
           </SidebarProvider>
           </ConfirmProvider>

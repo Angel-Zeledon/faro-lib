@@ -142,12 +142,14 @@ const thStyle: React.CSSProperties = {
  textTransform: 'uppercase' as const, letterSpacing: '0.06em',
 }
 
-function ThTip({ label, tip, sortKey, sort, onSort }: {
+function ThTip({ label, tip, sortKey, sort, onSort, dataTour }: {
  label: string
  tip: string
  sortKey?: SortKey
  sort?: SortState | null
  onSort?: (key: SortKey) => void
+ /** `data-tour` anchor, so a guided tour can point at this column. */
+ dataTour?: string
 }) {
  const { t } = useLanguage()
  const active = sortKey != null && sort?.key === sortKey
@@ -157,7 +159,7 @@ function ThTip({ label, tip, sortKey, sort, onSort }: {
  const inner = <Tooltip text={tip}><span>{label}</span><Info size={9} color={C.dim} style={{ opacity: 0.5, flexShrink: 0 }} /></Tooltip>
 
  if (sortKey == null || !onSort) {
-  return <th scope="col" style={thStyle}>{inner}</th>
+  return <th scope="col" data-tour={dataTour} style={thStyle}>{inner}</th>
  }
 
  // The next state this button produces, spelled out — an arrow glyph alone
@@ -169,7 +171,7 @@ function ThTip({ label, tip, sortKey, sort, onSort }: {
   { column: label })
 
  return (
-  <th scope="col" aria-sort={ariaSort} style={{ ...thStyle, color: active ? 'var(--accent)' : C.dim }}>
+  <th scope="col" aria-sort={ariaSort} data-tour={dataTour} style={{ ...thStyle, color: active ? 'var(--accent)' : C.dim }}>
    <button
     type="button"
     onClick={() => onSort(sortKey)}
@@ -2448,13 +2450,13 @@ export default function InventoryPage() {
  <th scope="col" style={{ padding: '9px 12px', width: 28, borderBottom: `1px solid ${C.border}` }}>
  <span className="sr-only">{tOr(t, 'inventory.col_expand', 'Show calculation')}</span>
  </th>
- <ThTip label={t('inventory.col_signal')} tip={t('inventory.tip_signal')} sortKey="signal" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_signal')} tip={t('inventory.tip_signal')} sortKey="signal" sort={sort} onSort={toggleSort} dataTour="inv.signal" />
  <ThTip label={t('inventory.col_sku_name')} tip={t('inventory.tip_sku_name')} sortKey="sku" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_stock')} tip={t('inventory.tip_stock')} sortKey="stock" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_trend')} tip={t('inventory.tip_trend')} />
  <ThTip label={`${t('inventory.wh_col_coverage')} (${coverageUnitShort(data?.coverage_unit, t)})`} tip={t('inventory.tip_days_coverage')} sortKey="coverage" sort={sort} onSort={toggleSort} />
  <ThTip label={t('inventory.col_demand_lt')} tip={t('inventory.tip_demand_lt')} sortKey="demand_lt" sort={sort} onSort={toggleSort} />
- <ThTip label={t('inventory.col_qty_to_order')} tip={t('inventory.tip_qty_to_order')} sortKey="qty" sort={sort} onSort={toggleSort} />
+ <ThTip label={t('inventory.col_qty_to_order')} tip={t('inventory.tip_qty_to_order')} sortKey="qty" sort={sort} onSort={toggleSort} dataTour="inv.suggest" />
  <ThTip label={t('inventory.col_lead_time')} tip={t('inventory.tip_lead_time')} sortKey="lead_time" sort={sort} onSort={toggleSort} />
  <ThTip label="MOQ" tip={t('inventory.tip_moq')} sortKey="moq" sort={sort} onSort={toggleSort} />
  <ThTip label="ABC-XYZ" tip={t('inventory.tip_abc_xyz')} sortKey="abc_xyz" sort={sort} onSort={toggleSort} />
