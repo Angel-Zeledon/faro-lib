@@ -1532,6 +1532,22 @@ export interface SkuIntelligenceData {
   } | null
 }
 
+// ── Billing ───────────────────────────────────────────────────────────────────
+export interface SubscriptionState {
+  plan: string | null
+  /** Stripe's own vocabulary, stored verbatim: trialing | active | past_due |
+   *  canceled | unpaid. Null when the tenant has never subscribed. */
+  subscription_status: string | null
+  has_billing_account: boolean
+  trial_ends_at: string | null
+  /** False on a deployment with no STRIPE_SECRET_KEY: show nothing rather than
+   *  a buy button that cannot work. */
+  billing_enabled: boolean
+  /** What this deployment can actually sell, plan -> interval -> price id. A
+   *  plan absent here has no configured price, so it is not offered. */
+  purchasable: Record<string, Record<string, string>>
+}
+
 // ── Series decomposition ──────────────────────────────────────────────────────
 /** One bucket of the STL split. The four values are aligned by construction on
  *  the backend — `observed === trend + seasonal + residual` for every row — so

@@ -4,8 +4,9 @@ import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
-  MessageCircle, Unlink, CalendarClock, MessageSquare,
+  MessageCircle, Unlink, CalendarClock, MessageSquare, CreditCard,
 } from 'lucide-react'
+import BillingPanel from '@/components/billing/BillingPanel'
 import { useEntitlements } from '@/lib/entitlements'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -1335,6 +1336,17 @@ export default function ConfigPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <ProfileSection t={t} lang={lang} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Company-level, but this is where the Stripe checkout returns to,
+              and where someone looks for "what am I paying". The panel renders
+              nothing at all on a deployment with no Stripe key. */}
+          <Card>
+            <SectionTitle
+              icon={CreditCard} color="var(--accent)"
+              title={t('billing.section_title')}
+              subtitle={t('billing.section_subtitle')}
+            />
+            <BillingPanel />
+          </Card>
           <AppConfigSection t={t} />
           <PlanningSection t={t} />
           <WhatsAppSection t={t} />

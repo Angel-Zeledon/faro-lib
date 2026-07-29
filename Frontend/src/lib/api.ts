@@ -1160,6 +1160,23 @@ export const getSkuDecomposition = (
   )
 }
 
+// ── Billing ───────────────────────────────────────────────────────────────────
+export const getSubscription = (opts?: RequestOpts) =>
+  request<import('./types').SubscriptionState>('GET', '/billing/subscription',
+    undefined, opts)
+
+/** Starts a Stripe-hosted checkout and returns the URL to send the browser to.
+ *
+ *  Note it takes a PLAN, not a price id: the server resolves the price from its
+ *  own configuration, so a client cannot check out against a price of its
+ *  choosing. Admin only. */
+export const startCheckout = (plan: string, interval: 'monthly' | 'yearly' = 'monthly') =>
+  request<{ url: string }>('POST', '/billing/checkout', { plan, interval })
+
+/** Stripe's own billing portal: cards, invoices, cancellation. Admin only. */
+export const openBillingPortal = () =>
+  request<{ url: string }>('POST', '/billing/portal', {})
+
 export const analyzeDataSource = (
   id: string,
   params: { date_col: string; target_col: string; sku_col?: string; sheet?: string; date_from?: string; date_to?: string },
