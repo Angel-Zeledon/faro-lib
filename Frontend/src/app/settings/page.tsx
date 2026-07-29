@@ -447,15 +447,36 @@ function SchedulesTab() {
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-const TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] = [
+/**
+ * Two of the three tabs are hidden, because neither does what its UI implies.
+ *
+ * · API keys: a key can be created and listed, and then authenticates nothing
+ *   — no endpoint accepts one. The tab shipped its own "coming soon" banner,
+ *   which is an admission that the screen was misleading, not a fix for it.
+ * · Webhooks: the delivery is real (HMAC-signed) but it is a single POST with
+ *   no retry and only two events, both about training runs. A user who
+ *   configures one reasonably expects it to be reliable.
+ *
+ * A control that does nothing is worse than an absent one: it spends the
+ * user's trust and their time. They come back by flipping these to true —
+ * the tabs and their components are untouched underneath.
+ */
+const ENABLED: Record<Tab, boolean> = {
+  'api-keys':  false,
+  'webhooks':  false,
+  'schedules': true,
+}
+
+const ALL_TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] = [
   { id: 'api-keys',   labelKey: 'settings.tab_api_keys',   Icon: Key },
   { id: 'webhooks',   labelKey: 'settings.tab_webhooks',   Icon: WebhookIcon },
   { id: 'schedules',  labelKey: 'settings.tab_schedules',  Icon: Clock },
 ]
+const TABS = ALL_TABS.filter(tab => ENABLED[tab.id])
 
 export default function SettingsPage() {
   const { t } = useLanguage()
-  const [tab, setTab] = useState<Tab>('api-keys')
+  const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? 'schedules')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -466,7 +487,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Tab bar */}
+      {/* Tab bar — pointless with a single tab, so it only renders when there
+          is a choice to make. */}
+      {TABS.length > 1 && (
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
         {TABS.map(({ id, labelKey, Icon }) => {
           const active = tab === id
@@ -490,12 +513,18 @@ export default function SettingsPage() {
           )
         })}
       </div>
+      )}
 
-      {/* Tab content */}
-      <Card tone="inset" padding="20px 24px">
-        {tab === 'api-keys'  && <ApiKeysTab />}
-        {tab === 'webhooks'  && <WebhooksTab />}
-        {tab === 'schedules' && <SchedulesTab />}
+      {/* Tab content. Each arm is gated too, so a stale `tab` in state can
+          never render a disabled surface.
+
+          The tour anchor lives here rather than on a tab button: with one tab
+          left there is no tab bar, and an anchor that only exists when the bar
+          is drawn left the tour pointing at nothing. */}
+      <Card tone="inset" padding="20px 24px" data-tour={`settings.${tab}`}>
+        {ENABLED['api-keys']  && tab === 'api-keys'  && <ApiKeysTab />}
+        {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
+        {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
       </Card>
     </div>
   )

@@ -23,6 +23,22 @@ import { roleLabel } from '@/lib/enumLabels'
 
 const ROLES = ['admin', 'analyst', 'viewer']
 
+/**
+ * The per-user permission checkboxes are hidden, because they grant nothing.
+ *
+ * `user_permissions` rows are written by `set_user_permissions` and read back
+ * by `get_user_permissions`, and that is the whole story: no endpoint and no
+ * frontend gate ever consults them. Authorisation is decided entirely by role
+ * — `require_analyst_or_above` / `require_admin`. So an admin could untick
+ * "manage inventory" for someone and that person would keep managing
+ * inventory, which is the worst kind of security control: one that reports
+ * success and does nothing.
+ *
+ * The modal and its API calls are left intact underneath. Flip this to true
+ * once the backend actually enforces the rows.
+ */
+const PER_USER_PERMISSIONS_ENABLED = false
+
 const PERMISSION_GROUPS: { labelKey: string; perms: string[] }[] = [
   { labelKey: 'users.group_forecasting', perms: ['view_forecasts', 'run_training', 'manage_sessions', 'export_data'] },
   { labelKey: 'users.group_inventory',   perms: ['view_inventory', 'manage_inventory'] },
@@ -801,15 +817,17 @@ export default function UsersPage() {
               {u.status === 'pending_confirmation' && (
                 <ResendButton userId={u.id} email={u.email} />
               )}
-              <button
-                onClick={() => setPermsUser(u)}
-                data-tour={idx === 0 ? 'users.permissions' : undefined}
-                title={t('users.permissions_title')}
-                aria-label={t('users.permissions_title')}
-                style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
-              >
-                <ShieldCheck size={14} aria-hidden="true" />
-              </button>
+              {PER_USER_PERMISSIONS_ENABLED && (
+                <button
+                  onClick={() => setPermsUser(u)}
+                  data-tour={idx === 0 ? 'users.permissions' : undefined}
+                  title={t('users.permissions_title')}
+                  aria-label={t('users.permissions_title')}
+                  style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
+                >
+                  <ShieldCheck size={14} aria-hidden="true" />
+                </button>
+              )}
               <button
                 onClick={() => setEditUser(u)}
                 title={t('users.edit_title')}
@@ -868,7 +886,7 @@ export default function UsersPage() {
       {deleteUser && (
         <DeleteModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={load} />
       )}
-      {permsUser && (
+      {PER_USER_PERMISSIONS_ENABLED && permsUser && (
         <PermissionsModal user={permsUser} onClose={() => setPermsUser(null)} />
       )}
     </div>
