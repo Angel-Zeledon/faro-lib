@@ -190,6 +190,96 @@ class TestMaterialize:
         assert resp.json()["error_code"] == "data_source_not_sql"
 
 
+class TestExportXlsx:
+    def test_full_result_downloads_as_workbook(self, client, auth_headers, sql_source, sales_table):
+        resp = client.post(
+            f"/api/v1/data-sources/{sql_source['id']}/export-query",
+            json={"sql": f"SELECT fecha, sku, ventas FROM {sales_table} ORDER BY fecha"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert "query-result.xlsx" in resp.headers["content-disposition"]
+
+        import io
+
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(resp.content), read_only=True)
+        ws = wb["data"]
+        rows = [[c.value for c in r] for r in ws.iter_rows()]
+        assert rows[0] == ["fecha", "sku", "ventas"]
+        assert len(rows) == 4  # header + 3 data rows
+        # Excel executes a leading '=' — the malicious cell must be guarded.
+        cells = {v for row in rows for v in row}
+        assert "'=SUM(A1:A9)" in cells
+        assert "=SUM(A1:A9)" not in cells
+
+    def test_export_without_query_rejected(self, client, auth_headers, sql_source):
+        resp = client.post(
+            f"/api/v1/data-sources/{sql_source['id']}/export-query",
+            json={},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error_code"] == "sql_source_no_saved_query"
+
+
+def _xlsx_bytes() -> bytes:
+    """Small in-memory sales workbook, the shape a real user uploads."""
+    import io
+
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["fecha", "sku", "ventas"])
+    for day in range(1, 11):
+        ws.append((f"2026-01-{day:02d}", "SKU-X", 5 + day))
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+class TestExcelUploadWorksLikeCsv:
+    """The wizard path and the data-source path must both accept .xlsx."""
+
+    def test_wizard_upload_accepts_xlsx(self, client, auth_headers, test_tenant):
+        resp = client.post(
+            "/api/v1/datasets",
+            files={"file": (
+                "ventas.xlsx", _xlsx_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        ds = resp.json()["data"]
+        row = query_one("SELECT * FROM datasets WHERE id = %s", (ds["id"],))
+        assert row["tenant_id"] == test_tenant["id"]
+        assert row["file_type"] == "xlsx"
+        assert Path(row["file_path"]).exists()
+
+    def test_data_source_upload_accepts_xlsx_and_previews(self, client, auth_headers):
+        resp = client.post(
+            "/api/v1/data-sources/file",
+            files={"file": (
+                "ventas.xlsx", _xlsx_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        src = resp.json()["data"]
+        assert src["row_count"] == 10
+
+        resp = client.get(f"/api/v1/data-sources/{src['id']}/preview", headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        preview = resp.json()["data"]
+        assert preview["columns"] == ["fecha", "sku", "ventas"]
+        assert preview["row_count"] == 10
+
+
 class TestDatasetListExcludesSqlSources:
     def test_wizard_dataset_list_hides_sql_sources_but_shows_materialized(
         self, client, auth_headers, sql_source, sales_table,

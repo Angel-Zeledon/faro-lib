@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import {
  listDataSources, createFileSource, createSqlSource, replaceFileSource,
  updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery, materializeSqlSource,
+ exportSqlQueryXlsx,
  getDataSourcePreview, getDataSource, renameDataSource, deleteDataSource,
  analyzeDataSource, analyzeSkuDetail, getEditableTable, saveDatasetAsNew,
 } from '@/lib/api'
@@ -350,6 +351,7 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  const [running, setRunning] = useState(false)
  const [saving, setSaving] = useState(false)
  const [materializing, setMaterializing] = useState(false)
+ const [exporting, setExporting] = useState(false)
  const [err, setErr] = useState<string | null>(null)
 
  const run = async () => {
@@ -370,6 +372,16 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  onSaved(updated)
  } catch (e: any) { setErr(e.message) }
  finally { setSaving(false) }
+ }
+
+ // Download the FULL query result (not the preview) as an .xlsx workbook.
+ const exportXlsx = async () => {
+ if (!sql.trim() || exporting) return
+ setExporting(true); setErr(null)
+ try {
+ await exportSqlQueryXlsx(source.id, sql, `${source.name}.xlsx`)
+ } catch (e: any) { setErr(e.message) }
+ finally { setExporting(false) }
  }
 
  // Snapshot the FULL query result (not the preview) as a CSV dataset; from
@@ -436,9 +448,18 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>
  {result.row_count} {result.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{result.truncated ? ` ${t('data.truncated_suffix')}` : ''}
  </span>
+ <button onClick={exportXlsx} disabled={exporting}
+ title={t('data.btn_export_xlsx_hint')}
+ style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 7,
+ background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted,
+ fontWeight: 600, cursor: exporting ? 'default' : 'pointer',
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
+ opacity: exporting ? 0.6 : 1 }}>
+ {exporting ? <Spinner size={12} /> : <FileSpreadsheet size={12} />} {t('data.btn_export_xlsx')}
+ </button>
  <button onClick={materialize} disabled={materializing}
  title={t('data.btn_materialize_hint')}
- style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 7,
+ style={{ padding: '6px 14px', borderRadius: 7,
  background: 'transparent', border: `1px solid ${C.green}`, color: C.green,
  fontWeight: 600, cursor: materializing ? 'default' : 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,

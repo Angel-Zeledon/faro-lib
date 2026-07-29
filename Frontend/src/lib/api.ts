@@ -296,6 +296,46 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+// POST variant: for downloads whose request carries a body (e.g. a SQL query
+// too long for a URL). Same auth/refresh/error handling as downloadBlob.
+async function downloadBlobPost(path: string, body: unknown, filename: string): Promise<void> {
+  const fetchBlob = () => {
+    const token = getToken()
+    return fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    })
+  }
+  let res = await fetchBlob()
+  if (res.status === 401) {
+    if (await tryRefresh()) {
+      res = await fetchBlob()
+      if (res.status === 401) _sessionLost()
+    } else {
+      _sessionLost()
+    }
+  }
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({ detail: res.statusText }))
+    const err = new ApiError(
+      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+      extractErrorCode(payload), extractErrorParams(payload),
+      extractFieldErrors(payload),
+    )
+    notify(err, false)
+    throw err
+  }
+  const blob = await res.blob()
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authSignup = (body: {
   email: string; password: string; full_name?: string; tenant_name: string
@@ -525,6 +565,9 @@ export const saveSqlQuery = (id: string, sql: string) =>
 
 export const materializeSqlSource = (id: string, body: { sql?: string; name?: string }) =>
   request<DataSource>('POST', `/data-sources/${id}/materialize`, body)
+
+export const exportSqlQueryXlsx = (id: string, sql: string, filename: string) =>
+  downloadBlobPost(`/data-sources/${id}/export-query`, { sql }, filename)
 
 export const getDataSourcePreview = (id: string, rows = 100, sheet?: string) =>
   request<DataPreview>('GET', `/data-sources/${id}/preview?rows=${rows}${sheet ? `&sheet=${encodeURIComponent(sheet)}` : ''}`)

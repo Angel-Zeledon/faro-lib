@@ -278,6 +278,28 @@ def materialize_source(
         raise _service_error(e)
 
 
+# ── Export SQL query result as Excel ───────────────────────────────────────────
+
+@router.post("/{source_id}/export-query")
+def export_query(
+    source_id: str,
+    body: MaterializeRequest,
+    user: CurrentUser = Depends(get_current_user),
+):
+    from fastapi.responses import Response
+
+    _ds_or_404(user.tenant_id, source_id)
+    try:
+        content = svc.export_sql_query_xlsx(user.tenant_id, source_id, sql=body.sql)
+    except ValueError as e:
+        raise _service_error(e)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="query-result.xlsx"'},
+    )
+
+
 # ── Save SQL query ─────────────────────────────────────────────────────────────
 
 @router.patch("/{source_id}/query")

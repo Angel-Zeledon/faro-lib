@@ -566,6 +566,91 @@ def materialize_sql_source(
     return _public(get_source(tenant_id, new_id))
 
 
+def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = None) -> bytes:
+    """Run a SQL source's query and return the FULL result as an .xlsx workbook.
+
+    Same streaming fetch and row ceiling as materialize (refuse, never
+    truncate). Text cells go through the formula-injection guard — Excel
+    executes a leading '=' even more eagerly than a re-imported CSV does."""
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise ValueError(f"Data source {source_id} not found")
+    if src.get("source_type") != "sql":
+        raise AppError(
+            "data_source_not_sql",
+            "Only SQL data sources can be exported this way.",
+            status_code=_REJECTED,
+        )
+    if src.get("connection_status") != "connected":
+        raise AppError(
+            "data_source_not_connected",
+            "This data source is not connected. Test the connection first.",
+            status_code=_REJECTED,
+        )
+    query_sql = (sql or src.get("saved_query") or "").strip()
+    if not query_sql:
+        raise AppError(
+            "sql_source_no_saved_query",
+            "This SQL data source has no query to export yet.",
+            status_code=_REJECTED,
+        )
+
+    import io
+
+    import sqlalchemy
+    from openpyxl import Workbook
+
+    from backend.utils.csv_safe import csv_safe
+
+    max_rows = settings.sql_materialize_max_rows
+    row_count = 0
+    try:
+        engine = _make_sql_engine(cfg=src.get("sql_config") or {}, statement_timeout_ms=120_000)
+        with engine.connect() as conn:
+            result = conn.execution_options(stream_results=True).execute(
+                sqlalchemy.text(query_sql)
+            )
+            columns = [str(c) for c in result.keys()]
+            wb = Workbook(write_only=True)
+            ws = wb.create_sheet(title="data")
+            ws.append([csv_safe(c) for c in columns])
+            while True:
+                batch = result.fetchmany(10_000)
+                if not batch:
+                    break
+                row_count += len(batch)
+                if row_count > max_rows:
+                    raise AppError(
+                        "sql_result_too_large",
+                        f"The query returned more than {max_rows} rows, the "
+                        "export limit. Narrow it with WHERE or LIMIT.",
+                        status_code=_REJECTED,
+                        params={"max_rows": max_rows},
+                    )
+                for r in batch:
+                    ws.append([_safe_cell(v) for v in r])
+    except AppError:
+        raise
+    except Exception as e:
+        raise AppError(
+            "sql_query_failed",
+            f"Query failed: {e}",
+            status_code=_REJECTED,
+            params={"reason": str(e)},
+        )
+
+    if row_count == 0:
+        raise AppError(
+            "sql_result_empty",
+            "The query returned no rows — there is nothing to export.",
+            status_code=_REJECTED,
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def save_sql_query(tenant_id: str, source_id: str, sql: str) -> dict:
     execute(
         "UPDATE datasets SET saved_query=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
