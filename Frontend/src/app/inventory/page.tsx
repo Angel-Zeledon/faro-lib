@@ -1889,10 +1889,7 @@ export default function InventoryPage() {
  </div>
  </div>
 
- {/* `inv.export` anchors this whole toolbar: the export controls (CSV, plantilla,
-     Exportar OC, PDF) are direct flex children here with no container of their
-     own, and wrapping them would change where the row wraps. */}
- <div data-tour="inv.export" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
  {/* Session freshness */}
  <DataFreshness currentSession={currentSession} />
 
@@ -1912,6 +1909,12 @@ export default function InventoryPage() {
  </div>
 
  <button onClick={() => sessionId && load(sessionId)} disabled={loading} title={t('inventory.btn_refresh')} style={{ all: 'unset', cursor: loading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', padding: '7px 10px', border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, opacity: loading ? 0.5 : 1 }}><RefreshCw size={13} /></button>
+ {/* Getting data in and out: import, template, and the three exports. They
+     were loose children of the toolbar, so the tour step about exporting had
+     to highlight the whole bar — refresh, links and all. Grouping them costs
+     one flex box and makes them wrap together instead of splitting mid-group,
+     which is what you want from a set of related controls anyway. */}
+ <div data-tour="inv.export" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
  <input ref={importRef} type="file" name="inventory_csv_import" aria-label={t('inventory.btn_import_csv_arrow')} accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
  <button onClick={() => importRef.current?.click()} disabled={importing} style={{ all: 'unset', cursor: importing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted, opacity: importing ? 0.6 : 1 }}>
  {importing ? <Spinner size={12} /> : <Upload size={12} />} CSV
@@ -1928,6 +1931,7 @@ export default function InventoryPage() {
  <button onClick={handlePDF} disabled={pdfLoading || !sessionId} title={t('inventory.title_download_pdf')} style={{ all: 'unset', cursor: pdfLoading || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', color: C.indigo, opacity: pdfLoading || !sessionId ? 0.5 : 1 }}>
  {pdfLoading ? <Spinner size={12} /> : <FileText size={12} />} PDF
  </button>
+ </div>
  <Link href="/inventory/roi" style={{
  display: 'flex', alignItems: 'center', gap: 5,
  fontSize: 11, color: C.dim, textDecoration: 'none',
