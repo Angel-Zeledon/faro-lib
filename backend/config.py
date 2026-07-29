@@ -31,6 +31,21 @@ class Settings(BaseSettings):
     # Worker
     max_concurrent_jobs: int = 2
     worker_poll_interval_seconds: float = 2.0
+    # Deployment topology. Both default True so a bare `uvicorn backend.main:app`
+    # keeps behaving like the single-process dev setup. In a split deployment the
+    # API container sets both to false and a dedicated worker container
+    # (`python -m backend.workers`) runs the loops instead.
+    #   worker_enabled    — the job-claim/training loop
+    #   scheduler_enabled — the cron loops (scheduled jobs, daily alerts,
+    #                       integration sync, monthly snapshot). Must be true in
+    #                       EXACTLY ONE instance or daily emails go out twice.
+    worker_enabled: bool = True
+    scheduler_enabled: bool = True
+    # Identity used to claim jobs and to recover this instance's orphans after a
+    # crash. Empty falls back to the container/host name. Give each long-lived
+    # worker a FIXED id (e.g. "worker-1") so its orphaned RUNNING jobs are still
+    # recognized after the container is recreated.
+    worker_id: str = ""
 
     # Upload
     max_upload_size_mb: int = 200
@@ -63,6 +78,9 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886" (Twilio sandbox)
     twilio_sms_from: str = ""       # plain E.164 sender, e.g. "+14155238886" — SMS cannot reuse the whatsapp: sender
+    # Row ceiling when snapshotting a SQL query into a CSV dataset. Exceeding it
+    # is a refusal, never a silent truncation.
+    sql_materialize_max_rows: int = 500_000
     # Public external base URL Twilio POSTs the inbound webhook to (scheme + host,
     # e.g. "https://app.faro.com"). Twilio computes X-Twilio-Signature over the
     # PUBLIC url; behind the frontend proxy / TLS termination the backend sees an

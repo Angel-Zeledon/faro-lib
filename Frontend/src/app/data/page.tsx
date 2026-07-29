@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import {
  listDataSources, createFileSource, createSqlSource, replaceFileSource,
- updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery,
+ updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery, materializeSqlSource,
  getDataSourcePreview, getDataSource, renameDataSource, deleteDataSource,
  analyzeDataSource, analyzeSkuDetail, getEditableTable, saveDatasetAsNew,
 } from '@/lib/api'
@@ -344,10 +344,12 @@ function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
 // ── SQL Editor Panel ──────────────────────────────────────────────────────────
 function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: DataSource) => void }) {
  const { t } = useLanguage()
+ const { addToast } = useToast()
  const [sql, setSql] = useState(source.saved_query || '')
  const [result, setResult] = useState<SqlQueryResult | null>(null)
  const [running, setRunning] = useState(false)
  const [saving, setSaving] = useState(false)
+ const [materializing, setMaterializing] = useState(false)
  const [err, setErr] = useState<string | null>(null)
 
  const run = async () => {
@@ -368,6 +370,22 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  onSaved(updated)
  } catch (e: any) { setErr(e.message) }
  finally { setSaving(false) }
+ }
+
+ // Snapshot the FULL query result (not the preview) as a CSV dataset; from
+ // there the wizard treats it exactly like an uploaded file.
+ const materialize = async () => {
+ if (!sql.trim() || materializing) return
+ setMaterializing(true); setErr(null)
+ try {
+ const ds = await materializeSqlSource(source.id, { sql, name: `${source.name} (SQL)` })
+ addToast(
+ t('data.materialize_done_title'),
+ `"${ds.name}" — ${t('data.materialize_done_body')}`,
+ 'success',
+ )
+ } catch (e: any) { setErr(e.message) }
+ finally { setMaterializing(false) }
  }
 
  return (
@@ -418,6 +436,15 @@ function SqlEditorPanel({ source, onSaved }: { source: DataSource; onSaved: (s: 
  <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>
  {result.row_count} {result.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{result.truncated ? ` ${t('data.truncated_suffix')}` : ''}
  </span>
+ <button onClick={materialize} disabled={materializing}
+ title={t('data.btn_materialize_hint')}
+ style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 7,
+ background: 'transparent', border: `1px solid ${C.green}`, color: C.green,
+ fontWeight: 600, cursor: materializing ? 'default' : 'pointer',
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
+ opacity: materializing ? 0.6 : 1 }}>
+ {materializing ? <Spinner size={12} /> : <Database size={12} />} {t('data.btn_materialize')}
+ </button>
  </div>
  <DataGrid columns={result.columns} rows={result.rows} />
  </div>

@@ -76,12 +76,24 @@ def _make_sql_engine(cfg: dict, statement_timeout_ms: int = 30_000):
     import sqlalchemy
     conn_str = _build_conn_str(cfg)
     engine_type = cfg.get("engine", "postgresql")
-    connect_args: dict = {"connect_timeout": 15}
+    # Timeout keywords are driver-specific: psycopg2/pymysql take
+    # connect_timeout, but pyodbc rejects it (its login timeout is `timeout`).
     if engine_type == "postgresql":
-        connect_args["options"] = f"-c statement_timeout={statement_timeout_ms}"
+        connect_args: dict = {
+            "connect_timeout": 15,
+            "options": f"-c statement_timeout={statement_timeout_ms}",
+        }
     elif engine_type == "mysql":
         timeout_s = max(1, statement_timeout_ms // 1000)
-        connect_args.update({"read_timeout": timeout_s, "write_timeout": timeout_s})
+        connect_args = {
+            "connect_timeout": 15,
+            "read_timeout": timeout_s,
+            "write_timeout": timeout_s,
+        }
+    elif engine_type == "mssql":
+        connect_args = {"timeout": 15}
+    else:
+        connect_args = {}
     return sqlalchemy.create_engine(conn_str, connect_args=connect_args, pool_pre_ping=True)
 
 
@@ -419,6 +431,141 @@ def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500
         )
 
 
+def materialize_sql_source(
+    tenant_id: str,
+    user_id: str,
+    source_id: str,
+    sql: Optional[str] = None,
+    name: Optional[str] = None,
+) -> dict:
+    """Run a SQL source's query and snapshot the result as a NEW CSV dataset
+    (parent_id = the SQL source). From that dataset on, the pipeline treats it
+    exactly like an uploaded CSV — the wizard, training and freshness never
+    need to know SQL was involved. A snapshot (not a live query) is deliberate:
+    a forecast must be reproducible against the data it actually trained on.
+
+    Streams the result in batches so the row cap bounds memory, and refuses —
+    rather than silently truncates — when the result exceeds it."""
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise ValueError(f"Data source {source_id} not found")
+    if src.get("source_type") != "sql":
+        raise AppError(
+            "data_source_not_sql",
+            "Only SQL data sources can be materialized into a dataset.",
+            status_code=_REJECTED,
+        )
+    if src.get("connection_status") != "connected":
+        raise AppError(
+            "data_source_not_connected",
+            "This data source is not connected. Test the connection first.",
+            status_code=_REJECTED,
+        )
+    query_sql = (sql or src.get("saved_query") or "").strip()
+    if not query_sql:
+        raise AppError(
+            "sql_source_no_saved_query",
+            "This SQL data source has no query to materialize yet.",
+            status_code=_REJECTED,
+        )
+
+    import csv as _csv
+
+    import sqlalchemy
+
+    from backend.storage import paths
+    from backend.utils.csv_safe import csv_safe
+
+    max_rows = settings.sql_materialize_max_rows
+    new_id = generate_id("ds")
+    dst_dir = paths.dataset_dir(tenant_id, new_id)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    file_path = dst_dir / "data.csv"
+    tmp_path = dst_dir / "data.csv.tmp"
+
+    row_count = 0
+    columns: list[str] = []
+    try:
+        engine = _make_sql_engine(cfg=src.get("sql_config") or {}, statement_timeout_ms=120_000)
+        with engine.connect() as conn:
+            result = conn.execution_options(stream_results=True).execute(
+                sqlalchemy.text(query_sql)
+            )
+            columns = [str(c) for c in result.keys()]
+            with open(tmp_path, "w", newline="", encoding="utf-8") as f:
+                writer = _csv.writer(f)
+                writer.writerow([csv_safe(c) for c in columns])
+                while True:
+                    batch = result.fetchmany(10_000)
+                    if not batch:
+                        break
+                    row_count += len(batch)
+                    if row_count > max_rows:
+                        raise AppError(
+                            "sql_result_too_large",
+                            f"The query returned more than {max_rows} rows, the "
+                            "materialization limit. Narrow it with WHERE or LIMIT.",
+                            status_code=_REJECTED,
+                            params={"max_rows": max_rows},
+                        )
+                    for r in batch:
+                        writer.writerow([_safe_cell(v) for v in r])
+    except AppError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        raise AppError(
+            "sql_query_failed",
+            f"Query failed: {e}",
+            status_code=_REJECTED,
+            params={"reason": str(e)},
+        )
+
+    if row_count == 0:
+        tmp_path.unlink(missing_ok=True)
+        raise AppError(
+            "sql_result_empty",
+            "The query returned no rows — there is nothing to materialize.",
+            status_code=_REJECTED,
+        )
+
+    size_bytes = tmp_path.stat().st_size
+    try:
+        # Same plan quota an uploaded file of this size would face.
+        from backend.datasets.service import _enforce_dataset_size
+        _enforce_dataset_size(tenant_id, size_bytes)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    tmp_path.replace(file_path)
+
+    # English fallback on purpose: this becomes the dataset's persisted NAME
+    # and backend logic must not hardcode Spanish — the UI sends a localized
+    # name (same convention as save_edited_as_new).
+    display_name = name.strip() if (name and name.strip()) else f"{src.get('name')} (SQL)"
+
+    execute(
+        """INSERT INTO datasets
+           (id, tenant_id, name, description, original_filename, file_type, file_path,
+            size_bytes, row_count, column_count, source_type, connection_status,
+            parent_id, uploaded_by, uploaded_at, updated_at)
+           VALUES (%s,%s,%s,%s,%s,'csv',%s,%s,%s,%s,'file','connected',%s,%s,NOW(),NOW())""",
+        (
+            new_id, tenant_id, display_name, src.get("description"),
+            f"{display_name}.csv", str(file_path),
+            size_bytes, row_count, len(columns), source_id, user_id,
+        ),
+    )
+    # Remember the query that produced the snapshot, so re-materializing after
+    # fresh rows land in the customer's DB is one click, not a rewrite.
+    execute(
+        "UPDATE datasets SET saved_query=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
+        (query_sql, source_id, tenant_id),
+    )
+    return _public(get_source(tenant_id, new_id))
+
+
 def save_sql_query(tenant_id: str, source_id: str, sql: str) -> dict:
     execute(
         "UPDATE datasets SET saved_query=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
@@ -444,7 +591,30 @@ def _build_conn_str(cfg: dict) -> str:
         "oracle": "oracle+cx_oracle",
     }
     driver = drivers.get(engine, "postgresql+psycopg2")
-    return f"{driver}://{user_enc}:{pw_enc}@{host}:{port}/{database}"
+    url = f"{driver}://{user_enc}:{pw_enc}@{host}:{port}/{database}"
+    if engine == "mssql":
+        # pyodbc needs an explicit ODBC driver name; pick the newest installed.
+        # TrustServerCertificate matches Driver 18's new encrypt-by-default,
+        # which otherwise rejects the self-signed certs typical of on-prem
+        # SQL Servers at SMB distributors.
+        url += f"?driver={quote_plus(_best_mssql_odbc_driver())}&TrustServerCertificate=yes"
+    return url
+
+
+def _best_mssql_odbc_driver() -> str:
+    """Newest SQL Server ODBC driver installed on this host, falling back to
+    the legacy 'SQL Server' driver that ships with Windows."""
+    try:
+        import pyodbc
+        installed = [d for d in pyodbc.drivers() if "SQL Server" in d]
+        for preferred in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
+            if preferred in installed:
+                return preferred
+        if installed:
+            return installed[-1]
+    except Exception:
+        pass
+    return "ODBC Driver 18 for SQL Server"
 
 
 # ── Preview ────────────────────────────────────────────────────────────────────

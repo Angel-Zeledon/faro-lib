@@ -83,8 +83,13 @@ def get_dataset(tenant_id: str, dataset_id: str) -> Optional[dict]:
 
 
 def list_datasets(tenant_id: str, skip: int = 0, limit: int = 50) -> list[dict]:
+    # SQL connections are excluded on purpose: this list feeds the training
+    # wizard's dataset picker, and a SQL source has no file to train on until
+    # its query is materialized (which produces a normal 'file' row here).
     return query(
-        "SELECT * FROM datasets WHERE tenant_id = %s ORDER BY uploaded_at DESC LIMIT %s OFFSET %s",
+        "SELECT * FROM datasets WHERE tenant_id = %s "
+        "AND COALESCE(source_type, 'file') != 'sql' "
+        "ORDER BY uploaded_at DESC LIMIT %s OFFSET %s",
         (tenant_id, limit, skip),
     )
 

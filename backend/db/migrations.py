@@ -1144,6 +1144,11 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_user_preferences_dm_sms_enabled",
      "ALTER TABLE user_preferences "
      "ADD COLUMN IF NOT EXISTS dm_sms_enabled BOOLEAN NOT NULL DEFAULT FALSE"),
+
+    # A SQL data source has no uploaded file, so original_filename cannot be
+    # NOT NULL — the constraint made create_sql_source fail on a fresh schema.
+    ("datasets_original_filename_nullable",
+     "ALTER TABLE datasets ALTER COLUMN original_filename DROP NOT NULL"),
 ]
 
 

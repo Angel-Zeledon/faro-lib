@@ -158,7 +158,7 @@ export const translations = {
     'nav.users':          'Usuarios',
     'nav.integrations':   'Integraciones',
     'nav.config':         'Configuración',
-    'nav.settings':       'API y Webhooks',
+    'nav.settings':       'Tareas programadas',
     'nav.sessions':       'Historial',
 
     // ── Session history page ──
@@ -233,7 +233,7 @@ export const translations = {
     'topbar.title_data':                'Mis ventas',
     'topbar.title_analyst':             'Asistente IA',
     'topbar.title_config':              'Configuración',
-    'topbar.title_settings':            'API y Webhooks',
+    'topbar.title_settings':            'Tareas programadas',
     'topbar.title_users':               'Usuarios',
     'topbar.notif_complete_title':      'Actualización lista',
     'topbar.notif_complete_body':       'terminó correctamente',
@@ -343,6 +343,10 @@ export const translations = {
     'data.btn_run':                   'Ejecutar',
     'data.truncated_suffix':          '(truncado)',
     'data.query_placeholder':         'SELECT * FROM tu_tabla LIMIT 100',
+    'data.btn_materialize':           'Usar como dataset',
+    'data.btn_materialize_hint':      'Guarda el resultado completo de la consulta como un dataset y úsalo para entrenar, igual que un archivo subido.',
+    'data.materialize_done_title':    'Dataset creado',
+    'data.materialize_done_body':     'ya está disponible en Mis ventas para entrenar.',
     // Analysis summary columns
     'data.col_sku':                   'SKU',
     'data.col_n':                     'N',
@@ -556,7 +560,7 @@ export const translations = {
 
     // ── Settings page (API keys / webhooks / schedules) ──
     'settings.title':                 'Ajustes',
-    'settings.subtitle':              'API keys, webhooks y tareas programadas',
+    'settings.subtitle':              'Reentrenamientos automáticos de tus predicciones',
     'settings.tab_api_keys':          'API Keys',
     'settings.tab_webhooks':          'Webhooks',
     'settings.tab_schedules':         'Tareas programadas',
@@ -2974,7 +2978,7 @@ export const translations = {
     'nav.users':          'Users',
     'nav.integrations':   'Integrations',
     'nav.config':         'Settings',
-    'nav.settings':       'API & Webhooks',
+    'nav.settings':       'Schedules',
     'nav.sessions':       'History',
 
     // ── Session history page ──
@@ -3049,7 +3053,7 @@ export const translations = {
     'topbar.title_data':                'My sales',
     'topbar.title_analyst':             'AI Analyst',
     'topbar.title_config':              'System Configuration',
-    'topbar.title_settings':            'API & Webhooks',
+    'topbar.title_settings':            'Schedules',
     'topbar.title_users':               'User Management',
     'topbar.notif_complete_title':      'Update ready',
     'topbar.notif_complete_body':       'finished successfully',
@@ -3157,6 +3161,10 @@ export const translations = {
     'data.btn_save_query':            'Save Query',
     'data.btn_run':                   'Run',
     'data.truncated_suffix':          '(truncated)',
+    'data.btn_materialize':           'Use as dataset',
+    'data.btn_materialize_hint':      'Saves the full query result as a dataset you can train on, just like an uploaded file.',
+    'data.materialize_done_title':    'Dataset created',
+    'data.materialize_done_body':     'is now available in My sales for training.',
     'data.query_placeholder':         'SELECT * FROM your_table LIMIT 100',
     // Analysis summary columns
     'data.col_sku':                   'SKU',
@@ -3371,7 +3379,7 @@ export const translations = {
 
     // ── Settings page (API keys / webhooks / schedules) ──
     'settings.title':                 'Settings',
-    'settings.subtitle':              'API keys, webhooks, and automated schedules',
+    'settings.subtitle':              'Automatic retraining of your forecasts',
     'settings.tab_api_keys':          'API Keys',
     'settings.tab_webhooks':          'Webhooks',
     'settings.tab_schedules':         'Schedules',

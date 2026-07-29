@@ -32,7 +32,9 @@ def list_datasets(
     from backend.db.connection import query_one
     items = ds_svc.list_datasets(user.tenant_id, skip=skip, limit=limit)
     row = query_one(
-        "SELECT COUNT(*) AS cnt FROM datasets WHERE tenant_id = %s", (user.tenant_id,)
+        "SELECT COUNT(*) AS cnt FROM datasets WHERE tenant_id = %s "
+        "AND COALESCE(source_type, 'file') != 'sql'",
+        (user.tenant_id,),
     )
     total = row["cnt"] if row else 0
     return ok({"items": items, "total": total, "skip": skip, "limit": limit})
@@ -46,4 +48,7 @@ def get_dataset(dataset_id: str, user: CurrentUser = Depends(get_current_user)):
             "dataset_not_found", "Dataset not found",
             status_code=404, params={"dataset_id": dataset_id},
         )
+    # Never let SQL connection credentials (even encrypted) reach the client.
+    ds = dict(ds)
+    ds.pop("sql_config", None)
     return ok(ds)

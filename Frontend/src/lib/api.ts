@@ -523,6 +523,9 @@ export const executeSqlQuery = (id: string, sql: string, limit = 500) =>
 export const saveSqlQuery = (id: string, sql: string) =>
   request<DataSource>('PATCH', `/data-sources/${id}/query`, { sql })
 
+export const materializeSqlSource = (id: string, body: { sql?: string; name?: string }) =>
+  request<DataSource>('POST', `/data-sources/${id}/materialize`, body)
+
 export const getDataSourcePreview = (id: string, rows = 100, sheet?: string) =>
   request<DataPreview>('GET', `/data-sources/${id}/preview?rows=${rows}${sheet ? `&sheet=${encodeURIComponent(sheet)}` : ''}`)
 

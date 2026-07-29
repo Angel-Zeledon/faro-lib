@@ -62,6 +62,11 @@ class ExecuteQueryRequest(BaseModel):
         return v
 
 
+class MaterializeRequest(BaseModel):
+    sql:  Optional[str] = None   # defaults to the source's saved query
+    name: Optional[str] = None   # defaults to "<source name> (SQL)" — UI sends localized
+
+
 class SaveQueryRequest(BaseModel):
     sql: str
 
@@ -251,6 +256,24 @@ def execute_query(
     try:
         result = svc.execute_sql_query(user.tenant_id, source_id, body.sql, limit=body.limit)
         return ok(result)
+    except ValueError as e:
+        raise _service_error(e)
+
+
+# ── Materialize SQL query into a CSV dataset ──────────────────────────────────
+
+@router.post("/{source_id}/materialize")
+def materialize_source(
+    source_id: str,
+    body: MaterializeRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    _ds_or_404(user.tenant_id, source_id)
+    try:
+        dataset = svc.materialize_sql_source(
+            user.tenant_id, user.user_id, source_id, sql=body.sql, name=body.name
+        )
+        return ok(dataset)
     except ValueError as e:
         raise _service_error(e)
 
