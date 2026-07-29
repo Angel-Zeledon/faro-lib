@@ -33,6 +33,19 @@ const SOURCE_COLOR: Record<string, string> = {
   error:         '#ef4444',
 }
 
+// ── Shell geometry ─────────────────────────────────────────────────────────────
+// This is the one screen that bleeds to the edges of the app shell instead of
+// living inside its padding, so it has to know the two numbers the shell
+// establishes (see AppShell.tsx and the `.page-content` rule in globals.css):
+// the top bar's height, and `.page-content`'s own padding — Tailwind `p-6`,
+// which computes to 21px at this app's root font size. The pane cancels the
+// padding with an equal negative margin and claims everything left under the
+// top bar, so its last row — the composer — lands exactly on the bottom of the
+// viewport. Getting either number wrong leaves the composer floating a few
+// pixels short of the bottom, which is what it used to do.
+const TOPBAR_H = 52
+const PAGE_PAD = 21
+
 function fmtTime(iso: string) {
   const d = new Date(iso)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -661,8 +674,8 @@ export default function AnalystPage() {
 
       <div style={{
         display: 'flex',
-        height: 'calc(100vh - 56px)',
-        margin: '-24px',
+        height: `calc(100vh - ${TOPBAR_H}px)`,
+        margin: -PAGE_PAD,
         overflow: 'hidden',
       }}>
 
@@ -864,7 +877,14 @@ export default function AnalystPage() {
                 data-tour="an.thread"
                 onScroll={handleScroll}
                 style={{
-                  flex: 1, overflowY: 'auto',
+                  flex: 1,
+                  // `minHeight: 0` reads as noise until it bites: a flex child
+                  // defaults to `min-height: auto`, i.e. it refuses to shrink
+                  // below the height of its own content. Without it a long
+                  // thread grows this row past the pane and pushes the composer
+                  // out of the viewport instead of scrolling inside itself.
+                  minHeight: 0,
+                  overflowY: 'auto',
                   padding: '20px 24px',
                   display: 'flex', flexDirection: 'column',
                 }}
@@ -961,10 +981,18 @@ export default function AnalystPage() {
                     )}
                   </div>
                 ) : (
-                  <>
+                  // The WhatsApp behaviour: messages stack from the BOTTOM, so
+                  // a two-message thread leaves its empty space above itself
+                  // rather than below. `marginTop: auto` swallows the free
+                  // space while the thread is shorter than the pane and
+                  // resolves to 0 as soon as it overflows — which is why this
+                  // is not `justifyContent: flex-end` on the scroll container,
+                  // whose overflow spills past the top edge and cannot be
+                  // scrolled back into view.
+                  <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
                     {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
                     {sending && <TypingBubble />}
-                  </>
+                  </div>
                 )}
                 <div ref={bottomRef} />
               </div>
