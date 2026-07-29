@@ -583,6 +583,13 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  }}
  />
  </div>
+ {/* Why this tab has no column editor while a file's does. Read-only is the
+     whole point: the columns you pick here are the ones Faro BRINGS, and the
+     table on the other end is never altered. Without saying so, the absence
+     looks like a missing feature rather than a deliberate boundary. */}
+ <p style={{ margin: '8px 2px 0', fontSize: 11, color: C.muted, lineHeight: 1.6 }}>
+ {t('data.sql_readonly_note')}
+ </p>
                  {/* A database error is the server talking, so it keeps the code voice. */}
  {err && (
  <div style={{ ...errorBlock, fontFamily: MONO, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>

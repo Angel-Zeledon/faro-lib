@@ -461,7 +461,11 @@ export const translations = {
     'data.tab_data_preview':          'Vista previa',
     'data.tab_analysis':              'Análisis',
     'data.tab_replace_file':          'Reemplazar archivo',
-    'data.tab_edit':                  'Editar',
+    // "Editar" did not say WHAT it edits, so the tab that adds, renames and
+    // drops columns read as a generic afterthought — and people concluded a CSV
+    // could not do what a SQL query obviously can. The name says it now.
+    'data.tab_edit':                  'Editar columnas y filas',
+    'data.sql_readonly_note':         'Las columnas que trae esta fuente son las que pongas en el SELECT. Faro se conecta a tu base solo para leer: nunca crea, cambia ni borra nada en ella. Si necesitas editar columnas y filas a mano, hazlo sobre un archivo cargado.',
     'data.editor_add_row':            'Añadir fila',
     'data.editor_delete_row':         'Eliminar fila',
     'data.editor_rename_column':      'Renombrar columna',
@@ -3358,7 +3362,8 @@ export const translations = {
     'data.tab_data_preview':          'Data Preview',
     'data.tab_analysis':              'Analysis',
     'data.tab_replace_file':          'Replace File',
-    'data.tab_edit':                  'Edit',
+    'data.tab_edit':                  'Edit columns and rows',
+    'data.sql_readonly_note':         'The columns this source brings are the ones you put in the SELECT. Faro connects to your database to read only: it never creates, changes or deletes anything there. To edit columns and rows by hand, do it on an uploaded file.',
     'data.editor_add_row':            'Add row',
     'data.editor_delete_row':         'Delete row',
     'data.editor_rename_column':      'Rename column',
