@@ -1912,7 +1912,14 @@ export const translations = {
 
     // ── SKU Intelligence ──
     'skus.session_label': 'Sesión:',
+    'skus.session_eyebrow': 'Sesión',
     'skus.select_trained_session': 'Selecciona una sesión entrenada…',
+    'skus.model_numbered': 'Modelo {n}',
+    'skus.model_other': 'Otro modelo',
+    'skus.model_combined': 'Modelo combinado',
+    'skus.model_baseline_last_value': 'Referencia (último valor)',
+    'skus.model_baseline_season': 'Referencia (temporada)',
+    'skus.model_baseline_average': 'Referencia (promedio)',
     'skus.reliability_high': 'Alta',
     'skus.reliability_medium': 'Media',
     'skus.reliability_low': 'Baja',
@@ -4721,7 +4728,14 @@ export const translations = {
 
     // ── SKU Intelligence ──
     'skus.session_label': 'Session:',
+    'skus.session_eyebrow': 'Session',
     'skus.select_trained_session': 'Select a trained session…',
+    'skus.model_numbered': 'Model {n}',
+    'skus.model_other': 'Other model',
+    'skus.model_combined': 'Combined model',
+    'skus.model_baseline_last_value': 'Reference (last value)',
+    'skus.model_baseline_season': 'Reference (season)',
+    'skus.model_baseline_average': 'Reference (average)',
     'skus.reliability_high': 'High',
     'skus.reliability_medium': 'Medium',
     'skus.reliability_low': 'Low',

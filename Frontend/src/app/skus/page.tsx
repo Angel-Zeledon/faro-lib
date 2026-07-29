@@ -98,6 +98,49 @@ function tOr(t: Translate, key: string, fallback: string, params?: Record<string
   return text === key ? fallback : text
 }
 
+// ── Model labels ──────────────────────────────────────────────────────────────
+//
+// A distributor buys stock; nothing in that job is helped by learning that one
+// of these series was fitted by a gradient-boosted tree. Every surface on this
+// screen renders a model id through `modelLabel` — the single mapping — so
+// "Modelo 3" is the same algorithm on every SKU, in every export and after
+// every reload. A per-render or per-SKU numbering would be worse than the
+// jargon: the same label would mean two different things on two rows.
+//
+// This array is the mapping. A model's POSITION here is the number the user
+// sees, so entries must only ever be appended — reordering or removing one
+// silently renumbers models the user has already learned.
+const MODEL_ORDER = ['lightgbm', 'xgboost', 'prophet', 'arima', 'ets', 'croston', 'sarimax', 'lstm']
+
+// Baselines are not one of the candidates: they are the "what if we didn't
+// forecast at all" yardstick every trained model has to beat. Giving them a
+// number would present them as an option worth picking; naming what they
+// actually do explains why they are in the table at all.
+// `ensemble` is the engine's per-SKU inverse-MAE blend of the models above
+// (pipeline.py `_generate_forecast_df`). It is neither one of the candidates
+// nor a yardstick, so a number would misfile it — it is what you get when the
+// numbered models are combined, and the label says exactly that.
+const NAMED_LABEL_KEYS: Record<string, string> = {
+  ensemble:       'skus.model_combined',
+  naive:          'skus.model_baseline_last_value',
+  seasonal_naive: 'skus.model_baseline_season',
+  historical_avg: 'skus.model_baseline_average',
+}
+
+function modelLabel(t: Translate, id: string | null | undefined): string {
+  if (!id) return '—'
+  const key = id.toLowerCase()
+  const namedKey = NAMED_LABEL_KEYS[key]
+  if (namedKey) return t(namedKey)
+  const idx = MODEL_ORDER.indexOf(key)
+  // An id outside the list means the engine gained a model this screen has not
+  // been told about. A generic label keeps the jargon hidden and is a visible
+  // signal to append the id to MODEL_ORDER; minting a number on the fly would
+  // be worse, because such a number could not survive the next release.
+  if (idx < 0) return t('skus.model_other')
+  return t('skus.model_numbered', { n: idx + 1 })
+}
+
 function pct(n: number | null | undefined) {
   if (n == null || isNaN(n)) return '—'
   return `${(n * 100).toFixed(1)}%`
@@ -129,11 +172,18 @@ function downloadCSV(filename: string, headers: string[], rows: (string | number
   URL.revokeObjectURL(url)
 }
 
-function exportMetricsCSV(sku: string, rows: MetricRow[]) {
+// Exports carry the SAME neutral labels the screen shows, not the raw
+// algorithm ids. The tempting alternative — real names in the file, numbers on
+// screen — hands the user a sheet full of words the product never showed them
+// and that nobody in support can reconcile with "Modelo 3". The labels are a
+// bijection with the ids, so nothing analytical is lost: rows still join and
+// group exactly as before. If a technical audience ever needs the algorithm,
+// that belongs in its own diagnostic export, not mixed into the user's sheet.
+function exportMetricsCSV(t: Translate, sku: string, rows: MetricRow[]) {
   downloadCSV(
     `metrics_${sku}.csv`,
     ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
-    rows.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
+    rows.map(r => [modelLabel(t, r.model), r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
   )
 }
 
@@ -171,12 +221,12 @@ function exportChartCSV(sku: string, data: SkuIntelligenceData) {
   )
 }
 
-function exportMetricsExcel(sku: string, rows: MetricRow[]) {
+function exportMetricsExcel(t: Translate, sku: string, rows: MetricRow[]) {
   downloadWorkbook(`metrics_${sku}.xlsx`, [{
     name: 'Metrics',
     rows: [
       ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
-      ...rows.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
+      ...rows.map(r => [modelLabel(t, r.model), r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
     ],
   }])
 }
@@ -217,31 +267,96 @@ function Sparkline({ values, color = 'var(--accent)', width = 80, height = 28 }:
 
 // ── Session selector ──────────────────────────────────────────────────────────
 
-function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-session-select', name = 'skus_session', tourAnchor }: {
+function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-session-select', name = 'skus_session', compact = false, tourAnchor }: {
   sessions: SessionInfo[]; selected: string | null; onSelect: (id: string) => void
   selectId?: string; name?: string
+  /** Drops the eyebrow and tightens the padding for the compare bar, where the
+   *  surrounding copy already says what the control picks. */
+  compact?: boolean
   /** Set on the primary selector only — a tour anchor has to be unique in the DOM. */
   tourAnchor?: string
 }) {
   const { t } = useLanguage()
+  const [focused, setFocused] = useState(false)
   const trained = sessions.filter(s => s.status === 'COMPLETED')
+  const current = trained.find(s => s.session_id === selected)
+
+  // Granularity and run date answer "which one is this?" once the name is
+  // ambiguous — they are context, so they sit under the name in the dim tone
+  // rather than competing with it.
+  const context = current
+    ? [
+        current.granularity ? granularityLabel(t, current.granularity) : null,
+        current.updated_at ? new Date(current.updated_at).toLocaleDateString() : null,
+      ].filter(Boolean).join(' · ')
+    : ''
+
   return (
-    <div data-tour={tourAnchor} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('skus.session_label')}</span>
-      <div style={{ position: 'relative' }}>
-        <select
-          id={selectId}
-          name={name}
-          aria-label={t('skus.session_label')}
-          className="form-select"
-          value={selected ?? ''}
-          onChange={e => onSelect(e.target.value)}
-          style={{ paddingRight: 32, minWidth: 220 }}
-        >
-          <option value="" disabled>{t('skus.select_trained_session')}</option>
-          {trained.map(s => <option key={s.session_id} value={s.session_id}>{s.name}</option>)}
-        </select>
-        <ChevronDown size={12} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--dim)' }} />
+    <div data-tour={tourAnchor} style={{ position: 'relative', minWidth: compact ? 200 : 236 }}>
+      {/* The native <select> stays the control: it is stretched invisibly over
+          the card below, so the dropdown, the keyboard behaviour and the
+          accessible name remain the browser's, while the visible layer is free
+          to give the name and its context two different weights — something a
+          styled <select> cannot do, since option text has one style. */}
+      <select
+        id={selectId}
+        name={name}
+        aria-label={t('skus.session_label')}
+        value={selected ?? ''}
+        onChange={e => onSelect(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          margin: 0, padding: 0, border: 'none', appearance: 'none',
+          opacity: 0, cursor: 'pointer', zIndex: 1,
+        }}
+      >
+        <option value="" disabled>{t('skus.select_trained_session')}</option>
+        {trained.map(s => <option key={s.session_id} value={s.session_id}>{s.name}</option>)}
+      </select>
+      <div
+        aria-hidden
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: compact ? '5px 10px' : '6px 12px',
+          background: 'var(--surface)',
+          border: `1px solid ${focused ? 'var(--accent)' : 'var(--border)'}`,
+          borderRadius: 9,
+          // The real focus ring lands on the transparent <select>, where nobody
+          // could see it — so the visible layer redraws the very same ring the
+          // global :focus-visible rule uses. Not a new treatment, just relocated.
+          outline: focused ? '2px solid var(--accent)' : 'none',
+          outlineOffset: 2,
+          transition: 'border-color var(--dur-1) var(--ease-out)',
+        }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          {!compact && (
+            <div style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
+              textTransform: 'uppercase', color: 'var(--dim)', lineHeight: 1.4,
+            }}>
+              {t('skus.session_eyebrow')}
+            </div>
+          )}
+          <div style={{
+            fontSize: 12, fontWeight: 600, lineHeight: 1.35,
+            color: current ? 'var(--text)' : 'var(--dim)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {current?.name ?? t('skus.select_trained_session')}
+          </div>
+          {context && (
+            <div style={{
+              fontSize: 10, color: 'var(--dim)', lineHeight: 1.35,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {context}
+            </div>
+          )}
+        </div>
+        <ChevronDown size={13} style={{ flexShrink: 0, color: 'var(--dim)' }} />
       </div>
     </div>
   )
@@ -370,7 +485,7 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
     { label: t('skus.stat_historical_points'), value: historical.length.toString() },
     { label: t('skus.stat_forecast_steps'), value: forecast.length.toString() },
     { label: t('skus.stat_best_wape'), value: bestMetric?.wape != null ? pct(bestMetric.wape) : '—' },
-    { label: t('skus.stat_best_model'), value: bestMetric?.model ?? '—' },
+    { label: t('skus.stat_best_model'), value: modelLabel(t, bestMetric?.model) },
   ]
 
   return (
@@ -470,7 +585,7 @@ function buildChartOption(
   isDark: boolean,
   gaps: { start: string; end: string }[],
   outlierIndices: number[] = [],
-  t: (key: string) => string = (k) => k,
+  t: Translate = (k) => k,
   overlays: ModelOverlay[] = [],
 ) {
   const { historical, forecast } = data
@@ -491,7 +606,7 @@ function buildChartOption(
   // When several models are overlaid, name the primary series by its model so
   // the legend/tooltip distinguish it from the overlays.
   const primaryName = overlays.length > 0 && data.model
-    ? data.model
+    ? modelLabel(t, data.model)
     : t('skus.series_forecast_p50')
 
   // Retrieve a quantile value from a forecast point.
@@ -638,7 +753,7 @@ function buildChartOption(
 
   // ── Overlay forecasts for additionally selected models ─────────────────────
   const overlayByDate = overlays.map(ov => ({
-    name:   ov.model,
+    name:   modelLabel(t, ov.model),
     color:  ov.color,
     byDate: new Map(ov.forecast.map(p => [p.date, p.value])),
   }))
@@ -932,7 +1047,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       doc.setFontSize(16); doc.setTextColor(30, 41, 59)
       doc.text(sku, margin, y); y += 7
       doc.setFontSize(9); doc.setTextColor(100, 116, 139)
-      doc.text(`${t('skus.pdf_session_label')}: ${sessionId}  ·  ${t('skus.pdf_granularity_label')}: ${data.applied_granularity}  ·  ${t('skus.pdf_model_label')}: ${data.model ?? 'N/A'}`, margin, y)
+      doc.text(`${t('skus.pdf_session_label')}: ${sessionId}  ·  ${t('skus.pdf_granularity_label')}: ${data.applied_granularity}  ·  ${t('skus.pdf_model_label')}: ${modelLabel(t, data.model)}`, margin, y)
       y += 8
 
       // Chart image
@@ -977,7 +1092,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
           doc.setFillColor(even ? 248 : 255, even ? 250 : 255, even ? 252 : 255)
           doc.rect(margin, y, contentW, 6, 'F')
           doc.setFontSize(7.5); doc.setTextColor(30, 41, 59)
-          const vals = [r.model ?? '', r.type ?? '', fmt(r.mae), fmt(r.rmse), r.wape != null ? pct(r.wape) : '—', fmt(r.bias)]
+          const vals = [modelLabel(t, r.model), r.type ?? '', fmt(r.mae), fmt(r.rmse), r.wape != null ? pct(r.wape) : '—', fmt(r.bias)]
           vals.forEach((v, i) => doc.text(v, margin + i * colW + 2, y + 4))
           y += 6
         })
@@ -1005,14 +1120,14 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
     ]
     const metricRows: (string | number | null)[][] = [
       ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
-      ...data.metrics.map(r => [r.model, r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null] as (string | number | null)[]),
+      ...data.metrics.map(r => [modelLabel(t, r.model), r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null] as (string | number | null)[]),
     ]
     // The workbook is opened by the user, so its sheet names and the Summary
     // sheet's row labels are copy, not field names — they go through i18n.
     const summaryRows: (string | number | null)[][] = [
       [t('skus.xls_metric'), t('skus.xls_value')],
       ['SKU', sku],
-      [t('skus.xls_model'), data.model ?? '—'],
+      [t('skus.xls_model'), modelLabel(t, data.model)],
       [t('skus.xls_granularity'), granularityLabel(t, data.applied_granularity)],
       [t('skus.xls_historical_points'), data.historical.length],
       [t('skus.xls_forecast_steps'), data.forecast.length],
@@ -1030,7 +1145,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       { name: t('skus.xls_sheet_metrics'),  rows: metricRows },
       { name: t('skus.xls_sheet_summary'),  rows: summaryRows },
     ]).then(() => setShowExportMenu(false))
-  }, [sku, data])
+  }, [sku, data, t])
 
   const toggleModel = (m: string) => {
     setSelModels(prev => prev.includes(m)
@@ -1163,7 +1278,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
                     }}
                   >
                     <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: sel ? color : 'var(--border)', flexShrink: 0 }} />
-                    {m}
+                    {modelLabel(t, m)}
                   </button>
                 )
               })}
@@ -1283,7 +1398,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
         <span>{t('skus.footer_freq')}: <strong>{data.original_freq}</strong></span>
         <span>{t('skus.footer_view')}: <strong>{data.applied_granularity}</strong></span>
         <span>{data.historical.length} {t('skus.footer_historical')} · {data.forecast.length} {t('skus.footer_forecast')}</span>
-        {data.model && <span>{t('skus.footer_model')}: <strong>{data.model}</strong></span>}
+        {data.model && <span>{t('skus.footer_model')}: <strong>{modelLabel(t, data.model)}</strong></span>}
         {gaps.length > 0 && (
           <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, background: 'rgba(251,191,36,0.4)', border: '1px dashed rgba(251,191,36,0.7)', borderRadius: 2 }} />
@@ -1370,8 +1485,8 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
               </button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsCSV(sku, sorted)}>{t('skus.export_csv_short')}</Button>
-          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsExcel(sku, sorted)}>{t('skus.export_excel_short')}</Button>
+          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsCSV(t, sku, sorted)}>{t('skus.export_csv_short')}</Button>
+          <Button variant="ghost" size="sm" icon={<Download size={11} />} onClick={() => exportMetricsExcel(t, sku, sorted)}>{t('skus.export_excel_short')}</Button>
         </div>
       </div>
 
@@ -1401,7 +1516,7 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
                 {sorted.map((r, i) => (
                   <tr key={i}>
                     <th scope="row" style={{ fontWeight: r === best ? 600 : 400, textAlign: 'left' }}>
-                      {r.model}
+                      {modelLabel(t, r.model)}
                       {r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 5 }}>{t('skus.badge_best')}</span>}
                     </th>
                     <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
@@ -1433,7 +1548,7 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
               {sorted.map((r, i) => (
                 <tr key={i} style={{ background: r === best ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined }}>
                   <th scope="row" style={{ fontWeight: r === best ? 600 : 400, textAlign: 'left' }}>
-                    {r.model}{r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 6 }}>{t('skus.badge_best')}</span>}
+                    {modelLabel(t, r.model)}{r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 6 }}>{t('skus.badge_best')}</span>}
                   </th>
                   <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
                   <td style={{ fontFamily: 'monospace' }}>{fmt(r.mae)}</td>
@@ -1956,6 +2071,7 @@ export default function SkusPage() {
             onSelect={id => { setCmpSessionId(id); setCmpSku(null) }}
             selectId="skus-compare-session-select"
             name="skus_compare_session"
+            compact
           />
           {cmpSkus.length > 0 && (
             <>
