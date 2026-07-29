@@ -1532,6 +1532,36 @@ export interface SkuIntelligenceData {
   } | null
 }
 
+// ── Series decomposition ──────────────────────────────────────────────────────
+/** One bucket of the STL split. The four values are aligned by construction on
+ *  the backend — `observed === trend + seasonal + residual` for every row — so
+ *  a chart binds straight off this array without re-deriving anything. */
+export interface DecompositionPoint {
+  date:     string
+  observed: number
+  trend:    number
+  seasonal: number
+  residual: number
+}
+
+export interface DecompositionData {
+  sku:                     string
+  granularity:             string
+  original_granularity:    string
+  available_granularities: string[]
+  /** Buckets in one seasonal cycle: 7 for daily, 52 weekly, 12 monthly. */
+  period:                  number
+  /** Stable English key ('weekly' | 'annual') — label the panel off this, not
+   *  off `period`, which is a count and means nothing to a reader. */
+  seasonal_cycle:          string
+  cycles_covered:          number
+  n_points:                number
+  series:                  DecompositionPoint[]
+  /** 0-1. How much of the movement the trend and the repeating cycle explain. */
+  trend_strength:          number
+  seasonal_strength:       number
+}
+
 // ── AI Narratives ─────────────────────────────────────────────────────────────
 export interface MorningNarrative {
   narrative:   string

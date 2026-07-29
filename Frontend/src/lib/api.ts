@@ -1140,6 +1140,26 @@ export const getSkuIntelligence = (
   )
 }
 
+/** STL split of one SKU's history into trend / seasonal / residual.
+ *
+ *  Refuses rather than degrades: too little history comes back as a 422 with
+ *  `decomposition_history_too_short` and the numbers needed to explain it. */
+export const getSkuDecomposition = (
+  sessionId: string,
+  sku: string,
+  params?: { granularity?: string },
+  opts?: RequestOpts,
+) => {
+  const q = new URLSearchParams()
+  if (params?.granularity) q.set('granularity', params.granularity)
+  const qs = q.toString()
+  return request<import('./types').DecompositionData>(
+    'GET',
+    `/sessions/${sessionId}/decomposition/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`,
+    undefined, opts,
+  )
+}
+
 export const analyzeDataSource = (
   id: string,
   params: { date_col: string; target_col: string; sku_col?: string; sheet?: string; date_from?: string; date_to?: string },

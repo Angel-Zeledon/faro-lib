@@ -3,12 +3,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import {
   getSessions, getMetrics, getInventory, getQuality,
-  getSkuIntelligence, getInventoryStatus,
+  getSkuIntelligence, getInventoryStatus, getSkuDecomposition, ApiError,
 } from '@/lib/api'
 import type {
   SessionInfo, MetricRow, InventoryRecommendation, QualityReport,
   SkuIntelligenceData, ForecastPoint, InventorySignal,
   InventoryStatusItem, CoverageUnit,
+  DecompositionData, DecompositionPoint,
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
@@ -1659,6 +1660,78 @@ function chartChrome(isDark: boolean) {
   }
 }
 
+/** Real sales, faint, with the trend drawn through them.
+ *
+ *  Deliberately NOT the textbook three-panel decomposition. The seasonal panel
+ *  would repeat what the by-weekday / by-month chart on this same tab already
+ *  says, in a form that is harder to read, and the residual panel is by
+ *  definition the part that carries no pattern — two more charts of noise for a
+ *  reader who asked for less. The one thing the split gives that nothing else
+ *  on this page can is the trend with the repeating cycle taken out: whether
+ *  the product is actually growing, or whether it is just December again. */
+function buildTrendOption(
+  series: DecompositionPoint[], accent: string, isDark: boolean,
+  labels: { observed: string; trend: string },
+) {
+  const c = chartChrome(isDark)
+  const dates = series.map(p => p.date)
+  return {
+    backgroundColor: 'transparent',
+    animation: false,
+    grid: { top: 18, bottom: 4, left: 4, right: 8, containLabel: true },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.tooltipBdr,
+      borderWidth: 1,
+      textStyle: { color: c.tooltipText, fontSize: 11 },
+      extraCssText: 'padding:8px 10px;border-radius:8px;',
+      formatter: (ps: { dataIndex: number }[]) => {
+        const p = series[ps[0]?.dataIndex ?? 0]
+        if (!p) return ''
+        return `<div style="font-size:11px"><b>${p.date}</b><br/>
+          ${labels.observed}: ${p.observed.toFixed(1)}<br/>
+          <b>${labels.trend}: ${p.trend.toFixed(1)}</b></div>`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLine: { lineStyle: { color: c.gridLine } },
+      axisTick: { show: false },
+      axisLabel: { color: c.dim, fontSize: 10, hideOverlap: true },
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: c.dim, fontSize: 10, formatter: (v: number) => fmtK(v) },
+      splitLine: { lineStyle: { color: c.gridLine, type: 'dashed' } },
+    },
+    series: [
+      {
+        // The raw series is context, not the subject: thin and faint so the
+        // trend reads on top of it rather than competing with it.
+        name: labels.observed,
+        type: 'line',
+        data: series.map(p => p.observed),
+        symbol: 'none',
+        lineStyle: { color: accent, width: 1, opacity: 0.28 },
+        z: 2,
+      },
+      {
+        name: labels.trend,
+        type: 'line',
+        data: series.map(p => p.trend),
+        symbol: 'none',
+        smooth: true,
+        lineStyle: { color: accent, width: 2.6 },
+        z: 5,
+      },
+    ],
+  }
+}
+
 function buildProfileOption(profile: AvgProfile, accent: string, isDark: boolean, obsLabel: (n: number) => string) {
   const c = chartChrome(isDark)
   return {
@@ -1827,6 +1900,31 @@ function SalesPatternPanel({ sessionId, sku, isDark }: {
 
   const spread = useMemo(() => buildSpread(points), [points])
 
+  // The trend split is a separate request: it is the only thing on this tab the
+  // browser cannot derive from the history it already has. A refusal here is
+  // expected, not exceptional — most SKUs simply lack the two full cycles STL
+  // needs — so it never surfaces as an error, only as a sentence.
+  const [decomp,      setDecomp]      = useState<DecompositionData | null>(null)
+  const [decompShort, setDecompShort] = useState<{ required: number; available: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setDecomp(null)
+    setDecompShort(null)
+    getSkuDecomposition(sessionId, sku, undefined, { silent: true })
+      .then(d => { if (!cancelled) setDecomp(d) })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        if (e instanceof ApiError && e.code === 'decomposition_history_too_short') {
+          setDecompShort({
+            required:  Number(e.params.required),
+            available: Number(e.params.available),
+          })
+        }
+      })
+    return () => { cancelled = true }
+  }, [sessionId, sku])
+
   // Both charts count points of the SERIES, whatever its granularity — a month
   // bar on a daily session rests on ~30 days, not on 1 month. Saying which unit
   // is what keeps "average of 47" from being read as 47 months.
@@ -1863,6 +1961,51 @@ function SalesPatternPanel({ sessionId, sku, isDark }: {
 
   return (
     <div style={{ padding: '18px 20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+      {/* ── Is it really growing, or is it just December again? ── */}
+      {(decomp || decompShort) && (
+        <>
+          <section>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{t('skus.trend_title')}</div>
+            <div style={{ fontSize: 11, color: 'var(--dim)', margin: '5px 0 12px', maxWidth: 620, lineHeight: 1.6 }}>
+              {t('skus.trend_caption')}
+            </div>
+            {decompShort ? (
+              <PatternNote>
+                {t('skus.trend_too_short', { required: decompShort.required, available: decompShort.available })}
+              </PatternNote>
+            ) : decomp ? (
+              <>
+                <ReactECharts
+                  option={buildTrendOption(decomp.series, accent, isDark, {
+                    observed: t('skus.trend_observed'),
+                    trend:    t('skus.trend_line'),
+                  })}
+                  style={{ height: 200, width: '100%' }}
+                  theme={isDark ? 'dark' : undefined}
+                  opts={{ renderer: 'canvas' }}
+                  notMerge
+                />
+                {/* The two strengths, said in words. A reader has no use for
+                    "seasonal_strength 0.39" but every use for what it means. */}
+                <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 8, lineHeight: 1.6 }}>
+                  {t(
+                    decomp.seasonal_cycle === 'weekly'
+                      ? 'skus.trend_strength_weekly'
+                      : 'skus.trend_strength_annual',
+                    {
+                      seasonal: Math.round(decomp.seasonal_strength * 100),
+                      trend:    Math.round(decomp.trend_strength * 100),
+                    },
+                  )}
+                </div>
+              </>
+            ) : null}
+          </section>
+
+          <div style={{ height: 1, background: 'var(--border)' }} />
+        </>
+      )}
 
       {/* ── Average by weekday / by month ── */}
       <section>
