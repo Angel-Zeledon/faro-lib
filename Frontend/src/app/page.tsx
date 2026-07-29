@@ -348,12 +348,12 @@ export default function LandingPage() {
 
  // Limits below mirror backend/entitlements/plans.py — keep the two in sync.
  //
- // PRE-LAUNCH CHECKLIST — verify these advertised capabilities work before deploying this page:
- // · API keys — can be created today but authenticate nothing; no endpoint accepts one.
- // · Integraciones (Alegra, Siigo) — page exists but is hidden from the nav pending a pricing decision.
- // · Webhooks — real, but a single POST with no retry, for two events (job.completed / job.failed).
- // · Búsqueda en documentos — backend and API client exist, but no upload UI is wired to them.
- // · Recetas de materiales (BOM) — backend only; no screen and no nav entry.
+ // This page only sells what a paying customer can use on day one. The five
+ // capabilities that used to be advertised here and were not shippable — API
+ // keys that authenticate nothing, the hidden Alegra/Siigo integrations,
+ // single-shot webhooks with no retry, document search with no upload UI, and
+ // BOM with no screen at all — have been removed rather than footnoted. If any
+ // of them ships, it gets added back here, not before.
  const PLANS = [
  {
  name: 'Starter',
@@ -386,7 +386,12 @@ export default function LandingPage() {
  priceHint: 'Desde $1.990/mes',
  desc: 'Para operaciones sin techo de catálogo, o que producen en lugar de solo revender.',
  skus: 'SKUs, usuarios y ubicaciones ilimitados',
- features: ['Todo lo del plan Profesional', 'Recetas de materiales (BOM) para quien ensambla o produce', 'Acceso API y webhooks para conectar tus sistemas', 'Integraciones con Alegra y Siigo', 'Integración a medida (ERP, WMS, BI)', 'Archivos de hasta 2 GB', 'Onboarding con equipo técnico dedicado', 'SLA de disponibilidad garantizado', 'Gerente de cuenta asignado'],
+ // Nothing here is unbuilt. BOM, API keys, webhooks and the Alegra/Siigo
+ // integrations used to be listed and are not: the BOM has no screen, an API
+ // key authenticates nothing, webhooks fire once with no retry, and the
+ // integrations page is hidden pending a pricing decision. Selling them from
+ // this page is a promise the product cannot keep on the day someone pays.
+ features: ['Todo lo del plan Profesional', 'Integración a medida (ERP, WMS, BI)', 'Archivos de hasta 2 GB', 'Onboarding con equipo técnico dedicado', 'SLA de disponibilidad garantizado', 'Gerente de cuenta asignado'],
  cta: 'Hablar con el equipo',
  ctaHref: 'mailto:hola@usefaro.io?subject=Faro%20%E2%80%94%20activar%20plan%20Empresarial',
  highlight: false,
@@ -418,7 +423,7 @@ export default function LandingPage() {
  plan: 'Empresarial',
  headline: 'Sin techo de catálogo, o produciendo en lugar de solo revender',
  who: 'Una cadena con decenas de puntos de venta, un distribuidor nacional con catálogo de cinco cifras, o una planta que arma producto terminado a partir de materias primas.',
- why: 'Aquí desaparecen los topes: códigos, usuarios y ubicaciones ilimitados, y archivos de hasta 2 GB para historiales largos. Se suman las recetas de materiales (BOM), que convierten el pronóstico del producto terminado en el requerimiento de cada insumo, y la conexión con los sistemas que ya usas por API, webhooks e integraciones.',
+ why: 'Aquí desaparecen los topes: códigos, usuarios y ubicaciones ilimitados, y archivos de hasta 2 GB para historiales largos. La conexión con los sistemas que ya usas se arma con nuestro equipo sobre tu operación, no se activa desde un panel.',
  outgrow: null as string | null,
  note: 'No hay un escalón siguiente: el precio se arma sobre tu operación. Escríbenos y lo vemos con números tuyos.',
  },
@@ -462,7 +467,6 @@ export default function LandingPage() {
  { title: 'Simulador de escenarios', desc: 'Hasta 50 reglas por escenario: multiplicar la demanda, marcar una promoción, atrasar a un proveedor o cambiar el stock de seguridad, filtrando por producto, categoría, proveedor o rango de fechas. Compara el escenario contra la base sin tocar nada de lo real, y lo puedes guardar para volver a correrlo.', isNew: false },
  { title: 'Alertas por WhatsApp', desc: 'El mismo resumen diario de productos en riesgo que llega por correo, ahora al teléfono de quien decide. Cada persona vincula y verifica su propio número desde su configuración.', isNew: false },
  { title: 'Analista con IA', desc: 'Preguntas en español sobre tus propios datos — “¿por qué subió la demanda de esta categoría?”, “¿qué proveedores me están atrasando?” — y cada respuesta viene marcada con de dónde salió, para que sepas cuándo se apoya en tus datos y cuándo no.', isNew: false },
- { title: 'Búsqueda en tus documentos', desc: 'Subes catálogos, listas de precios o contratos de proveedor y el analista los consulta al responder. Tus documentos quedan aislados a tu empresa.', isNew: false },
  { title: 'Recálculo programado', desc: 'En vez de acordarte de reentrenar, lo dejas corriendo solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes. La pantalla te muestra cuándo corrió, cuándo vuelve a correr y si falló.', isNew: false },
  { title: 'Mensajes de equipo', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de Faro, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
  ]
@@ -513,7 +517,7 @@ export default function LandingPage() {
  },
  {
  q: '¿Se puede integrar con nuestro ERP o sistema de inventario actual?',
- a: 'Sí, en el plan Empresarial. Ahí están el acceso a la API y los webhooks para automatizar la carga de ventas y la salida de pronósticos hacia otros sistemas, las integraciones con Alegra y Siigo, y el desarrollo a medida con nuestro equipo técnico. En Starter y Profesional la carga es por archivo: exportas de tu sistema y subes el CSV o Excel.',
+ a: 'En el plan Empresarial lo armamos con nuestro equipo técnico sobre tu operación, caso por caso — escríbenos y lo vemos. En Starter y Profesional la carga es por archivo: exportas de tu sistema y subes el CSV o Excel. También puedes conectar Faro directamente a tu base de datos Postgres o MySQL y traer las ventas con una consulta, sin archivos de por medio.',
  },
  {
  q: '¿Con qué frecuencia se actualizan los pronósticos?',
@@ -766,8 +770,12 @@ export default function LandingPage() {
  {/* Plain app samples — simple framed screenshots, not a headlined feature */}
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginTop: 32 }}>
  {[
+ // Real screenshots of the running app on the demo tenant's own data,
+ // taken in the light theme so they sit in this page instead of punching
+ // a dark hole in it. Nothing here is a mockup.
  { img: '/shot-inventory.png', caption: 'Semáforo de inventario', alt: 'Tabla de inventario de Faro con semáforo de colores: estados PEDIR YA, OK y SOBRESTOCK por SKU y bodega.' },
- { img: '/shot-forecast.png', caption: 'Pronóstico por SKU', alt: 'Gráfico de pronóstico por SKU de Faro: ventas históricas, pronóstico P50 y bandas de incertidumbre.' },
+ { img: '/shot-forecast.png', caption: 'Pronóstico por producto', alt: 'Gráfico de pronóstico por SKU de Faro: ventas históricas, pronóstico y el rango de venta probable.' },
+ { img: '/shot-pattern.png', caption: 'Cómo se vende cada producto', alt: 'Pantalla de Faro que separa la tendencia real de un producto del patrón que se repite cada semana, con el promedio por día de la semana debajo.' },
  ].map(({ img, caption, alt }) => (
  <figure key={img} data-reveal style={{ margin: 0 }}>
  <div style={{ borderRadius: 12, border: `1px solid ${T.border}`, overflow: 'hidden', boxShadow: '0 12px 32px rgba(15,23,42,0.10)' }}>
