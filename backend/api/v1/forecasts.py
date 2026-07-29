@@ -4,7 +4,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel, field_validator
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_analyst_or_above,
+)
 from backend.db import session_store
 from backend.db.connection import execute, query
 from backend.datasets.service import get_dataset
@@ -254,7 +256,7 @@ class OverrideItem(BaseModel):
 def save_overrides(
     session_id: str,
     body: list[OverrideItem],
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _require_completed(user.tenant_id, session_id)
     for item in body:

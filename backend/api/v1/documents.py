@@ -24,7 +24,9 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_analyst_or_above,
+)
 from backend.db.connection import execute, query, query_one
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -133,7 +135,9 @@ def _index_in_background(
 @router.post("/documents")
 async def upload_document(
     file: UploadFile = File(...),
-    user: CurrentUser = Depends(get_current_user),
+    # A read-only account must not be able to put a 50 MB file into the
+    # tenant's storage, or feed the analyst a document nobody vetted.
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
     Upload a document (PDF, DOCX, TXT up to 50 MB).
@@ -226,7 +230,7 @@ def get_document_status(doc_id: str, user: CurrentUser = Depends(get_current_use
 
 
 @router.delete("/documents/{doc_id}")
-def delete_document(doc_id: str, user: CurrentUser = Depends(get_current_user)):
+def delete_document(doc_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     doc = _get_doc(doc_id, user.tenant_id)
     if not doc:
         raise HTTPException(404, "Document not found")

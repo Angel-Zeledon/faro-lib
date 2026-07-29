@@ -5,7 +5,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_analyst_or_above,
+)
 from backend.db.connection import execute, query, query_one
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -34,7 +36,7 @@ def _hash_key(raw: str) -> str:
 
 
 @router.post("")
-def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(get_current_user)):
+def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_analyst_or_above)):
     raw = "sk_live_" + secrets.token_urlsafe(32)
     execute(
         """INSERT INTO api_keys (id, tenant_id, name, key_hash)
@@ -57,7 +59,7 @@ def list_api_keys(user: CurrentUser = Depends(get_current_user)):
 
 
 @router.delete("/{key_id}")
-def revoke_api_key(key_id: str, user: CurrentUser = Depends(get_current_user)):
+def revoke_api_key(key_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     row = query_one(
         "SELECT id FROM api_keys WHERE id = %s AND tenant_id = %s",
         (key_id, user.tenant_id),

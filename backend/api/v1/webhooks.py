@@ -9,7 +9,9 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_analyst_or_above,
+)
 from backend.db.connection import execute, query, query_one
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -49,7 +51,7 @@ class CreateWebhookRequest(BaseModel):
 
 
 @router.post("")
-def create_webhook(body: CreateWebhookRequest, user: CurrentUser = Depends(get_current_user)):
+def create_webhook(body: CreateWebhookRequest, user: CurrentUser = Depends(require_analyst_or_above)):
     secret = secrets.token_hex(32)
     execute(
         """INSERT INTO webhooks (id, tenant_id, url, events, secret)
@@ -70,7 +72,7 @@ def list_webhooks(user: CurrentUser = Depends(get_current_user)):
 
 
 @router.delete("/{webhook_id}")
-def delete_webhook(webhook_id: str, user: CurrentUser = Depends(get_current_user)):
+def delete_webhook(webhook_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     row = query_one(
         "SELECT id FROM webhooks WHERE id = %s AND tenant_id = %s",
         (webhook_id, user.tenant_id),

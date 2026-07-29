@@ -4,7 +4,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
-from backend.auth.guards import CurrentUser, get_current_user
+from backend.auth.guards import (
+    CurrentUser, get_current_user, require_analyst_or_above,
+)
 from backend.db.connection import execute, query_one
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -77,7 +79,7 @@ def get_schedule(session_id: str, user: CurrentUser = Depends(get_current_user))
 def save_schedule(
     session_id: str,
     body: SaveScheduleRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     if not session_svc.get_session(user.tenant_id, session_id):
         raise AppError("session_not_found", "Session not found", status_code=404)
@@ -111,7 +113,7 @@ def save_schedule(
 
 
 @router.delete("/sessions/{session_id}/schedule")
-def delete_schedule(session_id: str, user: CurrentUser = Depends(get_current_user)):
+def delete_schedule(session_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     if not session_svc.get_session(user.tenant_id, session_id):
         raise AppError("session_not_found", "Session not found", status_code=404)
     execute(
