@@ -80,7 +80,15 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </span>
         </div>
 
-        <div style={{ position: 'relative', height: '100%', zIndex: 1 }}>
+        {/* `overflowY: auto` matters on short screens. The box above is
+            `position: fixed; inset: 0; overflow: hidden` so the ambient scene
+            stays clipped to the viewport — but that clipping applied to the
+            form too, and a form taller than the screen simply had its bottom
+            cut off with no way to reach it. On a 640px-tall phone the signup
+            button sat at y=792 and the page would not scroll: nobody on a
+            normal phone could create an account. The scene keeps its clip;
+            only this column scrolls, and only when it has to. */}
+        <div style={{ position: 'relative', height: '100%', overflowY: 'auto', zIndex: 1 }}>
           {children}
         </div>
       </div>

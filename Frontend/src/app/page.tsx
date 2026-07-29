@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { Menu, X } from 'lucide-react'
 
 const T = {
  bg: '#ffffff',
@@ -24,8 +25,38 @@ const T = {
 }
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
+const NAV_LINKS: [string, string][] = [
+ ['#problema', 'El problema'],
+ ['#solucion', 'Cómo funciona'],
+ ['#casos', 'Industrias'],
+ ['#prices', 'Precios'],
+ ['#que-plan', 'Qué plan'],
+ ['mailto:hola@usefaro.io', 'Contacto'],
+]
+
 function Nav() {
+ // Below 900px the inline link row does not fit and is hidden. It used to be
+ // hidden with nothing in its place, so a phone had no way to reach Precios,
+ // Industrias or any other section short of scrolling the whole page — 22,000px
+ // of it. The button and sheet below only ever exist at that width.
+ const [menuOpen, setMenuOpen] = useState(false)
+
+ // A fixed sheet over a scrolling page: freeze the page while it is open, or
+ // the content slides behind it under a thumb that meant to scroll the menu.
+ useEffect(() => {
+ if (!menuOpen) return
+ const prev = document.body.style.overflow
+ document.body.style.overflow = 'hidden'
+ const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+ window.addEventListener('keydown', onKey)
+ return () => {
+ document.body.style.overflow = prev
+ window.removeEventListener('keydown', onKey)
+ }
+ }, [menuOpen])
+
  return (
+ <>
  <nav className="nav-shell" style={{
  position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
  background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)',
@@ -38,36 +69,60 @@ function Nav() {
  <span style={{ fontSize: 16, fontWeight: 800, color: T.text, letterSpacing: '-0.03em' }}>Faro</span>
  </div>
  <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
- {[
- ['#problema', 'El problema'],
- ['#solucion', 'Cómo funciona'],
- ['#casos', 'Industrias'],
- ['#prices', 'Precios'],
- ['#que-plan', 'Qué plan'],
- ['mailto:hola@usefaro.io', 'Contacto'],
- ].map(([href, label]) => (
+ {NAV_LINKS.map(([href, label]) => (
  <a key={href} href={href} style={{ fontSize: 13, color: T.muted, textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
  >{label}</a>
  ))}
  </div>
- <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
- <Link href="/login" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
+ <div className="nav-cta" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+ <Link href="/login" className="nav-tap" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
  Iniciar sesión
  </Link>
- <Link href="/signup" style={{ fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
+ <Link href="/signup" className="nav-signup" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
  Crear cuenta
  </Link>
  </div>
+
+ {/* Only rendered at all below 900px — see .nav-burger in the stylesheet. */}
+ <button
+ type="button"
+ className="nav-burger"
+ aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+ aria-expanded={menuOpen}
+ onClick={() => setMenuOpen(v => !v)}
+ >
+ {menuOpen ? <X size={20} /> : <Menu size={20} />}
+ </button>
  </nav>
+
+ {menuOpen && (
+ <div className="nav-sheet" onClick={() => setMenuOpen(false)}>
+ <div className="nav-sheet-inner" onClick={e => e.stopPropagation()}>
+ {NAV_LINKS.map(([href, label]) => (
+ <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>
+ ))}
+ <div className="nav-sheet-sep" />
+ <Link href="/login" onClick={() => setMenuOpen(false)}>Iniciar sesión</Link>
+ <Link
+ href="/signup"
+ onClick={() => setMenuOpen(false)}
+ className="nav-sheet-cta"
+ >
+ Crear cuenta
+ </Link>
+ </div>
+ </div>
+ )}
+ </>
  )
 }
 
 // ── Shared layout helpers ─────────────────────────────────────────────────────
 function Section({ id, children, alt, style }: { id?: string; children: React.ReactNode; alt?: boolean; style?: React.CSSProperties }) {
  return (
- <section id={id} style={{ background: alt ? T.bg2 : T.bg, padding: '88px 0', ...style }}>
+ <section id={id} className="sec" style={{ background: alt ? T.bg2 : T.bg, padding: '88px 0', ...style }}>
  <div className="sec-inner" data-reveal style={{ maxWidth: 1100, margin: '0 auto', padding: '0 48px' }}>{children}</div>
  </section>
  )
@@ -511,6 +566,10 @@ export default function LandingPage() {
  .reveal-armed, .reveal-in { opacity: 1 !important; transform: none !important; transition: none !important; }
  }
 
+ /* The mobile menu button. Hidden above 900px, where the inline link row is
+    the navigation; below it, it is the only navigation there is. */
+ .nav-burger { display: none; }
+
  /* Narrow viewports: collapse the fixed grid columns instead of overflowing.
     Nothing here changes colour, type or shadow — only how many columns fit. */
  @media (max-width: 900px) {
@@ -520,6 +579,59 @@ export default function LandingPage() {
  .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
  .split { grid-template-columns: 1fr !important; gap: 32px !important; }
  .faq-side { position: static !important; }
+
+ .nav-burger {
+ display: flex; align-items: center; justify-content: center;
+ width: 44px; height: 44px; margin-right: -10px;
+ background: none; border: none; padding: 0; cursor: pointer;
+ color: ${T.text}; border-radius: 8px;
+ }
+ .nav-burger:focus-visible { outline: 2px solid ${T.text}; outline-offset: 2px; }
+
+ /* Both auth actions in a 20px gutter is tight, and the sheet carries both
+    anyway, so only the primary one stays up here — signing up should not
+    require opening a menu first.
+    With the link row hidden, space-between is left with three children and
+    strands the button in the middle of the bar, which reads as a mistake.
+    Pushing it right parks it beside the menu button, where it belongs.
+
+    NOTE: no double quotes and no ampersands anywhere inside this style
+    block, comments included. The server escapes them into HTML entities and
+    the client renders them raw, so the two copies of this stylesheet stop
+    matching and hydration fails for the whole page. One quoted word in a CSS
+    comment was enough to do it. */
+ .nav-cta .nav-tap { display: none !important; }
+ .nav-cta { margin-left: auto; margin-right: 10px; }
+
+ .nav-sheet {
+ position: fixed; inset: 60px 0 0; z-index: 99;
+ background: rgba(15, 23, 42, 0.35);
+ backdrop-filter: blur(2px);
+ animation: nav-sheet-in 160ms ease-out both;
+ }
+ .nav-sheet-inner {
+ background: #fff; border-bottom: 1px solid ${T.border};
+ padding: 8px 20px 20px;
+ display: flex; flex-direction: column;
+ box-shadow: 0 18px 40px -24px rgba(15,23,42,0.35);
+ animation: nav-sheet-slide 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+ }
+ .nav-sheet-inner a {
+ display: flex; align-items: center; min-height: 48px;
+ font-size: 15px; font-weight: 500; color: ${T.body}; text-decoration: none;
+ border-bottom: 1px solid ${T.border};
+ }
+ .nav-sheet-inner a:last-child { border-bottom: none; }
+ .nav-sheet-sep { height: 12px; }
+ .nav-sheet-inner a.nav-sheet-cta {
+ justify-content: center; margin-top: 12px; border-bottom: none;
+ background: ${T.text}; color: #fff; font-weight: 700; border-radius: 9px;
+ }
+ }
+ @keyframes nav-sheet-in { from { opacity: 0 } to { opacity: 1 } }
+ @keyframes nav-sheet-slide { from { transform: translateY(-8px) } to { transform: none } }
+ @media (prefers-reduced-motion: reduce) {
+ .nav-sheet, .nav-sheet-inner { animation: none !important; }
  }
  @media (max-width: 760px) {
  .sec-inner, .hero-inner { padding: 0 20px !important; }
@@ -531,13 +643,35 @@ export default function LandingPage() {
  .footer-shell { padding: 40px 20px !important; }
  .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; }
  .footer-bottom { flex-direction: column; align-items: flex-start !important; gap: 8px; }
+
+ /* 88px of air above and below every section is a desktop rhythm. Stacked
+    into one column on a phone it turned the page into 22,000px — roughly
+    29 screens — and the gaps read as the page having ended. */
+ .sec { padding: 52px 0 !important; }
+
+ /* The hero reserves a full viewport plus a 120px nav offset, which on a
+    short phone screen pushes the first real section below two swipes of
+    mostly empty space. */
+ .hero-sec { min-height: 0 !important; padding-top: 96px !important; }
+
+ /* Anything tappable clears 44px. These are 36px chips and 17-20px inline
+    links today — fine with a cursor, a coin toss with a thumb. */
+ .btn-primary, .btn-ghost { min-height: 48px; padding: 14px 22px; width: 100%; justify-content: center; }
+ .case-tab { min-height: 44px !important; }
+ /* These carry an inline display:block, so the override has to say so. */
+ .foot-link { display: flex !important; align-items: center; min-height: 44px; margin-bottom: 0 !important; }
+ .nav-signup, .cta-link { min-height: 44px; }
+ .cta-link { display: inline-flex; align-items: center; }
+ /* Links that sit inside flowing paragraph text are left alone on purpose:
+    padding them to 44px would tear holes in the line spacing around them,
+    and the paragraph itself is the target the reader is already aiming at. */
  }
  `}</style>
 
  <Nav />
 
  {/* ── HERO ─────────────────────────────────────────────────────────── */}
- <section style={{ minHeight: '100vh', paddingTop: 120, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', borderBottom: `1px solid ${T.border}` }}>
+ <section className="hero-sec" style={{ minHeight: '100vh', paddingTop: 120, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', borderBottom: `1px solid ${T.border}` }}>
  <div className="hero-inner" style={{ maxWidth: 1100, width: '100%', margin: '0 auto', padding: '0 48px' }}>
 
  <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, marginBottom: 24, background: T.greenBg, border: `1px solid ${T.greenBd}`, fontSize: 11, fontWeight: 700, color: T.green, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -719,7 +853,7 @@ export default function LandingPage() {
  <Lead>El problema de inventario no es el mismo en un mayorista que en un retailer o en una planta de producción. Faro se adapta a las características de cada operación.</Lead>
  <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
  {CASES.map(({ label }, i) => (
- <button key={label} onClick={() => setActiveCase(i)} style={{ all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600, background: activeCase === i ? T.accentBg : T.bg, border: `1px solid ${activeCase === i ? T.accentBd : T.border}`, color: activeCase === i ? T.accent : T.muted, transition: 'all 0.15s' }}>
+ <button key={label} className="case-tab" onClick={() => setActiveCase(i)} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600, background: activeCase === i ? T.accentBg : T.bg, border: `1px solid ${activeCase === i ? T.accentBd : T.border}`, color: activeCase === i ? T.accent : T.muted, transition: 'all 0.15s' }}>
  {label}
  </button>
  ))}
@@ -989,7 +1123,7 @@ export default function LandingPage() {
  <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 24px' }}>
  Si tienes alguna pregunta que no está aquí, escríbenos directamente. Respondemos en menos de 24 horas.
  </p>
- <a href="mailto:hola@usefaro.io" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
+ <a href="mailto:hola@usefaro.io" className="cta-link" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
  Escribir al equipo →
  </a>
  </div>
@@ -1029,7 +1163,7 @@ export default function LandingPage() {
  <div>
  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Producto</div>
  {[['#solucion','Cómo funciona'],['#casos','Industrias'],['#prices','Precios'],['#comparacion','vs Excel']].map(([href, label]) => (
- <a key={href} href={href} style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
+ <a key={href} href={href} className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
  >{label}</a>
@@ -1038,7 +1172,7 @@ export default function LandingPage() {
  <div>
  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Empresa</div>
  {[['#problema','El problema'],['#nosotros','Nosotros'],['mailto:hola@usefaro.io','Contacto']].map(([href, label]) => (
- <a key={label} href={href} style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
+ <a key={label} href={href} className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
  >{label}</a>
@@ -1046,11 +1180,11 @@ export default function LandingPage() {
  </div>
  <div>
  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Contacto</div>
- <a href="mailto:angel.zeledon.fernandez@gmail.com" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 8 }}
+ <a href="mailto:angel.zeledon.fernandez@gmail.com" className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 8, wordBreak: 'break-word' }}
  onMouseEnter={e => (e.currentTarget.style.color = T.accent)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
  >angel.zeledon.fernandez@gmail.com</a>
- <a href="tel:+50671862820" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none' }}
+ <a href="tel:+50671862820" className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none' }}
  onMouseEnter={e => (e.currentTarget.style.color = T.accent)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
  >+506 7186 2820</a>

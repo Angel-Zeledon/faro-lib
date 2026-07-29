@@ -125,8 +125,9 @@ function SignupPageContent() {
   }
 
   return (
-    <div style={{
+    <div className="auth-shell" style={{
       height: '100%', display: 'flex', alignItems: 'center',
+      // See /login: the offset is a desktop composition, evened out on phones.
       paddingLeft: 'clamp(28px, 13vw, 200px)', paddingRight: 'clamp(28px, 6vw, 64px)',
       paddingBottom: '2vh',
     }}>
@@ -209,7 +210,7 @@ function SignupPageContent() {
               )}
 
               <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{
+                <div className="auth-row-2" style={{
                   display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
                   animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.14s both',
                 }}>
@@ -283,13 +284,7 @@ function SignupPageContent() {
                     <button
                       type="button" onClick={() => setShowPw(v => !v)}
                       aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')}
-                      style={{
-                        all: 'unset', position: 'absolute', right: 12, top: '50%',
-                        transform: 'translateY(-50%)', cursor: 'pointer', color: '#a1a1aa',
-                        display: 'flex', alignItems: 'center', transition: 'color 0.18s ease',
-                      }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0a0a0a' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#a1a1aa' }}
+                      className="auth-eye"
                     >
                       {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>

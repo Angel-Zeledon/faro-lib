@@ -89,8 +89,12 @@ function LoginPageContent() {
   // keeps the browser's own pseudo-classes in the same cascade as ours.
 
   return (
-    <div style={{
+    <div className="auth-shell" style={{
       height: '100%', display: 'flex', alignItems: 'center',
+      // Deliberately asymmetric on desktop: the card sits left of centre so the
+      // illustrated half of the layout reads as the other half of a composition.
+      // On a phone there is no other half, so globals.css evens this out — an
+      // off-centre card on a 390px screen just looks like a mistake.
       paddingLeft: "clamp(28px, 10vw, 150px)", paddingRight: "clamp(28px, 6vw, 64px)",
       paddingBottom: '3vh',   // optical centring — sits a touch above true middle
     }}>
@@ -187,13 +191,7 @@ function LoginPageContent() {
                 <button
                   type="button" onClick={() => setShowPw(v => !v)}
                   aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')}
-                  style={{
-                    all: 'unset', position: 'absolute', right: 12, top: '50%',
-                    transform: 'translateY(-50%)', cursor: 'pointer', color: '#a1a1aa',
-                    display: 'flex', alignItems: 'center', transition: 'color 0.18s ease',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0a0a0a' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#a1a1aa' }}
+                  className="auth-eye"
                 >
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>

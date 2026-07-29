@@ -580,6 +580,28 @@
 }
 .auth-submit:hover::after { animation: none; left: 130%; transition: left 0.6s ease; }
 
+/* The show/hide-password toggle. The icon is 14px, which was also the whole
+   button: a 14px target is unhittable with a thumb and well under the 44px
+   everyone builds for. The hit area is 44x44 and centred on the icon, so it
+   grows outward without moving anything or changing how it looks. */
+.auth-eye {
+  all: unset;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translate(50%, -50%);   /* the 44px box is centred on right:12px */
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #a1a1aa;
+  transition: color 0.18s ease;
+}
+.auth-eye:hover { color: #0a0a0a; }
+.auth-eye:focus-visible { outline: 2px solid #0a0a0a; outline-offset: 2px; border-radius: 8px; }
+
 .auth-link { position: relative; }
 .auth-link::after {
   content: ''; position: absolute; left: 0; right: 100%; bottom: -1px; height: 1px;
@@ -785,4 +807,37 @@
    the scenery there and keep only the wash and dots for atmosphere. */
 @media (max-width: 820px) {
   .auth-scenery { display: none !important; }
+}
+
+/* Phones. The auth card's left offset is a two-column composition on desktop;
+   with the scenery gone there is nothing to balance against, so an off-centre
+   card just reads as a layout bug. Even the gutters out and let the card use
+   the width it has. The overrides beat inline styles, hence !important. */
+@media (max-width: 560px) {
+  .auth-shell {
+    padding-left: 20px  !important;
+    padding-right: 20px !important;
+    padding-bottom: 0   !important;
+    /* A card taller than the screen must be reachable — `height: 100%` with
+       centred content would otherwise clip its top off past the viewport. */
+    height: auto        !important;
+    min-height: 100%;
+    /* Clears the brand mark, which the auth layout pins to the top-left. At
+       24px the signup heading ran straight through it. */
+    padding-top: 88px;
+    padding-bottom: 32px !important;
+    align-items: flex-start !important;
+  }
+  /* Two 12px-gutter columns inside a 350px card give each field ~165px, which
+     is narrower than the labels above them — "Nombre de la empresa" wrapped to
+     two lines and knocked its own input out of line with its neighbour. */
+  .auth-row-2 { grid-template-columns: 1fr !important; }
+  /* Secondary auth links sit inline in a label row at 12px, which leaves a
+     ~17px tap target. Give them the full 44px without moving the text. */
+  .auth-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin-block: -13px;   /* the taller box grows over its own row, not the layout */
+  }
 }
