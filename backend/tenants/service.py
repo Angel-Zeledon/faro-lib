@@ -5,7 +5,7 @@ from typing import Optional
 
 import psycopg2
 
-from backend.db.connection import query_one, execute, _json
+from backend.db.connection import query, query_one, execute, _json
 from backend.utils.ids import generate_id
 from backend.config import settings
 
@@ -49,6 +49,24 @@ def create_tenant(name: str) -> dict:
         (tenant_id, name, f"{base}-{tenant_id[-8:]}", trial_ends),
     )
     return get_tenant(tenant_id)
+
+
+def delete_empty_tenant(tenant_id: str) -> bool:
+    """Remove a tenant that never got its first user. Returns whether it went.
+
+    Signup creates the tenant before the user, so anything that stops the user
+    being created leaves a tenant nobody can log into. This is the cleanup for
+    exactly that window, and the `NOT EXISTS` is the safety catch: a tenant with
+    even one user is never touched, so this can only ever remove a shell.
+    """
+    rows = query(
+        """DELETE FROM tenants
+           WHERE id = %s
+             AND NOT EXISTS (SELECT 1 FROM users WHERE tenant_id = %s)
+           RETURNING id""",
+        (tenant_id, tenant_id),
+    )
+    return bool(rows)
 
 
 def get_tenant(tenant_id: str) -> Optional[dict]:

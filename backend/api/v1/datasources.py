@@ -155,7 +155,7 @@ async def create_file_source(
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     try:
         src = await svc.create_file_source(
@@ -171,7 +171,9 @@ async def create_file_source(
 @router.post("/sql")
 def create_sql_source(
     body: CreateSqlSourceRequest,
-    user: CurrentUser = Depends(get_current_user),
+    # A viewer must not be able to point the company at a database of their
+    # choosing, or store credentials under the tenant's name.
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     try:
         src = svc.create_sql_source(
@@ -197,7 +199,7 @@ def create_sql_source(
 async def replace_file(
     source_id: str,
     file: UploadFile = File(...),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     try:
@@ -213,7 +215,7 @@ async def replace_file(
 def update_sql_config(
     source_id: str,
     body: UpdateSqlConfigRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     try:
@@ -306,7 +308,7 @@ def export_query(
 def save_query(
     source_id: str,
     body: SaveQueryRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     src = svc.save_sql_query(user.tenant_id, source_id, body.sql)
@@ -367,7 +369,7 @@ def save_as_new(
 def rename_source(
     source_id: str,
     body: RenameSourceRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     src = svc.rename_source(user.tenant_id, source_id, body.name, description=body.description)
@@ -379,7 +381,7 @@ def rename_source(
 @router.delete("/{source_id}")
 def delete_source(
     source_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     import psycopg2
     _ds_or_404(user.tenant_id, source_id)

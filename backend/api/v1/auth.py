@@ -31,7 +31,7 @@ from backend.schemas.auth import (
     VerifyEmailRequest,
 )
 from backend.schemas.common import ok
-from backend.tenants.service import create_tenant
+from backend.tenants.service import create_tenant, delete_empty_tenant
 from backend.users import service as user_svc
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -143,14 +143,17 @@ async def signup(body: SignupRequest):
 
     # A number already VERIFIED by someone else authenticates the inbound
     # WhatsApp bot as that person — signup must not be able to claim it.
+    #
+    # The check covers any holder, not just a verified one, because that is what
+    # the database enforces: `users_whatsapp_number_uniq` is unique over every
+    # non-null number. While this only rejected verified holders, a signup
+    # reusing an unverified number sailed past the guard and died on the index
+    # with an unhandled UniqueViolation — a 500 where the person needed to be
+    # told the number was taken.
     from backend.whatsapp.identity import normalize_phone
 
     phone = normalize_phone(body.whatsapp_number)
-    if query_one(
-        """SELECT id FROM users
-           WHERE whatsapp_number = %s AND whatsapp_verified_at IS NOT NULL""",
-        (phone,),
-    ):
+    if query_one("SELECT id FROM users WHERE whatsapp_number = %s", (phone,)):
         raise AppError(
             "whatsapp_number_taken",
             "This WhatsApp number is already linked to another account",
@@ -158,14 +161,34 @@ async def signup(body: SignupRequest):
         )
 
     tenant = create_tenant(body.tenant_name)
-    user = user_svc.create_user(
-        tenant_id=tenant["id"],
-        email=body.email,
-        password=body.password,
-        role="admin",
-        full_name=body.full_name,
-        whatsapp_number=phone,
-    )
+    # The tenant row exists before its first user does, so anything that stops
+    # the user being created strands an empty tenant that nobody can ever log
+    # into — and the guards above are checks, not locks, so two simultaneous
+    # signups can still collide on the index. Undo the tenant and report the
+    # collision the same way the pre-check does.
+    try:
+        user = user_svc.create_user(
+            tenant_id=tenant["id"],
+            email=body.email,
+            password=body.password,
+            role="admin",
+            full_name=body.full_name,
+            whatsapp_number=phone,
+        )
+    except Exception as exc:
+        delete_empty_tenant(tenant["id"])
+        if "users_whatsapp_number_uniq" in str(exc):
+            raise AppError(
+                "whatsapp_number_taken",
+                "This WhatsApp number is already linked to another account",
+                status_code=409,
+            )
+        if "users_email" in str(exc) or "email" in str(exc).lower():
+            raise AppError(
+                "email_already_registered", "Email already registered",
+                status_code=409,
+            )
+        raise
 
     verify_token = create_signed_token(
         {"sub": user["id"], "tenant_id": tenant["id"], "purpose": "email_verify"},
