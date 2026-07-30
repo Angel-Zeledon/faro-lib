@@ -134,6 +134,9 @@ state and would fail if the feature broke — none weak.
   period toggle can briefly vanish because `PlanningContext` caches `null` on a
   `/planning` 401 with no retry. Self-heals on any navigation. Worth a real fix
   (don't cache null on 401; retry once) — not yet done.
+  **DONE (verified 2026-07-30):** `PlanningContext.load()` retries with a backoff
+  and never clobbers a good state with `null`; only a first load that fails every
+  attempt stays null.
 
 **In flight now:** two frontend visual-noise cleanup agents (emojis/decoration,
 density, unclear buttons) in worktrees.
