@@ -91,12 +91,22 @@ class ModelsConfigRequest(BaseModel):
 
 
 class ValidationConfigRequest(BaseModel):
-    train_ratio: float = 0.8
+    # Bounded here because the ENGINE bounds it: `SessionConfig.validate()` raises
+    # ConfigError("training.train_ratio must be between 0 and 1"), and the runner
+    # copies this value into the engine config verbatim. Unbounded, the wizard
+    # accepted 1.5, stored it, reported success, and then the training job died on
+    # a config the API had already blessed — a session sold that cannot train.
+    train_ratio: float = Field(default=0.8, gt=0, lt=1)
     walk_forward: bool = True
-    wfv_splits: int = 3
-    min_history: int = 20
-    seasonal_period: int = 7
-    horizon: int = 14
+    # The three below are NOT checked by `SessionConfig.validate()`, so the bounds
+    # are the engine's own published ones — the ranges it declares as legal in
+    # `validation/schema.py` `_RULES` and `SessionConfig.schema()`. Inventing a
+    # tighter range here would reject configs the engine accepts, which is the same
+    # class of lie as accepting ones it rejects.
+    wfv_splits: int = Field(default=3, ge=1, le=10)
+    min_history: int = Field(default=20, ge=5)
+    seasonal_period: int = Field(default=7, ge=2)
+    horizon: int = Field(default=14, ge=1)  # `SessionConfig.validate()`: horizon >= 1
 
 
 _HORIZON_LIMITS = {"D": (1, 30), "W": (1, 12), "2W": (1, 6), "MS": (1, 12)}
