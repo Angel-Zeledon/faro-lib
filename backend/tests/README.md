@@ -65,8 +65,12 @@ asserts against itself asserts nothing.
 **5. Browser tests for what only a browser can see.** Everything found by hand in
 that session was invisible to this suite: a page that will not scroll, a panel
 that collapses to nothing, a list that jumps 220px under the cursor, a tooltip
-clipped by an ancestor's overflow, a contrast ratio of 1.21:1. These are cheap to
-assert and each one was a real bug:
+clipped by an ancestor's overflow, a contrast ratio of 1.21:1.
+
+These now live in `Frontend/tests/smoke.mjs` — run `node tests/smoke.mjs` from
+`Frontend/` with the app up. Every assertion in it corresponds to a bug that
+shipped and survived a green run of this suite. It is cheap to extend: when a
+defect is only visible in a browser, it belongs there and nowhere else.
 
 - `document.documentElement.scrollHeight > innerHeight` and the wheel moves it
 - the panel's height equals the viewport's, not its content's
