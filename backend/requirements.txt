@@ -46,7 +46,11 @@ uvicorn==0.48.0
 watchfiles==1.2.0
 websockets==16.0
 # SQL data-source drivers (postgresql uses psycopg2 above)
-PyMySQL==2.2.8
+# 1.2.0 is the newest PyMySQL that exists, and the one the MySQL data-source
+# path was verified against. The previous pin, 2.2.8, was a version that was
+# never published: every fresh `pip install -r` failed, which is why the
+# production image had never been built.
+PyMySQL==1.2.0
 pyodbc==5.3.0
 # Billing. Imported lazily inside backend/billing/service.py, so the app still
 # boots and every non-billing route still works if this is ever missing.
