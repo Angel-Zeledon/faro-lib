@@ -28,10 +28,27 @@ _DB_WAIT_MAX_ATTEMPTS = 60
 
 
 def _wait_for_db() -> None:
-    from backend.db.connection import query_one
+    """Open this process's pool, retrying until the database answers.
+
+    The connection pool is per-process. The API gets one because its FastAPI
+    startup calls `init_pool`; nothing runs that startup here, so without this
+    the worker waits out all 60 attempts against a pool that was never opened
+    ("DB pool not initialized"), exits 1, and the container restarts forever —
+    an API that serves fine next to a deployment that trains nothing and sends
+    no daily alerts.
+
+    Opening the pool IS the connectivity check: psycopg2 connects `min_conn`
+    times eagerly, so a database that is not up yet fails right here and is
+    retried on the next attempt.
+    """
+    from backend.db.connection import init_pool, pool_is_initialized, query_one
 
     for attempt in range(1, _DB_WAIT_MAX_ATTEMPTS + 1):
         try:
+            if not pool_is_initialized():
+                # Same sizing as the API: the training loop runs several
+                # threads and each holds a connection while it writes.
+                init_pool(settings.database_url, min_conn=5, max_conn=20)
             query_one("SELECT 1 AS ok")
             log.info("Database reachable")
             return

@@ -110,3 +110,39 @@ class TestOrphanRecoveryScope:
         assert mine_sess["status"] == "FAILED"
         sibling_sess = query_one("SELECT status FROM sessions WHERE id = %s", (sibling_session,))
         assert sibling_sess["status"] != "FAILED"
+
+
+class TestWorkerOpensItsOwnPool:
+    """The dedicated worker container is a SECOND process: it reaches the
+    database only if it opens a pool itself.
+
+    This is not theory. Running the production image with
+    `python -m backend.workers` against a healthy database logged
+    "Waiting for database (n/60): DB pool not initialized" sixty times and
+    exited 1 — a restart loop in which training never runs and the 08:00
+    alerts never fire, next to an API that answers /health perfectly.
+    """
+
+    def test_wait_for_db_opens_a_pool_when_the_process_has_none(self, monkeypatch):
+        from backend.db import connection
+        from backend.workers.__main__ import _wait_for_db
+
+        original = connection._pool
+        # Exactly the state a freshly-exec'd worker process starts in.
+        monkeypatch.setattr(connection, "_pool", None)
+        assert not connection.pool_is_initialized()
+
+        try:
+            _wait_for_db()
+
+            assert connection.pool_is_initialized(), (
+                "_wait_for_db returned without opening a pool; the worker "
+                "process would burn its 60 attempts and exit(1)"
+            )
+            # And the pool it opened actually reaches the database.
+            assert connection.query_one("SELECT 1 AS ok")["ok"] == 1
+        finally:
+            opened = connection._pool
+            if opened is not None and opened is not original:
+                opened.closeall()
+            connection._pool = original

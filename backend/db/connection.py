@@ -37,6 +37,17 @@ def init_pool(database_url: str, min_conn: int = 1, max_conn: int = 10) -> None:
     )
 
 
+def pool_is_initialized() -> bool:
+    """Whether this PROCESS has opened its pool.
+
+    The pool is per-process state, not per-machine: a second process (the
+    standalone worker) reaches the same database only after calling `init_pool`
+    itself. Exposed so that caller can tell "not connected yet" apart from "the
+    database is down" instead of reading the private global.
+    """
+    return _pool is not None
+
+
 class _NotSent(Exception):
     """Internal marker: a failure that provably happened *before* the statement
     could reach the server, so re-running it cannot apply anything twice.
