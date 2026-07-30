@@ -30,11 +30,20 @@ def test_starter_excludes_paid_features_but_includes_core():
 @pytest.mark.offline
 def test_enterprise_only_features():
     pro = PLAN_CATALOG["professional"].features
-    assert Feature.API_ACCESS not in pro
     assert Feature.BOM not in pro
     assert Feature.WEBHOOKS not in pro
     ent = PLAN_CATALOG["enterprise"].features
-    assert {Feature.API_ACCESS, Feature.BOM, Feature.WEBHOOKS} <= ent
+    assert {Feature.BOM, Feature.WEBHOOKS} <= ent
+
+
+@pytest.mark.offline
+def test_api_access_reaches_professional():
+    """The customer with an ERP and a few thousand SKUs is a Professional, and
+    they are the one who most needs to stop uploading files by hand. Held at
+    Enterprise, the API was sold to the tier that feels that pain least."""
+    assert Feature.API_ACCESS not in PLAN_CATALOG["starter"].features
+    assert Feature.API_ACCESS in PLAN_CATALOG["professional"].features
+    assert Feature.API_ACCESS in PLAN_CATALOG["enterprise"].features
 
 
 @pytest.mark.offline
@@ -83,7 +92,8 @@ def test_trial_state_and_read_only():
 @pytest.mark.offline
 def test_required_plans_for():
     assert ent.required_plans_for(Feature.WHATSAPP_ALERTS) == ["professional", "enterprise"]
-    assert ent.required_plans_for(Feature.API_ACCESS) == ["enterprise"]
+    assert ent.required_plans_for(Feature.API_ACCESS) == ["professional", "enterprise"]
+    assert ent.required_plans_for(Feature.WEBHOOKS) == ["enterprise"]
 
 
 from backend.tenants import service as tenant_svc
@@ -843,13 +853,15 @@ def test_entitlements_endpoint_reports_plan(monkeypatch, make_tenant_user_header
     data = r.json()["data"] if "data" in r.json() else r.json()
     assert data["plan"] == "professional"
     assert data["features"]["whatsapp_alerts"] is True
-    assert data["features"]["api_access"] is False
+    assert data["features"]["api_access"] is True
+    assert data["features"]["webhooks"] is False
     assert data["limits"]["max_skus"] == 5000
     assert data["read_only"] is False
     # feature_plans: the minimum plan that unlocks each feature, so the upsell
     # can name the tier the user needs to reach.
     assert data["feature_plans"]["ai_analyst"] == "professional"
-    assert data["feature_plans"]["api_access"] == "enterprise"
+    assert data["feature_plans"]["api_access"] == "professional"
+    assert data["feature_plans"]["webhooks"] == "enterprise"
     assert data["feature_plans"]["semaphore"] == "starter"  # core = available from starter
 
 

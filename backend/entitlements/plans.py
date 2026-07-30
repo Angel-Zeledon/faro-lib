@@ -54,9 +54,14 @@ _PRO_EXTRA = frozenset({
     Feature.ABC_XYZ, Feature.WHATSAPP_ALERTS, Feature.AI_ANALYST,
     Feature.DOCUMENTS_RAG, Feature.EVENT_SIMULATOR, Feature.MILP_OPTIMIZER,
     Feature.SCHEDULED_REPORTS, Feature.MULTI_LOCATION, Feature.TEAM_MESSAGING,
+    # The customer who most needs to stop uploading files by hand is the one
+    # with an ERP and a few thousand SKUs — and that is a Professional, not an
+    # Enterprise. Held at Enterprise, the API would be sold to the tier that
+    # feels the pain least.
+    Feature.API_ACCESS,
 })
 
-_ENT_EXTRA = frozenset({Feature.BOM, Feature.API_ACCESS, Feature.WEBHOOKS, Feature.INTEGRATIONS})
+_ENT_EXTRA = frozenset({Feature.BOM, Feature.WEBHOOKS, Feature.INTEGRATIONS})
 
 PLAN_CATALOG: dict[str, PlanDef] = {
     "starter": PlanDef(

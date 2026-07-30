@@ -72,7 +72,10 @@ const NAV: NavItem[] = [
   // being called "Tareas programadas". Both routes said "settings" and neither
   // matched its screen.
   { href: '/mi-cuenta',           labelKey: 'nav.account',     Icon: User,            group: 'system' },
-  { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true, feature: 'api_access' },
+  // Gated on what the page actually holds. It was gated on api_access while
+  // the only live tab is scheduled retraining — a Professional feature — so a
+  // Professional tenant was sold recurring retraining and given no door to it.
+  { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true, feature: 'scheduled_reports' },
 ]
 
 const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']

@@ -1183,6 +1183,29 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # NOT NULL — the constraint made create_sql_source fail on a fresh schema.
     ("datasets_original_filename_nullable",
      "ALTER TABLE datasets ALTER COLUMN original_filename DROP NOT NULL"),
+
+    # ── API keys that actually authenticate ─────────────────────────────────
+    # A key carries its OWN role rather than inheriting its creator's: the
+    # integration must keep working when that person leaves the company, and
+    # must not gain power when they are promoted.
+    # 'viewer' is the default because a key minted before this column existed
+    # was never meant to write anything.
+    ("add_api_keys_role",
+     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'viewer'"),
+    ("add_api_keys_role_check",
+     "ALTER TABLE api_keys ADD CONSTRAINT api_keys_role_check "
+     "CHECK (role IN ('viewer', 'analyst'))"),
+    # Who minted it — for the audit trail only. The key acts as itself, never
+    # as this user.
+    ("add_api_keys_created_by",
+     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS created_by TEXT"),
+    # Last four characters, so the list can tell two keys apart without ever
+    # storing enough of one to use it.
+    ("add_api_keys_last4",
+     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS last4 TEXT"),
+    # Optional expiry. NULL = never expires, which is what every existing key is.
+    ("add_api_keys_expires_at",
+     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"),
 ]
 
 

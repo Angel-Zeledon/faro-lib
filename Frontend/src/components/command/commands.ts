@@ -62,7 +62,7 @@ export const COMMANDS: Command[] = [
   // shortcut.
   { id: 'go.config',       group: 'navigate', href: '/mi-cuenta',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
   { id: 'go.users',        group: 'navigate', href: '/usuarios',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
-  { id: 'go.api',          group: 'navigate', href: '/automatizacion',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true, feature: 'api_access' },
+  { id: 'go.api',          group: 'navigate', href: '/automatizacion',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true, feature: 'scheduled_reports' },
 
   // ── Do ─────────────────────────────────────────────────────────────────────
   { id: 'act.upload',    group: 'action', href: '/ventas',   labelKey: 'cmd.upload_sales',    aliasKey: 'cmd.alias.upload',       Icon: Upload,    writerOnly: true },
