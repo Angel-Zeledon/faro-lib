@@ -1,0 +1,887 @@
+<title>Faro — Guía de uso / User Guide</title>
+
+<style>
+  /* ── Tokens ────────────────────────────────────────────────────────────────
+     Taken from the product's own globals.css so the guide and the app are the
+     same object in the customer's mind: petróleo rail, teal accent, and the
+     semáforo colours exactly as they appear on screen. */
+  :root {
+    --rail:         #0C3A40;
+    --rail-text:    rgba(255,255,255,0.78);
+    --rail-active:  #ffffff;
+    --rail-line:    rgba(255,255,255,0.10);
+    --beam:         #4CC3B5;
+
+    --bg:           #F5F7F6;
+    --surface:      #ffffff;
+    --surface-2:    #EDF2F0;
+    --border:       #DFE6E4;
+    --border-strong:#C2CFCC;
+    --accent:       #0F766E;
+    --accent-dim:   rgba(15,118,110,0.10);
+    --text:         #16262A;
+    --muted:        #465A5D;
+    --dim:          #7A8D8F;
+
+    --now-fg:       #b91c1c;  --now-bg:       rgba(185,28,28,0.10);
+    --soon-fg:      #a16207;  --soon-bg:      rgba(161,98,7,0.10);
+    --ok-fg:        #15803d;  --ok-bg:        rgba(21,128,61,0.10);
+    --over-fg:      #1d4ed8;  --over-bg:      rgba(29,78,216,0.10);
+
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    --measure: 68ch;
+    --radius: 10px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:            #0A1517;
+      --surface:       #101D20;
+      --surface-2:     #16272B;
+      --border:        #1E3236;
+      --border-strong: #2C464B;
+      --accent:        #2BA79A;
+      --accent-dim:    rgba(43,167,154,0.13);
+      --text:          #E3EBEA;
+      --muted:         #93A8A6;
+      --dim:           #62797B;
+
+      --now-fg:  #ef4444;  --now-bg:  rgba(239,68,68,0.14);
+      --soon-fg: #f59e0b;  --soon-bg: rgba(245,158,11,0.14);
+      --ok-fg:   #22c55e;  --ok-bg:   rgba(34,197,94,0.14);
+      --over-fg: #60a5fa;  --over-bg: rgba(96,165,250,0.14);
+    }
+  }
+
+  /* The viewer's explicit toggle must beat the OS preference in both directions. */
+  :root[data-theme="dark"] {
+    --bg: #0A1517; --surface: #101D20; --surface-2: #16272B;
+    --border: #1E3236; --border-strong: #2C464B;
+    --accent: #2BA79A; --accent-dim: rgba(43,167,154,0.13);
+    --text: #E3EBEA; --muted: #93A8A6; --dim: #62797B;
+    --now-fg: #ef4444; --now-bg: rgba(239,68,68,0.14);
+    --soon-fg: #f59e0b; --soon-bg: rgba(245,158,11,0.14);
+    --ok-fg: #22c55e; --ok-bg: rgba(34,197,94,0.14);
+    --over-fg: #60a5fa; --over-bg: rgba(96,165,250,0.14);
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F7F6; --surface: #ffffff; --surface-2: #EDF2F0;
+    --border: #DFE6E4; --border-strong: #C2CFCC;
+    --accent: #0F766E; --accent-dim: rgba(15,118,110,0.10);
+    --text: #16262A; --muted: #465A5D; --dim: #7A8D8F;
+    --now-fg: #b91c1c; --now-bg: rgba(185,28,28,0.10);
+    --soon-fg: #a16207; --soon-bg: rgba(161,98,7,0.10);
+    --ok-fg: #15803d; --ok-bg: rgba(21,128,61,0.10);
+    --over-fg: #1d4ed8; --over-bg: rgba(29,78,216,0.10);
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Language switching ────────────────────────────────────────────────────
+     Two complete content trees, one per language. The wrapper carries the
+     state so nothing fights the theme attribute on the root element. */
+  .doc[data-doclang="es"] [lang="en"] { display: none; }
+  .doc[data-doclang="en"] [lang="es"] { display: none; }
+
+  .doc {
+    display: grid;
+    grid-template-columns: 244px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+
+  /* ── Rail ──────────────────────────────────────────────────────────────── */
+  .rail {
+    background: var(--rail);
+    color: var(--rail-text);
+    padding: 26px 0 40px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    border-right: 1px solid var(--rail-line);
+  }
+  .brand { padding: 0 22px 20px; display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 7px; flex: none;
+    background: linear-gradient(135deg, #4CC3B5, #0F766E);
+    display: grid; place-items: center;
+    color: #06282C; font-weight: 800; font-size: 14px;
+  }
+  .brand-name { color: #fff; font-weight: 650; letter-spacing: -0.01em; font-size: 15px; }
+  .brand-kind { color: rgba(255,255,255,0.45); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .rail-group { padding: 14px 22px 4px; }
+  .rail-group-label {
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(255,255,255,0.40);
+  }
+  .rail a {
+    display: block; padding: 6px 22px 6px 19px;
+    color: var(--rail-text); text-decoration: none; font-size: 13.5px;
+    border-left: 3px solid transparent;
+  }
+  .rail a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .rail a.on { color: var(--rail-active); border-left-color: var(--beam); background: rgba(255,255,255,0.10); }
+  .rail a:focus-visible { outline: 2px solid var(--beam); outline-offset: -2px; }
+
+  /* ── Main column ───────────────────────────────────────────────────────── */
+  .main { min-width: 0; }
+  .topbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 40px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-note { font-size: 12px; color: var(--dim); }
+  .langswitch { display: flex; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; }
+  .langswitch button {
+    all: unset; cursor: pointer; padding: 4px 13px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em;
+  }
+  .langswitch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .langswitch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .content { padding: 40px 40px 96px; max-width: calc(var(--measure) + 80px); }
+
+  .hero { padding-bottom: 8px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 650;
+  }
+  h1 {
+    font-size: clamp(30px, 4vw, 40px); line-height: 1.12; margin: 10px 0 12px;
+    letter-spacing: -0.02em; text-wrap: balance; font-weight: 700;
+  }
+  .lede { font-size: 18px; color: var(--muted); margin: 0; max-width: var(--measure); }
+
+  section { padding-top: 44px; scroll-margin-top: 64px; }
+  h2 {
+    font-size: 25px; letter-spacing: -0.015em; margin: 0 0 6px;
+    text-wrap: balance; font-weight: 680;
+  }
+  h3 { font-size: 16.5px; margin: 26px 0 6px; letter-spacing: -0.005em; font-weight: 650; }
+  p, li { max-width: var(--measure); }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 12px; padding-left: 20px; }
+  li { margin-bottom: 5px; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  strong { font-weight: 650; }
+  code {
+    font-family: var(--mono); font-size: 0.87em;
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 5px;
+  }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 40px 0 0; }
+
+  /* Step list — the numbers are real sequence, not decoration. */
+  ol.steps { list-style: none; padding: 0; counter-reset: s; }
+  ol.steps > li {
+    counter-increment: s; position: relative; padding-left: 38px; margin-bottom: 14px;
+  }
+  ol.steps > li::before {
+    content: counter(s); position: absolute; left: 0; top: 1px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent-dim); color: var(--accent);
+    font-size: 12px; font-weight: 700; display: grid; place-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px; margin: 16px 0;
+  }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 13px 16px; margin: 16px 0; font-size: 14.5px;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note-label {
+    display: block; font-size: 10.5px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 3px;
+  }
+
+  .plan-tag {
+    display: inline-block; vertical-align: 2px; margin-left: 8px;
+    font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    background: var(--surface-2); color: var(--muted); border: 1px solid var(--border-strong);
+  }
+
+  /* Semáforo chips — the exact colours the app paints, so the guide teaches
+     the same visual language the customer will act on. */
+  .signal { display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 700;
+            padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .s-now  { color: var(--now-fg);  background: var(--now-bg); }
+  .s-soon { color: var(--soon-fg); background: var(--soon-bg); }
+  .s-ok   { color: var(--ok-fg);   background: var(--ok-bg); }
+  .s-over { color: var(--over-fg); background: var(--over-bg); }
+
+  .tablewrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; background: var(--surface); }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); font-weight: 700; background: var(--surface-2); }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; }
+
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 6px; }
+  .flow span {
+    font-size: 13px; padding: 6px 12px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+  }
+  .flow i { color: var(--dim); font-style: normal; }
+
+  footer { color: var(--dim); font-size: 13px; padding-top: 34px; }
+
+  @media (max-width: 880px) {
+    .doc { grid-template-columns: 1fr; }
+    .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--rail-line); padding-bottom: 18px; }
+    .rail nav { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 14px; }
+    .rail-group { padding: 10px 14px 2px; width: 100%; }
+    .rail a { padding: 5px 12px; border-left: 0; border-radius: 999px; }
+    .rail a.on { border-left: 0; }
+    .topbar, .content { padding-left: 20px; padding-right: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-behavior: smooth; }
+</style>
+
+<div class="doc" data-doclang="es">
+
+  <aside class="rail">
+    <div class="brand">
+      <div class="brand-mark">F</div>
+      <div>
+        <div class="brand-name">Faro</div>
+        <div class="brand-kind" lang="es">Guía de uso</div>
+        <div class="brand-kind" lang="en">User guide</div>
+      </div>
+    </div>
+
+    <nav>
+      <div class="rail-group"><span class="rail-group-label" lang="es">Empezar</span><span class="rail-group-label" lang="en">Start</span></div>
+      <a href="#como-funciona"><span lang="es">Cómo funciona</span><span lang="en">How it works</span></a>
+      <a href="#primeros-pasos"><span lang="es">Primeros pasos</span><span lang="en">Getting started</span></a>
+      <a href="#datos"><span lang="es">Tus datos</span><span lang="en">Your data</span></a>
+      <a href="#historial"><span lang="es">Historial</span><span lang="en">History</span></a>
+
+      <div class="rail-group"><span class="rail-group-label" lang="es">Operación diaria</span><span class="rail-group-label" lang="en">Daily work</span></div>
+      <a href="#panel"><span lang="es">Panel de compras</span><span lang="en">Purchasing panel</span></a>
+      <a href="#inventario"><span lang="es">Inventario</span><span lang="en">Inventory</span></a>
+      <a href="#proveedores"><span lang="es">Proveedores</span><span lang="en">Suppliers</span></a>
+      <a href="#pedidos"><span lang="es">Pedidos</span><span lang="en">Orders</span></a>
+
+      <div class="rail-group"><span class="rail-group-label" lang="es">Análisis</span><span class="rail-group-label" lang="en">Analysis</span></div>
+      <a href="#pronosticos"><span lang="es">Pronósticos</span><span lang="en">Forecasts</span></a>
+      <a href="#impacto"><span lang="es">Impacto</span><span lang="en">Impact</span></a>
+      <a href="#escenarios"><span lang="es">Escenarios</span><span lang="en">Scenarios</span></a>
+      <a href="#asistente"><span lang="es">Asistente IA</span><span lang="en">AI assistant</span></a>
+
+      <div class="rail-group"><span class="rail-group-label" lang="es">Tu empresa</span><span class="rail-group-label" lang="en">Your company</span></div>
+      <a href="#alertas"><span lang="es">Alertas</span><span lang="en">Alerts</span></a>
+      <a href="#mensajes"><span lang="es">Mensajes</span><span lang="en">Messages</span></a>
+      <a href="#usuarios"><span lang="es">Usuarios y permisos</span><span lang="en">Users &amp; roles</span></a>
+      <a href="#cuenta"><span lang="es">Mi cuenta</span><span lang="en">My account</span></a>
+      <a href="#planes"><span lang="es">Planes</span><span lang="en">Plans</span></a>
+      <a href="#programadas"><span lang="es">Tareas programadas</span><span lang="en">Schedules</span></a>
+      <a href="#faq"><span lang="es">Preguntas frecuentes</span><span lang="en">FAQ</span></a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <span class="topbar-note" lang="es">Guía para clientes de Faro</span>
+      <span class="topbar-note" lang="en">Guide for Faro customers</span>
+      <div class="langswitch" role="group" aria-label="Idioma / Language">
+        <button type="button" data-lang="es" aria-pressed="true">Español</button>
+        <button type="button" data-lang="en" aria-pressed="false">English</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <header class="hero">
+        <div class="eyebrow" lang="es">Guía de uso</div>
+        <div class="eyebrow" lang="en">User guide</div>
+        <h1 lang="es">Comprar inventario con datos, no con corazonadas</h1>
+        <h1 lang="en">Buy inventory on data, not on hunches</h1>
+        <p class="lede" lang="es">Faro toma tu historial de ventas, proyecta la demanda de cada producto y te dice qué pedir hoy, cuánto y a quién. Esta guía cubre todo lo que vas a usar en el día a día.</p>
+        <p class="lede" lang="en">Faro takes your sales history, projects demand for each product, and tells you what to order today, how much, and from whom. This guide covers everything you will use day to day.</p>
+      </header>
+
+      <section id="como-funciona">
+        <h2 lang="es">Cómo funciona</h2>
+        <h2 lang="en">How it works</h2>
+
+        <div lang="es">
+          <p>Faro es un ciclo de cinco pasos que se repite cada vez que actualizas tus ventas:</p>
+          <div class="flow">
+            <span>Subes tus ventas</span><i>→</i>
+            <span>Faro pronostica la demanda</span><i>→</i>
+            <span>El semáforo marca cada producto</span><i>→</i>
+            <span>Generas la orden de compra</span><i>→</i>
+            <span>Registras la llegada</span>
+          </div>
+          <p>El último paso alimenta al primero: cada recepción que registras le enseña a Faro cuánto tarda de verdad cada proveedor, y ese plazo real entra en la siguiente recomendación.</p>
+          <h3>El semáforo</h3>
+          <p>Es el lenguaje central del producto. Cada producto, en cada bodega, tiene uno de estos cuatro estados:</p>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Estado</th><th>Qué significa</th><th>Qué hacer</th></tr></thead>
+              <tbody>
+                <tr><td><span class="signal s-now">PEDIR_YA</span></td><td>El inventario no alcanza para cubrir el tiempo que tarda en llegar un pedido nuevo.</td><td>Ordena hoy. Si esperas, te quedas sin producto.</td></tr>
+                <tr><td><span class="signal s-soon">PEDIR_PRONTO</span></td><td>Todavía tienes, pero el margen se está acabando.</td><td>Ponlo en la próxima orden.</td></tr>
+                <tr><td><span class="signal s-ok">OK</span></td><td>La cobertura es sana para el horizonte que estás planificando.</td><td>Nada. No lo mires.</td></tr>
+                <tr><td><span class="signal s-over">SOBRESTOCK</span></td><td>Tienes mucho más de lo que vas a vender en ese periodo.</td><td>No compres más. Considera moverlo o promocionarlo.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note">
+            <span class="note-label">Nota</span>
+            <p>Cómo se calcula el pronóstico —qué modelos compiten, cómo se valida y cómo se elige el ganador— tiene su propio documento técnico. Esta guía es sobre cómo operar el producto.</p>
+          </div>
+        </div>
+
+        <div lang="en">
+          <p>Faro is a five-step loop that repeats every time you refresh your sales:</p>
+          <div class="flow">
+            <span>You upload sales</span><i>→</i>
+            <span>Faro forecasts demand</span><i>→</i>
+            <span>The traffic light flags each product</span><i>→</i>
+            <span>You generate the purchase order</span><i>→</i>
+            <span>You log the delivery</span>
+          </div>
+          <p>The last step feeds the first: every reception you record teaches Faro how long each supplier really takes, and that real lead time goes into the next recommendation.</p>
+          <h3>The traffic light</h3>
+          <p>This is the product's core language. Every product, in every warehouse, sits in one of four states:</p>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>State</th><th>What it means</th><th>What to do</th></tr></thead>
+              <tbody>
+                <tr><td><span class="signal s-now">PEDIR_YA</span></td><td>Stock will not cover the time a new order takes to arrive.</td><td>Order today. Waiting means running out.</td></tr>
+                <tr><td><span class="signal s-soon">PEDIR_PRONTO</span></td><td>You still have stock, but the cushion is thinning.</td><td>Put it on the next order.</td></tr>
+                <tr><td><span class="signal s-ok">OK</span></td><td>Coverage is healthy for the horizon you are planning.</td><td>Nothing. Don't spend attention here.</td></tr>
+                <tr><td><span class="signal s-over">SOBRESTOCK</span></td><td>You hold far more than you will sell in the period.</td><td>Don't buy more. Consider moving or promoting it.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note">
+            <span class="note-label">Note</span>
+            <p>How the forecast is produced — which models compete, how they are validated, how the winner is chosen — has its own technical document. This guide is about operating the product.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="primeros-pasos">
+        <h2 lang="es">Primeros pasos</h2>
+        <h2 lang="en">Getting started</h2>
+
+        <div lang="es">
+          <p>Desde cero hasta tu primera lista de compras, en un rato:</p>
+          <ol class="steps">
+            <li><strong>Sube tu historial de ventas.</strong> Un archivo Excel (<code>.xlsx</code>) o CSV exportado de tu sistema. Necesita tres cosas: una columna de fecha, una de producto (SKU o nombre) y una de cantidad vendida. Faro detecta solo cuál es cuál.</li>
+            <li><strong>Confirma las columnas.</strong> Faro propone el mapeo; tú lo apruebas o lo corriges. Si algo no cuadra, te lo dice antes de entrenar.</li>
+            <li><strong>Elige el periodo y el horizonte.</strong> Si compras semanal, planifica en semanas. El horizonte es cuántos periodos hacia adelante quieres ver.</li>
+            <li><strong>Espera el entrenamiento.</strong> Toma minutos, no horas. Puedes cerrar la pestaña: el trabajo sigue en el servidor.</li>
+            <li><strong>Carga tu inventario actual.</strong> Sin stock, Faro sabe cuánto vas a vender pero no cuánto te falta. Es lo que convierte un pronóstico en una decisión de compra.</li>
+            <li><strong>Abre el Panel de compras.</strong> Ahí está la lista del día, ordenada por urgencia.</li>
+          </ol>
+          <div class="note">
+            <span class="note-label">Consejo</span>
+            <p>Cuanto más historial subas, mejor. Con menos de seis meses de datos, Faro marca esos productos como de alta incertidumbre y sugiere márgenes de seguridad mayores en vez de fingir precisión.</p>
+          </div>
+        </div>
+
+        <div lang="en">
+          <p>From zero to your first shopping list, in one sitting:</p>
+          <ol class="steps">
+            <li><strong>Upload your sales history.</strong> An Excel (<code>.xlsx</code>) or CSV file exported from your system. It needs three things: a date column, a product column (SKU or name), and a quantity-sold column. Faro works out which is which.</li>
+            <li><strong>Confirm the columns.</strong> Faro proposes the mapping; you approve or correct it. If something doesn't add up, it tells you before training.</li>
+            <li><strong>Pick the period and horizon.</strong> If you buy weekly, plan in weeks. The horizon is how many periods ahead you want to see.</li>
+            <li><strong>Wait for training.</strong> Minutes, not hours. You can close the tab — the work continues on the server.</li>
+            <li><strong>Load your current stock.</strong> Without it, Faro knows how much you will sell but not how much you are short. Stock is what turns a forecast into a buying decision.</li>
+            <li><strong>Open the Purchasing panel.</strong> That is today's list, sorted by urgency.</li>
+          </ol>
+          <div class="note">
+            <span class="note-label">Tip</span>
+            <p>The more history you upload, the better. With less than six months of data, Faro flags those products as high-uncertainty and suggests wider safety margins instead of faking precision.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="datos">
+        <h2 lang="es">Tus datos</h2>
+        <h2 lang="en">Your data</h2>
+
+        <div lang="es">
+          <p>Todo lo que Faro sabe de tu operación entra por <strong>Mis ventas</strong>. Hay tres caminos.</p>
+          <h3>Archivos</h3>
+          <p>Sube Excel o CSV. El archivo queda guardado y lo puedes reutilizar en actualizaciones futuras sin volver a subirlo.</p>
+          <h3>Conexión directa a tu base de datos</h3>
+          <p>Si tu ERP corre sobre PostgreSQL, MySQL o SQL Server, puedes conectarlo y escribir la consulta que extrae tus ventas. Con el resultado puedes:</p>
+          <ul>
+            <li><strong>Usarlo como dataset</strong> — se guarda como si hubieras subido un archivo, y sirve para entrenar.</li>
+            <li><strong>Descargarlo en Excel</strong> — el resultado completo del query, no solo lo que se ve en pantalla.</li>
+          </ul>
+          <p>La contraseña de la conexión se guarda cifrada y nunca vuelve al navegador.</p>
+          <h3>Editor de datos</h3>
+          <p>Puedes corregir tu tabla dentro de Faro como si fuera una hoja de cálculo. Al guardar se crea un dataset <strong>nuevo</strong>: el original queda intacto, así que siempre puedes volver.</p>
+          <div class="note">
+            <span class="note-label">Importante</span>
+            <p>Faro nunca escribe en tu sistema. Lee tus ventas y produce recomendaciones; las órdenes las apruebas y envías tú.</p>
+          </div>
+        </div>
+
+        <div lang="en">
+          <p>Everything Faro knows about your operation comes in through <strong>My sales</strong>. There are three routes.</p>
+          <h3>Files</h3>
+          <p>Upload Excel or CSV. The file is stored and can be reused in later refreshes without uploading it again.</p>
+          <h3>Direct database connection</h3>
+          <p>If your ERP runs on PostgreSQL, MySQL or SQL Server, you can connect it and write the query that extracts your sales. With the result you can:</p>
+          <ul>
+            <li><strong>Use it as a dataset</strong> — stored as if you had uploaded a file, ready to train on.</li>
+            <li><strong>Download it as Excel</strong> — the full query result, not just what fits on screen.</li>
+          </ul>
+          <p>The connection password is stored encrypted and never returned to the browser.</p>
+          <h3>Data editor</h3>
+          <p>You can fix your table inside Faro like a spreadsheet. Saving creates a <strong>new</strong> dataset: the original stays untouched, so you can always go back.</p>
+          <div class="note">
+            <span class="note-label">Important</span>
+            <p>Faro never writes to your system. It reads your sales and produces recommendations; you approve and send the orders yourself.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="historial">
+        <h2 lang="es">Historial de actualizaciones</h2>
+        <h2 lang="en">Update history</h2>
+        <div lang="es">
+          <p>Cada vez que subes ventas y entrenas, queda una entrada en el <strong>Historial</strong>. Desde ahí puedes renombrarlas (ponles nombres que signifiquen algo: «Ventas hasta marzo», no «sesión 4»), revisarlas o borrarlas.</p>
+          <p>Solo una está activa a la vez, y es la que alimenta el panel, el inventario y las alertas. Si algo se ve raro después de subir datos nuevos, revisa primero cuál está activa.</p>
+        </div>
+        <div lang="en">
+          <p>Every time you upload sales and train, an entry lands in <strong>History</strong>. From there you can rename them (use names that mean something: "Sales through March", not "session 4"), review them, or delete them.</p>
+          <p>Only one is active at a time, and it is the one feeding the panel, the inventory view and the alerts. If something looks odd after uploading new data, check which one is active first.</p>
+        </div>
+      </section>
+
+      <section id="panel">
+        <h2 lang="es">Panel de compras</h2>
+        <h2 lang="en">Purchasing panel</h2>
+        <div lang="es">
+          <p>Es la pantalla de todos los días. Responde una sola pregunta: <em>¿qué compro hoy?</em></p>
+          <ul>
+            <li><strong>Resumen ejecutivo</strong> — en dos líneas, qué cambió y qué necesita atención.</li>
+            <li><strong>Indicadores</strong> — cuántos productos están en riesgo, cuánto vale tu inventario, cómo viene la precisión.</li>
+            <li><strong>Productos urgentes</strong> — las tarjetas <span class="signal s-now">PEDIR_YA</span> primero, con cantidad sugerida y proveedor.</li>
+          </ul>
+          <p>Desde aquí generas la orden de compra en un clic, sin pasar por ninguna otra pantalla.</p>
+        </div>
+        <div lang="en">
+          <p>This is the everyday screen. It answers one question: <em>what do I buy today?</em></p>
+          <ul>
+            <li><strong>Executive summary</strong> — in two lines, what changed and what needs attention.</li>
+            <li><strong>Key figures</strong> — how many products are at risk, what your inventory is worth, how accuracy is trending.</li>
+            <li><strong>Urgent products</strong> — <span class="signal s-now">PEDIR_YA</span> cards first, with suggested quantity and supplier.</li>
+          </ul>
+          <p>You generate the purchase order from here in one click, without going through any other screen.</p>
+        </div>
+      </section>
+
+      <section id="inventario">
+        <h2 lang="es">Inventario</h2>
+        <h2 lang="en">Inventory</h2>
+        <div lang="es">
+          <p>La tabla completa: cada producto, en cada bodega, con su semáforo, su cobertura y su cantidad sugerida. Es donde miras el detalle que el panel resume.</p>
+          <h3>Configurar inventario</h3>
+          <p>Aquí le das a Faro el contexto que no está en tus ventas:</p>
+          <ul>
+            <li><strong>Stock actual</strong> por producto y bodega.</li>
+            <li><strong>Costo unitario</strong> — lo que hace posible hablar de plata y no solo de unidades.</li>
+            <li><strong>Bodegas</strong> — cuántas tienes y cuál es la principal.<span class="plan-tag">Multibodega: Profesional</span></li>
+            <li><strong>Cantidad mínima de pedido</strong> y empaques, para que la sugerencia sea comprable de verdad.</li>
+            <li><strong>Mermas</strong>, si tu producto se pierde o vence.</li>
+          </ul>
+          <p>Puedes cargarlo a mano o subir un archivo con todo de una vez.</p>
+        </div>
+        <div lang="en">
+          <p>The full table: every product, in every warehouse, with its traffic light, its coverage and its suggested quantity. This is the detail the panel summarises.</p>
+          <h3>Inventory setup</h3>
+          <p>Here you give Faro the context that isn't in your sales:</p>
+          <ul>
+            <li><strong>Current stock</strong> per product and warehouse.</li>
+            <li><strong>Unit cost</strong> — what makes it possible to talk in money, not just units.</li>
+            <li><strong>Warehouses</strong> — how many you have and which is the main one.<span class="plan-tag">Multi-warehouse: Professional</span></li>
+            <li><strong>Minimum order quantity</strong> and pack sizes, so the suggestion is actually buyable.</li>
+            <li><strong>Shrinkage</strong>, if your product expires or gets lost.</li>
+          </ul>
+          <p>You can enter it by hand or upload a file with everything at once.</p>
+        </div>
+      </section>
+
+      <section id="proveedores">
+        <h2 lang="es">Proveedores</h2>
+        <h2 lang="en">Suppliers</h2>
+        <div lang="es">
+          <p>Cada proveedor guarda su contacto, sus condiciones de pago y su tiempo de entrega. Puedes asignarle productos, y esos productos heredan su plazo.</p>
+          <div class="card">
+            <p style="margin:0"><strong>El plazo se aprende solo.</strong> Al principio usas el que tú escribes. Pero cada vez que registras la llegada de un pedido, Faro mide cuánto tardó de verdad y ajusta el plazo del proveedor. Con el tiempo, tus recomendaciones dejan de basarse en lo que el proveedor promete y pasan a basarse en lo que el proveedor cumple.</p>
+          </div>
+          <p>Por eso vale la pena registrar las recepciones aunque parezca trámite: es el único momento en que el sistema aprende de tu realidad.</p>
+        </div>
+        <div lang="en">
+          <p>Each supplier holds its contact details, payment terms and lead time. You can assign products to it, and those products inherit its lead time.</p>
+          <div class="card">
+            <p style="margin:0"><strong>Lead time learns itself.</strong> At first it uses the number you typed. But every time you log a delivery, Faro measures how long it actually took and adjusts that supplier's lead time. Over time your recommendations stop being based on what the supplier promises and start being based on what the supplier delivers.</p>
+          </div>
+          <p>That is why logging receptions is worth the two minutes: it is the only moment the system learns from your reality.</p>
+        </div>
+      </section>
+
+      <section id="pedidos">
+        <h2 lang="es">Pedidos</h2>
+        <h2 lang="en">Orders</h2>
+        <div lang="es">
+          <p>El ciclo de una orden de compra en Faro:</p>
+          <ol class="steps">
+            <li><strong>Se genera</strong> — desde el panel con las cantidades sugeridas, o a mano con «Nueva orden» si necesitas pedir algo que no viene de ningún pronóstico.</li>
+            <li><strong>La revisas</strong> — cambias cantidades, quitas líneas, eliges otro proveedor por línea si te conviene.</li>
+            <li><strong>La envías</strong> — por correo al proveedor, o a tu propio WhatsApp para que tú se la reenvíes como siempre lo has hecho. También puedes copiar el mensaje o descargar el PDF.</li>
+            <li><strong>Registras la llegada</strong> — «Llegó todo completo» si vino tal cual, o cantidad por cantidad si llegó parcial. El stock se actualiza solo con lo recibido.</li>
+          </ol>
+          <p>Una orden puede quedar <strong>parcial</strong>: recibes lo que llegó hoy y el resto sigue en camino. Faro no te obliga a mentir para cerrarla.</p>
+        </div>
+        <div lang="en">
+          <p>The life of a purchase order in Faro:</p>
+          <ol class="steps">
+            <li><strong>It is generated</strong> — from the panel with suggested quantities, or by hand with "New order" when you need something no forecast asked for.</li>
+            <li><strong>You review it</strong> — change quantities, drop lines, pick a different supplier per line if that suits you.</li>
+            <li><strong>You send it</strong> — by email to the supplier, or to your own WhatsApp so you can forward it the way you always have. You can also copy the message or download the PDF.</li>
+            <li><strong>You log the delivery</strong> — "Everything arrived" if it came in full, or quantity by quantity if it came short. Stock updates with what was actually received.</li>
+          </ol>
+          <p>An order can stay <strong>partial</strong>: you receive what arrived today and the rest stays in transit. Faro does not make you lie to close it.</p>
+        </div>
+      </section>
+
+      <section id="pronosticos">
+        <h2 lang="es">Pronósticos</h2>
+        <h2 lang="en">Forecasts</h2>
+        <div lang="es">
+          <p>La vista por producto: tu venta histórica y la proyección hacia adelante, con un rango alto y bajo.</p>
+          <p><strong>Lee el rango, no solo la línea.</strong> La línea es el escenario más probable; el rango es dónde va a caer la venta de verdad. Un producto con rango angosto es predecible y puedes ajustarle el inventario. Uno con rango ancho es volátil: ahí el colchón de seguridad no es exceso de precaución, es lo que evita el quiebre.</p>
+          <p>Cada producto trae además su clasificación y su historial, para que decidas dónde gastar tu atención.<span class="plan-tag">ABC-XYZ: Profesional</span></p>
+        </div>
+        <div lang="en">
+          <p>The per-product view: your sales history and the projection ahead, with a high and low range.</p>
+          <p><strong>Read the range, not just the line.</strong> The line is the most likely scenario; the range is where sales will actually land. A product with a narrow range is predictable and you can run it lean. One with a wide range is volatile: there, safety stock isn't over-caution, it is what prevents the stockout.</p>
+          <p>Each product also carries its classification and history, so you can decide where to spend attention.<span class="plan-tag">ABC-XYZ: Professional</span></p>
+        </div>
+      </section>
+
+      <section id="impacto">
+        <h2 lang="es">Impacto</h2>
+        <h2 lang="en">Impact</h2>
+        <div lang="es">
+          <p>Qué te ha dado Faro en plata: quiebres evitados, capital que dejaste de inmovilizar, órdenes generadas y recibidas. Es la pantalla para justificar la herramienta ante quien firma el cheque, y para ver si tus decisiones de compra están mejorando mes a mes.</p>
+        </div>
+        <div lang="en">
+          <p>What Faro has returned in money: stockouts avoided, capital you stopped tying up, orders generated and received. This is the screen for justifying the tool to whoever signs the cheque, and for seeing whether your buying decisions are improving month over month.</p>
+        </div>
+      </section>
+
+      <section id="escenarios">
+        <h2 lang="es">Escenarios<span class="plan-tag">Profesional</span></h2>
+        <h2 lang="en">Scenarios<span class="plan-tag">Professional</span></h2>
+        <div lang="es">
+          <p>¿Qué pasa si vendes 40 % más? ¿Si tu proveedor se atrasa dos semanas? ¿Si subes el nivel de servicio? Arma la regla, simula y compara contra tu plan actual <em>antes</em> de comprometer la plata.</p>
+          <ul>
+            <li><strong>Cambio de demanda</strong> — multiplica la demanda proyectada.</li>
+            <li><strong>Promoción</strong> — lo mismo, pero limitado a las fechas de la promo.</li>
+            <li><strong>Atraso de proveedor</strong> — suma días de entrega; más plazo, más urgencia.</li>
+            <li><strong>Inventario de seguridad</strong> — recalcula con otro nivel de servicio.</li>
+          </ul>
+          <p>Puedes aplicar cada regla a todo el portafolio, a una categoría o a un solo producto, y guardar el escenario para volver a él.</p>
+        </div>
+        <div lang="en">
+          <p>What if you sell 40% more? What if your supplier slips two weeks? What if you raise the service level? Build the rule, simulate, and compare against your current plan <em>before</em> committing the money.</p>
+          <ul>
+            <li><strong>Demand change</strong> — multiplies projected demand.</li>
+            <li><strong>Promotion</strong> — the same, limited to the promo dates.</li>
+            <li><strong>Supplier delay</strong> — adds days of lead time; longer lead time, more urgency.</li>
+            <li><strong>Safety stock</strong> — recalculates at a different service level.</li>
+          </ul>
+          <p>Each rule can apply to the whole portfolio, one category, or a single product, and you can save the scenario to come back to it.</p>
+        </div>
+      </section>
+
+      <section id="asistente">
+        <h2 lang="es">Asistente IA<span class="plan-tag">Profesional</span></h2>
+        <h2 lang="en">AI assistant<span class="plan-tag">Professional</span></h2>
+        <div lang="es">
+          <p>Pregúntale en español sobre tu propia operación: «¿qué productos me van a quebrar este mes?», «¿por qué subió tanto la sugerencia del SKU 1042?». Responde sobre tus datos, no en general.</p>
+          <p>También puedes subirle documentos —listas de precios, contratos, catálogos de proveedor— para que los tenga en cuenta al responder.</p>
+        </div>
+        <div lang="en">
+          <p>Ask it about your own operation in plain language: "which products will stock out this month?", "why did the suggestion for SKU 1042 jump?". It answers from your data, not in general.</p>
+          <p>You can also upload documents — price lists, contracts, supplier catalogues — for it to take into account when answering.</p>
+        </div>
+      </section>
+
+      <section id="alertas">
+        <h2 lang="es">Alertas</h2>
+        <h2 lang="en">Alerts</h2>
+        <div lang="es">
+          <p>Faro revisa tu inventario <strong>todos los días a las 8:00 UTC</strong> y te avisa si algo entró en riesgo, sin que tengas que abrir la app.</p>
+          <ul>
+            <li><strong>Correo</strong> — en todos los planes.</li>
+            <li><strong>WhatsApp</strong> — al número que verifiques en tu cuenta.<span class="plan-tag">Profesional</span></li>
+          </ul>
+          <p>Para recibir WhatsApp tienes que vincular tu número y confirmar el código de seis dígitos que te llega. Puedes desvincularlo cuando quieras desde tu cuenta.</p>
+        </div>
+        <div lang="en">
+          <p>Faro checks your inventory <strong>every day at 08:00 UTC</strong> and tells you if anything moved into risk, without you opening the app.</p>
+          <ul>
+            <li><strong>Email</strong> — on every plan.</li>
+            <li><strong>WhatsApp</strong> — to the number you verify in your account.<span class="plan-tag">Professional</span></li>
+          </ul>
+          <p>To receive WhatsApp you must link your number and confirm the six-digit code sent to it. You can unlink it at any time from your account.</p>
+        </div>
+      </section>
+
+      <section id="mensajes">
+        <h2 lang="es">Mensajes<span class="plan-tag">Profesional</span></h2>
+        <h2 lang="en">Messages<span class="plan-tag">Professional</span></h2>
+        <div lang="es">
+          <p>Chat interno entre las personas de tu empresa, dentro de Faro. Sirve para lo que hoy resuelves por WhatsApp: «¿ya pediste el 1042?», «este proveedor está atrasado otra vez». La conversación queda al lado de los datos de los que habla.</p>
+          <p>Si activas el aviso por SMS, recibes un mensaje cuando te escriben y no estás en la app. Todos los roles pueden usar mensajes, incluido solo lectura.</p>
+        </div>
+        <div lang="en">
+          <p>Internal chat between people in your company, inside Faro. It covers what you solve on WhatsApp today: "did you already order 1042?", "this supplier is late again". The conversation sits next to the data it is about.</p>
+          <p>If you enable the SMS notice, you get a text when someone writes and you are away from the app. Every role can use messages, including read-only.</p>
+        </div>
+      </section>
+
+      <section id="usuarios">
+        <h2 lang="es">Usuarios y permisos</h2>
+        <h2 lang="en">Users &amp; roles</h2>
+        <div lang="es">
+          <p>Invitas a tu equipo desde <strong>Usuarios</strong> y cada persona entra con uno de tres roles:</p>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Rol</th><th>Puede</th><th>No puede</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Administrador</strong></td><td>Todo, más invitar gente, cambiar el plan y la moneda.</td><td>—</td></tr>
+                <tr><td><strong>Analista</strong></td><td>Subir ventas, entrenar, editar inventario, crear y enviar órdenes, registrar recepciones.</td><td>Administrar usuarios, plan o facturación.</td></tr>
+                <tr><td><strong>Solo lectura</strong></td><td>Ver todo y escribir en mensajes.</td><td>Cambiar nada: ni stock, ni órdenes, ni proveedores.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Los datos de tu empresa son solo tuyos: ninguna cuenta de otra empresa puede verlos ni modificarlos, aunque conozca el identificador exacto de un registro.</p>
+        </div>
+        <div lang="en">
+          <p>You invite your team from <strong>Users</strong>, and each person gets one of three roles:</p>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Role</th><th>Can</th><th>Cannot</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Administrator</strong></td><td>Everything, plus inviting people and changing the plan and currency.</td><td>—</td></tr>
+                <tr><td><strong>Analyst</strong></td><td>Upload sales, train, edit inventory, create and send orders, log receptions.</td><td>Manage users, plan or billing.</td></tr>
+                <tr><td><strong>Read only</strong></td><td>See everything and write in messages.</td><td>Change anything: not stock, not orders, not suppliers.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Your company's data is yours alone: no account from another company can read or modify it, even knowing the exact identifier of a record.</p>
+        </div>
+      </section>
+
+      <section id="cuenta">
+        <h2 lang="es">Mi cuenta</h2>
+        <h2 lang="en">My account</h2>
+        <div lang="es">
+          <ul>
+            <li><strong>Idioma</strong> — español o inglés, por persona.</li>
+            <li><strong>Moneda</strong> — en qué moneda se muestran tus cifras. La cambia un administrador.</li>
+            <li><strong>WhatsApp</strong> — vincular o desvincular tu número para alertas.</li>
+            <li><strong>Contraseña</strong> — cambiarla, o recuperarla por correo si la olvidaste.</li>
+          </ul>
+          <div class="note">
+            <span class="note-label">Sobre la moneda</span>
+            <p>Cambiar la moneda cambia el símbolo, no convierte los montos que ya cargaste. Si tus costos están en colones y eliges dólares, vas a ver colones con signo de dólar. El precio de Faro se cobra siempre en dólares y no depende de este ajuste.</p>
+          </div>
+        </div>
+        <div lang="en">
+          <ul>
+            <li><strong>Language</strong> — Spanish or English, per person.</li>
+            <li><strong>Currency</strong> — which currency your figures are shown in. An administrator changes it.</li>
+            <li><strong>WhatsApp</strong> — link or unlink your number for alerts.</li>
+            <li><strong>Password</strong> — change it, or recover it by email if you forgot it.</li>
+          </ul>
+          <div class="note">
+            <span class="note-label">About currency</span>
+            <p>Changing the currency changes the symbol; it does not convert amounts you already loaded. If your costs are in colones and you pick dollars, you will see colones with a dollar sign. Faro's own price is always charged in dollars and does not depend on this setting.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="planes">
+        <h2 lang="es">Planes</h2>
+        <h2 lang="en">Plans</h2>
+        <div lang="es">
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Límite</th><th>Starter</th><th>Profesional</th><th>Empresarial</th></tr></thead>
+              <tbody>
+                <tr><td>Productos (SKUs)</td><td class="num">1.000</td><td class="num">5.000</td><td>Ilimitado</td></tr>
+                <tr><td>Usuarios</td><td class="num">2</td><td class="num">10</td><td>Ilimitado</td></tr>
+                <tr><td>Bodegas</td><td class="num">1</td><td class="num">5</td><td>Ilimitado</td></tr>
+                <tr><td>Actualizaciones guardadas</td><td class="num">20</td><td class="num">100</td><td>Ilimitado</td></tr>
+                <tr><td>Tamaño de archivo</td><td class="num">200 MB</td><td class="num">500 MB</td><td class="num">2 GB</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Profesional agrega ABC-XYZ, multibodega con sugerencias de transferencia, optimizador de compra por costo, escenarios, alertas por WhatsApp, asistente IA, recálculo programado y mensajes de equipo.</p>
+          <p>El cambio de plan y el medio de pago los maneja un administrador. El pago lo procesa Stripe: <strong>los datos de tu tarjeta no pasan por Faro</strong>.</p>
+        </div>
+        <div lang="en">
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Limit</th><th>Starter</th><th>Professional</th><th>Enterprise</th></tr></thead>
+              <tbody>
+                <tr><td>Products (SKUs)</td><td class="num">1,000</td><td class="num">5,000</td><td>Unlimited</td></tr>
+                <tr><td>Users</td><td class="num">2</td><td class="num">10</td><td>Unlimited</td></tr>
+                <tr><td>Warehouses</td><td class="num">1</td><td class="num">5</td><td>Unlimited</td></tr>
+                <tr><td>Saved refreshes</td><td class="num">20</td><td class="num">100</td><td>Unlimited</td></tr>
+                <tr><td>File size</td><td class="num">200 MB</td><td class="num">500 MB</td><td class="num">2 GB</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Professional adds ABC-XYZ, multi-warehouse with transfer suggestions, cost-based purchase optimisation, scenarios, WhatsApp alerts, the AI assistant, scheduled retraining and team messages.</p>
+          <p>Plan changes and payment methods are handled by an administrator. Payment is processed by Stripe: <strong>your card details never pass through Faro</strong>.</p>
+        </div>
+      </section>
+
+      <section id="programadas">
+        <h2 lang="es">Tareas programadas<span class="plan-tag">Profesional</span></h2>
+        <h2 lang="en">Schedules<span class="plan-tag">Professional</span></h2>
+        <div lang="es">
+          <p>Deja que Faro vuelva a entrenar solo, en el horario que definas. Útil si tus ventas se actualizan a diario y no quieres acordarte de subirlas.</p>
+          <p>La pantalla es para administradores.</p>
+        </div>
+        <div lang="en">
+          <p>Let Faro retrain on its own, on the schedule you set. Useful when your sales refresh daily and you would rather not remember to upload them.</p>
+          <p>The screen is admin-only.</p>
+        </div>
+      </section>
+
+      <section id="faq">
+        <h2 lang="es">Preguntas frecuentes</h2>
+        <h2 lang="en">FAQ</h2>
+
+        <div lang="es">
+          <h3>Subí ventas nuevas y el panel no cambió</h3>
+          <p>Revisa cuál actualización está activa en el Historial. Subir un archivo no cambia el plan activo hasta que el entrenamiento termina.</p>
+
+          <h3>Veo una pantalla con candado o no aparece en el menú</h3>
+          <p>Esa función pertenece a un plan superior. El menú solo muestra lo que tu plan incluye.</p>
+
+          <h3>Faro sugiere pedir algo que yo sé que no se vende</h3>
+          <p>Casi siempre es stock desactualizado o un costo sin cargar. Revisa el producto en Configurar inventario. Si el historial de ese producto es corto, el rango va a ser ancho: es honesto, no un error.</p>
+
+          <h3>¿Puedo pedir algo que Faro no sugirió?</h3>
+          <p>Sí. «Nueva orden» crea una orden manual que no depende de ningún pronóstico.</p>
+
+          <h3>¿Faro modifica mi ERP?</h3>
+          <p>No. Solo lee. Toda escritura en tu sistema la haces tú.</p>
+
+          <h3>¿Qué pasa si me paso del límite de productos de mi plan?</h3>
+          <p>Faro te avisa antes de cortarte. El camino es subir de plan; nadie pierde datos.</p>
+
+          <h3>¿Hay API pública o webhooks?</h3>
+          <p>Todavía no. Preferimos no ofrecer una llave que no abre nada: cuando la autenticación por API esté lista, aparecerá en la app.</p>
+        </div>
+
+        <div lang="en">
+          <h3>I uploaded new sales and the panel didn't change</h3>
+          <p>Check which refresh is active in History. Uploading a file does not change the active plan until training finishes.</p>
+
+          <h3>A screen is locked, or missing from the menu</h3>
+          <p>That feature belongs to a higher plan. The menu only shows what your plan includes.</p>
+
+          <h3>Faro suggests ordering something I know doesn't sell</h3>
+          <p>Almost always stale stock or a missing cost. Check that product in Inventory setup. If its history is short, the range will be wide — that is honesty, not a bug.</p>
+
+          <h3>Can I order something Faro didn't suggest?</h3>
+          <p>Yes. "New order" creates a manual order that depends on no forecast.</p>
+
+          <h3>Does Faro modify my ERP?</h3>
+          <p>No. It only reads. Every write into your system is done by you.</p>
+
+          <h3>What happens if I exceed my plan's product limit?</h3>
+          <p>Faro warns you before it cuts you off. The path is upgrading; nobody loses data.</p>
+
+          <h3>Is there a public API or webhooks?</h3>
+          <p>Not yet. We would rather not hand out a key that opens nothing: when API authentication is ready, it will appear in the app.</p>
+        </div>
+      </section>
+
+      <hr>
+      <footer>
+        <p lang="es">¿Algo que esta guía no responde? Escríbenos a <a href="mailto:hola@usefaro.io">hola@usefaro.io</a>.</p>
+        <p lang="en">Something this guide doesn't answer? Write to <a href="mailto:hola@usefaro.io">hola@usefaro.io</a>.</p>
+      </footer>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var doc = document.querySelector('.doc');
+    var buttons = document.querySelectorAll('.langswitch button');
+
+    function setLang(lang) {
+      doc.setAttribute('data-doclang', lang);
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+      });
+      try { localStorage.setItem('faro-doc-lang', lang); } catch (e) {}
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { setLang(b.dataset.lang); });
+    });
+
+    // A previous choice wins; otherwise follow the browser; otherwise Spanish,
+    // which is the language of most of the people this is written for.
+    var stored = null;
+    try { stored = localStorage.getItem('faro-doc-lang'); } catch (e) {}
+    var browserIsEnglish = (navigator.language || '').toLowerCase().indexOf('en') === 0;
+    setLang(stored === 'es' || stored === 'en' ? stored : (browserIsEnglish ? 'en' : 'es'));
+
+    // Highlight the section currently in view.
+    var links = Array.prototype.slice.call(document.querySelectorAll('.rail a'));
+    var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var i = sections.indexOf(entry.target);
+        if (i < 0) return;
+        links.forEach(function (a) { a.classList.remove('on'); });
+        links[i].classList.add('on');
+      });
+    }, { rootMargin: '-64px 0px -70% 0px' });
+    sections.forEach(function (s) { if (s) observer.observe(s); });
+  })();
+</script>
