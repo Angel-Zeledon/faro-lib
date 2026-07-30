@@ -31,10 +31,19 @@ def generate_po_pdf(
     supplier_name: str,
     items: list[dict],
     po_meta: dict,
+    currency: dict | None = None,
 ) -> Path:
+    """`currency` is the tenant's currency setting (`currency_of(tenant_id)`).
+    Resolved ONCE here, not per row: this document formats two amounts for every
+    line of the order and the reader is a DB query. Callers that already hold the
+    resolved dict (a loop over suppliers builds one PDF each) should pass it."""
     slug = slugify_supplier_name(supplier_name)
     path = paths.po_pdf_file(tenant_id, po_log_id, slug)
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    if currency is None:
+        from backend.api.v1.currency import currency_of
+        currency = currency_of(tenant_id)
 
     total_value = sum((i.get("final_qty") or 0) * (i.get("unit_cost") or 0) for i in items)
 
@@ -86,8 +95,12 @@ def generate_po_pdf(
                 str(i.get("sku", "")),
                 str(i.get("display_name") or i.get("sku", "")),
                 f"{qty:,.0f}",
-                money(cost, 2),
-                money(qty * cost, 2),
+                # Precision comes from the currency, not from this table: the two
+                # decimals hardcoded here rendered "₡8.50" for a colón cost the
+                # app itself shows as "₡9" everywhere else, and would have shown
+                # phantom cents for every 0-decimal currency in SUPPORTED.
+                money(cost, currency=currency),
+                money(qty * cost, currency=currency),
             ])
         table = Table(rows, colWidths=[1.1*inch, 2.3*inch, 1*inch, 1.1*inch, 1*inch])
         table.setStyle(TableStyle([
@@ -101,7 +114,7 @@ def generate_po_pdf(
         ]))
         story.append(table)
         story.append(Spacer(1, 0.15*inch))
-        story.append(Paragraph(f"<b>Total: {money(total_value, 2)}</b>", body))
+        story.append(Paragraph(f"<b>Total: {money(total_value, currency=currency)}</b>", body))
 
         doc.build(story)
 
@@ -117,8 +130,8 @@ def generate_po_pdf(
         for i in items:
             qty = i.get("final_qty") or 0
             cost = i.get("unit_cost") or 0
-            lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x {money(cost, 2)}")
-        lines.append(f"\nTotal: {money(total_value, 2)}")
+            lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x {money(cost, currency=currency)}")
+        lines.append(f"\nTotal: {money(total_value, currency=currency)}")
         path.with_suffix(".txt").write_text("\n".join(lines), encoding="utf-8")
         return path.with_suffix(".txt")
 

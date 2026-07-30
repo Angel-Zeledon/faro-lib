@@ -33,6 +33,24 @@ class ToolContext:
         return self.role in _ANALYST_ROLES
 
 
+def _tenant_currency(tenant_id: str) -> dict:
+    """The currency this company's money is shown in. One read per message, never
+    one per line: these builders loop over orders."""
+    from backend.api.v1.currency import currency_of
+    return currency_of(tenant_id)
+
+
+def _money(v, currency: dict | None = None) -> str:
+    """An amount in the tenant's currency. Both of this module's money strings
+    hardcoded a "$" — not even the anchor market's symbol — and one of them is the
+    total the buyer confirms by replying SÍ."""
+    from backend.formatting import money
+    try:
+        return money(float(v), currency=currency)
+    except (TypeError, ValueError):
+        return "—"
+
+
 # ── Query tools (read-only) ──────────────────────────────────────────────────
 
 def semaphore_status(ctx: ToolContext, args: dict) -> str:
@@ -63,10 +81,11 @@ def list_pending_pos(ctx: ToolContext, args: dict) -> str:
     if not pending:
         return "No tienes órdenes de compra pendientes de recibir."
     lines = ["Órdenes pendientes:"]
+    currency = _tenant_currency(ctx.tenant_id)
     for p in pending[:10]:
         ref = format_po_number(p.get("po_number"), p["id"])
         total = p.get("total_value")
-        total_s = f" · ${total:,.0f}" if total else ""
+        total_s = f" · {_money(total, currency)}" if total else ""
         lines.append(f"  • {ref} — {p.get('sku_count', 0)} SKU{total_s} ({p.get('reception_status')})")
     return "\n".join(lines)
 
@@ -98,13 +117,6 @@ def forecast_summary(ctx: ToolContext, args: dict) -> str:
 
 # ── Write proposals (NO mutation) ────────────────────────────────────────────
 
-def _money(v) -> str:
-    try:
-        return f"${float(v):,.0f}"
-    except (TypeError, ValueError):
-        return "—"
-
-
 def propose_approve_po(ctx: ToolContext, args: dict) -> dict:
     from backend.inventory import reception_service as rec_svc
     from backend.inventory.roi_service import format_po_number
@@ -121,7 +133,8 @@ def propose_approve_po(ctx: ToolContext, args: dict) -> dict:
     suppliers = sorted({(i.get("supplier") or "").strip() for i in ordered if (i.get("supplier") or "").strip()})
     ref = format_po_number(po.get("po_number"), po_log_id)
     summary = (f"Aprobar y enviar la orden {ref} — {len(suppliers)} proveedor(es), "
-               f"total {_money(po.get('total_value'))}. ¿Confirmas? (responde SÍ)")
+               f"total {_money(po.get('total_value'), _tenant_currency(ctx.tenant_id))}. "
+               f"¿Confirmas? (responde SÍ)")
     return {"type": "approve_po", "po_log_id": po_log_id, "summary": summary}
 
 

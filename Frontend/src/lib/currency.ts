@@ -61,10 +61,22 @@ export function activeCurrency(): CurrencyInfo {
 export const getCurrencyCode   = () => active.code
 export const getCurrencySymbol = () => active.symbol
 
-/** Full amount, no abbreviation. Use this everywhere by default. */
+/**
+ * Full amount, no abbreviation. Use this everywhere by default.
+ *
+ * Honours the currency's declared `decimals`: it used to round unconditionally,
+ * so a tenant on USD or MXN — both of which declare 2 — read "$8" for a unit cost
+ * of $8.49. A 0-decimal currency (CRC, COP, CLP, ARS) still goes through the
+ * exact same `Math.round(...).toLocaleString(locale)` as before, so the anchor
+ * market renders byte-for-byte what it did.
+ */
 export function formatMoney(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—'
-  return `${active.symbol}${Math.round(n).toLocaleString(active.locale)}`
+  const d = active.decimals
+  if (!(d > 0)) return `${active.symbol}${Math.round(n).toLocaleString(active.locale)}`
+  return `${active.symbol}${n.toLocaleString(active.locale, {
+    minimumFractionDigits: d, maximumFractionDigits: d,
+  })}`
 }
 
 /**

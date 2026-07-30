@@ -22,6 +22,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from backend.config import settings
+from backend.formatting import DEFAULT_CURRENCY
 from backend.notifications.locale import render_es
 
 log = logging.getLogger(__name__)
@@ -671,16 +672,28 @@ def send_po_to_supplier_email(
 
 
 # ── Monthly recap ─────────────────────────────────────────────────────────────
-# Target market is Costa Rica, so amounts render as colones (CRC). CR uses the
-# period as thousands separator.
+# Amounts follow the tenant's currency setting (backend/api/v1/currency.py), not
+# a hardcoded colón: this email is the one figure-bearing message Faro sends on
+# its own initiative, and a customer on USD used to read ₡ in the subject line.
+# LatAm convention throughout: period as the thousands separator, comma for the
+# decimals — which is why this does not go through `formatting.money`.
 _MONTH_KEYS = (
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
 )
 
 
-def _fmt_crc(value: float) -> str:
-    return "₡" + f"{value:,.0f}".replace(",", ".")
+def _fmt_money(value: float, currency: dict | None = None) -> str:
+    """Amount in the tenant's currency, LatAm-punctuated: ₡1.250.000 / $9.402,55.
+    `currency` is what `currency_of(tenant_id)` returns; omitting it renders the
+    anchor market's colón, exactly as this did before the setting existed."""
+    cur = currency or DEFAULT_CURRENCY
+    symbol = cur.get("symbol") or DEFAULT_CURRENCY["symbol"]
+    declared = cur.get("decimals")
+    decimals = declared if isinstance(declared, int) else 0
+    whole, _, cents = f"{value:,.{decimals}f}".partition(".")
+    out = symbol + whole.replace(",", ".")
+    return f"{out},{cents}" if cents else out
 
 
 def _month_label(month_key: str) -> str:
@@ -704,13 +717,17 @@ def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:
     )
 
 
-def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
+def send_monthly_roi_email(to: str, report: dict, roi_url: str,
+                           currency: dict | None = None) -> bool:
     """
     Monthly recap of what the buyer did with Faro.
 
     Every figure comes straight from `get_month_report`; metrics that could not
     be derived from the tenant's own records are omitted from the email rather
     than shown as zero. Returns True if the email was handed to the transport.
+
+    `currency` is the tenant's currency setting, resolved once per tenant by the
+    caller (the recap loop mails several recipients from one report).
     """
     _GRN = "#22c55e"
     _RED = "#ef4444"
@@ -741,7 +758,7 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     capital = report.get("capital_freed")
     if capital is not None:
         tiles.append(_recap_metric_block(
-            _fmt_crc(capital),
+            _fmt_money(capital, currency),
             render_es("roi_email_metric_capital_label"),
             render_es("roi_email_metric_capital_note"),
             _GRN,
@@ -750,7 +767,7 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
     managed = report.get("managed_purchase_value")
     if managed is not None:
         tiles.append(_recap_metric_block(
-            _fmt_crc(managed),
+            _fmt_money(managed, currency),
             render_es("roi_email_metric_purchases_label"),
             render_es("roi_email_metric_purchases_note"),
             _TEXT,
@@ -767,7 +784,7 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
 
     headline = (
         render_es("roi_email_headline_capital",
-                  month=month_label, amount=_fmt_crc(capital))
+                  month=month_label, amount=_fmt_money(capital, currency))
         if capital is not None
         else render_es("roi_email_headline_default", month=month_label)
     )
@@ -788,7 +805,7 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str) -> bool:
 
     subject = (
         render_es("roi_email_subject_capital",
-                  month=month_label, amount=_fmt_crc(capital))
+                  month=month_label, amount=_fmt_money(capital, currency))
         if capital is not None
         else render_es("roi_email_subject_default", month=month_label)
     )

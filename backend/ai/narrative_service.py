@@ -76,10 +76,15 @@ def _call_llm(client, user_message: str, max_tokens: int = 600) -> str:
 
 # ── Morning Briefing Narrative ────────────────────────────────────────────────
 
-def generate_morning_narrative(briefing: dict, profile: str = 'distributor') -> dict:
+def generate_morning_narrative(briefing: dict, profile: str = 'distributor',
+                               currency: dict | None = None) -> dict:
     """
     Generates a 150-200 word executive morning briefing narrative.
     Returns: {narrative, key_points, urgency, fallback}
+
+    `currency` is the tenant's currency (`currency_of(tenant_id)`), resolved once
+    by the caller: the key points and the fallback narrative quote money, and the
+    reader costs a DB query. Omitting it renders the anchor market's colón.
     """
     client = _get_client()
     profile_ctx = _PROFILE_CONTEXT.get(profile, _PROFILE_CONTEXT['distributor'])
@@ -124,8 +129,8 @@ def generate_morning_narrative(briefing: dict, profile: str = 'distributor') -> 
     if not client:
         # Rule-based fallback when Claude is not available
         urgency = 'critical' if kpis.get('order_now', 0) > 0 else ('warning' if kpis.get('order_soon', 0) > 0 else 'ok')
-        narrative = _build_fallback_narrative(data_summary, profile)
-        return {"narrative": narrative, "key_points": _extract_key_points(data_summary), "urgency": urgency, "fallback": True}
+        narrative = _build_fallback_narrative(data_summary, profile, currency)
+        return {"narrative": narrative, "key_points": _extract_key_points(data_summary, currency), "urgency": urgency, "fallback": True}
 
     prompt = f"""Perfil de empresa: {profile_ctx}
 
@@ -153,19 +158,23 @@ Sé específico, usa los números del contexto, no uses jerga técnica."""
     try:
         text = _call_llm(client, prompt, max_tokens=700)
         urgency = 'critical' if kpis.get('order_now', 0) > 0 else ('warning' if kpis.get('order_soon', 0) > 0 else 'ok')
-        return {"narrative": text, "key_points": _extract_key_points(data_summary), "urgency": urgency, "fallback": False}
+        return {"narrative": text, "key_points": _extract_key_points(data_summary, currency), "urgency": urgency, "fallback": False}
     except Exception as e:
         log.error("Morning narrative failed: %s", e)
         urgency = 'critical' if kpis.get('order_now', 0) > 0 else 'ok'
-        return {"narrative": _build_fallback_narrative(data_summary, profile), "key_points": [], "urgency": urgency, "fallback": True, "error": str(e)}
+        return {"narrative": _build_fallback_narrative(data_summary, profile, currency), "key_points": [], "urgency": urgency, "fallback": True, "error": str(e)}
 
 
 # ── Inventory Insight ─────────────────────────────────────────────────────────
 
-def generate_inventory_insight(items: list[dict], profile: str = 'distributor') -> dict:
+def generate_inventory_insight(items: list[dict], profile: str = 'distributor',
+                               currency: dict | None = None) -> dict:
     """
     Generates a concise insight about the current inventory state.
     Returns: {insight, recommendations, urgency, fallback}
+
+    `currency`: as in `generate_morning_narrative` — the fallback sentence quotes
+    the overstock value, so it must carry the tenant's symbol.
     """
     client = _get_client()
     profile_ctx = _PROFILE_CONTEXT.get(profile, _PROFILE_CONTEXT['distributor'])
@@ -199,7 +208,7 @@ def generate_inventory_insight(items: list[dict], profile: str = 'distributor') 
     }
 
     if not client:
-        return {"insight": _build_inventory_fallback(data_summary), "recommendations": [], "urgency": "warning" if signals.get('PEDIR_YA', 0) > 0 else "ok", "fallback": True}
+        return {"insight": _build_inventory_fallback(data_summary, currency), "recommendations": [], "urgency": "warning" if signals.get('PEDIR_YA', 0) > 0 else "ok", "fallback": True}
 
     prompt = f"""Perfil: {profile_ctx}
 
@@ -221,7 +230,7 @@ Usa números concretos. Sin jerga técnica."""
         return {"insight": text, "urgency": urgency, "fallback": False}
     except Exception as e:
         log.error("Inventory insight failed: %s", e)
-        return {"insight": _build_inventory_fallback(data_summary), "urgency": "warning", "fallback": True}
+        return {"insight": _build_inventory_fallback(data_summary, currency), "urgency": "warning", "fallback": True}
 
 
 # ── Forecast Explanation ──────────────────────────────────────────────────────
@@ -312,19 +321,19 @@ def get_suggested_questions(profile: str, has_inventory: bool, has_production: b
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _extract_key_points(data: dict) -> list[str]:
+def _extract_key_points(data: dict, currency: dict | None = None) -> list[str]:
     points = []
     if data.get('products_at_immediate_risk', 0) > 0:
         points.append(f"{data['products_at_immediate_risk']} producto(s) en riesgo inmediato de quiebre")
     if data.get('capital_trapped_in_overstock', 0) > 0:
         val = data['capital_trapped_in_overstock']
-        points.append(f"{money(val)} inmovilizado en sobrestock")
+        points.append(f"{money(val, currency=currency)} inmovilizado en sobrestock")
     if data.get('demand_change_alerts', 0) > 0:
         points.append(f"{data['demand_change_alerts']} SKU(s) con cambio significativo en demanda")
     return points
 
 
-def _build_fallback_narrative(data: dict, profile: str) -> str:
+def _build_fallback_narrative(data: dict, profile: str, currency: dict | None = None) -> str:
     ya = data.get('products_at_immediate_risk', 0)
     pronto = data.get('products_to_order_this_week', 0)
     total = data.get('total_skus_monitored', 0)
@@ -337,7 +346,7 @@ def _build_fallback_narrative(data: dict, profile: str) -> str:
     if pronto > 0:
         parts.append(f"{pronto} necesitan pedido esta semana. ")
     if capital > 0:
-        parts.append(f"Hay {money(capital)} inmovilizado en sobrestock que puede liberarse. ")
+        parts.append(f"Hay {money(capital, currency=currency)} inmovilizado en sobrestock que puede liberarse. ")
 
     demand_up = data.get('demand_rising', [])
     if demand_up:
@@ -347,7 +356,7 @@ def _build_fallback_narrative(data: dict, profile: str) -> str:
     return ''.join(parts)
 
 
-def _build_inventory_fallback(data: dict) -> str:
+def _build_inventory_fallback(data: dict, currency: dict | None = None) -> str:
     signals = data.get('distribucion_señales', {})
     total = data.get('total_skus', 0)
     ya = signals.get('PEDIR_YA', 0)
@@ -356,4 +365,4 @@ def _build_inventory_fallback(data: dict) -> str:
     over = signals.get('SOBRESTOCK', 0)
     return (f"De {total} SKUs: {ya} en riesgo inmediato, {pronto} requieren pedido esta semana, "
             f"{ok} están bien cubiertos y {over} tienen sobrestock. "
-            f"Valor en sobrestock: {money(data.get('overstock_value', 0))}.")
+            f"Valor en sobrestock: {money(data.get('overstock_value', 0), currency=currency)}.")

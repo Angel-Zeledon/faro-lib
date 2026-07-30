@@ -23,6 +23,20 @@ from backend.inventory.defaults import (
 
 log = logging.getLogger(__name__)
 
+
+def _tenant_currency(tenant_id: str) -> dict:
+    """The tenant's currency setting, for the money this module writes into
+    Spanish sentences and PDFs. Imported lazily: the reader lives in the API
+    layer and this module is imported by it.
+
+    Every caller resolves this ONCE per document or briefing and passes the dict
+    down — it is a DB read, so calling it inside a per-SKU loop would add one
+    query per row.
+    """
+    from backend.api.v1.currency import currency_of
+    return currency_of(tenant_id)
+
+
 # Z-scores for common service levels
 _Z = {0.90: 1.282, 0.95: 1.645, 0.97: 1.881, 0.99: 2.326}
 _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, "SIN_DATOS": 4}
@@ -2155,6 +2169,11 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
 
     items = get_inventory_status(tenant_id, session_id, service_level)
 
+    # Resolved once for the whole document (one DB read), then handed to every
+    # amount it renders — the report is read by whoever the buyer forwards it to,
+    # so it must carry the currency that company actually trades in.
+    currency = _tenant_currency(tenant_id)
+
     # ── Color palette ──────────────────────────────────────────────────────
     RED    = colors.HexColor("#ef4444")
     AMBER  = colors.HexColor("#f59e0b")
@@ -2225,7 +2244,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
             (warning, "Pedir pronto",    "f59e0b"),
             (ok,      "OK",              "22c55e"),
             (over,    "Sobrestock",      "3b82f6"),
-            (money(value) if value else "—", "Valor bodega", "6366f1"),
+            (money(value, currency=currency) if value else "—", "Valor bodega", "6366f1"),
         ]
     ]]
     kpi_row = [[Table([[v] for v in cell], colWidths=["100%"]) for cell in kpi_table_data[0]]]
@@ -2476,10 +2495,15 @@ def get_demand_spikes(
     return alerts[:8]
 
 
-def generate_recommendations(items: list[dict], period: str = "daily") -> list[dict]:
+def generate_recommendations(items: list[dict], period: str = "daily",
+                             currency: dict | None = None) -> list[dict]:
     """
     Generates plain-language, actionable recommendations from inventory status items.
     Each recommendation has: priority (1=critical), sku, name, rec_type, text, action.
+
+    `currency` is the tenant's currency setting, resolved once by the caller: the
+    OVERSTOCK sentence quotes an amount, and that sentence is what the executive
+    summary renders verbatim. Omitting it renders the anchor market's colón.
 
     `period` (multi-period Phase C): the active planning grain. A period-trained
     session reports coverage in that grain's unit (a weekly session's
@@ -2565,7 +2589,7 @@ def generate_recommendations(items: list[dict], period: str = "daily") -> list[d
                 'rec_type': 'OVERSTOCK',
                 'text': (
                     f"{name} tiene {format_coverage(days, period)} de cobertura ({format_coverage(excess, period)} más de lo óptimo). "
-                    f"Pausar el próximo pedido liberaría {money(value)} en capital de trabajo."
+                    f"Pausar el próximo pedido liberaría {money(value, currency=currency)} en capital de trabajo."
                 ),
                 'action': "Pausar próximo pedido",
                 'signal': signal,
@@ -2713,7 +2737,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     except Exception as e:
         log.warning("briefing transfer suggestions failed session=%s: %s", session_id, e)
 
-    recs = generate_recommendations(items, period)
+    recs = generate_recommendations(items, period, _tenant_currency(tenant_id))
 
     # Pull session-level forecast accuracy if available
     avg_accuracy: Optional[float] = None

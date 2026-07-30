@@ -2,7 +2,10 @@
 from uuid import uuid4
 
 
-def test_generate_po_pdf_writes_a_real_pdf_file(tmp_path, monkeypatch):
+# `client` is requested only for the DB pool it opens: the document now resolves
+# the tenant's own currency setting, so generating one is no longer offline.
+# (What it renders per currency is asserted in test_currency_reaches_backend_strings.py.)
+def test_generate_po_pdf_writes_a_real_pdf_file(client, tmp_path, monkeypatch):
     from backend.storage import paths
     monkeypatch.setattr(paths, "_base", lambda: tmp_path)
 

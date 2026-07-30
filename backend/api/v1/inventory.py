@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from psycopg2.pool import PoolError
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from backend.api.v1.currency import currency_of
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
     require_verified_analyst_or_above,
@@ -1455,6 +1456,9 @@ def send_po_to_suppliers(
         "generated_at": po["generated_at"].isoformat() if po.get("generated_at") else None,
         "po_log_id": po_log_id,
     }
+    # One read for the whole send, not one per supplier PDF: this loop builds a
+    # document per supplier and each document formats two amounts per line.
+    po_currency = currency_of(user.tenant_id)
 
     for supplier_name, supplier_items in by_supplier.items():
         # The buyer's explicit pick wins over the free-text name on the line.
@@ -1472,7 +1476,8 @@ def send_po_to_suppliers(
             skipped.append({"supplier": supplier_name, "reason": "no_contact_details"})
             continue
 
-        pdf_path = po_pdf.generate_po_pdf(user.tenant_id, po_log_id, supplier_name, supplier_items, po_meta)
+        pdf_path = po_pdf.generate_po_pdf(user.tenant_id, po_log_id, supplier_name,
+                                          supplier_items, po_meta, po_currency)
         pdf_bytes = pdf_path.read_bytes()
         slug = po_pdf.slugify_supplier_name(supplier_name)
 

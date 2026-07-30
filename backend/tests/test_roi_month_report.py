@@ -208,11 +208,15 @@ class TestRunMonthlyRoiEmails:
         _insert_po(tid, _IN_MONTH, suggested=8, approved=6, order_now=2, total_value=4000)
         _insert_snapshot(tid, _MONTH_OPEN, 9_000)
         _insert_snapshot(tid, _NEXT_MONTH_OPEN, 7_500)
+        # This company keeps its books in dollars, so the recap must be composed
+        # in dollars — the amounts are relabelled, never converted.
+        from backend.tenants.service import update_settings
+        update_settings(tid, {"currency": "USD"})
 
         captured = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url: (captured.append((to, report)), True)[1],
+            lambda to, report, roi_url, currency=None: (captured.append((to, report, currency)), True)[1],
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -223,6 +227,9 @@ class TestRunMonthlyRoiEmails:
         assert captured[0][0] == "boss@acme.cr"
         assert captured[0][1]["capital_freed"] == 1500.0   # 9000 - 7500
         assert captured[0][1]["adoption_rate"] == pytest.approx(0.75)  # 6 / 8
+        # Without this the subject line says ₡ to a company that trades in dollars.
+        assert captured[0][2] is not None, "the recap was mailed with no currency"
+        assert captured[0][2]["code"] == "USD" and captured[0][2]["symbol"] == "$"
 
         row = query_one(
             "SELECT month, recipients FROM inventory_roi_email_log WHERE tenant_id = %s",
@@ -242,7 +249,7 @@ class TestRunMonthlyRoiEmails:
         calls = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url: (calls.append(to), True)[1],
+            lambda to, report, roi_url, currency=None: (calls.append(to), True)[1],
         )
 
         now = datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
@@ -267,7 +274,7 @@ class TestRunMonthlyRoiEmails:
         calls = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url: (calls.append(to), True)[1],
+            lambda to, report, roi_url, currency=None: (calls.append(to), True)[1],
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -290,7 +297,7 @@ class TestRunMonthlyRoiEmails:
 
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url: False,
+            lambda to, report, roi_url, currency=None: False,
         )
 
         sent = roi_service.run_monthly_roi_emails(

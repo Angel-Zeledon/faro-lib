@@ -67,6 +67,25 @@ def test_propose_approve_po_does_not_mutate(client, registered_user):
     assert row["sent_at"] is None
 
 
+def test_po_totals_are_quoted_in_the_tenants_currency(client, registered_user):
+    """Both money strings this module writes hardcoded a "$" — including the total
+    the buyer confirms by replying SÍ, which is the last thing they read before an
+    order goes out. Break to check: revert either `_money` call site."""
+    from backend.tenants.service import update_settings
+    ctx = _ctx(registered_user)
+    po_id = _seed_po(ctx.tenant_id, qty=200)          # total_value = 2,000
+
+    # Default: the anchor market's colón, not a dollar sign.
+    assert "₡2,000" in tools.propose_approve_po(ctx, {"po_log_id": po_id})["summary"]
+    assert "₡2,000" in tools.QUERY_TOOLS["list_pending_pos"](ctx, {})
+
+    update_settings(ctx.tenant_id, {"currency": "USD"})
+    summary = tools.propose_approve_po(ctx, {"po_log_id": po_id})["summary"]
+    assert "$2,000.00" in summary and "₡" not in summary
+    listing = tools.QUERY_TOOLS["list_pending_pos"](ctx, {})
+    assert "$2,000.00" in listing and "₡" not in listing
+
+
 def test_propose_reception_does_not_mutate(client, registered_user):
     ctx = _ctx(registered_user)
     po_id = _seed_po(ctx.tenant_id, sku="SKU1", warehouse="bodega norte", qty=200)

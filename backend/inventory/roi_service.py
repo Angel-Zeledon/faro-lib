@@ -593,9 +593,15 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
                 r["email"]: r["id"] for r in get_tenant_alert_recipients(tid) if r.get("email")
             }
 
+            # One read per tenant, not per recipient: every admin of the same
+            # company reads the same money in the same currency.
+            from backend.api.v1.currency import currency_of
+            tenant_currency = currency_of(tid)
+
             delivered = 0
             for email in emails:
-                ok_sent = send_monthly_roi_email(to=email, report=report, roi_url=roi_url)
+                ok_sent = send_monthly_roi_email(to=email, report=report, roi_url=roi_url,
+                                                 currency=tenant_currency)
                 if ok_sent:
                     delivered += 1
                 else:

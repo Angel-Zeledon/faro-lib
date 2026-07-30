@@ -8,6 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend.api.v1.currency import currency_of
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -66,7 +67,10 @@ def morning_narrative(
         # and the narrative's risk count contradicts the KPIs on the same screen.
         period   = planning_service.get_planning(user.tenant_id).get("period", "daily")
         briefing = get_morning_briefing(user.tenant_id, body.session_id, period=period)
-        result   = generate_morning_narrative(briefing, body.profile)
+        # Resolved once per request: the narrative's key points and its
+        # rule-based fallback quote money, and this reader is a DB query.
+        result   = generate_morning_narrative(briefing, body.profile,
+                                              currency_of(user.tenant_id))
         return ok(result)
     except Exception as e:
         log.error("Morning narrative error: %s", e)
@@ -87,7 +91,8 @@ def inventory_insight(
     try:
         period = planning_service.get_planning(user.tenant_id).get("period", "daily")
         items  = get_inventory_status(user.tenant_id, body.session_id, period=period)
-        result = generate_inventory_insight(items, body.profile)
+        result = generate_inventory_insight(items, body.profile,
+                                           currency_of(user.tenant_id))
         return ok(result)
     except Exception as e:
         log.error("Inventory insight error: %s", e)

@@ -1,4 +1,4 @@
-﻿"""Billing routes.
+"""Billing routes.
 
 Three shapes, on purpose:
   · reads      — any signed-in user may see which plan their company is on

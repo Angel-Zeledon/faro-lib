@@ -299,7 +299,7 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
         email_mod.send_monthly_roi_email("buyer@faro-e2e.io", dict(self._REPORT),
                                          "https://faro.test/roi")
         msg = sent[0]
-        amount = email_mod._fmt_crc(1250000.0)
+        amount = email_mod._fmt_money(1250000.0)
         assert msg["subject"] == render_es("roi_email_subject_capital",
                                            month="junio de 2026", amount=amount)
         assert msg["subject"] == "Faro — liberaste ₡1.250.000 en junio de 2026"
