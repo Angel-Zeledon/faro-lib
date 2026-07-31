@@ -38,6 +38,7 @@ Objective (minimize):
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
@@ -366,6 +367,38 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
 # unsolved case — a fast approximate answer beats an unbounded solve.
 _SOLVE_TIME_LIMIT_S = 10.0
 
+# One HiGHS solve at a time per process.
+#
+# Concurrent solves deadlock. Measured on this codebase, same tiny input (2 SKUs
+# x 2 warehouses x 6 periods), the run that takes 9.3 seconds single-threaded:
+#
+#     2 threads x 20 rounds  -> clean
+#     3 threads x 30 rounds  -> clean on an idle machine, wedged on a busy one
+#     8 threads              -> hangs about 2 runs in 3, and does NOT recover:
+#                               still unfinished after 9 minutes
+#
+# The thread dump at the moment it wedges shows one worker inside
+# `_highs_wrapper`, another in ordinary Python, and the MAIN thread stuck in
+# `Thread.start()` — nobody can make progress. This is a hard deadlock, not
+# slowness: the process never comes back, and a wedged worker answers nothing at
+# all, so from a browser the backend has simply disappeared.
+#
+# scipy does not forward HiGHS's `threads` option (checked: `_milp` accepts no
+# such key), so the solver's internal parallelism cannot be capped from here.
+# The only guarantee available is that two native solves never overlap, and a
+# deadlock between concurrent solves is unreachable when there is no
+# concurrency.
+#
+# The lock covers ONLY the `milp()` call. Building the problem is pure Python
+# and numpy, costs a fraction of the solve, and stays parallel — callers that
+# arrive together still overlap on everything except the part that breaks.
+#
+# It lives in the ENGINE rather than in the API's `solve_slot` because this is a
+# property of the solver, not of one caller: a script, the training worker, or a
+# future endpoint would otherwise each have to remember. `solve_slot` remains
+# the admission control that returns a fast 503 instead of queueing requests.
+_SOLVE_LOCK = threading.Lock()
+
 
 def optimize(
     inp: OptimizationInput,
@@ -401,13 +434,14 @@ def optimize(
         if problem.A_ub is not None:
             constraints.append(
                 LinearConstraint(problem.A_ub, lb=-np.inf, ub=problem.b_ub))
-        res = milp(
-            problem.c,
-            integrality=problem.integrality,
-            bounds=problem.bounds,
-            constraints=constraints,
-            options={"time_limit": time_limit_s},
-        )
+        with _SOLVE_LOCK:
+            res = milp(
+                problem.c,
+                integrality=problem.integrality,
+                bounds=problem.bounds,
+                constraints=constraints,
+                options={"time_limit": time_limit_s},
+            )
     except Exception:
         return _fallback_recommend(inp, idx)
 
