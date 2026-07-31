@@ -6,6 +6,7 @@ import {
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
  setBusinessConfig, startTraining, getJob,
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
+ getDataGate, setRemediations,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import {
@@ -15,8 +16,9 @@ import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
 import DataIssuesPanel from '@/components/ui/DataIssuesPanel'
+import RemediationChoices from '@/components/ui/RemediationChoices'
 import type {
- InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary,
+ InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary, DataGate,
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import DataTabs from '@/components/layout/DataTabs'
@@ -394,6 +396,34 @@ const GRANULARITY_OPTIONS: { value: Granularity; labelKey: string }[] = [
  { value: 'monthly', labelKey: 'qs.plan_granularity_monthly' },
 ]
 
+// Which country's public holidays the engine learns from.
+//
+// The engine has always accepted this and the wizard never asked, so every
+// tenant trained on COLOMBIAN holidays — including the Mexican and Costa Rican
+// ones. Holidays are, per the engine's own comment, "among the strongest
+// signals a daily retail series carries": a distributor whose December 12th is
+// dead and whose Semana Santa is frantic was being modelled on someone else's
+// calendar, and nothing on any screen said so.
+//
+// A curated list rather than the ~150 the `holidays` package supports: this is
+// a LatAm product and a 150-row dropdown is a worse answer than a short one.
+// The backend validates against the full package list, so a country missing
+// here is a one-line addition, not a redesign.
+const HOLIDAY_COUNTRIES = [
+ { code: 'CR', labelKey: 'qs.country_CR' },
+ { code: 'CO', labelKey: 'qs.country_CO' },
+ { code: 'MX', labelKey: 'qs.country_MX' },
+ { code: 'PE', labelKey: 'qs.country_PE' },
+ { code: 'CL', labelKey: 'qs.country_CL' },
+ { code: 'AR', labelKey: 'qs.country_AR' },
+ { code: 'EC', labelKey: 'qs.country_EC' },
+ { code: 'GT', labelKey: 'qs.country_GT' },
+ { code: 'PA', labelKey: 'qs.country_PA' },
+ { code: 'DO', labelKey: 'qs.country_DO' },
+ { code: 'ES', labelKey: 'qs.country_ES' },
+ { code: 'US', labelKey: 'qs.country_US' },
+] as const
+
 function Chip({ label, selected, disabled, onClick }: {
  label: string; selected: boolean; disabled: boolean; onClick: () => void
 }) {
@@ -419,10 +449,12 @@ function Chip({ label, selected, disabled, onClick }: {
  )
 }
 
-function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, onGranularity, busy }: {
+function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, onGranularity,
+                        country, onCountry, busy }: {
  name: string; onName: (v: string) => void
  horizonDays: number; onHorizonDays: (v: number) => void
  granularity: Granularity; onGranularity: (v: Granularity) => void
+ country: string; onCountry: (v: string) => void
  busy: boolean
 }) {
  const { t } = useLanguage()
@@ -478,6 +510,29 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  ))}
  </div>
  </div>
+ <div data-tour="qs.country">
+ <label htmlFor="qs-holiday-country" style={labelStyle}>
+ {t('qs.plan_country_label')}
+ </label>
+ <select
+ id="qs-holiday-country"
+ value={country}
+ disabled={busy}
+ onChange={e => onCountry(e.target.value)}
+ style={{
+ padding: '9px 12px', borderRadius: 8,
+ border: '1px solid var(--border)', background: 'var(--surface)',
+ color: 'var(--text)', fontSize: 13, minWidth: 220,
+ }}
+ >
+ {HOLIDAY_COUNTRIES.map(c => (
+ <option key={c.code} value={c.code}>{t(c.labelKey)}</option>
+ ))}
+ </select>
+ <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6, lineHeight: 1.5 }}>
+ {t('qs.plan_country_help')}
+ </div>
+ </div>
  </div>
  )
 }
@@ -531,9 +586,19 @@ function QuickStartPageContent() {
  const [sessionName, setSessionName] = useState('')
  const [horizonDays, setHorizonDays] = useState<number>(28)
  const [granularity, setGranularity] = useState<Granularity>('auto')
+ // Defaults to Colombia because that is what every session silently used before
+ // this control existed — changing the default as well as adding the control
+ // would move existing tenants' holiday calendar without them asking.
+ const [holidayCountry, setHolidayCountry] = useState('CO')
 
  // Inspection result
  const [inspection, setInspection] = useState<InspectionResult | null>(null)
+ // The pre-training gate, evaluated against the CONFIRMED mapping. Null until
+ // the first confirm attempt: before a mapping exists the profiler's own
+ // reading is all there is, and that is what DataIssuesPanel already shows.
+ const [gate, setGate] = useState<DataGate | null>(null)
+ // {issue_type: option_code} — what the user decided about each fixable finding.
+ const [remediationChoices, setRemediationChoices] = useState<Record<string, string>>({})
 
  // Column mapping (14-field canonical schema)
  const [mapping, setMapping] = useState<Record<string, string | null>>(
@@ -589,6 +654,24 @@ function QuickStartPageContent() {
  handleDemo()
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [searchParams])
+
+ // Ask the gate as soon as the mapping screen opens, not only when the user
+ // presses confirm.
+ //
+ // The profiler's own `blocking` flag cannot tell a dead end from a question:
+ // it marks duplicated rows as blocking, so the screen said "este archivo no
+ // puede generar un pronóstico" and offered nothing but another file — for a
+ // problem the gate has two documented answers to. Fetching here puts the
+ // questions on screen the moment the user can act on them; `handleConfirm`
+ // re-asks against the confirmed mapping, which is the authoritative verdict.
+ useEffect(() => {
+ if (step !== 2 || !sessionId) return
+ let cancelled = false
+ getDataGate(sessionId, { silent: true })
+ .then(g => { if (!cancelled) setGate(g) })
+ .catch(() => { /* the profiler's own panel is still rendered */ })
+ return () => { cancelled = true }
+ }, [step, sessionId])
 
  // Load previously uploaded datasets once — a failure just keeps the reuse
  // tab hidden, the upload path is unaffected.
@@ -818,7 +901,6 @@ function QuickStartPageContent() {
 
  setError(null)
  setBusy(true)
- setStep(3)
 
  try {
  // POST canonical columns mapping
@@ -827,17 +909,55 @@ function QuickStartPageContent() {
   defaults_override: {},
  })
 
- // POST features config
+ // The gate, re-run against the mapping the user just confirmed. Everything
+ // before this point was judged from DETECTED columns — a guess. This is the
+ // same verdict `POST /train` enforces, so asking it here is the difference
+ // between a question the user can answer and a refusal they cannot.
+ //
+ // Deliberately BEFORE `setStep(3)`: showing "el sistema está aprendiendo"
+ // and only then discovering the run is refused is exactly what the removed
+ // "continuar de todos modos" link did, and the reason it had to go.
+ const liveGate = await getDataGate(sessionId, { silent: true })
+ setGate(liveGate)
+
+ // Nothing can be done about these, so there is nothing to ask. Stay on the
+ // mapping screen, where DataIssuesPanel says why.
+ if ((liveGate.blocking_fatal?.length ?? 0) > 0) {
+  setBusy(false)
+  return
+ }
+
+ // Fixable, and unanswered: the questions have just appeared below the
+ // mapping. Nothing started, so nothing has to be undone.
+ const stillUnresolved = (liveGate.unresolved ?? []).filter(
+  issueType => !remediationChoices[issueType],
+ )
+ if (stillUnresolved.length > 0) {
+  setBusy(false)
+  return
+ }
+
+ if (Object.keys(remediationChoices).length > 0) {
+  await setRemediations(sessionId, remediationChoices)
+ }
+
+ setStep(3)
+
+ // POST features config. `holiday_country` decides whose public holidays the
+ // model learns from; without it every tenant trained on Colombia's.
  await setFeatures(sessionId, {
  lags: [1, 7, 14, 28],
  rolling: [7, 14, 28],
  diffs: [1],
  calendar: true,
  ewm_spans: [7, 14],
+ holiday_country: holidayCountry,
  })
 
  // POST models config
- await setModels(sessionId, ['lightgbm', 'prophet', 'croston', 'xgboost'])
+ // `global_lgbm` leads the list: one model fitted across the whole catalogue,
+ // which is what gives a short or newly-launched SKU a usable forecast at all.
+ await setModels(sessionId, ['global_lgbm', 'lightgbm', 'prophet', 'croston', 'xgboost'])
 
  // POST validation config
  await setValidationConfig(sessionId, {
@@ -876,6 +996,18 @@ function QuickStartPageContent() {
  const msg = e instanceof Error ? e.message : t('qs.err_config')
  setError(msg)
  setBusy(false)
+ // Nothing was launched, so the "el sistema está aprendiendo" screen is a
+ // lie — and it is the screen with no controls on it. Send the user back to
+ // the mapping, where the error, the column selectors and any gate questions
+ // all are. The gate can still refuse here if the file changed underneath us
+ // between the check and the launch.
+ if (!trainLaunchedRef.current) {
+  setStep(2)
+  if (sessionId) {
+   try { setGate(await getDataGate(sessionId, { silent: true })) }
+   catch { /* the message above already says what failed */ }
+  }
+ }
  }
  }
 
@@ -1006,6 +1138,23 @@ function QuickStartPageContent() {
  setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
  }
 
+ // Back to step 1 with a clean slate. Reached from the mapping step when the
+ // file cannot train: continuing is pointless, so the way out is a new file.
+ const handleStartOver = () => {
+ setStep(1)
+ setBusy(false)
+ setError(null)
+ setFileName(null)
+ setSessionId(null)
+ setDatasetId(null)
+ setInspection(null)
+ setRetryNote(false)
+ setReusedMapping(null)
+ setCsvWarnings([])
+ setCsvIssues([])
+ setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
+ }
+
  // ── Preview table (first 3 rows sample) ─────────────────────────────────────
  function PreviewTable() {
  if (!inspection) return null
@@ -1054,6 +1203,27 @@ function QuickStartPageContent() {
  </div>
  )
  }
+
+ // Not one product in this file can reach the engine's min_history, so training
+ // it can only end in `no_models_trained`. The rule lives in the profiler — the
+ // frontend only reacts to the flag, so the threshold has one owner.
+ // Fatal only: nothing the user can answer changes the verdict, so the screen
+ // offers another file. Once the gate has run against the confirmed mapping it
+ // is the authority — the profiler's flag was a guess from detected columns.
+ const blockedByData = gate
+ ? (gate.blocking_fatal?.length ?? 0) > 0
+ : (inspection?.profile.data_quality?.blocking === true ||
+    (inspection?.profile.data_quality?.issues ?? []).some(i => i.blocking === true))
+
+ // Fixable and unanswered. Not the same as blocked: there IS a way forward,
+ // and it is one radio button away — so the confirm button stays visible and
+ // simply cannot fire until every question has an answer.
+ const unansweredFixable = (gate?.issues ?? [])
+ .filter(i => i.classification === 'blocking_fixable' && (i.remediations?.length ?? 0) > 0)
+ .filter(i => !remediationChoices[i.type])
+ .length
+
+ const missingRequired = CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name])
 
  return (
  <>
@@ -1117,12 +1287,13 @@ function QuickStartPageContent() {
  {' '}<strong style={{ color: 'var(--text)' }}>{t('qs.upload_desc_bold')}</strong>
  </p>
 
- {/* Plan settings: name + horizon + granularity. Applied to both the
- file-upload path and the one-click demo below. */}
+ {/* Plan settings: name + horizon + granularity + holiday calendar.
+ Applied to both the file-upload path and the one-click demo below. */}
  <PlanSettings
  name={sessionName} onName={setSessionName}
  horizonDays={horizonDays} onHorizonDays={setHorizonDays}
  granularity={granularity} onGranularity={setGranularity}
+ country={holidayCountry} onCountry={setHolidayCountry}
  busy={busy}
  />
 
@@ -1352,9 +1523,25 @@ function QuickStartPageContent() {
 
  {/* The profiler has always found these; nothing used to show them. This is
      the last screen where the user can still go fix the file. */}
+ {/* Only the findings nobody is being asked about. A finding with options is
+     rendered ONCE, by RemediationChoices below, with its ways out — showing
+     it here too produced the contradiction "puedes continuar igual" sitting
+     directly above "tienes que decidir algo antes de seguir". */}
  <DataIssuesPanel
-  issues={inspection.profile.data_quality?.issues ?? []}
+  issues={(gate?.issues ?? inspection.profile.data_quality?.issues ?? [])
+   .filter(i => (i.remediations?.length ?? 0) === 0)}
   granularity={inspection.granularity}
+ />
+
+ {/* The questions. Only appear once the gate has run against the mapping the
+     user confirmed — before that the column reading is a guess, and asking
+     someone to decide about a problem we may have imagined is noise. */}
+ <RemediationChoices
+  issues={gate?.issues ?? []}
+  chosen={remediationChoices}
+  onChoose={(issueType, code) =>
+   setRemediationChoices(prev => ({ ...prev, [issueType]: code }))}
+  disabled={busy}
  />
 
  {error && (
@@ -1364,21 +1551,70 @@ function QuickStartPageContent() {
  </div>
  )}
 
+ {/* No bypass. There used to be a "Continuar de todos modos" link here,
+     justified by the profiler judging the file from DETECTED columns —
+     the user might know better. That justification died when the gate
+     started re-running on the CONFIRMED mapping at launch: the button led
+     to the training screen, sat there as if something had started, and
+     then printed the backend's refusal. An escape hatch that cannot
+     escape is worse than no escape hatch.
+
+     Nothing is lost by removing it. The column selectors are on this same
+     screen: a user who thinks we read the wrong column fixes the mapping
+     and the file is judged again. That is the real answer to "I know
+     better" — correcting the reading, not overriding the verdict. */}
+ {blockedByData ? (
+ <>
+  <button
+  onClick={handleStartOver}
+  disabled={busy}
+  style={{
+   marginTop: 28, width: '100%', padding: '14px 0',
+   background: 'var(--accent)', color: '#fff',
+   border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700,
+   cursor: busy ? 'not-allowed' : 'pointer',
+   opacity: busy ? 0.7 : 1,
+   transition: 'opacity 0.15s',
+  }}
+  >
+  {t('qs.pick_another_file')}
+  </button>
+  <p style={{
+   marginTop: 10, fontSize: 12, color: 'var(--dim)',
+   textAlign: 'center', lineHeight: 1.5,
+  }}>
+  {t('qs.blocked_remap_hint')}
+  </p>
+ </>
+ ) : (
+ <>
  <button
  onClick={handleConfirm}
- disabled={busy || CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name])}
+ disabled={busy || missingRequired || unansweredFixable > 0}
  style={{
   marginTop: 28, width: '100%', padding: '14px 0',
   background: 'var(--accent)', color: '#fff',
   border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700,
-  cursor: (busy || CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name]))
+  cursor: (busy || missingRequired || unansweredFixable > 0)
    ? 'not-allowed' : 'pointer',
-  opacity: busy ? 0.7 : 1,
+  opacity: (busy || unansweredFixable > 0) ? 0.7 : 1,
   transition: 'opacity 0.15s',
  }}
  >
  {busy ? t('qs.processing') : t('qs.looks_good')}
  </button>
+ {/* Why the button is dead, said next to the button. A disabled control
+     with no explanation is how a user concludes the app is broken. */}
+ {unansweredFixable > 0 && !busy && (
+ <p style={{
+  marginTop: 8, fontSize: 12, color: 'var(--dim)',
+  textAlign: 'center', lineHeight: 1.5,
+ }}>
+  {t('gate.answer_first').replace('{count}', String(unansweredFixable))}
+ </p>
+ )}
+ </>
+ )}
  </div>
  )}
 
