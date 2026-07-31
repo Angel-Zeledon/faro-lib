@@ -22,12 +22,18 @@ REQUIRED_FIELDS: frozenset[str] = frozenset({"sku", "date", "demand"})
 # discovers the error as a stockout.
 DEFAULT_LEAD_TIME_DAYS = 15
 
+# The store label a single-location dataset gets. It is a DATA VALUE, not copy:
+# it ends up inside `series_key(sku, store)`, so every producer of a series key
+# has to spell it identically or the forecast and its history land under
+# different keys. Defined once here for that reason.
+DEFAULT_STORE = "Tienda única"
+
 # internal_name → default when not mapped (None = unknown, stays NaN)
 FIELD_DEFAULTS: dict[str, Any] = {
     "sku":           None,   # required — no default
     "date":          None,   # required — no default
     "demand":        None,   # required — no default
-    "store":         "Tienda única",
+    "store":         DEFAULT_STORE,
     "region":        "Sin región",
     "inventory":     0,
     "lead_time":     DEFAULT_LEAD_TIME_DAYS,
@@ -57,7 +63,8 @@ CANONICAL_FIELDS: list[dict] = [
     {"name": "discount",      "label": "Descuento",           "required": False, "dtype": "float"},
 ]
 
-_SEPARATOR = "│"   # U+2502 — chosen to avoid conflicts with CSV pipe characters
+SERIES_SEPARATOR = "│"   # U+2502 — chosen to avoid conflicts with CSV pipe characters
+_SEPARATOR = SERIES_SEPARATOR   # legacy alias
 
 
 def series_key(sku: Any, store: Any) -> str:

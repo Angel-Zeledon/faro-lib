@@ -87,7 +87,8 @@ class TestEvaluateAll:
 
     def test_returns_all_keys(self):
         result = evaluate_all([1, 2, 3], [1, 2, 3])
-        assert set(result.keys()) == {"mae", "rmse", "wape", "bias", "mape", "smape"}
+        assert set(result.keys()) == {"mae", "rmse", "wape", "bias", "mape",
+                                      "smape", "cost"}
 
     def test_perfect_preds_all_zero(self):
         result = evaluate_all([5, 10, 15], [5, 10, 15])

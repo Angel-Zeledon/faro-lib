@@ -62,58 +62,46 @@ def _compute_quantile_bounds(value: float, residual_std: float, quantiles: List[
 
 # ── Calendar helpers ───────────────────────────────────────────────────────
 
-def _easter(year: int) -> pd.Timestamp:
-    """Anonymous Gregorian Easter algorithm."""
-    a = year % 19
-    b, c = divmod(year, 100)
-    d, e = divmod(b, 4)
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = divmod(c, 4)
-    l = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * l) // 451
-    month = (h + l - 7 * m + 114) // 31
-    day = (h + l - 7 * m + 114) % 31 + 1
-    return pd.Timestamp(year=year, month=month, day=day)
-
-
-def _calendar_row(dt: pd.Timestamp) -> dict:
+def _calendar_rows(dates: List[pd.Timestamp], features_cfg: Any) -> List[dict]:
     """
-    Build the same calendar features that FeatureEngineer._calendar() produces
-    for a single future date.  Holiday lookup uses precomputed Easter; Colombia
-    national holidays beyond Easter/Christmas are approximated as zero for future
-    dates (they cannot be known without full holiday library for future years, but
-    Easter and Christmas are computed exactly).
-    """
-    easter_dt = _easter(dt.year)
-    xmas_dt = pd.Timestamp(year=dt.year, month=12, day=25)
-    days_to_easter = abs((dt - easter_dt).days)
-    days_to_xmas = abs((dt - xmas_dt).days)
-    is_christmas = int(dt.month == 12 and dt.day == 25)
-    is_easter = int(dt.normalize() == easter_dt)
+    Calendar features for future dates, from the SAME builder training used.
 
-    return {
-        "year":              dt.year,
-        "month":             dt.month,
-        "day":               dt.day,
-        "dow":               dt.dayofweek,
-        "week":              int(dt.isocalendar()[1]),
-        "quarter":           dt.quarter,
-        "is_weekend":        int(dt.dayofweek >= 5),
-        "sin_month":         float(np.sin(2 * np.pi * dt.month / 12)),
-        "cos_month":         float(np.cos(2 * np.pi * dt.month / 12)),
-        "sin_dow":           float(np.sin(2 * np.pi * dt.dayofweek / 7)),
-        "cos_dow":           float(np.cos(2 * np.pi * dt.dayofweek / 7)),
-        "is_holiday":        0,
-        "is_easter":         is_easter,
-        "is_christmas":      is_christmas,
-        "days_to_holiday":   0,
-        "days_to_easter":    days_to_easter,
-        "days_to_xmas":      days_to_xmas,
-        "holiday_intensity": is_easter * 5 + is_christmas * 5,
-        "christmas_season":  int(dt.month in [11, 12]),
-    }
+    This function used to hardcode `is_holiday = 0` and `days_to_holiday = 0`
+    for every future date, on the theory that future holidays are unknowable.
+    They are not — the `holidays` library derives them from each country's
+    rules — and the cost of the assumption was severe: the model was trained on
+    a feature that carried real signal and then served a constant, so every
+    holiday-driven demand spike was invisible to the forecast. Now both sides
+    call `calendar_frame`.
+    """
+    from forecasting_core.features.calendar import (
+        CALENDAR_COLUMNS, HolidayCalendar, calendar_frame,
+    )
+    cal = HolidayCalendar(getattr(features_cfg, "holiday_country", None))
+    frame = calendar_frame(dates, cal)
+    return [
+        {col: (float(v) if isinstance(v, float) else int(v))
+         for col, v in zip(CALENDAR_COLUMNS, row)}
+        for row in frame.itertuples(index=False, name=None)
+    ]
+
+
+def _calendar_row(dt: pd.Timestamp, features_cfg: Any = None) -> dict:
+    """Single future date's calendar features (see _calendar_rows)."""
+    return _calendar_rows([pd.Timestamp(dt)], features_cfg)[0]
+
+
+def _fourier_rows(dates: List[pd.Timestamp], features_cfg: Any) -> List[dict]:
+    """Fourier terms for future dates — same fixed epoch training used."""
+    from forecasting_core.features.calendar import fourier_frame
+
+    periods = list(getattr(features_cfg, "fourier_periods", []) or [])
+    if not periods:
+        return [{} for _ in dates]
+    K = int(getattr(features_cfg, "fourier_K", 2) or 2)
+    frame = fourier_frame(dates, periods, K)
+    cols = list(frame.columns)
+    return [dict(zip(cols, row)) for row in frame.itertuples(index=False, name=None)]
 
 
 # ── ML recursive forecasting ───────────────────────────────────────────────
@@ -163,12 +151,17 @@ def recursive_ml_predict(
     buf = list(history)
     residual_std = float(np.std(residuals)) if len(residuals) > 1 else 0.0
 
-    results = []
-    for future_dt in future_dates:
-        row: dict = {}
+    calendar_rows = (
+        _calendar_rows(list(future_dates), features_cfg)
+        if features_cfg.calendar else [{} for _ in future_dates]
+    )
+    seasonal_rows = _fourier_rows(list(future_dates), features_cfg)
 
-        if features_cfg.calendar:
-            row.update(_calendar_row(future_dt))
+    results = []
+    for step_i, future_dt in enumerate(future_dates):
+        row: dict = {}
+        row.update(calendar_rows[step_i])
+        row.update(seasonal_rows[step_i])
 
         # Lag features
         for l in features_cfg.lags:
@@ -249,6 +242,102 @@ def recursive_ml_predict(
     return results
 
 
+# ── Direct multi-horizon forecasting ───────────────────────────────────────
+
+def _bucket_delta(dates: pd.Series) -> pd.Timedelta:
+    """
+    The series' cadence, taken as the MEDIAN gap rather than the last one.
+
+    Reading it off the final two observations makes a single mistyped year
+    define the whole forecast calendar. Measured end to end: a file whose 60
+    daily rows carried one 1900 typo and one 2099 typo produced forecast dates
+    of 2173-11-01, 2247-09-03 and 2321-07-05 — the run completed, reported no
+    error, and presented a forecast for the twenty-fourth century as an ordinary
+    result. The median is what `data/profiler.py` already uses to detect
+    frequency, and one bad row cannot move it.
+    """
+    ordered = pd.to_datetime(pd.Series(dates)).sort_values()
+    if len(ordered) < 2:
+        return pd.Timedelta(days=1)
+    gaps = ordered.diff().dropna()
+    gaps = gaps[gaps > pd.Timedelta(0)]
+    if gaps.empty:
+        return pd.Timedelta(days=1)
+    return pd.Timedelta(gaps.median())
+
+
+def _future_dates(sub: pd.DataFrame, date_col: str, horizon: int) -> List[pd.Timestamp]:
+    dates = pd.to_datetime(sub[date_col])
+    last_date = dates.max()
+    delta = _bucket_delta(dates)
+    return [last_date + delta * i for i in range(1, horizon + 1)]
+
+
+def _direct_forecast(entry: dict, raw_df, config, horizon: int,
+                     quantiles: List[float]) -> List[dict]:
+    """
+    Forecast from a direct multi-horizon model, with conformal intervals.
+
+    Two things differ from the recursive path, and both are the point of it:
+    every step is predicted independently from the same origin, so no step is
+    built on a guess; and the band around step h comes from the residuals
+    measured AT step h in the rolling-origin backtest, so it widens with the
+    horizon the way the real uncertainty does.
+    """
+    from forecasting_core.evaluation.conformal import (
+        apply_bands, enforce_monotonic, horizon_bands,
+    )
+
+    forecaster = entry.get("direct_forecaster")
+    if forecaster is None:
+        return []
+
+    c = config.columns
+    primary = _primary_group(c)
+    sku = str(entry.get("sku", "__all__"))
+    if primary and raw_df is not None:
+        sub = raw_df[raw_df[primary].astype(str) == sku].sort_values(c.date)
+    elif raw_df is not None:
+        sub = raw_df.sort_values(c.date)
+    else:
+        return []
+    sub = sub.dropna(subset=[c.target])
+    if len(sub) < 2:
+        return []
+
+    try:
+        values = forecaster.point(horizon)
+    except Exception as e:
+        log.warning(f"Direct predict failed for {sku}: {e}")
+        return []
+    if values.size == 0:
+        return []
+
+    dates = _future_dates(sub, c.date, horizon)
+    scale = float(getattr(forecaster.profile, "scale", 1.0))
+    bands = horizon_bands(
+        forecaster.residuals_by_horizon, quantiles,
+        horizons=range(1, horizon + 1),
+    )
+
+    points: List[dict] = []
+    for i, value in enumerate(values[:horizon]):
+        step = i + 1
+        point = {"date": str(dates[i])[:10], "value": round(float(value), 4)}
+        band = bands.get(step)
+        if band:
+            point.update(apply_bands(float(value), enforce_monotonic(band), scale=scale))
+        else:
+            # No calibration data at all (a run with no viable folds): report
+            # the point forecast with a degenerate band rather than inventing a
+            # width. A band that is honestly absent beats one that is fabricated.
+            point.update({"lower": point["value"], "upper": point["value"],
+                          "p10": point["value"], "p50": point["value"],
+                          "p90": point["value"]})
+        points.append(point)
+    return points
+
+
 # ── Top-level dispatcher ───────────────────────────────────────────────────
 
 def predict_all_skus(
@@ -286,6 +375,15 @@ def predict_all_skus(
         model_name = entry.get("model", "unknown")
         sku = str(entry.get("sku", "__all__"))
 
+        # Direct multi-horizon models carry their own origin and predict every
+        # step in one shot; they must not be fed to the recursive path, which
+        # would treat step 1's prediction as an observation for step 2.
+        if entry.get("forecast_strategy") == "direct":
+            pts = _direct_forecast(entry, raw_df, config, horizon, quantiles)
+            if pts:
+                result.setdefault(sku, {})[model_name] = pts
+            continue
+
         if fitted_model is None or not feature_names:
             continue
 
@@ -308,10 +406,11 @@ def predict_all_skus(
         max_lookback = max(max(lags), max(rolling), max(diffs)) + 2
         history = list(sub[c.target].astype(float).values[-max_lookback:])
 
-        # Future dates
+        # Future dates — cadence from the median gap, so one mistyped year
+        # cannot set the forecast calendar (see _bucket_delta).
         dates = pd.to_datetime(sub[c.date])
-        last_date = dates.iloc[-1]
-        delta = dates.iloc[-1] - dates.iloc[-2] if len(dates) >= 2 else pd.Timedelta(days=1)
+        last_date = dates.max()
+        delta = _bucket_delta(dates)
         future_dates = [last_date + delta * i for i in range(1, horizon + 1)]
 
         try:
@@ -354,12 +453,8 @@ def predict_all_skus(
                 continue
 
             dates = pd.to_datetime(sub[c.date])
-            last_date = dates.iloc[-1]
-            delta = (
-                dates.iloc[-1] - dates.iloc[-2]
-                if len(dates) >= 2
-                else pd.Timedelta(days=1)
-            )
+            last_date = dates.max()
+            delta = _bucket_delta(dates)
             residual_std = float(np.std(residuals)) if len(residuals) > 1 else 0.0
 
             p10_arr = entry.get("p10")

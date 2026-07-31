@@ -18,6 +18,10 @@ from typing import Dict, Any
 ML_MODELS   = {"lightgbm", "xgboost"}
 STAT_MODELS = {"arima", "sarimax", "prophet", "ets", "croston"}
 DL_MODELS   = {"lstm"}
+# Fitted ONCE over every series instead of once per series, so it is deliberately
+# not in ML_MODELS: build_ml() must never hand it to the per-SKU Trainer, which
+# would fit one "global" model per SKU — the exact opposite of the point.
+GLOBAL_MODELS = {"global_lgbm"}
 
 
 class ModelFactory:
@@ -69,6 +73,9 @@ class ModelFactory:
     def dl_names(self) -> list:
         return [n for n in self.config if n in DL_MODELS]
 
+    def global_names(self) -> list:
+        return [n for n in self.config if n in GLOBAL_MODELS]
+
     @staticmethod
     def create(name: str, params: dict):
         """Instantiate a single ML model from a params dict (used by tuner)."""
@@ -83,4 +90,4 @@ class ModelFactory:
 
     @staticmethod
     def available_models() -> list:
-        return sorted(ML_MODELS | STAT_MODELS | DL_MODELS)
+        return sorted(ML_MODELS | STAT_MODELS | DL_MODELS | GLOBAL_MODELS)

@@ -37,6 +37,14 @@ ROUTING_TABLE: Dict[str, Set[str]] = {
 
 STAT_MODELS = {"arima", "sarimax", "prophet", "ets", "croston", "lstm", "naive", "seasonal_naive"}
 
+# Models that run on EVERY series regardless of its type. The global model is
+# the case the routing table cannot express: routing exists to keep a model away
+# from series it handles badly, but a cross-learning model is at its most useful
+# exactly where the table is most restrictive — the short and intermittent
+# series it sends to `naive`, which is where a model that can borrow from the
+# rest of the catalogue has something no per-SKU model can have.
+UNIVERSAL_MODELS: Set[str] = {"global_lgbm"}
+
 
 class ModelRouter:
     """Routes SKUs to their optimal model set based on series classification."""
@@ -76,6 +84,10 @@ class ModelRouter:
             run = assigned & self._declared
             if not run:
                 run = set(self._declared)
+            # Universal models bypass the narrowing entirely — but still only if
+            # the user selected them, so the "routing must never train a model
+            # the user did not choose" rule holds.
+            run |= (UNIVERSAL_MODELS & self._declared)
             routing[sku] = run
         return routing
 

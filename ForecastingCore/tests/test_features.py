@@ -208,10 +208,11 @@ class TestCalendarFeatures:
         assert (out["cos_month"].abs() <= 1.0).all()
 
     def test_easter_date_algorithm(self):
-        # Known Easter dates
-        eng = FeatureEngineer(_make_cfg(), dt_col="date", target="sales")
-        assert eng._easter_date(2022) == pd.Timestamp("2022-04-17")
-        assert eng._easter_date(2023) == pd.Timestamp("2023-04-09")
+        # Known Easter dates. The algorithm moved to features/calendar.py so
+        # that inference computes it the same way training does.
+        from forecasting_core.features.calendar import easter_date
+        assert easter_date(2022) == pd.Timestamp("2022-04-17")
+        assert easter_date(2023) == pd.Timestamp("2023-04-09")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

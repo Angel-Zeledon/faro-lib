@@ -74,6 +74,12 @@ class ColumnsConfig:
     date: str = ""
     group_keys: List[str] = field(default_factory=lambda: ["sku", "store"])
     exogenous: List[str] = field(default_factory=list)
+    # End-of-bucket stock, used to tell "sold none" from "had none to sell".
+    # MUST stay empty unless the user actually mapped an inventory column: the
+    # canonical schema broadcasts inventory=0 into unmapped sessions, and
+    # reading that as a permanent stockout would flag every row as censored.
+    # See data/censoring.py.
+    inventory: str = ""
 
 
 
@@ -86,6 +92,11 @@ class FeaturesConfig:
     ewm_spans: List[int] = field(default_factory=list)
     fourier_periods: List[int] = field(default_factory=list)  # e.g. [7, 30, 365]
     fourier_K: int = 2  # harmonics per period
+    # ISO country code for the holiday calendar. The product sells across LatAm;
+    # a Colombian holiday table is the wrong calendar for a distributor in
+    # Mexico or Peru, and the holidays are among the strongest demand signals a
+    # daily series has. "CO" keeps the pre-existing behaviour as the default.
+    holiday_country: str = "CO"
 
 
 @dataclass
@@ -137,6 +148,23 @@ class ModelRoutingConfig:
     thresholds: RoutingThresholdsConfig = field(default_factory=RoutingThresholdsConfig)
 
 
+@dataclass
+class HierarchyConfig:
+    """
+    Reconciliation across aggregation levels, coarsest first.
+
+    This field has to exist for the feature to exist. `ForecastEngine.train()`
+    reads `config["hierarchy"]` to decide whether to reconcile, and SessionConfig
+    had no such field — `to_dict()` never produced the key, the condition was
+    never true, and the whole reconciler was unreachable from any real session.
+
+    levels:         e.g. ["category", "sku"], coarsest to finest. Empty = off.
+    reconciliation: "bottom_up" | "top_down" | "mint".
+    """
+    levels: List[str] = field(default_factory=list)
+    reconciliation: str = "bottom_up"
+
+
 # ---------------------------------------------------------------------------
 # Main SessionConfig
 # ---------------------------------------------------------------------------
@@ -172,6 +200,7 @@ class SessionConfig:
     business: BusinessConfig = field(default_factory=BusinessConfig)
     routing: ModelRoutingConfig = field(default_factory=ModelRoutingConfig)
     granularity: GranularityConfig = field(default_factory=GranularityConfig)
+    hierarchy: HierarchyConfig = field(default_factory=HierarchyConfig)
 
     # ------------------------------------------------------------------
     # Constructors
@@ -221,6 +250,12 @@ class SessionConfig:
             cfg.granularity = GranularityConfig(
                 strategy=gd.get("strategy", "native"),
                 target_freq=gd.get("target_freq"),
+            )
+        if "hierarchy" in d:
+            hd = d["hierarchy"] or {}
+            cfg.hierarchy = HierarchyConfig(
+                levels=list(hd.get("levels") or []),
+                reconciliation=hd.get("reconciliation", "bottom_up"),
             )
         cfg.validate()
         return cfg

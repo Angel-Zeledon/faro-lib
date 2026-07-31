@@ -16,6 +16,10 @@ import numpy as np
 import pandas as pd
 from typing import List, Optional
 
+from forecasting_core.features.calendar import (
+    CALENDAR_COLUMNS, HolidayCalendar, calendar_frame, fourier_frame,
+)
+
 
 class FeatureEngineer:
 
@@ -28,6 +32,9 @@ class FeatureEngineer:
         self.cfg    = features_config
         self.dt_col = dt_col
         self.target = target
+        # The predictor builds future rows from this same calendar, so a holiday
+        # is a holiday on both sides of the forecast boundary.
+        self.calendar = HolidayCalendar(getattr(features_config, "holiday_country", None))
 
     def _groupby(self, df: pd.DataFrame):
         """Return a DataFrameGroupBy using the configured group columns, or None."""
@@ -37,7 +44,22 @@ class FeatureEngineer:
             return df.groupby(self._group_cols[0])
         return df.groupby(self._group_cols)
 
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, df: pd.DataFrame, drop_warmup: bool = True) -> pd.DataFrame:
+        """
+        Build the feature frame.
+
+        `drop_warmup=False` keeps the rows whose lag/rolling features are still
+        NaN because the series has not run long enough to fill the longest
+        window. That matters for one caller specifically: a series shorter than
+        the widest lag loses EVERY row to the warm-up drop — a 24-bucket SKU
+        against a `lag_28` config produces an empty frame — and the global
+        cross-learning model exists precisely to serve those series. Discarding
+        them before it runs removes the model's whole reason for being.
+
+        Keeping them is safe for gradient-boosted trees, which learn a split
+        direction for missing values natively rather than needing them filled.
+        Anything that cannot handle NaN must keep the default.
+        """
         if self.target in df.columns and not pd.api.types.is_numeric_dtype(df[self.target]):
             raise TypeError(
                 f"Target column '{self.target}' must be numeric, "
@@ -69,71 +91,28 @@ class FeatureEngineer:
             # e.g. days_to_holiday when the holidays lib is unavailable:
             # carries no signal — drop the column, not every row.
             df = df.drop(columns=all_nan)
+        if not drop_warmup:
+            # The target itself still has to be known — a row with no observed
+            # value is not a training example, it is a gap.
+            return df.dropna(subset=[self.target]) if self.target in df.columns else df
+
         subset = [c for c in generated if c not in all_nan]
         if self.target in df.columns:
             subset.append(self.target)
         df = df.dropna(subset=subset) if subset else df
         return df
 
-    @staticmethod
-    def _easter_date(year: int) -> pd.Timestamp:
-        """Anonymous Gregorian algorithm for Easter Sunday."""
-        a = year % 19
-        b, c = divmod(year, 100)
-        d, e = divmod(b, 4)
-        f = (b + 8) // 25
-        g = (b - f + 1) // 3
-        h = (19 * a + b - d - g + 15) % 30
-        i, k = divmod(c, 4)
-        l = (32 + 2 * e + 2 * i - h - k) % 7
-        m = (a + 11 * h + 22 * l) // 451
-        month = (h + l - 7 * m + 114) // 31
-        day = (h + l - 7 * m + 114) % 31 + 1
-        return pd.Timestamp(year=year, month=month, day=day)
-
     def _calendar(self, df):
-        dt = pd.to_datetime(df[self.dt_col])
-        df["year"]       = dt.dt.year
-        df["month"]      = dt.dt.month
-        df["day"]        = dt.dt.day
-        df["dow"]        = dt.dt.dayofweek
-        df["week"]       = dt.dt.isocalendar().week.astype(int)
-        df["quarter"]    = dt.dt.quarter
-        df["is_weekend"] = (dt.dt.dayofweek >= 5).astype(int)
-        df["sin_month"]  = np.sin(2 * np.pi * dt.dt.month / 12)
-        df["cos_month"]  = np.cos(2 * np.pi * dt.dt.month / 12)
-        df["sin_dow"]    = np.sin(2 * np.pi * dt.dt.dayofweek / 7)
-        df["cos_dow"]    = np.cos(2 * np.pi * dt.dt.dayofweek / 7)
+        """Attach the shared calendar features (see features/calendar.py).
 
-        years = dt.dt.year.unique()
-
-        # Colombia national holidays
-        holiday_dates: set = set()
-        try:
-            import holidays as hol_lib
-            col_hols = hol_lib.Colombia(years=years)
-            holiday_dates = set(pd.to_datetime(list(col_hols.keys())))
-        except Exception:
-            pass
-
-        easter_dates = {self._easter_date(y) for y in years}
-        xmas_dates   = {pd.Timestamp(year=y, month=12, day=25) for y in years}
-        normalized   = dt.dt.normalize()
-
-        df["is_holiday"]   = normalized.isin(holiday_dates).astype(int)
-        df["is_easter"]    = normalized.isin(easter_dates).astype(int)
-        df["is_christmas"] = normalized.isin(xmas_dates).astype(int)
-
-        def _min_days(x, dates):
-            return min(abs((x - d).days) for d in dates) if dates else np.nan
-
-        df["days_to_holiday"] = dt.apply(lambda x: _min_days(x, holiday_dates))
-        df["days_to_easter"]  = dt.apply(lambda x: _min_days(x, easter_dates))
-        df["days_to_xmas"]    = dt.apply(lambda x: _min_days(x, xmas_dates))
-
-        # composite holiday pressure score
-        df["holiday_intensity"] = df["is_holiday"] * 3 + df["is_easter"] * 5 + df["is_christmas"] * 5
-        df["christmas_season"]  = dt.dt.month.isin([11, 12]).astype(int)
+        Deliberately NOT a private reimplementation: the predictor builds future
+        rows from the same `calendar_frame`, and the only way those two can stay
+        in agreement is by being the same code.
+        """
+        frame = calendar_frame(df[self.dt_col], self.calendar)
+        frame.index = df.index
+        for col in CALENDAR_COLUMNS:
+            df[col] = frame[col]
         return df
 
     def _lags(self, df):
@@ -189,11 +168,8 @@ class FeatureEngineer:
 
     def _fourier(self, df: pd.DataFrame, periods: list, K: int) -> pd.DataFrame:
         """Fourier terms for cyclic seasonality. No leakage — only uses date column."""
-        dt = pd.to_datetime(df[self.dt_col])
-        t = (dt - dt.min()).dt.days.values.astype(float)
-        for period in periods:
-            for k in range(1, K + 1):
-                angle = 2 * np.pi * k * t / period
-                df[f"fourier_sin_{period}_{k}"] = np.sin(angle)
-                df[f"fourier_cos_{period}_{k}"] = np.cos(angle)
+        frame = fourier_frame(df[self.dt_col], periods, K)
+        frame.index = df.index
+        for col in frame.columns:
+            df[col] = frame[col]
         return df
