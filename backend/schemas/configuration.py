@@ -16,20 +16,65 @@ class CovariateEntry(BaseModel):
     type: str  # numeric | categorical | binary
 
 
+# The strategies `workers/runner.py::_apply_outlier_treatment` implements. The
+# set is closed and known at request time, and the chain there is a plain
+# if/elif that ENDS: a name outside this list matches no branch, so the run does
+# nothing, raises nothing and reports nothing — while the config screen keeps
+# saying the treatment is active. Measured: `strategy: "no_existe"` was accepted
+# with a 200 and silently became "leave".
+_OUTLIER_STRATEGIES = frozenset({
+    "leave", "winsorize_sigma", "winsorize_pct", "iqr_fence", "remove", "log1p",
+})
+
+# Bounds exist where a number outside them destroys the series rather than
+# treating it. `n_sigma <= 0` winsorizes every point onto the mean — a flat line
+# the models then learn perfectly and forecast uselessly. A percentile at or
+# above 50 clips from both ends past the median and does the same. `iqr_k <= 0`
+# collapses the fence onto the quartiles.
+_Sigma      = Annotated[float, Field(gt=0, le=10)]
+_Percentile = Annotated[float, Field(gt=0, lt=50)]
+_IqrK       = Annotated[float, Field(gt=0, le=10)]
+
+
+def _known_strategy(value: str) -> str:
+    if value not in _OUTLIER_STRATEGIES:
+        raise PydanticCustomError(
+            "outlier_strategy_unknown",
+            "'{strategy}' is not an outlier treatment this engine implements.",
+            {"strategy": str(value)[:32],
+             "allowed": ", ".join(sorted(_OUTLIER_STRATEGIES))},
+        )
+    return value
+
+
 class OutlierConfig(BaseModel):
     """Outlier treatment configuration — applied per-SKU before training."""
     strategy: str = "leave"
     # winsorize_sigma params
-    n_sigma: float = 3.0
+    n_sigma: _Sigma = 3.0
     # winsorize_pct params: clip bottom p% and top p%
-    percentile: float = 1.0
+    percentile: _Percentile = 1.0
     # iqr_fence params
-    iqr_k: float = 1.5
-    # per-SKU overrides (map: sku_name → strategy)
-    per_sku_overrides: Dict[str, str] = {}
-    per_sku_n_sigma: Dict[str, float] = {}
-    per_sku_percentile: Dict[str, float] = {}
-    per_sku_iqr_k: Dict[str, float] = {}
+    iqr_k: _IqrK = 1.5
+    # per-SKU overrides (map: sku_name → strategy). Capped so a runaway client
+    # cannot park megabytes of JSONB on the session; 5000 SKUs is far past any
+    # plan's `max_skus`.
+    per_sku_overrides: Dict[str, str] = Field(default_factory=dict, max_length=5000)
+    per_sku_n_sigma: Dict[str, _Sigma] = Field(default_factory=dict, max_length=5000)
+    per_sku_percentile: Dict[str, _Percentile] = Field(default_factory=dict, max_length=5000)
+    per_sku_iqr_k: Dict[str, _IqrK] = Field(default_factory=dict, max_length=5000)
+
+    @field_validator("strategy")
+    @classmethod
+    def _check_strategy(cls, value: str) -> str:
+        return _known_strategy(value)
+
+    @field_validator("per_sku_overrides")
+    @classmethod
+    def _check_per_sku(cls, value: Dict[str, str]) -> Dict[str, str]:
+        for strategy in value.values():
+            _known_strategy(strategy)
+        return value
 
 
 class ColumnsConfigRequest(BaseModel):
@@ -268,6 +313,63 @@ class ModelsConfigRequest(BaseModel):
                 "Unknown model '{model}'. Available: {allowed}.",
                 {"model": str(unknown[0])[:64], "allowed": ", ".join(sorted(allowed))},
             )
+        return values
+
+    @field_validator("hyperparameters")
+    @classmethod
+    def _hyperparameters_reach_a_real_model(
+        cls, values: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Keyed by model name, holding flat scalars, and bounded.
+
+        `workers/runner.py` builds `{m: hyperparams.get(m, {})}` and hands it to
+        the engine, so whatever lands here is passed to the library's
+        constructor. Three things were possible and none of them was reported:
+
+        * A block keyed by a model that does not exist — dead config that looks
+          live. `selected_models` already refuses an unknown name; this is the
+          same value arriving through the other field.
+        * A nested dict or list where the library expects a scalar, which fails
+          deep inside the fit with a library traceback and takes the whole run
+          down. The file was fine; the config killed it.
+        * Unbounded size, straight into JSONB.
+
+        Deliberately NOT a per-library bound check. Whether `n_estimators` may
+        be negative is LightGBM's rule to state, not ours to guess, and a table
+        of invented limits here would reject values the product may later want.
+        What is checked is the shape the runner and the factory require.
+        """
+        from forecasting_core.models.factory import ModelFactory
+
+        allowed = set(ModelFactory.available_models())
+        unknown = [m for m in values if m not in allowed]
+        if unknown:
+            raise PydanticCustomError(
+                "unknown_model",
+                "Hyperparameters given for unknown model '{model}'. Available: {allowed}.",
+                {"model": str(unknown[0])[:64], "allowed": ", ".join(sorted(allowed))},
+            )
+        for model, params in values.items():
+            if len(params) > 100:
+                raise PydanticCustomError(
+                    "too_many_hyperparameters",
+                    "Model '{model}' was given {count} hyperparameters; at most 100.",
+                    {"model": model, "count": len(params)},
+                )
+            for key, value in params.items():
+                if not isinstance(value, (str, int, float, bool)) and value is not None:
+                    raise PydanticCustomError(
+                        "hyperparameter_not_scalar",
+                        "Hyperparameter '{key}' for '{model}' must be a single "
+                        "value, not a list or an object.",
+                        {"key": str(key)[:64], "model": model},
+                    )
+                if isinstance(value, str) and len(value) > 256:
+                    raise PydanticCustomError(
+                        "hyperparameter_too_long",
+                        "Hyperparameter '{key}' for '{model}' is too long.",
+                        {"key": str(key)[:64], "model": model},
+                    )
         return values
 
     @model_validator(mode="after")

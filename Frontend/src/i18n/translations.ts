@@ -945,6 +945,12 @@ export const translations = {
     'errors.validation.unknown_country': 'no tiene feriados registrados ({country}). Usa un código ISO de país, como CO, MX, PE o CL.',
     'errors.validation.unknown_model': 'incluye un modelo que no existe ({model}). Elige entre: {allowed}.',
     'errors.validation.too_many_models': 'no puede tener más de {max_models} modelos, y recibimos {count}.',
+    // Una estrategia que el motor no implementa no fallaba: no hacía nada, y la
+    // pantalla seguía diciendo que estaba activa.
+    'errors.validation.outlier_strategy_unknown': 'pide un tratamiento de valores atípicos que no existe ({strategy}). Elige entre: {allowed}.',
+    'errors.validation.hyperparameter_not_scalar': 'trae un valor compuesto en «{key}» para {model}, y ahí solo cabe un valor suelto.',
+    'errors.validation.hyperparameter_too_long':   'trae un texto demasiado largo en «{key}» para {model}.',
+    'errors.validation.too_many_hyperparameters':  'le da {count} parámetros a {model}, y el máximo es 100.',
     'errors.validation.no_models_selected': 'Elige al menos un modelo para entrenar.',
     // Field names the user actually recognizes.
     'errors.field.qty': 'La cantidad',
@@ -4143,6 +4149,10 @@ export const translations = {
     'errors.validation.unknown_country': 'has no registered holidays ({country}). Use an ISO country code, such as CO, MX, PE or CL.',
     'errors.validation.unknown_model': 'includes a model that does not exist ({model}). Choose from: {allowed}.',
     'errors.validation.too_many_models': 'cannot hold more than {max_models} models, and we got {count}.',
+    'errors.validation.outlier_strategy_unknown': 'asks for an outlier treatment that does not exist ({strategy}). Choose from: {allowed}.',
+    'errors.validation.hyperparameter_not_scalar': 'has a compound value in "{key}" for {model}, where only a single value fits.',
+    'errors.validation.hyperparameter_too_long':   'has an over-long text in "{key}" for {model}.',
+    'errors.validation.too_many_hyperparameters':  'gives {model} {count} parameters, and the maximum is 100.',
     'errors.validation.no_models_selected': 'Select at least one model to train.',
     // Field names the user actually recognizes.
     'errors.field.qty': 'Quantity',
