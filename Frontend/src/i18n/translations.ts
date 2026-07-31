@@ -3080,6 +3080,12 @@ export const translations = {
     'integrations.disconnect_confirm_q':  '¿Desconectar',
     'integrations.disconnect_confirm_warn': 'Se detendrá la sincronización automática. Podrás volver a conectar esta cuenta cuando quieras.',
     'integrations.last_sync':             'Última sincronización',
+    // La sincronización diaria corre de madrugada sin nadie mirando, así que
+    // esta pantalla es el único sitio donde el usuario puede enterarse de que
+    // se detuvo — y de que mientras tanto sigue comprando con datos viejos.
+    'integrations.sync_blocked_title': 'Tu sincronización está detenida',
+    'integrations.sync_blocked_stale': 'Mientras tanto seguimos usando los últimos datos que sí entraron, así que lo que compres hoy se decide con información vieja.',
+    'integrations.sync_blocked_cta':   'Ir a resolverlo →',
     'integrations.never_synced':          'Todavía no se ha sincronizado',
     'integrations.no_providers':          'No hay proveedores contables disponibles.',
     'integrations.err_connecting':        'No se pudo conectar. Revisa tus credenciales.',
@@ -6189,6 +6195,9 @@ export const translations = {
     'integrations.disconnect_confirm_q':  'Disconnect',
     'integrations.disconnect_confirm_warn': 'Automatic sync will stop. You can reconnect this account anytime.',
     'integrations.last_sync':             'Last sync',
+    'integrations.sync_blocked_title': 'Your sync is stopped',
+    'integrations.sync_blocked_stale': 'In the meantime we keep using the last data that made it through, so what you buy today is decided with old information.',
+    'integrations.sync_blocked_cta':   'Go and resolve it →',
     'integrations.never_synced':          'Not synced yet',
     'integrations.no_providers':          'No accounting providers are available.',
     'integrations.err_connecting':        'Could not connect. Check your credentials.',

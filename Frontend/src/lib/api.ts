@@ -1371,6 +1371,17 @@ export interface Integration {
   status:        string
   last_sync_at:  string | null
   last_error:    string | null
+  // Set when the pre-training gate stopped the sync. `last_error` alone is one
+  // English sentence the screen can only print; these say which decision is
+  // waiting and where to make it, so a blocked sync is not just a red dot with
+  // a forecast quietly going stale behind it.
+  last_error_code?:    string | null
+  last_error_details?: {
+    session_id?: string | null
+    issues?:     string[]
+    remediable?: boolean
+    options?:    Record<string, string[]>
+  } | null
   created_at:    string
 }
 

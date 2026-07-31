@@ -1756,7 +1756,22 @@ def cash_calendar_fit(
         if inp is None:
             lines = []
         else:
-            result = optimize(inp)
+            # The SAME gate `/inventory/optimize` uses. This solve was outside
+            # it, which made the gate's cap a fiction: two purchasing panels
+            # take both slots, this endpoint adds a third solve, and measured
+            # locally three concurrent HiGHS solves stop making progress
+            # altogether — the process wedges rather than erroring, so the whole
+            # backend goes unresponsive instead of returning a 503. Two buyers
+            # refreshing while a third opens the cash calendar is enough.
+            try:
+                with opt_svc.solve_slot():
+                    result = optimize(inp)
+            except opt_svc.OptimizerBusy:
+                raise AppError(
+                    "optimizer_busy",
+                    "Optimizer busy (too many concurrent requests); please retry.",
+                    status_code=503,
+                )
             stock_rows = svc.list_stock(user.tenant_id)
             serialized = opt_svc.serialize_optimization_result(inp, result, stock_rows)
             lines = [

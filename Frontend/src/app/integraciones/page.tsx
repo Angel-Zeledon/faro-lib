@@ -12,6 +12,7 @@
  * credential fields, by contract with the backend (which never returns them).
  */
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   Plug, RefreshCw, Trash2, CheckCircle2, XCircle, Clock, Lock,
 } from 'lucide-react'
@@ -59,6 +60,55 @@ function fmtDate(iso: string | null, lang: 'es' | 'en') {
   return new Date(iso).toLocaleString(lang === 'en' ? 'en-US' : 'es-CR', {
     month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+}
+
+// ── Why the sync stopped ──────────────────────────────────────────────────────
+// The daily sync runs at 3 a.m. with nobody watching, so this screen is the only
+// place the tenant can learn it stopped. It used to print `last_error` — the
+// backend's English sentence — through InlineError, which for a gate refusal
+// read "This file cannot produce a forecast and no correction we can apply
+// changes that: all_zeros." to a Spanish user, with nowhere to go.
+//
+// When the gate is what stopped it, the code gives us Spanish and the details
+// give us the session, so the user is sent to the decision instead of to a
+// support ticket. Anything else still falls back to the raw sentence: a rough
+// message beats silence.
+function SyncError({ connection }: { connection: Integration }) {
+  const { t } = useLanguage()
+  const code = connection.last_error_code
+  const details = connection.last_error_details
+  const spanish = code ? t(`errors.${code}`) : null
+  const translated = spanish && spanish !== `errors.${code}` ? spanish : null
+
+  if (!translated) return <InlineError error={new Error(connection.last_error ?? '')} />
+
+  return (
+    <div style={{
+      border: '1px solid var(--border)', borderLeft: '4px solid #ef4444',
+      borderRadius: 10, padding: '12px 14px',
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
+        {t('integrations.sync_blocked_title')}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 8px', lineHeight: 1.55 }}>
+        {translated}
+      </p>
+      {/* The forecast does not fail loudly when a sync is refused — it simply
+          keeps serving the last good run. Saying so is the difference between
+          "algo falló" and "estás comprando con datos viejos". */}
+      <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 8px', lineHeight: 1.55 }}>
+        {t('integrations.sync_blocked_stale')}
+      </p>
+      {details?.session_id && details?.remediable && (
+        <Link
+          href={`/ventas?session=${details.session_id}`}
+          style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}
+        >
+          {t('integrations.sync_blocked_cta')}
+        </Link>
+      )}
+    </div>
+  )
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
@@ -229,9 +279,7 @@ function ProviderCard({
         </div>
       )}
 
-      {connection?.last_error && (
-        <InlineError error={new Error(connection.last_error)} />
-      )}
+      {connection?.last_error && <SyncError connection={connection} />}
 
       {!connection && (
         <ConnectForm
