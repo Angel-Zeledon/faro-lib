@@ -263,16 +263,29 @@ export function SourceBadge({ source }: { source?: ValueSource | null }) {
 // a red signal is not evidence that nothing is wrong: it is evidence that we
 // cannot see. So the green all-clear becomes an explicit "no lo podemos
 // confirmar" instead of quietly reassuring the buyer.
-export function AllClear({ stale }: { stale: boolean }) {
+//
+// `unmeasured` is the harder version of the same problem: stale data is old
+// data, but an uncounted catalogue is NO data. Every counter that would raise
+// an alarm reads 0 because nothing was ever measured, so the all-clear here is
+// not weak evidence — it is none at all, and it must not be shown as calm.
+export function AllClear({ stale, unmeasured = false }: {
+ stale: boolean
+ unmeasured?: boolean
+}) {
  const { t } = useLanguage()
+ const doubtful = stale || unmeasured
  return (
   <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)' }}>
    {stale && <div style={{ marginBottom: 10 }}><StaleSignalChip /></div>}
    <div style={{ fontSize: 15, marginBottom: 8 }}>
-    {t(stale ? 'hoy.no_pending_actions_unverified' : 'hoy.no_pending_actions')}
+    {t(unmeasured ? 'hoy.no_pending_actions_unmeasured'
+      : stale ? 'hoy.no_pending_actions_unverified'
+      : 'hoy.no_pending_actions')}
    </div>
    <div style={{ fontSize: 13, color: 'var(--dim)' }}>
-    {t(stale ? 'hoy.inventory_unverified' : 'hoy.inventory_under_control')}
+    {t(unmeasured ? 'hoy.inventory_unmeasured'
+      : doubtful ? 'hoy.inventory_unverified'
+      : 'hoy.inventory_under_control')}
    </div>
   </div>
  )

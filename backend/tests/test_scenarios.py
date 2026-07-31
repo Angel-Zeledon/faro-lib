@@ -99,7 +99,8 @@ class TestBaseline:
         assert base["order_now"] == 1        # SCN_A
         assert base["order_soon"] == 1       # SCN_B
         assert base["ok"] == 1               # SCN_C
-        # SCN_A: 100 lead-time demand + 10.4 safety − 40 stock = 70.4 → ceil(MOQ 1) = 71
+        # SCN_A: 100 lead-time demand + 8.12 safety − 40 stock = 68.12 → ceil(MOQ 1) = 69
+        # (see TestDemandMultiplier for why the safety cushion is 8.12, not 10.4)
         by_sku = {c["sku"]: c for c in data["changes"]}
         assert by_sku == {}, "an empty scenario must not report any change"
         assert base["total_units_to_order"] > 0
@@ -139,13 +140,22 @@ class TestDemandMultiplier:
         assert data["delta"]["total_units_to_order"] > 0
         assert scenario["estimated_purchase_value"] > base["estimated_purchase_value"]
 
-        # SCN_A: demand 15/day → 150 + 1.645·3·√10 (≈15.6) − 40 = 125.6 → 126
+        # The fixture's points carry `upper` but no `q90`, so sigma comes from
+        # the legacy branch of `_point_sigma`. `upper` is the TOP of a band —
+        # about a 90th percentile — not a standard deviation, so it is divided
+        # by z90 (1.2816) to recover one. Returning the raw spread handed the
+        # caller ~1.28 sigma and the caller applied z(0.95) again, serving a
+        # configured 95% service level at roughly 98%.
+        #
+        #   sigma    = (12 − 10) / 1.2816                     = 1.5605
+        #   base     = 10·10 + 1.645·1.5605·√10 − 40 = 68.12  → ceil = 69
+        #   ×1.5     = 15·10 + 1.645·2.3408·√10 − 40 = 122.18 → ceil = 123
         row = next(c for c in data["changes"] if c["sku"] == "SCN_A")
-        assert row["base_qty"] == 71.0
-        assert row["scenario_qty"] == 126.0
-        assert row["delta_qty"] == 55.0
+        assert row["base_qty"] == 69.0
+        assert row["scenario_qty"] == 123.0
+        assert row["delta_qty"] == 54.0
         assert row["scenario_daily_demand"] == 15.0
-        assert row["delta_value"] == 110.0     # 55 units × $2
+        assert row["delta_value"] == 108.0     # 54 units × $2
 
     def test_lower_multiplier_decreases_units_to_order(self, client, auth_headers, scenario_session):
         data = _run(client, auth_headers, scenario_session["session_id"],

@@ -1549,13 +1549,20 @@ class TestPureCalculationEdgeCases:
         A forecast point whose `value` is None counts as 0 demand (`p.get("value")
         or 0.0`), and its sigma still comes from the spread. Over
         [(None, upper 10), (5.0, upper 6)]:
-            avg = (0 + 5) / 2       = 2.5
-            std = ((10-0) + (6-5))/2 = 5.5
+            avg = (0 + 5) / 2                 = 2.5
+            std = ((10-0) + (6-5)) / 2 / z90  = 5.5 / 1.2816
+
+        The division by z90 is the point: `upper` is the top of a band, about a
+        90th percentile, not a standard deviation. Returning the raw spread gave
+        the caller ~1.28 sigma and the caller applied z(service_level) on top, so
+        a configured 95% service level was really being served at about 98%.
+
         The old test asserted `isinstance(avg, float) and avg >= 0`, which a
         function returning 0.0 would satisfy — and 0.0 demand is precisely the
         bug that drops a SKU off the semáforo.
         """
-        from backend.inventory.service import _avg_daily_forecast
+        import pytest as _pytest
+        from backend.inventory.service import _Q90_Z, _avg_daily_forecast
         avg, std = _avg_daily_forecast({
             "model1": {"forecast": [
                 {"date": "2026-01-01", "value": None, "upper": 10.0},
@@ -1563,7 +1570,9 @@ class TestPureCalculationEdgeCases:
             ]}
         }, lead_time=2)
         assert avg == 2.5, f"None was not treated as zero demand: avg={avg}"
-        assert std == 5.5, f"sigma from the spread is wrong: std={std}"
+        assert std == _pytest.approx(5.5 / _Q90_Z, rel=1e-9), (
+            f"sigma from the spread is wrong: std={std}"
+        )
 
     def test_avg_daily_forecast_negative_upper(self):
         """upper < value would make sigma negative; it is clamped to 0, and the

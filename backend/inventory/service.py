@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
+from backend.errors import AppError
 from backend.formatting import money, format_days as _format_days
 from backend.inventory.defaults import (
     DEFAULT_LEAD_TIME_DAYS,
@@ -633,7 +634,15 @@ def _point_sigma(p: dict) -> float:
     if q90 is not None:
         return max(0.0, (float(q90) - value) / _Q90_Z)
     upper = p.get("upper")
-    return max(0.0, float(upper) - value) if upper is not None else 0.0
+    if upper is None:
+        return 0.0
+    # `upper` is the TOP of a band, not a sigma. The engine has always written
+    # it as roughly the 90th percentile, so returning the raw spread here handed
+    # the caller ~1.28 sigma and the caller multiplied by z(service_level)
+    # again — a configured 95% service level was really being served at ~98%,
+    # and nothing in the product said so. Dividing by the same z the q90 branch
+    # uses makes both branches return the same quantity.
+    return max(0.0, (float(upper) - value) / _Q90_Z)
 
 
 def _pick_model(model_forecasts: dict, preferred: Optional[str]) -> dict:
@@ -765,6 +774,50 @@ def _calc_signal(coverage_days: float, lead_time: int) -> str:
     return "SOBRESTOCK"
 
 
+def _measured_safety_stock(
+    risk: Optional[dict], lead_time: float, service_level: float,
+) -> Optional[float]:
+    """
+    Safety stock read off the engine's measured cumulative error, or None.
+
+    `z * sigma * sqrt(L)` is an approximation of the quantile of demand over the
+    lead time, and it assumes the per-bucket forecast errors are normal and
+    independent. Neither holds: demand is non-negative and skewed, and a
+    forecast that runs high today runs high tomorrow, so the errors compound
+    faster than `sqrt(L)`. When the engine ran a rolling-origin backtest it
+    measured the cumulative error at each lead time directly, and that number
+    needs no assumptions at all.
+
+    Returns None whenever the measurement is absent — the caller then keeps the
+    classical formula rather than pretending.
+    """
+    if not risk:
+        return None
+    offsets = risk.get("cumulative_offsets") or {}
+    if not offsets:
+        return None
+
+    horizons = sorted(int(h) for h in offsets if str(h).isdigit())
+    if not horizons:
+        return None
+    wanted = max(1, int(math.ceil(float(lead_time))))
+    # A lead time longer than the backtest covers falls back to the longest
+    # horizon that WAS measured, instead of extrapolating a band nobody checked.
+    key = wanted if wanted in horizons else max(
+        [h for h in horizons if h <= wanted] or [horizons[0]]
+    )
+    band = offsets.get(str(key)) or {}
+    if not band:
+        return None
+
+    try:
+        target = float(service_level)
+        nearest = min(band, key=lambda q: abs(float(q) - target))
+        return max(0.0, float(band[nearest]))
+    except (TypeError, ValueError):
+        return None
+
+
 def _calc_recommended(
     current_stock: float,
     avg_daily: float,
@@ -772,14 +825,33 @@ def _calc_recommended(
     lead_time: int,
     moq: float,
     service_level: float = 0.95,
+    risk: Optional[dict] = None,
+    risk_scale: float = 1.0,
 ) -> float:
-    z = _Z.get(service_level, 1.645)
     lead_time_demand = avg_daily * lead_time
-    safety_stock = z * avg_std * math.sqrt(lead_time)
+    safety_stock = _safety_stock(avg_std, lead_time, service_level, risk, risk_scale)
     raw = max(0.0, lead_time_demand + safety_stock - current_stock)
     if moq and moq > 0:
         raw = math.ceil(raw / moq) * moq
     return float(round(raw, 2))
+
+
+def _safety_stock(
+    avg_std: float, lead_time: float, service_level: float,
+    risk: Optional[dict] = None, risk_scale: float = 1.0,
+) -> float:
+    """The cushion above lead-time demand: measured when we have it, modelled
+    when we do not. One function so the recommendation, the reorder point and
+    the explanation breakdown can never disagree about the number.
+
+    `risk_scale` splits a whole-SKU band across warehouses, mirroring how the
+    per-warehouse view already splits `avg_std` by that warehouse's share.
+    """
+    measured = _measured_safety_stock(risk, lead_time, service_level)
+    if measured is not None:
+        return measured * float(risk_scale)
+    z = _Z.get(service_level, 1.645)
+    return z * avg_std * math.sqrt(lead_time)
 
 
 # Signals for which recommending an order is meaningful. On any other signal
@@ -1092,6 +1164,10 @@ def _compute_inventory_status(
     # And which model actually won for each SKU, so the recommendation is
     # computed from that one instead of the mean of every model trained.
     best_model: dict[str, str] = {}
+    # Measured cumulative demand uncertainty per SKU, when the engine produced
+    # it. Absent for older sessions and for champions that ran no rolling-origin
+    # backtest — the safety stock falls back to the classical formula.
+    demand_risk: dict[str, dict] = {}
     try:
         result = session_store.get_training_result(tenant_id, session_id) or {}
         quality: dict = result.get("data_quality") or {}
@@ -1099,6 +1175,10 @@ def _compute_inventory_status(
             if isinstance(q, dict):
                 cv_by_sku[str(sku_key)] = q.get("cv")
         best_model = best_model_by_sku((result.get("metrics") or {}).get("rows") or [])
+        demand_risk = {
+            str(k): v for k, v in (result.get("demand_risk") or {}).items()
+            if isinstance(v, dict)
+        }
     except Exception as e:
         log.debug("cv_by_sku lookup failed for session=%s: %s", session_id, e)
 
@@ -1196,7 +1276,6 @@ def _compute_inventory_status(
         )
 
         if has_forecast and has_stock:
-            z = _Z.get(sku_service_level, 1.645)
             # Per-period demand: average over as many forecast buckets as the
             # lead time spans in periods, and judge the signal against the lead
             # time expressed in the same period. For daily all three helpers are
@@ -1208,8 +1287,16 @@ def _compute_inventory_status(
             )
             coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
             signal = _calc_signal(coverage_days, lt_periods)
+            # The measured band belongs to ONE model's forecast. Pairing it with
+            # a different model's point forecast would mix a global model's
+            # error distribution with, say, prophet's numbers — a plausible
+            # figure describing nothing.
+            sku_risk = demand_risk.get(sku)
+            if sku_risk and sku_risk.get("model") != best_model.get(sku):
+                sku_risk = None
             recommended = _calc_recommended(
-                current_stock, avg_daily, avg_std, lt_periods, moq, sku_service_level
+                current_stock, avg_daily, avg_std, lt_periods, moq,
+                sku_service_level, risk=sku_risk,
             )
             recommended = _gate_recommended_by_signal(signal, recommended)
             inventory_value = (
@@ -1217,7 +1304,9 @@ def _compute_inventory_status(
                 if stock.get("unit_cost") is not None else None
             )
             _demand_lt  = round(avg_daily * lt_periods, 2)
-            _safety      = round(z * avg_std * math.sqrt(lt_periods), 2)
+            _safety      = round(
+                _safety_stock(avg_std, lt_periods, sku_service_level, sku_risk), 2
+            )
             _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
             calc_explanation = {
                 "daily_demand":    round(avg_daily, 2),
@@ -1417,9 +1506,14 @@ def get_inventory_status_by_warehouse(
     # not disagree with it: a warehouse row and the tenant total for the same
     # SKU would otherwise be computed from different models.
     best_model: dict[str, str] = {}
+    demand_risk: dict[str, dict] = {}
     try:
         _res = session_store.get_training_result(tenant_id, session_id) or {}
         best_model = best_model_by_sku((_res.get("metrics") or {}).get("rows") or [])
+        demand_risk = {
+            str(k): v for k, v in (_res.get("demand_risk") or {}).items()
+            if isinstance(v, dict)
+        }
     except Exception as e:
         log.debug("best_model lookup failed for session=%s: %s", session_id, e)
 
@@ -1483,7 +1577,6 @@ def get_inventory_status_by_warehouse(
                     "service_level", stock, rule_index, supplier=supplier, category=category)
                 sku_service_level = (
                     float(service_level) if sl_source == SOURCE_DEFAULT else float(_sl_val))
-                z = _Z.get(sku_service_level, 1.645)
                 # Per-period demand + period lead time (identity for daily).
                 lt_periods = _lead_time_in_periods(lead_time, period)
                 steps = _steps_for_lead_time(lead_time, period)
@@ -1492,15 +1585,19 @@ def get_inventory_status_by_warehouse(
                 )
                 avg_daily *= share
                 avg_std *= share
+                sku_risk = demand_risk.get(sku)
+                if sku_risk and sku_risk.get("model") != best_model.get(sku):
+                    sku_risk = None
                 coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
                 signal = _calc_signal(coverage_days, lt_periods)
                 recommended = _calc_recommended(
                     current_stock, avg_daily, avg_std, lt_periods, moq,
-                    sku_service_level)
+                    sku_service_level, risk=sku_risk, risk_scale=share)
                 recommended = _gate_recommended_by_signal(signal, recommended)
                 reorder_point = round(
                     avg_daily * lt_periods
-                    + z * avg_std * math.sqrt(lt_periods), 2)
+                    + _safety_stock(avg_std, lt_periods, sku_service_level,
+                                    sku_risk, share), 2)
             else:
                 avg_daily = avg_std = None
                 coverage_days = None
@@ -1853,14 +1950,42 @@ def simulate_event_impact(
     """
     from datetime import date as _date, timedelta
 
-    if isinstance(start_date, str):
-        start_date = _date.fromisoformat(start_date)
-    if isinstance(end_date, str):
-        end_date = _date.fromisoformat(end_date)
+    # These three used to be `ValueError`s that the endpoint re-raised as
+    # `HTTPException(422, detail=str(e))`, which put two problems on the wire:
+    # the messages were hardcoded SPANISH inside backend logic (CLAUDE.md
+    # forbids it — the backend returns a code, the frontend renders the
+    # Spanish), and an unparseable date escaped as Python's own
+    # "Invalid isoformat string: 'ayer'", in English, naming an internal
+    # function to a distributor. Structured codes fix both at once.
+    def _parse(value, field: str):
+        if not isinstance(value, str):
+            return value
+        try:
+            return _date.fromisoformat(value)
+        except ValueError:
+            raise AppError(
+                "event_date_invalid",
+                f"'{field}' must be a date written as YYYY-MM-DD.",
+                status_code=422,
+                params={"field": field, "value": str(value)[:32]},
+            )
+
+    start_date = _parse(start_date, "start_date")
+    end_date = _parse(end_date, "end_date")
     if end_date < start_date:
-        raise ValueError("end_date no puede ser anterior a start_date")
+        raise AppError(
+            "event_end_before_start",
+            "The event ends before it starts.",
+            status_code=422,
+            params={"start": str(start_date), "end": str(end_date)},
+        )
     if multiplier <= 0:
-        raise ValueError("multiplier debe ser mayor que 0")
+        raise AppError(
+            "event_multiplier_not_positive",
+            "The multiplier must be greater than 0.",
+            status_code=422,
+            params={"multiplier": multiplier},
+        )
 
     today = _date.today()
     event_days = (end_date - start_date).days + 1
@@ -2523,7 +2648,14 @@ def generate_recommendations(items: list[dict], period: str = "daily",
         days     = item.get('coverage_days')
         lead     = item.get('lead_time_days', DEFAULT_LEAD_TIME_DAYS)
         qty      = item.get('recommended_qty') or 0
-        prov     = item.get('supplier') or 'el proveedor'
+        # Two different grammatical slots, so two forms. `prov` is the subject
+        # ("y el proveedor tarda 15 días"); the action needs the dative, and
+        # reusing the subject form there produced "Pedir 132 unidades a el
+        # proveedor" on screen — the contraction `a + el = al` is not optional
+        # in Spanish, and a named supplier takes no article at all.
+        supplier = item.get('supplier')
+        prov     = supplier or 'el proveedor'
+        prov_to  = f"a {supplier}" if supplier else 'al proveedor'
         abc      = item.get('abc', '?')
         trend    = item.get('demand_trend_pct')
         value    = item.get('inventory_value')
@@ -2537,7 +2669,7 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                     f"y {prov} tarda {_format_days(lead)} en entregar. "
                     f"Si no actúas hoy, habrá quiebre antes de recibir el pedido."
                 ),
-                'action': f"Pedir {qty:.0f} unidades a {prov}" if qty > 0 else "Emitir orden urgente",
+                'action': f"Pedir {qty:.0f} unidades {prov_to}" if qty > 0 else "Emitir orden urgente",
                 'signal': signal,
             })
 
@@ -2605,36 +2737,85 @@ def generate_recommendations(items: list[dict], period: str = "daily",
     return list(seen.values())[:20]  # top 20 recommendations
 
 
-def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
-    """{sku: name of its most accurate real model}, by lowest WAPE.
+# Ranking metric for choosing the model each SKU is bought from, best first.
+#
+# Repeated here as a literal rather than imported because the layering keeps
+# forecasting_core out of this module — the authority is
+# `forecasting_core/evaluation/metrics.py:CHAMPION_METRIC_ORDER`, and
+# `backend/tests/test_champion_metric_parity.py` asserts the two are equal so
+# the duplication cannot silently drift. Same arrangement as
+# DEFAULT_LEAD_TIME_DAYS.
+#
+# The drift is not hypothetical: this list started at ("cost", "wape") while the
+# engine had already moved to ("cost_horizon", ...), and on a real 13-SKU
+# session the two layers then disagreed on 8 of them. The engine computed its
+# recommendations from one model, the semáforo and the order quantity came from
+# another, and the accuracy on screen described a third.
+_CHAMPION_METRICS = ("cost_horizon", "cost", "wape", "mae")
 
-    Deliberately the same rule `compute_session_accuracy` scores with, so the
-    accuracy the app displays and the model the purchase is computed from are
-    the same one. Baselines are excluded: they exist to be beaten, and buying
-    from a naive forecast because it happened to win would be a bug, not a
-    fallback.
+
+def _champion_metric(rows: list[dict]) -> str:
+    for metric in _CHAMPION_METRICS:
+        if any(r.get(metric) is not None for r in rows):
+            return metric
+    return "wape"
+
+
+def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
+    """{sku: the model its purchase is computed from}, by lowest asymmetric cost.
+
+    This used to rank by WAPE. WAPE, like MAE, is symmetric: it scores a
+    forecast that runs 10% under exactly as well as one that runs 10% over, so
+    it crowned models that were wrong in the expensive direction as readily as
+    in the cheap one. Ranking by `cost` picks the model whose mistakes are the
+    affordable kind.
+
+    `compute_session_accuracy` reports the WAPE of whichever model this
+    function picked, so the accuracy on screen still describes the forecast the
+    orders came from — the invariant the old shared-rule comment was protecting.
+
+    Baselines are excluded: they exist to be beaten, and buying from a naive
+    forecast because it happened to win would be a bug, not a fallback.
     """
+    metric = _champion_metric(rows)
     best: dict[str, tuple[float, str]] = {}
     for r in rows:
         if r.get("type") == "baseline":
             continue
-        wape, model = r.get("wape"), r.get("model")
-        if wape is None or not model:
+        score, model = r.get(metric), r.get("model")
+        if score is None or not model:
             continue
         sku = str(r.get("sku"))
-        if sku not in best or float(wape) < best[sku][0]:
-            best[sku] = (float(wape), str(model))
-    return {sku: model for sku, (_w, model) in best.items()}
+        if sku not in best or float(score) < best[sku][0]:
+            best[sku] = (float(score), str(model))
+    return {sku: model for sku, (_s, model) in best.items()}
 
 
 def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[float]:
-    """Session-level accuracy: 1 - WAPE of each SKU's best real model.
+    """Session-level accuracy: 1 - WAPE of the model each SKU is bought from.
+
+    Not the best WAPE available for that SKU — the WAPE of the model that
+    actually produced the numbers on screen. Those were the same thing while the
+    champion was chosen by WAPE; now that it is chosen by asymmetric cost they
+    can differ, and reporting the better one would be advertising a forecast
+    nobody is using.
 
     Baseline rows (naive & friends) are scored for reference only and must not
     drag the headline number down. The aggregate is weighted by each SKU's
     daily demand so low-volume SKUs don't dominate; falls back to a plain mean
     when no demand weights are available. Clamped at 0 (WAPE can exceed 1).
+
+    A SKU scoring wape == 0 AND mae == 0 is left out entirely. WAPE divides by
+    the total real demand in the validation window, so a window with no demand
+    gives 0/0 — an error of zero over a scale of zero. That is not a perfect
+    forecast, it is the absence of anything to be accurate about, and the SKU
+    screen has always refused to print it. Measured on a real session: every one
+    of seven models (including the naive baselines) scored exactly 0/0, the
+    demand weight was unknown so the weighted branch fell through to the plain
+    mean, and the purchasing panel told the buyer "Precisión promedio 100.0%"
+    directly above a suggested order of 130 units.
     """
+    champions = best_model_by_sku(rows)
     best_wape: dict[str, float] = {}
     for r in rows:
         if r.get('type') == 'baseline':
@@ -2642,9 +2823,16 @@ def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[fl
         wape = r.get('wape')
         if wape is None:
             continue
+        if float(wape) == 0.0 and float(r.get('mae') or 0.0) == 0.0:
+            continue
         sku = str(r.get('sku'))
-        if sku not in best_wape or wape < best_wape[sku]:
-            best_wape[sku] = wape
+        if champions.get(sku) == r.get('model'):
+            best_wape[sku] = float(wape)
+        elif sku not in champions and (sku not in best_wape or wape < best_wape[sku]):
+            # No champion (e.g. every row for this SKU lacks the ranking
+            # metric): fall back to the old best-of rule rather than dropping
+            # the SKU out of the headline entirely.
+            best_wape[sku] = float(wape)
     if not best_wape:
         return None
     weights = {str(i.get('sku')): float(i.get('daily_demand') or 0.0) for i in items}
@@ -2750,6 +2938,13 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
 
     total_value    = sum(i['inventory_value'] for i in items if i.get('inventory_value') or 0)
     overstock_val  = sum(i['inventory_value'] for i in overstocked if i.get('inventory_value') or 0)
+    # How many products the value above could be computed from at all. Without
+    # it, a catalogue where nobody recorded a unit cost reports "₡0 en bodega" —
+    # which reads as "your stock is worth nothing" when the truth is that we
+    # were never told what it cost. The inventory screen already distinguishes
+    # the two ("SKUs con costo registrado"); the purchasing panel could not,
+    # because this number arrived with no denominator.
+    valued_skus    = sum(1 for i in items if i.get('inventory_value'))
 
     # Session name
     try:
@@ -2787,6 +2982,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
             'sin_datos':            sum(1 for i in items if i['signal'] == 'SIN_DATOS'),
             'avg_accuracy':         avg_accuracy,
             'total_inventory_value': round(total_value, 2),
+            'valued_skus':          valued_skus,
             'capital_in_overstock':  round(overstock_val, 2),
             'demand_alerts':        len(demand_changes),
             'demand_spikes':        len(demand_spikes),

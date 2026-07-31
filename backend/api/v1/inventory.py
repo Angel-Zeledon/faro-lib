@@ -13,13 +13,15 @@ import csv
 import io
 import json
 import logging
+import re
 from datetime import date
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from psycopg2.pool import PoolError
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 from backend.api.v1.currency import currency_of
 from backend.auth.guards import (
@@ -821,10 +823,19 @@ def dashboard_summary(
 # ── Events (temporadas / promociones) ────────────────────────────────────────
 
 def _parse_event_date(value: str, field: str) -> date:
+    # A bare `ValueError` inside a validator reaches the browser as pydantic's
+    # generic `value_error` on loc ["body"], which the frontend could only
+    # render as "body: no es válido." — measured on screen when saving an event
+    # whose end date preceded its start. A stable type plus params lets the
+    # catalogue say which date and why.
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)")
+        raise PydanticCustomError(
+            "event_date_invalid",
+            "'{field}' must be a date written as YYYY-MM-DD.",
+            {"field": field, "value": str(value)[:32]},
+        )
 
 
 class EventCreate(BaseModel):
@@ -839,7 +850,11 @@ class EventCreate(BaseModel):
         start = _parse_event_date(self.start_date, "start_date")
         end = _parse_event_date(self.end_date, "end_date")
         if end < start:
-            raise ValueError("end_date must not be before start_date")
+            raise PydanticCustomError(
+                "event_end_before_start",
+                "The event ends before it starts.",
+                {"start": self.start_date, "end": self.end_date},
+            )
         return self
 
 
@@ -859,7 +874,11 @@ class EventPatch(BaseModel):
             _parse_event_date(self.end_date, "end_date")
         if self.start_date is not None and self.end_date is not None:
             if date.fromisoformat(self.end_date) < date.fromisoformat(self.start_date):
-                raise ValueError("end_date must not be before start_date")
+                raise PydanticCustomError(
+                    "event_end_before_start",
+                    "The event ends before it starts.",
+                    {"start": self.start_date, "end": self.end_date},
+                )
         return self
 
 
@@ -1759,6 +1778,38 @@ def cash_calendar_fit(
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
+# A supplier's email is the address purchase orders are sent to. It was accepted
+# as any string at all: `no-es-un-email` saved cleanly, showed in the EMAIL
+# column of the suppliers table like a configured address, and stayed wrong
+# until the day an order failed to arrive. The send path does report that
+# (`skipped: delivery_failed`), so nothing is lost silently — but the user finds
+# out after the order was supposed to have gone, which is the wrong moment.
+#
+# Deliberately a shape check, not a deliverability check: the only thing we can
+# know at save time is whether an address could ever be routed. `pydantic`'s
+# EmailStr would need the `email-validator` dependency and would also reject
+# addresses that are unusual but legal; this refuses what is certainly
+# unreachable and leaves the rest to the send, which already reports its result.
+_EMAIL_SHAPE = re.compile(r"^[^@\s,;]+@[^@\s,;.]+(\.[^@\s,;.]+)+$")
+
+
+def _validated_email(value: Optional[str]) -> Optional[str]:
+    """None/blank stay None — not every supplier is contacted by email."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if not _EMAIL_SHAPE.match(text):
+        raise PydanticCustomError(
+            "supplier_email_shape",
+            "'{email}' cannot receive mail — a purchase order sent there would "
+            "never arrive. Use an address like nombre@empresa.com.",
+            {"email": text[:64]},
+        )
+    return text
+
+
 class SupplierCreate(BaseModel):
     name:           str
     email:          Optional[str] = None
@@ -1774,6 +1825,11 @@ class SupplierCreate(BaseModel):
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str] = None
 
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, value: Optional[str]) -> Optional[str]:
+        return _validated_email(value)
+
 
 class SupplierPatch(BaseModel):
     name:           Optional[str]   = None
@@ -1785,6 +1841,11 @@ class SupplierPatch(BaseModel):
     payment_terms:  Optional[str]   = None
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str]   = None
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, value: Optional[str]) -> Optional[str]:
+        return _validated_email(value)
 
 
 class SkuSupplierUpsert(BaseModel):
@@ -2484,10 +2545,19 @@ def optimize_inventory(
             status_code=503,
         )
 
+    # SKUs the optimizer refused to decide for: their stock is unknown, and how
+    # much to buy is a function of how much is left. They travel with every
+    # response — including the empty one — because "no suggestions" and "no
+    # suggestions BECAUSE nobody has told us what is on the shelf" look
+    # identical on screen, and only one of them is the user's to fix.
+    from backend.db import session_store
+    forecasts = session_store.get_forecasts(user.tenant_id, session_id) or {}
+    needs_stock = opt_svc.skus_missing_stock(forecasts, stock_rows)
+
     if inp is None:
         return ok({
             "status": "optimal", "total_cost": 0.0, "horizon_days": horizon_days,
-            "orders": [], "transfers": [],
+            "orders": [], "transfers": [], "needs_stock": needs_stock,
         })
 
     # optimize() never raises on structurally-valid-but-degenerate input
@@ -2505,4 +2575,7 @@ def optimize_inventory(
             "Optimizer busy (too many concurrent requests); please retry.",
             status_code=503,
         )
-    return ok(opt_svc.serialize_optimization_result(inp, result, stock_rows))
+    return ok({
+        **opt_svc.serialize_optimization_result(inp, result, stock_rows),
+        "needs_stock": needs_stock,
+    })

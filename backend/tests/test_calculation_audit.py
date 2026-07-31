@@ -14,6 +14,7 @@ import pytest
 pytestmark = pytest.mark.offline
 
 from backend.inventory.service import (
+    _Q90_Z,
     _calc_recommended,
     _calc_signal,
     _avg_daily_forecast,
@@ -215,18 +216,22 @@ class TestAvgDailyForecast:
     def test_legacy_points_without_quantiles_fall_back_to_upper(self):
         """Sessions trained before the quantile keys only carry `upper`.
 
-        For those, std per point stays (upper - value) — the old behaviour —
-        so an existing session keeps producing recommendations instead of
-        silently dropping to zero safety stock.
+        Those still produce a sigma — an existing session keeps making
+        recommendations instead of silently dropping to zero safety stock — but
+        it is now a real sigma. `upper` is the TOP of a band, roughly the 90th
+        percentile, so returning the raw spread handed the caller ~1.28 sigma
+        and the caller multiplied by z(service_level) again. A configured 95%
+        service level was being served at about 98%. Dividing by the same z the
+        q90 branch uses makes both branches return the same quantity.
         """
         model_forecasts = {
             "lgb": {"forecast": [
-                {"value": 10, "upper": 12},  # std=2
-                {"value": 20, "upper": 24},  # std=4
+                {"value": 10, "upper": 12},  # spread 2 -> sigma 2/1.2816
+                {"value": 20, "upper": 24},  # spread 4 -> sigma 4/1.2816
             ]}
         }
         avg, std = _avg_daily_forecast(model_forecasts, 2)
-        assert std == 3.0   # (2+4)/2
+        assert std == pytest.approx(3.0 / _Q90_Z, rel=1e-9)   # mean spread / z90
 
     def test_empty_models_returns_zero(self):
         avg, std = _avg_daily_forecast({}, 14)

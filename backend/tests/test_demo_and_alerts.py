@@ -44,7 +44,9 @@ class TestDemoQuickstart:
                       "validation_cfg", "forecast_cfg", "business_cfg"):
             assert cfg[field], f"{field} was not seeded"
         assert cfg["columns_cfg"]["schema_version"] == "canonical_v1"
-        assert cfg["models_cfg"]["selected_models"] == ["lightgbm", "prophet", "croston", "xgboost"]
+        assert cfg["models_cfg"]["selected_models"] == [
+            "global_lgbm", "lightgbm", "prophet", "croston", "xgboost",
+        ]
 
         # A real job is queued
         job = query_one("SELECT * FROM jobs WHERE id = %s AND tenant_id = %s", (job_id, tid))

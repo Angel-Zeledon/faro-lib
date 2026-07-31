@@ -213,7 +213,15 @@ export default function HoyMobile(props: HoyMobileProps) {
             </MobileSection>
           )}
 
-          {urgent.length === 0 && soon.length === 0 && <AllClear stale={semaphoreStale} />}
+          {urgent.length === 0 && soon.length === 0 && (
+            <AllClear
+              stale={semaphoreStale}
+              // Same rule as desktop: 0 alarms over a catalogue nobody counted
+              // is not calm, it is blindness.
+              unmeasured={(kpis?.sin_datos ?? 0) > 0
+                && (kpis?.sin_datos ?? 0) >= (kpis?.total_skus ?? 0)}
+            />
+          )}
 
           {/* Order just generated: on a phone the useful next step is not
               "go to /pedidos", it is forwarding the PO from this very device. */}

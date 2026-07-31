@@ -52,6 +52,20 @@ def solve_slot():
         _solve_gate.release()
 
 
+def skus_missing_stock(forecasts, stock_rows: list[dict]) -> list[str]:
+    """Forecast SKUs with no stock on file — the ones nothing can be decided for.
+
+    How much to buy is a function of how much is left, and how much is left is
+    exactly what nobody told us. There is no honest quantity to compute, so
+    these are named rather than guessed at.
+    """
+    measurable = {
+        r["sku"] for r in stock_rows
+        if r.get("sku") and r.get("current_stock") is not None
+    }
+    return sorted(sku for sku in forecasts if sku not in measurable)
+
+
 def build_optimization_input(
     tenant_id: str,
     session_id: str,
@@ -76,11 +90,26 @@ def build_optimization_input(
     Omit it and the function fetches the snapshot itself, as before.
     """
     forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
-    skus = sorted(forecasts.keys())
 
     if stock_rows is None:
         stock_rows = list_stock(tenant_id)
     warehouses = sorted({r["warehouse"] for r in stock_rows if r.get("warehouse")})
+
+    # A SKU with no stock on file is not optimized at all.
+    #
+    # It used to be: `float(current_stock or 0)` — assume the shelf is empty,
+    # which is the assumption that produces the LARGEST possible order. Measured
+    # on a real session, this endpoint told the buyer to order 130 units of a
+    # SKU the inventory screen was simultaneously refusing to give any signal to
+    # ("SIN_DATOS — agrega stock actual para ver la señal"). Two screens, one
+    # product, opposite advice, and the one with the buy button was the one that
+    # had invented its input.
+    #
+    # There is no honest quantity to compute here: how much to buy is a function
+    # of how much is left, and how much is left is precisely what nobody told
+    # us. So the SKU is left out and named in `needs_stock`, and the screens say
+    # what is missing instead of printing a number about nothing.
+    skus = sorted(set(forecasts) - set(skus_missing_stock(forecasts, stock_rows)))
 
     if not skus or not warehouses:
         return None
@@ -231,10 +260,30 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
     orders = []
     for (sku, w) in sorted(order_totals):
         row = row_by_sku_warehouse.get((sku, w), {})
+        # What the quantity RESTS ON, carried out with it.
+        #
+        # The optimizer has to assume something when a SKU has no stock row, and
+        # `float(current_stock or 0)` assumes zero — which is the assumption that
+        # produces the LARGEST possible order. Measured on a real session: the
+        # inventory screen refused to give SKU A a signal at all ("SIN_DATOS —
+        # agrega stock actual para ver la señal") while this endpoint told the
+        # same buyer to order 130 units of it, with a Convertir-en-OC button
+        # next to the number. Two screens, one SKU, opposite advice, and the one
+        # with the buy button was the one that had invented its input.
+        #
+        # `unit_cost` rides along for the same reason: with no cost on file the
+        # solve runs on _DEFAULT_UNIT_COST = 1.0, so `total_cost` is a number
+        # about nothing. The flags say which, so the screen can be honest
+        # instead of the caller having to infer it from a null.
         orders.append({
             "sku": sku, "warehouse": w, "qty": int(_math.ceil(order_totals[(sku, w)])),
             "unit_cost": row.get("unit_cost"),
             "supplier": row.get("supplier"),
+            # The solve ran on _DEFAULT_UNIT_COST = 1.0 for this line, so its
+            # share of `total_cost` is a number about nothing. Stock is not
+            # flagged here because a SKU with no stock on file never reaches
+            # the solve at all — see skus_missing_stock.
+            "assumed_unit_cost": row.get("unit_cost") is None,
         })
 
     transfers = []

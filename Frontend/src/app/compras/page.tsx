@@ -762,6 +762,16 @@ export default function HoyPage() {
  const { freshness } = useDataFreshness()
  const semaphoreStale = freshness?.semaphore === 'degraded'
 
+ // How much of the catalogue nobody has counted. The semáforo already reports
+ // these as SIN_DATOS per product; up here they were invisible, so a risk count
+ // of 0 over an entirely uncounted catalogue read as "nothing to worry about".
+ const uncounted = briefing?.kpis?.sin_datos ?? 0
+ const nothingCounted = uncounted > 0 && uncounted >= (briefing?.kpis?.total_skus ?? 0)
+ // No unit cost anywhere: the warehouse value is unknown, not zero. Guarded on
+ // the field being present so a briefing from before it existed keeps its old
+ // number rather than silently blanking.
+ const noCostOnFile = briefing?.kpis?.valued_skus === 0 && (briefing?.kpis?.total_skus ?? 0) > 0
+
  // Phone or desktop. Declared with the other hooks so the hook order is stable
  // whichever tree ends up rendering (see the fork below the early returns).
  const isNarrow = useIsNarrow()
@@ -801,7 +811,12 @@ export default function HoyPage() {
  // Generates a fallback narrative from briefing data — no API required
  function buildFallbackNarrative(b: MorningBriefing): MorningNarrative {
   const k = b.kpis
-  const urgency = k.order_now > 0 ? 'critical' : k.order_soon > 0 ? 'warning' : 'ok'
+  // 'ok' renders as "Situación controlada". An uncounted catalogue produces the
+  // same two zeros as a healthy one, so that badge was the calm face of having
+  // measured nothing — it degrades to a warning instead.
+  const allUncounted = (k.sin_datos ?? 0) > 0 && (k.sin_datos ?? 0) >= k.total_skus
+  const urgency = k.order_now > 0 ? 'critical'
+    : (k.order_soon > 0 || allUncounted) ? 'warning' : 'ok'
   const parts: string[] = []
   if (k.order_now > 0) {
    const names = (b.risks ?? []).slice(0, 3).map(r => r.display_name || r.sku).join(', ')
@@ -814,8 +829,20 @@ export default function HoyPage() {
    // five figures, and `/1_000_000` rendered ₡25,430 as "₡0.0M" — the product
    // reporting zero for money the user actually has stuck on a shelf.
    parts.push(`${fmtMoney(k.capital_in_overstock)} ${t('hoy.narrative_capital_tied_overstock')}`)
-  if (k.order_now === 0 && k.order_soon === 0)
-   parts.push(t('hoy.narrative_inventory_under_control'))
+  // "Everything is under control" is the strongest claim on this screen, and
+  // it was made from two counters that are both 0 when nobody has counted
+  // anything. A catalogue with no stock on file is not under control; it is
+  // unmeasured, and saying which one it is costs one sentence.
+  const uncountedHere = k.sin_datos ?? 0
+  if (k.order_now === 0 && k.order_soon === 0) {
+   if (uncountedHere >= k.total_skus && k.total_skus > 0)
+    parts.push(t('hoy.narrative_nothing_counted').replace('{count}', String(uncountedHere)))
+   else if (uncountedHere > 0)
+    parts.push(`${t('hoy.narrative_inventory_under_control')} ${
+     t('hoy.narrative_some_uncounted').replace('{count}', String(uncountedHere))}`)
+   else
+    parts.push(t('hoy.narrative_inventory_under_control'))
+  }
   if (k.avg_accuracy)
    parts.push(`${t('hoy.narrative_forecast_accuracy')}: ${(k.avg_accuracy * 100).toFixed(1)}%.`)
   return { narrative: parts.join(' '), key_points: [], urgency, fallback: true }
@@ -1324,17 +1351,32 @@ export default function HoyPage() {
        {/* KPI row */}
        <div data-tour="hoy.kpis" style={{ display: 'flex', gap: 12, marginBottom: semaphoreStale ? 8 : 28, flexWrap: 'wrap' }}>
         <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
-        <KpiCard label={t('hoy.kpi_risk_today')}        value={String(kpis!.order_now)}         color={kpis!.order_now > 0 ? C.red : C.text} />
-        <KpiCard label={t('hoy.kpi_this_week')}         value={String(kpis!.order_soon)}      color={kpis!.order_soon > 0 ? C.amber : C.text} />
+        <KpiCard label={t('hoy.kpi_risk_today')}        value={nothingCounted ? '—' : String(kpis!.order_now)}   color={kpis!.order_now > 0 ? C.red : C.text} />
+        <KpiCard label={t('hoy.kpi_this_week')}         value={nothingCounted ? '—' : String(kpis!.order_soon)}  color={kpis!.order_soon > 0 ? C.amber : C.text} />
         <KpiCard label={t('hoy.kpi_avg_accuracy')}      value={fmtPct(kpis!.avg_accuracy)}     color={accuracyColor(kpis!.avg_accuracy)}
          help={t('hoy.kpi_avg_accuracy_help')} />
-        <KpiCard label={t('hoy.kpi_inventory_value')}   value={fmtM(kpis!.total_inventory_value)} color={C.text} />
+        {/* "₡0 en bodega" reads as "your stock is worth nothing". With no unit
+            cost on file the honest answer is that we were never told. */}
+        <KpiCard label={t('hoy.kpi_inventory_value')}
+         value={(nothingCounted || noCostOnFile) ? '—' : fmtM(kpis!.total_inventory_value)}
+         color={C.text} />
        </div>
        {/* Every counter above divides by the same stale stock — say so once,
            right under them, instead of letting five confident numbers stand. */}
        {semaphoreStale && (
         <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
          {t('freshness.kpi_caveat')}
+        </div>
+       )}
+       {/* A risk count of 0 over products nobody has counted is not "no risk",
+           it is "no idea" — and ₡0 in the warehouse reads as "you have nothing"
+           when the truth is that nothing was measured. The uncounted share of
+           the catalogue decides how much of this row can be believed. */}
+       {uncounted > 0 && (
+        <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
+         {(nothingCounted ? t('hoy.kpi_nothing_counted') : t('hoy.kpi_partially_counted'))
+           .replace('{count}', String(uncounted))
+           .replace('{total}', String(kpis!.total_skus))}
         </div>
        )}
 
@@ -1428,10 +1470,10 @@ export default function HoyPage() {
         )}
 
         {/* All-rejected empty state */}
-        {cart.length > 0 && cart.every(i => i.status === 'rejected') && <AllClear stale={semaphoreStale} />}
+        {cart.length > 0 && cart.every(i => i.status === 'rejected') && <AllClear stale={semaphoreStale} unmeasured={nothingCounted} />}
 
         {/* No risks / warnings at all */}
-        {cart.length === 0 && <AllClear stale={semaphoreStale} />}
+        {cart.length === 0 && <AllClear stale={semaphoreStale} unmeasured={nothingCounted} />}
 
         {/* Feature 2.5 — suppliers the send path would silently skip. */}
         {relevantContactHealth.length > 0 && (
@@ -1661,7 +1703,33 @@ export default function HoyPage() {
          {t('hoy.optimizer_loading')}
         </p>
        )}
-       {optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0) && (
+       {/* Products the optimizer refused to decide for. Rendered even when there
+          is nothing else to show: "no suggestions" and "no suggestions BECAUSE
+          nobody recorded the stock" look identical on screen, and only one of
+          them is the user's to fix. */}
+      {optimization && (optimization.needs_stock?.length ?? 0) > 0 && (
+       <section style={{
+        marginTop: 32, padding: '12px 14px', borderRadius: 10,
+        border: '1px solid var(--border)', borderLeft: '4px solid #f59e0b',
+       }}>
+        <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+         {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
+        </h3>
+        <p style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.5, marginBottom: 8 }}>
+         {t('hoy.needs_stock_body')}
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text)', marginBottom: 8 }}>
+         {optimization.needs_stock!.slice(0, 12).join(', ')}
+         {optimization.needs_stock!.length > 12 &&
+          ` … +${optimization.needs_stock!.length - 12}`}
+        </p>
+        <Link href="/inventario" style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
+         {t('hoy.needs_stock_cta')}
+        </Link>
+       </section>
+      )}
+
+      {optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0) && (
         <section style={{ marginTop: 32, marginBottom: 28 }}>
          <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
           {t('hoy.optimizer_title')}
