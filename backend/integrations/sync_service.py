@@ -12,7 +12,9 @@ import logging
 
 from backend.db.connection import execute, query, transaction
 from backend.entitlements.service import enforce_limit
+from backend.errors import AppError
 from backend.integrations import registry, store
+from backend.integrations.base import IntegrationSyncError, parse_provider_number
 from backend.inventory import service as inv_svc
 from backend.inventory import warehouse_service as wh_svc
 from backend.db import session_store
@@ -34,6 +36,58 @@ log = logging.getLogger(__name__)
 # resolving "the tenant's first admin user" (which a tenant could rename or
 # delete, and which existing code doesn't do for the equivalent case).
 _SYSTEM_USER_ID = "system"
+
+
+_GATE_ERROR_CODES = frozenset({
+    "training_blocked_data_fatal", "training_blocked_unresolved",
+})
+
+
+def _record_blocked_sync(connection_id: str, tenant_id: str, session_id: str,
+                         error: AppError) -> None:
+    """Put a gate refusal somewhere the tenant can act on it.
+
+    The outer `except` already writes `str(e)` into `last_error`; that is one
+    English sentence and the screen can do nothing with it but print it. This
+    adds what the screen needs to be useful: which findings blocked the run,
+    whether any of them can be answered at all, and — when they can — the exact
+    options that were on offer, so the user is sent to the decision instead of
+    to a support ticket.
+
+    Deliberately never raises: this is the reporting path for a failure, and a
+    failure inside it must not replace the real reason with its own.
+    """
+    if error.code not in _GATE_ERROR_CODES:
+        return
+    details = {
+        "session_id": session_id,
+        "issues": [i.strip() for i in
+                   str((error.params or {}).get("issues", "")).split(",") if i.strip()],
+        "remediable": error.code == "training_blocked_unresolved",
+        "options": {},
+    }
+    try:
+        from backend.sessions import data_gate as gate_svc
+        data_quality = gate_svc.evaluate(tenant_id, session_id) or {}
+        details["options"] = {
+            issue["type"]: [o["code"] for o in issue.get("remediations", [])]
+            for issue in data_quality.get("issues", [])
+            if issue.get("classification") == "blocking_fixable"
+        }
+    except Exception as exc:      # pragma: no cover - reporting must not mask
+        log.warning("[sync] could not attach gate options to connection=%s: %s",
+                    connection_id, exc)
+    try:
+        store.mark_synced(connection_id, error=error.message,
+                          error_code=error.code, error_details=details)
+    except Exception as exc:      # pragma: no cover
+        log.warning("[sync] could not record gate refusal on connection=%s: %s",
+                    connection_id, exc)
+    log.error(
+        "[sync] tenant=%s connection=%s BLOCKED by the data gate (%s): %s. "
+        "The forecast will stay at its last successful run until this is answered.",
+        tenant_id, connection_id, error.code, details["issues"],
+    )
 
 
 def sync_connection(connection_id: str) -> dict:
@@ -113,7 +167,24 @@ def sync_connection(connection_id: str) -> dict:
         # maps it, so training groups per (sku, store) — see runner.py's
         # group_keys assembly. Store-less providers keep today's exact output.
         has_store = any(line.store is not None for line in sales)
-        csv_bytes = _build_sales_csv(sales, with_store=has_store, resolve_store=_canonical)
+        unreadable: list[dict] = []
+        csv_bytes = _build_sales_csv(sales, with_store=has_store,
+                                     resolve_store=_canonical, unreadable=unreadable)
+        # Every line unreadable means the provider changed how it reports
+        # quantities. Training on the empty CSV that produces would replace a
+        # working forecast with nothing and still report the sync as a success,
+        # so this fails loudly and the connection carries the reason.
+        if sales and len(unreadable) == len(sales):
+            raise IntegrationSyncError(
+                f"None of the {len(sales)} sale line(s) had a readable quantity "
+                f"(first: {unreadable[0]['value']!r}). Nothing was imported."
+            )
+        if unreadable:
+            log.warning(
+                "[sync] tenant=%s connection=%s skipped %d of %d sale line(s) with "
+                "an unreadable quantity, e.g. %s",
+                tenant_id, connection_id, len(unreadable), len(sales), unreadable[:3],
+            )
         dst_dir = paths.dataset_dir(tenant_id, dataset_id)
         dst_dir.mkdir(parents=True, exist_ok=True)
         file_path = dst_dir / "data.csv"
@@ -166,7 +237,19 @@ def sync_connection(connection_id: str) -> dict:
         session_svc.force_status(tenant_id, session_id, "MODELS_CONFIGURED")
 
         from backend.sessions import family_service as fam
-        family = fam.launch_training_family(tenant_id, session_id, _SYSTEM_USER_ID)
+        try:
+            family = fam.launch_training_family(tenant_id, session_id, _SYSTEM_USER_ID)
+        except AppError as gate_error:
+            # The pre-training gate holds ERP data to the same standard as an
+            # upload, which is the point. But the upload screen has a human in
+            # front of it who can choose a remediation, and this runs at 3 a.m.
+            # with nobody watching: left as a bare re-raise, a tenant whose ERP
+            # started reporting one row per invoice would see a red dot, keep
+            # yesterday's forecast forever, and never be told which decision was
+            # waiting. So the verdict — and the options that were on offer —
+            # travel to the connection row for the integrations screen to show.
+            _record_blocked_sync(connection_id, tenant_id, session_id, gate_error)
+            raise
         job_id = family["base_job_id"]
 
         store.mark_synced(connection_id)
@@ -180,7 +263,19 @@ def sync_connection(connection_id: str) -> dict:
             "job_id": job_id,
             "dataset_id": dataset_id,
             "stock_synced": list(merged.keys()),
+            # Reaches the "sync now" caller so a partial import is visible
+            # instead of being a number that quietly came out low.
+            "skipped_sale_lines": len(unreadable),
         }
+    except AppError as e:
+        if e.code in _GATE_ERROR_CODES:
+            # `_record_blocked_sync` already wrote the row, with the structured
+            # detail this handler cannot reconstruct. Re-recording here would
+            # overwrite `last_error_code`/`last_error_details` with NULL and
+            # leave the screen holding the same English sentence it had before.
+            raise
+        store.mark_synced(connection_id, error=str(e))
+        raise
     except Exception as e:
         store.mark_synced(connection_id, error=str(e))
         raise
@@ -195,11 +290,19 @@ def _merge_products_and_stock(products, stock) -> dict[str, dict]:
     for p in products:
         fields = merged.setdefault(p.sku, {})
         fields["display_name"] = p.name
-        if p.unit_cost is not None:
-            fields["unit_cost"] = p.unit_cost
+        # Same boundary, same rule as the sale quantities: an ERP that reports
+        # its cost as "1.234,56" would otherwise reach the DB as text. A cost
+        # that cannot be read is left unset — `upsert_stock` keeps whatever the
+        # tenant already had, which beats overwriting a real cost with a zero
+        # and quietly reporting every margin on this SKU as pure profit.
+        unit_cost = parse_provider_number(p.unit_cost)
+        if unit_cost is not None:
+            fields["unit_cost"] = unit_cost
     for s in stock:
         fields = merged.setdefault(s.sku, {})
-        fields["current_stock"] = s.quantity
+        quantity = parse_provider_number(s.quantity)
+        if quantity is not None:
+            fields["current_stock"] = quantity
         fields["warehouse"] = s.warehouse
     from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
     for fields in merged.values():
@@ -207,7 +310,8 @@ def _merge_products_and_stock(products, stock) -> dict[str, dict]:
     return merged
 
 
-def _build_sales_csv(sales, with_store: bool = False, resolve_store=None) -> bytes:
+def _build_sales_csv(sales, with_store: bool = False, resolve_store=None,
+                     unreadable: "list | None" = None) -> bytes:
     """Aggregate ProviderSaleLine rows to (date, sku) -> summed quantity and
     write the canonical CSV header the wizard/demo default config expects:
     `default_quickstart_configs()["columns_cfg"]["canonical_mapping"]` maps
@@ -225,15 +329,29 @@ def _build_sales_csv(sales, with_store: bool = False, resolve_store=None) -> byt
     written to the dataset use the tenant's canonical warehouse spellings
     ('norte' -> existing 'Norte'). Defaults to the plain
     'raw or DEFAULT_WAREHOUSE' fallback.
+
+    `unreadable`: optional list the caller passes in to receive one
+    `{sku, date, value}` entry per sale line whose quantity could not be read as
+    a number (see `parse_provider_number`). Those lines are left OUT of the
+    totals rather than counted as zero — a line nobody could read is not a day
+    with no sales, and writing a zero would teach the model a stockout that
+    never happened. The caller decides what to do with the list; dropping it on
+    the floor here is what would make this silent.
     """
     from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
     if resolve_store is None:
         resolve_store = lambda raw: raw or DEFAULT_WAREHOUSE  # noqa: E731
     totals: dict[tuple, float] = {}
     for line in sales:
+        quantity = parse_provider_number(line.quantity)
+        if quantity is None:
+            if unreadable is not None:
+                unreadable.append({"sku": line.sku, "date": line.date.isoformat(),
+                                   "value": str(line.quantity)[:32]})
+            continue
         key = ((line.date, line.sku, resolve_store(line.store))
                if with_store else (line.date, line.sku))
-        totals[key] = totals.get(key, 0.0) + line.quantity
+        totals[key] = totals.get(key, 0.0) + quantity
 
     buf = io.StringIO()
     writer = csv.writer(buf)
