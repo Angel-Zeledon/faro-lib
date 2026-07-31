@@ -47,6 +47,18 @@ function localeFor(lang: string): string {
  return lang === 'en' ? 'en-US' : 'es-CR'
 }
 
+// A calendar date, read as the day it says.
+//
+// `new Date("2026-11-25")` is parsed as midnight UTC by the language spec, so
+// `toLocaleDateString` in any negative-offset zone renders the day BEFORE.
+// Every country this product sells to is negative-offset: measured in the
+// browser, a Black Friday saved for 25–30 Nov was listed as "24 nov → 29 nov".
+// Anchoring at noon puts the instant far enough from both midnights that no
+// real-world offset can move the date.
+function dayOf(iso: string): Date {
+ return new Date(`${iso}T12:00:00`)
+}
+
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
@@ -1075,8 +1087,8 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', multiplier: '1.5', notes: '' })
 
  const visible = events.filter(e => e.active !== false)
- const upcoming = visible.filter(e => new Date(e.end_date) >= new Date())
- const past = visible.filter(e => new Date(e.end_date) < new Date())
+ const upcoming = visible.filter(e => dayOf(e.end_date) >= new Date())
+ const past = visible.filter(e => dayOf(e.end_date) < new Date())
 
  function handleAdd() {
  if (!form.name || !form.start_date || !form.end_date) return
@@ -1090,7 +1102,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  const TODAY_LABEL = t('inventory.day_today')
  const TOMORROW_LABEL = t('inventory.day_tomorrow')
  const daysUntil = (date: string) => {
- const d = Math.round((new Date(date).getTime() - Date.now()) / 86400000)
+ const d = Math.round((dayOf(date).getTime() - Date.now()) / 86400000)
  if (d < 0) return null
  if (d === 0) return TODAY_LABEL
  if (d === 1) return TOMORROW_LABEL
@@ -1127,8 +1139,8 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  <div style={{ flex: 1, minWidth: 0 }}>
  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ev.name}</div>
  <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>
- {new Date(ev.start_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}
- {ev.end_date !== ev.start_date && ` → ${new Date(ev.end_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}`}
+ {dayOf(ev.start_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}
+ {ev.end_date !== ev.start_date && ` → ${dayOf(ev.end_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}`}
  {until && <span style={{ marginLeft: 8, color: isClose ? C.amber : C.dim }}>({until})</span>}
  </div>
  </div>
@@ -1732,8 +1744,8 @@ export default function InventoryPage() {
  // Upcoming events within 30 days
  const upcomingAlerts = useMemo(() => events.filter(e => {
  if (e.active === false) return false   // un event apagado no debe alertar
- const d = Math.round((new Date(e.start_date).getTime() - Date.now()) / 86400000)
- return d >= 0 && d <= 30 && new Date(e.end_date) >= new Date()
+ const d = Math.round((dayOf(e.start_date).getTime() - Date.now()) / 86400000)
+ return d >= 0 && d <= 30 && dayOf(e.end_date) >= new Date()
  }), [events])
 
  function startEdit(item: InventoryStatusItem) { setEditId(item.sku); setEditState(rowToEdit(item)) }
@@ -1954,7 +1966,7 @@ export default function InventoryPage() {
  <div style={{ flex: 1, fontSize: 12 }}>
  <span style={{ fontWeight: 600, color: C.amber }}>{t('inventory.upcoming_events_prefix')}</span>
  {upcomingAlerts.map(ev => {
- const d = Math.round((new Date(ev.start_date).getTime() - Date.now()) / 86400000)
+ const d = Math.round((dayOf(ev.start_date).getTime() - Date.now()) / 86400000)
  // Clickable: the multiplier must not stay a bare number — opening the
  // simulator shows where it comes from and lets you tune it per product.
  return (

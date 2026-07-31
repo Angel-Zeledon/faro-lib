@@ -92,6 +92,12 @@ function fieldErrorText(
   const ruleKey = `errors.validation.${fe.type}`
   if (!(ruleKey in translations.es)) return fe.field ? `${fe.field}: ${fe.msg}` : fe.msg
 
+  // A `model_validator` failure is about the request as a whole, so Pydantic
+  // reports it on loc ["body"] and there is no field to name. Left in, it read
+  // as "body: no es válido." on screen — measured when saving an event whose
+  // end date preceded its start. The rule sentence has to stand alone.
+  if (fe.field === 'body' || !fe.field) return t(ruleKey, fe.ctx)
+
   const fieldKey = `errors.field.${fe.field}`
   const named = fe.field ? fieldKey in translations.es : false
   const fieldName = named ? t(fieldKey) : fe.field

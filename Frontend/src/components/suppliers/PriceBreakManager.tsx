@@ -51,9 +51,23 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
 
   const minQtyNum = Number(minQty)
   const unitPriceNum = Number(unitPrice)
+  // `> 0` on the price, not `>= 0`: the API rejects 0 with a 422, so allowing
+  // it here only bought a round-trip and an error the user could have been
+  // spared. The two bounds now say the same thing.
   const canAdd = sku.trim().length > 0
     && minQty.trim().length > 0 && Number.isFinite(minQtyNum) && minQtyNum > 0
-    && unitPrice.trim().length > 0 && Number.isFinite(unitPriceNum) && unitPriceNum >= 0
+    && unitPrice.trim().length > 0 && Number.isFinite(unitPriceNum) && unitPriceNum > 0
+
+  // Why the button is dim, said next to the button. Typing -50 greyed it out
+  // and volunteered nothing, which reads as "the app is broken" rather than
+  // "that number cannot be right". Only shown once the user has actually typed
+  // something wrong — an empty form is not a mistake yet.
+  const blockedReason =
+    (minQty.trim().length > 0 && (!Number.isFinite(minQtyNum) || minQtyNum <= 0))
+      ? t('suppliers.pb_min_qty_positive')
+      : (unitPrice.trim().length > 0 && (!Number.isFinite(unitPriceNum) || unitPriceNum <= 0))
+        ? t('suppliers.pb_price_positive')
+        : null
 
   async function handleAdd() {
     if (!canAdd) return
@@ -113,6 +127,10 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
       </p>
 
       {error && <InlineError error={new Error(error)} onDismiss={() => setError(null)} />}
+
+      {blockedReason && (
+        <p style={{ margin: 0, fontSize: 11, color: '#f59e0b' }}>{blockedReason}</p>
+      )}
 
       {loading ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>

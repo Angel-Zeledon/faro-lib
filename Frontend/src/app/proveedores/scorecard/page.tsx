@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { getSupplierScorecard, getSupplierLeadTimeAlerts } from '@/lib/api'
-import type { SupplierScorecardRow, SupplierLeadTimeAlert } from '@/lib/types'
+import { getSupplierScorecard, getSupplierLeadTimeAlerts, getPOHistory } from '@/lib/api'
+import type {
+  SupplierScorecardRow, SupplierLeadTimeAlert, POLogEntry,
+} from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import Card from '@/components/ui/Card'
 import Table, { Th, Td } from '@/components/ui/Table'
@@ -114,18 +116,28 @@ export default function SupplierScorecardPage() {
   const [alerts,  setAlerts]  = useState<SupplierLeadTimeAlert[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+  // Whether any purchase order has been received at all — see the load below.
+  const [hasReceptions, setHasReceptions] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [scorecard, deviations] = await Promise.all([
+      const [scorecard, deviations, poHistory] = await Promise.all([
         getSupplierScorecard(),
         // A failed deviation fetch must not blank the scorecard — the table
         // is still useful without the trend column.
         getSupplierLeadTimeAlerts().catch(() => [] as SupplierLeadTimeAlert[]),
+        // Only to tell two very different empty states apart. A scorecard is
+        // per SUPPLIER, so an order received with no supplier on its lines
+        // scores nobody and the table is legitimately empty — but the copy
+        // said "aún no hay recepciones registradas" to a user who had just
+        // registered one. Someone who believes their reception did not save
+        // registers it again, and the stock is counted twice.
+        getPOHistory(50).catch(() => [] as POLogEntry[]),
       ])
       setRows(scorecard)
       setAlerts(deviations)
+      setHasReceptions(poHistory.some(p => p.received_at))
     }
     catch (e: unknown) { setError(e instanceof Error ? e.message : t('scorecard.error_loading')) }
     finally { setLoading(false) }
@@ -219,10 +231,10 @@ export default function SupplierScorecardPage() {
         <Card tone="inset" radius={12} padding="40px 24px" style={{ textAlign: 'center' }}>
           <Truck size={32} color={C.dim} style={{ margin: '0 auto 12px', opacity: 0.4 }} aria-hidden="true" />
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
-            {t('scorecard.empty_title')}
+            {t(hasReceptions ? 'scorecard.empty_no_supplier_title' : 'scorecard.empty_title')}
           </div>
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
-            {t('scorecard.empty_body')}
+            {t(hasReceptions ? 'scorecard.empty_no_supplier_body' : 'scorecard.empty_body')}
           </div>
           <Link href="/proveedores" style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,

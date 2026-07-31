@@ -177,9 +177,17 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
               const key = `runcorr.${c.action}`
               const text = t(key, c as unknown as Record<string, unknown>)
               const usable = text !== key && !/\{[a-z_]+\}/i.test(text)
+              const line = usable ? text : c.description
+              // Both unusable means we have nothing to say about a change we
+              // made to the user's data. An empty bullet is the worst of the
+              // three options: it claims something happened and then refuses to
+              // say what — and that is exactly how the censored-demand notice
+              // shipped, silently blank, while the engine rewrote sales figures.
+              // Rendering nothing at least does not pretend.
+              if (!line) return null
               return (
                 <li key={i} style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.55 }}>
-                  {usable ? text : c.description}
+                  {line}
                 </li>
               )
             })}

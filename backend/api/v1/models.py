@@ -6,6 +6,13 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 _MODELS = [
     {
+        "name":        "global_lgbm",
+        "category":    "Global",
+        "status":      "available",
+        "description": "Cross-learning model — one fit across the whole catalogue, "
+                       "so short and new SKUs borrow the seasonality of the rest",
+    },
+    {
         "name":        "lightgbm",
         "category":    "ML",
         "status":      "available",
@@ -28,6 +35,13 @@ _MODELS = [
         "category":    "Statistical",
         "status":      "available",
         "description": "ARIMA — classical statistical model for stationary series",
+    },
+    {
+        "name":        "sarimax",
+        "category":    "Statistical",
+        "status":      "available",
+        "description": "SARIMAX — seasonal ARIMA that can also read external "
+                       "drivers such as price or promotions",
     },
     {
         "name":        "ets",

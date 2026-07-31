@@ -62,10 +62,50 @@ export interface ProfileColumn {
   sample:    unknown[]
 }
 
+/** One way out of a blocking-but-fixable finding, with what it costs.
+ *
+ * The cost is the whole point: "fill the gaps with zero" and "interpolate the
+ * gaps" are not two flavours of one button, they are two different claims about
+ * what happened, and only the user knows which is true. `action` and
+ * `consequence` arrive in English from the engine and are the fallback; the
+ * Spanish comes from `gateopt.<code>.*` in translations.ts, per CLAUDE.md. */
+export interface RemediationOption {
+  code:        string
+  action:      string
+  consequence: string
+  params:      Record<string, unknown>
+  recommended: boolean
+  applied_by:  string
+}
+
 export interface DataQualityIssue {
   type:     string
   severity: 'error' | 'warning' | 'info'
   message:  string
+  // Set only by issues that make a forecast impossible, not merely worse.
+  // Severity cannot carry this: `all_zeros` and the granularity conflict are
+  // already 'error' and the user may still continue past them.
+  blocking?: boolean
+  // Which of the gate's three outcomes this is. Absent on issues produced
+  // before the gate existed, which the UI treats as advisory.
+  classification?: 'blocking_fatal' | 'blocking_fixable' | 'advisory'
+  // False for something we can see, cannot fix, and must still say out loud.
+  remediable?:    boolean
+  params?:        Record<string, unknown>
+  remediations?:  RemediationOption[]
+  [key: string]: unknown
+}
+
+/** `GET /sessions/{id}/data-gate` — the same computation `POST /train` enforces. */
+export interface DataGate {
+  issues:              DataQualityIssue[]
+  blocking_fatal?:     string[]
+  blocking_fixable?:   string[]
+  advisory?:           string[]
+  // {issue_type: option_code} already recorded for this session.
+  chosen_remediations: Record<string, string>
+  // Fixable findings with no answer yet. Training stays blocked while non-empty.
+  unresolved:          string[]
   [key: string]: unknown
 }
 
@@ -86,6 +126,9 @@ export interface OutlierInfo {
 export interface DataQuality {
   issues:          DataQualityIssue[]
   gap_fill_needed: boolean
+  // True when at least one issue is blocking — training this file cannot
+  // produce a forecast.
+  blocking?:       boolean
   outliers?:       OutlierInfo
 }
 
@@ -299,8 +342,103 @@ export interface MetricRow {
   bias:       number | null
   mape:       number | null
   smape:      number | null
+  // Asymmetric per-unit error: a unit short is charged more than a unit spare.
+  // This — not WAPE — is what the engine ranks each SKU's models by, so any
+  // screen naming "the model used" has to rank by the same thing.
+  cost:       number | null
+  // The same asymmetric cost measured over the FULL h-step forecast, which is
+  // the only version comparable across model families. The engine and the
+  // backend both prefer it; a screen that stops at `cost` will name a different
+  // model than the one the purchase order came from.
+  cost_horizon: number | null
   n_folds:    number | null
   validation: string | null
+}
+
+// ── Policy backtest ───────────────────────────────────────────────────────────
+//
+// What the buyer would have LIVED THROUGH, not how close the curve was. The
+// engine replays the ordering policy over demand that actually happened, twice:
+// once driven by the model's forecast and once by "repeat the last value" — the
+// policy a distributor runs without the product. Every `baseline_` field is the
+// second run, so the pair is the only meaningful reading; either number alone is
+// an absolute floating free of any reference.
+//
+// See ForecastingCore/forecasting_core/business/policy_backtest.py.
+
+/** One run of the simulation over one series. */
+export interface PolicyOutcome {
+  n_buckets:        number
+  total_demand:     number
+  units_short:      number
+  units_ordered:    number
+  stockout_buckets: number
+  fill_rate:        number
+  stockout_rate:    number
+  avg_inventory:    number
+  peak_inventory:   number
+  days_of_cover:    number
+  /** null when the session has no unit cost to value the stock with. */
+  capital_tied_up:  number | null
+}
+
+export interface PolicySkuComparison {
+  model:             string
+  policy:            PolicyOutcome
+  baseline:          PolicyOutcome
+  fill_rate_gain:    number
+  stockouts_avoided: number
+  inventory_delta:   number
+  capital_freed:     number | null
+}
+
+export interface PolicyBacktestSummary {
+  /** How many series the simulation actually covers — usually FEWER than the
+   *  catalogue, since only series whose model ran a rolling-origin backtest
+   *  have both a past forecast and the actuals that followed it. Never render
+   *  these figures without it. */
+  n_series:                  number
+  fill_rate:                 number
+  baseline_fill_rate:        number
+  stockout_buckets:          number
+  baseline_stockout_buckets: number
+  stockouts_avoided:         number
+  avg_inventory:             number
+  baseline_avg_inventory:    number
+  capital_tied_up:           number | null
+  baseline_capital_tied_up:  number | null
+}
+
+/** `{}` for runs whose models produced no rolling-origin backtest, and for
+ *  every session trained before the engine computed this. Absent, not zero. */
+export interface PolicyBacktest {
+  summary?: PolicyBacktestSummary
+  by_sku?:  Record<string, PolicySkuComparison>
+}
+
+/** Measured uncertainty of CUMULATIVE demand over a lead time: add
+ *  `cumulative_offsets[L][q]` to the summed point forecast over L buckets to get
+ *  that quantile of total lead-time demand. Present only for SKUs whose champion
+ *  model ran a rolling-origin backtest. */
+export interface DemandRiskEntry {
+  model:              string
+  quantiles:          number[]
+  cumulative_offsets: Record<string, Record<string, number>>
+}
+
+/** GET /sessions/{id}/results — the whole stored training result. Every field is
+ *  optional because sessions trained before a field existed simply lack it. */
+export interface TrainingResults {
+  job_id?:          string
+  run_id?:          string
+  completed_at?:    string
+  metrics?:         MetricsResponse
+  inventory?:       InventoryResponse
+  demand_risk?:     Record<string, DemandRiskEntry>
+  policy_backtest?: PolicyBacktest
+  routing?:         RoutingPlan
+  data_quality?:    Record<string, unknown>
+  warnings?:        RunWarnings
 }
 
 export interface MetricsResponse {
@@ -1003,6 +1141,10 @@ export interface OptimizationOrder {
   qty:             number
   unit_cost:  number | null
   supplier:       string | null
+  // The solve ran on a placeholder cost for this line, so its share of
+  // `total_cost` means nothing. Optional: a response from before this existed
+  // has no flag. See backend/inventory/optimizer_service.py.
+  assumed_unit_cost?:  boolean
 }
 
 export interface OptimizationTransfer {
@@ -1018,6 +1160,10 @@ export interface OptimizationResponse {
   horizon_days:  number
   orders:        OptimizationOrder[]
   transfers:     OptimizationTransfer[]
+  // SKUs left out of the optimization because nobody has told us what is on the
+  // shelf. How much to buy depends on how much is left, so there is no honest
+  // quantity to show — the screen names them instead of printing a number.
+  needs_stock?:  string[]
 }
 
 export type CoverageUnit = 'day' | 'week' | 'month'
@@ -1465,6 +1611,10 @@ export interface MorningBriefingKPIs {
   sin_datos:             number
   avg_accuracy:          number | null
   total_inventory_value: number
+  // How many products that value could be computed from. 0 means nobody
+  // recorded a unit cost, so the total is not "₡0 of stock" — it is unknown.
+  // Optional: a briefing from before this existed does not carry it.
+  valued_skus?:          number
   capital_in_overstock:  number
   demand_alerts:         number
   demand_spikes?:        number

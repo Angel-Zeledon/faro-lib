@@ -16,6 +16,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -154,6 +155,65 @@ async def app_error_handler(request: Request, exc: AppError):
             "detail": exc.message,
             "error_code": exc.code,
             "error_params": exc.params,
+        },
+    )
+
+
+def _json_safe(value):
+    """Make a validation-error payload serialisable.
+
+    FastAPI echoes the offending input back inside its 422 body. When that
+    input is a bare `NaN` or `Infinity` — which `json.dumps` emits by default,
+    so any Python client sends them without trying — Starlette's JSONResponse
+    refuses it (`allow_nan=False`) and the 422 turns into an unhandled 500 with
+    an empty body. The user is then told the SERVER broke on a request that was
+    simply invalid, and CLAUDE.md's own troubleshooting note sends whoever
+    debugs it looking at the frontend proxy instead.
+    """
+    import math as _math
+
+    if isinstance(value, float) and not _math.isfinite(value):
+        return str(value)          # "nan" / "inf" — readable, and serialisable
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    if isinstance(value, float):
+        return value
+    return str(value)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _json_safe(exc.errors()), "error_code": "validation_error"},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    """Last resort: an unexpected failure must still answer in the API's shape.
+
+    Without this every unhandled exception answered `text/plain` /
+    "Internal Server Error" — no envelope, no code, nothing the frontend could
+    localize, and indistinguishable from the proxy-cannot-reach-the-backend
+    symptom the team is trained to look for first. A NUL byte in a path segment
+    (`/sessions/%00x/results`) was enough to trigger it on every session route,
+    because psycopg2 rejects NUL in a bind parameter.
+
+    The exception itself is logged with its traceback; the client gets a stable
+    code and nothing about the internals.
+    """
+    log.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected error occurred.",
+            "error_code": "internal_error",
+            "error_params": {},
         },
     )
 

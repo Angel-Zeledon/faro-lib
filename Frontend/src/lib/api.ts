@@ -1,7 +1,7 @@
 import type {
   SessionInfo, DatasetMeta, DataProfile, ColumnOptions, InspectionResult,
   QualityReport, RunWarnings, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
-  JobResponse, MetricsResponse, InventoryResponse, RoutingPlan,
+  JobResponse, MetricsResponse, InventoryResponse, RoutingPlan, TrainingResults,
   ForecastSeries, DataHealthReport,
   Chat, ChatMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
@@ -445,6 +445,20 @@ export const chooseColumnsCanonical = (id: string, body: CanonicalColumnsBody) =
 export const setFeatures = (id: string, body: Record<string, unknown>) =>
   request<{ ok: boolean }>('POST', `/sessions/${id}/configure/features`, body)
 
+// ── Pre-training data gate ────────────────────────────────────────────────────
+// What is wrong with this file and what the user may do about it. Evaluated
+// against the CONFIRMED mapping, so this is the same verdict `POST /train`
+// enforces — asking here and being refused there would be the worst of both.
+export const getDataGate = (id: string, opts?: { silent?: boolean }) =>
+  request<import('./types').DataGate>('GET', `/sessions/${id}/data-gate`, undefined, opts)
+
+// {issue_type: option_code}. Validated against the live gate, so a stale choice
+// for a finding this file no longer has is rejected rather than stored.
+export const setRemediations = (id: string, remediations: Record<string, string>) =>
+  request<{ remediations: Record<string, string> }>(
+    'POST', `/sessions/${id}/configure/remediations`, { remediations },
+  )
+
 export const setModels = (
   id: string,
   selected_models: string[],
@@ -517,6 +531,17 @@ export const getMetrics = (id: string) =>
 
 export const getInventory = (id: string) =>
   request<InventoryResponse>('GET', `/sessions/${id}/inventory`)
+
+/**
+ * The whole stored training result in one call.
+ *
+ * `/metrics` and `/inventory` are slices of exactly this payload, so a screen
+ * that needs a third slice (the policy backtest, the demand-risk bands) is
+ * better off asking once than asking three times and downloading the metric
+ * rows twice.
+ */
+export const getTrainingResults = (id: string) =>
+  request<TrainingResults>('GET', `/sessions/${id}/results`)
 
 // ── AI Analyst ────────────────────────────────────────────────────────────────
 export const analystQuery = (
@@ -1307,9 +1332,16 @@ export const optimizeInventory = (sessionId: string, horizonDays = 30) =>
   )
 
 // ── AI Narrative Intelligence ─────────────────────────────────────────────────
+// `silent: true` — the caller already renders a rules-based summary when this
+// fails or takes too long, and it says so on screen ("Análisis basado en
+// reglas"). The global toast has no way to know that, so it was raising "Algo
+// falló de nuestro lado" over a panel that had already recovered — and, because
+// the request outlived the navigation, sometimes on a completely different
+// page. A degraded AI summary is not an error the buyer needs to act on.
 export const getMorningNarrative = (sessionId: string, profile = 'distributor') =>
   request<import('./types').MorningNarrative>(
-    'POST', '/ai/narrative/morning', { session_id: sessionId, profile }
+    'POST', '/ai/narrative/morning', { session_id: sessionId, profile },
+    { silent: true },
   )
 
 

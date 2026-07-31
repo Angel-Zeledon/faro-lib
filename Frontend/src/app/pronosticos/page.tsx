@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import {
-  getSessions, getMetrics, getInventory, getQuality,
+  getSessions, getMetrics, getTrainingResults, getQuality,
   getSkuIntelligence, getInventoryStatus, getSkuDecomposition, ApiError,
 } from '@/lib/api'
 import type {
@@ -10,6 +10,7 @@ import type {
   SkuIntelligenceData, ForecastPoint, InventorySignal,
   InventoryStatusItem, CoverageUnit,
   DecompositionData, DecompositionPoint,
+  PolicyBacktest, PolicySkuComparison, DemandRiskEntry, TrainingResults,
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Badge from '@/components/ui/Badge'
@@ -25,13 +26,13 @@ import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { granularityLabel, seriesTypeLabel } from '@/lib/enumLabels'
 import { coverageUnitShort } from '@/lib/period'
-import { formatMoney } from '@/lib/currency'
+import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import {
   Search, Package, ChevronDown, RefreshCw,
   AlertTriangle, CheckCircle2, TrendingUp, BarChart2,
   LineChart as LineChartIcon, Eye, EyeOff, Download,
   GitCompare, TableProperties, Grid3x3, FileSpreadsheet, Loader2,
-  Maximize2, X,
+  Maximize2, X, Scale,
 } from 'lucide-react'
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false })
@@ -59,6 +60,15 @@ const ACTION_SIGNAL: Record<string, InventorySignal> = {
 // Stable identity, so a SKU with no metric rows does not hand SkuCard a fresh
 // array on every render.
 const EMPTY_METRICS: MetricRow[] = []
+
+// The value the champion is actually chosen by — a unit short costs more than a
+// unit spare, so the cheapest model is not always the most accurate one. Walks
+// the same order as the engine's CHAMPION_METRIC_ORDER and the backend's
+// _CHAMPION_METRICS; WAPE is the fallback for sessions trained before `cost`
+// existed. One definition, because those two already drifted apart once and
+// disagreed on 8 of 13 SKUs, and this screen is the third copy of the question.
+const championRank = (r: MetricRow): number | null | undefined =>
+  r.cost_horizon ?? r.cost ?? r.wape
 
 const GRANULARITY_LABELS: Record<string, string> = {
   daily:     'D',
@@ -135,7 +145,10 @@ function tOr(t: Translate, key: string, fallback: string, params?: Record<string
 // This array is the mapping. A model's POSITION here is the number the user
 // sees, so entries must only ever be appended — reordering or removing one
 // silently renumbers models the user has already learned.
-const MODEL_ORDER = ['lightgbm', 'xgboost', 'prophet', 'arima', 'ets', 'croston', 'sarimax', 'lstm']
+// `global_lgbm` is appended, never inserted: it is a candidate like the rest —
+// it competes on the same table and can win a SKU — so it gets a number, and
+// appending is what keeps every number the user has already learned intact.
+const MODEL_ORDER = ['lightgbm', 'xgboost', 'prophet', 'arima', 'ets', 'croston', 'sarimax', 'lstm', 'global_lgbm']
 
 // Baselines are not one of the candidates: they are the "what if we didn't
 // forecast at all" yardstick every trained model has to beat. Giving them a
@@ -207,8 +220,11 @@ function downloadCSV(filename: string, headers: string[], rows: (string | number
 function exportMetricsCSV(t: Translate, sku: string, rows: MetricRow[]) {
   downloadCSV(
     `metrics_${sku}.csv`,
-    ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
-    rows.map(r => [modelLabel(t, r.model), r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
+    // `cost` is the column the champion was chosen by; a sheet without it
+    // cannot explain why the winning row is not the one with the lowest WAPE.
+    ['model', 'type', 'cost', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
+    rows.map(r => [modelLabel(t, r.model), r.type, r.cost_horizon ?? r.cost ?? null,
+                   r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
   )
 }
 
@@ -250,8 +266,9 @@ function exportMetricsExcel(t: Translate, sku: string, rows: MetricRow[]) {
   downloadWorkbook(`metrics_${sku}.xlsx`, [{
     name: 'Metrics',
     rows: [
-      ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
-      ...rows.map(r => [modelLabel(t, r.model), r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
+      ['model', 'type', 'cost', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
+      ...rows.map(r => [modelLabel(t, r.model), r.type, r.cost_horizon ?? r.cost ?? null,
+                        r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null]),
     ],
   }])
 }
@@ -498,9 +515,16 @@ function ChipGroup<T extends string>({ options, value, onChange, label, tourAnch
 function StatsStrip({ data }: { data: SkuIntelligenceData }) {
   const { t } = useLanguage()
   const { stats, metrics, historical, forecast } = data
-  const bestMetric = metrics.reduce<MetricRow | null>((b, r) =>
-    r.wape !== null && (b === null || (b.wape !== null && r.wape < b.wape)) ? r : b
-  , null)
+  // The model this SKU's orders are actually computed from — see championRank.
+  // Baselines are excluded for the same reason the engine excludes them: they
+  // are the bar to clear, not a model anyone buys from.
+  const rank = championRank
+  const bestMetric = metrics.filter(r => r.type !== 'baseline').reduce<MetricRow | null>((b, r) => {
+    const value = rank(r)
+    if (value === null || value === undefined) return b
+    const current = b === null ? null : rank(b)
+    return current === null || current === undefined || value < current ? r : b
+  }, null)
 
   const items = [
     { label: t('skus.stat_avg_sales'), value: fmtK(stats?.mean) },
@@ -1165,19 +1189,21 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       if (data.metrics.length > 0) {
         doc.setFontSize(10); doc.setTextColor(129, 140, 248)
         doc.text(t('skus.pdf_model_performance'), margin, y); y += 5
-        const cols = [t('skus.pdf_col_model'), t('skus.pdf_col_type'), t('skus.pdf_col_mae'), t('skus.pdf_col_rmse'), t('skus.pdf_col_wape'), t('skus.pdf_col_bias')]
+        const cols = [t('skus.pdf_col_model'), t('skus.pdf_col_type'), t('skus.pdf_col_cost'), t('skus.pdf_col_mae'), t('skus.pdf_col_rmse'), t('skus.pdf_col_wape'), t('skus.pdf_col_bias')]
         const colW = contentW / cols.length
         doc.setFillColor(129, 140, 248); doc.rect(margin, y, contentW, 7, 'F')
         doc.setFontSize(8); doc.setTextColor(255, 255, 255)
         cols.forEach((c, i) => doc.text(c, margin + i * colW + 2, y + 5))
         y += 7
-        const sorted = [...data.metrics].sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))
+        // Same order as the screen: by the metric the champion was chosen with.
+        const sorted = [...data.metrics].sort((a, b) =>
+          (championRank(a) ?? Infinity) - (championRank(b) ?? Infinity))
         sorted.forEach((r, ri) => {
           const even = ri % 2 === 0
           doc.setFillColor(even ? 248 : 255, even ? 250 : 255, even ? 252 : 255)
           doc.rect(margin, y, contentW, 6, 'F')
           doc.setFontSize(7.5); doc.setTextColor(30, 41, 59)
-          const vals = [modelLabel(t, r.model), r.type ?? '', fmt(r.mae), fmt(r.rmse), r.wape != null ? pct(r.wape) : '—', fmt(r.bias)]
+          const vals = [modelLabel(t, r.model), r.type ?? '', fmt(r.cost_horizon ?? r.cost ?? null), fmt(r.mae), fmt(r.rmse), r.wape != null ? pct(r.wape) : '—', fmt(r.bias)]
           vals.forEach((v, i) => doc.text(v, margin + i * colW + 2, y + 4))
           y += 6
         })
@@ -1204,8 +1230,9 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       }),
     ]
     const metricRows: (string | number | null)[][] = [
-      ['model', 'type', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
-      ...data.metrics.map(r => [modelLabel(t, r.model), r.type, r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null] as (string | number | null)[]),
+      ['model', 'type', 'cost', 'mae', 'rmse', 'wape', 'bias', 'n_folds'],
+      ...data.metrics.map(r => [modelLabel(t, r.model), r.type, r.cost_horizon ?? r.cost ?? null,
+                                r.mae, r.rmse, r.wape, r.bias, r.n_folds ?? null] as (string | number | null)[]),
     ]
     // The workbook is opened by the user, so its sheet names and the Summary
     // sheet's row labels are copy, not field names — they go through i18n.
@@ -2100,19 +2127,38 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
     <div style={{ padding: '24px', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>{t('skus.no_metrics')}</div>
   )
 
-  const sorted = [...rows].sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))
-  const best   = sorted[0]
+  // Ordered by the metric the champion is chosen with, not by WAPE. Sorting by
+  // WAPE put the "mejor" badge on a model that was not the one behind this
+  // SKU's forecast, its reorder point or its purchase order — and nothing on
+  // screen said so.
+  const sorted = [...rows].sort((a, b) =>
+    (championRank(a) ?? Infinity) - (championRank(b) ?? Infinity))
+  // A baseline is scored so the real models have something to beat; it is not a
+  // candidate, and the engine refuses to buy from one. Badging the cheapest row
+  // outright put "MEJOR" on `Referencia (temporada)` on real data — a naive
+  // forecast the pipeline had already excluded, and which produced none of the
+  // numbers on this screen. Baselines stay listed, just out of the race.
+  const best   = sorted.find(r => r.type !== 'baseline') ?? null
   const caption = tOr(t, 'skus.metrics_table_caption',
-    `Model accuracy for ${sku}, ordered by WAPE, best first.`, { sku })
+    `Model accuracy for ${sku}, ordered by expected cost, best first.`, { sku })
 
   const numVals = (col: keyof MetricRow) =>
     sorted.map(r => r[col]).filter((v): v is number => typeof v === 'number')
+
+  // A session trained before `cost` existed has the column on no row; showing an
+  // all-dashes column there would only be noise.
+  const hasCost = rows.some(r => r.cost_horizon != null || r.cost != null)
+  const costOf = (r: MetricRow) => r.cost_horizon ?? r.cost ?? null
 
   const stats = {
     mae:  { min: Math.min(...numVals('mae')),  max: Math.max(...numVals('mae'))  },
     rmse: { min: Math.min(...numVals('rmse')), max: Math.max(...numVals('rmse')) },
     wape: { min: Math.min(...numVals('wape')), max: Math.max(...numVals('wape')) },
     bias: { min: Math.min(...numVals('bias')), max: Math.max(...numVals('bias')) },
+    cost: {
+      min: Math.min(...sorted.map(costOf).filter((v): v is number => v !== null)),
+      max: Math.max(...sorted.map(costOf).filter((v): v is number => v !== null)),
+    },
   }
 
   return (
@@ -2164,12 +2210,17 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
                 <tr>
                   <th scope="col" style={{ width: '20%' }}>{t('skus.col_model')}</th>
                   <th scope="col" style={{ width: '10%' }}>{t('skus.col_type')}</th>
+                  {/* The table is ordered by expected cost, best first. Saying
+                      so is the only way a screen-reader user learns why the
+                      rows are in this order — and which column decided it. */}
+                  {hasCost && (
+                    <th scope="col" aria-sort="ascending" style={{ width: '15%' }} title={t('skus.col_cost_help')}>
+                      {t('skus.col_cost')}
+                    </th>
+                  )}
                   <th scope="col" style={{ width: '15%' }}>{t('skus.col_mae')}</th>
                   <th scope="col" style={{ width: '15%' }}>{t('skus.col_rmse')}</th>
-                  {/* The table is always ordered by WAPE, best first. Saying so
-                      is the only way a screen-reader user learns why the rows
-                      are in this order. */}
-                  <th scope="col" aria-sort="ascending" style={{ width: '15%' }}>{t('skus.col_wape')}</th>
+                  <th scope="col" style={{ width: '15%' }}>{t('skus.col_wape')}</th>
                   <th scope="col" style={{ width: '15%' }}>{t('skus.col_bias')}</th>
                   <th scope="col" style={{ width: '10%' }}>{t('skus.col_folds')}</th>
                 </tr>
@@ -2182,6 +2233,9 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
                       {r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 5 }}>{t('skus.badge_best')}</span>}
                     </th>
                     <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
+                    {hasCost && (
+                      <td style={{ fontFamily: 'monospace', background: heatCell(costOf(r), stats.cost.min, stats.cost.max), borderRadius: 4 }}>{fmt(costOf(r))}</td>
+                    )}
                     <td style={{ fontFamily: 'monospace', background: heatCell(r.mae,  stats.mae.min,  stats.mae.max),  borderRadius: 4 }}>{fmt(r.mae)}</td>
                     <td style={{ fontFamily: 'monospace', background: heatCell(r.rmse, stats.rmse.min, stats.rmse.max), borderRadius: 4 }}>{fmt(r.rmse)}</td>
                     <td style={{ fontFamily: 'monospace', background: heatCell(r.wape, stats.wape.min, stats.wape.max), borderRadius: 4 }}>{r.wape !== null ? pct(r.wape) : '—'}</td>
@@ -2199,9 +2253,12 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
               <tr>
                 <th scope="col">{t('skus.col_model')}</th>
                 <th scope="col">{t('skus.col_type')}</th>
+                {hasCost && (
+                  <th scope="col" aria-sort="ascending" title={t('skus.col_cost_help')}>{t('skus.col_cost')}</th>
+                )}
                 <th scope="col">{t('skus.col_mae')}</th>
                 <th scope="col">{t('skus.col_rmse')}</th>
-                <th scope="col" aria-sort="ascending">{t('skus.col_wape')}</th>
+                <th scope="col">{t('skus.col_wape')}</th>
                 <th scope="col">{t('skus.col_bias')}</th>
                 <th scope="col">{t('skus.col_folds')}</th>
               </tr>
@@ -2213,6 +2270,7 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
                     {modelLabel(t, r.model)}{r === best && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 6 }}>{t('skus.badge_best')}</span>}
                   </th>
                   <td><span style={{ fontSize: 11, color: 'var(--dim)' }}>{r.type}</span></td>
+                  {hasCost && <td style={{ fontFamily: 'monospace' }}>{fmt(costOf(r))}</td>}
                   <td style={{ fontFamily: 'monospace' }}>{fmt(r.mae)}</td>
                   <td style={{ fontFamily: 'monospace' }}>{fmt(r.rmse)}</td>
                   <td style={{ fontFamily: 'monospace' }}>{r.wape !== null ? pct(r.wape) : '—'}</td>
@@ -2285,10 +2343,17 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
 // reflects post-reception stock, not the training-time snapshot. Forecast-derived
 // figures (reorder point, safety stock, stockout risk) stay from the training
 // recommendation `inv`, which does not change when stock moves.
-function InventoryPanel({ inv, live, coverageUnit }: {
+function InventoryPanel({ inv, live, coverageUnit, policy, risk }: {
   inv: InventoryRecommendation
   live?: InventoryStatusItem
   coverageUnit?: CoverageUnit
+  /** This SKU's own row of the policy backtest. Absent for a SKU whose model
+   *  ran no rolling-origin backtest, and for every pre-existing session. */
+  policy?: PolicySkuComparison
+  /** Present only when the safety stock above came from measured cumulative
+   *  error rather than the classical formula — which is worth saying, because
+   *  the two can differ by a lot on a SKU with persistent bias. */
+  risk?: DemandRiskEntry
 }) {
   const { t } = useLanguage()
   const fmtNum = (n: number | null | undefined, d = 0) => n != null ? n.toFixed(d) : '—'
@@ -2354,6 +2419,225 @@ function InventoryPanel({ inv, live, coverageUnit }: {
         <SignalBadge signal={signal} size="md" />
         <span style={{ fontSize: 12 }}>{message}</span>
       </div>
+
+      {/* Where the cushion above actually comes from. Silent provenance is how
+          a buyer ends up distrusting a number that was the more honest one. */}
+      {risk && (
+        <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.55 }}>
+          {t('skus.risk_measured_caption', { model: modelLabel(t, risk.model) })}
+        </div>
+      )}
+
+      {/* The same simulation as the session headline, narrowed to this SKU.
+          Stated as sentences rather than tiles: at this scale the pair of
+          numbers IS the message, and a tile would separate them. */}
+      {policy && (
+        <div style={{
+          borderTop: '1px solid var(--border)', paddingTop: 12,
+          display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+            {t('skus.policy_sku_title')}
+          </div>
+          <ul style={{
+            listStyle: 'disc', margin: 0, paddingLeft: 18,
+            display: 'flex', flexDirection: 'column', gap: 3,
+          }}>
+            <li style={{ fontSize: 11.5, color: 'var(--dim)', lineHeight: 1.55 }}>
+              {t('skus.policy_sku_fill', {
+                model:    pct(policy.policy.fill_rate),
+                baseline: pct(policy.baseline.fill_rate),
+              })}
+            </li>
+            <li style={{ fontSize: 11.5, color: 'var(--dim)', lineHeight: 1.55 }}>
+              {t('skus.policy_sku_stockouts', {
+                model:    policy.policy.stockout_buckets,
+                baseline: policy.baseline.stockout_buckets,
+              })}
+            </li>
+            <li style={{ fontSize: 11.5, color: 'var(--dim)', lineHeight: 1.55 }}>
+              {t('skus.policy_sku_inventory', {
+                model:    fmtK(policy.policy.avg_inventory),
+                baseline: fmtK(policy.baseline.avg_inventory),
+              })}
+            </li>
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Policy backtest ───────────────────────────────────────────────────────────
+//
+// The one figure on this screen a distributor can check against their own
+// experience. WAPE cannot express it: a forecast biased 20% high posts a
+// respectable error while quietly doubling the stock in the warehouse, and a
+// forecast biased 20% low posts the SAME error while emptying the shelves. The
+// engine therefore replays the ordering policy over demand that actually
+// happened — twice, once on the model's forecast and once on "order what we
+// ordered last time" — and this panel reports both runs side by side.
+//
+// Three rules the layout exists to enforce:
+//
+//   * Never a number without its baseline. "96% fill rate" is unreadable; "96%
+//     against 85% ordering as usual" is a claim someone can act on.
+//   * Never service level without the inventory it cost. Those two are in
+//     tension, and showing only the flattering half is the exact dishonesty
+//     this metric was built to prevent.
+//   * Never let `n_series` go unsaid. The simulation only covers series whose
+//     model ran a rolling-origin backtest, which is normally fewer than the
+//     catalogue — so the coverage is stated twice, as a chip and as a sentence.
+
+function PolicyTile({ value, label, detail }: {
+  value: string; label: string; detail: string
+}) {
+  return (
+    <div style={{ flex: 1, minWidth: 128, padding: '9px 12px' }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', lineHeight: 1.2 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 10.5, color: 'var(--dim)', marginTop: 2 }}>{label}</div>
+      {detail && (
+        <div style={{ fontSize: 10.5, color: 'var(--dim)', opacity: 0.8, marginTop: 3, lineHeight: 1.4 }}>
+          {detail}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PolicyBacktestPanel({ backtest, catalogueSize }: {
+  backtest: PolicyBacktest | null
+  /** SKUs this session actually trained, so the coverage can be stated as a
+   *  fraction. 0 when the catalogue is not known yet — the copy drops the
+   *  denominator rather than inventing one. */
+  catalogueSize: number
+}) {
+  const { t } = useLanguage()
+  const summary = backtest?.summary
+
+  // Absent renders as absent. `policy_backtest` is `{}` for a run whose models
+  // produced no rolling-origin backtest and for every session trained before
+  // the engine computed this — printing zeros there would be the product making
+  // a claim about a simulation it never ran.
+  if (!summary || !summary.n_series) return null
+
+  const units = t('skus.policy_units')
+  const money = (n: number | null | undefined) =>
+    n == null ? '—' : formatMoneyCompact(n)
+
+  const tiles: { value: string; label: string; detail: string }[] = [
+    {
+      value:  pct(summary.fill_rate),
+      label:  t('skus.policy_fill_rate'),
+      detail: t('skus.policy_vs_baseline', { baseline: pct(summary.baseline_fill_rate) }),
+    },
+    {
+      value:  String(summary.stockout_buckets),
+      label:  t('skus.policy_stockout_buckets'),
+      detail: t('skus.policy_vs_baseline', { baseline: String(summary.baseline_stockout_buckets) }),
+    },
+    {
+      value:  `${fmtK(summary.avg_inventory)} ${units}`,
+      label:  t('skus.policy_avg_inventory'),
+      detail: t('skus.policy_vs_baseline', {
+        baseline: `${fmtK(summary.baseline_avg_inventory)} ${units}`,
+      }),
+    },
+  ]
+  // No unit cost in the session means no way to value the stock. The tile is
+  // dropped rather than shown as zero money.
+  if (summary.capital_tied_up != null) {
+    tiles.push({
+      value:  money(summary.capital_tied_up),
+      label:  t('skus.policy_capital'),
+      detail: summary.baseline_capital_tied_up != null
+        ? t('skus.policy_vs_baseline', { baseline: money(summary.baseline_capital_tied_up) })
+        : '',
+    })
+  }
+
+  const covered  = summary.n_series
+  const hasTotal = catalogueSize > 0 && catalogueSize >= covered
+  const chip = hasTotal
+    ? t('skus.policy_coverage_chip', { n: covered, total: catalogueSize })
+    : t('skus.policy_coverage_chip_plain', { n: covered })
+  const coverageNote = hasTotal
+    ? t('skus.policy_coverage_note', { n: covered, total: catalogueSize })
+    : t('skus.policy_coverage_note_plain', { n: covered })
+
+  // Only stated when it is true in that direction. A negative "avoided" is a
+  // regression and gets said as one, never folded into a positive-sounding word.
+  const avoided = summary.stockouts_avoided
+  const avoidedNote = avoided > 0 ? t('skus.policy_stockouts_avoided', { n: avoided })
+    : avoided < 0 ? t('skus.policy_stockouts_added', { n: -avoided })
+    : ''
+
+  return (
+    <div
+      role="region"
+      aria-label={t('skus.policy_title')}
+      style={{
+        border: '1px solid var(--border)',
+        borderLeft: '4px solid var(--accent)',
+        borderRadius: 10,
+        background: 'var(--surface)',
+        padding: '14px 16px',
+        marginBottom: 18,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <Scale size={16} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
+              {t('skus.policy_title')}
+            </span>
+            {/* Coverage rides in the header, so the number can never be read
+                as catalogue-wide even by someone who only scans the tiles. */}
+            <span style={{
+              fontSize: 10.5, fontWeight: 700, color: 'var(--accent)',
+              background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+              padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap',
+            }}>
+              {chip}
+            </span>
+            {avoidedNote && (
+              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{avoidedNote}</span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3, lineHeight: 1.5 }}>
+            {t('skus.policy_subtitle')}
+          </div>
+        </div>
+      </div>
+
+      {/* Same stats-strip treatment the SKU panel uses, so the two read as one
+          product rather than two dashboards. */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: 0, marginTop: 12,
+        border: '1px solid var(--border)', borderRadius: 8,
+        background: 'var(--surface-2)', overflow: 'hidden',
+      }}>
+        {tiles.map((tile, i) => (
+          <div key={tile.label} style={{
+            flex: 1, minWidth: 128,
+            borderRight: i < tiles.length - 1 ? '1px solid var(--border)' : undefined,
+          }}>
+            <PolicyTile {...tile} />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 9, lineHeight: 1.55 }}>
+        {t('skus.policy_tradeoff')}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4, lineHeight: 1.55 }}>
+        {coverageNote}
+      </div>
     </div>
   )
 }
@@ -2410,6 +2694,11 @@ export default function SkusPage() {
   const [invStatus,      setInvStatus]      = useState<InventoryStatusItem[]>([])
   const [coverageUnit,   setCoverageUnit]   = useState<CoverageUnit | undefined>(undefined)
   const [quality,        setQuality]        = useState<QualityReport>({})
+  // What the ordering policy would have done over real past demand, and the
+  // measured lead-time uncertainty behind each safety stock. Both ride on the
+  // same `/results` payload the metrics and inventory come from.
+  const [policyBacktest, setPolicyBacktest] = useState<PolicyBacktest | null>(null)
+  const [demandRisk,     setDemandRisk]     = useState<Record<string, DemandRiskEntry>>({})
   const [loading,        setLoading]        = useState(false)
   const [search,         setSearch]         = useState('')
   const [skuListPage,    setSkuListPage]    = useState(1)
@@ -2508,19 +2797,30 @@ export default function SkusPage() {
     setSelectedSku(null)
     const failedParts: string[] = []
     Promise.all([
-      getMetrics(sessionId).catch(() => { failedParts.push(t('skus.part_metrics')); return { rows: [], by_model: {} } }),
-      getInventory(sessionId).catch(() => { failedParts.push(t('skus.part_inventory')); return { recommendations: [] } }),
+      // One call, not three: `/metrics` and `/inventory` are slices of this
+      // very payload, and the policy backtest and the demand-risk bands are two
+      // more. Asking separately would have downloaded the metric rows twice.
+      getTrainingResults(sessionId).catch(() => {
+        failedParts.push(t('skus.part_metrics'), t('skus.part_inventory'))
+        return {} as TrainingResults
+      }),
       getQuality(sessionId).catch(() => { failedParts.push(t('skus.part_data_quality')); return {} }),
       // Live stock/coverage/signal. Failing soft — the panels fall back to the
       // training recommendation if this is unavailable, so no error is surfaced.
       getInventoryStatus(sessionId, 0.95, { silent: true }).catch(() => ({ items: [], coverage_unit: undefined })),
-    ]).then(([m, inv, q, status]) => {
-      setMetrics(m.rows)
-      setInventory(inv.recommendations)
+    ]).then(([res, q, status]) => {
+      const rows = res.metrics?.rows ?? []
+      setMetrics(rows)
+      setInventory(res.inventory?.recommendations ?? [])
+      // `?? null` and `?? {}`, never a zeroed stand-in: a session trained before
+      // these existed has nothing to say, and the panels render nothing at all
+      // rather than a simulation that never ran.
+      setPolicyBacktest(res.policy_backtest ?? null)
+      setDemandRisk(res.demand_risk ?? {})
       setInvStatus(status.items ?? [])
       setCoverageUnit(status.coverage_unit)
       setQuality(q as QualityReport)
-      const skus = Array.from(new Set(m.rows.map(r => r.sku).filter(Boolean) as string[]))
+      const skus = Array.from(new Set(rows.map(r => r.sku).filter(Boolean) as string[]))
       if (skus.length) setSelectedSku(skus[0])
       if (failedParts.length) {
         setLoadError(`${t('skus.err_load_failed_prefix')}: ${failedParts.join(', ')}. ${t('skus.err_load_failed_suffix')}`)
@@ -2566,6 +2866,17 @@ export default function SkusPage() {
   const skuQuality   = useMemo(() => selectedSku ? quality[selectedSku] : undefined, [quality, selectedSku])
   const statusBySku  = useMemo(() => new Map(invStatus.map(i => [i.sku, i])), [invStatus])
   const skuStatus    = useMemo(() => selectedSku ? statusBySku.get(selectedSku) : undefined, [statusBySku, selectedSku])
+  // Both keyed by the raw SKU, and both legitimately missing for a SKU whose
+  // model produced no rolling-origin backtest — the Inventory tab simply omits
+  // the block rather than filling it in.
+  const skuPolicy    = useMemo(
+    () => (selectedSku ? policyBacktest?.by_sku?.[selectedSku] : undefined),
+    [policyBacktest, selectedSku],
+  )
+  const skuRisk      = useMemo(
+    () => (selectedSku ? demandRisk[selectedSku] : undefined),
+    [demandRisk, selectedSku],
+  )
   // Resolve the semáforo for a SKU: prefer the live inventory_stock signal,
   // fall back to the training-time recommendation when no live row exists.
   const signalForSku = useCallback((sku: string): InventorySignal | undefined => {
@@ -2576,12 +2887,15 @@ export default function SkusPage() {
   }, [statusBySku, recBySku])
   const seriesType   = skuQuality?.series_type ?? 'unknown'
   const skuColor     = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
-  // Best non-baseline model accuracy (1 − WAPE) for the selected SKU — the
-  // single discreet accuracy figure shown next to the chart header.
+  // Accuracy (1 − WAPE) of the model this SKU's chart is actually drawn from —
+  // the single discreet figure next to the chart header. Chosen by championRank,
+  // not by WAPE: picking the lowest-WAPE row here would quote the accuracy of a
+  // model the user is not looking at, and the two differ whenever being short
+  // costs more than being long.
   const skuAccuracy  = useMemo(() => {
     const best = skuMetrics
       .filter(r => r.type !== 'baseline' && r.wape !== null)
-      .sort((a, b) => (a.wape ?? Infinity) - (b.wape ?? Infinity))[0]
+      .sort((a, b) => (championRank(a) ?? Infinity) - (championRank(b) ?? Infinity))[0]
     if (best?.wape == null) return null
     // WAPE divides by total real demand, so a SKU that never sold scores a
     // meaningless 0 error and would proudly report "100%" over a flat line of
@@ -2776,6 +3090,11 @@ export default function SkusPage() {
           so this is the only place the user can learn the accuracy above is
           inflated by leakage. */}
       <RunWarningsPanel sessionId={sessionId} />
+
+      {/* What the purchasing policy would have produced over real past demand,
+          against the same policy driven by "order what we ordered last time".
+          Renders nothing at all when the run has no backtest to report. */}
+      <PolicyBacktestPanel backtest={policyBacktest} catalogueSize={metricsBySku.size} />
 
       {/* Body */}
       <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: 16, flex: 1, minHeight: 0 }}>
@@ -3006,7 +3325,13 @@ export default function SkusPage() {
                 )}
                 {tab === 'Inventory' && (
                   skuInventory
-                    ? <InventoryPanel inv={skuInventory} live={skuStatus} coverageUnit={coverageUnit} />
+                    ? <InventoryPanel
+                        inv={skuInventory}
+                        live={skuStatus}
+                        coverageUnit={coverageUnit}
+                        policy={skuPolicy}
+                        risk={skuRisk}
+                      />
                     : <div style={{ padding: 20, color: 'var(--dim)', fontSize: 13 }}>
                         {t('skus.no_inventory_recommendations')}
                       </div>

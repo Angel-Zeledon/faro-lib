@@ -792,6 +792,13 @@ export const translations = {
     'qs.preview':          'Vista previa de tus datos:',
     'qs.more_columns':     'columnas más',
     'qs.looks_good':       'Esto se ve bien, continuar →',
+    // Reemplazan a 'qs.looks_good' cuando el archivo no puede entrenar.
+    'qs.pick_another_file': 'Subir otro archivo',
+    'qs.continue_anyway':   'Continuar de todos modos',
+    // Reemplaza al enlace de «continuar de todos modos» cuando el archivo no
+    // puede entrenar: la salida honesta es corregir qué columna leímos, no
+    // saltarse el veredicto.
+    'qs.blocked_remap_hint': '¿Leímos mal una columna? Corrígela arriba y volvemos a revisar el archivo.',
     'qs.processing':       'Procesando…',
     'qs.learning_title':   'El sistema está aprendiendo',
     'qs.learning_desc':    'Configuramos automáticamente los mejores parámetros para tu negocio.',
@@ -893,6 +900,10 @@ export const translations = {
     'enum.model_desc_lstm':     'LSTM: red neuronal para patrones complejos y no lineales.',
 
     'errors.validation.missing': 'es obligatorio.',
+    // Fallos de `model_validator`: llegan en loc ["body"], sin campo que
+    // nombrar, así que la frase tiene que sostenerse sola.
+    'errors.validation.event_end_before_start': 'El evento termina antes de empezar: va del {start} al {end}. Revisa las fechas.',
+    'errors.validation.event_date_invalid':    'La fecha «{value}» no se entiende. Escríbela como año-mes-día, por ejemplo 2026-12-24.',
     'errors.validation.missing_argument': 'es obligatorio.',
     'errors.validation.greater_than': 'debe ser mayor que {gt}.',
     'errors.validation.greater_than_equal': 'debe ser al menos {ge}.',
@@ -928,6 +939,13 @@ export const translations = {
     'errors.validation.extra_forbidden': 'no se reconoce.',
     'errors.validation.value_error': 'no es válido.',
     'errors.validation.assertion_error': 'no es válido.',
+    // Reglas propias del asistente de entrenamiento. El backend las manda como
+    // un `type` estable + `ctx`, igual que las de Pydantic, para que los valores
+    // vayan en parámetros y no incrustados en una frase en inglés.
+    'errors.validation.unknown_country': 'no tiene feriados registrados ({country}). Usa un código ISO de país, como CO, MX, PE o CL.',
+    'errors.validation.unknown_model': 'incluye un modelo que no existe ({model}). Elige entre: {allowed}.',
+    'errors.validation.too_many_models': 'no puede tener más de {max_models} modelos, y recibimos {count}.',
+    'errors.validation.no_models_selected': 'Elige al menos un modelo para entrenar.',
     // Field names the user actually recognizes.
     'errors.field.qty': 'La cantidad',
     'errors.field.quantity': 'La cantidad',
@@ -941,6 +959,9 @@ export const translations = {
     'errors.field.multiplier': 'El multiplicador',
     'errors.field.service_level': 'El nivel de servicio',
     'errors.field.lead_time_days': 'El lead time (días)',
+    // Sin esta clave el 422 salía como «lead_time_std: debe ser al menos 0»,
+    // mezclando el identificador interno con la frase en español.
+    'errors.field.lead_time_std': 'La variabilidad del lead time (días)',
     'errors.field.extra_days': 'Los días de atraso',
     'errors.field.horizon': 'El horizonte',
     'errors.field.user_horizon_days': 'El horizonte',
@@ -969,6 +990,22 @@ export const translations = {
     'errors.field.url': 'La URL',
     'errors.field.events': 'Los eventos',
     'errors.field.user_granularity': 'El nivel de detalle',
+    // Configuración avanzada del entrenamiento. En singular a propósito: casi
+    // todos los rechazos son de UN elemento de la lista (un lag negativo), y
+    // Pydantic reporta el nombre de la lista como campo.
+    'errors.field.lags': 'El retraso (lag)',
+    'errors.field.rolling': 'La ventana móvil',
+    'errors.field.diffs': 'La diferencia',
+    'errors.field.ewm_spans': 'El suavizado exponencial',
+    'errors.field.fourier_periods': 'El periodo de Fourier',
+    'errors.field.fourier_K': 'El número de armónicos de Fourier',
+    'errors.field.holiday_country': 'El país del calendario de feriados',
+    'errors.field.selected_models': 'La selección de modelos',
+    'errors.field.selection_metric': 'La métrica de selección',
+    'errors.field.train_ratio': 'La proporción de entrenamiento',
+    'errors.field.wfv_splits': 'El número de cortes de validación',
+    'errors.field.min_history': 'El historial mínimo por producto',
+    'errors.field.seasonal_period': 'El periodo estacional',
     'qs.err_failed':       'El cálculo falló:',
     'errors.training.no_models_trained': 'ningún producto tiene suficiente historial para pronosticar. Cada producto necesita varias fechas con ventas — revisa si hay productos con una sola fila o sin demanda.',
     'qs.err_timeout':      'Esto está tardando más de lo esperado. Revisa el estado más tarde o vuelve a intentarlo.',
@@ -992,6 +1029,25 @@ export const translations = {
     'qs.plan_granularity_daily':   'Diario',
     'qs.plan_granularity_weekly':  'Semanal',
     'qs.plan_granularity_monthly': 'Mensual',
+
+    // Whose public holidays the model learns from. Before this control existed
+    // every tenant trained on Colombia's calendar, whatever country they were
+    // in — and the holidays are among the strongest signals a daily sales
+    // series has, so the wrong calendar quietly makes the forecast worse.
+    'qs.plan_country_label': '¿En qué país vendes?',
+    'qs.plan_country_help':  'Lo usamos para los días feriados: son de los días que más mueven las ventas, y los de cada país son distintos.',
+    'qs.country_CR': 'Costa Rica',
+    'qs.country_CO': 'Colombia',
+    'qs.country_MX': 'México',
+    'qs.country_PE': 'Perú',
+    'qs.country_CL': 'Chile',
+    'qs.country_AR': 'Argentina',
+    'qs.country_EC': 'Ecuador',
+    'qs.country_GT': 'Guatemala',
+    'qs.country_PA': 'Panamá',
+    'qs.country_DO': 'República Dominicana',
+    'qs.country_ES': 'España',
+    'qs.country_US': 'Estados Unidos',
     // Dataset reuse (step 1: pick a previously uploaded file / retry without re-upload)
     'qs.clone_tab':          'Repetir una carga anterior',
     'qs.clone_desc':         'Vuelve a calcular con el mismo archivo y las mismas columnas de una carga anterior. Solo cambia el horizonte o el nivel de detalle arriba.',
@@ -1020,8 +1076,123 @@ export const translations = {
     'csv.template_hint':         'Trae las columnas que Faro reconoce automáticamente, con filas de ejemplo.',
 
     // ── Profiler findings on the uploaded file (keys are the English codes) ──
+    // ── Puerta previa al entrenamiento ────────────────────────────────────
+    // El motor manda códigos en inglés + parámetros; el español vive aquí.
+    // Cada opción dice QUÉ hace y QUÉ CUESTA, porque el costo es justamente lo
+    // que convierte esto en una decisión del usuario y no en un valor por
+    // defecto: «rellenar con cero» y «interpolar» no son dos sabores del mismo
+    // botón, son dos afirmaciones distintas sobre lo que pasó.
+    'gate.decide_title':    'Tienes que decidir algo antes de seguir',
+    'gate.decide_subtitle': 'Encontramos cosas en tu archivo que cambian el pronóstico y solo tú sabes cuál es la correcta. Elige una opción en cada punto: te decimos qué pasa con cada una.',
+    'gate.answered_count':  '{answered} de {total} resueltos',
+    'gate.recommended':     'recomendado',
+    'gate.answer_first':    'Te falta responder {count} punto(s) de arriba.',
+    // Hallazgos que NO bloquean pero sí traen opciones: los valores extremos
+    // son el caso. Bloquearlos pararía casi cualquier archivo real, y aun así
+    // la elección importa, porque recortar una temporada alta de verdad hace
+    // que el año siguiente pidas de menos justo cuando importa.
+    'gate.optional_title':    'Puedes ajustar esto si quieres',
+    'gate.optional_subtitle': 'Esto no impide entrenar y lo dejamos como está si no tocas nada. Te lo mostramos porque cambia el resultado y solo tú sabes qué pasó.',
+
+    // Los enunciados de cada problema.
+    'gate.issue.ambiguous_date_format':     'No sabemos si tus fechas están en día/mes o mes/día',
+    'gate.issue.ambiguous_number_format':   'No sabemos si la coma separa miles o decimales',
+    'gate.issue.cumulative_demand':         'Tus cantidades parecen un acumulado, no lo vendido en cada período',
+    'gate.issue.duplicates':                'Hay varias filas del mismo producto en el mismo día',
+    'gate.issue.negative_target':           'Hay cantidades negativas',
+    'gate.issue.out_of_range_dates':        'Hay fechas imposibles',
+    'gate.issue.dataset_wide_gap':          'Hay un tramo del calendario sin ninguna venta',
+    'gate.issue.non_numeric_target':        'Hay texto donde debería ir una cantidad',
+    'gate.issue.null_target':               'Hay cantidades vacías',
+    'gate.issue.excel_serial_dates':        'Tus fechas vienen como el número interno de Excel',
+    'gate.issue.inconsistent_sku_identity': 'El mismo producto aparece escrito de varias formas',
+    'gate.issue.target_looks_like_money':   'La columna de cantidad parece dinero, no unidades',
+
+    // Y las salidas, cada una con su consecuencia.
+    'gateopt.date_format_day_first.action':        'Leer el primer número como el día (dd/mm/aaaa), como se escribe en Latinoamérica.',
+    'gateopt.date_format_day_first.consequence':   'Si el archivo venía en formato de EE. UU., {n_rows} filas se van a otro mes y se destruye el patrón semanal del que viven los modelos. Después nada se verá roto.',
+    'gateopt.date_format_month_first.action':      'Leer el primer número como el mes (mm/dd/aaaa), como se escribe en EE. UU.',
+    'gateopt.date_format_month_first.consequence': 'Si el archivo venía en formato latinoamericano, esas filas se van al mes equivocado y el pronóstico queda mal sin avisar.',
+
+    'gateopt.separator_comma_is_thousands.action':      'La coma separa miles: «1,234» son mil doscientos treinta y cuatro.',
+    'gateopt.separator_comma_is_thousands.consequence': 'Si en realidad era decimal, multiplicas cada una de esas cantidades por mil y pides mil veces de más.',
+    'gateopt.separator_comma_is_decimal.action':        'La coma es decimal: «1,234» es uno con doscientos treinta y cuatro.',
+    'gateopt.separator_comma_is_decimal.consequence':   'Si en realidad separaba miles, divides esas cantidades entre mil y te quedas corto en cada pedido.',
+
+    'gateopt.cumulative_to_periodic.action':      'Convertir a venta por período restando cada valor del anterior.',
+    'gateopt.cumulative_to_periodic.consequence': 'Cada producto pierde su primera observación (no hay nada de qué restarla). Si los valores no eran acumulados, aparecen negativos por todas partes.',
+    'gateopt.cumulative_keep.action':             'Son la cantidad vendida en cada período, déjalos así.',
+    'gateopt.cumulative_keep.consequence':        'Si de verdad son totales acumulados, el pronóstico crece sin techo: cada período parece vender más que el anterior y las compras se disparan.',
+
+    'gateopt.duplicates_sum.action':            'Sumar las filas del mismo día y producto en un total por período.',
+    'gateopt.duplicates_sum.consequence':       'Correcto si tu sistema exporta una fila por VENTA. Si esas {n_rows} filas son correcciones de la misma venta, la demanda se cuenta doble y pides el doble.',
+    'gateopt.duplicates_keep_last.action':      'Quedarse solo con la última fila de cada día y producto.',
+    'gateopt.duplicates_keep_last.consequence': 'Correcto si cada fila corrige a la anterior. Si eran ventas distintas del mismo día, pierdes todas menos una y pides de menos.',
+
+    'gateopt.negatives_net_into_period.action':      'Restarlas de las ventas del mismo día y producto: son devoluciones.',
+    'gateopt.negatives_net_into_period.consequence': 'La demanda neta de ese día baja por lo devuelto y las filas del día se juntan en una. Un día con más devoluciones que ventas queda en 0. Solo es correcto si esas {n_rows} filas son de verdad devoluciones del mismo día.',
+    'gateopt.negatives_as_zero.action':              'Leer toda cantidad negativa como 0.',
+    'gateopt.negatives_as_zero.consequence':         'Esos días quedan como «no se vendió nada». Si eran devoluciones reales, la demanda queda sobrestimada justo donde hubo problemas.',
+    'gateopt.negatives_drop_rows.action':            'Eliminar las filas con cantidad negativa.',
+    'gateopt.negatives_drop_rows.consequence':       'Pierdes esas filas del historial. Un producto que ya andaba justo de datos puede quedarse sin los suficientes y salir del pronóstico.',
+
+    'gateopt.out_of_range_dates_drop.action':      'Eliminar las filas con fechas imposibles.',
+    'gateopt.out_of_range_dates_drop.consequence': 'Pierdes esas ventas, pero el calendario vuelve a tener sentido y el relleno de huecos puede funcionar.',
+    'gateopt.out_of_range_dates_keep.action':      'Dejarlas y corregir el archivo por tu cuenta más adelante.',
+    'gateopt.out_of_range_dates_keep.consequence': 'Se abandona el relleno de huecos en todos los productos que las tocan: el rango de fechas queda demasiado abierto para saber qué falta.',
+
+    'gateopt.gaps_fill_zero.action':       'Insertar los períodos que faltan con demanda 0.',
+    'gateopt.gaps_fill_zero.consequence':  'Estás afirmando que el catálogo entero no vendió nada durante {gap_days} días. Si las filas solo faltan en el archivo, los modelos aprenden un desplome que nunca pasó y las compras salen bajas.',
+    'gateopt.gaps_interpolate.action':      'Insertar los períodos que faltan y trazar una línea recta entre las observaciones.',
+    'gateopt.gaps_interpolate.consequence': 'Inventa una transición suave que probablemente no ocurrió, pero no afirma que hubo un desplome. Suaviza de más si el hueco era una temporada baja real.',
+    'gateopt.gaps_forward_fill.action':      'Insertar los períodos que faltan repitiendo el último valor conocido.',
+    'gateopt.gaps_forward_fill.consequence': 'Lo que se vendiera el {gap_start} se repite {missing_periods} veces. Si ese día había promoción, la promoción se convierte en un mes de demanda normal.',
+    'gateopt.gaps_leave.action':             'Dejar el hueco tal como está.',
+    'gateopt.gaps_leave.consequence':        'Los modelos ven el salto de fechas como si nada. Es lo correcto si en ese tramo de verdad no operabas.',
+
+    'gateopt.non_numeric_strip_symbols.action':      'Quitar símbolos de moneda, espacios y unidades, y leer lo que queda como número.',
+    'gateopt.non_numeric_strip_symbols.consequence': '{n_recoverable} de {n_rows} valores pasan a ser números. Los demás siguen ilegibles y sus filas se eliminan.',
+    'gateopt.non_numeric_as_zero.action':            'Leer como 0 todo valor ilegible.',
+    'gateopt.non_numeric_as_zero.consequence':       'Afirmas que en esos períodos no se vendió nada. Si solo estaba mal escrito, subestimas la demanda ahí.',
+    'gateopt.non_numeric_drop_rows.action':          'Eliminar las filas con valores ilegibles.',
+    'gateopt.non_numeric_drop_rows.consequence':     'Pierdes esas filas. Los productos que ya tenían poco historial pueden quedarse fuera del pronóstico.',
+
+    'gateopt.null_target_as_zero.action':        'Leer las celdas vacías como 0.',
+    'gateopt.null_target_as_zero.consequence':   'Afirmas que en {n_rows} períodos ({pct}%) no se vendió nada. Si la cantidad simplemente no se exportó, subestimas la demanda en todos ellos.',
+    'gateopt.null_target_drop_rows.action':      'Eliminar las {n_rows} filas con cantidad vacía.',
+    'gateopt.null_target_drop_rows.consequence': 'Pierdes el {pct}% del archivo. Los productos que ya andaban al límite de historial pueden caer por debajo y quedar fuera.',
+
+    'gateopt.excel_serial_as_date.action':        'Son fechas guardadas como número de Excel: convertirlas a fecha.',
+    'gateopt.excel_serial_as_date.consequence':   'Si en realidad eran números (un código, una cantidad), las conviertes en fechas sin sentido y el calendario queda inservible.',
+    'gateopt.excel_serial_as_number.action':      'Son números de verdad, déjalos como están.',
+    'gateopt.excel_serial_as_number.consequence': 'Si eran fechas de Excel, el historial queda sin calendario utilizable y no se puede entrenar nada estacional.',
+
+    'gateopt.sku_identity_unify.action':            'Tratar las variantes como el mismo producto (quitar espacios, ignorar mayúsculas).',
+    'gateopt.sku_identity_unify.consequence':       '{n_variants} series pasan a ser {n_groups}. Si dos de esos códigos son productos distintos, sus ventas se suman y ambos comparten un solo pronóstico y una sola orden de compra.',
+    'gateopt.sku_identity_keep_separate.action':      'Dejar cada código exactamente como está escrito.',
+    'gateopt.sku_identity_keep_separate.consequence': 'Si eran el mismo producto, su historial queda partido en varios pedazos y ninguno tiene datos suficientes para un buen pronóstico.',
+
+    'gateopt.target_is_units.action':          'Son unidades vendidas, está bien así.',
+    'gateopt.target_is_units.consequence':     'Seguimos con esa columna. Si era dinero, cada «unidad» pronosticada es en realidad un colón y las cantidades a pedir no significan nada.',
+    'gateopt.target_is_money_remap.action':      'Es dinero: volver atrás y mapear la columna de unidades.',
+    'gateopt.target_is_money_remap.consequence': 'El entrenamiento sigue bloqueado hasta que la columna de demanda apunte a otro lado.',
+
+    'gateopt.outliers_leave.action':          'Dejar los valores extremos.',
+    'gateopt.outliers_leave.consequence':     'Si son ventas reales —un pedido mayorista, una promoción— es lo correcto: el modelo aprende que existen y los espera.',
+    'gateopt.outliers_clip_iqr.action':       'Recortarlos al rango normal de cada producto.',
+    'gateopt.outliers_clip_iqr.consequence':  'Los {n_rows} picos se aplanan al borde de la demanda habitual. Una temporada alta real desaparece del historial, así que el año que viene el modelo no la espera y pides de menos justo cuando importa.',
+    'gateopt.outliers_winsorize.action':      'Acercarlos a unas pocas desviaciones estándar de la media del producto.',
+    'gateopt.outliers_winsorize.consequence': 'Más suave que recortar: conserva que el pico existió pero reduce su tamaño. Sigue deformando una temporada alta real.',
+
     'dqissue.title':    'Revisa esto antes de continuar',
     'dqissue.subtitle': 'Puedes continuar igual, pero corregir el archivo ahora te ahorra una proyección equivocada.',
+
+    // Cabecera alterna cuando algún hallazgo trae `blocking`: el archivo no
+    // puede entrenar, así que aquí no cabe el "puedes continuar igual".
+    'dqissue.blocked_title':    'Este archivo no puede generar un pronóstico',
+    'dqissue.blocked_subtitle': 'No es una advertencia: tal como está, el cálculo terminaría sin ningún resultado. Corrige el archivo y vuelve a subirlo.',
+    'dqissue.no_trainable_history':     'Ningún producto tiene suficiente historia: se necesitan al menos {min_required} periodos de ventas y el máximo en tu archivo es {longest_history}.',
+    'dqissue.no_trainable_history.fix': 'Un pronóstico se aprende del pasado, y aquí casi no hay pasado que leer. Sube el historial completo: con {min_required} fechas de ventas de un mismo producto ya se puede entrenar, y con unos 6 meses la sugerencia de compra se vuelve confiable.',
 
     'dqissue.granularity_conflict':     'Tus productos no se reportan con la misma frecuencia ({per_bucket}).',
     'dqissue.granularity_conflict.fix': 'Todos se entrenan en la misma línea de tiempo, así que un producto reportado por mes se modela como si vendiera todos los días y su sugerencia de compra sale muy por debajo. Separa el archivo por frecuencia, o usa la granularidad más gruesa ({suggested}) para todo.',
@@ -1075,11 +1246,27 @@ export const translations = {
     'errors.dataset_not_found':             'No encontramos ese archivo de datos.',
     'errors.dataset_file_missing':          'El archivo de «{session}» ya no está en el servidor. Vuelve a subirlo.',
     'errors.dataset_file_empty':            'El archivo de «{session}» está vacío o no tiene columnas. Sube un CSV con encabezado y datos.',
+    // El gate de datos rechaza el entrenamiento en `family_service`, así que
+    // este error puede llegar por cualquier ruta (asistente, demo, sync del
+    // ERP). Sin estas dos claves el usuario leía el inglés de `AppError` tal
+    // cual: «This file cannot produce a forecast and no correction we can
+    // apply changes that: all_zeros.»
+    'errors.training_blocked_data_fatal':   'Este archivo no puede generar un pronóstico, y no hay corrección que lo cambie. Revisa el archivo y vuelve a subirlo.',
+    'errors.training_blocked_unresolved':   'Antes de entrenar tienes que decidir qué hacer con los problemas que encontramos en el archivo: si seguimos sin resolverlos, el pronóstico saldría mal de una forma que ya podemos ver.',
+    // Simulador de escenarios. Antes salían como `ValueError` en español
+    // incrustado en el backend (prohibido por CLAUDE.md) o, para una fecha
+    // ilegible, como el mensaje de Python: «Invalid isoformat string: 'ayer'».
+    // `event_end_before_start` ya existía más abajo con su propia redacción;
+    // el simulador reusa ese código en vez de inventar uno paralelo.
+    'errors.event_date_invalid':            'La fecha «{value}» no se entiende. Escríbela como año-mes-día, por ejemplo 2026-12-24.',
+    'errors.event_multiplier_not_positive': 'El multiplicador tiene que ser mayor que 0: con {multiplier} no habría ventas que simular.',
     'errors.dataset_file_unreadable':       'No pudimos leer el archivo de «{session}»: el formato CSV no es válido. Revisa que no esté dañado y vuelve a intentarlo.',
     'errors.dataset_not_inspected':         'Todavía no analizamos este archivo. Abre el paso de revisión del asistente primero.',
     'errors.session_no_dataset':            'Esta sesión todavía no tiene un archivo de datos. Sube uno para continuar.',
     'errors.columns_not_configured':        'Todavía no sabemos qué columnas son la fecha y la venta. Completa el paso de columnas del asistente.',
     'errors.columns_config_invalid':        'La configuración de columnas no es válida. Revisa el mapeo y vuelve a intentarlo.',
+    'errors.canonical_columns_missing':     'Falta elegir la columna para: {fields}. Vuelve al paso de mapeo y selecciona una para cada uno.',
+    'errors.canonical_columns_not_in_file': 'Las columnas que elegiste para {fields} no están en el archivo: {chosen}. Columnas disponibles: {columns}.',
     'errors.column_required':               'Falta elegir la columna de {field}. Selecciona una de estas: {columns}.',
     'errors.column_not_in_file':            'La columna «{column}» no existe en el archivo que subiste. Columnas disponibles: {columns}.',
     'errors.upload_parse_failed':           'No pudimos leer el archivo que subiste. Revisa que sea un CSV o Excel válido y vuelve a intentarlo.',
@@ -1196,7 +1383,7 @@ export const translations = {
     'inventory.bulk_row_discarded':  'Cambios de la fila {sku} descartados',
     'inventory.bulk_row_error':      'No se pudo guardar la fila {sku}',
 
-    'skus.metrics_table_caption':    'Precisión de cada modelo para {sku}, del mejor al peor.',
+    'skus.metrics_table_caption':    'Modelos evaluados para {sku}, ordenados por costo esperado, del mejor al peor.',
 
     // In-app alert history. The backend sends machine values (kind, status,
     // channel, failure_reason); the sentences live here. FAILED sends are
@@ -1520,6 +1707,11 @@ export const translations = {
     'freshness.kpi_caveat':           'Estos números se calculan sobre datos desactualizados: tómalos como referencia, no como la foto de hoy.',
     'hoy.no_pending_actions_unverified': 'No vemos nada urgente, pero no lo podemos confirmar',
     'hoy.inventory_unverified':          'Tus datos están desactualizados, así que la ausencia de alertas no significa que todo esté bien.',
+    // Más fuerte que «desactualizado»: ahí los datos son viejos, aquí no hay
+    // ninguno. Cada contador que dispararía una alerta vale 0 porque nadie ha
+    // contado nada, así que no hay evidencia de calma — no hay evidencia.
+    'hoy.no_pending_actions_unmeasured': 'No podemos decirte si hay algo urgente',
+    'hoy.inventory_unmeasured':          'Ninguno de tus productos tiene stock registrado. Sin saber cuánto te queda no podemos avisarte de nada: regístralo y el semáforo empieza a funcionar.',
 
     // Salidas para quien no puede verificar su correo (spam, enlace vencido).
     'auth.resend_verification':          'Reenviar correo',
@@ -1549,6 +1741,10 @@ export const translations = {
     'runcorr.clip_outliers':   'Recortamos los valores extremos de {n_skus} producto(s) para que un dato suelto no arrastre el pronóstico.',
     'runcorr.drop_duplicate_timestamps': 'Juntamos las filas repetidas con la misma fecha y el mismo producto.',
     'runcorr.cast_target_to_numeric':    'Convertimos a número la columna de ventas, que venía como texto.',
+    // The engine REWRITES the user's sales figures upward here. Anything less
+    // than saying so plainly would leave a distributor comparing our numbers
+    // against their own file and finding they do not match.
+    'runcorr.censored_demand_recovered': 'Encontramos {n_recovered} día(s) con el producto agotado en {n_skus} producto(s). Lo que se vendió esos días no es lo que la gente quería comprar, sino lo que alcanzó a haber, así que subimos esas cifras en unas {units_recovered} unidades en total, hasta lo que la serie venía vendiendo. Sin ese ajuste el pronóstico lee un quiebre de inventario como una caída de la demanda y te hace pedir todavía menos. Si comparas contra tu archivo, esa es la diferencia.',
 
     // Pandas frequency aliases as words — the engine speaks "D"/"MS", the user does not.
     'freq.H':  'por hora',
@@ -1573,6 +1769,17 @@ export const translations = {
     'runwarn.TARGET_FEATURE_LEAKAGE.title': 'Una columna repite las ventas que queremos predecir',
     'runwarn.TARGET_FEATURE_LEAKAGE.what':  'El modelo está viendo la respuesta entre las columnas de entrada. Por eso la precisión sale altísima, pero el pronóstico hacia adelante no sirve: en el futuro esa columna no existe.',
     'runwarn.TARGET_FEATURE_LEAKAGE.fix':   'Quita esa columna del mapeo de columnas y vuelve a entrenar. Ignora el porcentaje de precisión de esta sesión.',
+
+    // A product with no recommendation looks exactly like a well-stocked one on
+    // the semáforo, so this has to be said out loud or the user simply does not
+    // buy something they needed to buy.
+    'runwarn.SKU_WITHOUT_RECOMMENDATION.title': 'Productos que se quedaron sin sugerencia de compra',
+    'runwarn.SKU_WITHOUT_RECOMMENDATION.what':  'El modelo elegido para estos productos no llegó a producir un pronóstico, así que no aparecen con cantidad sugerida. Ojo: en el semáforo eso se ve igual que un producto bien abastecido, y no lo es.',
+    'runwarn.SKU_WITHOUT_RECOMMENDATION.fix':   'Revisa el historial de estos productos antes de la próxima compra y pídelos por criterio propio esta vez. Si se repite, suele ser historial demasiado corto o con muchos huecos.',
+
+    'runwarn.NO_MODEL_BEAT_BASELINE.title': 'Productos donde ningún modelo le ganó a "repetir lo último"',
+    'runwarn.NO_MODEL_BEAT_BASELINE.what':  'Para estos productos, pronosticar con el último dato conocido resultó más certero que cualquier modelo entrenado. Su historial no tiene un patrón aprovechable todavía. Igual les calculamos una sugerencia, pero confía en ella menos que en el resto.',
+    'runwarn.NO_MODEL_BEAT_BASELINE.fix':   'Suele pasar con productos nuevos, de venta muy esporádica o con historial irregular. Con más meses de datos casi siempre se corrige solo.',
 
     'runwarn.NEAR_PERFECT_CORRELATION.title': 'Una columna es casi idéntica a las ventas',
     'runwarn.NEAR_PERFECT_CORRELATION.what':  'Suele ser la misma cifra en otra unidad (por ejemplo, monto vendido junto a unidades vendidas). El modelo se apoya en ella y aparenta acertar más de lo que realmente puede.',
@@ -1605,6 +1812,13 @@ export const translations = {
     'runwarn.MODEL_INCOMPATIBLE.title': 'Un modelo no se pudo usar con estos datos',
     'runwarn.MODEL_INCOMPATIBLE.what':  'El modelo que elegiste necesita más historial o una frecuencia distinta, así que el pronóstico salió de los otros modelos.',
     'runwarn.MODEL_INCOMPATIBLE.fix':   'Puedes dejarlo así o entrenar de nuevo eligiendo otros modelos.',
+
+    // Sin estas claves el panel caía al `message` del backend y mostraba la
+    // frase en inglés tal cual: "Dropped column(s) that exist in the history
+    // but cannot be known for a future date: ...".
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.title': 'Una columna no se pudo usar para predecir',
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.what':  'Esa columna existe en tu historial, pero nadie sabe cuánto valdrá en una fecha futura, así que el modelo no puede apoyarse en ella. Si la dejáramos, el pronóstico se explicaría con un dato que en realidad nunca recibe.',
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.fix':   'No tienes que hacer nada: el resto de tus datos sí se usó. Si esa columna es importante para tus ventas, súbela con su valor planificado hacia adelante.',
 
     'runwarn.HORIZON_TOO_LARGE.title': 'El horizonte es largo para el historial disponible',
     'runwarn.HORIZON_TOO_LARGE.what':  'Estás pidiendo predecir más adelante de lo que el historial permite sostener, así que los últimos períodos son mucho menos confiables.',
@@ -1691,6 +1905,13 @@ export const translations = {
     'hoy.narrative_products_need_order_week': 'producto(s) necesitan pedido esta semana.',
     'hoy.narrative_capital_tied_overstock': 'inmovilizados en sobrestock — considera pausar esos pedidos.',
     'hoy.narrative_inventory_under_control': 'El inventario está bajo control hoy. No hay acciones urgentes pendientes.',
+    // Un catálogo sin stock registrado no está «bajo control»: está sin medir,
+    // y los dos contadores que sostenían esa frase valen 0 en ambos casos.
+    'hoy.narrative_nothing_counted': 'Todavía no podemos decirte cómo está tu inventario: ninguno de tus {count} producto(s) tiene stock registrado. Regístralo y aquí verás el semáforo.',
+    'hoy.narrative_some_uncounted':  'Eso sí, {count} producto(s) no están contados, así que no entran en esta lectura.',
+    // Bajo la fila de indicadores.
+    'hoy.kpi_nothing_counted':    'Ninguno de tus {total} producto(s) tiene stock registrado, así que estas cifras no dicen «no hay riesgo» sino «no sabemos». Registra el stock para que el semáforo funcione.',
+    'hoy.kpi_partially_counted':  'Estas cifras cubren solo los productos con stock registrado: {count} de {total} no están contados y quedan fuera.',
     'hoy.narrative_forecast_accuracy': 'Precisión del forecast',
     'hoy.csv_col_product': 'Producto',
     'hoy.csv_col_quantity': 'Cantidad',
@@ -1740,6 +1961,12 @@ export const translations = {
     'hoy.optimizer_transfers_title':'Transferencias recomendadas',
     'hoy.optimizer_transfer_line':  'Mover {qty} uds de {sku} de {from} a {to}',
     'hoy.optimizer_convert_to_po':  'Convertir en OC',
+    // El optimizador solía suponer stock = 0 cuando no había ninguno
+    // registrado — justo el supuesto que produce el pedido más grande posible.
+    // Ahora esos productos quedan fuera del cálculo y se nombran aquí.
+    'hoy.needs_stock_title':  'Faltan {count} producto(s) por contar',
+    'hoy.needs_stock_body':   'De estos productos no sabemos cuánto te queda en bodega, y cuánto pedir depende justo de eso. No los incluimos en las sugerencias de compra: no queremos darte una cifra inventada.',
+    'hoy.needs_stock_cta':    'Registrar el stock de estos productos →',
     'hoy.optimizer_empty':          'No hay recomendaciones de compra o transferencia por ahora.',
     'hoy.optimizer_loading':        'Calculando recomendaciones…',
     'hoy.optimizer_po_created':     'Orden de compra generada',
@@ -2018,6 +2245,7 @@ export const translations = {
     'skus.pdf_col_rmse': 'RMSE',
     'skus.pdf_col_wape': 'WAPE',
     'skus.pdf_col_bias': 'Sesgo',
+    'skus.pdf_col_cost': 'Costo',
     'skus.pdf_footer_title': 'Informe de Predicciones',
     'skus.chip_granularity': 'Granularidad',
     'skus.chip_chart': 'Gráfico',
@@ -2060,6 +2288,11 @@ export const translations = {
     'skus.col_wape': 'WAPE',
     'skus.col_bias': 'Sesgo',
     'skus.col_folds': 'Folds',
+    // The column the winning model is picked by. Deliberately not called
+    // "error": quedarse corto y quedarse largo no cuestan lo mismo, y ese
+    // desbalance es justo lo que esta columna mide y el WAPE no.
+    'skus.col_cost': 'Costo',
+    'skus.col_cost_help': 'Lo que costaría equivocarse con este modelo, contando que quedarse sin producto cuesta más que sobrar. Es la columna con la que se elige el modelo ganador.',
     'skus.badge_best': 'MEJOR',
     'skus.quality_records': 'Registros',
     'skus.quality_outliers': 'Valores atípicos',
@@ -2100,6 +2333,35 @@ export const translations = {
     'skus.quality_label_lower': 'calidad',
     'skus.no_quality_data': 'Sin datos de calidad',
     'skus.accuracy_label': 'Precisión',
+    // ── Policy backtest ──
+    // The purchasing outcome the forecast would have produced, replayed over
+    // sales that actually happened. Every figure is stated next to the same
+    // figure for "pedir lo mismo que la vez pasada", because an absolute number
+    // here means nothing on its own.
+    'skus.policy_title':           'Qué habría pasado comprando así',
+    'skus.policy_subtitle':        'Repetimos tus compras sobre las ventas que ya ocurrieron y las comparamos con pedir lo mismo que la vez anterior, que es lo que harías sin pronóstico.',
+    'skus.policy_baseline_name':   'pidiendo como siempre',
+    'skus.policy_vs_baseline':     'Pidiendo como siempre: {baseline}',
+    'skus.policy_fill_rate':       'Demanda atendida',
+    'skus.policy_stockout_buckets':'Períodos sin stock',
+    'skus.policy_avg_inventory':   'Inventario promedio',
+    'skus.policy_capital':         'Capital en bodega',
+    'skus.policy_units':           'u',
+    'skus.policy_stockouts_avoided': '{n} quiebres evitados',
+    'skus.policy_stockouts_added':   '{n} quiebres más',
+    'skus.policy_tradeoff':        'Las dos mitades van juntas: atender más demanda casi siempre cuesta más inventario. Ninguna de estas cifras dice nada por su cuenta.',
+    'skus.policy_coverage_chip':   '{n} de {total} productos',
+    'skus.policy_coverage_chip_plain': '{n} productos',
+    'skus.policy_coverage_note':   'Estas cifras cubren {n} de los {total} productos de esta sesión: los únicos con historial suficiente para simular una compra pasada. El resto no está contado aquí.',
+    'skus.policy_coverage_note_plain': 'Estas cifras cubren {n} producto(s): los únicos con historial suficiente para simular una compra pasada. El resto de tu catálogo no está contado aquí.',
+    // The same simulation, narrowed to the product currently open.
+    'skus.policy_sku_title':       'Comprando así, este producto habría',
+    'skus.policy_sku_fill':        'atendido {model} de su demanda, contra {baseline} pidiendo como siempre',
+    'skus.policy_sku_stockouts':   'pasado {model} períodos sin stock, contra {baseline}',
+    'skus.policy_sku_inventory':   'cargado {model} unidades en promedio, contra {baseline}',
+    // Where the safety stock number comes from, when the engine measured it
+    // instead of applying the textbook formula.
+    'skus.risk_measured_caption':  'Este colchón sale de los errores reales de {model} a lo largo del tiempo de entrega, no de la fórmula estándar.',
     'skus.tab_forecast': 'Forecast',
     'skus.tab_pattern': 'Cómo se vende',
     // Trend panel — the decomposition, said without the vocabulary. The whole
@@ -2721,6 +2983,9 @@ export const translations = {
     'suppliers.pb_toggle':             'Escalas de precio',
     'suppliers.pb_title':              'Escalas de precio',
     'suppliers.pb_hint':                'A partir de cierta cantidad, cada unidad cuesta menos. Se usan para sugerir cuándo conviene pedir más.',
+    // Un botón que se apaga sin decir nada se lee como «la app está rota».
+    'suppliers.pb_min_qty_positive':    'La cantidad mínima tiene que ser mayor que 0.',
+    'suppliers.pb_price_positive':      'El precio unitario tiene que ser mayor que 0.',
     'suppliers.pb_loading':            'Cargando escalas…',
     'suppliers.pb_empty':              'Este proveedor todavía no tiene escalas de precio registradas.',
     'suppliers.pb_err_loading':        'No se pudieron cargar las escalas de precio',
@@ -2766,6 +3031,12 @@ export const translations = {
     'scorecard.deviation_previous':    'previas',
     'scorecard.deviation_method':      'Detectado con una regla de control estadístico de 3 sigma sobre la mediana y la desviación absoluta mediana del propio historial de cada proveedor.',
     'scorecard.empty_title':           'Aún no hay recepciones registradas',
+    // El scorecard mide POR PROVEEDOR. Una orden recibida cuyas líneas no
+    // tienen proveedor no puntúa a nadie, y la tabla queda vacía con razón —
+    // pero decirle «aún no hay recepciones» a quien acaba de registrar una lo
+    // lleva a registrarla otra vez, y el stock se cuenta dos veces.
+    'scorecard.empty_no_supplier_title': 'Registraste llegadas, pero sin proveedor asignado',
+    'scorecard.empty_no_supplier_body':  'Tus recepciones sí se guardaron. Lo que falta es decir a qué proveedor le compraste cada producto: sin eso no podemos medir a nadie. Asígnalo en la ficha de cada producto y el scorecard empieza a llenarse con las próximas llegadas.',
     'scorecard.empty_body':            'Registra la llegada de una orden de compra desde el historial de Impacto para que Faro empiece a aprender el desempeño de tus proveedores.',
     'scorecard.empty_cta':             'Ir a Proveedores',
 
@@ -3718,6 +3989,10 @@ export const translations = {
     'qs.preview':          'Preview of your data:',
     'qs.more_columns':     'more columns',
     'qs.looks_good':       'This looks good, continue →',
+    // Replace 'qs.looks_good' when the file cannot train.
+    'qs.pick_another_file': 'Upload another file',
+    'qs.continue_anyway':   'Continue anyway',
+    'qs.blocked_remap_hint': 'Did we read a column wrong? Fix it above and we will check the file again.',
     'qs.processing':       'Processing…',
     'qs.learning_title':   'The system is learning',
     'qs.learning_desc':    'We automatically configure the best parameters for your business.',
@@ -3819,6 +4094,8 @@ export const translations = {
     'enum.model_desc_lstm':     'LSTM — a neural network for complex, non-linear patterns.',
 
     'errors.validation.missing': 'is required.',
+    'errors.validation.event_end_before_start': 'The event ends before it starts: it runs from {start} to {end}. Check the dates.',
+    'errors.validation.event_date_invalid':    'We cannot read the date "{value}". Write it as year-month-day, for example 2026-12-24.',
     'errors.validation.missing_argument': 'is required.',
     'errors.validation.greater_than': 'must be greater than {gt}.',
     'errors.validation.greater_than_equal': 'must be at least {ge}.',
@@ -3854,6 +4131,13 @@ export const translations = {
     'errors.validation.extra_forbidden': 'is not recognized.',
     'errors.validation.value_error': 'is not valid.',
     'errors.validation.assertion_error': 'is not valid.',
+    // Training-wizard rules of our own. The backend sends them as a stable
+    // `type` + `ctx`, exactly like Pydantic's, so the values travel as
+    // parameters instead of being baked into an English sentence.
+    'errors.validation.unknown_country': 'has no registered holidays ({country}). Use an ISO country code, such as CO, MX, PE or CL.',
+    'errors.validation.unknown_model': 'includes a model that does not exist ({model}). Choose from: {allowed}.',
+    'errors.validation.too_many_models': 'cannot hold more than {max_models} models, and we got {count}.',
+    'errors.validation.no_models_selected': 'Select at least one model to train.',
     // Field names the user actually recognizes.
     'errors.field.qty': 'Quantity',
     'errors.field.quantity': 'Quantity',
@@ -3867,6 +4151,7 @@ export const translations = {
     'errors.field.multiplier': 'Multiplier',
     'errors.field.service_level': 'Service level',
     'errors.field.lead_time_days': 'Lead time (days)',
+    'errors.field.lead_time_std': 'Lead time variability (days)',
     'errors.field.extra_days': 'Delay in days',
     'errors.field.horizon': 'Horizon',
     'errors.field.user_horizon_days': 'Horizon',
@@ -3895,6 +4180,22 @@ export const translations = {
     'errors.field.url': 'URL',
     'errors.field.events': 'Events',
     'errors.field.user_granularity': 'Level of detail',
+    // Advanced training configuration. Singular on purpose: nearly every refusal
+    // is about ONE entry of the list (a negative lag), and Pydantic reports the
+    // list's name as the field.
+    'errors.field.lags': 'The lag',
+    'errors.field.rolling': 'The rolling window',
+    'errors.field.diffs': 'The difference',
+    'errors.field.ewm_spans': 'The exponential smoothing span',
+    'errors.field.fourier_periods': 'The Fourier period',
+    'errors.field.fourier_K': 'The number of Fourier harmonics',
+    'errors.field.holiday_country': 'The holiday calendar country',
+    'errors.field.selected_models': 'The model selection',
+    'errors.field.selection_metric': 'The selection metric',
+    'errors.field.train_ratio': 'The train ratio',
+    'errors.field.wfv_splits': 'The number of validation splits',
+    'errors.field.min_history': 'The minimum history per product',
+    'errors.field.seasonal_period': 'The seasonal period',
     'qs.err_failed':       'The calculation failed:',
     'errors.training.no_models_trained': 'no product has enough history to forecast. Each product needs several dates with sales — check for products with a single row or with no demand.',
     'qs.err_timeout':      'This is taking longer than expected. Check the status later or try again.',
@@ -3918,6 +4219,21 @@ export const translations = {
     'qs.plan_granularity_daily':   'Daily',
     'qs.plan_granularity_weekly':  'Weekly',
     'qs.plan_granularity_monthly': 'Monthly',
+
+    'qs.plan_country_label': 'Which country do you sell in?',
+    'qs.plan_country_help':  'We use it for public holidays: they are among the days that move sales the most, and every country has its own.',
+    'qs.country_CR': 'Costa Rica',
+    'qs.country_CO': 'Colombia',
+    'qs.country_MX': 'Mexico',
+    'qs.country_PE': 'Peru',
+    'qs.country_CL': 'Chile',
+    'qs.country_AR': 'Argentina',
+    'qs.country_EC': 'Ecuador',
+    'qs.country_GT': 'Guatemala',
+    'qs.country_PA': 'Panama',
+    'qs.country_DO': 'Dominican Republic',
+    'qs.country_ES': 'Spain',
+    'qs.country_US': 'United States',
     // Dataset reuse (step 1: pick a previously uploaded file / retry without re-upload)
     'qs.clone_tab':          'Repeat a previous upload',
     'qs.clone_desc':         'Run the numbers again with the same file and columns as a previous upload. Only change the horizon or the level of detail above.',
@@ -3946,8 +4262,112 @@ export const translations = {
     'csv.template_hint':         'Includes the columns Faro auto-detects, with sample rows.',
 
     // ── Profiler findings on the uploaded file (keys are the English codes) ──
+    // ── Pre-training gate ─────────────────────────────────────────────────
+    'gate.decide_title':    'There is something you have to decide first',
+    'gate.decide_subtitle': 'We found things in your file that change the forecast, and only you know which reading is right. Pick one option for each: we tell you what each one does.',
+    'gate.answered_count':  '{answered} of {total} answered',
+    'gate.recommended':     'recommended',
+    'gate.answer_first':    'You still have {count} question(s) above to answer.',
+    'gate.optional_title':    'You can adjust this if you want',
+    'gate.optional_subtitle': 'This does not stop training and we leave it alone if you touch nothing. We show it because it changes the result and only you know what happened.',
+
+    'gate.issue.ambiguous_date_format':     'We cannot tell whether your dates are day/month or month/day',
+    'gate.issue.ambiguous_number_format':   'We cannot tell whether the comma separates thousands or decimals',
+    'gate.issue.cumulative_demand':         'Your quantities look like a running total, not what sold in each period',
+    'gate.issue.duplicates':                'There are several rows for the same product on the same day',
+    'gate.issue.negative_target':           'There are negative quantities',
+    'gate.issue.out_of_range_dates':        'There are impossible dates',
+    'gate.issue.dataset_wide_gap':          'There is a stretch of the calendar with no sales at all',
+    'gate.issue.non_numeric_target':        'There is text where a quantity should be',
+    'gate.issue.null_target':               'There are empty quantities',
+    'gate.issue.excel_serial_dates':        'Your dates arrived as Excel’s internal number',
+    'gate.issue.inconsistent_sku_identity': 'The same product is written several different ways',
+    'gate.issue.target_looks_like_money':   'The quantity column looks like money, not units',
+
+    'gateopt.date_format_day_first.action':        'Read the first number as the day (dd/mm/yyyy) — the Latin American convention.',
+    'gateopt.date_format_day_first.consequence':   'If the file was actually exported month-first, {n_rows} rows move to a different month and the weekly pattern the models rely on is destroyed. Nothing will look broken afterwards.',
+    'gateopt.date_format_month_first.action':      'Read the first number as the month (mm/dd/yyyy) — the US convention.',
+    'gateopt.date_format_month_first.consequence': 'If the file was exported day-first, those rows move to the wrong month and the forecast is quietly wrong.',
+
+    'gateopt.separator_comma_is_thousands.action':      'The comma separates thousands: "1,234" is one thousand two hundred and thirty-four.',
+    'gateopt.separator_comma_is_thousands.consequence': 'If it was really a decimal, every one of those quantities is multiplied by a thousand and you order a thousand times too much.',
+    'gateopt.separator_comma_is_decimal.action':        'The comma is a decimal: "1,234" is one point two three four.',
+    'gateopt.separator_comma_is_decimal.consequence':   'If it really separated thousands, those quantities are divided by a thousand and every order comes out short.',
+
+    'gateopt.cumulative_to_periodic.action':      'Convert to per-period demand by subtracting each value from the previous one.',
+    'gateopt.cumulative_to_periodic.consequence': 'Each product loses its first observation (there is nothing to subtract from). If the values were not cumulative, negatives appear everywhere.',
+    'gateopt.cumulative_keep.action':             'They are the quantity sold in each period after all — leave them.',
+    'gateopt.cumulative_keep.consequence':        'If they really are running totals the forecast grows without bound: every period looks bigger than the last and the purchase quantities run away.',
+
+    'gateopt.duplicates_sum.action':            'Add the rows of the same day and product into one period total.',
+    'gateopt.duplicates_sum.consequence':       'Correct when the ERP exports one row per SALE. If those {n_rows} rows are instead corrections of the same sale, demand is counted twice and you order double.',
+    'gateopt.duplicates_keep_last.action':      'Keep only the last row for each day and product.',
+    'gateopt.duplicates_keep_last.consequence': 'Correct when each row corrects the previous one. If they were separate sales on the same day, you lose all but one and order too little.',
+
+    'gateopt.negatives_net_into_period.action':      'Subtract them from the sales of the same day and product — treat them as returns.',
+    'gateopt.negatives_net_into_period.consequence': 'That day’s net demand drops by the returned quantity, and the rows of that day are merged into one. A day whose returns exceed its sales becomes 0. Correct only if these {n_rows} rows really are returns booked against the same day.',
+    'gateopt.negatives_as_zero.action':              'Read every negative quantity as 0.',
+    'gateopt.negatives_as_zero.consequence':         'Those days become "sold nothing". If they were real returns, demand is overstated exactly where there was trouble.',
+    'gateopt.negatives_drop_rows.action':            'Remove the rows with a negative quantity.',
+    'gateopt.negatives_drop_rows.consequence':       'You lose those rows from the history. A product already short of data can fall below the threshold and drop out of the forecast.',
+
+    'gateopt.out_of_range_dates_drop.action':      'Remove the rows with impossible dates.',
+    'gateopt.out_of_range_dates_drop.consequence': 'You lose those sales, but the calendar makes sense again and gap filling can work.',
+    'gateopt.out_of_range_dates_keep.action':      'Keep them and fix the file yourself later.',
+    'gateopt.out_of_range_dates_keep.consequence': 'Gap filling is abandoned for every series they touch — the date range is too wide to tell what is missing.',
+
+    'gateopt.gaps_fill_zero.action':       'Insert the missing periods with demand 0.',
+    'gateopt.gaps_fill_zero.consequence':  'You are asserting that the whole catalogue sold nothing for {gap_days} days. If the rows are merely missing, every model learns a collapse that never happened and the suggested orders come out low.',
+    'gateopt.gaps_interpolate.action':      'Insert the missing periods and draw a straight line between the observations.',
+    'gateopt.gaps_interpolate.consequence': 'It invents a smooth transition that probably did not happen, but it does not assert a collapse. Over-smooths if the gap was a real low season.',
+    'gateopt.gaps_forward_fill.action':      'Insert the missing periods and repeat the last observed value.',
+    'gateopt.gaps_forward_fill.consequence': 'Whatever happened to sell on {gap_start} is repeated {missing_periods} times. If that was a promotion day, the promotion becomes a month of baseline demand.',
+    'gateopt.gaps_leave.action':             'Leave the gap exactly as it is.',
+    'gateopt.gaps_leave.consequence':        'The models see the jump in dates as if nothing happened. Right if you genuinely were not trading in that stretch.',
+
+    'gateopt.non_numeric_strip_symbols.action':      'Strip currency symbols, spaces and unit suffixes and read what is left as a number.',
+    'gateopt.non_numeric_strip_symbols.consequence': '{n_recoverable} of {n_rows} values become numbers. The rest stay unreadable and their rows are dropped.',
+    'gateopt.non_numeric_as_zero.action':            'Read every unreadable value as 0.',
+    'gateopt.non_numeric_as_zero.consequence':       'You assert nothing sold in those periods. If it was merely mistyped, you understate demand there.',
+    'gateopt.non_numeric_drop_rows.action':          'Remove the rows with unreadable values.',
+    'gateopt.non_numeric_drop_rows.consequence':     'You lose those rows. Products already short of history can drop out of the forecast.',
+
+    'gateopt.null_target_as_zero.action':        'Read the empty cells as 0.',
+    'gateopt.null_target_as_zero.consequence':   'You assert that {n_rows} periods ({pct}%) sold nothing. If the quantity was simply not exported, demand is understated everywhere those blanks fall.',
+    'gateopt.null_target_drop_rows.action':      'Remove the {n_rows} rows with an empty quantity.',
+    'gateopt.null_target_drop_rows.consequence': 'You lose {pct}% of the file. Products already close to the minimum history can fall under it and be skipped.',
+
+    'gateopt.excel_serial_as_date.action':        'They are dates stored as Excel numbers — convert them to dates.',
+    'gateopt.excel_serial_as_date.consequence':   'If they really were numbers (a code, a quantity), you turn them into meaningless dates and the calendar is unusable.',
+    'gateopt.excel_serial_as_number.action':      'They are genuine numbers — leave them.',
+    'gateopt.excel_serial_as_number.consequence': 'If they were Excel dates, the history has no usable calendar and nothing seasonal can be trained.',
+
+    'gateopt.sku_identity_unify.action':            'Treat the variants as the same product (trim spaces, ignore capitalisation).',
+    'gateopt.sku_identity_unify.consequence':       '{n_variants} series become {n_groups}. If two of those codes really are different products, their sales are added together and both get one forecast — and one purchase order.',
+    'gateopt.sku_identity_keep_separate.action':      'Keep every code exactly as written.',
+    'gateopt.sku_identity_keep_separate.consequence': 'If they were the same product, its history is split into pieces and none of them has enough data for a good forecast.',
+
+    'gateopt.target_is_units.action':          'They are units sold — this is right.',
+    'gateopt.target_is_units.consequence':     'We keep using that column. If it was money, every forecast "unit" is really a currency unit and the quantities to order mean nothing.',
+    'gateopt.target_is_money_remap.action':      'It is money — go back and map the units column instead.',
+    'gateopt.target_is_money_remap.consequence': 'Training stays blocked until the demand column points somewhere else.',
+
+    'gateopt.outliers_leave.action':          'Leave the extreme values in.',
+    'gateopt.outliers_leave.consequence':     'If they are real sales — a wholesale order, a promotion — this is the right call: the model learns they exist and expects them.',
+    'gateopt.outliers_clip_iqr.action':       'Clip them back to the normal range of each product.',
+    'gateopt.outliers_clip_iqr.consequence':  'The {n_rows} peaks are flattened to the edge of ordinary demand. A genuine peak season is erased from the history, so next year the model does not expect it and you under-order exactly when it matters.',
+    'gateopt.outliers_winsorize.action':      'Pull them in to a few standard deviations of each product’s mean.',
+    'gateopt.outliers_winsorize.consequence': 'Gentler than clipping: it keeps the fact that a peak happened but shrinks it. Still distorts a real peak season.',
+
     'dqissue.title':    'Check this before you continue',
     'dqissue.subtitle': 'You can continue anyway, but fixing the file now saves you a wrong projection.',
+
+    // Alternate header when a finding carries `blocking`: the file cannot
+    // train, so "you can continue anyway" is the wrong thing to say.
+    'dqissue.blocked_title':    'This file cannot produce a forecast',
+    'dqissue.blocked_subtitle': 'This is not a warning: as it stands, the calculation would finish with no result at all. Fix the file and upload it again.',
+    'dqissue.no_trainable_history':     'No product has enough history: at least {min_required} sales periods are required and the most any product has in your file is {longest_history}.',
+    'dqissue.no_trainable_history.fix': 'A forecast is learned from the past, and there is almost no past to read here. Upload the full history: {min_required} sales dates for a single product are enough to train, and at around 6 months the purchase suggestion becomes reliable.',
 
     'dqissue.granularity_conflict':     'Your products are not reported at the same frequency ({per_bucket}).',
     'dqissue.granularity_conflict.fix': 'They all train on the same time axis, so a product reported monthly is modeled as if it sold every day and its purchase suggestion comes out far too low. Split the file by frequency, or use the coarsest granularity ({suggested}) for everything.',
@@ -4001,11 +4421,17 @@ export const translations = {
     'errors.dataset_not_found':             'That dataset was not found.',
     'errors.dataset_file_missing':          'The file for "{session}" is no longer on the server. Upload it again.',
     'errors.dataset_file_empty':            'The file for "{session}" is empty or has no columns. Upload a CSV with a header row and data.',
+    'errors.training_blocked_data_fatal':   'This file cannot produce a forecast, and no correction would change that. Check the file and upload it again.',
+    'errors.training_blocked_unresolved':   'Before training you have to decide what to do about the problems we found in the file: leaving them unresolved would produce a forecast that is wrong in a way we can already see.',
+    'errors.event_date_invalid':            'We cannot read the date "{value}". Write it as year-month-day, for example 2026-12-24.',
+    'errors.event_multiplier_not_positive': 'The multiplier has to be greater than 0: with {multiplier} there would be no sales to simulate.',
     'errors.dataset_file_unreadable':       'We could not read the file for "{session}": invalid CSV format. Check that it is not corrupted and try again.',
     'errors.dataset_not_inspected':         'This file has not been inspected yet. Open the review step of the wizard first.',
     'errors.session_no_dataset':            'This session has no dataset yet. Upload one to continue.',
     'errors.columns_not_configured':        'The date and sales columns are not set yet. Complete the column step of the wizard.',
     'errors.columns_config_invalid':        'The column configuration is not valid. Review the mapping and try again.',
+    'errors.canonical_columns_missing':     'No column is mapped for: {fields}. Go back to the mapping step and pick one for each.',
+    'errors.canonical_columns_not_in_file': 'The columns chosen for {fields} are not in the file: {chosen}. Available columns: {columns}.',
     'errors.column_required':               'The {field} column is required. Pick one of these: {columns}.',
     'errors.column_not_in_file':            'Column "{column}" does not exist in the file you uploaded. Available columns: {columns}.',
     'errors.upload_parse_failed':           'We could not read the file you uploaded. Check that it is a valid CSV or Excel file and try again.',
@@ -4065,7 +4491,7 @@ export const translations = {
     'inventory.bulk_row_discarded':  'Changes to row {sku} discarded',
     'inventory.bulk_row_error':      'Row {sku} could not be saved',
 
-    'skus.metrics_table_caption':    'Model accuracy for {sku}, best first.',
+    'skus.metrics_table_caption':    'Models evaluated for {sku}, ordered by expected cost, best first.',
 
     // Command palette (Ctrl+K) and undo instead of confirm.
     'cmd.placeholder':            'Search a product or type an action…',
@@ -4431,6 +4857,8 @@ export const translations = {
     'freshness.kpi_caveat':           'These figures are computed on out-of-date data — treat them as a reference, not as today\'s picture.',
     'hoy.no_pending_actions_unverified': 'Nothing urgent that we can see — but we cannot confirm it',
     'hoy.inventory_unverified':          'Your data is out of date, so the absence of alerts does not mean everything is fine.',
+    'hoy.no_pending_actions_unmeasured': 'We cannot tell you whether anything is urgent',
+    'hoy.inventory_unmeasured':          'None of your products has stock on file. Without knowing how much is left we cannot warn you about anything: record it and the traffic light starts working.',
 
     // Ways out for someone who cannot verify their email (spam, expired link).
     'auth.resend_verification':          'Resend email',
@@ -4460,6 +4888,7 @@ export const translations = {
     'runcorr.clip_outliers':   'We trimmed the extreme values on {n_skus} product(s) so one stray figure does not drag the forecast.',
     'runcorr.drop_duplicate_timestamps': 'We merged the repeated rows sharing the same date and product.',
     'runcorr.cast_target_to_numeric':    'We converted the sales column to numbers; it arrived as text.',
+    'runcorr.censored_demand_recovered': 'We found {n_recovered} out-of-stock day(s) across {n_skus} product(s). What sold on those days is not what customers wanted, only what was left on the shelf, so we raised those figures by about {units_recovered} units in total, up to what the series had been selling. Without that adjustment the forecast reads a stockout as a drop in demand and has you order even less. If you compare against your own file, that is the difference.',
 
     // Pandas frequency aliases as words — the engine speaks "D"/"MS", the user does not.
     'freq.H':  'hourly',
@@ -4484,6 +4913,14 @@ export const translations = {
     'runwarn.TARGET_FEATURE_LEAKAGE.title': 'A column repeats the sales we are trying to predict',
     'runwarn.TARGET_FEATURE_LEAKAGE.what':  'The model can see the answer among its input columns. That is why accuracy looks extremely high while the forward forecast is useless: that column does not exist in the future.',
     'runwarn.TARGET_FEATURE_LEAKAGE.fix':   'Remove that column from the column mapping and train again. Ignore this session\'s accuracy figure.',
+
+    'runwarn.SKU_WITHOUT_RECOMMENDATION.title': 'Products left without a purchase suggestion',
+    'runwarn.SKU_WITHOUT_RECOMMENDATION.what':  'The model selected for these products never produced a forecast, so they carry no suggested quantity. Note that on the semáforo this looks exactly like a well-stocked product, and it is not one.',
+    'runwarn.SKU_WITHOUT_RECOMMENDATION.fix':   'Check these products by hand before your next order. If it keeps happening, the cause is usually a history that is too short or too full of gaps.',
+
+    'runwarn.NO_MODEL_BEAT_BASELINE.title': 'Products where no model beat "repeat the last value"',
+    'runwarn.NO_MODEL_BEAT_BASELINE.what':  'For these products, forecasting with the last known figure turned out more accurate than any trained model. Their history carries no usable pattern yet. We still compute a suggestion, but trust it less than the rest.',
+    'runwarn.NO_MODEL_BEAT_BASELINE.fix':   'Common for new products, very sporadic sellers, or irregular histories. A few more months of data usually fixes it on its own.',
 
     'runwarn.NEAR_PERFECT_CORRELATION.title': 'A column is almost identical to sales',
     'runwarn.NEAR_PERFECT_CORRELATION.what':  'Usually the same figure in another unit (revenue next to units sold). The model leans on it and looks more accurate than it really is.',
@@ -4516,6 +4953,10 @@ export const translations = {
     'runwarn.MODEL_INCOMPATIBLE.title': 'A model could not be used with this data',
     'runwarn.MODEL_INCOMPATIBLE.what':  'The model you picked needs more history or a different frequency, so the forecast came from the other models.',
     'runwarn.MODEL_INCOMPATIBLE.fix':   'You can leave it as is, or train again picking other models.',
+
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.title': 'A column could not be used to predict',
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.what':  'That column exists in your history, but nobody knows what it will be on a future date, so the model cannot lean on it. Leaving it in would explain the forecast with an input it never actually receives.',
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.fix':   'Nothing to do: the rest of your data was still used. If that column matters to your sales, upload it with its planned value going forward.',
 
     'runwarn.HORIZON_TOO_LARGE.title': 'The horizon is long for the history available',
     'runwarn.HORIZON_TOO_LARGE.what':  'You are asking to predict further ahead than the history can support, so the last periods are far less reliable.',
@@ -4602,6 +5043,10 @@ export const translations = {
     'hoy.narrative_products_need_order_week': 'product(s) need ordering this week.',
     'hoy.narrative_capital_tied_overstock': 'tied up in overstock — consider pausing those orders.',
     'hoy.narrative_inventory_under_control': 'Inventory is under control today. No urgent actions pending.',
+    'hoy.narrative_nothing_counted': 'We cannot tell you how your inventory is doing yet: none of your {count} product(s) has stock on file. Record it and the traffic light will show up here.',
+    'hoy.narrative_some_uncounted':  'That said, {count} product(s) are not counted, so they are not part of this reading.',
+    'hoy.kpi_nothing_counted':    'None of your {total} product(s) has stock on file, so these figures do not say "no risk" — they say "we do not know". Record the stock to make the traffic light work.',
+    'hoy.kpi_partially_counted':  'These figures cover only the products with stock on file: {count} of {total} are not counted and are left out.',
     'hoy.narrative_forecast_accuracy': 'Forecast accuracy',
     'hoy.csv_col_product': 'Product',
     'hoy.csv_col_quantity': 'Quantity',
@@ -4651,6 +5096,9 @@ export const translations = {
     'hoy.optimizer_transfers_title':'Recommended transfers',
     'hoy.optimizer_transfer_line':  'Move {qty} units of {sku} from {from} to {to}',
     'hoy.optimizer_convert_to_po':  'Convert to PO',
+    'hoy.needs_stock_title':  '{count} product(s) still need counting',
+    'hoy.needs_stock_body':   'We do not know how much of these you have left, and how much to order depends on exactly that. They are left out of the purchase suggestions: we would rather show nothing than a made-up number.',
+    'hoy.needs_stock_cta':    'Record the stock for these products →',
     'hoy.optimizer_empty':          'No purchase or transfer recommendations right now.',
     'hoy.optimizer_loading':        'Calculating recommendations…',
     'hoy.optimizer_po_created':     'Purchase order created',
@@ -4928,6 +5376,7 @@ export const translations = {
     'skus.pdf_col_rmse': 'RMSE',
     'skus.pdf_col_wape': 'WAPE',
     'skus.pdf_col_bias': 'Bias',
+    'skus.pdf_col_cost': 'Cost',
     'skus.pdf_footer_title': 'Predictions Report',
     'skus.chip_granularity': 'Granularity',
     'skus.chip_chart': 'Chart',
@@ -4969,6 +5418,8 @@ export const translations = {
     'skus.col_rmse': 'RMSE',
     'skus.col_wape': 'WAPE',
     'skus.col_bias': 'Bias',
+    'skus.col_cost': 'Cost',
+    'skus.col_cost_help': 'What getting it wrong would cost with this model, counting that running out costs more than having spare. This is the column the winning model is picked by.',
     'skus.col_folds': 'Folds',
     'skus.badge_best': 'BEST',
     'skus.quality_records': 'Records',
@@ -5010,6 +5461,28 @@ export const translations = {
     'skus.quality_label_lower': 'quality',
     'skus.no_quality_data': 'No quality data',
     'skus.accuracy_label': 'Accuracy',
+    // ── Policy backtest ──
+    'skus.policy_title':           'What buying this way would have done',
+    'skus.policy_subtitle':        'We replayed your purchases over sales that already happened and compared them with ordering the same as last time, which is what you would do without a forecast.',
+    'skus.policy_baseline_name':   'ordering as usual',
+    'skus.policy_vs_baseline':     'Ordering as usual: {baseline}',
+    'skus.policy_fill_rate':       'Demand served',
+    'skus.policy_stockout_buckets':'Periods out of stock',
+    'skus.policy_avg_inventory':   'Average inventory',
+    'skus.policy_capital':         'Cash in the warehouse',
+    'skus.policy_units':           'u',
+    'skus.policy_stockouts_avoided': '{n} stockouts avoided',
+    'skus.policy_stockouts_added':   '{n} more stockouts',
+    'skus.policy_tradeoff':        'The two halves belong together: serving more demand almost always costs more inventory. Neither figure says anything on its own.',
+    'skus.policy_coverage_chip':   '{n} of {total} products',
+    'skus.policy_coverage_chip_plain': '{n} products',
+    'skus.policy_coverage_note':   'These figures cover {n} of this session\'s {total} products — the only ones with enough history to simulate a past purchase. The rest are not counted here.',
+    'skus.policy_coverage_note_plain': 'These figures cover {n} product(s) — the only ones with enough history to simulate a past purchase. The rest of your catalog is not counted here.',
+    'skus.policy_sku_title':       'Buying this way, this product would have',
+    'skus.policy_sku_fill':        'served {model} of its demand, against {baseline} ordering as usual',
+    'skus.policy_sku_stockouts':   'spent {model} periods out of stock, against {baseline}',
+    'skus.policy_sku_inventory':   'carried {model} units on average, against {baseline}',
+    'skus.risk_measured_caption':  'This cushion comes from {model}\'s own errors across the lead time, not from the textbook formula.',
     'skus.tab_forecast': 'Forecast',
     'skus.tab_pattern': 'How it sells',
     'skus.trend_title': 'Is it really growing?',
@@ -5624,6 +6097,8 @@ export const translations = {
     'suppliers.pb_toggle':             'Price breaks',
     'suppliers.pb_title':              'Price breaks',
     'suppliers.pb_hint':                'From a certain quantity on, each unit costs less. Used to suggest when it is worth ordering more.',
+    'suppliers.pb_min_qty_positive':    'The minimum quantity has to be greater than 0.',
+    'suppliers.pb_price_positive':      'The unit price has to be greater than 0.',
     'suppliers.pb_loading':            'Loading price breaks…',
     'suppliers.pb_empty':              'This supplier has no price breaks registered yet.',
     'suppliers.pb_err_loading':        'Could not load the price breaks',
@@ -5669,6 +6144,8 @@ export const translations = {
     'scorecard.deviation_previous':    'previous',
     'scorecard.deviation_method':      'Detected with a 3-sigma statistical control rule over the median and median absolute deviation of each supplier\'s own history.',
     'scorecard.empty_title':           'No receptions recorded yet',
+    'scorecard.empty_no_supplier_title': 'You recorded arrivals, but with no supplier assigned',
+    'scorecard.empty_no_supplier_body':  'Your receptions were saved. What is missing is which supplier you bought each product from: without that we cannot score anyone. Set it on each product and the scorecard starts filling up with the next arrivals.',
     'scorecard.empty_body':            'Record the arrival of a purchase order from the Impact history so Faro can start learning your suppliers\' performance.',
     'scorecard.empty_cta':             'Go to Suppliers',
 

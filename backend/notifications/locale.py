@@ -120,6 +120,15 @@ _ES: dict[str, str] = {
     "po_email_col_sku":     "SKU",
     "po_email_col_product": "Producto",
     "po_email_col_qty":     "Cantidad",
+    # ── PO document (PDF/TXT) that Faro sends to the supplier ────────────────
+    # A line with no cost on file used to print "₡0", and the total with it, so
+    # the document leaving the tenant's name quoted a price of zero to their
+    # supplier. An unknown price is stated as unknown; the total then covers
+    # only the priced lines and says so, instead of adding zeros in silence.
+    "po_pdf_cost_unknown":  "a convenir",
+    "po_pdf_total":         "Total: {amount}",
+    "po_pdf_total_partial": "Total ({priced} de {total} líneas con precio): {amount}",
+    "po_pdf_total_none":    "Total: pendiente de cotizar",
     # ── Monthly recap email ───────────────────────────────────────────────────
     # Every tile states where its number came from, so the copy never implies a
     # saving Faro cannot measure.

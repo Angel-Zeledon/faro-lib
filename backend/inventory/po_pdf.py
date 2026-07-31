@@ -14,6 +14,7 @@ from pathlib import Path
 
 from backend.storage import paths
 from backend.formatting import money
+from backend.notifications.locale import render_es
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,26 @@ def slugify_supplier_name(name: str) -> str:
     filename and in the public serving URL's path."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return slug or "supplier"
+
+
+def _total_line(priced: list, items: list, total_value: float, currency) -> str:
+    """The order's total, stated for exactly the lines that have a price.
+
+    Three cases, and only the first is the old behaviour:
+      * every line priced  -> "Total: ₡X"
+      * some priced        -> "Total (3 de 5 líneas con precio): ₡X"
+      * none priced        -> "Total: pendiente de cotizar"
+
+    Summing unknown costs as zero would have understated the order to the
+    supplier, which is the one direction a purchase document must never err in.
+    """
+    if not priced:
+        return render_es("po_pdf_total_none")
+    amount = money(total_value, currency=currency)
+    if len(priced) == len(items):
+        return render_es("po_pdf_total", amount=amount)
+    return render_es("po_pdf_total_partial",
+                     priced=len(priced), total=len(items), amount=amount)
 
 
 def generate_po_pdf(
@@ -45,7 +66,14 @@ def generate_po_pdf(
         from backend.api.v1.currency import currency_of
         currency = currency_of(tenant_id)
 
-    total_value = sum((i.get("final_qty") or 0) * (i.get("unit_cost") or 0) for i in items)
+    # A line whose cost nobody recorded is priced as UNKNOWN, not as zero.
+    # `unit_cost or 0` used to make this document — which leaves the tenant and
+    # arrives at their supplier, in their name — quote "₡0" per unit and a
+    # "Total: ₡0" for the order. The supplier has no way to tell that apart from
+    # a price the buyer meant. The total below therefore covers only the priced
+    # lines and says how many those are.
+    priced = [i for i in items if i.get("unit_cost") is not None]
+    total_value = sum((i.get("final_qty") or 0) * float(i["unit_cost"]) for i in priced)
 
     try:
         from reportlab.lib.pagesizes import letter
@@ -90,7 +118,8 @@ def generate_po_pdf(
         rows = [header]
         for i in items:
             qty = i.get("final_qty") or 0
-            cost = i.get("unit_cost") or 0
+            cost = i.get("unit_cost")
+            unknown = render_es("po_pdf_cost_unknown")
             rows.append([
                 str(i.get("sku", "")),
                 str(i.get("display_name") or i.get("sku", "")),
@@ -99,8 +128,8 @@ def generate_po_pdf(
                 # decimals hardcoded here rendered "₡8.50" for a colón cost the
                 # app itself shows as "₡9" everywhere else, and would have shown
                 # phantom cents for every 0-decimal currency in SUPPORTED.
-                money(cost, currency=currency),
-                money(qty * cost, currency=currency),
+                unknown if cost is None else money(cost, currency=currency),
+                unknown if cost is None else money(qty * float(cost), currency=currency),
             ])
         table = Table(rows, colWidths=[1.1*inch, 2.3*inch, 1*inch, 1.1*inch, 1*inch])
         table.setStyle(TableStyle([
@@ -114,7 +143,7 @@ def generate_po_pdf(
         ]))
         story.append(table)
         story.append(Spacer(1, 0.15*inch))
-        story.append(Paragraph(f"<b>Total: {money(total_value, currency=currency)}</b>", body))
+        story.append(Paragraph(f"<b>{_total_line(priced, items, total_value, currency)}</b>", body))
 
         doc.build(story)
 
@@ -129,9 +158,11 @@ def generate_po_pdf(
         ]
         for i in items:
             qty = i.get("final_qty") or 0
-            cost = i.get("unit_cost") or 0
-            lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x {money(cost, currency=currency)}")
-        lines.append(f"\nTotal: {money(total_value, currency=currency)}")
+            cost = i.get("unit_cost")
+            shown = (render_es("po_pdf_cost_unknown") if cost is None
+                     else money(cost, currency=currency))
+            lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x {shown}")
+        lines.append(f"\n{_total_line(priced, items, total_value, currency)}")
         path.with_suffix(".txt").write_text("\n".join(lines), encoding="utf-8")
         return path.with_suffix(".txt")
 

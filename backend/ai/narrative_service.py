@@ -54,11 +54,26 @@ PRINCIPIOS ABSOLUTOS:
 """
 
 
+# The purchasing panel calls this on every load and blocks on it. 60s was long
+# enough that nothing downstream survived the wait: measured end to end, the
+# backend answered its honest fallback after 63.7s, by which point the Next
+# proxy had already given up and handed the browser a bare 500 — so the
+# graceful "we could not reach the AI, here is the rules-based summary" never
+# arrived, and a red "Algo falló de nuestro lado" appeared instead, sometimes on
+# a page the user had already navigated to.
+#
+# 12s is chosen against the client, not the model: the frontend stops waiting at
+# 8s and renders its own fallback, so anything slower than that is already too
+# late to be shown. A real Anthropic call returns well inside it; the local
+# Ollama fallback either does too or was never going to.
+_NARRATIVE_TIMEOUT_SECONDS = 12.0
+
+
 def _get_client():
     """Returns the local LLM client, or None if it can't be constructed."""
     try:
         from backend.ai.local_llm import get_local_llm_client
-        return get_local_llm_client(timeout=60.0)
+        return get_local_llm_client(timeout=_NARRATIVE_TIMEOUT_SECONDS)
     except Exception as e:
         log.warning("Narrative service: local LLM client unavailable: %s", e)
         return None
