@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasets import service as ds_svc
@@ -30,7 +31,7 @@ from backend.schemas.common import ok
 from backend.schemas.configuration import (
     AttachDatasetRequest, BusinessConfigRequest, CanonicalColumnsRequest,
     ColumnsConfigRequest, FeaturesConfigRequest, ForecastConfigRequest,
-    ModelsConfigRequest, ValidationConfigRequest,
+    ModelsConfigRequest, RemediationsRequest, ValidationConfigRequest,
 )
 from backend.sessions import service as session_svc
 
@@ -48,6 +49,73 @@ def _get_session_or_404(tenant_id: str, session_id: str) -> dict:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── Partial-save merge ─────────────────────────────────────────────────────
+#
+# Every wizard step posts one config blob, and a client is free to post only
+# the fields its screen owns. `model_dump()` cannot serve that: it fills every
+# omitted field with the schema default, so by the time a handler sees the dict
+# "the client did not send lead_time_days" and "the client sent 7" are the same
+# thing — and writing that dict wholesale reverted whatever the user had
+# configured from another screen, while answering 200 with the reverted values.
+# `model_dump(exclude_unset=True)` is what keeps the two apart (verified against
+# pydantic 2.13.4 through FastAPI's own validation path: an omitted field is
+# absent from the dump, a field sent with a value equal to its default is
+# present in it).
+
+def _apply_patch(base: dict, patch: dict, model: BaseModel) -> dict:
+    """Overlay `patch` onto `base`, descending into nested request models."""
+    merged = dict(base)
+    for key, value in patch.items():
+        sub = getattr(model, key, None)
+        current = merged.get(key)
+        # A nested request model gets the same treatment one level down: a body
+        # that sets only `outlier_config.n_sigma` must not blank the rest of the
+        # stored outlier config. Plain `Dict[...]` fields are deliberately NOT
+        # deep-merged — canonical_mapping, hyperparameters, transforms and the
+        # per-SKU override maps are user-supplied collections, and merging them
+        # would make removing a key impossible.
+        if isinstance(sub, BaseModel) and isinstance(value, dict) and isinstance(current, dict):
+            merged[key] = _apply_patch({**sub.model_dump(), **current}, value, sub)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _merge_config(body: BaseModel, stored: Optional[dict]) -> dict:
+    """Build the config to persist from a body that may name only SOME fields.
+
+    Three layers, lowest priority first:
+
+      1. the schema defaults — this is what makes the FIRST save of a session
+         (nothing stored yet) produce a COMPLETE, valid config rather than a
+         one-key blob the training runner would later read holes out of. It
+         also back-fills fields added to the schema after `stored` was written.
+      2. whatever is already stored — everything the user configured earlier.
+      3. the fields THIS request actually set.
+
+    An explicit `null` counts as layer 3: pydantic records the key as set, so
+    clearing a field on purpose still works.
+    """
+    return _apply_patch(
+        {**body.model_dump(), **(stored or {})},
+        body.model_dump(exclude_unset=True),
+        body,
+    )
+
+
+def _persist_config(tenant_id: str, session_id: str, field: str, config: dict) -> dict:
+    """Write a config blob and return what the database now holds.
+
+    The response echoes THIS, not the request body — a client that trusts the
+    echo is how the full-replace bug stayed invisible for so long. A write that
+    comes back empty is reported as a failure instead of being echoed as a save.
+    """
+    stored = session_store.set_field(tenant_id, session_id, field, config)
+    if stored is None:
+        raise HTTPException(500, f"Configuration '{field}' could not be saved.")
+    return stored
 
 
 def _run_granularity_detection(
@@ -197,6 +265,98 @@ def inspect_dataset(
         raise HTTPException(status_code=500, detail=f"Inspection failed: {e}")
 
 
+# ── Pre-training gate ──────────────────────────────────────────────────────
+
+@router.get("/sessions/{session_id}/data-gate")
+def get_data_gate(session_id: str, user: CurrentUser = Depends(get_current_user)):
+    """What is wrong with this file, and what the user may do about it.
+
+    Evaluated against the CONFIRMED column mapping when there is one, so the
+    panel the user answers is the same computation `POST /train` enforces.
+    Falls back to the profiler's own recommendation before the mapping step.
+    """
+    from backend.sessions import data_gate as gate_svc
+
+    _get_session_or_404(user.tenant_id, session_id)
+    result = gate_svc.evaluate(user.tenant_id, session_id)
+    if result is None:
+        raise AppError(
+            "session_no_dataset",
+            "No dataset attached. POST /sessions/{id}/dataset first.",
+            status_code=400,
+        )
+    chosen = gate_svc.chosen_remediations(user.tenant_id, session_id)
+    from forecasting_core.data import gate as gate_mod
+    return ok({
+        **result,
+        "chosen_remediations": chosen,
+        "unresolved": gate_mod.unresolved(result, chosen),
+    })
+
+
+@router.post("/sessions/{session_id}/configure/remediations")
+def configure_remediations(
+    session_id: str,
+    body: RemediationsRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Record how the user chose to handle each blocking-but-fixable finding.
+
+    Choices are validated against the LIVE gate, not against a static list: an
+    option that does not answer a finding this file actually has would sit in
+    the config looking like a decision and change nothing at training time.
+    """
+    from backend.sessions import data_gate as gate_svc
+
+    _get_session_or_404(user.tenant_id, session_id)
+    result = gate_svc.evaluate(user.tenant_id, session_id)
+    if result is None:
+        raise AppError(
+            "session_no_dataset",
+            "No dataset attached. POST /sessions/{id}/dataset first.",
+            status_code=400,
+        )
+
+    offered = {
+        issue["type"]: {o["code"] for o in issue.get("remediations", [])}
+        for issue in result.get("issues", [])
+    }
+    rejected = [
+        f"{issue_type}={code}"
+        for issue_type, code in body.remediations.items()
+        if code not in offered.get(issue_type, set())
+    ]
+    if rejected:
+        raise AppError(
+            "remediation_not_offered",
+            "These choices do not answer any finding in this file: "
+            f"{', '.join(rejected)}.",
+            status_code=422,
+            params={"choices": ", ".join(rejected)},
+        )
+
+    stored = dict(session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {})
+    merged = {**(stored.get("remediations") or {}), **body.remediations}
+    stored["remediations"] = merged
+    stored["remediations_configured_at"] = _now()
+    stored["remediations_configured_by"] = user.user_id
+    session_store.set_field(user.tenant_id, session_id, "columns_cfg", stored)
+
+    from forecasting_core.data import gate as gate_mod
+    return ok({
+        "remediations": merged,
+        "unresolved": gate_mod.unresolved(result, merged),
+    })
+
+
+@router.get("/sessions/{session_id}/configure/remediations")
+def get_remediations(session_id: str, user: CurrentUser = Depends(get_current_user)):
+    from backend.sessions import data_gate as gate_svc
+
+    _get_session_or_404(user.tenant_id, session_id)
+    return ok({"remediations": gate_svc.chosen_remediations(user.tenant_id, session_id)})
+
+
 # ── Columns ────────────────────────────────────────────────────────────────
 
 @router.post("/sessions/{session_id}/configure/columns")
@@ -221,6 +381,14 @@ def configure_columns(
     inspection = session_store.get_field(user.tenant_id, session_id, "inspection") or {}
     real_columns = [c["name"] for c in inspection.get("profile", {}).get("columns", [])]
 
+    # This endpoint accepts two different schemas, so a partial save may only
+    # merge onto a stored config of the SAME shape. Merging a canonical body
+    # onto an old-style blob (or the reverse) would leave both vocabularies in
+    # one row, and the runner reads whichever it finds first.
+    stored_cols = session_store.get_field(user.tenant_id, session_id, "columns_cfg") or {}
+    stored_is_canonical = stored_cols.get("schema_version") == "canonical_v1"
+    merge_base = stored_cols if stored_cols and stored_is_canonical == is_canonical else None
+
     if is_canonical:
         # The wizard's column-mapping step is where a user lands here, so both
         # failures share one code and carry the schema's English as `reason`.
@@ -239,7 +407,7 @@ def configure_columns(
                 params={"reason": str(e)},
             )
         config = {
-            **req.model_dump(),
+            **_merge_config(req, merge_base),
             "schema_version": "canonical_v1",
             "configured_at":  _now(),
             "configured_by":  user.user_id,
@@ -282,9 +450,13 @@ def configure_columns(
                     status_code=422,
                     params={"column": req_old.sku_column, "columns": ", ".join(real_columns)},
                 )
-        config = {**req_old.model_dump(), "configured_at": _now(), "configured_by": user.user_id}
+        config = {
+            **_merge_config(req_old, merge_base),
+            "configured_at": _now(),
+            "configured_by": user.user_id,
+        }
 
-    session_store.set_field(user.tenant_id, session_id, "columns_cfg", config)
+    config = _persist_config(user.tenant_id, session_id, "columns_cfg", config)
     if s["status"] in ("INSPECTED", "COLUMNS_CONFIGURED", "FEATURES_CONFIGURED",
                         "MODELS_CONFIGURED", "COMPLETED", "FAILED"):
         try:
@@ -318,8 +490,9 @@ def configure_features(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     s = _get_session_or_404(user.tenant_id, session_id)
-    config = {**body.model_dump(), "configured_at": _now()}
-    session_store.set_field(user.tenant_id, session_id, "features_cfg", config)
+    stored = session_store.get_field(user.tenant_id, session_id, "features_cfg")
+    config = {**_merge_config(body, stored), "configured_at": _now()}
+    config = _persist_config(user.tenant_id, session_id, "features_cfg", config)
 
     if s["status"] in ("COLUMNS_CONFIGURED", "FEATURES_CONFIGURED",
                         "MODELS_CONFIGURED", "COMPLETED", "FAILED"):
@@ -345,8 +518,9 @@ def configure_models(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     s = _get_session_or_404(user.tenant_id, session_id)
-    config = {**body.model_dump(), "configured_at": _now()}
-    session_store.set_field(user.tenant_id, session_id, "models_cfg", config)
+    stored = session_store.get_field(user.tenant_id, session_id, "models_cfg")
+    config = {**_merge_config(body, stored), "configured_at": _now()}
+    config = _persist_config(user.tenant_id, session_id, "models_cfg", config)
 
     if s["status"] in ("FEATURES_CONFIGURED", "MODELS_CONFIGURED",
                         "COMPLETED", "FAILED", "CANCELLED"):
@@ -372,9 +546,9 @@ def configure_validation(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _get_session_or_404(user.tenant_id, session_id)
-    config = {**body.model_dump(), "configured_at": _now()}
-    session_store.set_field(user.tenant_id, session_id, "validation_cfg", config)
-    return ok(config)
+    stored = session_store.get_field(user.tenant_id, session_id, "validation_cfg")
+    config = {**_merge_config(body, stored), "configured_at": _now()}
+    return ok(_persist_config(user.tenant_id, session_id, "validation_cfg", config))
 
 
 @router.get("/sessions/{session_id}/configure/validation")
@@ -486,9 +660,9 @@ def configure_forecast(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _get_session_or_404(user.tenant_id, session_id)
-    config = {**body.model_dump(), "configured_at": _now()}
-    session_store.set_field(user.tenant_id, session_id, "forecast_cfg", config)
-    return ok(config)
+    stored = session_store.get_field(user.tenant_id, session_id, "forecast_cfg")
+    config = {**_merge_config(body, stored), "configured_at": _now()}
+    return ok(_persist_config(user.tenant_id, session_id, "forecast_cfg", config))
 
 
 @router.get("/sessions/{session_id}/config/forecast")
@@ -504,9 +678,9 @@ def configure_business(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _get_session_or_404(user.tenant_id, session_id)
-    config = {**body.model_dump(), "configured_at": _now()}
-    session_store.set_field(user.tenant_id, session_id, "business_cfg", config)
-    return ok(config)
+    stored = session_store.get_field(user.tenant_id, session_id, "business_cfg")
+    config = {**_merge_config(body, stored), "configured_at": _now()}
+    return ok(_persist_config(user.tenant_id, session_id, "business_cfg", config))
 
 
 @router.get("/sessions/{session_id}/config/business")

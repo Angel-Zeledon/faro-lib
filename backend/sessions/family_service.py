@@ -135,7 +135,15 @@ def launch_training_family(
     """
     from backend.db.connection import execute
     from backend.db import session_store
+    from backend.sessions import data_gate
     from backend.sessions import service as session_svc
+
+    # THE gate, and it lives here on purpose. Every launch path goes through
+    # this function — POST /sessions/{id}/train, POST /demo/quickstart, the ERP
+    # integrations sync and the seed script — so a caller cannot start a run on
+    # data the gate rejected by talking to a different endpoint. Enforcing it in
+    # the REST handler alone is what made it a suggestion.
+    data_gate.enforce(tenant_id, base_session_id)
 
     dates = _read_dataset_dates(tenant_id, base_session_id)
     specs = plan_family(dates, user_granularity, user_horizon_days)  # always >= 1

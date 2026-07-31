@@ -27,7 +27,7 @@ def test_sync_imports_stock_dataset_and_enqueues_training(client, test_tenant, m
         def fetch_products(self): return [base.ProviderProduct("SKU-Z", "Zeta", 5.0)]
         def fetch_stock(self): return [base.ProviderStock("SKU-Z", 12.0, "principal")]
         def fetch_sales(self, since=None):
-            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0, 8.0) for d in range(1, 20)]
+            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0, 8.0) for d in range(1, 32)]
     monkeypatch.setattr(registry, "get_provider", lambda name, creds: FakeProvider(creds))
 
     tid = test_tenant["id"]
@@ -90,7 +90,7 @@ def test_sync_with_store_lines_builds_store_column_and_mapping(client, test_tena
         def fetch_stock(self): return [base.ProviderStock("SKU-Z", 12.0, "principal")]
         def fetch_sales(self, since=None):
             lines = [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0, 8.0, store="Norte")
-                     for d in range(1, 20)]
+                     for d in range(1, 32)]
             # Same sku+date as a Norte line but a different store: must stay
             # a separate dataset row, not be summed into Norte's.
             lines.append(base.ProviderSaleLine(date(2026, 1, 1), "SKU-Z", 5.0, 8.0, store="Sur"))
@@ -151,7 +151,7 @@ def test_sync_normalizes_warehouse_and_store_spellings(client, test_tenant, monk
             ]
         def fetch_sales(self, since=None):
             lines = [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0, 8.0, store="norte")
-                     for d in range(1, 20)]
+                     for d in range(1, 32)]
             # 'sur' must match the 'Sur' spelling introduced by THIS sync's
             # stock import, even though it isn't committed yet.
             lines.append(base.ProviderSaleLine(date(2026, 1, 1), "SKU-Y", 5.0, 8.0, store="sur"))
@@ -288,7 +288,7 @@ def test_run_daily_syncs_all_connections_isolating_failures(client, test_tenant,
         def fetch_products(self): return [base.ProviderProduct("SKU-OK", "Okay", 4.0)]
         def fetch_stock(self): return [base.ProviderStock("SKU-OK", 7.0, "principal")]
         def fetch_sales(self, since=None):
-            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-OK", 2.0, 6.0) for d in range(1, 20)]
+            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-OK", 2.0, 6.0) for d in range(1, 32)]
 
     class BrokenProvider(base.AccountingProvider):
         def test_connection(self): pass
@@ -332,3 +332,147 @@ def test_run_daily_syncs_all_connections_isolating_failures(client, test_tenant,
         assert "connection reset by provider" in broken_row["last_error"]
     finally:
         execute("DELETE FROM tenants WHERE id = %s", (broken_tenant["id"],))
+
+
+# ── The gate stops an unattended sync, and the tenant has to be able to see it ─
+#
+# The pre-training gate holds ERP data to the same standard as an upload, which
+# is what the product promises. But the upload screen has a human in front of it
+# who can pick a remediation, and `run_daily_integration_syncs` runs at 3 a.m.
+# with nobody watching. Left as a bare raise, the whole event was one swallowed
+# log line: the tenant kept yesterday's forecast, forever, and the only visible
+# trace was a red dot with no way to act on it.
+
+def test_a_provider_reporting_nothing_cannot_train_and_the_sync_is_refused(
+    client, test_tenant, monkeypatch, fernet_key
+):
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+    from backend.errors import AppError
+    from backend.integrations import base, registry, store, sync_service
+
+    class EmptyProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return []
+        def fetch_stock(self): return []
+        def fetch_sales(self, since=None): return []
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: EmptyProvider(creds))
+
+    conn = store.create_connection(test_tenant["id"], "alegra",
+                                   {"email": "a@b.com", "token": "t"})
+    with pytest.raises(AppError) as exc:
+        sync_service.sync_connection(conn["id"])
+    assert exc.value.code == "training_blocked_data_fatal"
+
+    row = query_one(
+        "SELECT status, last_error, last_error_code, last_error_details "
+        "FROM integration_connections WHERE id=%s", (conn["id"],))
+    assert row["status"] == "error"
+    assert row["last_error_code"] == "training_blocked_data_fatal"
+    assert row["last_error_details"]["remediable"] is False
+    assert row["last_error_details"]["issues"], "the screen has nothing to name otherwise"
+
+
+def test_a_sync_blocked_on_a_fixable_finding_carries_the_options_to_the_screen(
+    client, test_tenant, monkeypatch, fernet_key
+):
+    """The tenant must be told WHICH decision is waiting, not just that one is."""
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+    from backend.errors import AppError
+    from backend.integrations import base, registry, store, sync_service
+
+    class ReturningProvider(base.AccountingProvider):
+        """An ERP that books returns as negative sale lines."""
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-R", "Retornos", 5.0)]
+        def fetch_stock(self): return [base.ProviderStock("SKU-R", 10.0, "principal")]
+        def fetch_sales(self, since=None):
+            lines = [base.ProviderSaleLine(date(2026, 1, d), "SKU-R", 4.0 + (d % 3), 9.0)
+                     for d in range(1, 32)]
+            lines.append(base.ProviderSaleLine(date(2026, 2, 2), "SKU-R", -6.0, 9.0))
+            return lines
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: ReturningProvider(creds))
+
+    conn = store.create_connection(test_tenant["id"], "alegra",
+                                   {"email": "a@b.com", "token": "t"})
+    with pytest.raises(AppError) as exc:
+        sync_service.sync_connection(conn["id"])
+    assert exc.value.code == "training_blocked_unresolved"
+
+    row = query_one(
+        "SELECT last_error_code, last_error_details FROM integration_connections "
+        "WHERE id=%s", (conn["id"],))
+    details = row["last_error_details"]
+    assert row["last_error_code"] == "training_blocked_unresolved"
+    assert details["remediable"] is True
+    assert "negative_target" in details["issues"]
+    # The exact options, so the screen can offer them instead of a support ticket.
+    assert set(details["options"]["negative_target"]) == {
+        "negatives_net_into_period", "negatives_as_zero", "negatives_drop_rows"}
+    # And the session the decision belongs to.
+    assert details["session_id"]
+
+
+def test_a_successful_sync_clears_a_previous_gate_refusal(
+    client, test_tenant, monkeypatch, fernet_key
+):
+    """A stale 'blocked' badge would send the user to fix a solved problem."""
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+    from backend.integrations import base, registry, store, sync_service
+
+    conn = store.create_connection(test_tenant["id"], "alegra",
+                                   {"email": "a@b.com", "token": "t"})
+    store.mark_synced(conn["id"], error="blocked", error_code="training_blocked_data_fatal",
+                      error_details={"issues": ["all_zeros"]})
+
+    class HealthyProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-H", "Healthy", 5.0)]
+        def fetch_stock(self): return [base.ProviderStock("SKU-H", 10.0, "principal")]
+        def fetch_sales(self, since=None):
+            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-H", 3.0 + (d % 5), 8.0)
+                    for d in range(1, 32)]
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: HealthyProvider(creds))
+
+    sync_service.sync_connection(conn["id"])
+
+    row = query_one("SELECT status, last_error_code, last_error_details "
+                    "FROM integration_connections WHERE id=%s", (conn["id"],))
+    assert row["status"] == "connected"
+    assert row["last_error_code"] is None
+    assert row["last_error_details"] is None
+
+
+def test_two_branches_selling_the_same_sku_on_the_same_day_is_not_a_duplicate(
+    client, test_tenant, monkeypatch, fernet_key
+):
+    """The over-block that would have stopped every multi-warehouse tenant forever.
+
+    A session that maps a store column trains on (sku, store); a gate that
+    grouped by sku alone would see the two branches' rows as a duplicate and
+    demand a decision with no correct answer, on every single sync.
+    """
+    monkeypatch.setattr("backend.config.settings.testing_mode", False)
+    from backend.db.connection import query_one
+    from backend.integrations import base, registry, store, sync_service
+
+    class TwoBranchProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-B", "Both", 5.0)]
+        def fetch_stock(self): return [base.ProviderStock("SKU-B", 10.0, "Norte")]
+        def fetch_sales(self, since=None):
+            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-B", 3.0 + (d % 4), 8.0,
+                                          store=branch)
+                    for d in range(1, 32) for branch in ("Norte", "Sur")]
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: TwoBranchProvider(creds))
+
+    conn = store.create_connection(test_tenant["id"], "alegra",
+                                   {"email": "a@b.com", "token": "t"})
+    result = sync_service.sync_connection(conn["id"])
+
+    assert result["job_id"], "a healthy two-branch sync must actually queue a job"
+    row = query_one("SELECT status FROM integration_connections WHERE id=%s",
+                    (conn["id"],))
+    assert row["status"] == "connected"

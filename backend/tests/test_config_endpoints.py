@@ -52,9 +52,12 @@ def test_list_models_no_auth(client):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert isinstance(data, list)
-    assert len(data) == 7
+    assert len(data) == 9
     names = {m["name"] for m in data}
-    assert {"lightgbm", "xgboost", "prophet", "arima", "ets", "croston", "lstm"} == names
+    # `global_lgbm` is fitted ONCE across the whole catalogue rather than once
+    # per SKU, which is why it is its own category below.
+    assert {"global_lgbm", "lightgbm", "xgboost", "prophet", "arima", "sarimax",
+            "ets", "croston", "lstm"} == names
     for m in data:
         assert "name"        in m
         assert "category"    in m
@@ -66,7 +69,22 @@ def test_model_categories(client):
     r = client.get("/api/v1/models")
     data = r.json()["data"]
     cats = {m["category"] for m in data}
-    assert cats == {"ML", "Statistical", "Deep Learning"}
+    assert cats == {"Global", "ML", "Statistical", "Deep Learning"}
+
+
+def test_catalogue_matches_the_engine(client):
+    """
+    The catalogue and the engine must not drift apart.
+
+    This endpoint is a hand-maintained list; the engine has its own. A model
+    present in one and absent from the other is either unselectable in the UI or
+    selectable and untrainable — and the two hardcoded assertions above only
+    catch it when someone remembers to update them.
+    """
+    from forecasting_core.models.factory import ModelFactory
+
+    names = {m["name"] for m in client.get("/api/v1/models").json()["data"]}
+    assert names == set(ModelFactory.available_models())
 
 
 def test_model_statuses(client):

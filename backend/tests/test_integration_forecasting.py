@@ -60,6 +60,14 @@ def _make_mock_engine(n_skus: int = 3, horizon: int = 14):
         "n_series": n_skus, "issues": [],
         "rows": [{"sku": s, "completeness": 1.0, "n_rows": 90} for s in skus],
     }
+    # Everything the runner puts into the stored training result has to be
+    # JSON-serialisable. A MagicMock's auto-attributes are not, so any engine
+    # method the runner persists must be stubbed here explicitly — otherwise the
+    # failure surfaces as "MagicMock is not JSON serializable" from psycopg2,
+    # far away from the method that was actually missing.
+    engine.get_demand_risk.return_value = {}
+    engine.get_policy_backtest.return_value = {}
+    engine.get_run_warnings.return_value = {"validation": [], "corrections": []}
     engine.export_config.return_value = None
     return engine
 

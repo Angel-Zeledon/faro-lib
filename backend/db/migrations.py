@@ -1206,6 +1206,23 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # Optional expiry. NULL = never expires, which is what every existing key is.
     ("add_api_keys_expires_at",
      "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"),
+    # ── A daily ERP sync stopped by the data gate ────────────────────────────
+    # The pre-training gate holds external-DB data to the same standard as an
+    # upload, which is what the owner asked for — but the upload path has a
+    # human in front of it who can pick a remediation, and the 3 a.m. sync has
+    # nobody. Without this the tenant's only signal is a red dot: the forecast
+    # quietly goes stale and the reason lives in `last_error` as one English
+    # sentence the screen cannot act on.
+    # `last_error_code` is the stable identifier the frontend translates;
+    # `last_error_details` carries the blocking issue types and the options
+    # that were on offer, so the integrations screen can say WHICH decision is
+    # waiting and send the user to make it. Both NULL on every existing row,
+    # which reads correctly as "never failed this way".
+    ("add_integration_connections_last_error_code",
+     "ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_error_code TEXT"),
+    ("add_integration_connections_last_error_details",
+     "ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS "
+     "last_error_details JSONB"),
 ]
 
 

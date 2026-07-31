@@ -19,17 +19,42 @@ def fernet_key(monkeypatch):
 
 @pytest.fixture
 def fake_provider(monkeypatch):
-    """A provider whose test_connection always succeeds — no network calls."""
+    """A provider whose test_connection always succeeds — no network calls.
+
+    It returns a month of real sales because the pre-training gate holds ERP
+    data to the same standard as an upload: a provider that reports nothing
+    cannot train anything, and the sync is refused. Tests that want to exercise
+    the refusal use `fake_provider_no_sales` below.
+    """
+    from datetime import date
+
     from backend.integrations import registry, base
 
     class FakeProvider(base.AccountingProvider):
+        def test_connection(self): pass
+        def fetch_products(self): return [base.ProviderProduct("SKU-Z", "Zeta", 5.0)]
+        def fetch_stock(self): return [base.ProviderStock("SKU-Z", 12.0, "principal")]
+        def fetch_sales(self, since=None):
+            return [base.ProviderSaleLine(date(2026, 1, d), "SKU-Z", 3.0 + (d % 4), 8.0)
+                    for d in range(1, 32)]
+
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: FakeProvider(creds))
+    return FakeProvider
+
+
+@pytest.fixture
+def fake_provider_no_sales(monkeypatch):
+    """Connects fine, reports no sales at all — the gate must refuse the sync."""
+    from backend.integrations import registry, base
+
+    class EmptyProvider(base.AccountingProvider):
         def test_connection(self): pass
         def fetch_products(self): return []
         def fetch_stock(self): return []
         def fetch_sales(self, since=None): return []
 
-    monkeypatch.setattr(registry, "get_provider", lambda name, creds: FakeProvider(creds))
-    return FakeProvider
+    monkeypatch.setattr(registry, "get_provider", lambda name, creds: EmptyProvider(creds))
+    return EmptyProvider
 
 
 @pytest.fixture

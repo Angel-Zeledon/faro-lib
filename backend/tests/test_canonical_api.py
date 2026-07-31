@@ -39,6 +39,18 @@ if _CANON_FQN not in sys.modules:
     sys.modules[_CANON_FQN] = _canon_mod
 
 
+def _stub_set_field(tenant_id, session_id, field, value):
+    """Stand in for session_store.set_field WITHOUT breaking its contract.
+
+    set_field returns the blob as the database now holds it, and the handler
+    echoes that return value rather than the request body. A bare
+    `mock.patch(...)` would hand back a MagicMock and these tests would then be
+    asserting on a mock instead of on a config — so the stub returns the value
+    it was given, which is what a successful write does.
+    """
+    return value
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
@@ -184,7 +196,8 @@ class TestCanonicalAPI:
         """
         with mock.patch("backend.sessions.service.get_session",    return_value=MOCK_SESSION), \
              mock.patch("backend.db.session_store.get_field",      return_value=MOCK_INSPECTION_FOR_CFG), \
-             mock.patch("backend.db.session_store.set_field"), \
+             mock.patch("backend.db.session_store.set_field",
+                        side_effect=_stub_set_field), \
              mock.patch("backend.sessions.service.transition",     return_value=MOCK_SESSION):
             r = oc.post(
                 f"/api/v1/sessions/{SESSION_ID}/configure/columns",
@@ -253,7 +266,8 @@ class TestCanonicalAPI:
         """
         with mock.patch("backend.sessions.service.get_session",    return_value=MOCK_SESSION), \
              mock.patch("backend.db.session_store.get_field",      return_value=MOCK_INSPECTION_FOR_CFG), \
-             mock.patch("backend.db.session_store.set_field"), \
+             mock.patch("backend.db.session_store.set_field",
+                        side_effect=_stub_set_field), \
              mock.patch("backend.sessions.service.transition",     return_value=MOCK_SESSION):
             r = oc.post(
                 f"/api/v1/sessions/{SESSION_ID}/configure/columns",
@@ -281,7 +295,8 @@ class TestCanonicalAPI:
         """
         with mock.patch("backend.sessions.service.get_session",    return_value=MOCK_SESSION), \
              mock.patch("backend.db.session_store.get_field",      return_value=None), \
-             mock.patch("backend.db.session_store.set_field"), \
+             mock.patch("backend.db.session_store.set_field",
+                        side_effect=_stub_set_field), \
              mock.patch("backend.sessions.service.transition",     return_value=MOCK_SESSION):
             r = oc.post(
                 f"/api/v1/sessions/{SESSION_ID}/configure/columns",

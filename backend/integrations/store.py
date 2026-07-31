@@ -7,12 +7,13 @@ is for internal use (the sync worker) — never wire it to an API response.
 """
 from typing import Optional
 
-from backend.db.connection import execute, query, query_one
+from backend.db.connection import _json, execute, query, query_one
 from backend.integrations.crypto import decrypt_credentials, encrypt_credentials
 from backend.utils.ids import generate_id
 
 # Columns safe to return to callers — credentials is deliberately excluded.
-_SAFE_COLUMNS = "id, provider, status, last_sync_at, last_error, created_at"
+_SAFE_COLUMNS = ("id, provider, status, last_sync_at, last_error, "
+                 "last_error_code, last_error_details, created_at")
 # get_connection additionally exposes tenant_id: the sync worker (which looks
 # connections up by id alone) needs it to scope its own tenant-data writes.
 _SAFE_COLUMNS_WITH_TENANT = f"tenant_id, {_SAFE_COLUMNS}"
@@ -86,24 +87,36 @@ def delete_connection(tenant_id: str, connection_id: str) -> bool:
     return len(rows) > 0
 
 
-def mark_synced(connection_id: str, error: Optional[str] = None) -> None:
+def mark_synced(connection_id: str, error: Optional[str] = None,
+                error_code: Optional[str] = None,
+                error_details: Optional[dict] = None) -> None:
     """Record the outcome of a sync attempt.
 
     On failure (`error` given): status='error', last_error=`error`.
     On success: status='connected', last_error cleared.
     Either way, last_sync_at is stamped with the current time.
+
+    `error_code` / `error_details` exist for the one failure a tenant can
+    actually DO something about: the daily sync stopped by the pre-training
+    gate. The English sentence in `last_error` tells a support engineer what
+    happened; the code and the details tell the integrations screen which
+    decision is waiting and let it send the user to make it. A blocked sync
+    with nothing but a red dot is a forecast going stale in silence.
     """
     if error is not None:
         execute(
             """UPDATE integration_connections
-               SET last_sync_at = NOW(), status = 'error', last_error = %s
+               SET last_sync_at = NOW(), status = 'error', last_error = %s,
+                   last_error_code = %s, last_error_details = %s
                WHERE id = %s""",
-            (error, connection_id),
+            (error, error_code, _json(error_details) if error_details else None,
+             connection_id),
         )
     else:
         execute(
             """UPDATE integration_connections
-               SET last_sync_at = NOW(), status = 'connected', last_error = NULL
+               SET last_sync_at = NOW(), status = 'connected', last_error = NULL,
+                   last_error_code = NULL, last_error_details = NULL
                WHERE id = %s""",
             (connection_id,),
         )

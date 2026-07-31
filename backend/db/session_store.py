@@ -32,16 +32,27 @@ def get_field(tenant_id: str, session_id: str, field: str) -> Optional[Any]:
     return row[field] if row else None
 
 
-def set_field(tenant_id: str, session_id: str, field: str, value: Any) -> None:
+def set_field(tenant_id: str, session_id: str, field: str, value: Any) -> Optional[Any]:
+    """Write one config blob and return it AS THE DATABASE NOW HOLDS IT.
+
+    The returned value is a measurement, not an echo of the argument, and the
+    two are not always the same: `_json` replaces NaN/Inf with None on the way
+    in, so a handler that returned its own `value` to the client would report a
+    number that Postgres stored as null. Callers that tell a user "saved" should
+    report this, and should treat a None here (no row came back — the statement
+    matched nothing) as a failed save rather than a silent success.
+    """
     if field not in _CONFIG_FIELDS:
         raise ValueError(f"Unknown config field: {field}")
-    execute(
+    row = query_one(
         f"""INSERT INTO session_configs (session_id, tenant_id, {field}, updated_at)
             VALUES (%s, %s, %s, NOW())
             ON CONFLICT (session_id) DO UPDATE
-            SET {field} = EXCLUDED.{field}, updated_at = NOW()""",
+            SET {field} = EXCLUDED.{field}, updated_at = NOW()
+            RETURNING {field}""",
         (session_id, tenant_id, _json(value)),
     )
+    return row[field] if row else None
 
 
 def clear_field(tenant_id: str, session_id: str, field: str) -> None:

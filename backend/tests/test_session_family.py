@@ -61,8 +61,12 @@ def _make_ready_session(tid, uid, dates):
     fd, path = tempfile.mkstemp(suffix=".csv"); os.close(fd)
     with open(path, "w", newline="") as f:
         w = csv.writer(f); w.writerow(["sku", "fecha", "cantidad"])
-        for d in dates:
-            w.writerow(["A", d, 5])
+        for i, d in enumerate(dates):
+            # Varying, non-monotone quantities: the pre-training gate now runs
+            # inside launch_training_family, and a flat or ever-rising column is
+            # a finding of its own that has nothing to do with what these tests
+            # are about (the granularity fan-out).
+            w.writerow(["A", d, 5 + (i % 4)])
     ds_id = generate_id("ds")
     execute(
         """INSERT INTO datasets (id, tenant_id, name, original_filename,
@@ -101,8 +105,10 @@ class TestLaunchFamily:
         assert base_fcfg["horizon"] == 90
 
     def test_short_data_launches_only_base(self, client, test_tenant, registered_user):
+        """25 days: enough to train at all (the gate's floor is 20 periods), far
+        short of the 20 weekly buckets a coarser family member would need."""
         tid, uid = test_tenant["id"], registered_user["user"]["id"]
-        sid = _make_ready_session(tid, uid, _daily_dates(10))
+        sid = _make_ready_session(tid, uid, _daily_dates(25))
         result = fam.launch_training_family(tid, sid, uid)
         rows = query("SELECT granularity FROM sessions WHERE family_id=%s", (sid,))
         assert [r["granularity"] for r in rows] == ["daily"]
