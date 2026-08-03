@@ -59,6 +59,44 @@ function dayOf(iso: string): Date {
  return new Date(`${iso}T12:00:00`)
 }
 
+// Why a product the user uploaded is missing from the forecast. The backend
+// sends a stable `reason` plus the numbers; `detail` is its English sentence,
+// used only when the catalogue has no entry for that reason. It used to be the
+// only field and it was Spanish, so this notice stayed Spanish in English mode.
+function excludedReasonText(
+ e: ExcludedSku,
+ t: (k: string, p?: Record<string, unknown>) => string,
+): string {
+ const key = `inventory.excluded_reason.${e.reason}`
+ const text = t(key, { n: e.n_rows, min: e.min_history ?? '' })
+ return text === key ? e.detail : text
+}
+
+// A dataset with no SKU column trains as ONE series, and the backend labels that
+// row with the `__all__` sentinel's English name. Relabel it once here, on the
+// way in, so every cell below — table, detail panel, edit form, CSV — shows the
+// reader's language without each of them having to know about the sentinel.
+//
+// Matched against the backend's exact generated label, not against the sentinel
+// alone: a user who typed their own name for that row keeps it.
+const SINGLE_SERIES_FALLBACK = 'Single series (no SKU column)'
+
+function withSingleSeriesLabel<T extends { items: InventoryStatusItem[] }>(
+ data: T,
+ t: (k: string) => string,
+): T {
+ if (!data?.items?.some(i => i.sku === '__all__' && i.display_name === SINGLE_SERIES_FALLBACK)) {
+  return data
+ }
+ return {
+  ...data,
+  items: data.items.map(i =>
+   i.sku === '__all__' && i.display_name === SINGLE_SERIES_FALLBACK
+    ? { ...i, display_name: t('inventory.single_series_label') }
+    : i),
+ }
+}
+
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
@@ -1559,10 +1597,10 @@ export default function InventoryPage() {
  setEditingQtySku(null)
  // `silent: true` — the failure is rendered as a full ErrorState below, so the
  // interceptor's toast would say the same thing twice.
- try { setData(await getInventoryStatus(sid, 0.95, { silent: true })) }
+ try { setData(withSingleSeriesLabel(await getInventoryStatus(sid, 0.95, { silent: true }), t)) }
  catch (e: unknown) { setError(e) }
  finally { setLoading(false) }
- }, [])
+ }, [t])
 
  useEffect(() => { if (sessionId) load(sessionId) }, [sessionId, load])
 
@@ -1948,7 +1986,7 @@ export default function InventoryPage() {
  {data!.excluded_skus!.map(e => (
  <div key={e.sku} style={{ color: C.muted }}>
  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: C.text }}>{e.sku}</span>
- {' — '}{e.detail}
+ {' — '}{excludedReasonText(e, t)}
  </div>
  ))}
  </div>
@@ -2409,7 +2447,12 @@ export default function InventoryPage() {
           }}>{item.abc}</span>
          </td>
          <td style={{ padding: '10px 12px', fontSize: 11, color: C.muted }}>
-          {item.action_suggested}
+          {item.action_suggested_code
+           ? (t(`inventory.dead_action_${item.action_suggested_code}`) ===
+              `inventory.dead_action_${item.action_suggested_code}`
+               ? item.action_suggested
+               : t(`inventory.dead_action_${item.action_suggested_code}`))
+           : item.action_suggested}
          </td>
         </tr>
        ))}

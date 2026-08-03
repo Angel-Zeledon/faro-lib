@@ -13,7 +13,8 @@ import {
  evaluatePriceBreaks, getCashCalendar, checkCashFit, listSuppliers,
 } from '@/lib/api'
 import type {
- MorningBriefing, BriefingRecommendation, MorningNarrative, DemandSpike, POLogEntry,
+ MorningBriefing, BriefingRecommendation, MorningNarrative, NarrativeKeyPoint,
+ DemandSpike, POLogEntry, CoverageUnit,
  OptimizationResponse, OptimizationOrder, POLineDecision, OverdueReception, SendPOResult,
  SupplierContactHealthRow, SupplierLeadTimeAlert, Supplier,
  PriceBreakEvaluation, CashCalendar, CashFitResult, InventoryStatusItem,
@@ -94,6 +95,67 @@ function formatDateES(isoDate: string, lang: string) {
 }
 
 // ── Subcomponents ─────────────────────────────────────────────────────────────
+
+// ── The morning briefing's recommendations, in the reader's language ──────────
+//
+// These sentences used to be composed in Spanish inside `inventory/service.py`
+// and printed verbatim. Measured with the UI set to English: whole paragraphs
+// of Spanish — "Emite la orden de Aceite de Oliva 1L HOY — tienes 2 días de
+// stock…" — under the heading "Suggested action:". CLAUDE.md puts this the
+// other way round: the backend sends a stable code plus params, the catalogue
+// holds the wording.
+//
+// The backend's own `text`/`action` stay as the fallback, in English, for a
+// deployment whose frontend is older than its API. A rough sentence beats a
+// blank line.
+//
+// Coverage arrives as a raw number because its noun changes with the planning
+// period (2 días vs 2 semanas) AND with the language; `coverageUnitLabel` owns
+// that pairing already.
+function recText(
+  rec: BriefingRecommendation,
+  coverageUnit: CoverageUnit | undefined,
+  t: (k: string, p?: Record<string, unknown>) => string,
+): string {
+  // `text_code` lets one rec_type have two wordings — a named supplier and
+  // no supplier need different sentences in both languages.
+  const key = `hoyrec.${rec.text_code ?? rec.rec_type}`
+  const params = { ...(rec.text_params ?? {}) } as Record<string, unknown>
+  if (typeof params.days === 'number') {
+    params.coverage = `${params.days} ${coverageUnitLabel(coverageUnit, params.days as number, t)}`
+  }
+  if (typeof params.excess === 'number') {
+    params.excess_coverage =
+      `${params.excess} ${coverageUnitLabel(coverageUnit, params.excess as number, t)}`
+  }
+  if (typeof params.lead_days === 'number') {
+    params.lead = `${params.lead_days} ${dayUnit(params.lead_days as number, t)}`
+  }
+  const text = t(key, params)
+  return text === key ? rec.text : text
+}
+
+// The one-line summary under the narrative card. It is composed by the backend
+// even when the AI call SUCCEEDS — the narrative itself comes back in the
+// reader's language, and these three sentences arrived in Spanish underneath it.
+function keyPointText(
+  point: NarrativeKeyPoint,
+  t: (k: string, p?: Record<string, unknown>) => string,
+): string {
+  const key = `narrative.kp.${point.code}`
+  const text = t(key, point.params ?? {})
+  return text === key ? point.text : text
+}
+
+function recAction(
+  rec: BriefingRecommendation,
+  t: (k: string, p?: Record<string, unknown>) => string,
+): string {
+  if (!rec.action_code) return rec.action
+  const key = `hoyrec.action.${rec.action_code}`
+  const text = t(key, (rec.action_params ?? {}) as Record<string, unknown>)
+  return text === key ? rec.action : text
+}
 
 function RecIcon({ rec_type }: { rec_type: BriefingRecommendation['rec_type'] }) {
  switch (rec_type) {
@@ -855,12 +917,22 @@ export default function HoyPage() {
    setNarrative(buildFallbackNarrative(briefing))
    setLoadingNarrative(false)
   }, 8000)
-  getMorningNarrative(sessionId)
-   .then(data => { clearTimeout(timeout); setNarrative(data) })
+  // `lang` reaches the model as the language to answer in. Measured before it
+  // did: the whole narrative came back in Spanish under an English heading.
+  getMorningNarrative(sessionId, 'distributor', lang)
+   // `fallback: true` means the AI was unreachable and the backend answered with
+   // its rule-based sentence. That one is written in English for API clients,
+   // so this screen builds its own from the briefing instead — same facts,
+   // through the catalogue, so it follows the language toggle.
+   .then(data => {
+    clearTimeout(timeout)
+    setNarrative(data.fallback ? buildFallbackNarrative(briefing) : data)
+   })
    .catch(() => { clearTimeout(timeout); setNarrative(buildFallbackNarrative(briefing)) })
    .finally(() => setLoadingNarrative(false))
   return () => clearTimeout(timeout)
- }, [briefing?.session_id])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [briefing?.session_id, lang])
 
  // Build cart when briefing arrives
  useEffect(() => {
@@ -1389,7 +1461,7 @@ export default function HoyPage() {
           <NarrativeCard
            title={t('hoy.narrative_card_title')}
            narrative={narrative?.narrative ?? null}
-           keyPoints={narrative?.key_points ?? []}
+           keyPoints={(narrative?.key_points ?? []).map(p => keyPointText(p, t))}
            urgency={narrative?.urgency ?? 'ok'}
            loading={loadingNarrative}
            fallback={narrative?.fallback ?? false}
@@ -1397,8 +1469,13 @@ export default function HoyPage() {
            onRefresh={() => {
             if (!sessionId) return
             setLoadingNarrative(true)
-            getMorningNarrative(sessionId)
-             .then(setNarrative).catch(() => {}).finally(() => setLoadingNarrative(false))
+            getMorningNarrative(sessionId, 'distributor', lang)
+             // Same rule as the initial load: the backend's rule-based sentence
+             // is written for an API client, not for this screen, so "Refresh"
+             // must not swap the local one back out for it.
+             .then(data => setNarrative(
+              data.fallback && briefing ? buildFallbackNarrative(briefing) : data))
+             .catch(() => {}).finally(() => setLoadingNarrative(false))
            }}
           />
          </div>
@@ -1866,10 +1943,12 @@ export default function HoyPage() {
              <div style={{ flexShrink: 0, marginTop: 1 }}>
               <RecIcon rec_type={rec.rec_type} />
              </div>
-             <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{rec.text}</span>
+             <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+              {recText(rec, briefing?.coverage_unit, t)}
+             </span>
             </div>
             <p style={{ fontSize: 12, color: C.muted, margin: 0, paddingLeft: 26 }}>
-             {t('hoy.suggested_action_label')}: {rec.action}
+             {t('hoy.suggested_action_label')}: {recAction(rec, t)}
             </p>
            </div>
           ))}

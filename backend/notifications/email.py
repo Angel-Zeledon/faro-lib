@@ -23,7 +23,7 @@ from email.mime.text import MIMEText
 
 from backend.config import settings
 from backend.formatting import DEFAULT_CURRENCY
-from backend.notifications.locale import render_es
+from backend.notifications.locale import render_es, render_month
 
 log = logging.getLogger(__name__)
 
@@ -473,20 +473,20 @@ def send_supplier_lead_time_alert_email(
     _AMB = "#f59e0b"
 
     def _row(d: dict) -> str:
-        # `severidad` / `lead_time_reciente` / `n_reciente` are payload keys owned
-        # by supplier_health_service, not user-facing copy — read, never rendered.
-        color = _RED if d.get("severidad") == "alta" else _AMB
+        # `severity` / `lead_time_recent` / `n_recent` are payload keys owned by
+        # supplier_health_service, not user-facing copy — read, never rendered.
+        color = _RED if d.get("severity") == "high" else _AMB
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
             f'<td style="padding:10px 12px;font-size:13px;font-weight:600;">{d.get("supplier", "")}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:700;">'
-            f'  {render_es("lead_time_email_days", days=d.get("lead_time_reciente"))}</td>'
+            f'  {render_es("lead_time_email_days", days=d.get("lead_time_recent"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
-            f'  {render_es("lead_time_email_days", days=d.get("lead_time_historico"))}</td>'
+            f'  {render_es("lead_time_email_days", days=d.get("lead_time_historical"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">'
             f'  {render_es("lead_time_email_deviation_days", days=d.get("deviation_days"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
-            f'  {render_es("lead_time_email_receptions_ratio", recent=d.get("n_reciente"), baseline=d.get("n_baseline"))}</td>'
+            f'  {render_es("lead_time_email_receptions_ratio", recent=d.get("n_recent"), baseline=d.get("n_baseline"))}</td>'
             f'</tr>'
         )
 
@@ -677,12 +677,6 @@ def send_po_to_supplier_email(
 # its own initiative, and a customer on USD used to read ₡ in the subject line.
 # LatAm convention throughout: period as the thousands separator, comma for the
 # decimals — which is why this does not go through `formatting.money`.
-_MONTH_KEYS = (
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-)
-
-
 def _fmt_money(value: float, currency: dict | None = None) -> str:
     """Amount in the tenant's currency, LatAm-punctuated: ₡1.250.000 / $9.402,55.
     `currency` is what `currency_of(tenant_id)` returns; omitting it renders the
@@ -697,13 +691,11 @@ def _fmt_money(value: float, currency: dict | None = None) -> str:
 
 
 def _month_label(month_key: str) -> str:
-    """'2026-06' -> 'junio de 2026' (month name and joiner come from the catalog)."""
+    """'2026-06' -> 'junio de 2026'. The month names, the joiner and the ordering
+    all belong to the copy catalog — the PDF needs the same three and had grown
+    its own copy of the list."""
     year, month = (int(p) for p in month_key.split("-"))
-    return render_es(
-        "month_label",
-        month=render_es(f"month_name_{_MONTH_KEYS[month - 1]}"),
-        year=year,
-    )
+    return render_month(year, month)
 
 
 def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:

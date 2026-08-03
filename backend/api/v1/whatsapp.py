@@ -17,6 +17,7 @@ from fastapi import APIRouter, Request, Response
 from backend.config import settings
 from backend.db.connection import execute, query_one
 from backend.notifications.whatsapp import send_whatsapp
+from backend.notifications.locale import render_es
 from backend.whatsapp import agent, conversation_store as cs, identity
 from backend.whatsapp.tools import ToolContext
 
@@ -27,11 +28,10 @@ log = logging.getLogger(__name__)
 RATE_LIMIT_MAX = 20
 RATE_LIMIT_WINDOW_SECS = 60
 
-_REJECT_UNKNOWN = (
-    "Hola 👋 No reconozco este número. Vincula tu WhatsApp desde tu perfil en "
-    "Faro para poder ayudarte por aquí."
-)
-_RATE_LIMITED = "Vas muy rápido 🙏 Espera un momento y vuelve a escribirme."
+# Both go straight back to a phone, so their Spanish lives in the backend copy
+# catalog like the rest of this channel's wording.
+_REJECT_UNKNOWN = render_es("wa_unknown_number")
+_RATE_LIMITED = render_es("wa_rate_limited")
 
 
 def compute_twilio_signature(url: str, params: dict, auth_token: str) -> str:

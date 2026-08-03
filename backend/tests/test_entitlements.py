@@ -709,7 +709,7 @@ def test_dead_stock_hides_abc_and_derived_action_for_starter(
     item['abc'] BEFORE _strip_abc_xyz_unless_entitled ran, and the strip
     only removed the raw abc/xyz/abc_xyz keys — leaving action_suggested as
     a way for a Starter tenant (no Feature.ABC_XYZ) to reverse-engineer the
-    gated classification ('Devolver al proveedor' <=> abc == 'C', etc).
+    gated classification (`return_to_supplier` <=> abc == 'C', etc).
     The fix drops action_suggested too whenever the raw keys are stripped.
 
     Real dead-stock classification depends on stock-history-derived demand
@@ -750,7 +750,7 @@ def test_dead_stock_hides_abc_and_derived_action_for_starter(
     assert r.status_code == 200, r.text
     items = r.json()["data"]["items"]
     assert len(items) == 1
-    for key in ("abc", "xyz", "abc_xyz", "action_suggested"):
+    for key in ("abc", "xyz", "abc_xyz", "action_suggested", "action_suggested_code"):
         assert key not in items[0], f"Starter dead-stock response leaked {key!r}"
 
     # Proves the gate actually toggles rather than the field being always
@@ -765,7 +765,11 @@ def test_dead_stock_hides_abc_and_derived_action_for_starter(
     items2 = r2.json()["data"]["items"]
     assert len(items2) == 1
     assert items2[0]["abc"] == "C"
-    assert items2[0]["action_suggested"] == "Devolver al proveedor"
+    # The action is a code plus an English fallback now; the frontend renders
+    # `inventory.dead_action_<code>`. BOTH have to be gated — the code leaks the
+    # classification just as plainly as the sentence did.
+    assert items2[0]["action_suggested_code"] == "return_to_supplier"
+    assert items2[0]["action_suggested"] == "Return to the supplier"
 
 
 def test_send_now_allows_starter_without_whatsapp(

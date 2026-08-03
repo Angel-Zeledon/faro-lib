@@ -46,6 +46,15 @@ def money(amount: float, decimals: int | None = None, currency: dict | None = No
     return f"{symbol}{amount:,.{decimals}f}"
 
 
+# The Spanish nouns live in `backend/notifications/locale.py`, keyed in English,
+# because that is where copy for the channels the frontend never renders belongs
+# (CLAUDE.md, Language). These helpers only decide WHICH key applies — the number
+# agreement and the unit — never the wording.
+#
+# Which means: what these produce is Spanish, so it may only reach a PDF, an
+# email or a WhatsApp message. An API response that the frontend renders must
+# carry the raw number instead and let the catalogue supply the noun; use
+# ``format_coverage_en`` for the English fallback text such a response ships.
 def format_days(n: float) -> str:
     """
     Day count that agrees in number: "1 día" / "N días". Every user-facing
@@ -53,8 +62,9 @@ def format_days(n: float) -> str:
     product reads "1 días de stock" on exactly the screen shown when a product
     is about to run out.
     """
+    from backend.notifications.locale import render_es
     rounded = round(n)
-    return "1 día" if rounded == 1 else f"{rounded:,.0f} días"
+    return render_es("unit_day_one") if rounded == 1 else render_es("unit_day_many", n=f"{rounded:,.0f}")
 
 
 # Coverage in a period-trained session (multi-period Phase C) comes out in the
@@ -62,17 +72,39 @@ def format_days(n: float) -> str:
 # that interpolates a coverage figure must carry the matching noun, or `/hoy`
 # reads "32 días de cobertura" for what is really 32 weeks. Keyed on the planning
 # period (daily/weekly/monthly); "daily" is byte-identical to ``format_days``.
-_COVERAGE_WORDS = {
-    "daily":   ("día", "días"),
-    "weekly":  ("semana", "semanas"),
-    "monthly": ("mes", "meses"),
+_COVERAGE_KEYS = {
+    "daily":   ("unit_day_one", "unit_day_many"),
+    "weekly":  ("unit_week_one", "unit_week_many"),
+    "monthly": ("unit_month_one", "unit_month_many"),
+}
+
+_COVERAGE_WORDS_EN = {
+    "daily":     ("day", "days"),
+    "weekly":    ("week", "weeks"),
+    "monthly":   ("month", "months"),
+    "quarterly": ("quarter", "quarters"),
+    "yearly":    ("year", "years"),
 }
 
 
 def format_coverage(n: float, period: str = "daily") -> str:
     """Coverage figure that agrees in number AND unit for the active planning
     period: "1 semana" / "N semanas" under weekly, "1 día" / "N días" under
-    daily (or any unknown/legacy period)."""
+    daily (or any unknown/legacy period). Spanish — see the note above."""
+    from backend.notifications.locale import render_es
     rounded = round(n)
-    singular, plural = _COVERAGE_WORDS.get(period or "daily", _COVERAGE_WORDS["daily"])
+    one_key, many_key = _COVERAGE_KEYS.get(period or "daily", _COVERAGE_KEYS["daily"])
+    return render_es(one_key) if rounded == 1 else render_es(many_key, n=f"{rounded:,.0f}")
+
+
+def format_coverage_en(n: float, period: str = "daily") -> str:
+    """The same figure in English, for the fallback sentence an API response
+    carries alongside its code + params.
+
+    It exists because the alternative kept happening: `format_coverage` got
+    interpolated into an English sentence and the screen read "Azucar has 32
+    días of coverage".
+    """
+    rounded = round(n)
+    singular, plural = _COVERAGE_WORDS_EN.get(period or "daily", _COVERAGE_WORDS_EN["daily"])
     return f"1 {singular}" if rounded == 1 else f"{rounded:,.0f} {plural}"

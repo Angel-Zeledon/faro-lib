@@ -227,15 +227,21 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
     directly; non-alerting suppliers are omitted, not returned with a false
     flag, so a truthiness check on the list is meaningful):
 
-        supplier              supplier name
-        lead_time_historico    baseline median, days
-        lead_time_reciente     recent median, days
-        deviation_days        recent - baseline (always > 0 here)
-        z_score                robust one-sided z
-        sigma                  robust sigma actually used (after the floor)
-        n_baseline / n_reciente
-        severidad              'alta' when z >= 2 * Z_THRESHOLD else 'media'
-        mensaje                ready-to-show Spanish sentence
+        supplier                supplier name
+        lead_time_historical    baseline median, days
+        lead_time_recent        recent median, days
+        deviation_days          recent - baseline (always > 0 here)
+        z_score                 robust one-sided z
+        sigma                   robust sigma actually used (after the floor)
+        n_baseline / n_recent
+        severity                'high' when z >= 2 * Z_THRESHOLD else 'medium'
+        message                 English fallback sentence
+        message_code / message_params
+                                what the frontend renders in the reader's
+                                language. The sentence used to exist only as
+                                Spanish built here, so /proveedores/scorecard
+                                showed "Acme está tardando 12 días, no 7" with
+                                the rest of the page in English.
     """
     rows = query(
         """SELECT supplier, lead_time_days, observed_at
@@ -293,20 +299,21 @@ def _evaluate_supplier(supplier: str, series: list[float]) -> Optional[dict]:
     if z < Z_THRESHOLD:
         return None
 
+    recent_s, baseline_s = _fmt_days(recent_median), _fmt_days(baseline_median)
     return {
-        "supplier":           supplier,
-        "lead_time_historico": round(baseline_median, 1),
-        "lead_time_reciente":  round(recent_median, 1),
-        "deviation_days":     round(delta, 1),
-        "z_score":             round(z, 2),
-        "sigma":               round(sigma, 2),
-        "n_baseline":          len(baseline),
-        "n_reciente":          len(recent),
-        "severidad":           "alta" if z >= 2 * Z_THRESHOLD else "media",
-        "mensaje": (
-            f"{supplier} está tardando {_fmt_days(recent_median)} días, "
-            f"no {_fmt_days(baseline_median)}"
-        ),
+        "supplier":             supplier,
+        "lead_time_historical": round(baseline_median, 1),
+        "lead_time_recent":     round(recent_median, 1),
+        "deviation_days":       round(delta, 1),
+        "z_score":              round(z, 2),
+        "sigma":                round(sigma, 2),
+        "n_baseline":           len(baseline),
+        "n_recent":             len(recent),
+        "severity":             "high" if z >= 2 * Z_THRESHOLD else "medium",
+        "message":              f"{supplier} is taking {recent_s} days, not {baseline_s}",
+        "message_code":         "supplier_taking_longer",
+        "message_params":       {"supplier": supplier, "recent": recent_s,
+                                 "historical": baseline_s},
     }
 
 

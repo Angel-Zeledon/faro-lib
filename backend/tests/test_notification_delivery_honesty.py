@@ -413,7 +413,7 @@ class TestAlertDeliveryFailuresAreObservable:
         monkeypatch.setattr(sh_svc, "query", lambda *a, **kw: [{"tenant_id": tid}])
         monkeypatch.setattr(
             sh_svc, "get_lead_time_deviations",
-            lambda t: [{"supplier": "Acme", "deviation_days": 4.0, "severidad": "alta"}])
+            lambda t: [{"supplier": "Acme", "deviation_days": 4.0, "severity": "high"}])
         monkeypatch.setattr(
             "backend.notifications.email.send_supplier_lead_time_alert_email",
             lambda **kw: False)

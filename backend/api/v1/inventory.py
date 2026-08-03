@@ -2427,16 +2427,26 @@ def dead_stock(
                 'avg_daily_demand': round(avg_daily, 2),
                 'signal':           item.get('signal'),
                 'abc':              item.get('abc', '?'),
+                # Code + English fallback: the frontend renders
+                # `inventory.dead_action_<code>`. This was Spanish prose in the
+                # payload, printed verbatim, so the dead-stock table read
+                # "Devolver al proveedor" with the rest of the page in English.
+                'action_suggested_code': (
+                    'return_to_supplier' if item.get('abc') == 'C' else
+                    'offer_discount' if item.get('abc') == 'B' else
+                    'review_with_sales'
+                ),
                 'action_suggested': (
-                    'Devolver al proveedor' if item.get('abc') == 'C' else
-                    'Ofrecer descuento' if item.get('abc') == 'B' else
-                    'Revisar con ventas'
+                    'Return to the supplier' if item.get('abc') == 'C' else
+                    'Offer a discount' if item.get('abc') == 'B' else
+                    'Review with sales'
                 ),
             })
 
     dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
     dead_items = _strip_abc_xyz_unless_entitled(
-        dead_items, user.tenant_id, extra_keys=("action_suggested",)
+        dead_items, user.tenant_id,
+        extra_keys=("action_suggested", "action_suggested_code"),
     )
 
     total_capital = sum(d['capital_trapped'] for d in dead_items)
@@ -2467,11 +2477,23 @@ def export_po(
 
     output = io.StringIO()
     writer = csv.writer(output)
+    # The file is opened in Excel, never rendered by the frontend, so its Spanish
+    # headers come from the backend copy catalog keyed in English.
+    from backend.notifications.locale import render_es
     writer.writerow([
-        "SKU", "Nombre", "Proveedor", "Señal",
-        "Stock actual", "Días cobertura", "Demanda (lead time)",
-        "Lead time (días)", "Origen lead time",
-        "Cantidad recomendada", "MOQ", "Costo unitario", "Valor orden",
+        render_es("inventory_csv_col_sku"),
+        render_es("inventory_csv_col_name"),
+        render_es("inventory_csv_col_supplier"),
+        render_es("inventory_csv_col_signal"),
+        render_es("inventory_csv_col_stock"),
+        render_es("inventory_csv_col_coverage"),
+        render_es("inventory_csv_col_lead_demand"),
+        render_es("inventory_csv_col_lead_time"),
+        render_es("inventory_csv_col_lead_source"),
+        render_es("inventory_csv_col_recommended"),
+        render_es("inventory_csv_col_moq"),
+        render_es("inventory_csv_col_unit_cost"),
+        render_es("inventory_csv_col_order_value"),
     ])
     for i in po_items:
         qty   = i.get("recommended_qty") or 0
@@ -2479,7 +2501,9 @@ def export_po(
         value = round(qty * cost, 2) if cost else ""
         # Label where the lead time came from so the buyer can trust (or
         # question) it — same distinction the /hoy and /inventory screens show.
-        lead_origin = "Aprendido" if i.get("lead_time_source") == "learned" else "Configurado"
+        lead_origin = render_es("inventory_csv_lead_source_learned"
+                                if i.get("lead_time_source") == "learned"
+                                else "inventory_csv_lead_source_declared")
         writer.writerow([
             # Neutralize the user-controlled text cells against CSV formula
             # injection — these can carry `=`/`+`/`@` from an imported catalog

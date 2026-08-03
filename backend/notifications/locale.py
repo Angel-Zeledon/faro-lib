@@ -147,9 +147,127 @@ _ES: dict[str, str] = {
     "roi_email_metric_purchases_note":  "Unidades ordenadas × costo unitario de tus propios datos.",
     "roi_email_cta":                    "Ver el resumen completo",
     "roi_email_footer":                 "Cada cifra sale de tus propios registros en Faro: las órdenes que generaste y las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos lo que quedó registrado.",
+    # ── Inventory summary PDF (downloaded, then forwarded to other people) ────
+    # The buyer downloads this and sends it on, so it never passes through the
+    # frontend and its Spanish belongs here. Note `inventory_pdf_generated_on`
+    # takes an already-formatted date: `strftime("%B")` returns whatever the
+    # SERVER's locale is, which on a machine running in English printed
+    # "03 de August de 2026" on a Spanish document.
+    "inventory_pdf_title":           "RESUMEN DE INVENTARIO",
+    "inventory_pdf_generated_on":    "Generado el {date}",
+    "inventory_pdf_kpi_total":       "Total SKUs",
+    "inventory_pdf_kpi_urgent":      "Pedir YA",
+    "inventory_pdf_kpi_warning":     "Pedir pronto",
+    "inventory_pdf_kpi_ok":          "OK",
+    "inventory_pdf_kpi_overstock":   "Sobrestock",
+    "inventory_pdf_kpi_value":       "Valor bodega",
+    "inventory_pdf_section_action":  "Productos que requieren acción",
+    "inventory_pdf_section_rest":    "Resto del inventario",
+    "inventory_pdf_col_sku":         "SKU",
+    "inventory_pdf_col_name":        "Nombre",
+    "inventory_pdf_col_signal":      "Señal",
+    "inventory_pdf_col_stock":       "Stock actual",
+    "inventory_pdf_col_coverage":    "Días cobertura",
+    "inventory_pdf_col_order":       "Pedir",
+    "inventory_pdf_col_supplier":    "Proveedor",
+    "inventory_pdf_col_abc_xyz":     "ABC-XYZ",
+    # The signal VALUES stay as stored (PEDIR_YA…); these are their labels.
+    "inventory_pdf_signal_order_now":  "🔴 PEDIR YA",
+    "inventory_pdf_signal_order_soon": "🟡 Pedir pronto",
+    "inventory_pdf_signal_ok":         "🟢 OK",
+    "inventory_pdf_signal_overstock":  "🔵 Sobrestock",
+    "inventory_pdf_signal_no_data":    "Sin datos",
+    "inventory_pdf_footer":          "Generado automáticamente · Sesión {session} · Nivel de servicio {level}%",
+    # ── Purchase-order PDF header block ───────────────────────────────────────
+    # Two forms on purpose: the PDF's heading is sentence case, the plain-text
+    # fallback's banner is upper case. `.title()` would have written "Orden De
+    # Compra" — Spanish does not capitalize the preposition.
+    "po_pdf_heading":          "Orden de Compra",
+    "po_pdf_title":            "ORDEN DE COMPRA",
+    "po_pdf_date":             "Fecha",
+    "po_pdf_reference":        "Referencia",
+    "po_pdf_issued_on":        "Fecha de emisión",
+    "po_pdf_supplier":         "Proveedor",
+    "po_pdf_section_lines":    "Líneas del pedido",
+    "po_pdf_col_sku":          "SKU",
+    "po_pdf_col_product":      "Producto",
+    "po_pdf_col_qty":          "Cantidad",
+    "po_pdf_col_unit_cost":    "Costo unitario",
+    "po_pdf_col_subtotal":     "Subtotal",
+    # ── Inventory status export (CSV the user downloads) ──────────────────────
+    "inventory_csv_col_sku":            "SKU",
+    "inventory_csv_col_name":           "Nombre",
+    "inventory_csv_col_supplier":       "Proveedor",
+    "inventory_csv_col_signal":         "Señal",
+    "inventory_csv_col_stock":          "Stock actual",
+    "inventory_csv_col_coverage":       "Días cobertura",
+    "inventory_csv_col_lead_demand":    "Demanda (lead time)",
+    "inventory_csv_col_lead_time":      "Lead time (días)",
+    "inventory_csv_col_lead_source":    "Origen lead time",
+    "inventory_csv_col_recommended":    "Cantidad recomendada",
+    "inventory_csv_col_moq":            "MOQ",
+    "inventory_csv_col_unit_cost":      "Costo unitario",
+    "inventory_csv_col_order_value":    "Valor orden",
+    "inventory_csv_lead_source_learned":   "Aprendido",
+    "inventory_csv_lead_source_declared":  "Configurado",
+    # ── WhatsApp assistant ────────────────────────────────────────────────────
+    # Everything the bot says back on WhatsApp. The channel never reaches the
+    # frontend, so this is the catalogue that owns its wording.
+    "wa_unknown_number":     "Hola 👋 No reconozco este número. Vincula tu WhatsApp desde tu perfil en Faro para poder ayudarte por aquí.",
+    "wa_rate_limited":       "Vas muy rápido 🙏 Espera un momento y vuelve a escribirme.",
+    "wa_help":               "Puedo ayudarte con tu inventario: pregúntame por el semáforo (qué pedir), tus órdenes pendientes o el pronóstico de un SKU. También puedo aprobar una orden o registrar una recepción.",
+    "wa_generic_mode":       "Recibí tu mensaje. Por ahora estoy en modo básico: puedo confirmar una acción pendiente si respondes “sí”. Muy pronto podré responder tus consultas de inventario por aquí.",
+    "wa_apology":            "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?",
+    "wa_read_only":          "Tu perfil es de solo lectura, así que no puedo ejecutar acciones. Puedo darte información de inventario si quieres.",
+    "wa_read_only_tool":     "Tu perfil es de solo lectura; no puedes ejecutar esta acción.",
+    "wa_no_analysis_yet":    "Aún no hay un análisis de inventario listo. Sube tus ventas y entrena un modelo primero.",
+    "wa_status_line":        "🔴 {risks} para pedir ya · 🟡 {warnings} por reabastecer · 🟢 {overstock} con sobrestock",
+    "wa_no_pending_pos":     "No tienes órdenes de compra pendientes de recibir.",
+    "wa_no_forecasts_yet":   "Aún no hay pronósticos listos para esta cuenta.",
+    "wa_forecast_not_found": "No encontré pronóstico para el SKU {sku}.",
+    "wa_forecast_too_short": "El pronóstico del SKU {sku} aún no tiene suficientes puntos.",
+    "wa_trend_up":           "sube",
+    "wa_trend_down":         "baja",
+    "wa_trend_flat":         "estable",
+    "wa_ask_sku_for_forecast": "¿De qué SKU quieres el pronóstico? Indícame el código.",
+    "wa_forecast_summary":     "Pronóstico SKU {sku}: {periods} periodos, promedio {avg} uds/periodo, tendencia {trend} (de {first} a {last}).",
+    "wa_pending_pos_header":   "Órdenes pendientes:",
+    "wa_pending_po_line":      "  • {reference} — {skus} SKU{total} ({status})",
+    "wa_status_item_line":     "  • {name} ({coverage}{qty})",
+    "wa_status_order_qty":     " · pedir {qty}",
+    # Every write is confirmed in two steps; the confirmation word is Spanish
+    # copy and the matcher for it lives in the agent, keyed off this same
+    # catalog rather than a second literal.
+    "wa_confirm_suffix":       " ¿Confirmas? (responde SÍ)",
+    "wa_confirm_send_po":      "Aprobar y enviar la orden {reference} — {suppliers} proveedor(es), total {amount}.",
+    "wa_confirm_reception":    "Registrar recepción de {qty} uds de {sku} en {warehouse} (orden {reference}).",
+    "wa_ask_po_to_approve":    "Indícame el número de la orden de compra a aprobar.",
+    "wa_po_not_found":         "No encontré esa orden de compra.",
+    "wa_po_already_sent":      "Esa orden ya fue enviada.",
+    "wa_ask_quantity":         "¿Cuántas unidades llegaron? Indícame la cantidad.",
+    "wa_ask_reception_sku":    "¿De qué SKU es la recepción?",
+    "wa_quantity_positive":    "La cantidad recibida debe ser mayor a cero.",
+    "wa_no_pending_po_sku":    "No encontré una orden pendiente con el SKU {sku}.",
+    "wa_no_pending_po_sku_wh": "No encontré una orden pendiente con el SKU {sku} en {warehouse}.",
+    "wa_po_sent_ok":           "Listo ✅ Orden {reference} aprobada y marcada como enviada.",
+    "wa_reception_ok":         "Listo ✅ Registré {qty} uds de {sku} en {warehouse}.",
+    "wa_unknown_action":       "Acción no reconocida.",
+    # ── Duration nouns for the Spanish channels ───────────────────────────────
+    # `backend/formatting.py` composes "1 día" / "N semanas" for the PDF, the
+    # WhatsApp digest and the recap email. Those nouns are Spanish copy, so they
+    # belong here rather than as literals in a formatting helper — and they must
+    # agree in number, or the PDF shown when a product is about to run out reads
+    # "1 días de stock".
+    "unit_day_one":     "1 día",
+    "unit_day_many":    "{n} días",
+    "unit_week_one":    "1 semana",
+    "unit_week_many":   "{n} semanas",
+    "unit_month_one":   "1 mes",
+    "unit_month_many":  "{n} meses",
     # Month names for the recap's "junio de 2026" label. Keyed in English so the
     # module indexes them with an English identifier, never a Spanish literal.
     "month_label":        "{month} de {year}",
+    "day_month_year":     "{day} de {month} de {year}",
     "month_name_january":   "enero",
     "month_name_february":  "febrero",
     "month_name_march":     "marzo",
@@ -165,6 +283,12 @@ _ES: dict[str, str] = {
 }
 
 
+_MONTH_KEYS = (
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+)
+
+
 def render_es(key: str, **params: object) -> str:
     """Render the Spanish template for `key`, interpolating `params`.
 
@@ -172,3 +296,22 @@ def render_es(key: str, **params: object) -> str:
     programming error that must fail loudly in tests, not ship a blank.
     """
     return _ES[key].format(**params)
+
+
+def render_month(year: int, month: int) -> str:
+    """(2026, 6) -> 'junio de 2026'."""
+    return render_es("month_label",
+                     month=render_es(f"month_name_{_MONTH_KEYS[month - 1]}"),
+                     year=year)
+
+
+def render_date(d) -> str:
+    """A date -> '3 de agosto de 2026'.
+
+    Exists because `strftime("%d de %B de %Y")` reads the month name from the
+    SERVER's locale: on a machine running in English it printed "03 de August
+    de 2026" onto a Spanish PDF.
+    """
+    return render_es("day_month_year", day=d.day,
+                     month=render_es(f"month_name_{_MONTH_KEYS[d.month - 1]}"),
+                     year=d.year)

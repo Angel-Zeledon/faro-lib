@@ -1130,6 +1130,9 @@ export interface ExcludedSku {
   sku:     string
   n_rows:  number
   reason:  'insufficient_history' | 'no_forecast' | string
+  // Rows needed, present only on `insufficient_history` — the sentence quotes it.
+  min_history?: number
+  // English fallback. The rendered line comes from `inventory.excluded_reason.<reason>`.
   detail:  string
 }
 
@@ -1414,16 +1417,20 @@ export interface SupplierContactHealthRow {
 
 // Feature 3.3 — a supplier whose recent lead time drifted off its own history.
 export interface SupplierLeadTimeAlert {
-  supplier:           string
-  lead_time_historico: number
-  lead_time_reciente:  number
-  deviation_days:     number
-  z_score:             number
-  sigma:               number
-  n_baseline:          number
-  n_reciente:          number
-  severidad:           'media' | 'alta'
-  mensaje:             string
+  supplier:             string
+  lead_time_historical: number
+  lead_time_recent:     number
+  deviation_days:       number
+  z_score:              number
+  sigma:                number
+  n_baseline:           number
+  n_recent:             number
+  severity:             'medium' | 'high'
+  // `message` is the English fallback; the rendered sentence comes from
+  // `scorecard.<message_code>` with `message_params`.
+  message:              string
+  message_code:         string
+  message_params:       Record<string, unknown>
 }
 
 // Feature 3.5 — a supplier quantity scale: "from min_qty units on, each unit
@@ -1597,8 +1604,15 @@ export interface BriefingRecommendation {
   sku:       string
   name:      string
   rec_type:  'STOCKOUT_RISK' | 'REORDER_SOON' | 'DEMAND_UP' | 'DEMAND_DOWN' | 'OVERSTOCK'
+  // English, and only the fallback: the sentence the user reads is built from
+  // `rec_type` + `text_params` against the catalogue, so it follows the language
+  // toggle. Kept for a frontend older than its API — see recText/recAction.
   text:      string
   action:    string
+  text_code?:     string
+  text_params?:   Record<string, unknown>
+  action_code?:   string
+  action_params?: Record<string, unknown>
   signal:    string
 }
 
@@ -1729,9 +1743,19 @@ export interface DecompositionData {
 }
 
 // ── AI Narratives ─────────────────────────────────────────────────────────────
+// The key points survive a SUCCESSFUL AI call — the narrative comes back in the
+// reader's language but these are composed by the backend — so they travel as
+// code + params and get their wording from the catalogue (`narrative.kp.*`).
+// `text` is the English fallback for a code this build does not know.
+export interface NarrativeKeyPoint {
+  code:   string
+  params: Record<string, unknown>
+  text:   string
+}
+
 export interface MorningNarrative {
   narrative:   string
-  key_points:  string[]
+  key_points:  NarrativeKeyPoint[]
   urgency:     'critical' | 'warning' | 'ok'
   fallback:    boolean
   error?:      string
@@ -1749,6 +1773,10 @@ export interface ForecastExplanation {
 }
 
 export interface SuggestedQuestion {
+  // Clicking one puts it in the composer and sends it, so it has to be in the
+  // reader's language: `analyst.q.<code>` is what gets rendered, `text` is the
+  // English fallback.
+  code: string
   text: string
   icon: string
 }
@@ -1767,7 +1795,9 @@ export interface DeadStockItem {
   avg_daily_demand:       number
   signal:                 string
   abc:                    string
+  // English fallback; the cell renders `inventory.dead_action_<code>`.
   action_suggested:       string
+  action_suggested_code?: string
 }
 
 export interface DeadStockResponse {

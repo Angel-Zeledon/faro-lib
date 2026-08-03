@@ -1338,9 +1338,14 @@ export const optimizeInventory = (sessionId: string, horizonDays = 30) =>
 // falló de nuestro lado" over a panel that had already recovered — and, because
 // the request outlived the navigation, sometimes on a completely different
 // page. A degraded AI summary is not an error the buyer needs to act on.
-export const getMorningNarrative = (sessionId: string, profile = 'distributor') =>
+// `language` is the reader's active UI language. The narrative is written by a
+// model, so the language has to travel with the request: without it the answer
+// always came back in Spanish, under an English heading, on an English page.
+export const getMorningNarrative = (
+  sessionId: string, profile = 'distributor', language = 'es',
+) =>
   request<import('./types').MorningNarrative>(
-    'POST', '/ai/narrative/morning', { session_id: sessionId, profile },
+    'POST', '/ai/narrative/morning', { session_id: sessionId, profile, language },
     { silent: true },
   )
 

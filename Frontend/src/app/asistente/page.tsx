@@ -957,10 +957,17 @@ export default function AnalystPage() {
                           {t('analyst.suggested_questions_header')}
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, justifyContent: 'center' }}>
-                          {suggestedQs.map(q => (
+                          {suggestedQs.map(q => {
+                            // The backend ships a code plus an English sentence;
+                            // the catalogue owns the wording. Clicking one SENDS
+                            // it, so it has to be the reader's language — these
+                            // used to be Spanish whatever the UI was set to.
+                            const label = q.code ? t(`analyst.q.${q.code}`) : q.text
+                            const text = label === `analyst.q.${q.code}` ? q.text : label
+                            return (
                             <button
-                              key={q.text}
-                              onClick={() => { setInput(q.text); inputRef.current?.focus() }}
+                              key={q.code || q.text}
+                              onClick={() => { setInput(text); inputRef.current?.focus() }}
                               style={{
                                 all: 'unset', cursor: 'pointer',
                                 padding: '6px 12px', borderRadius: 20, fontSize: 12,
@@ -971,9 +978,10 @@ export default function AnalystPage() {
                               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
                               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
                             >
-                              {q.text}
+                              {text}
                             </button>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )}

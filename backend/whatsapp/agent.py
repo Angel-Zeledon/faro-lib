@@ -17,6 +17,7 @@ import re
 import unicodedata
 
 from backend.ai.local_llm import get_local_llm_client
+from backend.notifications.locale import render_es
 from backend.whatsapp import tools as wt
 from backend.whatsapp.tools import ToolContext, ToolError
 
@@ -24,24 +25,14 @@ log = logging.getLogger(__name__)
 
 MAX_TOKENS = 400
 
+# These two match what the USER types, so they are Spanish on purpose — the same
+# exemption as the CSV header aliases: values read from real user input, not copy.
 _AFFIRMATIVE = {
     "si", "sisi", "s", "y", "yes", "ok", "oka", "okay", "dale", "listo",
     "confirmo", "confirmar", "confirmado", "aprobar", "apruebo", "correcto",
     "deacuerdo", "vale", "hazlo", "adelante", "sip",
 }
 _NEGATIVE = {"no", "cancela", "cancelar", "mejorno", "nop", "negativo"}
-
-_HELP = ("Puedo ayudarte con tu inventario: pregúntame por el semáforo "
-         "(qué pedir), tus órdenes pendientes o el pronóstico de un SKU. "
-         "También puedo aprobar una orden o registrar una recepción.")
-
-# Honest reply used while the bot runs without a hosted LLM (generic mode): it
-# does not promise Q&A it cannot answer, but confirmations still work.
-_BASIC_MODE = ("Recibí tu mensaje. Por ahora estoy en modo básico: puedo "
-               "confirmar una acción pendiente si respondes \"sí\". Muy pronto "
-               "podré responder tus consultas de inventario por aquí.")
-
-_APOLOGY = "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?"
 
 
 def _strip_accents(s: str) -> str:
@@ -64,13 +55,15 @@ def is_affirmative(text: str) -> bool:
 
 
 def _system_prompt() -> str:
+    # English prompt, Spanish answer: WhatsApp is a Spanish-only channel for this
+    # product, and the free-text `reply` goes straight to the user's phone.
     lines = [
-        "Eres el asistente de inventario de Faro por WhatsApp. Decide qué "
-        "herramienta usar para responder al usuario. Responde SOLO con un "
-        "objeto JSON, sin texto adicional.",
-        'Formato: {"tool": <nombre|null>, "args": {...}, "reply": <texto|null>}.',
-        "Si ninguna herramienta aplica, usa tool=null y escribe una respuesta breve en 'reply'.",
-        "Herramientas disponibles:",
+        "You are Faro's inventory assistant on WhatsApp. Decide which tool to "
+        "use to answer the user. Reply with ONLY a JSON object, no other text.",
+        'Format: {"tool": <name|null>, "args": {...}, "reply": <text|null>}.',
+        "If no tool applies, use tool=null and write a short answer in 'reply'.",
+        "The 'reply' text is sent to the user as-is, so write it in Spanish.",
+        "Available tools:",
     ]
     for spec in wt.TOOL_SPECS:
         lines.append(f'- {spec["name"]} ({spec["kind"]}): {spec["description"]} args={spec["args"]}')
@@ -132,7 +125,7 @@ def _handle(ctx, incoming_text, history, pending):
                 return str(e), None
             except Exception:  # noqa: BLE001 — never leave a half-applied write ambiguous
                 log.exception("[whatsapp] execute_pending_action failed")
-                return _APOLOGY, None
+                return render_es("wa_apology"), None
         # Non-confirming: discard and treat as a fresh intent below.
         pending = None
 
@@ -140,14 +133,14 @@ def _handle(ctx, incoming_text, history, pending):
     # hanging on a slow local model. Confirmations above already executed.
     from backend.config import settings
     if settings.whatsapp_bot_generic_mode:
-        return _BASIC_MODE, None
+        return render_es("wa_generic_mode"), None
 
     # 2. Fresh intent routing (one LLM completion).
     try:
         decision = _route(ctx, incoming_text, history)
     except Exception:  # noqa: BLE001 — LLM/timeout: apologize, mutate nothing
         log.exception("[whatsapp] routing failed")
-        return _APOLOGY, None
+        return render_es("wa_apology"), None
 
     tool = decision.get("tool")
     args = decision.get("args") or {}
@@ -159,12 +152,11 @@ def _handle(ctx, incoming_text, history, pending):
             return str(e), None
         except Exception:  # noqa: BLE001
             log.exception("[whatsapp] query tool failed: %s", tool)
-            return _APOLOGY, None
+            return render_es("wa_apology"), None
 
     if tool in wt.WRITE_TOOLS:
         if not ctx.is_analyst_or_above:
-            return ("Tu perfil es de solo lectura, así que no puedo ejecutar acciones. "
-                    "Puedo darte información de inventario si quieres."), None
+            return render_es("wa_read_only"), None
         try:
             proposal = wt.WRITE_TOOLS[tool](ctx, args)
         except ToolError as e:
@@ -173,4 +165,4 @@ def _handle(ctx, incoming_text, history, pending):
 
     # 3. No tool — free-text reply from the LLM, or default help.
     reply = decision.get("reply")
-    return (reply or _HELP), None
+    return (reply or render_es("wa_help")), None

@@ -304,13 +304,17 @@ class TestDeviationRuleFires:
         alert = health_svc._evaluate_supplier("Acme", series)
 
         assert alert is not None, "a 5-day sustained shift must fire"
-        assert alert["lead_time_historico"] == 7.0
-        assert alert["lead_time_reciente"] == 12.0
+        assert alert["lead_time_historical"] == 7.0
+        assert alert["lead_time_recent"] == 12.0
         assert alert["deviation_days"] == 5.0
         assert alert["z_score"] >= health_svc.Z_THRESHOLD
         assert alert["n_baseline"] == 5
-        assert alert["n_reciente"] == 3
-        assert alert["mensaje"] == "Acme está tardando 12 días, no 7"
+        assert alert["n_recent"] == 3
+        # The sentence the buyer reads is built by the frontend from the code and
+        # the params; the backend only ships those plus an English fallback.
+        assert alert["message_code"] == "supplier_taking_longer"
+        assert alert["message_params"] == {"supplier": "Acme", "recent": "12", "historical": "7"}
+        assert alert["message"] == "Acme is taking 12 days, not 7"
 
     def test_shift_from_a_perfectly_consistent_supplier_is_detected(self):
         """MAD == 0 here; the sigma floor must still let a real shift through."""
@@ -322,7 +326,7 @@ class TestDeviationRuleFires:
         # Floor is max(1.0, 0.10 * 7) = 1.0 -> z = 4.0
         assert alert["sigma"] == 1.0
         assert alert["z_score"] == 4.0
-        assert alert["severidad"] == "media"
+        assert alert["severity"] == "medium"
 
     def test_extreme_shift_is_marked_high_severity(self):
         series = [5, 5, 5, 5, 5, 30, 30, 30]
@@ -330,7 +334,7 @@ class TestDeviationRuleFires:
 
         assert alert is not None
         assert alert["z_score"] >= 2 * health_svc.Z_THRESHOLD
-        assert alert["severidad"] == "alta"
+        assert alert["severity"] == "high"
 
     def test_minimum_viable_history_fires(self):
         """Exactly MIN_BASELINE + MIN_RECENT observations."""
@@ -339,7 +343,7 @@ class TestDeviationRuleFires:
 
         assert alert is not None
         assert alert["n_baseline"] == health_svc.MIN_BASELINE
-        assert alert["n_reciente"] == health_svc.MIN_RECENT
+        assert alert["n_recent"] == health_svc.MIN_RECENT
 
 
 class TestDeviationRuleStaysQuiet:
@@ -418,8 +422,8 @@ class TestDeviationFromRealReceptions:
         assert steady not in names, "stable supplier must not be reported"
 
         row = next(a for a in alerts if a["supplier"] == late)
-        assert row["lead_time_historico"] == 7.0
-        assert row["lead_time_reciente"] == 12.0
+        assert row["lead_time_historical"] == 7.0
+        assert row["lead_time_recent"] == 12.0
 
     def test_receiving_pos_late_produces_an_alert(self, client, auth_headers, test_tenant):
         """Drives supplier_lead_time_obs purely through POST /po/{id}/receive."""
@@ -453,9 +457,10 @@ class TestDeviationFromRealReceptions:
         row = next((a for a in alerts if a["supplier"] == prov), None)
 
         assert row is not None, "8 real receptions shifting 5d -> 15d must alert"
-        assert row["lead_time_historico"] == 5.0
-        assert row["lead_time_reciente"] == 15.0
-        assert row["mensaje"] == f"{prov} está tardando 15 días, no 5"
+        assert row["lead_time_historical"] == 5.0
+        assert row["lead_time_recent"] == 15.0
+        assert row["message_params"] == {"supplier": prov, "recent": "15", "historical": "5"}
+        assert row["message"] == f"{prov} is taking 15 days, not 5"
 
     def test_tenant_isolation(self, client, test_tenant):
         from backend.tenants.service import create_tenant

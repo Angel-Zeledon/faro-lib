@@ -93,15 +93,15 @@ def generate_po_pdf(
         body = styles["Normal"]
 
         story = [
-            Paragraph("Orden de Compra", h1),
+            Paragraph(render_es("po_pdf_heading"), h1),
             HRFlowable(width="100%", thickness=1, color=colors.grey),
             Spacer(1, 0.1*inch),
         ]
 
         meta = [
-            ["Proveedor", supplier_name],
-            ["Fecha de emisión", str(po_meta.get("generated_at", "N/A"))],
-            ["Referencia", str(po_meta.get("po_log_id", ""))],
+            [render_es("po_pdf_supplier"), supplier_name],
+            [render_es("po_pdf_issued_on"), str(po_meta.get("generated_at", "N/A"))],
+            [render_es("po_pdf_reference"), str(po_meta.get("po_log_id", ""))],
         ]
         t = Table(meta, colWidths=[1.8*inch, 4.7*inch])
         t.setStyle(TableStyle([
@@ -113,8 +113,10 @@ def generate_po_pdf(
         story.append(t)
         story.append(Spacer(1, 0.2*inch))
 
-        story.append(Paragraph("Líneas del pedido", h2))
-        header = ["SKU", "Producto", "Cantidad", "Costo unitario", "Subtotal"]
+        story.append(Paragraph(render_es("po_pdf_section_lines"), h2))
+        header = [render_es("po_pdf_col_sku"), render_es("po_pdf_col_product"),
+                  render_es("po_pdf_col_qty"), render_es("po_pdf_col_unit_cost"),
+                  render_es("po_pdf_col_subtotal")]
         rows = [header]
         for i in items:
             qty = i.get("final_qty") or 0
@@ -150,10 +152,10 @@ def generate_po_pdf(
     except ImportError:
         log.warning("reportlab not installed — writing plain-text PO at %s", path.with_suffix(".txt"))
         lines = [
-            "ORDEN DE COMPRA",
+            render_es("po_pdf_title"),
             "=" * 50,
-            f"Proveedor: {supplier_name}",
-            f"Fecha: {po_meta.get('generated_at', 'N/A')}",
+            f"{render_es('po_pdf_supplier')}: {supplier_name}",
+            f"{render_es('po_pdf_date')}: {po_meta.get('generated_at', 'N/A')}",
             "",
         ]
         for i in items:

@@ -31,26 +31,64 @@ class TestRecommendationUnitLabels:
     def _text(self, recs, sku, rec_type):
         return next(r["text"] for r in recs if r["sku"] == sku and r["rec_type"] == rec_type)
 
-    def test_weekly_coverage_labeled_in_weeks_not_days(self):
-        recs = generate_recommendations(self._items(), period="weekly")
-        ya = self._text(recs, "YA", "STOCKOUT_RISK")
-        over = self._text(recs, "OVER", "OVERSTOCK")
-        # Coverage reads in weeks; the supplier lead time stays in days.
-        assert "0 semanas de stock" in ya
-        assert "tarda 10 días en entregar" in ya
-        # 32.1 weeks coverage — NOT "32 días".
-        assert "32 semanas de cobertura" in over
-        assert "días de cobertura" not in over
-        # Excess vs the 3×lead ceiling is computed in the SAME unit (weeks):
-        # 32.1 − (7/7)*3 = 29.1 → "29 semanas", never a mixed-unit "11 días".
-        assert "29 semanas más de lo óptimo" in over
+    def _rec(self, recs, sku, rec_type):
+        return next(r for r in recs if r["sku"] == sku and r["rec_type"] == rec_type)
 
-    def test_daily_output_is_byte_identical_to_default(self):
+    def test_weekly_coverage_is_carried_in_weeks_not_days(self):
+        """The sentence now lives in the frontend catalogue, so what the backend
+        must get right is the NUMBER and the period it belongs to. Coverage is
+        in the active period's unit; the supplier lead time is a real calendar
+        duration and stays in days."""
+        recs = generate_recommendations(self._items(), period="weekly")
+        ya = self._rec(recs, "YA", "STOCKOUT_RISK")["text_params"]
+        over = self._rec(recs, "OVER", "OVERSTOCK")["text_params"]
+        assert ya["days"] == 0          # 0.3 weeks of stock
+        assert ya["lead_days"] == 10    # days, not weeks
+        assert over["days"] == 32       # 32.1 WEEKS
+        # Excess vs the 3x-lead ceiling is computed in the SAME unit:
+        # 32.1 - (7/7)*3 = 29.1 -> 29 weeks, never a mixed-unit 11.
+        assert over["excess"] == 29
+
+    def test_daily_excess_uses_the_daily_ceiling(self):
+        """The same arithmetic under daily: 32.1 - (7/1)*3 = 11.1 -> 11 days.
+        A single unit conversion missing here is what produced the original
+        "-12 dias mas de lo optimo"."""
+        recs = generate_recommendations(self._items(), period="daily")
+        over = self._rec(recs, "OVER", "OVERSTOCK")["text_params"]
+        assert over["days"] == 32
+        assert over["excess"] == 11
+
+    def test_daily_is_still_the_default(self):
         items = self._items()
         assert generate_recommendations(items, period="daily") == generate_recommendations(items)
-        over = self._text(generate_recommendations(items), "OVER", "OVERSTOCK")
-        # Daily keeps the "días" wording exactly as before.
-        assert "32 días de cobertura" in over
+
+    def test_the_english_fallback_agrees_with_the_period(self):
+        """`text` is only the fallback for a frontend with no catalogue entry,
+        but it must not be Spanglish: `format_coverage` emits Spanish nouns, and
+        interpolating it here printed "Azucar has 32 dias of coverage"."""
+        weekly = self._rec(generate_recommendations(self._items(), period="weekly"),
+                           "OVER", "OVERSTOCK")["text"]
+        assert "32 weeks of coverage" in weekly
+        assert "29 weeks more than optimal" in weekly
+        assert "dias" not in weekly and "días" not in weekly
+        daily = self._rec(generate_recommendations(self._items(), period="daily"),
+                          "OVER", "OVERSTOCK")["text"]
+        assert "32 days of coverage" in daily
+
+    def test_the_supplier_name_travels_without_a_preposition(self):
+        """Grammar belongs to the catalogue: a param carrying "a Andina"
+        rendered as "Order 264 units a Andina" once the UI was English."""
+        ya = self._rec(generate_recommendations(self._items()), "YA", "STOCKOUT_RISK")
+        assert ya["text_params"]["supplier"] == "Andina"
+        assert ya["action_params"]["supplier"] == "Andina"
+        assert ya["action_code"] == "order_qty_from_supplier"
+
+    def test_no_supplier_gets_its_own_key_rather_than_a_spanish_default(self):
+        items = [dict(self._items()[0], supplier=None)]
+        ya = self._rec(generate_recommendations(items), "YA", "STOCKOUT_RISK")
+        assert ya["text_code"] == "STOCKOUT_RISK_NO_SUPPLIER"
+        assert ya["action_code"] == "order_qty_from_generic"
+        assert "proveedor" not in ya["text"]
 
     def test_format_coverage_daily_matches_format_days(self):
         for n in (0, 1, 2, 5.4, 32.1, 144):
@@ -350,12 +388,15 @@ class TestNarrativeKpiConsistency:
     def _immediate_risk_from_narrative(self, narrative: dict) -> int:
         """The narrative's own count of immediate-risk products, read from the
         structured key_points the endpoint returns. Both the fallback builder and
-        the LLM path derive these from the same briefing kpis['order_now']."""
-        import re
+        the LLM path derive these from the same briefing kpis['order_now'].
+
+        Read from the CODE and its params, not by parsing the sentence: the
+        sentence is now the frontend's to compose, and a test that greps prose
+        for "riesgo inmediato" would have started passing vacuously the moment
+        the wording moved."""
         for kp in narrative.get("key_points", []):
-            m = re.match(r"\s*(\d+)\s+producto", kp)
-            if m and "riesgo inmediato" in kp:
-                return int(m.group(1))
+            if kp.get("code") == "immediate_stockout_risk":
+                return int(kp["params"]["n"])
         return 0
 
     def _force_rule_based_fallback(self, monkeypatch):
@@ -398,7 +439,9 @@ class TestNarrativeKpiConsistency:
         assert self._immediate_risk_from_narrative(n) == kpi_order_now
         assert n["urgency"] == "ok"   # not 'critical'
         # The prose must not claim immediate-risk products the KPI denies.
-        assert "riesgo inmediato" not in n["narrative"]
+        # (English: the rule-based narrative is the API's fallback, and /hoy
+        # composes its own from the briefing — see buildFallbackNarrative.)
+        assert "immediate risk" not in n["narrative"]
 
     def test_daily_narrative_agrees_with_kpi_tile(
         self, client, auth_headers, test_tenant, monkeypatch
@@ -428,4 +471,4 @@ class TestNarrativeKpiConsistency:
         n = narr.json()["data"]
         assert self._immediate_risk_from_narrative(n) == kpi_order_now
         assert n["urgency"] == "critical"
-        assert "riesgo inmediato" in n["narrative"]
+        assert "immediate risk" in n["narrative"]

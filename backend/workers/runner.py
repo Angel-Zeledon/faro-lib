@@ -1133,14 +1133,19 @@ def _compute_excluded_skus(df, group_col, forecasts: dict, min_history: int) -> 
             continue
         n = int(len(g))
         if n < min_history:
+            # `reason` is the stable code the frontend renders from; `detail` is
+            # its English fallback, kept for a client that does not know the
+            # code. It used to be the only field and it was Spanish, so /inventario
+            # listed excluded products in Spanish under an English heading.
             excluded.append({
                 "sku": sku, "n_rows": n, "reason": "insufficient_history",
-                "detail": f"Solo {n} registros de historia (se necesitan al menos {min_history})",
+                "min_history": int(min_history),
+                "detail": f"Only {n} rows of history (at least {min_history} are needed)",
             })
         else:
             excluded.append({
                 "sku": sku, "n_rows": n, "reason": "no_forecast",
-                "detail": "No se pudo generar un pronóstico confiable para este producto",
+                "detail": "No reliable forecast could be produced for this product",
             })
     return excluded
 

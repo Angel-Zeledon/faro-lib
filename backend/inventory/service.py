@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
 from backend.errors import AppError
-from backend.formatting import money, format_days as _format_days
+from backend.formatting import money, format_days as _format_days, format_coverage_en
 from backend.inventory.defaults import (
     DEFAULT_LEAD_TIME_DAYS,
     DEFAULT_MOQ,
@@ -1364,9 +1364,12 @@ def _compute_inventory_status(
         # "__all__" is the internal sentinel used when the dataset has no SKU/group
         # column (single-series session) — it must never surface unexplained as a SKU
         # name in the UI, so give it a friendly label traceable to its real cause.
+        # English: the frontend recognises the sentinel and renders its own label
+        # (`inventory.single_series_label`); this is the fallback for a client
+        # that does not.
         display_name = stock.get("display_name") if stock else None
         if sku == "__all__" and not display_name:
-            display_name = "Serie única (sin columna SKU)"
+            display_name = "Single series (no SKU column)"
 
         items.append({
             "sku":                sku,
@@ -2176,8 +2179,12 @@ def seed_calendar_events(
 
     country = (country or "CR").upper()
     if country not in cat.SUPPORTED_COUNTRIES:
-        raise ValueError(
-            f"País '{country}' sin catálogo. Disponibles: {', '.join(cat.SUPPORTED_COUNTRIES)}"
+        raise AppError(
+            "calendar_country_unsupported",
+            f"No calendar catalog for country '{country}'. "
+            f"Available: {', '.join(cat.SUPPORTED_COUNTRIES)}",
+            params={"country": country,
+                    "available": ", ".join(cat.SUPPORTED_COUNTRIES)},
         )
 
     occurrences = cat.build_occurrences(country, years)
@@ -2312,9 +2319,15 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         "PEDIR_YA": RED, "PEDIR_PRONTO": AMBER,
         "OK": GREEN, "SOBRESTOCK": BLUE, "SIN_DATOS": colors.grey,
     }
+    # This document is downloaded and forwarded, so the frontend never renders
+    # it: its Spanish comes from the backend copy catalog, keyed in English.
+    from backend.notifications.locale import render_es, render_date
     SIGNAL_LABELS = {
-        "PEDIR_YA": "🔴 PEDIR YA", "PEDIR_PRONTO": "🟡 Pedir pronto",
-        "OK": "🟢 OK", "SOBRESTOCK": "🔵 Sobrestock", "SIN_DATOS": "Sin datos",
+        "PEDIR_YA":     render_es("inventory_pdf_signal_order_now"),
+        "PEDIR_PRONTO": render_es("inventory_pdf_signal_order_soon"),
+        "OK":           render_es("inventory_pdf_signal_ok"),
+        "SOBRESTOCK":   render_es("inventory_pdf_signal_overstock"),
+        "SIN_DATOS":    render_es("inventory_pdf_signal_no_data"),
     }
 
     buf = BytesIO()
@@ -2337,10 +2350,11 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     story = []
 
     # ── Header ─────────────────────────────────────────────────────────────
-    today_str = date.today().strftime("%d de %B de %Y")
+    today_str = render_date(date.today())
     header_data = [[
-        Paragraph("<b>RESUMEN DE INVENTARIO</b>", H1),
-        Paragraph(f"<font color='#64748b'>Generado el {today_str}</font>", SMALL),
+        Paragraph(f"<b>{render_es('inventory_pdf_title')}</b>", H1),
+        Paragraph(f"<font color='#64748b'>"
+                  f"{render_es('inventory_pdf_generated_on', date=today_str)}</font>", SMALL),
     ]]
     header_table = Table(header_data, colWidths=["70%", "30%"])
     header_table.setStyle(TableStyle([
@@ -2364,12 +2378,13 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
          Paragraph(l, ParagraphStyle("kl", fontSize=7.5, alignment=TA_CENTER,
                                      textColor=colors.HexColor("#64748b")))]
         for n, l, c in [
-            (total,   "Total SKUs",      "6366f1"),
-            (urgent,  "Pedir YA",        "ef4444"),
-            (warning, "Pedir pronto",    "f59e0b"),
-            (ok,      "OK",              "22c55e"),
-            (over,    "Sobrestock",      "3b82f6"),
-            (money(value, currency=currency) if value else "—", "Valor bodega", "6366f1"),
+            (total,   render_es("inventory_pdf_kpi_total"),     "6366f1"),
+            (urgent,  render_es("inventory_pdf_kpi_urgent"),    "ef4444"),
+            (warning, render_es("inventory_pdf_kpi_warning"),   "f59e0b"),
+            (ok,      render_es("inventory_pdf_kpi_ok"),        "22c55e"),
+            (over,    render_es("inventory_pdf_kpi_overstock"), "3b82f6"),
+            (money(value, currency=currency) if value else "—",
+             render_es("inventory_pdf_kpi_value"), "6366f1"),
         ]
     ]]
     kpi_row = [[Table([[v] for v in cell], colWidths=["100%"]) for cell in kpi_table_data[0]]]
@@ -2387,15 +2402,15 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     # ── Urgent SKUs table ──────────────────────────────────────────────────
     critical_items = [i for i in items if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO")][:20]
     if critical_items:
-        story.append(Paragraph("Productos que requieren acción", H2))
+        story.append(Paragraph(render_es("inventory_pdf_section_action"), H2))
         tdata = [[
-            Paragraph("<b>SKU</b>", CELL_BOLD),
-            Paragraph("<b>Nombre</b>", CELL_BOLD),
-            Paragraph("<b>Señal</b>", CELL_BOLD),
-            Paragraph("<b>Stock actual</b>", CELL_BOLD),
-            Paragraph("<b>Días cobertura</b>", CELL_BOLD),
-            Paragraph("<b>Pedir</b>", CELL_BOLD),
-            Paragraph("<b>Proveedor</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_sku')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_name')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_signal')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_stock')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_coverage')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_order')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_supplier')}</b>", CELL_BOLD),
         ]]
         row_styles = []
         for idx, item in enumerate(critical_items):
@@ -2407,7 +2422,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(sig_label, ParagraphStyle("sig", fontSize=8,
                           fontName="Helvetica-Bold", textColor=sig_color)),
                 Paragraph(f"{item['current_stock']:,.0f}" if item.get("current_stock") is not None else "—", CELL),
-                Paragraph(f"{item['coverage_days']:.0f} días" if item.get("coverage_days") is not None else "—", CELL),
+                Paragraph(_format_days(item["coverage_days"]) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(f"<b>{item['recommended_qty']:,.0f}</b>" if item.get("recommended_qty") else "—",
                           ParagraphStyle("qty", fontSize=8, fontName="Helvetica-Bold", textColor=GREEN)),
                 Paragraph(item.get("supplier") or "—", CELL),
@@ -2434,13 +2449,13 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     # ── All SKUs compact table ─────────────────────────────────────────────
     remaining = [i for i in items if i["signal"] not in ("PEDIR_YA", "PEDIR_PRONTO")]
     if remaining:
-        story.append(Paragraph("Resto del inventario", H2))
+        story.append(Paragraph(render_es("inventory_pdf_section_rest"), H2))
         small_data = [[
-            Paragraph("<b>SKU</b>", CELL_BOLD),
-            Paragraph("<b>Nombre</b>", CELL_BOLD),
-            Paragraph("<b>Señal</b>", CELL_BOLD),
-            Paragraph("<b>Días cobertura</b>", CELL_BOLD),
-            Paragraph("<b>ABC-XYZ</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_sku')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_name')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_signal')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_coverage')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_abc_xyz')}</b>", CELL_BOLD),
         ]]
         for item in remaining[:30]:
             small_data.append([
@@ -2466,7 +2481,8 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     story.append(Spacer(1, 12))
     story.append(HRFlowable(width="100%", thickness=0.5, color=BORDER))
     story.append(Paragraph(
-        f"Generado automáticamente · Sesión {session_id[:8]} · Nivel de servicio {service_level*100:.0f}%",
+        render_es("inventory_pdf_footer", session=session_id[:8],
+                  level=f"{service_level*100:.0f}"),
         ParagraphStyle("footer", fontSize=7, textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER),
     ))
 
@@ -2624,20 +2640,24 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                              currency: dict | None = None) -> list[dict]:
     """
     Generates plain-language, actionable recommendations from inventory status items.
-    Each recommendation has: priority (1=critical), sku, name, rec_type, text, action.
+    Each recommendation has: priority (1=critical), sku, name, rec_type, signal,
+    plus two ways to say the same thing — `text_code`/`text_params` and
+    `action_code`/`action_params`, which the frontend renders through the
+    catalogue in the reader's language, and `text`/`action`, an English sentence
+    kept only as the fallback for a frontend older than this API.
 
     `currency` is the tenant's currency setting, resolved once by the caller: the
-    OVERSTOCK sentence quotes an amount, and that sentence is what the executive
-    summary renders verbatim. Omitting it renders the anchor market's colón.
+    OVERSTOCK sentence quotes an amount, and that amount is pre-formatted here
+    (in `text` and in `text_params['amount']`) because only the backend knows the
+    tenant's setting. Omitting it renders the anchor market's colón.
 
     `period` (multi-period Phase C): the active planning grain. A period-trained
     session reports coverage in that grain's unit (a weekly session's
-    coverage_days of 3 means 3 WEEKS), so the coverage figures are formatted in
-    that unit and the "óptimo" ceiling is compared in the same unit. Lead time
-    stays in real calendar days — a supplier takes N days regardless of the
-    planning grain. "daily" reproduces the prior output byte-for-byte.
+    coverage_days of 3 means 3 WEEKS), so the coverage figures travel in that
+    unit and the optimal ceiling is compared in the same unit. Lead time stays in
+    real calendar days — a supplier takes N days regardless of the planning
+    grain, which is why `lead_days` is a separate param from `days`.
     """
-    from backend.formatting import format_coverage
     days_per_period = _days_per_period(period)
     recs: list[dict] = []
 
@@ -2648,14 +2668,11 @@ def generate_recommendations(items: list[dict], period: str = "daily",
         days     = item.get('coverage_days')
         lead     = item.get('lead_time_days', DEFAULT_LEAD_TIME_DAYS)
         qty      = item.get('recommended_qty') or 0
-        # Two different grammatical slots, so two forms. `prov` is the subject
-        # ("y el proveedor tarda 15 días"); the action needs the dative, and
-        # reusing the subject form there produced "Pedir 132 unidades a el
-        # proveedor" on screen — the contraction `a + el = al` is not optional
-        # in Spanish, and a named supplier takes no article at all.
+        # Raw, with no article and no preposition attached. Spanish needs the
+        # contraction `a + el = al` and a named supplier takes no article at all,
+        # so this used to be carried twice, pre-declined. Both forms belong to
+        # the catalogue now: a supplier and no supplier get their own key.
         supplier = item.get('supplier')
-        prov     = supplier or 'el proveedor'
-        prov_to  = f"a {supplier}" if supplier else 'al proveedor'
         abc      = item.get('abc', '?')
         trend    = item.get('demand_trend_pct')
         value    = item.get('inventory_value')
@@ -2665,11 +2682,30 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                 'priority': 1, 'sku': sku, 'name': name,
                 'rec_type': 'STOCKOUT_RISK',
                 'text': (
-                    f"Emite la orden de {name} HOY — tienes {format_coverage(days, period)} de stock "
-                    f"y {prov} tarda {_format_days(lead)} en entregar. "
-                    f"Si no actúas hoy, habrá quiebre antes de recibir el pedido."
+                    f"Order {name} TODAY — you have {format_coverage_en(days, period)} of stock "
+                    f"and {supplier or 'the supplier'} takes {round(lead)} days to deliver. "
+                    f"If you do not act today it runs out before the order arrives."
                 ),
-                'action': f"Pedir {qty:.0f} unidades {prov_to}" if qty > 0 else "Emitir orden urgente",
+                # Raw numbers, never pre-formatted words: `format_coverage`
+                # and `_format_days` emit Spanish nouns ("días", "semanas"), so
+                # interpolating them would smuggle Spanish into whatever
+                # language the reader chose. The frontend has coverageUnitLabel
+                # for exactly this.
+                'text_params': {
+                    'name': name, 'days': round(days), 'lead_days': round(lead),
+                    'supplier': supplier or '',
+                },
+                # Grammar belongs to the catalogue, not to the data: a param
+                # carrying "a Acme" rendered as "Order 216 units a Acme" the
+                # moment the UI was English, and an unnamed supplier fell back to
+                # the Spanish words "el proveedor" inside an English sentence.
+                # Each case gets its own key and the name travels raw.
+                'text_code': 'STOCKOUT_RISK' if supplier else 'STOCKOUT_RISK_NO_SUPPLIER',
+                'action': (f"Order {qty:.0f} units from {supplier or 'the supplier'}"
+                           if qty > 0 else "Issue an urgent order"),
+                'action_code': ('order_qty_from_supplier' if supplier else 'order_qty_from_generic')
+                               if qty > 0 else 'order_urgent',
+                'action_params': {'qty': f"{qty:.0f}", 'supplier': supplier or ''},
                 'signal': signal,
             })
 
@@ -2678,10 +2714,15 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                 'priority': 2, 'sku': sku, 'name': name,
                 'rec_type': 'REORDER_SOON',
                 'text': (
-                    f"{name} tiene {format_coverage(days, period)} de cobertura frente a un lead time de {_format_days(lead)}. "
-                    f"Emite el pedido esta semana para mantener el colchón de seguridad."
+                    f"{name} has {format_coverage_en(days, period)} of coverage against a lead "
+                    f"time of {round(lead)} days. Issue the order this week to keep the safety buffer."
                 ),
-                'action': f"Pedir {qty:.0f} unidades antes del viernes" if qty > 0 else "Planificar pedido",
+                'text_params': {
+                    'name': name, 'days': round(days), 'lead_days': round(lead),
+                },
+                'action': f"Order {qty:.0f} units before Friday" if qty > 0 else "Plan the order",
+                'action_code': 'order_qty_by_friday' if qty > 0 else 'plan_order',
+                'action_params': {'qty': f"{qty:.0f}"},
                 'signal': signal,
             })
 
@@ -2691,10 +2732,13 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                     'priority': 3, 'sku': sku, 'name': name,
                     'rec_type': 'DEMAND_UP',
                     'text': (
-                        f"La demanda real de {name} está corriendo {trend:.0f}% por encima del pronóstico. "
-                        f"Considera aumentar el stock de seguridad o anticipar el próximo pedido."
+                        f"Real demand for {name} is running {trend:.0f}% above the forecast. "
+                        f"Consider raising the safety stock or bringing the next order forward."
                     ),
-                    'action': "Revisar stock de seguridad",
+                    'text_params': {'name': name, 'pct': f"{trend:.0f}"},
+                    'action': "Review the safety stock",
+                    'action_code': 'review_safety_stock',
+                    'action_params': {},
                     'signal': signal,
                 })
             elif trend <= -15:
@@ -2702,10 +2746,13 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                     'priority': 4, 'sku': sku, 'name': name,
                     'rec_type': 'DEMAND_DOWN',
                     'text': (
-                        f"La demanda de {name} está {abs(trend):.0f}% por debajo del pronóstico. "
-                        f"Verifica si perdiste un cliente clave o hay un cambio de tendencia real."
+                        f"Demand for {name} is {abs(trend):.0f}% below the forecast. "
+                        f"Check whether you lost a key customer or the trend really changed."
                     ),
-                    'action': "Revisar con el equipo de ventas",
+                    'text_params': {'name': name, 'pct': f"{abs(trend):.0f}"},
+                    'action': "Review with the sales team",
+                    'action_code': 'review_with_sales',
+                    'action_params': {},
                     'signal': signal,
                 })
 
@@ -2720,10 +2767,17 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                 'priority': 5, 'sku': sku, 'name': name,
                 'rec_type': 'OVERSTOCK',
                 'text': (
-                    f"{name} tiene {format_coverage(days, period)} de cobertura ({format_coverage(excess, period)} más de lo óptimo). "
-                    f"Pausar el próximo pedido liberaría {money(value, currency=currency)} en capital de trabajo."
+                    f"{name} has {format_coverage_en(days, period)} of coverage "
+                    f"({format_coverage_en(excess, period)} more than optimal). Pausing the next order "
+                    f"would free {money(value, currency=currency)} of working capital."
                 ),
-                'action': "Pausar próximo pedido",
+                'text_params': {
+                    'name': name, 'days': round(days), 'excess': round(excess),
+                    'amount': money(value, currency=currency),
+                },
+                'action': "Pause the next order",
+                'action_code': 'pause_next_order',
+                'action_params': {},
                 'signal': signal,
             })
 

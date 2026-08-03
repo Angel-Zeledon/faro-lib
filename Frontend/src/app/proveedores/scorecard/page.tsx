@@ -10,6 +10,7 @@ import Card from '@/components/ui/Card'
 import Table, { Th, Td } from '@/components/ui/Table'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
+import { renderSupplierAlert } from '@/lib/supplierAlertCopy'
 import { BarChart3, ArrowLeft, AlertTriangle, Truck, TrendingUp } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -78,13 +79,13 @@ function ScorecardTable({ rows, alerts }: {
                 <Td size="lg" divider={false}>
                   {alert ? (
                     <span
-                      title={`${alert.mensaje} (z=${alert.z_score}, ${alert.n_reciente} ${t('scorecard.trend_tooltip_recent')} ${alert.n_baseline} ${t('scorecard.trend_tooltip_historical')})`}
+                      title={`${renderSupplierAlert(t, alert)} (z=${alert.z_score}, ${alert.n_recent} ${t('scorecard.trend_tooltip_recent')} ${alert.n_baseline} ${t('scorecard.trend_tooltip_historical')})`}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap',
                         fontSize: 11, fontWeight: 700,
-                        color: alert.severidad === 'alta' ? C.red : C.amber,
-                        background: `${alert.severidad === 'alta' ? C.red : C.amber}1a`,
+                        color: alert.severity === 'high' ? C.red : C.amber,
+                        background: `${alert.severity === 'high' ? C.red : C.amber}1a`,
                       }}
                     >
                       <TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d
@@ -211,9 +212,9 @@ export default function SupplierScorecardPage() {
                 </strong>
                 {alerts.map(a => (
                   <span key={a.supplier}>
-                    {a.mensaje} {t('scorecard.deviation_days')}{' '}
+                    {renderSupplierAlert(t, a)} {t('scorecard.deviation_days')}{' '}
                     <span style={{ color: C.dim }}>
-                      ({t('scorecard.deviation_recent')} {a.n_reciente} {t('scorecard.deviation_receptions_vs')} {a.n_baseline} {t('scorecard.deviation_previous')})
+                      ({t('scorecard.deviation_recent')} {a.n_recent} {t('scorecard.deviation_receptions_vs')} {a.n_baseline} {t('scorecard.deviation_previous')})
                     </span>
                   </span>
                 ))}

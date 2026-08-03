@@ -24,20 +24,27 @@ log = logging.getLogger(__name__)
 
 # ── Request models ─────────────────────────────────────────────────────────────
 
+# `language` is the reader's active UI language, sent by the frontend. It only
+# reaches the model as an answer instruction — nothing in the rule-based path
+# branches on it, so an unknown value degrades to the anchor market's Spanish
+# rather than failing the request.
 class MorningNarrativeRequest(BaseModel):
     session_id:  str
     profile:     str = 'distributor'
+    language:    str = 'es'
 
 
 class InventoryInsightRequest(BaseModel):
     session_id: str
     profile:    str = 'distributor'
+    language:   str = 'es'
 
 
 class ForecastExplanationRequest(BaseModel):
     sku:        str
     session_id: str
     profile:    str = 'distributor'
+    language:   str = 'es'
 
 
 class SuggestedQuestionsRequest(BaseModel):
@@ -70,7 +77,8 @@ def morning_narrative(
         # Resolved once per request: the narrative's key points and its
         # rule-based fallback quote money, and this reader is a DB query.
         result   = generate_morning_narrative(briefing, body.profile,
-                                              currency_of(user.tenant_id))
+                                              currency_of(user.tenant_id),
+                                              language=body.language)
         return ok(result)
     except Exception as e:
         log.error("Morning narrative error: %s", e)
@@ -92,7 +100,8 @@ def inventory_insight(
         period = planning_service.get_planning(user.tenant_id).get("period", "daily")
         items  = get_inventory_status(user.tenant_id, body.session_id, period=period)
         result = generate_inventory_insight(items, body.profile,
-                                           currency_of(user.tenant_id))
+                                           currency_of(user.tenant_id),
+                                           language=body.language)
         return ok(result)
     except Exception as e:
         log.error("Inventory insight error: %s", e)
@@ -116,7 +125,8 @@ def forecast_explanation(
         sku_data = next((i for i in items if i['sku'] == body.sku), None)
         if not sku_data:
             raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in inventory status")
-        result = generate_forecast_explanation(body.sku, sku_data, body.profile)
+        result = generate_forecast_explanation(body.sku, sku_data, body.profile,
+                                               language=body.language)
         return ok(result)
     except HTTPException:
         raise

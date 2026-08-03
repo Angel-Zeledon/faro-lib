@@ -189,9 +189,9 @@ class TestInventoryAlertEmailCopyComesFromTheCatalog:
 
 class TestLeadTimeAlertEmailCopyComesFromTheCatalog:
     def _deviation(self) -> dict:
-        return {"supplier": "Andina", "severidad": "alta", "lead_time_reciente": 21,
-                "lead_time_historico": 7, "deviation_days": 14,
-                "n_reciente": 3, "n_baseline": 18}
+        return {"supplier": "Andina", "severity": "high", "lead_time_recent": 21,
+                "lead_time_historical": 7, "deviation_days": 14,
+                "n_recent": 3, "n_baseline": 18}
 
     def test_plural_body_and_subject_agree_with_the_count(self, sent):
         email_mod.send_supplier_lead_time_alert_email(

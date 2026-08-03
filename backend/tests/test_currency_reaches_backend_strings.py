@@ -277,27 +277,40 @@ _OVERSTOCK_ITEM = {
 
 
 class TestOverstockSentenceCarriesTheTenantsCurrency:
-    def _overstock_text(self, currency) -> str:
+    """The recommendation now travels as code + params with an English fallback
+    sentence, so the amount has to carry the tenant's symbol in BOTH — the
+    frontend renders the Spanish, but it cannot format the money itself."""
+
+    def _overstock(self, currency) -> dict:
         from backend.inventory.service import generate_recommendations
         recs = generate_recommendations([dict(_OVERSTOCK_ITEM)], "daily", currency)
-        rec = next(r for r in recs if r["rec_type"] == "OVERSTOCK")
-        return rec["text"]
+        return next(r for r in recs if r["rec_type"] == "OVERSTOCK")
 
     def test_the_sentence_uses_the_tenants_symbol(self):
         """Break to check: drop `currency=currency` from the OVERSTOCK text."""
-        text = self._overstock_text(USD)
-        assert "$12,500.00" in text, text
-        assert "₡" not in text
+        rec = self._overstock(USD)
+        assert "$12,500.00" in rec["text"], rec["text"]
+        assert "₡" not in rec["text"]
+
+    def test_the_param_the_frontend_renders_carries_it_too(self):
+        """The `text` above is only the fallback. Break to check: drop
+        `currency=currency` from `text_params['amount']` and this is the only
+        test that notices."""
+        rec = self._overstock(USD)
+        assert rec["text_params"]["amount"] == "$12,500.00", rec["text_params"]
 
     def test_the_anchor_market_sentence_is_unchanged(self):
-        text = self._overstock_text(None)
-        assert "liberaría ₡12,500 en capital de trabajo" in text, text
+        rec = self._overstock(None)
+        assert "would free ₡12,500 of working capital" in rec["text"], rec["text"]
+        assert rec["text_params"]["amount"] == "₡12,500"
 
 
 class TestBriefingAndNarrativeThreadTheSetting:
     """End to end through the real endpoints: the currency is set with the real
-    PATCH, and the assertions read the composed Spanish the API returns. This is
-    what breaks if the tenant_id stops being threaded anywhere along
+    PATCH, and the assertions read the amounts the API composes — the one part of
+    these payloads the frontend cannot build, since only the backend knows the
+    tenant's currency setting. This is what breaks if the tenant_id stops being
+    threaded anywhere along
     endpoint -> get_morning_briefing -> generate_recommendations, or
     endpoint -> generate_morning_narrative -> _extract_key_points.
     """
@@ -362,7 +375,15 @@ class TestBriefingAndNarrativeThreadTheSetting:
                         headers=auth_headers)
         assert r.status_code == 200, r.text
         data = r.json()["data"]
-        blob = " ".join(data["key_points"]) + " " + data["narrative"]
+        # A key point is code + params + English fallback now. The amount is
+        # pre-formatted in BOTH — only the backend knows the tenant's setting —
+        # so the currency has to reach each of them.
+        amounts = [p["params"].get("amount") for p in data["key_points"]
+                   if "amount" in p["params"]]
+        assert amounts, f"no key point quotes an amount: {data['key_points']}"
+        blob = (" ".join(p["text"] for p in data["key_points"])
+                + " " + " ".join(str(a) for a in amounts)
+                + " " + data["narrative"])
         assert "$50,000.00" in blob, blob
         assert "₡" not in blob, "the colón survived in the executive summary"
 
