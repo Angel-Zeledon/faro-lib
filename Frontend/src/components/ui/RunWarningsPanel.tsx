@@ -104,9 +104,18 @@ function Group({ group }: { group: RunWarningGroup }) {
   )
 }
 
-export default function RunWarningsPanel({ sessionId }: { sessionId: string | null }) {
+export default function RunWarningsPanel(
+  { sessionId, collapsible = false }: { sessionId: string | null; collapsible?: boolean },
+) {
   const { t } = useLanguage()
   const [data, setData] = useState<RunWarnings | null>(null)
+  // Collapsed by default where the page's job is to show something else.
+  // On /pronosticos this panel had grown to ~600px of prose above the fold, so
+  // a page called "Predicciones" opened without a single prediction in view.
+  // The finding still has to be reachable — it is the only place the user can
+  // learn the accuracy is inflated — so it keeps its line and its colour, and
+  // gives up only the room.
+  const [open, setOpen] = useState(!collapsible)
 
   useEffect(() => {
     if (!sessionId) { setData(null); return }
@@ -124,6 +133,7 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
   if (groups.length === 0 && corrections.length === 0) return null
 
   const hasError = groups.some(g => g.severity === 'error')
+  const findings = groups.length + (corrections.length > 0 ? 1 : 0)
   const accent   = hasError ? '#dc2626' : '#d97706'
 
   return (
@@ -138,23 +148,46 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
         marginBottom: 18,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      <button
+        type="button"
+        onClick={collapsible ? () => setOpen(v => !v) : undefined}
+        aria-expanded={collapsible ? open : undefined}
+        style={{
+          all: 'unset', width: '100%',
+          cursor: collapsible ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+        }}
+      >
         {hasError
           ? <AlertTriangle size={17} color={accent} style={{ flexShrink: 0, marginTop: 1 }} />
           : <AlertCircle   size={17} color={accent} style={{ flexShrink: 0, marginTop: 1 }} />}
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
             {t('runwarn.title')}
+            {collapsible && findings > 0 && (
+              <span style={{
+                marginLeft: 8, fontSize: 12, fontWeight: 700, color: accent,
+                background: `${accent}1a`, borderRadius: 20, padding: '1px 8px',
+              }}>{findings}</span>
+            )}
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 3, lineHeight: 1.5 }}>
             {t('runwarn.subtitle')}
           </div>
         </div>
-      </div>
+        {collapsible && (
+          <ChevronDown
+            size={16} color="var(--dim)" aria-hidden="true"
+            style={{ flexShrink: 0, marginTop: 2,
+                     transform: open ? 'rotate(180deg)' : 'none',
+                     transition: 'transform .15s' }}
+          />
+        )}
+      </button>
 
-      {groups.map(g => <Group key={g.code} group={g} />)}
+      {open && groups.map(g => <Group key={g.code} group={g} />)}
 
-      {corrections.length > 0 && (
+      {open && corrections.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,

@@ -1488,7 +1488,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       <StatsStrip data={data} />
 
       {/* Chart */}
-      <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={{ flex: 1, minHeight: 0, padding: '8px 0 0' }}>
+      <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={{ flex: 1, minHeight: 300, padding: '8px 0 0' }}>
         {data.historical.length === 0 && data.forecast.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--dim)', fontSize: 13 }}>
             {t('skus.no_series_data')}
@@ -3089,15 +3089,24 @@ export default function SkusPage() {
       {/* Data problems the engine found while training. They never abort a run,
           so this is the only place the user can learn the accuracy above is
           inflated by leakage. */}
-      <RunWarningsPanel sessionId={sessionId} />
+      {/* Collapsed to one line: it used to run ~600px above the chart, which
+          is why a page called "Predicciones" opened with no prediction in
+          view. The finding keeps its colour and its click; it gives up the room. */}
+      <RunWarningsPanel sessionId={sessionId} collapsible />
 
-      {/* What the purchasing policy would have produced over real past demand,
-          against the same policy driven by "order what we ordered last time".
-          Renders nothing at all when the run has no backtest to report. */}
-      <PolicyBacktestPanel backtest={policyBacktest} catalogueSize={metricsBySku.size} />
 
       {/* Body */}
-      <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: 16, flex: 1, minHeight: 0 }}>
+      {/* `minHeight` is a floor, not decoration. This row is `flex: 1`, i.e. it
+          takes whatever is LEFT OVER after the two panels above it — and those
+          two grow with how much the engine has to report. On a run with a long
+          warnings list and a backtest, nothing was left over: the row resolved
+          to 0, `minHeight: 0` allowed exactly that, and the cards' `overflow:
+          hidden` clipped the chart away. Measured: a 300px canvas alive inside
+          a container measuring 0, on a page where the user could find no graph
+          at all. The floor is the chart (300) plus its toolbar and stats strip,
+          so the more Faro has to say about the data the more the page scrolls —
+          instead of the graph silently disappearing. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: 16, flex: 1, minHeight: 640 }}>
 
         {/* SKU list */}
         <div style={{
@@ -3340,6 +3349,15 @@ export default function SkusPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* What the purchasing policy would have produced over real past demand,
+          against the same policy driven by "order what we ordered last time".
+          Renders nothing when the run has no backtest to report.
+          Below the chart on purpose: it qualifies the forecast, so it reads
+          after it instead of standing between the user and it. */}
+      <div style={{ marginTop: 16 }}>
+        <PolicyBacktestPanel backtest={policyBacktest} catalogueSize={metricsBySku.size} />
       </div>
     </div>
   )
