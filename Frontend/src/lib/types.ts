@@ -1016,6 +1016,12 @@ export interface InventoryStatusItem extends InventoryStock {
   coverage_days:       number | null
   signal:               InventorySignal
   recommended_qty: number | null
+  /** Units already on their way and not yet received: purchase orders the buyer
+   *  has SENT, plus transfers in transit into this warehouse. Subtracted from
+   *  `recommended_qty` — without it the buyer was told to order the same units
+   *  again every day until they landed. Show it wherever the quantity is shown,
+   *  or a drop to 0 looks like the app forgetting. */
+  incoming_qty?:        number
   inventory_value:     number | null
   n_models:             number
   abc:                  string

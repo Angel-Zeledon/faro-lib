@@ -2368,6 +2368,13 @@ export default function InventoryPage() {
  {item.recommended_qty != null && item.recommended_qty > 0
  ? <span style={{ fontSize: 18, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.recommended_qty, 0)}</span>
  : <span style={{ fontSize: 13, color: C.dim }}>—</span>}
+ {/* Why the number is low (or a dash) when the signal is red: the units
+     are already on a truck. Without this the drop reads as a bug. */}
+ {(item.incoming_qty ?? 0) > 0 && (
+ <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>
+ {t('inventory.incoming_on_the_way', { qty: fmt(item.incoming_qty!, 0) })}
+ </div>
+ )}
  </div>
  <span style={{ fontSize: 12, color: C.muted }}>{item.supplier || '—'}</span>
  </div>

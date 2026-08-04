@@ -265,6 +265,64 @@ def delete_stock(tenant_id: str, sku: str) -> None:
     )
 
 
+def get_incoming_qty(tenant_id: str) -> dict[tuple[str, str], float]:
+    """Units already on their way, per (sku, warehouse). Two sources:
+
+      · purchase orders the buyer has SENT and not fully received, and
+      · transfers in transit from another of the tenant's own warehouses.
+
+    `sent_at IS NOT NULL` is the load-bearing half of the PO condition. A PO the
+    buyer generated and never sent means nothing is coming, and counting it
+    would silence a real stockout alarm — the one direction this must never err
+    in. A generated-but-unsent order is a draft, not stock.
+
+    Transfers are credited to the DESTINATION only. The origin already lost the
+    units at send time (`transfer_service.create_transfer` decrements it inside
+    the same transaction), so crediting the origin too would invent stock.
+
+    Only lines the buyer stands behind count: 'approved'/'modified' on the PO
+    side, and on the transfer side whatever was actually dispatched minus what
+    has already been received.
+    """
+    from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
+
+    incoming: dict[tuple[str, str], float] = {}
+
+    for r in query(
+        """SELECT poi.sku, poi.warehouse,
+                  SUM(poi.final_qty - COALESCE(poi.received_qty, 0)) AS qty
+             FROM inventory_po_items poi
+             JOIN inventory_po_log pol ON pol.id = poi.po_log_id
+            WHERE poi.tenant_id = %s
+              AND pol.sent_at IS NOT NULL
+              AND pol.reception_status IN ('pending', 'partial')
+              AND poi.status IN ('approved', 'modified')
+            GROUP BY poi.sku, poi.warehouse""",
+        (tenant_id,),
+    ):
+        qty = float(r["qty"] or 0)
+        if qty > 0:
+            key = (r["sku"], r["warehouse"] or DEFAULT_WAREHOUSE)
+            incoming[key] = incoming.get(key, 0.0) + qty
+
+    for r in query(
+        """SELECT tri.sku, trl.to_warehouse AS warehouse,
+                  SUM(tri.qty_sent - COALESCE(tri.qty_received, 0)) AS qty
+             FROM inventory_transfer_items tri
+             JOIN inventory_transfer_log trl ON trl.id = tri.transfer_id
+            WHERE tri.tenant_id = %s
+              AND trl.status IN ('in_transit', 'partial')
+            GROUP BY tri.sku, trl.to_warehouse""",
+        (tenant_id,),
+    ):
+        qty = float(r["qty"] or 0)
+        if qty > 0:
+            key = (r["sku"], r["warehouse"] or DEFAULT_WAREHOUSE)
+            incoming[key] = incoming.get(key, 0.0) + qty
+
+    return incoming
+
+
 # Dataset columns we recognize as inventory data when present in an uploaded file.
 _DATASET_STOCK_FLOAT_COLS = {"current_stock", "min_stock", "unit_cost", "moq", "service_level", "sale_price"}
 _DATASET_STOCK_INT_COLS   = {"lead_time_days"}
@@ -827,10 +885,27 @@ def _calc_recommended(
     service_level: float = 0.95,
     risk: Optional[dict] = None,
     risk_scale: float = 1.0,
+    incoming: float = 0.0,
 ) -> float:
+    """How much to order, against the INVENTORY POSITION rather than the shelf.
+
+    `incoming` is what is already on its way and not yet received: purchase
+    orders the buyer has sent, and stock transferred from another warehouse of
+    theirs. Without it the buyer was told to order the same units again every
+    day until they physically arrived — and in a multi-warehouse tenant a single
+    internal move produced TWO of those, because the origin loses the stock at
+    send time and the destination does not gain it until reception.
+
+    Measured before this: 200 units sent San José -> Cartago, and one second
+    later Faro asked for 250 more at the origin and 90 more at the destination,
+    for a company that already owned 430.
+
+    Defaults to 0.0 so every caller that has nothing on order behaves exactly as
+    before.
+    """
     lead_time_demand = avg_daily * lead_time
     safety_stock = _safety_stock(avg_std, lead_time, service_level, risk, risk_scale)
-    raw = max(0.0, lead_time_demand + safety_stock - current_stock)
+    raw = max(0.0, lead_time_demand + safety_stock - current_stock - max(0.0, incoming))
     if moq and moq > 0:
         raw = math.ceil(raw / moq) * moq
     return float(round(raw, 2))
@@ -1139,6 +1214,7 @@ def _compute_inventory_status(
     forecasts: Optional[dict] = None,
     stock_rows: Optional[list] = None,
     learned_lead_times: Optional[dict] = None,
+    incoming_qty: Optional[dict] = None,
     period: str = "daily",
 ) -> list[dict]:
     """
@@ -1185,6 +1261,11 @@ def _compute_inventory_status(
     if stock_rows is None:
         stock_rows = list_stock(tenant_id)
     stock_map = _aggregate_stock_rows_by_sku(stock_rows)
+
+    # What is already on its way: sent purchase orders and transfers in transit.
+    # One query pair for the whole tenant, never inside the SKU loop.
+    if incoming_qty is None:
+        incoming_qty = get_incoming_qty(tenant_id)
 
     # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
     # tenant-wide table (no session_id column) that accumulates rows from every
@@ -1275,6 +1356,12 @@ def _compute_inventory_status(
             else float(_sl_val)
         )
 
+        # Company-wide for this SKU: the aggregated row sums every warehouse's
+        # stock, so it must sum every warehouse's incoming too. Hoisted above the
+        # branch so a row without a forecast still reports what is on its way.
+        sku_incoming = sum(
+            q for (i_sku, _wh), q in incoming_qty.items() if i_sku == sku)
+
         if has_forecast and has_stock:
             # Per-period demand: average over as many forecast buckets as the
             # lead time spans in periods, and judge the signal against the lead
@@ -1296,7 +1383,7 @@ def _compute_inventory_status(
                 sku_risk = None
             recommended = _calc_recommended(
                 current_stock, avg_daily, avg_std, lt_periods, moq,
-                sku_service_level, risk=sku_risk,
+                sku_service_level, risk=sku_risk, incoming=sku_incoming,
             )
             recommended = _gate_recommended_by_signal(signal, recommended)
             inventory_value = (
@@ -1438,6 +1525,10 @@ def _compute_inventory_status(
             "coverage_days":     round(coverage_days, 1) if coverage_days is not None and coverage_days < 9990 else None,
             "signal":             signal,
             "recommended_qty": recommended,
+            # Already on its way: sent POs + transfers in transit. Exposed so the
+            # UI can say "N units arriving" instead of leaving the buyer to
+            # wonder why the quantity dropped.
+            "incoming_qty": round(float(sku_incoming), 2),
             "inventory_value":   inventory_value,
             "n_models":           len(model_forecasts),
             "xyz":               _classify_xyz(cv_by_sku.get(sku)),
@@ -1470,6 +1561,7 @@ def get_inventory_status_by_warehouse(
     stock_rows: Optional[list] = None,
     learned_lead_times: Optional[dict] = None,
     lanes: Optional[dict] = None,
+    incoming_qty: Optional[dict] = None,
 ) -> list[dict]:
     """
     Per-(sku, warehouse) semaphore rows (feature 5.4).
@@ -1519,6 +1611,9 @@ def get_inventory_status_by_warehouse(
         }
     except Exception as e:
         log.debug("best_model lookup failed for session=%s: %s", session_id, e)
+
+    if incoming_qty is None:
+        incoming_qty = get_incoming_qty(tenant_id)
 
     warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
                   or [wh_svc.DEFAULT_WAREHOUSE])
@@ -1574,6 +1669,10 @@ def get_inventory_status_by_warehouse(
             _moq_val, _, _ = _sd_svc.resolve_field(
                 "moq", stock, rule_index, supplier=supplier, category=category)
             moq = float(_moq_val if _moq_val is not None else DEFAULT_MOQ)
+            # Hoisted above the branch: a row with no demand of its own still
+            # has units on the way, and the buyer needs to see them before they
+            # order more into a warehouse that already has a truck coming.
+            wh_incoming = incoming_qty.get((sku, wh), 0.0)
 
             if model_forecasts and share > 0.0:
                 _sl_val, sl_source, _ = _sd_svc.resolve_field(
@@ -1595,7 +1694,8 @@ def get_inventory_status_by_warehouse(
                 signal = _calc_signal(coverage_days, lt_periods)
                 recommended = _calc_recommended(
                     current_stock, avg_daily, avg_std, lt_periods, moq,
-                    sku_service_level, risk=sku_risk, risk_scale=share)
+                    sku_service_level, risk=sku_risk, risk_scale=share,
+                    incoming=wh_incoming)
                 recommended = _gate_recommended_by_signal(signal, recommended)
                 reorder_point = round(
                     avg_daily * lt_periods
@@ -1625,6 +1725,10 @@ def get_inventory_status_by_warehouse(
                 "reorder_point": reorder_point,
                 "signal": signal,
                 "recommended_qty": recommended,
+                # Already on its way: sent POs + transfers in transit. Exposed so the
+                # UI can say "N units arriving" instead of leaving the buyer to
+                # wonder why the quantity dropped.
+                "incoming_qty": round(float(wh_incoming), 2),
                 "recommended_action": None,
                 "transfer_suggestion": None,
                 # Why a possible transfer LOST against buying (structured
@@ -3166,11 +3270,13 @@ def run_daily_inventory_alerts() -> None:
             forecasts = session_store.get_forecasts(tid, sid) or {}
             stock_rows = list_stock(tid)
             learned_lead_times = get_learned_lead_times(tid)
+            incoming_qty = get_incoming_qty(tid)
 
             items = _compute_inventory_status(
                 tid, sid,
                 forecasts=forecasts, stock_rows=stock_rows,
                 learned_lead_times=learned_lead_times,
+                incoming_qty=incoming_qty,
             )
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
@@ -3188,6 +3294,7 @@ def run_daily_inventory_alerts() -> None:
                         tid, sid,
                         forecasts=forecasts, stock_rows=stock_rows,
                         learned_lead_times=learned_lead_times,
+                        incoming_qty=incoming_qty,
                     )
                     transfer_count = sum(
                         1 for i in wh_items if i.get("recommended_action") == "transfer")
