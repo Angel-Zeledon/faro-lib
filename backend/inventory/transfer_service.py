@@ -332,8 +332,15 @@ def close_transfer(tenant_id: str, transfer_id: str, user_id: str) -> dict:
                 tenant_id, sku=sku, warehouse=origin, quantity=qty,
                 reason="transfer_loss",
                 unit_cost=unit_costs.get(sku),
-                # End-user copy (Spanish by design, like every explanation string)
-                notes=f"Faltante al cerrar transferencia {origin} → {t['to_warehouse']}",
+                # The note is PERSISTED and the ledger renders it verbatim, so a
+                # sentence written here would be frozen in one language forever —
+                # it read "Faltante al cerrar transferencia ..." on an English
+                # screen. What the row means is already carried by
+                # `reason='transfer_loss'`, which the UI localises
+                # (inventory.shrinkage_reason_transfer_loss); all the note has to
+                # add is WHICH route lost them, and two warehouse names with an
+                # arrow between them belong to no language.
+                notes=f"{origin} → {t['to_warehouse']}",
                 user_id=user_id, conn=conn,
             )
         execute(

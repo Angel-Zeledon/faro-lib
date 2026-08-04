@@ -39,6 +39,14 @@ _SPANISH_WORDS = {
     "pedido", "pedidos", "pedir", "proveedor", "proveedores", "unidades",
     "inventario", "sobrestock", "quiebre", "quiebres", "cobertura", "bodega",
     "existencias", "recepcion", "orden", "ordenes", "reabastecer",
+    # Added after the first version of this guard passed while
+    # `transfer_service.close_transfer` was still writing "Faltante al cerrar
+    # transferencia ..." into a shrinkage note the UI renders. Accent-free
+    # Spanish is the blind spot of a character-based check, so the word list is
+    # what has to carry it.
+    "faltante", "faltantes", "transferencia", "transferencias", "traslado",
+    "traslados", "cerrar", "sucursal", "tienda", "compra", "compras", "venta",
+    "ventas", "cantidad", "stock actual", "costo", "precio", "fecha", "señal",
 }
 
 # Values, not copy: the semáforo's signals are persisted on stock rows and in PO
@@ -66,6 +74,11 @@ _ALLOWED = {
     "utils/stock_import.py",
     "datasources/service.py",
     "dataframes/canonical.py",
+    # Canonical COLUMN names, not copy: this module writes a CSV that Faro's own
+    # detector reads back, and the quick-start config names the columns in it.
+    # Renaming them would break the round trip, not translate anything.
+    "integrations/sync_service.py",
+    "sessions/defaults.py",
     # Legacy Spanish DB column names being renamed forward by the migration.
     "db/migrations.py",
 }
