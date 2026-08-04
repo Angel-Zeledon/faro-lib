@@ -72,6 +72,15 @@ function excludedReasonText(
  return text === key ? e.detail : text
 }
 
+// `undefined` for a box the user left empty, so the field is omitted from the
+// request body and the stored value survives. Any number the user actually
+// typed goes through, including one the backend will reject — a rejected save
+// tells them something; a silent 15 does not.
+function leadTimeOrUnset(raw: string): number | undefined {
+ const n = parseInt(raw, 10)
+ return raw.trim() === '' || Number.isNaN(n) ? undefined : n
+}
+
 // A dataset with no SKU column trains as ONE series, and the backend labels that
 // row with the `__all__` sentinel's English name. Relabel it once here, on the
 // way in, so every cell below — table, detail panel, edit form, CSV — shows the
@@ -1662,7 +1671,10 @@ export default function InventoryPage() {
  try {
  await upsertInventoryStock(sku, {
  current_stock: parseFloat(draft.current_stock) || 0,
- lead_time_days: parseInt(draft.lead_time_days) || DEFAULT_LEAD_TIME_DAYS,
+ // A blank box means "leave it as it is", not "use 15 days". Sending the
+ // default wrote it over whatever the user had configured, and the app then
+ // reported it back as their own choice.
+ lead_time_days: leadTimeOrUnset(draft.lead_time_days),
  supplier: draft.supplier || undefined,
  })
  setRowBaseline(prev => ({ ...prev, [sku]: { ...draft } }))
@@ -1710,7 +1722,10 @@ export default function InventoryPage() {
  try {
  await upsertInventoryStock(sku, {
  current_stock: parseFloat(draft.current_stock) || 0,
- lead_time_days: parseInt(draft.lead_time_days) || DEFAULT_LEAD_TIME_DAYS,
+ // A blank box means "leave it as it is", not "use 15 days". Sending the
+ // default wrote it over whatever the user had configured, and the app then
+ // reported it back as their own choice.
+ lead_time_days: leadTimeOrUnset(draft.lead_time_days),
  supplier: draft.supplier || undefined,
  })
  saved++
@@ -1797,7 +1812,7 @@ export default function InventoryPage() {
  if (!editState || savingRef.current) return
  savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: parseInt(editState.lead_time_days) || DEFAULT_LEAD_TIME_DAYS, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || DEFAULT_MOQ, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || DEFAULT_SERVICE_LEVEL, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: leadTimeOrUnset(editState.lead_time_days), unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || DEFAULT_MOQ, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || DEFAULT_SERVICE_LEVEL, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_saving')) }
  finally { savingRef.current = false; setSaving(false) }

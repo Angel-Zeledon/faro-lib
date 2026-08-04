@@ -133,14 +133,34 @@ def upsert_stock(
     # the same (sku, warehouse) row svc.upsert_stock will actually write —
     # 'norte' with an existing 'Norte' is an update, not a new location.
     warehouse = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
-    if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse):
+    existing = svc.get_stock(user.tenant_id, sku, warehouse=warehouse)
+    if not existing:
         enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
     # A new warehouse name would otherwise be auto-created for free by
     # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations entirely.
     # Enforce BEFORE the write so a blocked request never creates the row.
     if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
         enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
-    row = svc.upsert_stock(user.tenant_id, sku, body.model_dump(exclude_none=True))
+
+    data = body.model_dump(exclude_none=True)
+    if existing:
+        # Only what the caller ACTUALLY SENT touches an existing row.
+        #
+        # `exclude_none` alone could not tell "omitted" from "sent": the three
+        # fields that are not Optional (`min_stock`, `lead_time_days`, `moq`)
+        # arrive already materialised to their model defaults, so a body naming
+        # only the stock count silently wrote 0 / 15 / 1 over them. Measured on
+        # the daily "update stock" screen, which posts exactly
+        # {current_stock, lead_time_days, supplier}: a supplier minimum of 100
+        # became 1 and the recommendation went from 100 units to 81 — below a
+        # minimum the supplier will not ship. The stock count and the supplier's
+        # minimum have nothing to do with each other; counting stock must not
+        # rewrite the purchasing rules.
+        #
+        # A row that does NOT exist yet still gets the documented defaults —
+        # a new row has to start somewhere.
+        data = {k: v for k, v in data.items() if k in body.model_fields_set}
+    row = svc.upsert_stock(user.tenant_id, sku, data)
     return ok(row)
 
 
