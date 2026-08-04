@@ -431,6 +431,12 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
       onClick={onClick}
       style={{
         all: 'unset', cursor: 'pointer', display: 'block', width: '100%',
+        // `all: unset` also resets box-sizing to content-box, so `width: 100%`
+        // plus 28px of padding and the 3px selected border made every card
+        // exactly 31px wider than the column holding it — at ANY column width,
+        // which is why the list scrolled sideways and the reliability pill was
+        // cut off no matter how much room the column was given.
+        boxSizing: 'border-box',
         padding: '11px 14px',
         background: selected ? 'var(--surface-2)' : 'transparent',
         borderLeft: `3px solid ${selected ? color : 'transparent'}`,
@@ -438,19 +444,23 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
         transition: 'background 0.12s, border-color 0.12s',
       }}
     >
+      {/* Two rows that can only shrink, never overflow. Every element used to
+          be `flexShrink: 0` inside a column narrower than their sum, so the
+          card spilled to the right and the list scrolled sideways — the SKU
+          badge and the reliability pill were cut in half. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-          <Package size={11} color={color} />
-          <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flex: 1 }}>
+          <Package size={11} color={color} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {sku}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          {sparkVals.length > 0 && <Sparkline values={sparkVals} color={color} width={50} height={22} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          {sparkVals.length > 0 && <Sparkline values={sparkVals} color={color} width={44} height={20} />}
           {signal && <SignalBadge signal={signal} />}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, fontWeight: 500, color, background: color + '18', borderRadius: 4, padding: '1px 5px' }}>
           {seriesTypeLabel(t, seriesType)}
         </span>
@@ -3106,7 +3116,7 @@ export default function SkusPage() {
           at all. The floor is the chart (300) plus its toolbar and stats strip,
           so the more Faro has to say about the data the more the page scrolls —
           instead of the graph silently disappearing. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: 16, flex: 1, minHeight: 640 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, flex: 1, minHeight: 640 }}>
 
         {/* SKU list */}
         <div style={{
