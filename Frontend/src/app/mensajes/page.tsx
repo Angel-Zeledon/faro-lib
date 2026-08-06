@@ -1,4 +1,5 @@
 'use client'
+import FeatureGate from '@/components/ui/FeatureGate'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { MessageSquare, Send, ArrowLeft, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
@@ -31,7 +32,7 @@ function timeLabel(iso: string, lang: string) {
   return d.toLocaleDateString(lang === 'es' ? 'es' : 'en-US', { day: 'numeric', month: 'short' })
 }
 
-export default function MessagesPage() {
+function MessagesPage() {
   const { t, lang } = useLanguage()
   const me = getUser()
   const narrow = useIsNarrow()
@@ -407,5 +408,15 @@ export default function MessagesPage() {
         )}
       </Card>
     </div>
+  )
+}
+
+// Typing the URL (or keeping a bookmark from the trial) used to render this page
+// in full on a plan that does not include it; the wall came later, from the API.
+export default function MessagesPageGated() {
+  return (
+    <FeatureGate feature="team_messaging">
+      <MessagesPage />
+    </FeatureGate>
   )
 }

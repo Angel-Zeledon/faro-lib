@@ -3132,6 +3132,8 @@ export const translations = {
     // ── Entitlements (nav lock, read-only banner, upsell) ──
     'entitlements.readonly_banner':    'Tu período de prueba terminó. Puedes seguir viendo tus datos, pero para crear pedidos o actualizar tus ventas necesitas activar un plan.',
     'entitlements.upsell_title':       'Función no disponible en tu plan',
+    'entitlements.unverified_title': 'No pudimos verificar tu plan',
+    'entitlements.unverified_body': 'Esto no es un límite de tu plan: no logramos leerlo en este momento. Reintenta; si sigue igual, puede que tu sesión haya vencido.',
     'entitlements.upsell_body':        'Esta función requiere un plan superior. Actualiza tu plan para desbloquearla.',
     'entitlements.upsell_cta':         'Ver planes',
     'entitlements.upsell_plan_label':  'Plan requerido',
@@ -6317,6 +6319,8 @@ export const translations = {
     // ── Entitlements (nav lock, read-only banner, upsell) ──
     'entitlements.readonly_banner':    'Your trial period has ended. You can still view your data, but you need to upgrade your plan to create orders or update your sales.',
     'entitlements.upsell_title':       'Feature not available on your plan',
+    'entitlements.unverified_title': 'We could not verify your plan',
+    'entitlements.unverified_body': 'This is not a limit on your plan — we simply could not read it just now. Retry; if it persists, your session may have expired.',
     'entitlements.upsell_body':        'This feature requires a higher plan. Upgrade to unlock it.',
     'entitlements.upsell_cta':         'View plans',
     'entitlements.upsell_plan_label':  'Required plan',

@@ -1,4 +1,5 @@
 'use client'
+import FeatureGate from '@/components/ui/FeatureGate'
 import {
   useState, useEffect, useRef, useCallback,
   type KeyboardEvent, type UIEvent,
@@ -411,7 +412,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function AnalystPage() {
+function AnalystPage() {
   const { t } = useLanguage()
   const { undoable, addToast } = useToast()
   const [chats,       setChats]       = useState<Chat[]>([])
@@ -1063,5 +1064,15 @@ export default function AnalystPage() {
       </div>
 
     </>
+  )
+}
+
+// Typing the URL (or keeping a bookmark from the trial) used to render this page
+// in full on a plan that does not include it; the wall came later, from the API.
+export default function AnalystPageGated() {
+  return (
+    <FeatureGate feature="ai_analyst">
+      <AnalystPage />
+    </FeatureGate>
   )
 }

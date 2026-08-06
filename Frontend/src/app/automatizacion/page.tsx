@@ -593,7 +593,7 @@ const ALL_TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] 
 ]
 const TABS = ALL_TABS.filter(tab => ENABLED[tab.id])
 
-export default function SettingsPage() {
+function SettingsPage() {
   const { t } = useLanguage()
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? 'schedules')
 
@@ -646,5 +646,15 @@ export default function SettingsPage() {
         {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
       </Card>
     </div>
+  )
+}
+
+// Typing the URL (or keeping a bookmark from the trial) used to render this page
+// in full on a plan that does not include it; the wall came later, from the API.
+export default function SettingsPageGated() {
+  return (
+    <FeatureGate feature="scheduled_reports">
+      <SettingsPage />
+    </FeatureGate>
   )
 }
