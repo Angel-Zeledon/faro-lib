@@ -317,6 +317,33 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
 
   const noShares = warehouses.every(w => w.demand_share == null)
 
+  /** The split that will really apply, and which warehouses get nothing.
+   *
+   *  Mirrors `warehouse_service.get_demand_shares`: it normalises over the
+   *  warehouses that HAVE a value, so a blank box means 0% of the demand — not
+   *  "untouched". Shown because the arithmetic is invisible otherwise.
+   */
+  const shareEffect = (() => {
+    const value = (w: { name: string; demand_share?: number | null }) => {
+      const raw = draft[w.name]
+      if (raw !== undefined) return raw.trim() === '' ? null : Number(raw)
+      return w.demand_share ?? null
+    }
+    const set = warehouses.filter(w => {
+      const v = value(w)
+      return v != null && Number.isFinite(v) && v > 0
+    })
+    if (!set.length) return null
+    const total = set.reduce((sum, w) => sum + Number(value(w)), 0)
+    return {
+      effective: set.map(w => ({
+        name: w.name,
+        pct: Math.round((Number(value(w)) / total) * 1000) / 10,
+      })),
+      blank: warehouses.filter(w => !set.includes(w)).map(w => w.name),
+    }
+  })()
+
   async function saveShares() {
     setSaving(true)
     try {
@@ -407,6 +434,27 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
                   style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
             <X size={13} color={C.dim} />
           </button>
+
+          {/* What these numbers will ACTUALLY do. The backend normalises over
+              the warehouses that have a value, so the figures need not add to
+              100 — but that also means a blank box is not "leave it alone", it
+              is 0%. Measured: Cartago 35 with principal blank gave Cartago the
+              whole 78.8/day and left principal with no demand at all, silently
+              dropping it out of planning. */}
+          {shareEffect && (
+            <div style={{ flexBasis: '100%', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+              {shareEffect.blank.length > 0 && (
+                <div style={{ color: 'var(--signal-order-now-fg)' }}>
+                  {t('inventory.wh_shares_blank_warning',
+                     { names: shareEffect.blank.join(', ') })}
+                </div>
+              )}
+              <div>
+                {t('inventory.wh_shares_effective')}{' '}
+                {shareEffect.effective.map(e => `${e.name} ${e.pct}%`).join(' · ')}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
