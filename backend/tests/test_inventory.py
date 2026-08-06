@@ -453,6 +453,16 @@ class TestDatasetSyncSanitization:
         )
 
     def test_negative_current_stock_from_dataset_is_rejected(self, client, test_tenant):
+        """A rejected count leaves NOTHING behind on a SKU we have never counted.
+
+        The rejection itself is unchanged: a negative value never reaches the
+        column, as it never does through PUT/PATCH/bulk CSV either. What changed
+        is what is left afterwards. This used to create the row anyway and save
+        the supplier beside it — and `current_stock` is NOT NULL DEFAULT 0, so
+        the file's one statement about the shelf was thrown away and replaced by
+        a 0 the semáforo reads as an empty shelf. The SKU came out PEDIR_YA on
+        the strength of a number nobody wrote. See test_stock_seeding_zero.py.
+        """
         import pandas as pd
         from backend.inventory.service import sync_stock_from_dataset
         from backend.db.connection import query_one
@@ -465,7 +475,38 @@ class TestDatasetSyncSanitization:
             "supplier":      ["Prov Dataset"],
         })
         n = sync_stock_from_dataset(test_tenant["id"], df, group_col="sku", date_col="fecha")
-        assert n == 1
+        assert n == 0
+
+        assert query_one(
+            "SELECT current_stock FROM inventory_stock "
+            "WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        ) is None, "a rejected count still materialised a row holding 0"
+
+    def test_a_rejected_count_leaves_an_existing_row_alone_but_saves_the_rest(
+        self, client, test_tenant,
+    ):
+        """The other half: on a SKU that HAS been counted, nothing is lost.
+
+        Refusing to create must not turn the same upload into a no-op for rows
+        that already exist — the supplier is still worth saving, and the count
+        on file is the one thing the negative value must not touch.
+        """
+        import pandas as pd
+        from backend.inventory.service import sync_stock_from_dataset, upsert_stock
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        upsert_stock(test_tenant["id"], sku, {"current_stock": 12})
+
+        df = pd.DataFrame({
+            "sku":           [sku],
+            "fecha":         ["2026-01-01"],
+            "current_stock": [-25],
+            "supplier":      ["Prov Dataset"],
+        })
+        assert sync_stock_from_dataset(
+            test_tenant["id"], df, group_col="sku", date_col="fecha") == 1
 
         row = query_one(
             "SELECT current_stock, supplier FROM inventory_stock "
@@ -474,7 +515,7 @@ class TestDatasetSyncSanitization:
         )
         assert row is not None
         assert row["supplier"] == "Prov Dataset"   # other valid fields still saved
-        assert float(row["current_stock"]) >= 0, (
+        assert float(row["current_stock"]) == 12, (
             "negative current_stock from a dataset column was persisted, unlike "
             "every other write path (PUT/PATCH/bulk CSV) which enforces ge=0"
         )
