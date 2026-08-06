@@ -126,8 +126,13 @@ def _index_in_background(
         log.error("Document indexing failed (doc=%s): %s", doc_id, exc, exc_info=True)
         try:
             _set_status(doc_id, tenant_id, "FAILED", error=str(exc)[:500])
-        except Exception:
-            pass
+        except Exception as status_exc:
+            # The status write is the ONLY thing the user can see — indexing runs
+            # in the background. Losing it leaves the document sitting on
+            # "procesando" forever with nothing anywhere saying why, so the log
+            # line has to name that outcome instead of swallowing it.
+            log.error("Document %s failed AND could not be marked FAILED — it will "
+                      "stay 'processing' in the UI: %s", doc_id, status_exc)
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────

@@ -60,11 +60,21 @@ def recover_orphaned_jobs() -> int:
             "UPDATE jobs SET status = 'FAILED', completed_at = NOW(), error = %s WHERE id = %s",
             ("Worker restarted — job aborted", job["id"]),
         )
+        # The job row is FAILED at this point either way. If the SESSION cannot
+        # follow, the user is left with a session that says it is still training
+        # and a worker that will never touch it again — and the line below used
+        # to claim "Recovered" regardless, so the log agreed with the screen and
+        # both were wrong. Same shape as the cancel path in api/v1/training.py.
         try:
             force_status(job["tenant_id"], job["session_id"], "FAILED")
-        except Exception:
-            pass
-        log.warning(f"Recovered stuck job {job['id']} for session {job['session_id']} → FAILED")
+            log.warning("Recovered stuck job %s for session %s → FAILED",
+                        job["id"], job["session_id"])
+        except Exception as exc:
+            log.error(
+                "Stuck job %s marked FAILED but session %s could NOT be moved off "
+                "RUNNING — it will look like it is still training: %s",
+                job["id"], job["session_id"], exc,
+            )
 
     if stuck:
         log.info(f"Recovered {len(stuck)} stuck RUNNING job(s) on worker startup")
