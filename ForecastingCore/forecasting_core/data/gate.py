@@ -216,6 +216,60 @@ def _issue(type_: str, severity: str, message: str, classification: str,
 
 _DATE_PARTS = re.compile(r"^\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\s*$")
 
+DATE_ORDER_DAY_FIRST = "day_first"
+DATE_ORDER_MONTH_FIRST = "month_first"
+
+
+def detect_determined_date_order(df: pd.DataFrame,
+                                 date_col: Optional[str]) -> Optional[str]:
+    """The reading a `dd/mm/yyyy`-style column can only have, or None.
+
+    The counterpart to `detect_ambiguous_date_format`, and the reason that one
+    is allowed to stay silent. When some row's FIRST component is > 12 the file
+    can only be day-first: no month is 13. There is nothing to ask the user, so
+    the gate raises no issue — but somebody still has to ACT on the verdict,
+    because pandas' default is month-first and would drop exactly those rows as
+    unparseable. That was the bug: a plainly day-first Latin American export
+    lost every row with a day past the 12th and misdated the rest, while a
+    genuinely ambiguous file got the careful question.
+
+    Returns DATE_ORDER_DAY_FIRST, DATE_ORDER_MONTH_FIRST, or None when the
+    column is ambiguous (both readings possible — that is the other detector's
+    job), not of this shape, or self-contradictory (components > 12 on BOTH
+    sides, which `invalid_dates` reports).
+    """
+    if not date_col or date_col not in df.columns:
+        return None
+    col = df[date_col]
+    if pd.api.types.is_datetime64_any_dtype(col) or pd.api.types.is_numeric_dtype(col):
+        return None
+
+    text = col.dropna().astype(str)
+    if text.empty:
+        return None
+
+    parts = text.str.extract(_DATE_PARTS)
+    matched = parts.dropna()
+    # A mixed column has a different problem, and guessing an order from the
+    # rows that happen to match would apply it to the ones that do not.
+    if matched.empty or len(matched) < len(text):
+        return None
+
+    first = pd.to_numeric(matched[0], errors="coerce")
+    second = pd.to_numeric(matched[1], errors="coerce")
+    if first.isna().any() or second.isna().any():
+        return None
+
+    first_over = bool((first > 12).any())
+    second_over = bool((second > 12).any())
+    if first_over and second_over:
+        return None          # neither reading works — not ours to fix
+    if first_over:
+        return DATE_ORDER_DAY_FIRST
+    if second_over:
+        return DATE_ORDER_MONTH_FIRST
+    return None              # ambiguous: detect_ambiguous_date_format asks
+
 
 def detect_ambiguous_date_format(df: pd.DataFrame, date_col: Optional[str]) -> list:
     """`03/04/2026` is the 3rd of April or the 4th of March, and both parse.

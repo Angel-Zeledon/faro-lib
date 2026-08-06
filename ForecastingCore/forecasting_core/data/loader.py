@@ -34,6 +34,44 @@ def _sniff_separator(path: str) -> str:
     return best
 
 
+def _fix_day_first_dates(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse `dd/mm/yyyy` columns as day-first when no other reading is possible.
+
+    Every consumer downstream — profiler, gate, quality check, trainer — calls
+    `pd.to_datetime` on its own, and pandas defaults to month-first. On a Latin
+    American export (`13/03/2025`) that dropped every row whose day is past the
+    12th as "unparseable" and quietly moved the rest to another month; the run
+    then died on the first row month-first cannot explain. Settling it once,
+    here, is the only way all of them agree.
+
+    Deliberately narrow. A column qualifies only when EVERY non-null value has
+    the `d/m/y` shape AND at least one first component is > 12 — so it cannot be
+    anything but a date, and cannot be month-first. Ambiguous columns (all
+    components <= 12) are left as text on purpose: that is a real question for
+    the user, and `gate.detect_ambiguous_date_format` asks it.
+    """
+    from forecasting_core.data.gate import (
+        DATE_ORDER_DAY_FIRST, detect_determined_date_order,
+    )
+
+    for col in df.columns:
+        # Text, whichever way this pandas spells it: 3.x reads CSV strings as
+        # the `str` dtype, so an is_object_dtype check silently matched nothing.
+        if not (pd.api.types.is_object_dtype(df[col])
+                or pd.api.types.is_string_dtype(df[col])):
+            continue
+        try:
+            if detect_determined_date_order(df, col) != DATE_ORDER_DAY_FIRST:
+                continue
+            parsed = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
+        except Exception:
+            continue
+        # Never trade a readable column for a mostly-empty one.
+        if int(parsed.notna().sum()) == int(df[col].notna().sum()):
+            df[col] = parsed
+    return df
+
+
 class LoadError(Exception):
     pass
 
@@ -68,19 +106,20 @@ class DataLoader:
             raise LoadError(f"Unsupported format '{ext}'. Supported: {self.SUPPORTED}")
 
         if ext == ".csv":
-            return pd.read_csv(path, sep=_sniff_separator(path), encoding="utf-8-sig")
+            return _fix_day_first_dates(
+                pd.read_csv(path, sep=_sniff_separator(path), encoding="utf-8-sig"))
         if ext in (".xlsx", ".xls"):
-            return pd.read_excel(path)
+            return _fix_day_first_dates(pd.read_excel(path))
         if ext == ".parquet":
-            return pd.read_parquet(path)
+            return _fix_day_first_dates(pd.read_parquet(path))
         if ext == ".sql":
-            return self._load_sql(path, sql_engine)
+            return _fix_day_first_dates(self._load_sql(path, sql_engine))
 
     def load_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """Accept a DataFrame directly (for programmatic use)."""
         if not isinstance(df, pd.DataFrame):
             raise LoadError("Expected a pandas DataFrame")
-        return df.copy()
+        return _fix_day_first_dates(df.copy())
 
     def _load_sql(self, path: str, engine_str: str) -> pd.DataFrame:
         if not engine_str:

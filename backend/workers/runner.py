@@ -711,6 +711,25 @@ def _apply_date_format(df: "pd.DataFrame", date_col: str, dayfirst: bool,
     return out
 
 
+def _apply_determined_date_order(df: "pd.DataFrame", date_col: str,
+                                 notes: "list | None" = None) -> "pd.DataFrame":
+    """Apply the only reading a `dd/mm/yyyy` column can have, when there is one.
+
+    No user decision is involved: the file itself rules one order out. Silent by
+    design for month-first, which is already pandas' default — writing a prep
+    note there would tell the buyer we changed something we did not.
+    """
+    from forecasting_core.data.gate import (
+        DATE_ORDER_DAY_FIRST, detect_determined_date_order,
+    )
+
+    if not date_col or date_col not in df.columns:
+        return df
+    if detect_determined_date_order(df, date_col) != DATE_ORDER_DAY_FIRST:
+        return df
+    return _apply_date_format(df, date_col, dayfirst=True, notes=notes)
+
+
 def _apply_excel_serial_dates(df: "pd.DataFrame", col: str,
                               notes: "list | None" = None) -> "pd.DataFrame":
     """Turn Excel's day-count (45000) back into a date (2023-03-15)."""
@@ -1339,6 +1358,14 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                     engine._df, date_col,
                     dayfirst=remediations["ambiguous_date_format"] == "date_format_day_first",
                     notes=prep_notes,
+                )
+            else:
+                # 1b — a date order that is NOT in doubt still has to be applied.
+                # The gate only asks when both readings are possible; a column
+                # with a day past the 12th can only be day-first, and pandas'
+                # default (month-first) would drop precisely those rows.
+                engine._df = _apply_determined_date_order(
+                    engine._df, date_col, prep_notes,
                 )
             # 2 — an Excel serial column the user confirmed is a date
             if remediations.get("excel_serial_dates") == "excel_serial_as_date":
