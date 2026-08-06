@@ -63,10 +63,16 @@ function cleanRule(rule: ScenarioRule): ScenarioRule {
 
 const fmtNum = (n: number) =>
   new Intl.NumberFormat('es', { maximumFractionDigits: 0 }).format(n)
-const fmtMoney = (n: number) =>
-  new Intl.NumberFormat('es', { maximumFractionDigits: 0 }).format(n)
+// The tenant's currency, like every other money figure in the app. This page
+// used to hardcode '$', so a Costa Rican buyer comparing scenarios read
+// "$1986" for an amount the inventory screen showed as ₡1 986 — the same
+// number, off by an exchange rate, in the panel meant to justify a purchase.
+const fmtMoney = (n: number) => formatMoney(n)
+/** Daily demand to one decimal — a buyer cannot act on the fourth. */
+const fmtDemand = (n: number | null | undefined) =>
+  n == null ? '—' : new Intl.NumberFormat('es', { maximumFractionDigits: 1 }).format(n)
 const fmtDelta = (n: number, money = false) => {
-  const body = money ? `$${fmtMoney(Math.abs(n))}` : fmtNum(Math.abs(n))
+  const body = money ? fmtMoney(Math.abs(n)) : fmtNum(Math.abs(n))
   if (n === 0) return '—'
   return `${n > 0 ? '+' : '−'}${body}`
 }
@@ -124,8 +130,13 @@ function RuleEditor({ rule, onChange, onRemove, tourAnchor }: {
           <>
             <div data-tour={tourAnchor ? 'sc.multiplier' : undefined}>
               <FieldLabel variant="eyebrow" htmlFor={`mult-${rule.type}`}>{t('scenarios.field_multiplier')}</FieldLabel>
+              {/* step="any": the browser measures steps FROM `min`, so step
+                  0.05 with min 0.01 made the valid ladder 0.01, 0.06, 0.11 …
+                  and the app's OWN default of 1.4 came up invalid — the browser
+                  offered "1.36 y 1.41". A demand multiplier has no natural
+                  increment anyway. */}
               <Input
-                id={`mult-${rule.type}`} type="number" step="0.05" min="0.01" max="10"
+                id={`mult-${rule.type}`} type="number" step="any" min="0.01" max="10"
                 value={rule.multiplier ?? ''}
                 onChange={e => set({ multiplier: Number(e.target.value) })}
                 size="sm" tone="bg"
@@ -248,9 +259,9 @@ function CompareTable({ result }: { result: ScenarioRunResult }) {
             return (
               <tr key={key}>
                 <Td divider="top" style={{ color: C.muted }}>{t(labelKey)}</Td>
-                <Td align="right" divider="top">{money ? `$${fmtMoney(base)}` : fmtNum(base)}</Td>
+                <Td align="right" divider="top">{money ? fmtMoney(base) : fmtNum(base)}</Td>
                 <Td align="right" divider="top" style={{ fontWeight: 600 }}>
-                  {money ? `$${fmtMoney(scenario)}` : fmtNum(scenario)}
+                  {money ? fmtMoney(scenario) : fmtNum(scenario)}
                 </Td>
                 <Td align="right" divider="top" style={{ fontWeight: 700, color: deltaColor(delta) }}>
                   {fmtDelta(delta, money)}
@@ -303,7 +314,10 @@ function ChangesTable({ rows }: { rows: ScenarioChangeRow[] }) {
                 {fmtDelta(row.delta_qty)}
               </Td>
               <Td align="right" divider="top" nowrap style={{ ...CELL, color: C.muted }}>
-                {row.base_daily_demand ?? '—'} → {row.scenario_daily_demand ?? '—'}
+                {/* One decimal, like every other demand figure in the app. The
+                    raw value carries four ("78.8147 → 110.3406"), which sat next
+                    to whole-unit quantities in the same row. */}
+                {fmtDemand(row.base_daily_demand)} → {fmtDemand(row.scenario_daily_demand)}
               </Td>
               <Td align="right" divider="top" nowrap style={{ ...CELL, color: C.muted }}>
                 {row.base_lead_time_days ?? '—'} → {row.scenario_lead_time_days ?? '—'}
