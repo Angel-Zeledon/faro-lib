@@ -37,6 +37,9 @@ export interface SessionSummary {
   horizon:          number | null
   granularity:      string | null
   sku_count:        number | null
+  // Why the run failed, straight from the job that died. Null for every other
+  // status — and for a FAILED session old enough that its job row is gone.
+  failure_reason?:  string | null
   tags:             string[]
 }
 

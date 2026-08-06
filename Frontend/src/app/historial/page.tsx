@@ -225,6 +225,24 @@ export default function SessionsHistoryPage() {
                     </Td>
                     <Td divider={false} data-tour={idx === 0 ? 'ses.status' : undefined}>
                       <StatusBadge status={s.status} />
+                      {/* A bare "Fallida" left the buyer with nothing to act on:
+                          the reason was in the job all along. */}
+                      {s.status === 'FAILED' && s.failure_reason && (
+                        // Labelled, because the engine's reason is free text in
+                        // English: without a frame a Spanish-speaking buyer
+                        // cannot tell whether they are reading an instruction
+                        // for them or a detail for whoever they ask for help.
+                        <div style={{ marginTop: 4, fontSize: 11, color: C.dim, maxWidth: 280,
+                                      whiteSpace: 'normal', lineHeight: 1.35 }}
+                             title={s.failure_reason}>
+                          <span style={{ color: C.muted }}>
+                            {t('sessions.failure_detail_label')}{' '}
+                          </span>
+                          {s.failure_reason.length > 220
+                            ? `${s.failure_reason.slice(0, 220)}…`
+                            : s.failure_reason}
+                        </div>
+                      )}
                     </Td>
                     <Td divider={false} nowrap style={{ color: C.muted }}
                         data-tour={idx === 0 ? 'ses.dataset' : undefined}>

@@ -77,11 +77,21 @@ def list_session_summaries(tenant_id: str, skip: int = 0, limit: int = 50) -> li
                            THEN (SELECT COUNT(DISTINCT elem->>'sku')
                                  FROM jsonb_array_elements(r.training_result->'metrics'->'rows') AS elem)::int
                       END
-                  ) AS sku_count
+                  ) AS sku_count,
+                  j.error AS failure_reason
            FROM sessions s
            LEFT JOIN datasets d        ON d.id = s.dataset_id AND d.tenant_id = s.tenant_id
            LEFT JOIN session_configs c ON c.session_id = s.id
            LEFT JOIN session_results r ON r.session_id = s.id
+           -- Why a run failed. It was already in jobs.error and the history
+           -- screen showed a bare "Fallida", so the buyer whose 20-minute run
+           -- died had nothing to act on: not the reason, not whether retrying
+           -- would help. Latest job wins — a session can be re-queued.
+           LEFT JOIN LATERAL (
+               SELECT error FROM jobs
+               WHERE session_id = s.id AND error IS NOT NULL
+               ORDER BY created_at DESC LIMIT 1
+           ) j ON TRUE
            WHERE s.tenant_id = %s
            ORDER BY s.created_at DESC
            LIMIT %s OFFSET %s""",
