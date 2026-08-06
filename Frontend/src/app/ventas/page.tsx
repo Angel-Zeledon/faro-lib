@@ -21,6 +21,7 @@ import type {
  InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary, DataGate,
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
+import { useErrorDetail } from '@/components/ui/States'
 import DataTabs from '@/components/layout/DataTabs'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
@@ -542,6 +543,10 @@ function QuickStartPageContent() {
  const router = useRouter()
  const searchParams = useSearchParams()
  const { t } = useLanguage()
+ // Backend failures arrive with a stable `error_code`; without this the wizard
+ // printed the English `detail` instead — a viewer who picked a file read
+ // "Role 'viewer' not permitted. Required: ['admin', 'analyst']".
+ const errorDetail = useErrorDetail()
  // The wizard runs inside the AppShell, so the planning context that resolves
  // the active session was loaded BEFORE this training existed — see the
  // redirect in pollFamily for why it has to be refreshed there.
@@ -637,7 +642,7 @@ function QuickStartPageContent() {
  trainLaunchedRef.current = true
  await pollFamily(demo.job_id, demo.family)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : t('qs.err_demo'))
+ setError(errorDetail(e) || t('qs.err_demo'))
  setBusy(false)
  }
  }
@@ -770,7 +775,7 @@ function QuickStartPageContent() {
 
  setStep(2)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : t('qs.reuse_err_attach'))
+ setError(errorDetail(e) || t('qs.reuse_err_attach'))
  setStep(1)
  } finally {
  setBusy(false)
@@ -840,7 +845,7 @@ function QuickStartPageContent() {
  setMapping(next)
  setStep(2)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : t('qs.clone_err'))
+ setError(errorDetail(e) || t('qs.clone_err'))
  setStep(1)
  } finally {
  setBusy(false)
@@ -888,7 +893,7 @@ function QuickStartPageContent() {
  await startFromDataset(dataset.id)
  } catch (e: unknown) {
  // Only the upload itself can throw here — startFromDataset handles its own.
- const msg = e instanceof Error ? e.message : t('qs.err_upload')
+ const msg = errorDetail(e) || t('qs.err_upload')
  setError(msg)
  setFileName(null)
  setBusy(false)
@@ -993,7 +998,7 @@ function QuickStartPageContent() {
  // Poll the whole family
  await pollFamily(res.job_id, res.family)
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : t('qs.err_config')
+ const msg = errorDetail(e) || t('qs.err_config')
  setError(msg)
  setBusy(false)
  // Nothing was launched, so the "el sistema está aprendiendo" screen is a
@@ -1092,7 +1097,7 @@ function QuickStartPageContent() {
  await new Promise(res => setTimeout(res, 3000))
  return poll()
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : t('qs.err_status')
+ const msg = errorDetail(e) || t('qs.err_status')
  setError(msg)
  setBusy(false)
  }

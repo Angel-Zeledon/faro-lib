@@ -18,6 +18,8 @@ Usage:
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from backend.errors import AppError
+
 from backend.auth.jwt_handler import decode_token
 from backend.config import settings
 from backend.errors import AppError
@@ -136,9 +138,16 @@ def get_current_user(
 def require_role(*roles: str):
     def guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if user.role not in roles:
-            raise HTTPException(
+            # A structured code, not a sentence: this guard sits behind every
+            # mutating endpoint, so its English `detail` was what a Spanish
+            # -speaking warehouse user actually read on screen —
+            # "Role 'viewer' not permitted. Required: ['admin', 'analyst']".
+            # The frontend renders the Spanish from code + params (CLAUDE.md).
+            raise AppError(
+                "role_not_permitted",
+                f"Role '{user.role}' not permitted. Required: {list(roles)}",
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{user.role}' not permitted. Required: {list(roles)}",
+                params={"role": user.role, "required": sorted(roles)},
             )
         return user
 

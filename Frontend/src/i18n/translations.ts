@@ -3241,6 +3241,7 @@ export const translations = {
     'errors.refresh_token_invalid':                'Tu sesión venció. Vuelve a iniciar sesión.',
     'errors.reset_code_invalid':                   'El código no es válido o ya venció. Pide uno nuevo.',
     'errors.reset_token_invalid':                  'El enlace para cambiar la contraseña no es válido o ya venció. Pide uno nuevo.',
+    'errors.role_not_permitted':                   'Tu rol no puede hacer esto. Pídele a un administrador de tu empresa que lo haga, o que te cambie el rol.',
     'errors.ai_unavailable': 'El asistente no alcanzó a responder. Tu pregunta sigue aquí — inténtalo de nuevo, o hazla más corta.',
 
     // ── What-if scenarios (PENDIENTES #7) ──────────────────────────────────
@@ -6433,6 +6434,7 @@ export const translations = {
     'errors.refresh_token_invalid':                'Your session expired. Please sign in again.',
     'errors.reset_code_invalid':                   'That code is invalid or has expired. Request a new one.',
     'errors.reset_token_invalid':                  'This password reset link is invalid or has expired. Request a new one.',
+    'errors.role_not_permitted':                   'Your role cannot do this. Ask an administrator at your company to do it, or to change your role.',
     'errors.ai_unavailable': 'The assistant could not answer in time. Your question is still here — try again, or ask a shorter one.',
 
     // ── What-if scenarios (PENDIENTES #7) ──────────────────────
