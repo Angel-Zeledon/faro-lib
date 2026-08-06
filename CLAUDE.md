@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. All the code needs to be in english
 
+## Priority: stability over scope (read this first)
+
+The product has a lot of surface already built. **The work is making what exists
+behave impeccably, not widening it.** In order:
+
+1. Stability and correctness of what is already there.
+2. Only the features the owner names explicitly as important.
+3. Nothing else.
+
+Concretely:
+
+- **Fixing a bug is not the same as adding an option.** When a fix needs a new
+  capability — an endpoint, a field, a screen, a toggle — say so and ask before
+  building it.
+- **Improvements found while testing go on a list, not into the code.** Report
+  them; let the owner choose. A one-off "implement those" is permission for
+  those, and does not lift this rule for the next idea.
+- Verify in a browser as a user, not only with tests. See the `running-faro`
+  skill for the environment traps and `silent-failures` for the review lens.
+- When robustness and scope conflict, robustness wins.
+- Out of scope on the owner's instruction: CI/CD, Stripe.
+
 ## Project Overview
 
 **Faro** — inventory purchasing decisions platform for LatAm SMB distributors.
