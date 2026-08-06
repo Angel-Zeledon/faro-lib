@@ -982,8 +982,17 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
   const a    = document.createElement('a')
   a.href = url; a.download = 'purchase_order.csv'; a.click()
   URL.revokeObjectURL(url)
-  // After successful download, log the PO generation (fire and forget)
-  logPOGeneration(sessionId).catch(() => {})
+  // The CSV is in the buyer's hands either way, but the `po_history` row is
+  // what makes the order EXIST for the product: /pedidos lists it, reception
+  // is tracked against it and supplier lead-time learning reads it. This used
+  // to be `.catch(() => {})` — "fire and forget" — so a failed log left the
+  // buyer with a file and the app with no order, and the only hint was the
+  // interceptor's generic toast landing right after a successful download.
+  // Silenced here so the caller can say the specific thing instead.
+  let logged = true
+  try { await logPOGeneration(sessionId, undefined, undefined, { silent: true }) }
+  catch { logged = false }
+  return { logged }
 }
 
 export const downloadInventoryTemplate = async () => {
@@ -1106,6 +1115,7 @@ export const logPOGeneration = (
   sessionId: string,
   items?: POLineDecision[],
   destinationWarehouse?: string,
+  opts?: RequestOpts,
 ) => {
   // destination_warehouse omitted = tenant default warehouse (mono-warehouse
   // tenants never send it, so their behavior is byte-identical to before 5.4).
@@ -1116,6 +1126,7 @@ export const logPOGeneration = (
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,
     Object.keys(body).length ? body : undefined,
+    opts,
   )
 }
 

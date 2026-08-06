@@ -1120,14 +1120,23 @@ export default function HoyPage() {
   // Feature: generate→send in one flow. Capture the logged PO so we can offer
   // "send to suppliers now" right here, instead of sending the buyer to /orders.
   try {
-   const entry = await logPOGeneration(sessionId, decisions, multi ? destWarehouse || undefined : undefined)
+   const entry = await logPOGeneration(
+    sessionId, decisions, multi ? destWarehouse || undefined : undefined,
+    { silent: true },
+   )
    setGeneratedPO(entry)
    setGeneratedLines(approved)
    setSendState('idle')
    setSendResult(null)
   } catch {
-   // The CSV already downloaded successfully; the inline send panel is a bonus,
-   // so a logging failure here shouldn't block or alarm the buyer.
+   // This call is not just the inline send panel — it is what makes the order
+   // EXIST: /pedidos lists it, reception is tracked against it, and supplier
+   // lead-time learning reads it. The old comment here reasoned the panel was
+   // "a bonus" and stayed quiet, so a buyer who had just downloaded a CSV was
+   // left believing the order was in the system. It is not, and the fix is to
+   // generate it again, which they can only do if we say so.
+   addToast(t('inventory.toast_po_not_logged_title'),
+       t('inventory.toast_po_not_logged_body'), 'error')
   }
  }
 

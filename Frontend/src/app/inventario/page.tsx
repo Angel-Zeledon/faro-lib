@@ -1852,9 +1852,20 @@ export default function InventoryPage() {
 
  async function handleExport() {
  if (!sessionId) return; setExporting(true)
- try { await exportInventoryPO(sessionId) }
+ try {
+  const { logged } = await exportInventoryPO(sessionId)
+  if (!logged) warnPONotLogged()
+ }
  catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_exporting')) }
  finally { setExporting(false) }
+ }
+
+ // The download succeeded and the order did NOT get recorded — two different
+ // facts, and the buyer needs both. Without this they walk away believing the
+ // order is in Pedidos, where it will never arrive and never be received.
+ function warnPONotLogged() {
+  addToast(t('inventory.toast_po_not_logged_title'),
+      t('inventory.toast_po_not_logged_body'), 'error')
  }
 
  // Exports a PO CSV built from the buyer's edited quantities (instead of the
@@ -1889,7 +1900,8 @@ export default function InventoryPage() {
   status: (editedQty[i.sku] != null ? 'modified' : 'approved') as 'approved' | 'modified',
   unit_cost: i.unit_cost ?? undefined,
  }))
- logPOGeneration(sessionId, decisions).catch(() => {})
+ logPOGeneration(sessionId, decisions, undefined, { silent: true })
+  .catch(() => warnPONotLogged())
  }
 
  async function handlePDF() {
