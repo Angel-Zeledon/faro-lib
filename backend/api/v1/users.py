@@ -38,7 +38,7 @@ def _hash_code(code: str) -> str:
 
 # Short-lived + attempt-capped: a 6-digit code only resists brute force if the
 # window is minutes and a handful of wrong guesses burns it.
-_CODE_EXPIRE_MINUTES = 15
+from backend.config import OTP_EXPIRE_MINUTES as _CODE_EXPIRE_MINUTES
 _CODE_MAX_ATTEMPTS   = 5
 
 

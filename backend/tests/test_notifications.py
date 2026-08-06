@@ -122,6 +122,7 @@ import re
 
 import pytest
 
+from backend.config import OTP_EXPIRE_MINUTES, SETUP_LINK_EXPIRE_HOURS
 from backend.notifications import email as email_mod
 from backend.notifications import locale as locale_mod
 from backend.notifications import whatsapp as wa_mod
@@ -238,8 +239,10 @@ class TestAuthEmailCopyComesFromTheCatalog:
         assert "482913" in msg["html"]
         assert _SENTINEL in msg["html"], "the heading is not read from the catalog"
         assert render_es("change_password_email_intro", app="ForecastPlatform") in msg["html"]
-        # The TTL number stays in code, the unit word comes from the catalog.
-        assert render_es("hours_duration", hours=30) in msg["html"]
+        # Derived from the constant the ISSUER writes to pw_change_codes, never
+        # from a literal. Hardcoding "30 horas" here is what let the email
+        # promise a 30-hour window for a code that dies after 15 minutes.
+        assert render_es("minutes_duration", minutes=OTP_EXPIRE_MINUTES) in msg["html"]
         assert "<strong" in msg["html"], "emphasis markup must stay in the module"
 
     def test_password_reset_otp_email(self, sent):
@@ -247,9 +250,24 @@ class TestAuthEmailCopyComesFromTheCatalog:
         msg = sent[0]
         assert msg["subject"] == render_es("password_reset_otp_email_subject")
         assert render_es("password_reset_otp_email_heading") in msg["html"]
-        assert render_es("password_reset_otp_email_expiry",
-                         duration=email_mod._strong(render_es("hours_duration", hours=30))
-                         ) in msg["html"]
+        assert render_es(
+            "password_reset_otp_email_expiry",
+            duration=email_mod._strong(
+                render_es("minutes_duration", minutes=OTP_EXPIRE_MINUTES)),
+        ) in msg["html"]
+
+    def test_otp_email_announces_the_expiry_the_issuer_actually_wrote(self, sent):
+        """The announced window must equal the row's real lifetime.
+
+        Reset and change codes both expire in OTP_EXPIRE_MINUTES. The emails used
+        to quote the setup LINK's 30 hours instead, so a user who trusted the
+        message came back to a dead code — 120x off, and no test noticed because
+        both sides asserted the same literal.
+        """
+        email_mod.send_password_reset_otp("user@faro-e2e.io", "445566")
+        html = sent[0]["html"]
+        assert f"{OTP_EXPIRE_MINUTES} minutos" in html
+        assert "30 horas" not in html, "the OTP is quoting the setup link's window"
 
     def test_account_setup_email_interpolates_name_and_app(self, sent):
         email_mod.send_account_setup_email(
@@ -260,6 +278,11 @@ class TestAuthEmailCopyComesFromTheCatalog:
         assert render_es("account_setup_email_heading",
                          app="ForecastPlatform", name="Ana Rojas") in msg["html"]
         assert render_es("account_setup_email_cta") in msg["html"]
+        # The invite LINK really does last hours (users.py mints it with
+        # expires_minutes=60 * SETUP_LINK_EXPIRE_HOURS). Pinned here so the fix
+        # that shortened the OTP copy cannot shorten this one by accident.
+        assert render_es("hours_duration", hours=SETUP_LINK_EXPIRE_HOURS) in msg["html"]
+        assert "minutos" not in msg["html"], "the setup link is not a minutes-long window"
 
 
 class TestPurchaseOrderEmailCopyComesFromTheCatalog:

@@ -5,6 +5,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# How long a 6-digit OTP (password reset, password change) stays valid.
+# Lives here because THREE places need the same number and they used to each
+# keep their own: the two issuers agreed on 15 minutes while the email and the
+# UI both announced "30 horas", so a user who believed the app came back to a
+# dead code. Whoever states the duration must read it from here.
+OTP_EXPIRE_MINUTES = 15
+# The account-setup / email-verification LINK is a different, deliberately long
+# window (users.py mints it with expires_minutes=60 * 30) — an invite has to
+# survive a weekend in a spam folder.
+SETUP_LINK_EXPIRE_HOURS = 30
+
 
 class Settings(BaseSettings):
     secret_key: str

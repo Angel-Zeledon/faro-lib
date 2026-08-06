@@ -103,13 +103,18 @@ def _strong(text: str) -> str:
     return f'<strong style="color:{_TEXT};">{text}</strong>'
 
 
-# How long a verification code / setup link stays valid. The number lives in
-# code; only the unit word comes from the locale catalog.
-_CODE_TTL_HOURS = 30
+# Two different windows, and one label used to serve both: the 6-digit OTP
+# (15 minutes) was announced as "30 horas" because it borrowed the setup link's
+# number. Read them from config so the announcement cannot drift from the
+# expiry the issuer actually wrote to the database.
+def _otp_ttl_label() -> str:
+    from backend.config import OTP_EXPIRE_MINUTES
+    return render_es("minutes_duration", minutes=OTP_EXPIRE_MINUTES)
 
 
-def _code_ttl_label() -> str:
-    return render_es("hours_duration", hours=_CODE_TTL_HOURS)
+def _setup_link_ttl_label() -> str:
+    from backend.config import SETUP_LINK_EXPIRE_HOURS
+    return render_es("hours_duration", hours=SETUP_LINK_EXPIRE_HOURS)
 
 
 def _send_resend(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
@@ -268,7 +273,7 @@ def send_change_password_code(to: str, code: str) -> bool:
                        padding:14px 24px;font-family:monospace;">{code}</span>
         </div>
         <p style="color:{_DIM};font-size:12px;margin:0;">
-          {render_es("change_password_email_expiry", duration=_strong(_code_ttl_label()))}
+          {render_es("change_password_email_expiry", duration=_strong(_otp_ttl_label()))}
         </p>
         """,
     )
@@ -298,7 +303,7 @@ def send_password_reset_otp(to: str, code: str) -> bool:
                        padding:14px 24px;font-family:monospace;">{code}</span>
         </div>
         <p style="color:{_DIM};font-size:12px;margin:0;">
-          {render_es("password_reset_otp_email_expiry", duration=_strong(_code_ttl_label()))}
+          {render_es("password_reset_otp_email_expiry", duration=_strong(_otp_ttl_label()))}
         </p>
         """,
     )
@@ -324,7 +329,7 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
         </p>
         {_button(render_es("account_setup_email_cta"), setup_url)}
         <p style="color:{_DIM};font-size:12px;">
-          {render_es("account_setup_email_expiry", duration=_code_ttl_label())}
+          {render_es("account_setup_email_expiry", duration=_setup_link_ttl_label())}
         </p>
         """,
     )

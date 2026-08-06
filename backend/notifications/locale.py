@@ -64,8 +64,12 @@ _ES: dict[str, str] = {
     "account_setup_email_intro":        "Un administrador ha creado una cuenta para ti en {app}. Haz clic en el botón de abajo para verificar tu correo y activar tu cuenta.",
     "account_setup_email_cta":          "Activar mi cuenta",
     "account_setup_email_expiry":       "Este enlace expira en {duration}. Si no esperabas esta invitación, puedes ignorar este correo.",
-    # The three messages above quote the same TTL; the number stays in code.
+    # Two different windows: the 6-digit codes expire in minutes, the setup
+    # LINK in hours. They used to share one label and the codes were announced
+    # as lasting 30 hours when they died after 15 minutes. Numbers come from
+    # backend.config (OTP_EXPIRE_MINUTES / SETUP_LINK_EXPIRE_HOURS).
     "hours_duration":                   "{hours} horas",
+    "minutes_duration":                 "{minutes} minutos",
     # ── Daily stockout digest (email) ─────────────────────────────────────────
     # `{s}` is the plural suffix the module decides, matching the convention of
     # `alert_email_more_row` above.

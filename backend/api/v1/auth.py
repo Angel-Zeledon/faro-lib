@@ -110,7 +110,7 @@ def _hash_code(code: str) -> str:
 
 # A 6-digit OTP has 10^6 combinations; keeping the window short and burning the
 # code after a few wrong guesses is what makes brute force infeasible.
-_OTP_EXPIRE_MINUTES = 15
+from backend.config import OTP_EXPIRE_MINUTES as _OTP_EXPIRE_MINUTES
 _OTP_MAX_ATTEMPTS   = 5
 
 
