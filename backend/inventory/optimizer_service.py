@@ -52,6 +52,70 @@ def solve_slot():
         _solve_gate.release()
 
 
+def _net_transfer_moves(
+    transfer_totals: dict[tuple[str, str, str], float],
+) -> list[dict]:
+    """Per-bucket transfer variables → the smallest set of moves that means the same.
+
+    A lane the tenant has not configured defaults to free, and free movement
+    makes CIRCULATION cost the solver nothing. Measured on a three-warehouse
+    tenant: "mover 2126 uds de SKU-001 de Cartago a Heredia" printed directly
+    above "mover 1518 de Heredia a Cartago", and SKU-005 came out as a clean
+    three-way ring (Cartago→principal→Heredia→Cartago, 831 each) that returns
+    every unit where it started. Summed over buckets the quantities also
+    exceeded the stock that exists, because opposite moves accumulate on both
+    sides. A warehouse worker would have driven all of it.
+
+    Cancelling pairs only removes 2-cycles, so this works from what physically
+    matters instead: each warehouse's NET change for that SKU. Warehouses that
+    end up net-negative ship, net-positive receive, and they are paired off
+    largest-first. The result carries the same net effect per location, can
+    contain no cycle of any length, and never moves a unit twice.
+    """
+    by_sku: dict[str, dict[str, float]] = {}
+    for (sku, a, b), qty in transfer_totals.items():
+        if qty <= 0:
+            continue
+        balance = by_sku.setdefault(sku, {})
+        balance[a] = balance.get(a, 0.0) - qty      # ships
+        balance[b] = balance.get(b, 0.0) + qty      # receives
+
+    moves: list[dict] = []
+    for sku in sorted(by_sku):
+        balance = by_sku[sku]
+        # Whole units, and rounded the way each side is used: a shipper rounds
+        # DOWN (never send more than the plan says leaves) and a receiver rounds
+        # DOWN too, so the pairing can never invent stock.
+        senders = sorted(
+            ((w, -q) for w, q in balance.items() if q < -0.5),
+            key=lambda pair: -pair[1])
+        receivers = sorted(
+            ((w, q) for w, q in balance.items() if q > 0.5),
+            key=lambda pair: -pair[1])
+        si = ri = 0
+        send_left = senders[si][1] if senders else 0.0
+        recv_left = receivers[ri][1] if receivers else 0.0
+        while si < len(senders) and ri < len(receivers):
+            qty = min(send_left, recv_left)
+            whole = int(_math.floor(qty))
+            if whole > 0:
+                moves.append({
+                    "sku": sku,
+                    "from_warehouse": senders[si][0],
+                    "to_warehouse": receivers[ri][0],
+                    "qty": whole,
+                })
+            send_left -= qty
+            recv_left -= qty
+            if send_left <= 0.5:
+                si += 1
+                send_left = senders[si][1] if si < len(senders) else 0.0
+            if recv_left <= 0.5:
+                ri += 1
+                recv_left = receivers[ri][1] if ri < len(receivers) else 0.0
+    return moves
+
+
 def skus_missing_stock(forecasts, stock_rows: list[dict]) -> list[str]:
     """Forecast SKUs with no stock on file — the ones nothing can be decided for.
 
@@ -286,12 +350,7 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
             "assumed_unit_cost": row.get("unit_cost") is None,
         })
 
-    transfers = []
-    for (sku, a, b) in sorted(transfer_totals):
-        transfers.append({
-            "sku": sku, "from_warehouse": a, "to_warehouse": b,
-            "qty": int(_math.ceil(transfer_totals[(sku, a, b)])),
-        })
+    transfers = _net_transfer_moves(transfer_totals)
 
     return {
         "status": result.status,

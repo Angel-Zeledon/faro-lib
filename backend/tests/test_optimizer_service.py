@@ -286,6 +286,10 @@ class TestSerializeOptimizationResult:
 
         assert out["orders"][0]["qty"] == 3693
         assert isinstance(out["orders"][0]["qty"], int)
-        # 0.01 units still rounds up to a whole unit (it passed the qty>0 filter).
-        assert out["transfers"][0]["qty"] == 1
-        assert isinstance(out["transfers"][0]["qty"], int)
+        # The two sides round in OPPOSITE directions, and both directions are the
+        # safe one for what they do. An order rounds UP: buying 3693 instead of
+        # 3692.67 cannot cause a stockout. A transfer rounds DOWN: rounding 0.01
+        # units up to 1 would take a real unit off a real shelf and send a person
+        # to move it, on the strength of solver noise. Sub-unit moves are dropped.
+        assert out["transfers"] == [], (
+            "0.01 units became a warehouse trip")
