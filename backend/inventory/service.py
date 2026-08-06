@@ -3498,6 +3498,23 @@ def run_daily_inventory_alerts() -> None:
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)
+            # A crash BEFORE any send (a corrupt forecasts blob, an unreadable
+            # stock table) used to leave this tenant with no email and no row
+            # anywhere — and silence is what a normal day looks like, so "the
+            # digest broke" was indistinguishable from "nothing is urgent".
+            # record_notification_delivery's own docstring makes the argument:
+            # without a failed row, absence is ambiguous. Write one per
+            # recipient so it shows up in /me/activity, where they can see it.
+            try:
+                for r in get_tenant_alert_recipients(tid) or []:
+                    record_notification_delivery(
+                        tid, r["id"], "inventory_alert_email", False,
+                        context={"channel": "email", "recipient": r.get("email"),
+                                 "reason": f"digest failed: {e}"},
+                    )
+            except Exception as inner:  # the recipient lookup itself may be what broke
+                log.error("inventory_alert: tenant=%s could not record failure: %s",
+                          tid, inner)
 
 
 def _sum_overstock_value(items: list[dict]) -> float:

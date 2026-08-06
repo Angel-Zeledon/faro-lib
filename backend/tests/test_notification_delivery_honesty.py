@@ -380,6 +380,41 @@ class TestAlertDeliveryFailuresAreObservable:
         assert rows[0]["status"] == "success"
         assert "reason" not in rows[0]["context"]
 
+    def test_a_digest_that_crashes_before_sending_still_leaves_a_trace(
+        self, monkeypatch, registered_user, test_tenant,
+    ):
+        """The gap the three tests above did not cover: the failure happening
+        BEFORE any send.
+
+        Every case above reaches `send_inventory_alert_email` and records its
+        result. When the computation itself throws — a corrupt forecasts blob,
+        an unreadable stock table — the per-tenant handler logged one line and
+        moved on: no email, and no row anywhere in the product. Silence is also
+        what a healthy day looks like, so the user reads a broken digest as
+        "nothing is urgent today".
+        """
+        from backend.inventory import service as inv_svc
+
+        tid = test_tenant["id"]
+        uid = registered_user["user"]["id"]
+        _arrange_daily_loop(monkeypatch, tid, _critical(5))
+        monkeypatch.setattr(
+            inv_svc, "_compute_inventory_status",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("forecasts blob unreadable")),
+        )
+        sent = []
+        monkeypatch.setattr(
+            "backend.notifications.email.send_inventory_alert_email",
+            lambda **kw: sent.append(kw) or True)
+
+        inv_svc.run_daily_inventory_alerts()   # must not raise
+
+        assert sent == [], "the digest computation failed yet an email went out"
+        rows = _activity(tid, uid, "inventory_alert_email")
+        assert len(rows) == 1, "a digest that crashed left no trace for the user"
+        assert rows[0]["status"] == "failed"
+        assert "forecasts blob unreadable" in rows[0]["context"]["reason"]
+
     def test_failed_whatsapp_alert_is_recorded(
         self, monkeypatch, registered_user, test_tenant,
     ):
