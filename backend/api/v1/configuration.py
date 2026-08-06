@@ -230,9 +230,14 @@ def inspect_dataset(
         session_store.set_field(user.tenant_id, session_id, "inspection", inspection)
 
         if profile:
+            # n_rows lives under profile["stats"], not at the top level, so this
+            # stored 0 for every dataset ever uploaded — and the "use a file you
+            # already uploaded" picker then advertised "8.0 MB · 0 filas", which
+            # reads as a broken file. column_count worked only because
+            # `columns` IS top-level.
             update_stats(
                 user.tenant_id, s["dataset_id"],
-                row_count=profile.get("n_rows", 0),
+                row_count=int((profile.get("stats") or {}).get("n_rows") or 0),
                 column_count=len(profile.get("columns", {})),
             )
 
