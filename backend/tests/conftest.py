@@ -143,6 +143,29 @@ def client(app):
 
 
 @pytest.fixture(autouse=True, scope="session")
+def _db_pool_is_open():
+    """Open the connection pool for the test session, whatever the test asks for.
+
+    The pool used to be a side effect of the `client` fixture: TestClient's
+    __enter__ fires FastAPI's startup, which calls init_pool. Any DB-touching
+    test that does not request `client` therefore passed only when some earlier
+    test had already built one. Run by node id it died in the `test_tenant`
+    fixture with "DB pool not initialized — check DATABASE_URL in .env", which
+    accuses an env var that is perfectly fine — measured on every test in
+    test_notification_delivery_honesty.py, none of which take `client`.
+
+    Guarded the same way workers/__main__.py guards it, and main.py's startup
+    now reuses an already-open pool instead of replacing it.
+    """
+    from backend.config import settings
+    from backend.db.connection import init_pool, pool_is_initialized
+
+    if not pool_is_initialized() and settings.database_url:
+        init_pool(settings.database_url, min_conn=1, max_conn=10)
+    yield
+
+
+@pytest.fixture(autouse=True, scope="session")
 def _force_local_llm_in_tests():
     """
     backend/ai/local_llm.py::get_local_llm_client() returns a real

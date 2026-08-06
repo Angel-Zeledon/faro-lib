@@ -43,14 +43,22 @@ async def lifespan(app: FastAPI):
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is not set — add it to Backend/.env")
 
-    from backend.db.connection import init_pool
+    from backend.db.connection import init_pool, pool_is_initialized
     try:
         # min_conn=5 pre-warms 5 connections at startup so that concurrent requests
         # don't serialize behind the TCP+TLS handshake (3s each on Supabase us-west-2).
         # ThreadedConnectionPool holds its mutex during psycopg2.connect(), so without
         # pre-warmed connections every concurrent request serializes.
-        init_pool(settings.database_url, min_conn=5, max_conn=20)
-        log.info("Database connection pool initialized (5 warm connections)")
+        #
+        # Guarded because init_pool REPLACES the global: a process that already
+        # opened one (the standalone worker entrypoint, the test session) would
+        # otherwise orphan it here, leaking its live connections for the life of
+        # the process. Same check workers/__main__.py already makes.
+        if pool_is_initialized():
+            log.info("Database connection pool already open in this process — reusing it")
+        else:
+            init_pool(settings.database_url, min_conn=5, max_conn=20)
+            log.info("Database connection pool initialized (5 warm connections)")
     except Exception as exc:
         log.error("DB pool init failed — server will start but DB calls will fail: %s", exc)
 
