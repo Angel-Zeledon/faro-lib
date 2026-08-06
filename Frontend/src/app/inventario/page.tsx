@@ -107,6 +107,22 @@ function withSingleSeriesLabel<T extends { items: InventoryStatusItem[] }>(
 }
 
 // ── Palette ───────────────────────────────────────────────────────────────────
+
+// A row whose signal says "order" while the quantity is 0 is not a contradiction
+// — the stock is still above the reorder point, so the answer is "not yet" — but
+// "No pedir" next to "Pedir pronto", or a bare dash, reads like one. Say when it
+// WILL be time, using the reorder point the API already sends.
+function notYetLabel(
+  item: InventoryStatusItem,
+  t: (k: string, p?: Record<string, unknown>) => string,
+): string {
+  const ordering = item.signal === 'PEDIR_YA' || item.signal === 'PEDIR_PRONTO'
+  if (!ordering) return t('inventory.dont_order')
+  return item.reorder_point != null
+    ? t('inventory.not_yet_at', { qty: Math.round(item.reorder_point) })
+    : t('inventory.not_yet')
+}
+
 const C = {
  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
  text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
@@ -1331,7 +1347,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  </button>
  )
  ) : item.recommended_qty === 0
- ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
+ ? <span style={{ color: C.dim, fontSize: 11 }}>{notYetLabel(item, t)}</span>
  : <span style={{ color: C.dim }}>—</span>}
  </span>
  <span style={{ color: C.dim }}>{item.current_stock?.toFixed(0) ?? '—'}</span>
@@ -2415,7 +2431,7 @@ export default function InventoryPage() {
  <div style={{ textAlign: 'right' }}>
  {item.recommended_qty != null && item.recommended_qty > 0
  ? <span style={{ fontSize: 18, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.recommended_qty, 0)}</span>
- : <span style={{ fontSize: 13, color: C.dim }}>—</span>}
+ : <span style={{ fontSize: 12, color: C.dim }}>{item.recommended_qty === 0 ? notYetLabel(item, t) : '—'}</span>}
  {/* Why the number is low (or a dash) when the signal is red: the units
      are already on a truck. Without this the drop reads as a bug. */}
  {(item.incoming_qty ?? 0) > 0 && (
@@ -2728,7 +2744,7 @@ export default function InventoryPage() {
  </button>
  )
  ) : item.recommended_qty === 0
- ? <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.dont_order')}</span>
+ ? <span style={{ color: C.dim, fontSize: 11 }}>{notYetLabel(item, t)}</span>
  : '—'}
  </td>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}`, color: C.muted }}>{item.lead_time_days}d
