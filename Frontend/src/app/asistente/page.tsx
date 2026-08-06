@@ -529,6 +529,9 @@ function AnalystPage() {
     }
 
     setSending(true)
+    // Stamped before the call so the catch can tell a slow model from a broken
+    // one — the two need different advice.
+    const startedAt = Date.now()
     try {
       // Optimistically show user message
       const optimistic: ChatMessage = {
@@ -574,7 +577,15 @@ function AnalystPage() {
       setTimeout(() => scrollToBottom(), 30)
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err)
-      const friendly = raw.includes('429') || raw.toLowerCase().includes('too many')
+      const code = (err as { error_code?: string })?.error_code
+      // A failure that took the whole window is the model being slow, not a
+      // broken server, and "intenta de nuevo en unos segundos" is the wrong
+      // advice for it: measured against a local model, the proxy cut the request
+      // at 30.0s while the answer landed at 63s. Say which one happened.
+      const tookTooLong = Date.now() - startedAt >= 20_000
+      const friendly = code === 'ai_unavailable' || tookTooLong
+        ? t('analyst.err_slow_model')
+        : raw.includes('429') || raw.toLowerCase().includes('too many')
         ? t('analyst.err_too_many_requests')
         : raw.includes('500') || raw.toLowerCase().includes('server error')
         ? t('analyst.err_server_error')
@@ -589,7 +600,10 @@ function AnalystPage() {
         source: 'error',
         created_at: new Date().toISOString(),
       }
-      setMessages(prev => [...prev.filter(m => !m.id.startsWith('opt-')), errMsg])
+      // Keep the question. It used to be filtered out with the optimistic
+      // message, so a failed answer erased what the user had asked and they had
+      // to retype it to try again.
+      setMessages(prev => [...prev, errMsg])
     } finally {
       setSending(false)
       inputRef.current?.focus()

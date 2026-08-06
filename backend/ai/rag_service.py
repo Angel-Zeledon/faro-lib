@@ -128,7 +128,11 @@ class RAGService:
             # _anthro is the text-generation client. It is now the local LLM
             # (Ollama) drop-in, which exposes the same messages.create() surface.
             from backend.ai.local_llm import get_local_llm_client
-            self._anthro = get_local_llm_client(timeout=60.0)
+            # Same budget as the chat endpoint: 60s sat ABOVE the frontend
+            # proxy's ~30s ceiling, so a slow model could only ever produce a
+            # bare 500 with no code and no explanation.
+            from backend.api.v1.chats import LLM_BUDGET_S
+            self._anthro = get_local_llm_client(timeout=LLM_BUDGET_S)
         except Exception as exc:
             log.warning("RAG disabled — local LLM client init error: %s", exc)
             self._ready = False

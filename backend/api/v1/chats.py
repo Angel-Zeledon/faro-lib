@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from backend.ai import rag
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.config import settings
+from backend.errors import AppError
 from backend.db import chat_store
 from backend.entitlements.guards import require_feature
 from backend.entitlements.plans import Feature
@@ -32,6 +33,26 @@ router = APIRouter(
     dependencies=[Depends(require_feature(Feature.AI_ANALYST))],
 )
 log = logging.getLogger(__name__)
+
+# The frontend proxies /api through Next, which cuts a request at ~30s. Nothing
+# in application code can raise that, so every LLM call on this path has to fit
+# UNDER it — otherwise the browser gets a bare `500 Internal Server Error` with
+# no code and no envelope, which is exactly what it used to get: measured against
+# a local Ollama with a 60s budget, the proxy gave up at 30.0s while the model
+# answered successfully at 63s, an answer nobody could ever see.
+PROXY_CEILING_S = 30.0
+# Serialising the error and returning it also takes time; leave room for it.
+_CEILING_MARGIN_S = 2.0
+
+# A chat title is decoration; the answer is the product. Title generation runs
+# FIRST on a chat's first message, so it used to spend the whole answer budget
+# before anything tried to answer — the one question that decides whether a buyer
+# trusts this feature. It gets a small slice and falls back to the question.
+_TITLE_BUDGET_S = 5.0
+
+# Derived, not typed: the two budgets plus the margin have to fit the window, and
+# a hand-picked pair drifted out of it the first time (5 + 25 = exactly 30).
+LLM_BUDGET_S = PROXY_CEILING_S - _TITLE_BUDGET_S - _CEILING_MARGIN_S
 
 MAX_QUESTION_LENGTH = 4000
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -273,7 +294,7 @@ def _auto_title(question: str) -> str:
     """Use the local LLM to generate a short 4-6 word chat title."""
     try:
         from backend.ai.local_llm import get_local_llm_client
-        client = get_local_llm_client(timeout=60.0)
+        client = get_local_llm_client(timeout=_TITLE_BUDGET_S)
         msg = client.messages.create(
             max_tokens=30,
             messages=[{
@@ -294,7 +315,7 @@ def _general_answer(question: str, history: list[dict]) -> str:
     """General LLM response for chats without a session context (local LLM)."""
     try:
         from backend.ai.local_llm import get_local_llm_client
-        client = get_local_llm_client(timeout=60.0)
+        client = get_local_llm_client(timeout=LLM_BUDGET_S)
         messages = [
             {"role": m["role"], "content": m["content"]}
             for m in (history or [])[-6:]
@@ -308,7 +329,13 @@ def _general_answer(question: str, history: list[dict]) -> str:
         return response.content[0].text
     except Exception as exc:
         log.warning("General answer failed: %s", exc)
-        return (
-            "The AI service is temporarily unavailable. "
-            "Please try again in a moment or contact your administrator."
+        # A code, not prose, and certainly not English prose presented as the
+        # analyst's own answer — which is what this returned. The frontend
+        # renders `errors.ai_unavailable` and keeps the question in the thread so
+        # the buyer can retry it instead of retyping it.
+        raise AppError(
+            "ai_unavailable",
+            f"The AI service did not answer within {LLM_BUDGET_S:.0f}s: {exc}",
+            status_code=503,
+            params={"budget_seconds": int(LLM_BUDGET_S)},
         )

@@ -2264,6 +2264,7 @@ export const translations = {
     'analyst.err_load_history': 'No se pudo cargar el historial de esta conversación. Verifica tu conexión e intenta de nuevo.',
     'analyst.err_too_many_requests': 'Demasiadas solicitudes — espera un momento antes de enviar otro mensaje.',
     'analyst.err_server_error': 'Error del servidor — intenta de nuevo en unos segundos.',
+    'analyst.err_slow_model': 'El asistente tardó demasiado en responder y se cortó la consulta. Tu pregunta sigue aquí — vuelve a intentarla, o hazla más corta.',
     'analyst.err_connection': 'Error de conexión — verifica tu conexión a internet.',
     'analyst.err_failed_response': 'No se pudo obtener una respuesta. Intenta de nuevo.',
 
@@ -3240,6 +3241,7 @@ export const translations = {
     'errors.refresh_token_invalid':                'Tu sesión venció. Vuelve a iniciar sesión.',
     'errors.reset_code_invalid':                   'El código no es válido o ya venció. Pide uno nuevo.',
     'errors.reset_token_invalid':                  'El enlace para cambiar la contraseña no es válido o ya venció. Pide uno nuevo.',
+    'errors.ai_unavailable': 'El asistente no alcanzó a responder. Tu pregunta sigue aquí — inténtalo de nuevo, o hazla más corta.',
 
     // ── What-if scenarios (PENDIENTES #7) ──────────────────────────────────
     'nav.scenarios':                     'Escenarios',
@@ -5484,6 +5486,7 @@ export const translations = {
     'analyst.err_load_history': 'Could not load this conversation history. Check your connection and try again.',
     'analyst.err_too_many_requests': 'Too many requests — please wait a moment before sending another message.',
     'analyst.err_server_error': 'Server error — please try again in a few seconds.',
+    'analyst.err_slow_model': 'The assistant took too long to answer and the request was cut off. Your question is still here — try it again, or ask a shorter one.',
     'analyst.err_connection': 'Connection error — please check your internet connection.',
     'analyst.err_failed_response': 'Failed to get a response. Please try again.',
 
@@ -6430,6 +6433,7 @@ export const translations = {
     'errors.refresh_token_invalid':                'Your session expired. Please sign in again.',
     'errors.reset_code_invalid':                   'That code is invalid or has expired. Request a new one.',
     'errors.reset_token_invalid':                  'This password reset link is invalid or has expired. Request a new one.',
+    'errors.ai_unavailable': 'The assistant could not answer in time. Your question is still here — try again, or ask a shorter one.',
 
     // ── What-if scenarios (PENDIENTES #7) ──────────────────────
     'nav.scenarios':                     'Scenarios',
