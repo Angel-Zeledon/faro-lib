@@ -459,6 +459,37 @@ def sync_stock_from_dataset(
     # checks). Dataset rows never carry an explicit warehouse (not in
     # _DATASET_STOCK_COLS), so every new key lands in "principal".
     existing_keys = list_stock_keys(tenant_id)
+
+    # A price is not an inventory count.
+    #
+    # `current_stock` is NOT NULL DEFAULT 0, so CREATING a stock row for a SKU
+    # whose dataset said nothing about stock materialises a 0 — and the semáforo
+    # cannot tell that 0 from an empty shelf. Measured on a real upload: a file
+    # whose only inventory-ish mapping was `precio_unitario` seeded 200 rows with
+    # a sale_price and current_stock = 0, and every one of the 200 came out
+    # "PEDIR YA" for a catalogue nobody had ever counted.
+    #
+    # So a row is only CREATED when the dataset says something about what is on
+    # the shelf or how it is replenished. Price-only data still UPDATES a row
+    # that already exists — that is useful and invents nothing.
+    _STOCK_DEFINING = {"current_stock", "lead_time_days", "min_stock", "moq"}
+    filtered: list[tuple[str, dict]] = []
+    skipped_no_stock_signal = 0
+    for sku, data in entries:
+        if (sku, "principal") in existing_keys or (_STOCK_DEFINING & data.keys()):
+            filtered.append((sku, data))
+        else:
+            skipped_no_stock_signal += 1
+    if skipped_no_stock_signal:
+        log.info(
+            "sync_stock_from_dataset: %d SKU(s) not created — the file carried no "
+            "stock, lead time, min stock or MOQ for them (tenant=%s)",
+            skipped_no_stock_signal, tenant_id,
+        )
+    entries = filtered
+    if not entries:
+        return 0
+
     new_keys = {(sku, "principal") for sku, _ in entries} - existing_keys
     from backend.entitlements.service import enforce_limit
     enforce_limit(tenant_id, "max_skus", count_stock(tenant_id), adding=len(new_keys))
