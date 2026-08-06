@@ -1457,9 +1457,16 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  const saveName = async () => {
  if (!newName.trim()) return
  setSavingName(true)
- try { onUpdated(await renameDataSource(source.id, newName.trim())) }
- catch {}
- finally { setSavingName(false); setEditName(false) }
+ try {
+  onUpdated(await renameDataSource(source.id, newName.trim()))
+  setEditName(false)
+ } catch {
+  // The interceptor already toasts the reason. Leave the editor OPEN with the
+  // typed name in it: closing it threw the name away and put the old one back,
+  // which reads like the rename was accepted and then undone. Same choice as
+  // the run-rename editor in /historial.
+ }
+ finally { setSavingName(false) }
  }
 
  const doDelete = async () => {
