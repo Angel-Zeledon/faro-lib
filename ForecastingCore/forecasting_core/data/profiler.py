@@ -836,9 +836,23 @@ class DataProfiler:
             warnings.append("No group/SKU column detected — treating as single series")
         return best
 
+    # A text column this numeric IS the quantity column with dirt in it, not a
+    # different kind of column. Below the threshold we do not claim it.
+    _TARGET_MIN_NUMERIC_SHARE = 0.8
+
     def _detect_target(self, df, dt_col, group_col, warnings) -> Optional[str]:
         exclude = {dt_col, group_col}
         numeric = [c for c in df.select_dtypes(include=np.number).columns if c not in exclude]
+
+        # A quantity column with a few dirty cells ("3 unidades", a blank) is
+        # read by pandas as text, so a dtype-only search did not see it at all:
+        # the file was rejected as having NO quantity column while the mapping
+        # screen showed that very column selected as Demanda. The gate's
+        # `non_numeric_target` already offers to strip, zero or drop those
+        # cells — it just never got the chance, because this returned None.
+        if not numeric:
+            numeric = self._mostly_numeric_columns(df, exclude)
+
         if not numeric:
             warnings.append("No numeric target column detected")
             return None
@@ -854,12 +868,42 @@ class DataProfiler:
 
         scores = {}
         for col in numeric:
-            s = df[col].dropna()
+            # Coerce: `numeric` can now hold a mostly-numeric TEXT column, and
+            # .std() on text either raises or returns nonsense.
+            s = pd.to_numeric(df[col], errors="coerce").dropna()
             if len(s) < 2:
                 continue
             cv = s.std() / (abs(s.mean()) + 1e-8)
             scores[col] = cv * (s >= 0).mean()
         return max(scores, key=scores.get) if scores else numeric[0]
+
+    def _mostly_numeric_columns(self, df, exclude: set) -> list:
+        """Text columns that are numbers with dirt in them, most-numeric first.
+
+        Excludes anything that parses as a date: a `dd/mm/yyyy` column is not a
+        quantity, and neither is one pandas already turned into datetimes.
+        """
+        candidates = []
+        for col in df.columns:
+            if col in exclude:
+                continue
+            s = df[col]
+            if (pd.api.types.is_numeric_dtype(s)
+                    or pd.api.types.is_datetime64_any_dtype(s)
+                    or pd.api.types.is_bool_dtype(s)):
+                continue
+            filled = s.dropna().astype(str).str.strip()
+            filled = filled[filled != ""]
+            if filled.empty:
+                continue
+            parsed = pd.to_numeric(filled.str.replace(",", ".", regex=False),
+                                   errors="coerce")
+            share = float(parsed.notna().mean())
+            if share < self._TARGET_MIN_NUMERIC_SHARE:
+                continue
+            candidates.append((share, col))
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        return [col for _, col in candidates]
 
     def _detect_freq(self, df, dt_col, group_col) -> Optional[str]:
         if not dt_col:
