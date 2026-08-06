@@ -77,11 +77,25 @@ def list_suppliers(tenant_id: str) -> list[dict]:
         # Below the threshold the average describes one delivery, not the
         # supplier, and the planner ignores it. Reporting it anyway would show
         # the buyer a number nothing is actually using.
+        #
+        # Same reason for the `> 0` guard, and it is not hypothetical: three
+        # counter pickups (ordered and collected the same day — routine in this
+        # market) average to 0 days. `_effective_lead_time` refuses a
+        # non-positive average, so the card was announcing "tardan 0 días en
+        # promedio, y ese es el número con el que planifico" about a number the
+        # planner had thrown away. Whatever this reports must be what plans.
         average = row.get("lead_time_learned_days")
+        usable = average is not None and float(average) > 0
         row["lead_time_learned_days"] = (
             round(float(average), 1)
-            if average is not None and observations >= MIN_LEAD_TIME_OBSERVATIONS
+            if usable and observations >= MIN_LEAD_TIME_OBSERVATIONS
             else None
+        )
+        # Enough deliveries, none of them usable. Without this the UI reads
+        # "3 of 3 recorded — 0 more and we adjust on our own", promising an
+        # adjustment that will never come.
+        row["lead_time_learned_unusable"] = bool(
+            observations >= MIN_LEAD_TIME_OBSERVATIONS and not usable
         )
     return rows
 

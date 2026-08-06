@@ -40,6 +40,7 @@ interface SupplierLearning {
   lead_time_observations?:        number
   lead_time_observations_needed?: number
   lead_time_learned_days?:        number | null
+  lead_time_learned_unusable?:    boolean
 }
 type SupplierWithLearning = Supplier & SupplierLearning
 
@@ -69,6 +70,18 @@ function LeadTimeLearning({ supplier }: { supplier: SupplierWithLearning }) {
         {tOr(t, 'suppliers.learning_active',
           `Learned from ${seen} deliveries: ${learned} days on average — that is the number we plan with.`,
           { n: seen, days: learned })}
+      </span>
+    )
+  }
+  // Enough deliveries recorded, none of them usable — every one arrived the
+  // same day it was ordered, so they say nothing about how long this supplier
+  // takes. Saying "N more and we adjust" here would promise what cannot happen.
+  if (supplier.lead_time_learned_unusable) {
+    return (
+      <span style={{ color: C.dim }}>
+        {tOr(t, 'suppliers.learning_unusable',
+          `Recorded ${seen} deliveries, but each arrived the same day it was ordered, so they say nothing about this supplier's lead time. Still using the ${supplier.lead_time_days} days you configured.`,
+          { n: seen, days: supplier.lead_time_days })}
       </span>
     )
   }

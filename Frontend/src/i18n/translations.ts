@@ -1501,6 +1501,7 @@ export const translations = {
     'suppliers.learning_none':      'Todavía no tengo entregas tuyas de este proveedor. Cuando recibas {needed} órdenes, ajusto el tiempo de entrega solo.',
     'suppliers.learning_partial':   'Llevo {n} de {needed} entregas registradas. Con {missing} más ajusto el tiempo de entrega solo.',
     'suppliers.learning_active':    'Aprendí de {n} entregas: tardan {days} días en promedio, y ese es el número con el que planifico.',
+    'suppliers.learning_unusable':  'Registré {n} entregas, pero todas llegaron el mismo día que las pediste, así que no dicen nada del plazo de este proveedor. Sigo usando los {days} días que configuraste.',
     // Banner de confianza en /hoy
     'hoy.assumptions_title_singular': 'Esta recomendación usa 1 supuesto nuestro — revísalo',
     'hoy.assumptions_title_plural':   'Estas recomendaciones usan {n} supuestos nuestros — revísalos',
@@ -4752,6 +4753,7 @@ export const translations = {
     'suppliers.learning_none':      'No deliveries from this supplier recorded yet. Once you receive {needed} orders, we adjust the lead time on our own.',
     'suppliers.learning_partial':   '{n} of {needed} deliveries recorded. {missing} more and we adjust the lead time on our own.',
     'suppliers.learning_active':    'Learned from {n} deliveries: {days} days on average — that is the number we plan with.',
+    'suppliers.learning_unusable':  'Recorded {n} deliveries, but each arrived the same day it was ordered, so they say nothing about this supplier’s lead time. Still using the {days} days you configured.',
     'hoy.assumptions_title_singular': 'This recommendation uses 1 assumption of ours — review it',
     'hoy.assumptions_title_plural':   'These recommendations use {n} assumptions of ours — review them',
     'hoy.assumptions_body':     'You have not given us {fields} for {skus} of the {total} products on this screen, so we used our own values.',
