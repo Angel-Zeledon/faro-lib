@@ -921,6 +921,8 @@ export const translations = {
     'skus.xls_median':            'Mediana',
     'skus.xls_n':                 'Cantidad de datos',
 
+    'enum.model_desc_global_lgbm': 'Aprende de todo el catálogo a la vez, así los productos nuevos o con poca historia toman prestada la estacionalidad de los demás.',
+    'enum.model_desc_sarimax':  'ARIMA con estacionalidad, y además puede leer factores externos como el precio o las promociones.',
     'enum.model_desc_lightgbm': 'Árboles de decisión potenciados: rápido y muy preciso con datos tabulares.',
     'enum.model_desc_xgboost':  'Gradient boosting extremo: una base sólida para series estructuradas.',
     'enum.model_desc_prophet':  'Prophet de Facebook: separa la tendencia de la estacionalidad.',
@@ -4226,6 +4228,8 @@ export const translations = {
     'skus.xls_median':            'Median',
     'skus.xls_n':                 'Data points',
 
+    'enum.model_desc_global_lgbm': 'Learns from the whole catalogue at once, so new or short-history SKUs borrow the seasonality of the rest.',
+    'enum.model_desc_sarimax':  'Seasonal ARIMA that can also read external drivers such as price or promotions.',
     'enum.model_desc_lightgbm': 'Gradient boosted trees — fast and highly accurate on tabular data.',
     'enum.model_desc_xgboost':  'Extreme gradient boosting — a strong baseline for structured series.',
     'enum.model_desc_prophet':  'Facebook Prophet — separates trend from seasonality.',
