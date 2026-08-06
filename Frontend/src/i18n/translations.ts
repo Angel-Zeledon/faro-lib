@@ -2696,6 +2696,7 @@ export const translations = {
     'inventory.wh_empty_title': 'Sin datos en esta bodega',
     'inventory.wh_empty_sub': 'Esta bodega no tiene stock ni demanda asignada para la sesión activa.',
     'inventory.wh_transfer_btn': 'Transferir {qty} desde {from}',
+    'inventory.wh_partial_transfer_btn': 'Mover {qty} desde {from} y comprar las otras {rest}',
     'inventory.wh_transfer_sent': 'Transferencia creada',
     'inventory.wh_order_hint': 'Pedir {qty} al proveedor',
     // Rutas de traslado: tiempo y costo por par de bodegas (PENDIENTES #2).
@@ -2715,6 +2716,8 @@ export const translations = {
     'transfers.reason_transfer_faster_and_cheaper': 'Es mejor trasladar {qty} unidades desde {from_warehouse}: llega en {lane_days} {lane_days_unit} y cuesta menos que comprar.',
     'transfers.reason_transfer_too_slow': 'Es mejor comprar al proveedor: el traslado tardaría {lane_days} {lane_days_unit}.',
     'transfers.reason_transfer_more_expensive': 'Es mejor comprar al proveedor: trasladar {qty} unidades desde {from_warehouse} cuesta más que comprarlas.',
+    'transfers.reason_transfer_donor_would_run_short': 'En {from_warehouse} hay {donor_stock} unidades, pero solo le alcanzan para {donor_coverage_days} días y prestarlas la dejaría por debajo del mínimo de {min_coverage_days} días. Por eso conviene comprar.',
+    'transfers.reason_transfer_donation_too_small': 'Desde {from_warehouse} solo se pueden mover {qty} de las {need} unidades que faltan, así que el traslado por sí solo no resuelve el faltante.',
     // Calendario comercial precargado (feature 3.4)
     'inventory.calendar_intro': 'Eventos comerciales de Costa Rica que Faro ya conoce. Actívalos para que aparezcan en tus alertas y en el simulador.',
     // Multiplicador por producto + explicación (feature 3.4)
@@ -5891,6 +5894,7 @@ export const translations = {
     'inventory.wh_empty_title': 'No data in this warehouse',
     'inventory.wh_empty_sub': 'This warehouse has no stock and no assigned demand for the active session.',
     'inventory.wh_transfer_btn': 'Transfer {qty} from {from}',
+    'inventory.wh_partial_transfer_btn': 'Move {qty} from {from} and buy the other {rest}',
     'inventory.wh_transfer_sent': 'Transfer created',
     'inventory.wh_order_hint': 'Order {qty} from supplier',
     // Transfer lanes: time + money per warehouse pair (PENDIENTES #2).
@@ -5909,6 +5913,8 @@ export const translations = {
     'transfers.reason_transfer_faster_and_cheaper': 'Better to transfer {qty} units from {from_warehouse}: it arrives in {lane_days} {lane_days_unit} and costs less than buying.',
     'transfers.reason_transfer_too_slow': 'Better to buy from the supplier: the transfer would take {lane_days} {lane_days_unit}.',
     'transfers.reason_transfer_more_expensive': 'Better to buy from the supplier: transferring {qty} units from {from_warehouse} costs more than buying them.',
+    'transfers.reason_transfer_donor_would_run_short': '{from_warehouse} holds {donor_stock} units, but that is only {donor_coverage_days} days of its own demand and lending would drop it below the {min_coverage_days}-day floor. Buying is the right call.',
+    'transfers.reason_transfer_donation_too_small': '{from_warehouse} can only spare {qty} of the {need} units missing, so a transfer alone would not close the gap.',
     'inventory.calendar_intro': 'Commercial events in Costa Rica that Faro already knows. Switch them on to see them in your alerts and in the simulator.',
     'inventory.mult_base_label': 'Event multiplier:',
     'inventory.mult_from_catalog': "Faro's initial calendar estimate.",

@@ -961,6 +961,15 @@ export interface WarehouseStatusItem {
   /** Set when a transfer was possible on coverage but LOST against buying
    * (too slow / more expensive). Rendered as plain text, never as an alert. */
   transfer_rejected_reason?: TransferReason | null
+  /** An OPTION next to the purchase, not the recommendation: a donor that can
+   *  cover part of the gap on a sound lane. Accepting it leaves the rest to be
+   *  bought, and the purchase shrinks by itself (in-transit units net out). */
+  partial_transfer?: {
+    from_warehouse: string
+    qty: number
+    remaining_qty: number
+    lane_days: number
+  } | null
   unit_cost: number | null
 }
 

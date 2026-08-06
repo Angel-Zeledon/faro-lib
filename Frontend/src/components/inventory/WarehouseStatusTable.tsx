@@ -47,6 +47,21 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                        body={t('inventory.wh_empty_sub')} />
   }
 
+  /** Move the part a donor CAN spare; the rest stays a purchase. */
+  async function sendPartial(row: WarehouseStatusItem) {
+    const pt = row.partial_transfer
+    if (!pt) return
+    const key = `${row.sku}|${row.warehouse}`
+    setSendingSku(key)
+    try {
+      await createTransfer(pt.from_warehouse, row.warehouse,
+                           [{ sku: row.sku, qty: pt.qty }])
+      setSentSkus(prev => new Set(prev).add(key))
+      onTransferCreated?.()
+      load()
+    } finally { setSendingSku(null) }
+  }
+
   async function sendTransfer(row: WarehouseStatusItem) {
     const ts = row.transfer_suggestion
     if (!ts) return
@@ -119,6 +134,24 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                           text, never an alert (it is a recommendation). */}
                       {rejected && (
                         <span style={{ display: 'block', marginTop: 2 }}>{rejected}</span>
+                      )}
+                      {/* The donor next door cannot cover the whole gap, so
+                          buying stays the recommendation — but moving what it
+                          has is the buyer's call to make, and they can only make
+                          it if it is on screen. Taking it shrinks the purchase on
+                          its own: in-transit units net out of the next one. */}
+                      {row.partial_transfer && !sent && (
+                        <button onClick={() => sendPartial(row)}
+                                disabled={sendingSku === key}
+                                style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
+                                         alignItems: 'center', gap: 6, marginTop: 4,
+                                         color: C.indigo, fontSize: 12, fontWeight: 600 }}>
+                          <ArrowLeftRight size={13} />
+                          {t('inventory.wh_partial_transfer_btn')
+                            .replace('{qty}', String(row.partial_transfer.qty))
+                            .replace('{from}', row.partial_transfer.from_warehouse)
+                            .replace('{rest}', String(row.partial_transfer.remaining_qty))}
+                        </button>
                       )}
                     </span>
                   ) : '—'}

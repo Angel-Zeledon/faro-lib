@@ -1773,6 +1773,11 @@ def get_inventory_status_by_warehouse(
                 # Why a possible transfer LOST against buying (structured
                 # {reason_code, params}; the frontend renders the sentence).
                 "transfer_rejected_reason": None,
+                # An OPTION, not the recommendation: a donor that can cover part
+                # of the need. Set by _network_transfer_pass when the full
+                # transfer was refused for being too small but its lane is still
+                # sound. See its "Move what there is, buy the rest" note.
+                "partial_transfer": None,
                 "unit_cost": (float(stock["unit_cost"])
                               if stock and stock.get("unit_cost") is not None else None),
             })
@@ -1889,6 +1894,15 @@ def _network_transfer_pass(
             r["recommended_action"] = "order"
             need = float(r["recommended_qty"])
             candidates: list[dict] = []
+            # Why each warehouse holding this SKU was ruled out BEFORE the lane
+            # rules got a say. Without this the row just said "order" while a
+            # sister warehouse visibly held hundreds of units, and
+            # `transfer_rejected_reason` stayed null — the buyer could see the
+            # stock and not the reason, which is the one thing this feature owes
+            # them. Ordered by how much the buyer needs to hear it.
+            near_miss: Optional[dict] = None
+            # Best donor that can cover only PART of the need (see below).
+            partial: Optional[dict] = None
             for d in rows:
                 if d is r or not d.get("current_stock"):
                     continue
@@ -1900,14 +1914,64 @@ def _network_transfer_pass(
                         donatable,
                         float(d["current_stock"]) - daily * min_cov)
                 if donatable <= 0:
+                    # It HAS stock, it just cannot spare any: lending would push
+                    # the donor under its own safety floor.
+                    if near_miss is None:
+                        near_miss = {
+                            "reason_code": "transfer_donor_would_run_short",
+                            "params": {
+                                "from_warehouse": d["warehouse"],
+                                "donor_stock": round(float(d["current_stock"]), 2),
+                                "donor_coverage_days": (
+                                    round(float(d["current_stock"]) / daily, 1)
+                                    if daily > 0 else None),
+                                "min_coverage_days": round(min_cov, 1),
+                            },
+                        }
+                    continue
+                # Move whole units of whatever this SKU is counted in. The
+                # purchase side gets integers for free (its MOQ ceiling rounds
+                # up), so the same table read "Pedir 174" next to "Transferir
+                # 132.95" — and nobody moves 0.95 of a bottle. FLOOR, never
+                # ceil: the donor cannot lend more than it can spare. A SKU sold
+                # by weight keeps its fractions through its own moq.
+                step = float(r.get("moq") or 0) or 1.0
+                donatable = math.floor(donatable / step) * step
+                if donatable <= 0:
                     continue
                 after = float(d["current_stock"]) - donatable
                 cov_after = after / daily if daily > 0 else 9999.0
                 if cov_after < min_cov:
+                    if near_miss is None:
+                        near_miss = {
+                            "reason_code": "transfer_donor_would_run_short",
+                            "params": {
+                                "from_warehouse": d["warehouse"],
+                                "donor_stock": round(float(d["current_stock"]), 2),
+                                "donor_coverage_days": round(cov_after, 1),
+                                "min_coverage_days": round(min_cov, 1),
+                            },
+                        }
                     continue
                 # A donation that doesn't materially cover the need never
-                # replaced the order (pre-feature rule, unchanged).
+                # replaced the order (pre-feature rule, unchanged) — but the
+                # buyer is told, because "move 100 of the 174 I need" is a
+                # decision they may well want to take by hand.
                 if donatable < 0.8 * need:
+                    near_miss = {
+                        "reason_code": "transfer_donation_too_small",
+                        "params": {
+                            "from_warehouse": d["warehouse"],
+                            "qty": round(donatable, 2),
+                            "need": round(need, 2),
+                        },
+                    }
+                    # Keep the largest one: the purchase stands, but moving part
+                    # of it is a decision the buyer can take, and they can only
+                    # take it if we offer it. Attached after the main loop, and
+                    # only if the lane rules accept it.
+                    if not partial or donatable > partial["qty"]:
+                        partial = {"donor": d, "qty": donatable}
                     continue
                 candidates.append({"donor": d, "qty": donatable, "cov_after": cov_after})
 
@@ -1946,8 +2010,35 @@ def _network_transfer_pass(
                 }
                 rejection = None
                 break
+            # A lane verdict outranks a pre-lane filter: it describes a donor
+            # that could actually have lent, which is the more useful answer.
             if rejection is not None:
                 r["transfer_rejected_reason"] = rejection
+            elif r["recommended_action"] == "order" and near_miss is not None:
+                r["transfer_rejected_reason"] = near_miss
+
+            # "Move what there is, buy the rest." The full transfer was refused
+            # because it would not close the gap, which is the right call for a
+            # RECOMMENDATION — but the units next door are real and the buyer may
+            # well want them. Offered as an extra, never as the recommendation:
+            # `recommended_action` stays "order" and `recommended_qty` is
+            # untouched. Accepting it creates a transfer, and the purchase then
+            # shrinks on its own, because in-transit stock nets out of the next
+            # recommendation (see _calc_recommended's `incoming`).
+            if (r["recommended_action"] == "order" and partial
+                    and r["transfer_suggestion"] is None):
+                lane = lane_for(lanes, partial["donor"]["warehouse"], r["warehouse"])
+                accepted, reason_code, params = _evaluate_transfer_lane(
+                    lane, partial["qty"], r, partial["donor"])
+                if accepted:
+                    r["partial_transfer"] = {
+                        "from_warehouse": partial["donor"]["warehouse"],
+                        "qty": round(partial["qty"], 2),
+                        "remaining_qty": round(max(0.0, need - partial["qty"]), 2),
+                        "lane_days": lane["lead_time_days"],
+                        "reason_code": reason_code,
+                        "params": params,
+                    }
 
 
 # ── Per-product event multipliers ────────────────────────────────────────────
