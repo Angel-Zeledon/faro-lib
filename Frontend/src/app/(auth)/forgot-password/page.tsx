@@ -3,6 +3,7 @@ import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authForgotPassword, authForgotPasswordVerify, authResetPassword } from '@/lib/api'
+import { clearAuth } from '@/lib/auth'
 import { Zap, CheckCircle2, AlertTriangle, ArrowLeft, KeyRound, Mail, Lock } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
@@ -89,8 +90,16 @@ export default function ForgotPasswordPage() {
     setLoading(true)
     try {
       await authResetPassword(resetToken, pw)
+      // Whoever just proved control of THIS mailbox is not whoever was logged in
+      // on this browser. Leaving the old session in place sent them to /login,
+      // where the guard saw a valid token and waved them into the previous
+      // user's workspace — a warehouse PC handed a viewer the admin's account.
+      clearAuth()
       setStep('done')
-      setTimeout(() => router.replace('/login'), 2500)
+      // Hard navigation, not router.replace: a client-side route change keeps
+      // React state alive, and the auth context would write the old user back
+      // into storage on its next render.
+      setTimeout(() => window.location.replace('/login'), 2500)
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.reset_failed'))
     } finally {
