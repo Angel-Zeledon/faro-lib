@@ -164,6 +164,13 @@ def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dic
     # Normalize-at-write: 'norte' must reuse an existing 'Norte' row, never
     # create a case-variant duplicate location.
     name = resolve_canonical_name(tenant_id, name)
+    # The FIRST warehouse a tenant ever gets is their default, whatever the
+    # caller asked for. Every tenant used to end up with is_default = false on
+    # every row, and "which one is the default" then fell through to
+    # name_precedence_key — an answer that MOVES when a warehouse is renamed.
+    # Anchoring the flag at creation keeps the default where the tenant put it.
+    if not count_warehouses(tenant_id):
+        is_default = True
     execute(
         "INSERT INTO warehouses (tenant_id, name, is_default) VALUES (%s, %s, %s) "
         "ON CONFLICT (tenant_id, name) DO NOTHING",

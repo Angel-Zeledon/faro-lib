@@ -204,10 +204,18 @@ def _ensure_warehouse(tenant_id: str, name: str, conn: Optional[Any] = None) -> 
     shared transaction connection instead of its own auto-committing one.
     """
     try:
+        # is_default on the tenant's FIRST warehouse, decided inside the same
+        # statement so this stays one round-trip on the stock-write path. Without
+        # it every row kept is_default = false and "which is the default" fell
+        # through to name precedence — an answer that moves when a warehouse is
+        # renamed. See warehouse_service.create_warehouse for the other path.
         execute(
-            "INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s) "
+            "INSERT INTO warehouses (tenant_id, name, is_default) "
+            "SELECT %s, %s, NOT EXISTS ("
+            "    SELECT 1 FROM warehouses WHERE tenant_id = %s"
+            ") "
             "ON CONFLICT (tenant_id, name) DO NOTHING",
-            (tenant_id, name),
+            (tenant_id, name, tenant_id),
             conn=conn,
         )
     except Exception as e:
