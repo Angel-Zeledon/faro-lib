@@ -1586,6 +1586,14 @@ export default function InventoryPage() {
  const { warehouses, multi: multiWarehouse } = useWarehouses()
  const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
 
+ // "Todas" with several warehouses shows the NETWORK TOTAL per SKU, but a row
+ // save posts no warehouse and lands on one of them. So a buyer who read 615
+ // (575 + 40), typed 600 and pressed Enter left the network holding 640: the
+ // figure they typed became principal's stock and the other warehouse was
+ // added on top. Editing an aggregate has no correct destination — the fields
+ // are read-only here and the hint says which tab to use instead.
+ const isNetworkStockView = multiWarehouse && !selectedWarehouse
+
  // Effective order quantity for an item: the buyer's edit if present, else the recommendation.
  const effectiveQty = useCallback((item: InventoryStatusItem): number =>
   editedQty[item.sku] ?? item.recommended_qty ?? 0, [editedQty])
@@ -2219,8 +2227,11 @@ export default function InventoryPage() {
  id="bulk-edit-keys"
  style={{ padding: '7px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.dim }}
  >
- {tOr(t, 'inventory.bulk_keyboard_hint',
-  'Enter saves this row and moves to the next · Esc discards this row')}
+ {isNetworkStockView
+  ? tOr(t, 'inventory.bulk_network_readonly',
+   'These figures add up every warehouse. Pick one above to edit its stock.')
+  : tOr(t, 'inventory.bulk_keyboard_hint',
+   'Enter saves this row and moves to the next · Esc discards this row')}
  </div>
  {/* Row-level outcome, announced. Without it a keyboard user pressing Enter
      had no way to know whether the row was saved. */}
@@ -2299,6 +2310,7 @@ export default function InventoryPage() {
  name={`bulk-current-stock-${item.sku}`} aria-label={fieldLabel(t('inventory.col_current_stock'))}
  aria-describedby="bulk-edit-keys" aria-keyshortcuts="Enter Escape"
  type="number" min={0}
+ disabled={isNetworkStockView}
  value={draft?.current_stock ?? ''}
  onChange={e => handleDraftChange(item.sku, 'current_stock', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
@@ -2316,6 +2328,7 @@ export default function InventoryPage() {
  name={`bulk-lead-time-${item.sku}`} aria-label={fieldLabel(t('inventory.col_lead_time_days'))}
  aria-describedby="bulk-edit-keys" aria-keyshortcuts="Enter Escape"
  type="number" min={1} max={365}
+ disabled={isNetworkStockView}
  value={draft?.lead_time_days ?? ''}
  onChange={e => handleDraftChange(item.sku, 'lead_time_days', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}
@@ -2331,6 +2344,7 @@ export default function InventoryPage() {
  name={`bulk-supplier-${item.sku}`} aria-label={fieldLabel(t('inventory.col_provider'))}
  aria-describedby="bulk-edit-keys" aria-keyshortcuts="Enter Escape"
  type="text"
+ disabled={isNetworkStockView}
  value={draft?.supplier ?? ''}
  onChange={e => handleDraftChange(item.sku, 'supplier', e.target.value)}
  onFocus={e => { e.target.style.borderColor = 'var(--accent)' }}

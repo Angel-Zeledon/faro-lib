@@ -3,7 +3,7 @@
 // by-warehouse status and renders one warehouse's rows, including the
 // TRANSFER suggestions produced by the backend's network pass.
 import { useCallback, useEffect, useState } from 'react'
-import { getStatusByWarehouse, createTransfer } from '@/lib/api'
+import { getStatusByWarehouse, createTransfer, upsertInventoryStock } from '@/lib/api'
 import type { WarehouseStatusItem, CoverageUnit } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
@@ -28,6 +28,8 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
   const [error, setError] = useState<unknown>(null)
   const [sendingSku, setSendingSku] = useState<string | null>(null)
   const [sentSkus, setSentSkus] = useState<Set<string>>(new Set())
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [savingSku, setSavingSku] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setError(null)
@@ -45,6 +47,25 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
   if (rows.length === 0) {
     return <EmptyState title={t('inventory.wh_empty_title')}
                        body={t('inventory.wh_empty_sub')} />
+  }
+
+  /** Count this warehouse's stock, in this warehouse's row.
+   *
+   *  The "Todas" editor could not do this: it shows the network SUM and posts
+   *  without a warehouse, so a typed total landed on one location and the rest
+   *  was added on top. Here the destination is the tab the user is looking at.
+   */
+  async function saveStock(sku: string, raw: string) {
+    const value = Number(raw)
+    if (!Number.isFinite(value) || value < 0) return
+    setSavingSku(sku)
+    try {
+      await upsertInventoryStock(sku, { current_stock: value, warehouse })
+      setDrafts(prev => { const next = { ...prev }; delete next[sku]; return next })
+      load()
+    } catch (e) {
+      setError(e)
+    } finally { setSavingSku(null) }
   }
 
   /** Move the part a donor CAN spare; the rest stays a purchase. */
@@ -101,7 +122,26 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
             return (
               <tr key={key}>
                 <td style={td}>{row.display_name || row.sku}</td>
-                <td style={td}>{row.current_stock ?? '—'}</td>
+                <td style={td}>
+                  <input
+                    type="number" min={0}
+                    name={`wh-stock-${row.sku}`}
+                    aria-label={`${t('inventory.wh_col_stock')} — ${row.display_name || row.sku} — ${warehouse}`}
+                    disabled={savingSku === row.sku}
+                    value={drafts[row.sku] ?? String(row.current_stock ?? '')}
+                    onChange={e => setDrafts(p => ({ ...p, [row.sku]: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); void saveStock(row.sku, (e.target as HTMLInputElement).value) }
+                      if (e.key === 'Escape') setDrafts(p => { const n = { ...p }; delete n[row.sku]; return n })
+                    }}
+                    onBlur={e => {
+                      if (drafts[row.sku] !== undefined) void saveStock(row.sku, e.target.value)
+                    }}
+                    style={{ width: 92, background: 'var(--bg)', border: `1px solid ${C.border}`,
+                             borderRadius: 6, padding: '4px 7px', fontSize: 12, color: C.text,
+                             outline: 'none' }}
+                  />
+                </td>
                 <td style={td}>{row.coverage_days != null
                   ? `${row.coverage_days} ${coverageUnitShort(coverageUnit, t)}` : '—'}</td>
                 <td style={td}>
