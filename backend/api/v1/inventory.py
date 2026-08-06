@@ -439,6 +439,7 @@ async def bulk_import_preview(
 async def bulk_import(
     file: UploadFile = File(...),
     mapping: Optional[str] = Form(default=None),
+    warehouse: Optional[str] = Form(default=None),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
@@ -448,6 +449,12 @@ async def bulk_import(
     ('Código', 'Existencia', 'Costo Unitario', separated by ';') imports with
     no hand-editing. `mapping` — a JSON object of {canonical_field:
     source_column} sent by the wizard — overrides the detection per field.
+
+    `warehouse` is the destination for rows that do not name one. Without it the
+    only way to stock a second location was a `warehouse` COLUMN — supported
+    here since 5.4, but never mentioned in the UI, so creating a warehouse led
+    to "Sin datos en esta bodega" and no way forward. A row that DOES name a
+    warehouse keeps its own: a multi-warehouse sheet still imports as written.
 
     Canonical fields: sku, warehouse, display_name, category, brand,
     unit_of_measure, barcode, current_stock, min_stock, lead_time_days,
@@ -466,6 +473,15 @@ async def bulk_import(
         return fmt_, columns_, used_, detected_, rows_, errors_, skipped_
 
     fmt, columns, used, detected, rows, errors, skipped_no_sku = await asyncio.to_thread(_parse)
+
+    # Destination for rows that name no warehouse. Applied before the limit
+    # pre-checks below, which count new (sku, warehouse) keys and new location
+    # names — they must judge the rows that will actually be written.
+    default_wh = (warehouse or "").strip()
+    if default_wh:
+        for row in rows:
+            if not (row.get("warehouse") or "").strip():
+                row["warehouse"] = default_wh
 
     if not rows:
         # The whole file was rejected — a user event, not API misuse, so it

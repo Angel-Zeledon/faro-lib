@@ -847,9 +847,12 @@ export const getInventoryStatus = (sessionId: string, serviceLevel = 0.95, opts?
     undefined, opts,
   )
 
-export const importInventoryCSV = (file: File) => {
+// `warehouse` is the destination for rows whose file names none — how the
+// per-warehouse tab stocks a location without asking the user to add a column.
+export const importInventoryCSV = (file: File, warehouse?: string) => {
   const fd = new FormData()
   fd.append('file', file)
+  if (warehouse) fd.append('warehouse', warehouse)
   return request<{ imported: number; total_rows: number }>('POST', '/inventory/bulk', fd)
 }
 

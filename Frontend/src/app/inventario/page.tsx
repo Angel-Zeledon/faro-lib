@@ -1839,7 +1839,10 @@ export default function InventoryPage() {
  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
  const file = e.target.files?.[0]; if (!file) return; e.target.value = ''; setImporting(true)
  try {
- const res = await importInventoryCSV(file)
+ // Whichever warehouse tab is open is the destination for rows that name
+ // none. In "Todas" nothing is passed and the backend resolves the default,
+ // exactly as before.
+ const res = await importInventoryCSV(file, selectedWarehouse ?? undefined)
  await load(sessionId)
  addToast(t('inventory.toast_import_title'), `${t('inventory.alert_imported_prefix')} ${res.imported} ${t('inventory.alert_imported_of')} ${res.total_rows} SKUs`, 'success')
  }
@@ -2087,11 +2090,30 @@ export default function InventoryPage() {
 
  {/* Per-warehouse semáforo replaces the main table while a warehouse is selected */}
  {selectedWarehouse && sessionId ? (
+ <>
+ {/* How stock gets INTO this warehouse. A newly created location showed
+     "Sin datos en esta bodega" and offered nothing: the only route was a
+     `warehouse` column in a CSV that the UI never mentioned. The import
+     button lives here too now, and rows that name no warehouse land in
+     the tab that is open. */}
+ <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+               padding: '8px 12px', borderRadius: 8, background: C.surface,
+               border: `1px solid ${C.border}`, marginBottom: 10 }}>
+ <span style={{ fontSize: 11.5, color: C.dim, flex: 1 }}>
+ {t('inventory.wh_import_hint', { warehouse: selectedWarehouse })}
+ </span>
+ <button onClick={() => importRef.current?.click()} disabled={importing}
+         style={{ all: 'unset', cursor: importing ? 'default' : 'pointer',
+                  fontSize: 12, fontWeight: 600, color: C.indigo }}>
+ {importing ? t('common.saving') : t('inventory.btn_import_csv_arrow')}
+ </button>
+ </div>
  <WarehouseStatusTable
  sessionId={sessionId}
  warehouse={selectedWarehouse}
  onTransferCreated={() => load(sessionId)}
  />
+ </>
  ) : (
  <>
  {/* Main table / view */}
