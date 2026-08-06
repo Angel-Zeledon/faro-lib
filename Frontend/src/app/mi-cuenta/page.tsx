@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import BillingPanel from '@/components/billing/BillingPanel'
 import CurrencySection from '@/components/billing/CurrencySection'
+import TimezoneSection from '@/components/billing/TimezoneSection'
 import { useEntitlements } from '@/lib/entitlements'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -1359,6 +1360,17 @@ export default function ConfigPage() {
               subtitle={t('currency.section_subtitle')}
             />
             <CurrencySection />
+          </Card>
+          {/* Its own card, next to currency: both are "how this company's data is
+              expressed", and the scheduled-retrain hours are meaningless without
+              a zone attached. */}
+          <Card>
+            <SectionTitle
+              icon={Clock} color="var(--accent)"
+              title={t('timezone.section_title')}
+              subtitle={t('timezone.section_subtitle')}
+            />
+            <TimezoneSection />
           </Card>
           <AppConfigSection t={t} />
           <PlanningSection t={t} />

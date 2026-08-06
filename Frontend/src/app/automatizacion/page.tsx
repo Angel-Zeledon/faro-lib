@@ -1,18 +1,21 @@
 'use client'
+import FeatureGate from '@/components/ui/FeatureGate'
 import { useState, useEffect, useCallback } from 'react'
 import {
   listApiKeys, createApiKey, revokeApiKey,
   listWebhooks, createWebhook, deleteWebhook,
-  getSessions, getSchedule, saveSchedule, deleteSchedule,
+  getSessions, getSchedule, saveSchedule, deleteSchedule, listSchedules,
+  getTenantTimezone, listScheduleHistory,
 } from '@/lib/api'
 import type { ApiKey, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
+import type { TenantTimezone, ScheduleRun } from '@/lib/api'
 import Button from '@/components/ui/Button'
 import Input, { Select } from '@/components/ui/Input'
 import Card from '@/components/ui/Card'
 import Spinner from '@/components/ui/Spinner'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { webhookEventLabel } from '@/lib/enumLabels'
+import { webhookEventLabel, timezoneLabel } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -314,7 +317,7 @@ function WebhooksTab() {
 
 // ── Schedules tab ─────────────────────────────────────────────────────────────
 function SchedulesTab() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const confirm = useConfirm()
   const [sessions,   setSessions]  = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId] = useState<string>('')
@@ -326,6 +329,29 @@ function SchedulesTab() {
   const [saved,      setSaved]     = useState(false)
   const [cronExpr,   setCron]      = useState(CRON_OPTIONS[0].value)
   const [enabled,    setEnabled]   = useState(true)
+  // Everything already armed, whatever session it belongs to. This form opens on
+  // the FIRST completed session, so an admin whose retrain lives on another one
+  // saw an empty "create a schedule" form and no sign the first existed.
+  const [allSchedules, setAllSchedules] =
+    useState<Array<JobSchedule & { session_name: string }>>([])
+
+  const [tz, setTz] = useState<TenantTimezone | null>(null)
+  const [history, setHistory] = useState<ScheduleRun[]>([])
+
+  // Instants render in the COMPANY's zone, not the reader's browser. The cron
+  // is read there now, so "cada lunes a las 6am" and this hour have to agree —
+  // on a laptop set to another zone they did not, and the screen contradicted
+  // the picker sitting right above it. Falls back to browser-local only while
+  // the zone is still loading or unavailable.
+  const inTenantZone = (iso: string) => new Date(iso).toLocaleString(lang, {
+    ...(tz ? { timeZone: tz.timezone } : {}), dateStyle: 'short', timeStyle: 'short',
+  })
+
+  const reloadAll = useCallback(() => {
+    listSchedules().then(setAllSchedules).catch(() => setAllSchedules([]))
+    getTenantTimezone().then(r => setTz(r.current)).catch(() => setTz(null))
+    listScheduleHistory(10).then(setHistory).catch(() => setHistory([]))
+  }, [])
 
   useEffect(() => {
     getSessions()
@@ -335,7 +361,8 @@ function SchedulesTab() {
         if (completed.length) setSessionId(completed[0].session_id)
       })
       .catch(e => setError(e.message))
-  }, [])
+    reloadAll()
+  }, [reloadAll])
 
   useEffect(() => {
     if (!sessionId) return
@@ -354,6 +381,11 @@ function SchedulesTab() {
     try {
       const s = await saveSchedule(sessionId, cronExpr, enabled)
       setSchedule(s); setSaved(true); setTimeout(() => setSaved(false), 3000)
+      // The "already scheduled" list exists so nobody arms a second schedule
+      // without seeing the first — it has to include the one just armed.
+      // Measured: saved a schedule, /schedules returned it, the list stayed
+      // empty until a full page reload.
+      reloadAll()
     } catch (e: any) { setError(e.message) }
     finally { setSaving(false) }
   }
@@ -361,7 +393,7 @@ function SchedulesTab() {
   const handleDelete = async () => {
     if (!(await confirm({ title: t('settings.remove_schedule_confirm'), danger: true }))) return
     setDeleting(true)
-    try { await deleteSchedule(sessionId); setSchedule(null) }
+    try { await deleteSchedule(sessionId); setSchedule(null); reloadAll() }
     catch (e: any) { setError(e.message) }
     finally { setDeleting(false) }
   }
@@ -371,6 +403,85 @@ function SchedulesTab() {
       <div style={{ fontSize: 12, color: 'var(--dim)' }}>
         {t('settings.schedules_desc')}
       </div>
+
+      {/* What is armed right now, across every session. The form below edits ONE
+          session and opens on the first one, so this is the only place the state
+          of the feature is visible without guessing which session to pick. */}
+      {allSchedules.length > 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '7px 12px', background: 'var(--surface)', fontSize: 11,
+                        fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase',
+                        letterSpacing: '0.05em' }}>
+            {t('settings.schedules_active_title')}
+          </div>
+          {allSchedules.map(sc => (
+            <button
+              key={sc.id}
+              onClick={() => setSessionId(sc.session_id)}
+              style={{ all: 'unset', cursor: 'pointer', display: 'flex', width: '100%',
+                       boxSizing: 'border-box', gap: 10, flexWrap: 'wrap',
+                       alignItems: 'center', padding: '8px 12px', fontSize: 12,
+                       borderTop: '1px solid var(--border)' }}
+            >
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{sc.session_name}</span>
+              <span style={{ color: 'var(--dim)' }}>
+                {CRON_OPTIONS.find(o => o.value === sc.cron_expr)?.labelKey
+                  ? t(CRON_OPTIONS.find(o => o.value === sc.cron_expr)!.labelKey)
+                  : sc.cron_expr}
+              </span>
+              {!sc.enabled && (
+                <span style={{ color: 'var(--dim)' }}>· {t('settings.schedule_paused')}</span>
+              )}
+              {sc.next_run && sc.enabled && (
+                <span style={{ color: 'var(--dim)' }}>
+                  · {t('settings.next_run')} {inTenantZone(sc.next_run)}
+                </span>
+              )}
+              {/* A trigger that has been failing for weeks used to look exactly
+                  like a healthy one. */}
+              {sc.last_error && (
+                <span style={{ color: 'var(--signal-order-now-fg)' }}>
+                  · {t('settings.schedule_last_error')} {sc.last_error.slice(0, 90)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* What the scheduler HAS done, not just what it will do next. The
+          schedule row keeps only the last run, so a trigger that fails every
+          other night looked healthy between failures. */}
+      {history.length > 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '7px 12px', background: 'var(--surface)', fontSize: 11,
+                        fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase',
+                        letterSpacing: '0.05em' }}>
+            {t('settings.schedule_history_title')}
+          </div>
+          {history.map(run => (
+            <div key={run.id}
+                 style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline',
+                          padding: '7px 12px', fontSize: 12,
+                          borderTop: '1px solid var(--border)' }}>
+              <span style={{ color: 'var(--dim)' }}>
+                {inTenantZone(run.created_at)}
+              </span>
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{run.session_name}</span>
+              <span style={{ color: run.status === 'FAILED' ? 'var(--signal-order-now-fg)'
+                                   : run.status === 'COMPLETED' ? 'var(--signal-ok-fg)'
+                                   : 'var(--dim)' }}>
+                {t(`settings.schedule_run_${run.status.toLowerCase()}`)}
+              </span>
+              {run.error && (
+                <span style={{ color: 'var(--dim)', maxWidth: 420, whiteSpace: 'normal' }}>
+                  {run.error.slice(0, 120)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div data-tour="settings.session" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <label style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('settings.session_label')}</label>
@@ -414,8 +525,16 @@ function SchedulesTab() {
           </label>
 
           {schedule?.next_run && (
-            <div style={{ fontSize: 11, color: 'var(--dim)' }}>
-              {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{new Date(schedule.next_run).toLocaleString()}</strong>
+            <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.6 }}>
+              {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{inTenantZone(schedule.next_run)}</strong>
+              {/* Whose clock the hours in the picker refer to. The cron is now
+                  read in the tenant's timezone, so "cada lunes a las 6am" means
+                  6am there — but only if the screen says where "there" is. */}
+              {tz && (
+                <div>{t('settings.schedule_timezone_note', {
+                  zone: timezoneLabel(t, tz.timezone, tz.label),
+                })}</div>
+              )}
             </div>
           )}
 

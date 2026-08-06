@@ -749,6 +749,35 @@ export const getSchedule = (sessionId: string) =>
       throw e
     })
 
+// Every schedule this tenant has. The screen is per-session and opens on
+// whichever session comes first, so without this an admin could not see that a
+// retrain was already armed on another one.
+export interface TenantTimezone { timezone: string; label: string; country: string | null }
+
+// The clock a scheduled retrain is read in. The frequency picker names an hour
+// ("cada lunes a las 6am"), so the screen has to say WHOSE 6am it is.
+export const getTenantTimezone = () =>
+  request<{ current: TenantTimezone; supported: TenantTimezone[] }>('GET', '/tenant/timezone')
+
+export const setTenantTimezone = (timezone: string) =>
+  request<{ current: TenantTimezone }>('PATCH', '/tenant/timezone', { timezone })
+
+export interface ScheduleRun {
+  id: string; session_id: string; session_name: string
+  status: string; created_at: string
+  started_at: string | null; completed_at: string | null; error: string | null
+}
+
+// What the scheduler has actually done. `scheduled_jobs` keeps only the LAST
+// run, so an intermittently failing schedule was invisible.
+export const listScheduleHistory = (limit = 20) =>
+  request<ScheduleRun[]>('GET', `/schedules/history?limit=${limit}`)
+
+export const listSchedules = () =>
+  request<Array<import('./types').JobSchedule & { session_name: string }>>(
+    'GET', '/schedules',
+  )
+
 export const saveSchedule = (sessionId: string, cronExpr: string, enabled: boolean) =>
   request<import('./types').JobSchedule>('POST', `/sessions/${sessionId}/schedule`, {
     cron_expr: cronExpr, enabled,

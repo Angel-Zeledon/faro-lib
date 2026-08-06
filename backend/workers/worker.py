@@ -137,20 +137,36 @@ _SCHEDULER_ERROR_MAX_CHARS = 500
 _SCHEDULER_RETRY_AFTER_SECONDS = 3600
 
 
-def _next_cron_run(cron_expr: str, now: datetime) -> datetime:
-    """Next occurrence of `cron_expr` strictly after `now`.
+def _next_cron_run(cron_expr: str, now: datetime,
+                   tenant_id: str | None = None) -> datetime:
+    """Next occurrence of `cron_expr` strictly after `now`, in the tenant's clock.
+
+    The RESULT is a UTC instant either way — `next_run` is compared against
+    `now()` and must stay comparable. What the timezone decides is which wall
+    clock "0 6 * * 1" refers to: the frequency picker calls it "cada lunes a las
+    6am", so it has to mean 6am where the company is. Rescheduling here in UTC
+    while the API computed the first run in local time would have quietly undone
+    the fix on the very first firing.
 
     Falls back to a fixed retry delay when the expression itself is
     unparseable — an invalid cron must not leave `next_run` in the past, which
     would turn the scheduler poll into a hot loop retrying every 60 s forever.
     """
     try:
-        return croniter(cron_expr, now).get_next(datetime)
+        base = now
+        if tenant_id:
+            from backend.api.v1.timezone import zoneinfo_of
+            base = now.astimezone(zoneinfo_of(tenant_id))
+        nxt = croniter(cron_expr, base).get_next(datetime)
+        if nxt.tzinfo is None:
+            nxt = nxt.replace(tzinfo=base.tzinfo)
+        return nxt.astimezone(timezone.utc)
     except Exception:
         return now + timedelta(seconds=_SCHEDULER_RETRY_AFTER_SECONDS)
 
 
-def _record_schedule_failure(sched_id: str, cron_expr: str, now: datetime, error: str) -> None:
+def _record_schedule_failure(sched_id: str, cron_expr: str, now: datetime, error: str,
+                             tenant_id: str | None = None) -> None:
     """Persist why a scheduled trigger failed and move `next_run` forward.
 
     Mirrors `integration_connections.last_error`: without a stored error a
@@ -163,7 +179,8 @@ def _record_schedule_failure(sched_id: str, cron_expr: str, now: datetime, error
         execute(
             "UPDATE scheduled_jobs SET last_error = %s, last_error_at = NOW(), next_run = %s "
             "WHERE id = %s",
-            (error[:_SCHEDULER_ERROR_MAX_CHARS], _next_cron_run(cron_expr, now), sched_id),
+            (error[:_SCHEDULER_ERROR_MAX_CHARS],
+             _next_cron_run(cron_expr, now, tenant_id), sched_id),
         )
     except Exception as e:
         log.error("Could not record failure for scheduled job %s: %s", sched_id, e, exc_info=True)
@@ -188,7 +205,7 @@ def _run_due_scheduled_jobs(now: datetime) -> int:
         cron_expr  = job["cron_expr"]
         try:
             create_job(tenant_id, session_id, created_by="scheduler")
-            nxt = _next_cron_run(cron_expr, now)
+            nxt = _next_cron_run(cron_expr, now, tenant_id)
             execute(
                 "UPDATE scheduled_jobs SET next_run = %s, last_run = %s, "
                 "last_error = NULL, last_error_at = NULL WHERE id = %s",
@@ -198,7 +215,7 @@ def _run_due_scheduled_jobs(now: datetime) -> int:
             log.info(f"Scheduled job triggered: session={session_id} next={nxt.isoformat()}")
         except Exception as e:
             log.error(f"Failed to trigger scheduled job {sched_id}: {e}", exc_info=True)
-            _record_schedule_failure(sched_id, cron_expr, now, str(e))
+            _record_schedule_failure(sched_id, cron_expr, now, str(e), tenant_id)
     return triggered
 
 

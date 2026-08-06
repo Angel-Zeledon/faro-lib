@@ -101,3 +101,19 @@ export const modelDescription = (
   const label = t(key)
   return label === key ? backendDescription : label
 }
+
+/**
+ * Country name for an IANA timezone ('America/Mexico_City' → 'México').
+ *
+ * `/tenant/timezone` ships an English `label` because backend logic may not
+ * hold Spanish copy, so the localized name lives here. `backendLabel` is the
+ * fallback for a zone added to the API before this catalogue, which beats
+ * printing `timezone.zone.America/...` at the user.
+ */
+export const timezoneLabel = (
+  t: Translate, zone: string, backendLabel?: string,
+) => {
+  const key = `timezone.zone.${zone}`
+  const label = t(key)
+  return label === key ? (backendLabel || zone) : label
+}

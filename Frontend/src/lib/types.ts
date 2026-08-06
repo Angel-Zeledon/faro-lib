@@ -797,6 +797,11 @@ export interface JobSchedule {
   cron_expr:  string
   next_run:   string
   enabled:    boolean
+  // A trigger that has been failing for weeks looks identical to a healthy one
+  // without these, which is why the API sends them.
+  last_run?:       string | null
+  last_error?:     string | null
+  last_error_at?:  string | null
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
