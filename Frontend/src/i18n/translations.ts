@@ -1143,6 +1143,16 @@ export const translations = {
     'gate.issue.excel_serial_dates':        'Tus fechas vienen como el número interno de Excel',
     'gate.issue.inconsistent_sku_identity': 'El mismo producto aparece escrito de varias formas',
     'gate.issue.target_looks_like_money':   'La columna de cantidad parece dinero, no unidades',
+    // Sin estas, el usuario leía el inglés del motor tal cual — y justo estas
+    // siete son las que bloquean el archivo, o sea las que más importa entender.
+    'gate.issue.no_numeric_column':         'Ninguna columna tiene números que puedan ser una cantidad vendida',
+    'gate.issue.no_date_column':            'Ninguna columna se puede leer como fecha, así que no hay línea de tiempo',
+    'gate.issue.single_date_value':         'Todas las filas tienen la misma fecha: es una foto de un día, no un historial',
+    'gate.issue.empty_dataset':             'El archivo tiene encabezado pero ninguna fila',
+    'gate.issue.insufficient_columns':      'Faltan columnas: un historial necesita cuándo, qué producto y cuántos',
+    'gate.issue.identifier_not_product':    'La columna de producto parece un número de factura: un valor distinto por fila',
+    'gate.issue.censored_demand_no_inventory': 'Sin columna de inventario, un día sin ventas no se distingue de un día sin producto',
+    'gate.issue.outliers':                  'Hay ventas muy fuera de lo normal',
 
     // Y las salidas, cada una con su consecuencia.
     'gateopt.date_format_day_first.action':        'Leer el primer número como el día (dd/mm/aaaa), como se escribe en Latinoamérica.',
@@ -4418,6 +4428,14 @@ export const translations = {
     'gate.issue.excel_serial_dates':        'Your dates arrived as Excel’s internal number',
     'gate.issue.inconsistent_sku_identity': 'The same product is written several different ways',
     'gate.issue.target_looks_like_money':   'The quantity column looks like money, not units',
+    'gate.issue.no_numeric_column':         'No column holds numbers that could be a quantity sold',
+    'gate.issue.no_date_column':            'No column can be read as a date, so there is no timeline',
+    'gate.issue.single_date_value':         'Every row carries the same date — a snapshot, not a history',
+    'gate.issue.empty_dataset':             'The file has a header but no rows',
+    'gate.issue.insufficient_columns':      'Columns missing: a history needs when, which product and how many',
+    'gate.issue.identifier_not_product':    'The product column looks like an invoice number — one distinct value per row',
+    'gate.issue.censored_demand_no_inventory': 'With no stock column, a day with no sales looks like a day with no product',
+    'gate.issue.outliers':                  'There are sales far outside the normal range',
 
     'gateopt.date_format_day_first.action':        'Read the first number as the day (dd/mm/yyyy) — the Latin American convention.',
     'gateopt.date_format_day_first.consequence':   'If the file was actually exported month-first, {n_rows} rows move to a different month and the weekly pattern the models rely on is destroyed. Nothing will look broken afterwards.',
