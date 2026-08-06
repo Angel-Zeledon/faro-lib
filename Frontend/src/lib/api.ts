@@ -1367,12 +1367,22 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
 export const getDeadStock = (sessionId: string, minDays = 30) =>
   request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
 
-// Default 30 matches the backend's default — see the endpoint's comment on
-// why a shorter horizon locks out any SKU whose lead time isn't configured.
-export const optimizeInventory = (sessionId: string, horizonDays = 30) =>
-  request<OptimizationResponse>(
-    'GET', `/inventory/optimize?session_id=${sessionId}&horizon_days=${horizonDays}`,
+// Omit `horizonDays` and the endpoint derives it from the tenant's active
+// (period, horizon) — their own planning window.
+//
+// The panel used to hardcode 30 days, which is where this hurt: at 30 days the
+// MILP hits its 10s ceiling even on five SKUs and degrades to the greedy
+// fallback, and that fallback ignores transfers ENTIRELY. Measured on a
+// three-warehouse tenant: 14 days solved optimally with 22 transfers and 2
+// purchase lines; 30 days fell back to 5 purchase lines and no transfers — the
+// opposite advice, presented as "the optimisation plan". Asking for the horizon
+// the buyer actually plans on is both more honest and far likelier to solve.
+export const optimizeInventory = (sessionId: string, horizonDays?: number) => {
+  const horizon = horizonDays != null ? `&horizon_days=${horizonDays}` : ''
+  return request<OptimizationResponse>(
+    'GET', `/inventory/optimize?session_id=${sessionId}${horizon}`,
   )
+}
 
 // ── AI Narrative Intelligence ─────────────────────────────────────────────────
 // `silent: true` — the caller already renders a rules-based summary when this

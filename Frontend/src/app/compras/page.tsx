@@ -864,7 +864,10 @@ export default function HoyPage() {
  useEffect(() => {
   if (!sessionId) return
   setOptimizationLoading(true)
-  optimizeInventory(sessionId, 30)
+  // No horizon: the endpoint uses the tenant's own planning window. Forcing 30
+  // pushed every solve past the solver's ceiling and into the transfer-blind
+  // fallback (see optimizeInventory).
+  optimizeInventory(sessionId)
    .then(setOptimization)
    .catch(() => setOptimization(null))
    .finally(() => setOptimizationLoading(false))
@@ -1820,9 +1823,33 @@ export default function HoyPage() {
          <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
           {t('hoy.optimizer_title')}
          </h2>
-         <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 14 }}>
+         <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 6 }}>
           {t('hoy.optimizer_subtitle').replace('{horizon}', String(optimization.horizon_days))}
          </p>
+         {/* Why this panel's numbers are bigger than the semáforo's, said before
+             the buyer has to wonder. The two answer different questions — "order
+             today" vs "cover the horizon" — and standing next to each other with
+             no explanation they read as a contradiction: measured on one tenant,
+             the semáforo said SKU-002 needed nothing while this said buy 1966. */}
+         <p style={{ fontSize: 11.5, color: 'var(--dim)', marginBottom: 14, lineHeight: 1.6 }}>
+          {t('hoy.optimizer_vs_semaforo').replace('{horizon}', String(optimization.horizon_days))}
+         </p>
+
+         {/* The cost optimiser could not finish, so these lines come from the
+             greedy fallback — which ignores transfers entirely and buys each
+             day's shortfall. Measured: the same tenant got 22 transfers and 2
+             purchase lines when the solve completed, and 5 purchase lines with
+             no transfers when it did not. Presenting the second as "the
+             optimisation plan" without a word is how a buyer ends up ordering
+             stock they already own in another warehouse. */}
+         {optimization.status === 'fallback' && (
+          <p style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 14, padding: '8px 10px',
+                      borderRadius: 8, color: 'var(--text)',
+                      background: 'color-mix(in srgb, var(--signal-order-soon-fg) 12%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--signal-order-soon-fg) 35%, transparent)' }}>
+           {t('hoy.optimizer_fallback_notice')}
+          </p>
+         )}
 
          {optimization.orders.length > 0 && (
           <div style={{ marginBottom: 16 }}>
