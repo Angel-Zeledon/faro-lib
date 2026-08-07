@@ -5,12 +5,12 @@ from typing import Optional
 
 import pandas as pd
 
-from backend.dataframes.io import _csv_sep
+from backend.dataframes.io import _csv_sep, read_csv_any_encoding
 
 
 def _read(path: str) -> pd.DataFrame:
     if str(path).endswith(".csv"):
-        return pd.read_csv(path, sep=_csv_sep(path), encoding="utf-8-sig")
+        return read_csv_any_encoding(path, sep=_csv_sep(path))
     return pd.read_excel(path)
 
 

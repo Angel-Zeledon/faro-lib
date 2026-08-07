@@ -51,6 +51,36 @@ def _csv_sep(source: _Source) -> str:
     return sniff_separator(sample)
 
 
+CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+
+
+def read_csv_any_encoding(source, **kwargs) -> pd.DataFrame:
+    """``pd.read_csv`` that survives a file its exporter did not write in UTF-8.
+
+    An ERP export from a Windows machine in a Spanish locale is cp1252, not
+    UTF-8, and ``utf-8-sig`` raises ``UnicodeDecodeError`` on the first accented
+    byte — so a whole year of history was refused over one "Camión", with a
+    failure that reads as a broken file rather than a wrong encoding. The stock
+    importer already fell back (``backend/api/v1/inventory.py::_decode_csv``);
+    the sales path, where most files actually enter, did not.
+
+    UTF-8 is tried first so a correctly encoded file is never reinterpreted.
+    latin-1 goes last because it maps all 256 byte values and therefore always
+    succeeds — the chain never ends without a DataFrame for an encoding reason.
+    Only ``UnicodeDecodeError`` is retried: a malformed or empty CSV must still
+    surface as itself, not as an encoding problem.
+    """
+    last: Optional[UnicodeDecodeError] = None
+    for encoding in CSV_ENCODINGS:
+        try:
+            if hasattr(source, "seek"):
+                source.seek(0)
+            return pd.read_csv(source, encoding=encoding, **kwargs)
+        except UnicodeDecodeError as exc:
+            last = exc
+    raise last                                  # pragma: no cover - latin-1 cannot fail
+
+
 def _to_records(df: pd.DataFrame) -> list[dict]:
     """DataFrame -> list[dict] with NaN -> None and numpy scalars -> Python."""
     df = df.where(pd.notna(df), None)
@@ -80,7 +110,7 @@ def _read_df(source: _Source, fmt: Optional[str], nrows: Optional[int]) -> pd.Da
     if fmt == "parquet":
         df = pd.read_parquet(buf)
         return df.head(nrows) if nrows is not None else df
-    return pd.read_csv(buf, nrows=nrows, sep=_csv_sep(source), encoding="utf-8-sig")
+    return read_csv_any_encoding(buf, nrows=nrows, sep=_csv_sep(source))
 
 
 def read_rows(source: _Source, fmt: Optional[str] = None,
@@ -115,7 +145,7 @@ def read_dataframe(source: _Source, fmt: Optional[str] = None,
     if fmt == "parquet":
         df = pd.read_parquet(buf)
         return df.head(nrows) if nrows is not None else df
-    return pd.read_csv(buf, nrows=nrows, sep=_csv_sep(source), encoding="utf-8-sig")
+    return read_csv_any_encoding(buf, nrows=nrows, sep=_csv_sep(source))
 
 
 def dataframe_from_records(rows, columns: list[str]):
@@ -130,7 +160,7 @@ def read_columns(path: str, cols: list[str]) -> list[dict]:
     if fmt == "excel":
         df = pd.read_excel(path, usecols=cols)
     else:
-        df = pd.read_csv(path, usecols=cols, sep=_csv_sep(path), encoding="utf-8-sig")
+        df = read_csv_any_encoding(path, usecols=cols, sep=_csv_sep(path))
     return _to_records(df)
 
 
@@ -161,7 +191,7 @@ def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
             total_rows = None
         df = pd.read_parquet(path).head(rows)
     else:
-        df = pd.read_csv(path, nrows=rows, sep=_csv_sep(path), encoding="utf-8-sig")
+        df = read_csv_any_encoding(path, nrows=rows, sep=_csv_sep(path))
         # Full row count without loading the whole file into memory.
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as _f:
@@ -190,7 +220,7 @@ def read_table(path: str, sheet: Optional[str] = None) -> dict:
     elif fmt == "parquet":
         df = pd.read_parquet(path)
     else:
-        df = pd.read_csv(path, sep=_csv_sep(path), encoding="utf-8-sig")
+        df = read_csv_any_encoding(path, sep=_csv_sep(path))
     return {"columns": list(df.columns), "rows": _to_records(df)}
 
 

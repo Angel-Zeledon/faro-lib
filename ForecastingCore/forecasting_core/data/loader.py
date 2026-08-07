@@ -1,7 +1,7 @@
 """
 DataLoader — loads datasets from multiple sources.
 
-Supported formats: CSV, Excel (.xlsx/.xls), Parquet, SQL query file.
+Supported formats: CSV, Excel (.xlsx/.xls), Parquet, JSON, SQL query file.
 
 Example:
     loader = DataLoader()
@@ -32,6 +32,31 @@ def _sniff_separator(path: str) -> str:
         if count > best_count:
             best, best_count = candidate, count
     return best
+
+
+CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+
+
+def _read_csv(path: str, sep: str) -> pd.DataFrame:
+    """Read a CSV whose exporter may not have written UTF-8.
+
+    An ERP export from a Windows machine in a Spanish locale is cp1252, and
+    ``utf-8-sig`` raises ``UnicodeDecodeError`` on the first accented byte — so
+    training refused a whole file over one "Camión". UTF-8 is tried first so a
+    correct file is never reinterpreted; latin-1 goes last because it maps all
+    256 byte values and therefore always succeeds. Only ``UnicodeDecodeError``
+    is retried, so a genuinely malformed CSV still surfaces as itself.
+
+    Mirrors ``backend/dataframes/io.py::read_csv_any_encoding``; the duplication
+    is deliberate — this package must not import the backend.
+    """
+    last: "UnicodeDecodeError | None" = None
+    for encoding in CSV_ENCODINGS:
+        try:
+            return pd.read_csv(path, sep=sep, encoding=encoding)
+        except UnicodeDecodeError as exc:
+            last = exc
+    raise last                                  # pragma: no cover - latin-1 cannot fail
 
 
 def _fix_day_first_dates(df: pd.DataFrame) -> pd.DataFrame:
@@ -79,7 +104,7 @@ class LoadError(Exception):
 class DataLoader:
     """Loads a DataFrame from file path or SQL."""
 
-    SUPPORTED = {".csv", ".xlsx", ".xls", ".parquet", ".sql"}
+    SUPPORTED = {".csv", ".xlsx", ".xls", ".parquet", ".json", ".sql"}
 
     def load(self, path: str, sql_engine: str = "") -> pd.DataFrame:
         """
@@ -106,12 +131,16 @@ class DataLoader:
             raise LoadError(f"Unsupported format '{ext}'. Supported: {self.SUPPORTED}")
 
         if ext == ".csv":
-            return _fix_day_first_dates(
-                pd.read_csv(path, sep=_sniff_separator(path), encoding="utf-8-sig"))
+            return _fix_day_first_dates(_read_csv(path, _sniff_separator(path)))
         if ext in (".xlsx", ".xls"):
             return _fix_day_first_dates(pd.read_excel(path))
         if ext == ".parquet":
             return _fix_day_first_dates(pd.read_parquet(path))
+        if ext == ".json":
+            # Accepted at upload and handled everywhere in backend/dataframes/io.py;
+            # this loader was the one place that refused it, so a .json dataset
+            # uploaded and previewed fine and then died at training.
+            return _fix_day_first_dates(pd.read_json(path))
         if ext == ".sql":
             return _fix_day_first_dates(self._load_sql(path, sql_engine))
 
