@@ -8,6 +8,8 @@ all, and nothing stopping a second one being armed. The DB row was there the
 whole time.
 """
 
+from uuid import uuid4
+
 from backend.db.connection import execute, query_one
 
 
@@ -72,9 +74,20 @@ class TestListSchedules:
         self, client, auth_headers, test_tenant, completed_session,
     ):
         """The join is on (session, tenant); a cross-tenant leak here would hand
-        one company another's session names."""
+        one company another's session names.
+
+        The other tenant is created for real rather than named as a string:
+        `scheduled_jobs.tenant_id` now has a FK to `tenants`, so arming a
+        schedule for an id that was never a tenant is refused by the database.
+        That refusal is the point of the constraint, not an obstacle to route
+        around — a row for a nonexistent tenant is exactly the orphan it exists
+        to prevent. See test_tenant_cascade_fk.py.
+        """
+        from backend.tenants.service import create_tenant
+
         session_id = completed_session["id"]
-        _arm("ten_someone_else", session_id)
+        other = create_tenant(f"pytest-schedules-{uuid4().hex[:8]}")
+        _arm(other["id"], session_id)
         try:
             rows = client.get("/api/v1/schedules", headers=auth_headers).json()["data"]
             assert all(x["session_id"] != session_id for x in rows) or all(
@@ -82,7 +95,8 @@ class TestListSchedules:
             # Nothing armed for THIS tenant, so nothing may come back.
             assert rows == []
         finally:
-            execute("DELETE FROM scheduled_jobs WHERE tenant_id = %s", ("ten_someone_else",))
+            # One statement, because the FK cascade now takes the schedule too.
+            execute("DELETE FROM tenants WHERE id = %s", (other["id"],))
 
     def test_a_viewer_can_read_the_list(self, client, viewer_headers, test_tenant,
                                         completed_session):

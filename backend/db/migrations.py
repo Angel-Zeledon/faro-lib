@@ -1223,6 +1223,90 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_integration_connections_last_error_details",
      "ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS "
      "last_error_details JSONB"),
+
+    # Of the 45 tables carrying `tenant_id`, only four declared a foreign key to
+    # `tenants`. Deleting a tenant therefore left every other table's rows behind
+    # — unreachable (no tenant owns them), invisible, and permanent. Measured on
+    # the dev database before this ran: 1.3M orphan rows from 24,794 tenants that
+    # no longer existed, 596 MB, and a backend suite that had slowed from 26
+    # minutes to 4h21 dragging them around.
+    #
+    # `data_export.delete_tenant()` compensates by deleting each table explicitly,
+    # and its list is now schema-checked by a test — but that only protects the
+    # product's own erasure path. Anything else that removes a tenant (a script,
+    # a fixture, a psql session) still orphaned everything. This makes the
+    # database itself keep the invariant.
+    #
+    # Written against the live catalog rather than a list of 41 table names, so a
+    # tenant-scoped table added later gets its cascade on the next boot instead of
+    # waiting to be remembered. It is idempotent by construction: it only touches
+    # tables that carry `tenant_id` and do not already have that FK.
+    #
+    # Orphans MUST be deleted before the constraint is added or the ALTER cannot
+    # validate — and on `strict` startup a failure here would stop the server
+    # booting. They are rows belonging to accounts that no longer exist, which in
+    # a module that cites the right to erasure is a liability, not an asset.
+    # NOT VALID + VALIDATE keeps the write lock short on a large table.
+    # NOTE: no `%` anywhere in this block. `execute()` hands the SQL to psycopg,
+    # which reads `%s`/`%I` as ITS OWN placeholders and fails with "tuple index
+    # out of range" — so Postgres's `format()` and `RAISE NOTICE '%'` cannot be
+    # used here. `quote_ident` + concatenation says the same thing safely.
+    ("cascade_tenant_id_foreign_keys",
+     r"""
+     DO $$
+     DECLARE
+         r      record;
+         ident  text;
+         cname  text;
+     BEGIN
+         FOR r IN
+             SELECT c.table_name AS t
+             FROM information_schema.columns c
+             JOIN information_schema.tables x
+               ON x.table_name = c.table_name
+              AND x.table_schema = c.table_schema
+              AND x.table_type = 'BASE TABLE'
+             WHERE c.column_name = 'tenant_id'
+               AND c.table_schema = 'public'
+               AND c.table_name <> 'tenants'
+               AND NOT EXISTS (
+                   SELECT 1 FROM pg_constraint pc
+                   JOIN pg_attribute a
+                     ON a.attrelid = pc.conrelid AND a.attnum = ANY (pc.conkey)
+                   WHERE pc.conrelid = ('public.' || quote_ident(c.table_name))::regclass
+                     AND pc.contype = 'f'
+                     AND pc.confrelid = 'public.tenants'::regclass
+                     AND a.attname = 'tenant_id')
+         LOOP
+             ident := 'public.' || quote_ident(r.t);
+             cname := quote_ident('fk_' || r.t || '_tenant');
+
+             -- Per table, never fatal. This runs inside run_all(strict=True) at
+             -- startup, so an unforeseen table — one where tenant_id holds
+             -- something that was never a tenant id, or one too large to
+             -- validate inside the statement timeout — would otherwise stop the
+             -- server from booting. Skipping one table costs that table's
+             -- cascade and is caught loudly by the catalog test in
+             -- test_tenant_cascade_fk.py; refusing to boot costs the product.
+             BEGIN
+                 EXECUTE 'DELETE FROM ' || ident || ' x WHERE NOT EXISTS '
+                      || '(SELECT 1 FROM public.tenants t WHERE t.id = x.tenant_id)';
+                 EXECUTE 'ALTER TABLE ' || ident || ' ADD CONSTRAINT ' || cname
+                      || ' FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)'
+                      || ' ON DELETE CASCADE NOT VALID';
+                 EXECUTE 'ALTER TABLE ' || ident || ' VALIDATE CONSTRAINT ' || cname;
+             EXCEPTION WHEN OTHERS THEN
+                 -- USING MESSAGE, not RAISE's format string: that needs a
+                 -- percent placeholder, which psycopg would eat. Same trap as
+                 -- above -- and it bites inside SQL comments too, since psycopg
+                 -- interpolates over the whole string without parsing it.
+                 RAISE WARNING USING MESSAGE =
+                     'cascade FK skipped for table ' || r.t
+                     || ' (SQLSTATE ' || SQLSTATE || ')';
+             END;
+         END LOOP;
+     END $$;
+     """),
 ]
 
 
