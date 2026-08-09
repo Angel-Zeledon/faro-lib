@@ -29,11 +29,11 @@ del tamaño de la superficie, no de su riesgo.
 
 | Pantalla | Ruta | Acciones | Última caminata | Qué se verificó | Qué falta |
 |---|---|---:|---|---|---|
-| Inventario | `/inventario` | 60 | 2026-08-06 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas |
+| Inventario | `/inventario` | 60 | 2026-08-09 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación; edición masiva de stock/lead time y semáforo recalculado con datos reales (cobertura, cantidad a pedir) | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas, importar CSV de stock |
 | Pronósticos | `/pronosticos` | 17 | — | — | Todo |
 | Archivos / Fuentes | `/archivos` | 40 | — | — | Todo salvo el rename (leído en código, no caminado) |
-| Panel de compras | `/compras` | 14 | 2026-08-06 | Panel del optimizador: horizonte, transferencias sin ciclos, explicación vs semáforo | Generar OC, envío a proveedores, selección de bodega destino, edición de cantidades |
-| Mis ventas | `/ventas` | 11 | 2026-08-06 | Subida, mapeo, gate con remediaciones, entrenamiento completo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
+| Panel de compras | `/compras` | 14 | 2026-08-09 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC; resumen ejecutivo con datos reales | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación |
+| Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
 | Landing | `/` | 8 | — | — | Todo |
 | Asistente IA | `/asistente` | 14 | — | — | Todo (necesita Ollama o clave Anthropic) |
@@ -44,19 +44,31 @@ del tamaño de la superficie, no de su riesgo.
 | Impacto | `/impacto` | 0 | — | — | Todo |
 | Integraciones | `/integraciones` | 3 | — | — | Todo |
 | Mensajes | `/mensajes` | 4 | — | — | Todo |
-| Registro | `/signup` | 2 | — | — | Todo |
+| Registro | `/signup` | 2 | 2026-08-09 | Alta completa (tenant + admin), rechazo por WhatsApp duplicado sin dejar filas varadas, aviso honesto cuando no se puede enviar el correo | Correo duplicado, validaciones de contraseña una por una, reenvío de verificación |
 | Recuperar contraseña | `/forgot-password` | 4 | — | — | Todo (el arreglo de sesión se verificó en código, no caminado) |
-| Historial | `/historial` | 7 | 2026-08-06 | Motivo de fallo en sesiones fallidas | Renombrar, eliminar, activar sesión, comparar |
+| Historial | `/historial` | 7 | 2026-08-09 | Motivo de fallo en sesiones fallidas; lista completa con archivo, horizonte, granularidad y SKUs | Renombrar, eliminar, comparar. **"Activar sesión" no existe** — la sesión activa se deriva de la familia más nueva + el período activo, no se elige; estaba mal listada como acción pendiente |
 | Scorecard proveedor | `/proveedores/scorecard` | 0 | — | — | Todo |
 | Iniciar sesión | `/login` | 3 | 2026-08-06 | Login de tres cuentas con roles distintos | Credenciales malas, cuenta suspendida, cierre entre pestañas (verificado por evento, no con dos pestañas reales) |
-| Pedidos | `/pedidos` | 3 | — | — | Todo |
+| Pedidos | `/pedidos` | 3 | 2026-08-09 | Lista con OC generada (número, urgentes, unidades, estado "En camino"); registrar llegada **parcial** — suma solo lo recibido y deja la OC en `partial` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp (abrir/copiar/enviarme), recibir de más |
 | Planes | `/planes` | 0 | — | — | Todo |
 | Restablecer contraseña | `/reset-password` | 2 | — | — | Todo |
-| Verificar correo | `/verify-email` | 1 | — | — | Todo |
+| Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | — | — | Todo |
 
-**Resumen honesto:** 8 pantallas de 25 tienen alguna caminata, y ninguna está
-caminada entera. Las 17 restantes están **sin medir**.
+**Resumen honesto (2026-08-09):** 12 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 13 restantes están **sin medir**.
+
+Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
+produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
+correo → login → subir ventas (archivo cp1252 con `;` y fechas dd/mm/yyyy) →
+entrenar → semáforo → registrar stock → aprobar recomendación → generar OC →
+registrar llegada parcial → stock actualizado por lo recibido, no por lo pedido.
+Cero errores de consola, cero 500 y cero violaciones de FK en todo el recorrido.
+
+Dos casillas que la tabla daba por pendientes y que **no existen como acción**:
+"activar sesión" en `/historial`, y el borrado de cuenta — `DELETE /tenant` y
+`/tenant/export` no tienen pantalla, son solo API, así que no hay forma de
+caminarlos y quedan cubiertos únicamente por tests.
 
 ## Por qué la suite no sustituye esto
 
