@@ -31,7 +31,7 @@ del tamaño de la superficie, no de su riesgo.
 |---|---|---:|---|---|---|
 | Inventario | `/inventario` | 60 | 2026-08-09 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación; edición masiva de stock/lead time y semáforo recalculado con datos reales (cobertura, cantidad a pedir) | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas, importar CSV de stock |
 | Pronósticos | `/pronosticos` | 17 | — | — | Todo |
-| Archivos / Fuentes | `/archivos` | 40 | — | — | Todo salvo el rename (leído en código, no caminado) |
+| Archivos / Fuentes | `/archivos` | 40 | 2026-08-09 | Vista previa (archivo cp1252 con acentos intactos — lector distinto al del entrenamiento); editor de columnas y filas con las 360 filas; "Guardar como nuevo"; renombrar (persiste `Ñ`, `ú` y guion largo); eliminar con confirmación que nombra el archivo y limpia base **y disco**; pestaña Análisis | Conectar fuente SQL ("Nuevo elemento"), "Reemplazar archivo", buscador, tutorial de 9 pasos, correr un Análisis completo |
 | Panel de compras | `/compras` | 14 | 2026-08-09 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC; resumen ejecutivo con datos reales | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación |
 | Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
@@ -55,8 +55,8 @@ del tamaño de la superficie, no de su riesgo.
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | — | — | Todo |
 
-**Resumen honesto (2026-08-09):** 13 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 12 restantes están **sin medir**.
+**Resumen honesto (2026-08-09):** 14 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 11 restantes están **sin medir**.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
@@ -98,6 +98,19 @@ distingue un 403 de un dato malo y en ese caso avisa que reintentar no sirve; y
 "Agregar bodega" ni la importación de CSV (que es escritura, aunque el botón
 solo diga "CSV"). Las lecturas —plantilla, exportaciones, PDF— siguen para todos,
 y el admin conserva todo, verificado entrando con ambos roles.
+
+## `/archivos`: la lista miente después de guardar (2026-08-09)
+
+Al usar "Guardar como nuevo" en el editor, la fuente **sí se crea** —está en la
+base, en disco, y se abre en el panel derecho— pero la barra lateral **no se
+refresca**: sigue diciendo "1 FUENTE" y listando solo el original. Pulsar el
+botón de refrescar muestra las dos. No se pierde nada; lo que falla es que la
+pantalla afirma un número que no es cierto justo después de una acción exitosa.
+El arreglo es recargar la lista tras guardar. **Sin arreglar.**
+
+Descartado al comprobarlo, para que nadie lo persiga: el contador **sí**
+pluraliza ("2 FUENTES"). Pareció un fallo por una regex mía que hacía match
+parcial, no por el producto.
 
 **Lo que sigue abierto, encontrado al verificar lo anterior:** `/compras` tiene
 el mismo patrón — le muestra "Aprobar" y "Rechazar" a un viewer, y al generar la
