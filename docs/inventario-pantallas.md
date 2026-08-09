@@ -89,7 +89,23 @@ Lo que **no** está bien es lo que ve el usuario antes y después del rechazo:
    dato malo sino un permiso. Eso manda al usuario a repetir algo inútil.
 
 Ninguno es un agujero de seguridad — el backend no cede. Son mentiras de copy y
-una superficie de edición ofrecida a quien no puede usarla. **Sin arreglar.**
+una superficie de edición ofrecida a quien no puede usarla.
+
+**Los tres quedaron arreglados el 2026-08-09**: `states.err_permission_title`
+dejó de decir "ver" y dice "Tu rol no permite esta acción"; el guardado de stock
+distingue un 403 de un dato malo y en ese caso avisa que reintentar no sirve; y
+`/inventario` ya no le ofrece a un viewer el editor, "Registrar salida",
+"Agregar bodega" ni la importación de CSV (que es escritura, aunque el botón
+solo diga "CSV"). Las lecturas —plantilla, exportaciones, PDF— siguen para todos,
+y el admin conserva todo, verificado entrando con ambos roles.
+
+**Lo que sigue abierto, encontrado al verificar lo anterior:** `/compras` tiene
+el mismo patrón — le muestra "Aprobar" y "Rechazar" a un viewer, y al generar la
+orden el `POST /log-po` devuelve 403. Ahí **sí** avisa ("Tienes el CSV, pero no
+pudimos registrar la orden…"), así que no es mudo; pero cierra con "Genérala de
+nuevo", que para un viewer es la misma promesa vacía que ya se corrigió en
+inventario. Falta gatear los botones por rol y distinguir el 403. **Sin
+arreglar.**
 
 Dos casillas que la tabla daba por pendientes y que **no existen como acción**:
 "activar sesión" en `/historial`, y el borrado de cuenta — `DELETE /tenant` y

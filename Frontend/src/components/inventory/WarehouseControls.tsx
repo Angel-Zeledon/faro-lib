@@ -9,6 +9,7 @@ import {
 } from '@/lib/api'
 import type { Warehouse, TransferLane } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { getUser } from '@/lib/auth'
 import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight } from 'lucide-react'
 
 const C = {
@@ -130,6 +131,12 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
       // the form stays open for a retry.
     } finally { setSaving(false) }
   }
+
+  // The catch below already noted "the 403 a viewer gets" and let the button
+  // stand anyway. Offering it at all is the defect: the viewer types a name,
+  // submits, and the only possible outcome is a refusal.
+  const role = getUser()?.role
+  if (role !== 'admin' && role !== 'analyst') return null
 
   if (!adding) {
     return (

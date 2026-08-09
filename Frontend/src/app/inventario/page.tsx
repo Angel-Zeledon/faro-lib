@@ -9,6 +9,7 @@ import {
  createShrinkage,
  getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
  listEventMultipliers, setEventMultiplier, deleteEventMultiplier,
+ ApiError,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
@@ -26,6 +27,7 @@ import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonCards, Skele
 import HelpTip from '@/components/ui/HelpTip'
 import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { getUser } from '@/lib/auth'
 import { useToast } from '@/contexts/ToastContext'
 import Tooltip from '@/components/ui/Tooltip'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
@@ -1558,6 +1560,15 @@ function ExpandedCalcRow({ item, background }: {
 export default function InventoryPage() {
  const { t } = useLanguage()
  const { addToast } = useToast()
+ // A viewer was offered the whole write toolbar — stock editor, shrinkage,
+ // "add warehouse" — could type a value, and only met the refusal at save
+ // time. The backend always held (403, nothing written), so this is honesty,
+ // not security: do not offer what the role cannot do. Same shape as
+ // /escenarios and /historial.
+ const canEdit = ((): boolean => {
+ const role = getUser()?.role
+ return role === 'admin' || role === 'analyst'
+ })()
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[]; coverage_unit?: CoverageUnit } | null>(null)
@@ -1742,6 +1753,9 @@ export default function InventoryPage() {
  })
  let saved = 0
  const failed: string[] = []
+ // Tracked apart from `failed` because the cause changes what we can honestly
+ // tell the user: a rejected value is worth reviewing, a rejected ROLE is not.
+ let denied = false
  for (const [sku, draft] of toSave) {
  try {
  await upsertInventoryStock(sku, {
@@ -1756,6 +1770,7 @@ export default function InventoryPage() {
  } catch (e) {
  console.error(`Error saving ${sku}:`, e)
  failed.push(sku)
+ if (e instanceof ApiError && e.kind === 'permission') denied = true
  }
  }
  setUpdateSaving(false)
@@ -1764,6 +1779,13 @@ export default function InventoryPage() {
  setUpdateDraft({})
  setUpdatedSkus(new Set())
  setViewMode('table')
+ } else if (denied) {
+ // "Review and try again" is a lie when the role was the refusal: the values
+ // are fine and every retry fails identically. Say what happened and what
+ // would actually resolve it, instead of sending the user in a circle.
+ addToast(t('inventory.toast_save_denied_title'),
+ t('inventory.toast_save_denied_body'), 'error')
+ setUpdatedSkus(new Set(failed))
  } else {
  addToast(t('inventory.toast_save_partial'), `${failed.join(', ')} ${t('inventory.toast_save_failed_sufx')}`, 'error')
  setUpdatedSkus(new Set(failed))
@@ -1968,7 +1990,9 @@ export default function InventoryPage() {
  ['table', <List size={13} />, t('inventory.view_table')],
  ['simple', <Package size={13} />, t('inventory.view_simple')],
  ['provider', <Layers size={13} />, t('inventory.view_provider')],
- ['update', <PencilLine size={13} />, t('inventory.view_update')],
+ // "Actualizar stock" is the editor, not a view: a viewer who opens it can
+ // type and reach an enabled Save that can only ever be refused.
+ ...(canEdit ? [['update', <PencilLine size={13} />, t('inventory.view_update')]] : []),
  ['dead', <Package size={13} />, t('inventory.view_dead')],
  ] as [string, React.ReactNode, string][]).map(([mode, icon, label]) => (
  <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'dead')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
@@ -1984,10 +2008,14 @@ export default function InventoryPage() {
      one flex box and makes them wrap together instead of splitting mid-group,
      which is what you want from a set of related controls anyway. */}
  <div data-tour="inv.export" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+ {/* Import, not export — it writes stock. The download beside it ("Plantilla")
+     and the three exports are reads, so they stay for everyone. */}
+ {canEdit && <>
  <input ref={importRef} type="file" name="inventory_csv_import" aria-label={t('inventory.btn_import_csv_arrow')} accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
  <button onClick={() => importRef.current?.click()} disabled={importing} style={{ all: 'unset', cursor: importing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted, opacity: importing ? 0.6 : 1 }}>
  {importing ? <Spinner size={12} /> : <Upload size={12} />} CSV
  </button>
+ </>}
  <button onClick={() => downloadInventoryTemplate().catch(err => setError(err instanceof Error ? err.message : String(err)))} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted }}>
  <Download size={12} /> {t('inventory.btn_template')}
  </button>
@@ -2017,9 +2045,11 @@ export default function InventoryPage() {
  }} title={t('inventory.title_manage_suppliers')}>
  <Truck size={12} /> {t('inventory.btn_suppliers')}
  </Link>
+ {canEdit && (
  <button onClick={() => setShowShrinkageModal(true)} title={t('inventory.shrinkage_title_register')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: C.red }}>
  <PackageMinus size={12} /> {t('inventory.shrinkage_btn_register')}
  </button>
+ )}
  </div>
  </div>
 
