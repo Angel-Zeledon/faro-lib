@@ -37,7 +37,7 @@ del tamaño de la superficie, no de su riesgo.
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
 | Landing | `/` | 8 | — | — | Todo |
 | Asistente IA | `/asistente` | 14 | — | — | Todo (necesita Ollama o clave Anthropic) |
-| Usuarios | `/usuarios` | 19 | — | — | Todo |
+| Usuarios | `/usuarios` | 19 | 2026-08-09 | Crear usuario con rol (queda `pending_confirmation`, sin verificar); filtros de estado y rol; **permisos ejercidos como viewer real**: escrituras rechazadas con 403 y estado sin cambiar (ver abajo) | Editar usuario, suspender/reactivar, cambiar rol de otro, reenviar invitación, no poder degradarse a sí mismo |
 | Escenarios | `/escenarios` | 6 | 2026-08-06 (parcial) | Solo el muro de plan para tenant Starter | La pantalla entera con un plan que la incluya |
 | Automatización | `/automatizacion` | 14 | 2026-08-06 | Programaciones armadas, historial, zona horaria, re-anclaje | Llaves de API, webhooks, pausar/eliminar programación |
 | Proveedores | `/proveedores` | 6 | 2026-08-06 (solo API) | Campos de lead time aprendido/inutilizable | La pantalla; alta y edición de proveedor; scorecard |
@@ -55,8 +55,8 @@ del tamaño de la superficie, no de su riesgo.
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | — | — | Todo |
 
-**Resumen honesto (2026-08-09):** 12 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 13 restantes están **sin medir**.
+**Resumen honesto (2026-08-09):** 13 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 12 restantes están **sin medir**.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
@@ -64,6 +64,32 @@ correo → login → subir ventas (archivo cp1252 con `;` y fechas dd/mm/yyyy) �
 entrenar → semáforo → registrar stock → aprobar recomendación → generar OC →
 registrar llegada parcial → stock actualizado por lo recibido, no por lo pedido.
 Cero errores de consola, cero 500 y cero violaciones de FK en todo el recorrido.
+
+## Permisos: qué se probó con un viewer real (2026-08-09)
+
+Se creó un usuario `Solo lectura` desde la pantalla, se lo activó y se entró con
+él. **El backend cumple**: `PUT /inventory/stock/{sku}`, `POST /users`,
+`DELETE /tenant` y `POST /inventory/log-po` devuelven 403, y se verificó en la
+base que **nada cambió** — el stock siguió en 40/406/300, no se creó el usuario
+que se intentó colar, y el tenant sigue vivo. El menú lateral tampoco le muestra
+"Usuarios". Esa parte está bien.
+
+Lo que **no** está bien es lo que ve el usuario antes y después del rechazo:
+
+1. `/inventario` le ofrece a un viewer toda la barra de escritura — "Actualizar
+   stock", "Registrar salida", "Inmovilizado", "Agregar bodega", "Importar CSV"
+   — le deja abrir el editor, teclear un valor y llegar hasta un botón verde y
+   habilitado que dice "Guardar 1 cambio". El rechazo llega recién al guardar.
+2. El aviso del rechazo **dice otra cosa que lo que pasó**: el título es "No
+   tienes permiso para ver esto" cuando fue una escritura, y se contradice con
+   su propio cuerpo ("Tu rol no puede hacer esto"). El usuario estaba viéndolo
+   perfectamente; lo que no pudo fue guardar.
+3. El segundo aviso, "Guardado incompleto — Revisa e intenta de nuevo", promete
+   una salida que no existe: reintentar no va a funcionar nunca, porque no es un
+   dato malo sino un permiso. Eso manda al usuario a repetir algo inútil.
+
+Ninguno es un agujero de seguridad — el backend no cede. Son mentiras de copy y
+una superficie de edición ofrecida a quien no puede usarla. **Sin arreglar.**
 
 Dos casillas que la tabla daba por pendientes y que **no existen como acción**:
 "activar sesión" en `/historial`, y el borrado de cuenta — `DELETE /tenant` y
