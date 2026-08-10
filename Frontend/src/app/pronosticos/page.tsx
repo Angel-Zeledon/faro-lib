@@ -25,6 +25,7 @@ import Pagination, { usePage } from '@/components/table/Pagination'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { granularityLabel, seriesTypeLabel } from '@/lib/enumLabels'
+import { modelLabel, type Translate as TranslateFn } from '@/lib/modelLabel'
 import { coverageUnitShort } from '@/lib/period'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import {
@@ -127,7 +128,7 @@ const OVERLAY_COLORS = ['#f59e0b', '#06b6d4', '#f472b6', '#a78bfa', '#f97316', '
 
 // `t` returns the key itself when the catalog has no entry, so a build whose
 // copy has not landed yet would print "skus.metrics_table_caption" at the user.
-type Translate = (key: string, params?: Record<string, unknown>) => string
+type Translate = TranslateFn
 function tOr(t: Translate, key: string, fallback: string, params?: Record<string, unknown>): string {
   const text = t(key, params)
   return text === key ? fallback : text
@@ -135,49 +136,10 @@ function tOr(t: Translate, key: string, fallback: string, params?: Record<string
 
 // ── Model labels ──────────────────────────────────────────────────────────────
 //
-// A distributor buys stock; nothing in that job is helped by learning that one
-// of these series was fitted by a gradient-boosted tree. Every surface on this
-// screen renders a model id through `modelLabel` — the single mapping — so
-// "Modelo 3" is the same algorithm on every SKU, in every export and after
-// every reload. A per-render or per-SKU numbering would be worse than the
-// jargon: the same label would mean two different things on two rows.
-//
-// This array is the mapping. A model's POSITION here is the number the user
-// sees, so entries must only ever be appended — reordering or removing one
-// silently renumbers models the user has already learned.
-// `global_lgbm` is appended, never inserted: it is a candidate like the rest —
-// it competes on the same table and can win a SKU — so it gets a number, and
-// appending is what keeps every number the user has already learned intact.
-const MODEL_ORDER = ['lightgbm', 'xgboost', 'prophet', 'arima', 'ets', 'croston', 'sarimax', 'lstm', 'global_lgbm']
-
-// Baselines are not one of the candidates: they are the "what if we didn't
-// forecast at all" yardstick every trained model has to beat. Giving them a
-// number would present them as an option worth picking; naming what they
-// actually do explains why they are in the table at all.
-// `ensemble` is the engine's per-SKU inverse-MAE blend of the models above
-// (pipeline.py `_generate_forecast_df`). It is neither one of the candidates
-// nor a yardstick, so a number would misfile it — it is what you get when the
-// numbered models are combined, and the label says exactly that.
-const NAMED_LABEL_KEYS: Record<string, string> = {
-  ensemble:       'skus.model_combined',
-  naive:          'skus.model_baseline_last_value',
-  seasonal_naive: 'skus.model_baseline_season',
-  historical_avg: 'skus.model_baseline_average',
-}
-
-function modelLabel(t: Translate, id: string | null | undefined): string {
-  if (!id) return '—'
-  const key = id.toLowerCase()
-  const namedKey = NAMED_LABEL_KEYS[key]
-  if (namedKey) return t(namedKey)
-  const idx = MODEL_ORDER.indexOf(key)
-  // An id outside the list means the engine gained a model this screen has not
-  // been told about. A generic label keeps the jargon hidden and is a visible
-  // signal to append the id to MODEL_ORDER; minting a number on the fly would
-  // be worse, because such a number could not survive the next release.
-  if (idx < 0) return t('skus.model_other')
-  return t('skus.model_numbered', { n: idx + 1 })
-}
+// Moved to `@/lib/modelLabel` (imported above) so the run-warnings panel can
+// use the SAME numbering. It was printing raw algorithm ids at a user this
+// screen deliberately shields from them, and a second copy of the array here
+// would have meant a second numbering.
 
 function pct(n: number | null | undefined) {
   if (n == null || isNaN(n)) return '—'

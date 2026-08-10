@@ -174,8 +174,8 @@ caminarlos y quedan cubiertos únicamente por tests.
 
 Sesión real, 2 SKUs, 180 puntos diarios. Los tres primeros eran variantes del
 **mismo defecto de fondo**: la pantalla mostraba números de tres modelos
-distintos sin decir que eran distintos. Los cuatro quedaron cerrados; sigue
-abierto solo el texto en inglés del final.
+distintos sin decir que eran distintos. Los cuatro quedaron cerrados, y el texto
+en inglés del final también.
 
 **Observación, no defecto:** en el SKU-B la referencia `naive` gana en costo
 (8.69) a todos los modelos entrenados (mejor: 8.94). El código excluye las
@@ -235,12 +235,26 @@ documentada: quedarse corto cuesta más que sobrar— así que gana Modelo 2. Pe
    **Sin caminar:** ningún SKU de las sesiones de prueba supera el cerco de 3×,
    así que no vi los marcadores dibujados bajo la regla nueva.
 
-**Además, no es un número pero sí una mentira de idioma:** "Ver detalle" del
-aviso de calidad imprime el texto crudo del motor, en inglés, a un usuario
-español — `SKU 'SKU-A' / model 'croston': Croston is designed for intermittent
-series (zero_ratio=0% < 20%)`. Y nombra el algoritmo que **esta misma pantalla
-oculta a propósito** tras "Modelo N". El título y el "cómo arreglarlo" sí están
-en español (`runwarn.<code>.*`); solo la muestra queda sin traducir.
+**Además, no era un número pero sí una mentira de idioma. ARREGLADO.** "Ver
+detalle" imprimía el texto crudo del motor, en inglés, a un usuario español —
+`SKU 'SKU-A' / model 'croston': Croston is designed for intermittent series
+(zero_ratio=0% < 20%)`— y nombraba el algoritmo que **esta misma pantalla oculta
+a propósito** tras "Modelo N".
+
+La estructura para arreglarlo ya existía: cada muestra trae `code` + `context`,
+y el bloque de correcciones de ese mismo panel ya usaba el patrón código → i18n
+→ respaldo. Ahora las muestras lo usan igual, con tres escalones: plantilla
+`runwarn.<CODE>.sample`, luego la línea neutra de `context`, y solo al final el
+inglés del motor. `modelLabel` se movió a `lib/modelLabel.ts` para que el panel
+use **la misma** numeración que el gráfico — una segunda copia del arreglo
+habría sido una segunda numeración, que es justo lo que ese mapeo evita.
+
+Un caso no se podía traducir sin tocar el motor: `UNSORTED_DATES` mandaba
+`context: {}` y el nombre de la columna vivía solo dentro de la frase en inglés.
+`leakage.py` ahora pasa `context={"column": dt_col}` — aditivo, el mensaje no
+cambia. Caminado en los dos idiomas: "SKU-A: Modelo 6 no encaja con esta serie",
+"Columna de fechas: fecha", "Columna que quedó fuera: precio_unitario", y sus
+equivalentes en inglés. Cero prosa del motor y cero nombres de algoritmo.
 
 **Descartado al comprobarlo:** los nombres "Modelo 1..9" parecen arbitrarios
 —llegan a 9 con solo 5 botones— pero son un mapeo fijo por posición

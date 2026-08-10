@@ -11,8 +11,9 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, AlertCircle, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
 import { getRunWarnings } from '@/lib/api'
-import type { RunWarnings, RunWarningGroup } from '@/lib/types'
+import type { RunWarnings, RunWarningGroup, RunWarningSample } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { modelLabel } from '@/lib/modelLabel'
 
 // Codes with no dedicated copy fall back to the engine's English message
 // rather than rendering a raw i18n key.
@@ -32,9 +33,43 @@ function contextLine(context: Record<string, unknown>): string {
     .join('  ·  ')
 }
 
+/** One detail line, in the reader's language when we can build it.
+ *
+ * The detail used to be the engine's raw sentence, always: a Spanish user
+ * opening "Ver detalle" read `SKU 'SKU-A' / model 'croston': Croston is
+ * designed for intermittent series (zero_ratio=0% < 20%)`. Two problems in one
+ * line — English prose, and the algorithm name that the forecast screen goes
+ * out of its way to hide behind "Modelo N".
+ *
+ * The payload already carries what a sentence needs: a stable `code` and a
+ * structured `context`. So: template first, then the neutral key/value line,
+ * and only then the engine's English — which is still better than nothing when
+ * the message holds a detail the context does not (UNSORTED_DATES names the
+ * column in prose and sends an empty context).
+ */
+function useSampleLine() {
+  const { t } = useLanguage()
+  return (code: string, sample: RunWarningSample): string => {
+    const key = `runwarn.${code}.sample`
+    // `model` arrives as the engine's id. Numbering it here is the whole point
+    // of sharing MODEL_ORDER with /pronosticos rather than copying it.
+    const params: Record<string, unknown> = { ...sample.context }
+    if (typeof params.model === 'string') params.model = modelLabel(t, params.model)
+    if (Array.isArray(params.columns)) params.columns = params.columns.join(', ')
+
+    const text = t(key, params)
+    // A leftover {placeholder} means this run predates the field the sentence
+    // needs — the same guard the corrections list below already uses.
+    const usable = text !== key && !/\{[a-z_]+\}/i.test(text)
+    if (usable) return text
+    return contextLine(sample.context) || sample.message || ''
+  }
+}
+
 function Group({ group }: { group: RunWarningGroup }) {
   const { t } = useLanguage()
   const codeText = useCodeText()
+  const sampleLine = useSampleLine()
   const [open, setOpen] = useState(false)
 
   const isError = group.severity === 'error'
@@ -87,17 +122,18 @@ function Group({ group }: { group: RunWarningGroup }) {
           listStyle: 'none', margin: '7px 0 0', padding: 0,
           display: 'flex', flexDirection: 'column', gap: 4,
         }}>
-          {group.samples.map((s, i) => (
-            <li key={i} style={{
-              fontSize: 12, color: 'var(--dim)', lineHeight: 1.55,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            }}>
-              {/* Findings raised by the backend's own prep step carry no
-                  sentence — only the numbers that identify the offending
-                  rows — so the context is what the user actually needs. */}
-              {s.message || contextLine(s.context)}
-            </li>
-          ))}
+          {group.samples.map((s, i) => {
+            const line = sampleLine(group.code, s)
+            if (!line) return null
+            return (
+              <li key={i} style={{
+                fontSize: 12, color: 'var(--dim)', lineHeight: 1.55,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              }}>
+                {line}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

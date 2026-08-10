@@ -1858,10 +1858,12 @@ export const translations = {
     'runwarn.UNSORTED_DATES.title': 'Las fechas no vienen en orden',
     'runwarn.UNSORTED_DATES.what':  'Lo ordenamos nosotros, pero si el archivo mezcla formatos de fecha algunas filas pueden haber quedado en el mes equivocado.',
     'runwarn.UNSORTED_DATES.fix':   'Confirma que todas las fechas usen el mismo formato.',
+    'runwarn.UNSORTED_DATES.sample': 'Columna de fechas: {column}',
 
     'runwarn.MODEL_INCOMPATIBLE.title': 'Un modelo no se pudo usar con estos datos',
     'runwarn.MODEL_INCOMPATIBLE.what':  'El modelo que elegiste necesita más historial o una frecuencia distinta, así que el pronóstico salió de los otros modelos.',
     'runwarn.MODEL_INCOMPATIBLE.fix':   'Puedes dejarlo así o entrenar de nuevo eligiendo otros modelos.',
+    'runwarn.MODEL_INCOMPATIBLE.sample': '{sku}: {model} no encaja con esta serie',
 
     // Sin estas claves el panel caía al `message` del backend y mostraba la
     // frase en inglés tal cual: "Dropped column(s) that exist in the history
@@ -1869,6 +1871,7 @@ export const translations = {
     'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.title': 'Una columna no se pudo usar para predecir',
     'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.what':  'Esa columna existe en tu historial, pero nadie sabe cuánto valdrá en una fecha futura, así que el modelo no puede apoyarse en ella. Si la dejáramos, el pronóstico se explicaría con un dato que en realidad nunca recibe.',
     'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.fix':   'No tienes que hacer nada: el resto de tus datos sí se usó. Si esa columna es importante para tus ventas, súbela con su valor planificado hacia adelante.',
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.sample': 'Columna que quedó fuera: {columns}',
 
     'runwarn.HORIZON_TOO_LARGE.title': 'El horizonte es largo para el historial disponible',
     'runwarn.HORIZON_TOO_LARGE.what':  'Estás pidiendo predecir más adelante de lo que el historial permite sostener, así que los últimos períodos son mucho menos confiables.',
@@ -5111,14 +5114,17 @@ export const translations = {
     'runwarn.UNSORTED_DATES.title': 'Dates are not in order',
     'runwarn.UNSORTED_DATES.what':  'We sorted them, but if the file mixes date formats some rows may have landed in the wrong month.',
     'runwarn.UNSORTED_DATES.fix':   'Confirm every date uses the same format.',
+    'runwarn.UNSORTED_DATES.sample': 'Date column: {column}',
 
     'runwarn.MODEL_INCOMPATIBLE.title': 'A model could not be used with this data',
     'runwarn.MODEL_INCOMPATIBLE.what':  'The model you picked needs more history or a different frequency, so the forecast came from the other models.',
     'runwarn.MODEL_INCOMPATIBLE.fix':   'You can leave it as is, or train again picking other models.',
+    'runwarn.MODEL_INCOMPATIBLE.sample': '{sku}: {model} does not fit this series',
 
     'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.title': 'A column could not be used to predict',
     'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.what':  'That column exists in your history, but nobody knows what it will be on a future date, so the model cannot lean on it. Leaving it in would explain the forecast with an input it never actually receives.',
     'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.fix':   'Nothing to do: the rest of your data was still used. If that column matters to your sales, upload it with its planned value going forward.',
+    'runwarn.FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME.sample': 'Column left out: {columns}',
 
     'runwarn.HORIZON_TOO_LARGE.title': 'The horizon is long for the history available',
     'runwarn.HORIZON_TOO_LARGE.what':  'You are asking to predict further ahead than the history can support, so the last periods are far less reliable.',
