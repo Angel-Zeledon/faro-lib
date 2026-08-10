@@ -75,8 +75,28 @@ def mark_verified(tenant_id: str, user_id: str) -> None:
 
 
 def update_password(tenant_id: str, user_id: str, new_password: str) -> None:
+    """Change the password AND cut every session that predates the change.
+
+    Deleting the refresh tokens alone only stops a session from being RENEWED.
+    Measured on 2026-08-10 before `sessions_invalid_before` existed: after a
+    completed reset the access token issued beforehand kept answering 200 —
+    full write access — for the rest of its 15 minutes, which is exactly the
+    window that matters to someone resetting because they think an intruder is
+    inside.
+
+    The cut keeps full microsecond precision, and tokens carry a sub-second
+    `iat` to match. An earlier version floored both to the second so a login in
+    the same second as the reset would not be mistaken for an older token — and
+    the suite promptly caught the other half: under load the pre-reset token was
+    minted in that same second too, and survived. A second cannot separate "just
+    before" from "just after"; microseconds can, so neither side rounds.
+    """
     execute(
-        "UPDATE users SET hashed_password = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+        """UPDATE users
+              SET hashed_password = %s,
+                  sessions_invalid_before = NOW(),
+                  updated_at = NOW()
+            WHERE id = %s AND tenant_id = %s""",
         (hash_password(new_password), user_id, tenant_id),
     )
     execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))

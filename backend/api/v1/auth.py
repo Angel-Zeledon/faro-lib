@@ -428,23 +428,13 @@ async def reset_password(body: ResetPasswordRequest):
     _reject_weak_password(body.new_password)
 
     user_svc.update_password(payload["tenant_id"], payload["sub"], body.new_password)
-    # NOT "all sessions have been revoked", which is what this used to claim and
-    # is measurably false: `update_password` deletes refresh tokens, so no session
-    # can be EXTENDED, but an access token already in someone's hands keeps
-    # working until it expires. Walked 2026-08-10 — after a completed reset the
-    # pre-reset access token still answered 200 while its refresh answered 401.
-    #
-    # Revoking it is not a line of code here: this endpoint is unauthenticated,
-    # so it holds no `jti` to put on the blocklist (which is how /logout does it).
-    # Killing other people's live tokens needs invalidation by user-and-time —
-    # a new field — so it is a decision, not a fix. Until then the contract says
-    # what actually happens.
-    return ok({
-        "message": (
-            "Password updated. Sign-in sessions cannot be renewed; access tokens "
-            "already issued stay valid until they expire."
-        ),
-    })
+    # This claim is now true, and was not until 2026-08-10. `update_password`
+    # used to delete refresh tokens only, so a session could not be RENEWED
+    # while an access token already in someone's hands kept full write access
+    # for the rest of its 15 minutes — measured, not theorised. It now also
+    # stamps `users.sessions_invalid_before`, which guards.py refuses tokens
+    # against, so an intruder's live token dies with this call.
+    return ok({"message": "Password updated. All sessions have been signed out."})
 
 
 @router.post("/logout")

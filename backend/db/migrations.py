@@ -1307,6 +1307,19 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
          END LOOP;
      END $$;
      """),
+    # ── Cutting live sessions on a password change (walked 2026-08-10) ───────
+    # Access tokens are stateless and the reset flow is UNAUTHENTICATED, so it
+    # holds no `jti` to put on the revoked_tokens blocklist the way /logout
+    # does. Measured before this column existed: after a completed reset the
+    # pre-reset access token still answered 200 for the rest of its 15 minutes,
+    # while the endpoint claimed every session had been revoked.
+    #
+    # The cut is per USER and per TIME: any access token minted at or before
+    # this instant is refused (guards.py compares it against the token's `iat`).
+    # NULL means "never cut anything", which is every account that has not
+    # changed its password — their tokens are untouched.
+    ("add_users_sessions_invalid_before",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_invalid_before TIMESTAMPTZ"),
 ]
 
 

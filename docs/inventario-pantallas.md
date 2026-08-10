@@ -375,18 +375,35 @@ ya tenga un access token conserva acceso completo —incluido escribir— hasta 
 venza (15 minutos). Para el caso que motiva un reset ("creo que alguien entró"),
 esos minutos son justo los que importan.
 
-**Por qué no lo arreglé de fondo.** No es una línea. `/logout` sí revoca el
-access token porque es una petición *autenticada*: tiene el `jti` en la mano y lo
-mete en la lista negra que `guards.py` consulta en cada request. El reset es un
-flujo **sin autenticar**: no hay `jti` que revocar. Matar tokens vivos ajenos
-exige invalidar por usuario-y-fecha (un campo tipo `sessions_invalid_before`
-comparado contra el `iat` del token — que hoy los tokens ni siquiera llevan).
-Eso es capacidad nueva, así que es decisión del dueño.
+**ARREGLADO el mismo día, con el visto bueno del dueño.** `/logout` sí podía
+revocar el access token porque es una petición *autenticada*: tiene el `jti` en
+la mano para la lista negra que `guards.py` consulta. El reset es un flujo **sin
+autenticar** y nunca ve el token del intruso, así que el corte se expresa por
+**usuario y fecha**: `users.sessions_invalid_before` (columna nueva, aditiva,
+creada por la migración al arrancar) contra el `iat` del token, que ahora los
+tokens llevan.
 
-**Lo que sí se hizo:** dejar de afirmarlo. El endpoint ahora responde lo que
-realmente pasa — que la sesión no se puede renovar y que los access tokens ya
-emitidos siguen válidos hasta vencer. La promesa falsa era el defecto que sí me
-tocaba.
+Un token sin `iat` —los emitidos antes de este cambio— no puede probar cuándo se
+hizo, así que se rechaza; pero **solo** en cuentas que efectivamente cortaron.
+Quien nunca cambió su contraseña tiene `NULL` y no pasa ni por esa rama, así que
+sus tokens viejos siguen funcionando igual.
+
+**La parte que casi sale mal, y que encontró la suite.** La primera versión
+truncaba ambos lados al segundo, para que un login hecho en el mismo segundo que
+el reset no se leyera como más viejo que el corte y dejara al usuario fuera de la
+cuenta que acababa de recuperar. Un test lo atrapó. Pero al correr la selección
+completa apareció el reflejo: **bajo carga, el token anterior al reset también
+caía en ese mismo segundo, y sobrevivía al cambio de contraseña**. Un segundo no
+alcanza para separar "emitido justo antes" de "emitido justo después".
+Microsegundos sí, así que ninguno de los dos lados redondea. Ese fallo **solo
+aparecía en la corrida grande**, nunca aislado.
+
+Caminado contra el servidor real después de reiniciar: sesión abierta → reset →
+el access token anterior devuelve **401** (antes daba 200) y el login inmediato
+devuelve **200**, sin bloqueo. El endpoint volvió a poder decir "All sessions
+have been signed out" porque ahora es cierto. Cinco tests nombrados por el fallo,
+con compuerta de mutación (comentar la llamada del guard pone dos en rojo), y 222
+tests de la vecindad de auth en verde.
 
 ## Por qué la suite no sustituye esto
 

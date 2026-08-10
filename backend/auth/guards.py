@@ -96,6 +96,53 @@ def _authenticate_api_key(credential: str) -> CurrentUser:
     )
 
 
+def _reject_if_predates_password_change(payload: dict) -> None:
+    """Refuse a token minted before this account last cut its sessions.
+
+    The blocklist above can only disown a token whose `jti` somebody handed us —
+    which is why /logout can revoke itself and a password RESET cannot: that
+    flow is unauthenticated and never sees the intruder's token. So the cut is
+    expressed per user and per time instead: `users.sessions_invalid_before`,
+    set by `update_password`, against the token's own `iat`.
+
+    Costs one primary-key lookup, in the same shape as `is_revoked` right above.
+
+    Both sides keep sub-second precision, and that is the whole reason this
+    comparison is trustworthy. A first version floored both to the second so a
+    login made in the same second as a reset would not read as older than the
+    cut and lock the user out of the account they had just recovered; the suite
+    then caught the mirror image — under load the PRE-reset token was minted in
+    that same second as well, and sailed through a password change. A second
+    cannot separate "issued just before" from "issued just after". Microseconds
+    can, so nothing rounds and both cases land correctly.
+
+    A token with NO `iat` cannot prove when it was made, so it is refused — but
+    only for an account that has actually cut its sessions. Accounts that never
+    changed a password hold NULL here and never reach that branch, so tokens
+    minted before `iat` existed keep working exactly as before.
+    """
+    user_id = payload.get("sub")
+    if not user_id:
+        return
+    from backend.db.connection import query_one
+
+    row = query_one(
+        "SELECT sessions_invalid_before FROM users WHERE id = %s", (user_id,),
+    )
+    cut = row.get("sessions_invalid_before") if row else None
+    if not cut:
+        return
+
+    iat = payload.get("iat")
+    if iat is not None and float(iat) >= cut.timestamp():
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Session ended by a password change",
+    )
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> CurrentUser:
@@ -123,6 +170,8 @@ def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked"
             )
+
+    _reject_if_predates_password_change(payload)
 
     return CurrentUser(
         user_id=payload["sub"],
