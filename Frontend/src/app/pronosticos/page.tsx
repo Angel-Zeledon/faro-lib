@@ -543,7 +543,13 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
     { label: t('skus.stat_max'), value: fmtK(stats?.max) },
     { label: t('skus.stat_historical_points'), value: historical.length.toString() },
     { label: t('skus.stat_forecast_steps'), value: forecast.length.toString() },
-    { label: t('skus.stat_best_wape'), value: bestMetric?.wape != null ? pct(bestMetric.wape) : '—' },
+    // NOT "best WAPE", which is what this tile claimed while showing the WAPE
+    // of the CHAMPION — chosen by asymmetric cost, not by WAPE. On a real
+    // session it read "Mejor WAPE 24.6%" directly above a table whose own rows
+    // showed 17.9% and 21.5%, so the screen contradicted itself in one glance.
+    // The value is the right one to show — it is the error of the forecast the
+    // orders come from — so the fix is the label, not the number.
+    { label: t('skus.stat_champion_wape'), value: bestMetric?.wape != null ? pct(bestMetric.wape) : '—' },
     { label: t('skus.stat_best_model'), value: modelLabel(t, bestMetric?.model) },
   ]
 

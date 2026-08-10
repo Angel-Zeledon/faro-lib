@@ -30,7 +30,7 @@ del tamaño de la superficie, no de su riesgo.
 | Pantalla | Ruta | Acciones | Última caminata | Qué se verificó | Qué falta |
 |---|---|---:|---|---|---|
 | Inventario | `/inventario` | 60 | 2026-08-09 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación; edición masiva de stock/lead time y semáforo recalculado con datos reales (cobertura, cantidad a pedir) | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas, importar CSV de stock |
-| Pronósticos | `/pronosticos` | 17 | — | — | Todo |
+| Pronósticos | `/pronosticos` | 17 | 2026-08-10 | Aviso de calidad y sus 5 detalles; pestañas Forecast / Cómo se vende / Métricas / Calidad / Inventario; granularidad D/W/M/Q/Y (la agregación es coherente: 180 → 26 → 6 → 2 → 1 puntos y el promedio escala); multi-selección de modelos y banda de confianza; buscador; comparación de dos sesiones lado a lado; panel de backtest; tabla de métricas contra la API | Las tres exportaciones (Excel por SKU, "Todos los SKUs", PDF), pantalla completa, el tutorial, "Ver análisis estadístico detallado". **Cuatro hallazgos, uno arreglado y tres abiertos — ver abajo** |
 | Archivos / Fuentes | `/archivos` | 40 | 2026-08-09 | Vista previa (archivo cp1252 con acentos intactos — lector distinto al del entrenamiento); editor de columnas y filas con las 360 filas; "Guardar como nuevo"; renombrar (persiste `Ñ`, `ú` y guion largo); eliminar con confirmación que nombra el archivo y limpia base **y disco**; pestaña Análisis | Conectar fuente SQL ("Nuevo elemento"), "Reemplazar archivo", buscador, tutorial de 9 pasos, correr un Análisis completo |
 | Panel de compras | `/compras` | 14 | 2026-08-10 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC (queda en la base: 348 und, ₡417 600); resumen ejecutivo con datos reales; **permisos ejercidos con viewer y admin reales, en ancho normal y angosto** (ver abajo) | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación. El gate de "Crear transferencia" quedó **sin caminar**: la sesión activa no trae sugerencias de traslado en el briefing |
 | Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
@@ -55,8 +55,8 @@ del tamaño de la superficie, no de su riesgo.
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | — | — | Todo |
 
-**Resumen honesto (2026-08-09):** 14 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 11 restantes están **sin medir**.
+**Resumen honesto (2026-08-10):** 15 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 10 restantes están **sin medir**.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
@@ -169,6 +169,66 @@ Dos casillas que la tabla daba por pendientes y que **no existen como acción**:
 "activar sesión" en `/historial`, y el borrado de cuenta — `DELETE /tenant` y
 `/tenant/export` no tienen pantalla, son solo API, así que no hay forma de
 caminarlos y quedan cubiertos únicamente por tests.
+
+## `/pronosticos`: cuatro hallazgos de la primera caminata (2026-08-10)
+
+Sesión real, 2 SKUs, 180 puntos diarios. Los tres primeros son variantes del
+**mismo defecto de fondo**: la pantalla muestra números de tres modelos
+distintos sin decir que son distintos.
+
+Para el SKU-A, la tabla de métricas de la propia pantalla dice:
+
+| Modelo | costo | MAE | WAPE |
+|---|---:|---:|---:|
+| Modelo 2 (xgboost) | **14.60** | 10.04 | 24.6% |
+| Modelo 1 (lightgbm) | 16.80 | 8.79 | 21.5% |
+| Modelo 3 (prophet) | 18.32 | 17.55 | **45.7%** |
+| Modelo 9 (global_lgbm) | 20.88 | **8.61** | **17.9%** |
+
+El campeón se elige por **costo asimétrico** —decisión correcta y bien
+documentada: quedarse corto cuesta más que sobrar— así que gana Modelo 2. Pero:
+
+1. **`Mejor WAPE` no era el mejor WAPE. ARREGLADO.** La tarjeta rotulaba
+   "Mejor WAPE: 24.6%" justo encima de una tabla con 17.9% y 21.5%. El valor
+   está bien (es el error del pronóstico del que salen las compras); la
+   etiqueta afirmaba un superlativo falso. Ahora dice "WAPE del elegido".
+
+2. **El gráfico dibuja un modelo que no es el campeón. SIN ARREGLAR.** En
+   `backend/api/v1/forecasts.py:479` el modelo servido por defecto es
+   `next(iter(sku_forecasts.keys()))` — **el primero del diccionario**. Para el
+   SKU-A eso es Modelo 3, con WAPE 45.7%, mientras la orden de compra se calcula
+   con Modelo 2 (24.6%). El comprador mira una curva de un modelo y pide según
+   otro, y nada en pantalla lo dice: el pie dice "Modelo: Modelo 3" y la tarjeta
+   de al lado "Mejor modelo: Modelo 2". Se reprodujo en otra sesión y otro SKU
+   (panel B: sirve Modelo 3, campeón Modelo 9), así que es sistemático, no un
+   caso. Es exactamente la deriva que el comentario de
+   `backend/inventory/service.py:3037` dice haber cerrado una vez entre motor,
+   semáforo y precisión: sigue viva en el gráfico.
+
+3. **La tarjeta de la lista anuncia el mejor MAE de cualquiera. SIN ARREGLAR.**
+   `page.tsx:421` toma el MAE más bajo de **todas** las filas, sin excluir
+   baselines. Para el SKU-A muestra "MAE 8.61", que es de Modelo 9, no del
+   elegido (10.04). Con otros datos podría anunciar el MAE de una referencia —
+   justo lo que el resto del código excluye a propósito porque "existen para ser
+   superadas".
+
+4. **La misma pantalla dice 5 atípicos y 0 atípicos. SIN ARREGLAR.** El pie del
+   gráfico dice "5 valores atípicos detectados" (cálculo del frontend, cerco de
+   Tukey 1.5×IQR sobre la serie mostrada) y la pestaña Calidad, a un clic, dice
+   "0 Valores atípicos — Serie limpia, sin advertencias" (conteo del motor).
+   Cada una es cierta según su definición; el usuario lee una sola pantalla.
+
+**Además, no es un número pero sí una mentira de idioma:** "Ver detalle" del
+aviso de calidad imprime el texto crudo del motor, en inglés, a un usuario
+español — `SKU 'SKU-A' / model 'croston': Croston is designed for intermittent
+series (zero_ratio=0% < 20%)`. Y nombra el algoritmo que **esta misma pantalla
+oculta a propósito** tras "Modelo N". El título y el "cómo arreglarlo" sí están
+en español (`runwarn.<code>.*`); solo la muestra queda sin traducir.
+
+**Descartado al comprobarlo:** los nombres "Modelo 1..9" parecen arbitrarios
+—llegan a 9 con solo 5 botones— pero son un mapeo fijo por posición
+(`MODEL_ORDER`), estable entre SKUs, exportaciones y recargas. Es deliberado y
+está documentado. No perseguirlo.
 
 ## Por qué la suite no sustituye esto
 
