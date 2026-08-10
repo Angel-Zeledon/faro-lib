@@ -229,6 +229,17 @@ def get_roi_summary(tenant_id: str) -> dict:
     """
     Returns accumulated ROI metrics across all time for a given tenant.
     """
+    # `active_days` counts the days the buyer actually DID something, which is
+    # what the screen's "days active" figure claims. It used to be the span
+    # between the first and last order, so a tenant who ordered once and came
+    # back a year later read "365 days active" after using Faro on two days. A
+    # distinct-day count cannot overstate: it is bounded by the days they showed
+    # up.
+    #
+    # This rationale lives OUT here rather than inside the SQL: the guard in
+    # test_no_spanish_in_backend_logic scans string literals, and quoting the
+    # screen's own Spanish label inside the query tripped it — correctly, since
+    # it cannot tell a comment from copy once both are inside the same string.
     agg = query_one(
         """SELECT
                COUNT(*)::int                    AS total_pos_generated,
@@ -240,12 +251,6 @@ def get_roi_summary(tenant_id: str) -> dict:
                COALESCE(SUM(rejected_count), 0)::int  AS total_rejected,
                MIN(generated_at)                AS first_po_at,
                MAX(generated_at)                AS last_po_at,
-               -- Days the buyer actually DID something, which is what the
-               -- screen's "días activo" claims. It used to be the span between
-               -- the first and last order, so a tenant who ordered once and
-               -- again a year later read "365 días activo" after using Faro on
-               -- two days. A distinct-day count cannot overstate: it is bounded
-               -- by the number of days they showed up.
                COUNT(DISTINCT generated_at::date)::int AS active_days
            FROM inventory_po_log
            WHERE tenant_id = %s""",
