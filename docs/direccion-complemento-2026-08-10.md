@@ -64,11 +64,36 @@ tiene una compuerta de datos con remediaciones. Eso es el diferenciador, y está
 hecho.
 
 **Lo que falta no es capacidad de lectura: es que la lectura sea un ciclo y no un
-evento.** Hoy importar es un asistente que se corre una vez. La misma fuente,
-con el mismo mapeo, reimportable de un clic y programable, es lo que convierte
-"subir ventas" de tarea mensual en algo que pasa solo — y es lo que ataca los
-407 días. Las piezas existen sueltas: `/archivos` tiene fuentes, `/ventas`
-recuerda el mapeo, `/automatizacion` tiene programaciones.
+evento.** Hoy importar un archivo es un asistente que se corre una vez. La misma
+fuente, con el mismo mapeo, reimportable de un clic y programable, es lo que
+convierte "subir ventas" de tarea mensual en algo que pasa solo — y es lo que
+ataca los 407 días. Las piezas existen sueltas: `/archivos` tiene fuentes,
+`/ventas` recuerda el mapeo, `/automatizacion` tiene programaciones.
+
+### Corrección al caminar `/integraciones` (mismo día)
+
+Escrito lo anterior, resultó que **el ciclo automático ya existe — pero solo por
+la vía API**. Hay conectores reales a Alegra y Siigo (`backend/integrations/`,
+con registro, DTOs, cifrado de credenciales y suite de tests), y
+`run_daily_integration_syncs` corre desde el bucle diario del worker, trayendo
+catálogo, stock y ventas sin que nadie abra nada. Es exactamente la forma que
+este documento pide. Nada de eso está sin construir.
+
+Eso no invalida la tesis; la afila, y en tres puntos:
+
+1. **El patrón ya está probado en casa.** No hay que inventar cómo se ve "que
+   entre solo": ya se ve así para dos proveedores. Lo que falta es darle ese
+   mismo tratamiento al **archivo**, que es por donde va a entrar el volumen.
+2. **Dos conectores no cubren "de todo".** Cubren una tajada. Y la vía archivo
+   sigue siendo la única que le sirve a todos los demás.
+3. **Están detrás del plan Enterprise.** Es decir: la capacidad que hace que
+   Faro complemente en vez de reemplazar es hoy la más cara del catálogo,
+   mientras que teclear el inventario a mano está disponible para todos. Vale la
+   pena revisar si ese es el reparto que se quiere.
+
+Además, Alegra y Siigo son software contable **colombiano**, y el mercado ancla
+declarado es **Costa Rica** (ver la memoria de estrategia, que ya marcaba esta
+desalineación el 2026-07-19). Sigue sin definirse el equivalente real para CR.
 
 ## Qué sí, por orden de rendimiento
 

@@ -42,7 +42,7 @@ del tamaño de la superficie, no de su riesgo.
 | Automatización | `/automatizacion` | 14 | 2026-08-06 | Programaciones armadas, historial, zona horaria, re-anclaje | Llaves de API, webhooks, pausar/eliminar programación |
 | Proveedores | `/proveedores` | 6 | 2026-08-06 (solo API) | Campos de lead time aprendido/inutilizable | La pantalla; alta y edición de proveedor; scorecard |
 | Impacto | `/impacto` | 0 | 2026-08-10 | **Los cuatro números de portada reconciliados contra la base uno por uno** (ver abajo); resumen mensual; tabla de evolución; estados vacíos | Tutorial, enlaces de navegación, un mes con capital liberado real (necesita dos mediciones mensuales seguidas) |
-| Integraciones | `/integraciones` | 3 | — | — | Todo |
+| Integraciones | `/integraciones` | 3 | 2026-08-10 (solo el muro) | Muro de plan para tenant Starter, y **verificado contra el código que lo que promete existe**: conectores Alegra/Siigo reales, credenciales cifradas, y `run_daily_integration_syncs` corriendo desde el bucle diario del worker | **La pantalla entera con un plan que la incluya**: conectar, probar conexión, sincronizar, ver errores de credenciales. Nada del flujo real está caminado |
 | Mensajes | `/mensajes` | 4 | — | — | Todo |
 | Registro | `/signup` | 2 | 2026-08-09 | Alta completa (tenant + admin), rechazo por WhatsApp duplicado sin dejar filas varadas, aviso honesto cuando no se puede enviar el correo | Correo duplicado, validaciones de contraseña una por una, reenvío de verificación |
 | Recuperar contraseña | `/forgot-password` | 4 | — | — | Todo (el arreglo de sesión se verificó en código, no caminado) |
