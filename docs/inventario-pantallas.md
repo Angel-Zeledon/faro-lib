@@ -172,9 +172,16 @@ caminarlos y quedan cubiertos únicamente por tests.
 
 ## `/pronosticos`: cuatro hallazgos de la primera caminata (2026-08-10)
 
-Sesión real, 2 SKUs, 180 puntos diarios. Los tres primeros son variantes del
-**mismo defecto de fondo**: la pantalla muestra números de tres modelos
-distintos sin decir que son distintos.
+Sesión real, 2 SKUs, 180 puntos diarios. Los tres primeros eran variantes del
+**mismo defecto de fondo**: la pantalla mostraba números de tres modelos
+distintos sin decir que eran distintos. Los cuatro quedaron cerrados; sigue
+abierto solo el texto en inglés del final.
+
+**Observación, no defecto:** en el SKU-B la referencia `naive` gana en costo
+(8.69) a todos los modelos entrenados (mejor: 8.94). El código excluye las
+referencias a propósito para elegir de dónde comprar, y el motor ya lo advierte
+en el log ("no model beat a naive baseline on cost_horizon"). Que el usuario no
+se entere es una decisión de producto, no un error de cálculo.
 
 Para el SKU-A, la tabla de métricas de la propia pantalla dice:
 
@@ -193,7 +200,7 @@ documentada: quedarse corto cuesta más que sobrar— así que gana Modelo 2. Pe
    está bien (es el error del pronóstico del que salen las compras); la
    etiqueta afirmaba un superlativo falso. Ahora dice "WAPE del elegido".
 
-2. **El gráfico dibuja un modelo que no es el campeón. SIN ARREGLAR.** En
+2. **El gráfico dibujaba un modelo que no era el campeón. ARREGLADO.** En
    `backend/api/v1/forecasts.py:479` el modelo servido por defecto es
    `next(iter(sku_forecasts.keys()))` — **el primero del diccionario**. Para el
    SKU-A eso es Modelo 3, con WAPE 45.7%, mientras la orden de compra se calcula
@@ -203,20 +210,30 @@ documentada: quedarse corto cuesta más que sobrar— así que gana Modelo 2. Pe
    (panel B: sirve Modelo 3, campeón Modelo 9), así que es sistemático, no un
    caso. Es exactamente la deriva que el comentario de
    `backend/inventory/service.py:3037` dice haber cerrado una vez entre motor,
-   semáforo y precisión: sigue viva en el gráfico.
+   semáforo y precisión: seguía viva en el gráfico. Ahora el endpoint delega en
+   `best_model_by_sku` —la misma autoridad— y cae al primer modelo disponible
+   solo si el campeón no tiene serie guardada. Verificado en 6 SKUs de 3
+   sesiones: servido == campeón en todos, y `avail=0` no revienta.
 
-3. **La tarjeta de la lista anuncia el mejor MAE de cualquiera. SIN ARREGLAR.**
-   `page.tsx:421` toma el MAE más bajo de **todas** las filas, sin excluir
-   baselines. Para el SKU-A muestra "MAE 8.61", que es de Modelo 9, no del
-   elegido (10.04). Con otros datos podría anunciar el MAE de una referencia —
-   justo lo que el resto del código excluye a propósito porque "existen para ser
-   superadas".
+3. **La tarjeta de la lista anunciaba el mejor MAE de cualquiera. ARREGLADO.**
+   `page.tsx:421` tomaba el MAE más bajo de **todas** las filas, sin excluir
+   baselines. Para el SKU-A mostraba "MAE 8.61", que es de Modelo 9, no del
+   elegido (10.04). Con otros datos podría haber anunciado el MAE de una
+   referencia — justo lo que el resto del código excluye a propósito porque
+   "existen para ser superadas". Ahora usa el mismo campeón que la tira de
+   estadísticas: SKU-A muestra 10.04 y SKU-B 5.37, ambos del modelo que compra.
 
-4. **La misma pantalla dice 5 atípicos y 0 atípicos. SIN ARREGLAR.** El pie del
-   gráfico dice "5 valores atípicos detectados" (cálculo del frontend, cerco de
-   Tukey 1.5×IQR sobre la serie mostrada) y la pestaña Calidad, a un clic, dice
-   "0 Valores atípicos — Serie limpia, sin advertencias" (conteo del motor).
-   Cada una es cierta según su definición; el usuario lee una sola pantalla.
+4. **La misma pantalla decía 5 atípicos y 0 atípicos. ARREGLADO.** No eran dos
+   implementaciones sino dos **umbrales**: el motor usa un cerco de 3×IQR
+   (`outlier_iqr_factor = 3.0`) y el frontend usaba el de 1.5×IQR, el de
+   "atípico leve" del manual. El motor manda —su conteo es el que alimenta el
+   puntaje de calidad y las advertencias— así que el frontend adoptó su factor.
+   Publica solo un **conteo**, nunca posiciones, así que los marcadores se
+   siguen ubicando en el frontend y por eso la constante tiene que seguir
+   igualando la del motor; queda dicho en el comentario. Verificado: el pie ya
+   no reporta atípicos para el SKU-A y la pestaña Calidad sigue diciendo 0.
+   **Sin caminar:** ningún SKU de las sesiones de prueba supera el cerco de 3×,
+   así que no vi los marcadores dibujados bajo la regla nueva.
 
 **Además, no es un número pero sí una mentira de idioma:** "Ver detalle" del
 aviso de calidad imprime el texto crudo del motor, en inglés, a un usuario

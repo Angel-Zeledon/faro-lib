@@ -275,14 +275,28 @@ function exportMetricsExcel(t: Translate, sku: string, rows: MetricRow[]) {
 
 // ── Outlier detection ─────────────────────────────────────────────────────────
 
+// The engine's fence, not a second opinion. This used to use 1.5·IQR — the
+// textbook "mild outlier" rule — while the engine's DataQualityChecker uses
+// `outlier_iqr_factor = 3.0`. Same maths, different threshold, so the chart
+// footer said "5 valores atípicos detectados" one click away from the Calidad
+// tab saying "0 — serie limpia, sin advertencias", about the same SKU. Both
+// were true to their own rule and the user reads one screen.
+//
+// The engine is the authority: its count is what the quality score and the
+// warnings are computed from. It publishes only a COUNT, never positions, so
+// the markers still have to be located here — which is exactly why this
+// constant has to keep matching
+// `ForecastingCore/forecasting_core/data/quality.py: outlier_iqr_factor`.
+const OUTLIER_IQR_FACTOR = 3.0
+
 function detectOutliers(points: { date: string; value: number }[]): number[] {
   if (points.length < 6) return []
   const sorted = [...points].sort((a, b) => a.value - b.value)
   const q1  = sorted[Math.floor(sorted.length * 0.25)].value
   const q3  = sorted[Math.floor(sorted.length * 0.75)].value
   const iqr = q3 - q1
-  const lo  = q1 - 1.5 * iqr
-  const hi  = q3 + 1.5 * iqr
+  const lo  = q1 - OUTLIER_IQR_FACTOR * iqr
+  const hi  = q3 + OUTLIER_IQR_FACTOR * iqr
   return points.reduce<number[]>((acc, p, i) => {
     if (p.value < lo || p.value > hi) acc.push(i)
     return acc
@@ -418,9 +432,18 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
   tourAnchor?: string
 }) {
   const { t } = useLanguage()
-  const best = metrics.reduce<MetricRow | null>((b, r) =>
-    r.mae !== null && (b === null || (b.mae !== null && r.mae < b.mae)) ? r : b
-  , null)
+  // The MAE of the model this SKU is BOUGHT from — the same champion the stats
+  // strip and the semáforo obey. This used to be the lowest MAE of any row,
+  // baselines included, so the card advertised an accuracy nobody was using:
+  // on a real SKU it read "MAE 8.61" (Modelo 9) while the orders came from a
+  // model scoring 10.04, and a baseline sat 0.1 away from taking the headline —
+  // the very rows the rest of the code excludes because they exist to be beaten.
+  const best = metrics.filter(r => r.type !== 'baseline').reduce<MetricRow | null>((b, r) => {
+    const value = championRank(r)
+    if (value === null || value === undefined) return b
+    const current = b === null ? null : championRank(b)
+    return current === null || current === undefined || value < current ? r : b
+  }, null)
   const seriesType = quality?.series_type ?? 'unknown'
   const color = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
   const sparkVals = metrics.map(r => r.mae).filter((v): v is number => v !== null)
