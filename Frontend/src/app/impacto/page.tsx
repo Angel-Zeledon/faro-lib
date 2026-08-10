@@ -273,8 +273,14 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 8 }}>
             {t('recap.insufficient_title')}
           </div>
+          {/* Names the month instead of saying "this month". This card always
+              covers the month that just CLOSED (the same period the recap email
+              sends), so on any day of August "este mes" pointed at August —
+              while the evolution table directly below listed August with four
+              orders. The sentence and the table contradicted each other for a
+              reader who took the words literally. */}
           <p style={{ margin: '0 auto', maxWidth: 520, fontSize: 12.5, color: C.muted, lineHeight: 1.7 }}>
-            {t('recap.insufficient_body')}
+            {t('recap.insufficient_body', { month: monthLabel })}
           </p>
         </div>
       </Card>
@@ -283,7 +289,8 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
   const headline = report.capital_freed != null
     ? `${formatMoney(report.capital_freed)} ${t('recap.headline_freed')}`
-    : t('recap.headline_no_amount')
+    // Same correction as the empty state above: the month is the closed one.
+    : t('recap.headline_no_amount', { month: monthLabel })
 
   return (
     <Card padding={0} overflow="hidden" data-tour="roi.recap">

@@ -41,7 +41,7 @@ del tamaño de la superficie, no de su riesgo.
 | Escenarios | `/escenarios` | 6 | 2026-08-06 (parcial) | Solo el muro de plan para tenant Starter | La pantalla entera con un plan que la incluya |
 | Automatización | `/automatizacion` | 14 | 2026-08-06 | Programaciones armadas, historial, zona horaria, re-anclaje | Llaves de API, webhooks, pausar/eliminar programación |
 | Proveedores | `/proveedores` | 6 | 2026-08-06 (solo API) | Campos de lead time aprendido/inutilizable | La pantalla; alta y edición de proveedor; scorecard |
-| Impacto | `/impacto` | 0 | — | — | Todo |
+| Impacto | `/impacto` | 0 | 2026-08-10 | **Los cuatro números de portada reconciliados contra la base uno por uno** (ver abajo); resumen mensual; tabla de evolución; estados vacíos | Tutorial, enlaces de navegación, un mes con capital liberado real (necesita dos mediciones mensuales seguidas) |
 | Integraciones | `/integraciones` | 3 | — | — | Todo |
 | Mensajes | `/mensajes` | 4 | — | — | Todo |
 | Registro | `/signup` | 2 | 2026-08-09 | Alta completa (tenant + admin), rechazo por WhatsApp duplicado sin dejar filas varadas, aviso honesto cuando no se puede enviar el correo | Correo duplicado, validaciones de contraseña una por una, reenvío de verificación |
@@ -55,8 +55,8 @@ del tamaño de la superficie, no de su riesgo.
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | — | — | Todo |
 
-**Resumen honesto (2026-08-10):** 15 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 10 restantes están **sin medir**.
+**Resumen honesto (2026-08-10):** 16 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 9 restantes están **sin medir**.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
@@ -260,6 +260,35 @@ equivalentes en inglés. Cero prosa del motor y cero nombres de algoritmo.
 —llegan a 9 con solo 5 botones— pero son un mapeo fijo por posición
 (`MODEL_ORDER`), estable entre SKUs, exportaciones y recargas. Es deliberado y
 está documentado. No perseguirlo.
+
+## `/impacto`: los números aguantan, dos frases apuntan al mes equivocado (2026-08-10)
+
+Primera caminata. Esta pantalla casi no tiene botones: es puro número derivado,
+que es justo donde un dato falso no hace ruido. **Los cuatro de portada
+reconcilian exactamente** contra `inventory_po_log`:
+
+| En pantalla | De dónde sale | Cuadra |
+|---|---|---|
+| 4 órdenes generadas | 4 filas | sí |
+| ₡421 058 gestionados | 3006 + 425 + 27 + 417 600 | exacto |
+| 2 riesgos atendidos | suma de `skus_order_now` | sí |
+| 3 de 3 recomendaciones (100%) | `approved_count` / `suggested_count` | sí |
+
+**ARREGLADO — el resumen mensual decía "este mes" hablando de otro.** La tarjeta
+cubre siempre el mes **cerrado** (el mismo período del correo mensual, decisión
+deliberada y documentada en `inventory.py:1307`), así que el 10 de agosto el
+encabezado decía "Resumen de julio de 2026" y el cuerpo, "no registramos ninguna
+orden de compra **en este mes**" — mientras la tabla de evolución, cinco
+centímetros abajo, listaba agosto con 4 pedidos. Las dos frases con "este mes"
+ahora nombran el mes: "…ninguna orden de compra en julio de 2026". Caminado.
+
+**SIN ARREGLAR — "5 días activo" no son días activos.** `roi_service.py:278`
+calcula `(última orden − primera orden).days`, o sea el **lapso** entre la
+primera y la última orden. Aquí da 5 (4 → 10 de agosto), pero un tenant que
+pidiera una vez y repitiera al año leería "365 días activo" habiendo usado Faro
+dos días. El valor es medible y útil; la etiqueta promete otra cosa. Es la misma
+familia que el "Mejor WAPE" de `/pronosticos`. Qué debería decir es decisión del
+dueño, así que queda anotado.
 
 ## Por qué la suite no sustituye esto
 
