@@ -32,7 +32,7 @@ del tamaño de la superficie, no de su riesgo.
 | Inventario | `/inventario` | 60 | 2026-08-09 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación; edición masiva de stock/lead time y semáforo recalculado con datos reales (cobertura, cantidad a pedir) | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas, importar CSV de stock |
 | Pronósticos | `/pronosticos` | 17 | — | — | Todo |
 | Archivos / Fuentes | `/archivos` | 40 | 2026-08-09 | Vista previa (archivo cp1252 con acentos intactos — lector distinto al del entrenamiento); editor de columnas y filas con las 360 filas; "Guardar como nuevo"; renombrar (persiste `Ñ`, `ú` y guion largo); eliminar con confirmación que nombra el archivo y limpia base **y disco**; pestaña Análisis | Conectar fuente SQL ("Nuevo elemento"), "Reemplazar archivo", buscador, tutorial de 9 pasos, correr un Análisis completo |
-| Panel de compras | `/compras` | 14 | 2026-08-09 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC; resumen ejecutivo con datos reales | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación |
+| Panel de compras | `/compras` | 14 | 2026-08-10 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC (queda en la base: 348 und, ₡417 600); resumen ejecutivo con datos reales; **permisos ejercidos con viewer y admin reales, en ancho normal y angosto** (ver abajo) | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación. El gate de "Crear transferencia" quedó **sin caminar**: la sesión activa no trae sugerencias de traslado en el briefing |
 | Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
 | Landing | `/` | 8 | — | — | Todo |
@@ -99,26 +99,67 @@ distingue un 403 de un dato malo y en ese caso avisa que reintentar no sirve; y
 solo diga "CSV"). Las lecturas —plantilla, exportaciones, PDF— siguen para todos,
 y el admin conserva todo, verificado entrando con ambos roles.
 
-## `/archivos`: la lista miente después de guardar (2026-08-09)
+## `/archivos`: la lista miente después de guardar (2026-08-09, arreglado el 2026-08-10)
 
 Al usar "Guardar como nuevo" en el editor, la fuente **sí se crea** —está en la
 base, en disco, y se abre en el panel derecho— pero la barra lateral **no se
 refresca**: sigue diciendo "1 FUENTE" y listando solo el original. Pulsar el
 botón de refrescar muestra las dos. No se pierde nada; lo que falla es que la
 pantalla afirma un número que no es cierto justo después de una acción exitosa.
-El arreglo es recargar la lista tras guardar. **Sin arreglar.**
+
+**Causa, encontrada el 2026-08-10:** la misma pantalla tiene dos caminos que
+crean una fuente y solo uno estaba bien cableado. La materialización SQL avisa
+por `onDatasetCreated`, que la agrega a la lista; el editor de hoja de cálculo
+avisaba por `onUpdated`, que recorre la lista buscando el id **y no encuentra
+nada**, porque el id es nuevo. Por eso seleccionaba la copia a la derecha sin
+sumarla a la izquierda. Ahora el editor usa el mismo canal que el camino SQL.
+Caminado: la barra pasa de "4 FUENTES" a "5 FUENTES" con la copia arriba, sin
+tocar refrescar, y la copia está en `datasets` con sus 360 filas.
 
 Descartado al comprobarlo, para que nadie lo persiga: el contador **sí**
 pluraliza ("2 FUENTES"). Pareció un fallo por una regex mía que hacía match
 parcial, no por el producto.
 
-**Lo que sigue abierto, encontrado al verificar lo anterior:** `/compras` tiene
-el mismo patrón — le muestra "Aprobar" y "Rechazar" a un viewer, y al generar la
-orden el `POST /log-po` devuelve 403. Ahí **sí** avisa ("Tienes el CSV, pero no
-pudimos registrar la orden…"), así que no es mudo; pero cierra con "Genérala de
+**Lo que seguía abierto, encontrado al verificar lo anterior:** `/compras` tenía
+el mismo patrón — le mostraba "Aprobar" y "Rechazar" a un viewer, y al generar la
+orden el `POST /log-po` devolvía 403. Ahí **sí** avisaba ("Tienes el CSV, pero no
+pudimos registrar la orden…"), así que no era mudo; pero cerraba con "Genérala de
 nuevo", que para un viewer es la misma promesa vacía que ya se corrigió en
-inventario. Falta gatear los botones por rol y distinguir el 403. **Sin
-arreglar.**
+inventario.
+
+## `/compras`: qué se cerró el 2026-08-10
+
+Gatear "Aprobar" y "Rechazar" no bastaba. El carrito se llena con **dos**
+estados, `approved` y `modified`, y dos controles que parecían decorativos
+marcan `modified` por su cuenta: cambiar la cantidad y re-apuntar la línea a
+otro proveedor. Dejando cualquiera de los dos, un viewer volvía a levantar la
+barra verde de "Descargar orden de compra" sin haber aprobado nada. Por eso el
+gate cubre la cantidad y el selector de proveedor además de los dos botones.
+
+Quedaron gateados por rol: aprobar/rechazar/deshacer/restaurar, la cantidad, el
+selector de proveedor, "Descargar orden de compra", "Convertir en OC" del
+optimizador, "Registrar llegada" de los pedidos atrasados y "Crear
+transferencia". El aviso de atraso, el plan del optimizador, el porqué de cada
+recomendación y todos los números siguen visibles: lo que se quita es la
+decisión, no la lectura. En el lugar de los botones el viewer lee "Tu rol no
+puede generar órdenes", para que la ausencia no parezca una pantalla rota.
+
+También `downloadOC` distingue ahora el 403 del resto: si el rechazo fue el rol,
+deja de decir "Genérala de nuevo" y usa el aviso de permisos. Sigue siendo
+alcanzable con los botones ocultos, porque el rol se lee de una copia local que
+queda vieja en cuanto un admin degrada al usuario desde otra sesión.
+
+Caminado con las dos cuentas y en los dos anchos: el viewer no ve ninguno de
+esos controles (cero `input`, cero `select` en la pantalla) y sí ve los SKUs, el
+porqué y el plan; el admin los ve todos, y una orden real generada desde la
+pantalla quedó en `inventory_po_log` con 348 unidades, ₡417 600 y
+`approved_count = 1`. En angosto, el viewer pierde el stepper y "Agregar al
+pedido"; el admin los conserva. Cero errores de consola.
+
+**Lo que no se caminó:** el gate de "Crear transferencia". La sesión activa del
+tenant de prueba no trae `transfer_suggestions` en el briefing, así que ese
+componente nunca se dibujó — el gate está puesto y compila, pero no lo vi
+oculto en el navegador. Casilla vacía, no casilla correcta.
 
 Dos casillas que la tabla daba por pendientes y que **no existen como acción**:
 "activar sesión" en `/historial`, y el borrado de cuenta — `DELETE /tenant` y

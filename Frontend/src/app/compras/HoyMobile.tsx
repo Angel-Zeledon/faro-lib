@@ -66,6 +66,11 @@ interface HoyMobileProps {
   onChangeQty: (sku: string, qty: number) => void
   onClearCart: () => void
   onGenerate:  () => void
+  /** False for a viewer. The narrow layout has to make the same promises as
+   *  the desktop one, so the decision surface disappears here too — the
+   *  quantity stepper included, since a change flips the line to `modified`
+   *  and would raise the generate bar for a role that cannot generate. */
+  canDecide:   boolean
   generatedPO: POLogEntry | null
   onDismissGenerated: () => void
   pendingReceptions: number
@@ -81,6 +86,7 @@ export default function HoyMobile(props: HoyMobileProps) {
     loading, error, onRetry, briefing, firstName, freshness, semaphoreStale,
     cart, approved, onApprove, onRemove, onChangeQty, onClearCart, onGenerate,
     generatedPO, onDismissGenerated, pendingReceptions, overduePOs, noInventory,
+    canDecide,
   } = props
 
   const urgent = cart.filter(i => i.signal === 'PEDIR_YA' && i.status !== 'rejected')
@@ -189,6 +195,7 @@ export default function HoyMobile(props: HoyMobileProps) {
                   onApprove={() => onApprove(item.sku)}
                   onRemove={() => onRemove(item.sku)}
                   onChangeQty={q => onChangeQty(item.sku, q)}
+                  canDecide={canDecide}
                 />
               ))}
             </MobileSection>
@@ -208,6 +215,7 @@ export default function HoyMobile(props: HoyMobileProps) {
                   onApprove={() => onApprove(item.sku)}
                   onRemove={() => onRemove(item.sku)}
                   onChangeQty={q => onChangeQty(item.sku, q)}
+                  canDecide={canDecide}
                 />
               ))}
             </MobileSection>
@@ -297,13 +305,14 @@ export default function HoyMobile(props: HoyMobileProps) {
 }
 
 // ── One decision, one card ───────────────────────────────────────────────────
-function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChangeQty }: {
+function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChangeQty, canDecide }: {
   item:        ActionItem
   briefing:    MorningBriefing
   stale:       boolean
   onApprove:   () => void
   onRemove:    () => void
   onChangeQty: (qty: number) => void
+  canDecide:   boolean
 }) {
   const { t } = useLanguage()
   const [showWhy, setShowWhy] = useState(false)
@@ -378,7 +387,23 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
         </div>
       )}
 
-      {/* Quantity stepper */}
+      {/* Quantity stepper — read-only for a viewer, who still gets the number
+          and its value, just not the controls that would shape an order they
+          cannot place. */}
+      {!canDecide ? (
+        <div style={{ marginTop: 12, textAlign: 'center' }}>
+          <div style={{ color: accent, fontSize: 22, fontWeight: 800 }}>
+            {item.qty.toLocaleString('es')}
+          </div>
+          <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>
+            {t('hoy.label_units')}
+            {value > 0 && <> · ≈ {formatMoney(value)}</>}
+          </div>
+          <div style={{ fontSize: 11, color: C.dim, marginTop: 8, fontStyle: 'italic' }}>
+            {t('hoy.decide_role_readonly')}
+          </div>
+        </div>
+      ) : (
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, marginTop: 12,
       }}>
@@ -421,8 +446,10 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
           <Plus size={17} />
         </StepButton>
       </div>
+      )}
 
       {/* Primary action — full width, thumb height */}
+      {canDecide && (
       <button
         onClick={inCart ? onRemove : onApprove}
         disabled={!canOrder && !inCart}
@@ -442,6 +469,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
             ? tOr(t, 'mobile.add_to_cart', 'Add to the order')
             : t('hoy.enough_stock')}
       </button>
+      )}
 
       {/* Why panel */}
       <button

@@ -10,7 +10,7 @@ import {
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
  getOverduePOs, sendPOToSuppliers, getSupplierContactHealth, getSupplierLeadTimeAlerts,
- evaluatePriceBreaks, getCashCalendar, checkCashFit, listSuppliers,
+ evaluatePriceBreaks, getCashCalendar, checkCashFit, listSuppliers, ApiError,
 } from '@/lib/api'
 import type {
  MorningBriefing, BriefingRecommendation, MorningNarrative, NarrativeKeyPoint,
@@ -226,13 +226,17 @@ function LeadTimeLearning({ item }: { item: ActionItem }) {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier, tourAnchor, tourAnchors }: {
+function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors }: {
  item:        ActionItem
  onApprove:   () => void
  onReject:    () => void
  onChangeQty: (qty: number) => void
  suppliers:   Supplier[]
  onChangeSupplier: (supplierId: string) => void
+ /** A viewer can read every recommendation but cannot turn one into an order:
+  *  the only exit from this cart is POST /inventory/log-po, which their role
+  *  is refused. Approving would build a basket that can only fail at the end. */
+ canDecide:   boolean
  /** Set on the first card only — a tour anchor has to be unique in the DOM,
   *  and this used to repeat once per recommendation. */
  tourAnchor?: string
@@ -311,8 +315,11 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
      </div>
      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3 }}>{item.reason}</div>
      {/* Supplier is a decision, not a label: the buyer can send this line to
-         whoever they want before the order is generated. */}
-     {suppliers.length > 0 ? (
+         whoever they want before the order is generated. Which is exactly why
+         it is a picker only for a role that can generate one — re-pointing a
+         line also flips it to `modified` and fills the cart. A viewer gets the
+         same read-only label a tenant with no suppliers loaded already sees. */}
+     {suppliers.length > 0 && canDecide ? (
       <label data-tour={tourAnchors?.supplier} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('hoy.cart_supplier_label')}</span>
        <select
@@ -482,7 +489,15 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
      <div data-tour={tourAnchors?.qty} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.label_order_qty')}</span>
-      {editing ? (
+      {/* Not cosmetic for a viewer: changing the quantity marks the line
+          `modified`, which is one of the two statuses that fill the cart — so
+          leaving it editable would put the "Generate PO" bar back on screen
+          for someone whose role can never generate one. */}
+      {!canDecide ? (
+       <span style={{ fontSize: 18, fontWeight: 800, color: accent, lineHeight: 1 }}>
+        {item.qty.toLocaleString('es')}
+       </span>
+      ) : editing ? (
        <input
         type="number" min={0} value={qtyInput}
         name="order_qty" aria-label={t('hoy.label_order_qty')}
@@ -517,7 +532,11 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
      </div>
 
      {/* Action buttons */}
-     {!isApproved ? (
+     {!canDecide ? (
+      <span style={{ fontSize: 12, color: 'var(--dim)', fontStyle: 'italic', marginLeft: 'auto' }}>
+       {t('hoy.decide_role_readonly')}
+      </span>
+     ) : !isApproved ? (
       <div data-tour={tourAnchors?.decide} style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
        {canOrder ? (
         <>
@@ -552,7 +571,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
     </div>
    )}
 
-   {isRejected && (
+   {isRejected && canDecide && (
     <button onClick={onApprove} style={{
      all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--dim)', textDecoration: 'underline',
     }}>
@@ -815,6 +834,12 @@ export default function HoyPage() {
  const [sendResult, setSendResult]     = useState<SendPOResult | null>(null)
 
  const user    = getUser()
+ // Every write this screen can start — logging a PO, converting an optimizer
+ // line, recording a reception — is refused for a viewer by the backend. The
+ // screen used to offer all of them anyway and only admit it at the end, after
+ // the buyer had already decided twelve products and downloaded a CSV. Same
+ // shape as /inventario, /escenarios and /historial.
+ const canEdit = user?.role === 'admin' || user?.role === 'analyst'
  const { addToast } = useToast()
 
  // How old the two inputs behind the semáforo are. When either has gone blind
@@ -1131,15 +1156,24 @@ export default function HoyPage() {
    setGeneratedLines(approved)
    setSendState('idle')
    setSendResult(null)
-  } catch {
+  } catch (e) {
    // This call is not just the inline send panel — it is what makes the order
    // EXIST: /pedidos lists it, reception is tracked against it, and supplier
    // lead-time learning reads it. The old comment here reasoned the panel was
    // "a bonus" and stayed quiet, so a buyer who had just downloaded a CSV was
    // left believing the order was in the system. It is not, and the fix is to
    // generate it again, which they can only do if we say so.
-   addToast(t('inventory.toast_po_not_logged_title'),
-       t('inventory.toast_po_not_logged_body'), 'error')
+   //
+   // Unless the refusal was the ROLE, and then "generate it again" is an empty
+   // promise: every retry 403s identically. Reachable even with the cart bar
+   // gated — a cached role goes stale the moment an admin demotes the user in
+   // another session.
+   if (e instanceof ApiError && e.kind === 'permission') {
+    addToast(t('states.err_permission_title'), t('states.err_permission_body'), 'error')
+   } else {
+    addToast(t('inventory.toast_po_not_logged_title'),
+        t('inventory.toast_po_not_logged_body'), 'error')
+   }
   }
  }
 
@@ -1261,6 +1295,7 @@ export default function HoyPage() {
       : i,
     ))}
     onGenerate={downloadOC}
+    canDecide={canEdit}
     generatedPO={generatedPO}
     onDismissGenerated={dismissGeneratedPO}
     pendingReceptions={pendingPOs.length}
@@ -1392,18 +1427,23 @@ export default function HoyPage() {
             {t('hoy.overdue_line_prefix')} <strong>{o.supplier}</strong>{' '}
             {t('hoy.overdue_line_suffix')} <strong>{o.days_overdue}</strong> {t('hoy.overdue_days_ago_suffix')}
            </span>
-           <button
-            /* First row only: a tour anchor has to be unique to be findable. */
-            data-tour={idx === 0 ? 'hoy.receive' : undefined}
-            onClick={() => setReceivingPO(o.po_log_id)}
-            style={{
-             all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-             fontSize: 12, fontWeight: 700, color: C.red, padding: '6px 12px', borderRadius: 7,
-             border: `1px solid ${C.red}55`, flexShrink: 0,
-            }}
-           >
-            <Truck size={12} /> {t('hoy.overdue_cta')}
-           </button>
+           {/* The alert itself stays for everyone — a late delivery is worth
+               knowing about whatever your role. Only recording the reception,
+               which writes stock, is gated. */}
+           {canEdit && (
+            <button
+             /* First row only: a tour anchor has to be unique to be findable. */
+             data-tour={idx === 0 ? 'hoy.receive' : undefined}
+             onClick={() => setReceivingPO(o.po_log_id)}
+             style={{
+              all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 700, color: C.red, padding: '6px 12px', borderRadius: 7,
+              border: `1px solid ${C.red}55`, flexShrink: 0,
+             }}
+            >
+             <Truck size={12} /> {t('hoy.overdue_cta')}
+            </button>
+           )}
           </div>
          ))}
         </div>
@@ -1502,7 +1542,7 @@ export default function HoyPage() {
             transfer — the component renders null otherwise. */}
         {(briefing?.transfer_suggestions?.length ?? 0) > 0 && (
          <div data-tour="hoy.transfers">
-          <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} />
+          <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} canApprove={canEdit} />
          </div>
         )}
 
@@ -1528,6 +1568,7 @@ export default function HoyPage() {
             onChangeQty={qty => changeQty(item.sku, qty)}
             suppliers={suppliers}
             onChangeSupplier={id => changeSupplier(item.sku, id)}
+            canDecide={canEdit}
            />
           ))}
          </div>
@@ -1553,6 +1594,7 @@ export default function HoyPage() {
             onChangeQty={qty => changeQty(item.sku, qty)}
             suppliers={suppliers}
             onChangeSupplier={id => changeSupplier(item.sku, id)}
+            canDecide={canEdit}
            />
           ))}
          </div>
@@ -1864,12 +1906,17 @@ export default function HoyPage() {
              <span style={{ fontSize: 13 }}>
               {order.sku} — {order.warehouse}: <strong>{order.qty}</strong>
              </span>
-             <button onClick={() => convertOrderToPO(order)} style={{
-              all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              color: 'var(--accent)', padding: '4px 10px', borderRadius: 6,
-             }}>
-              {t('hoy.optimizer_convert_to_po')}
-             </button>
+             {/* Writes a PO in one click, so it is refused for a viewer — and
+                 it has no catch of its own: the failure surfaced only as the
+                 shared 403 toast with the line still sitting there. */}
+             {canEdit && (
+              <button onClick={() => convertOrderToPO(order)} style={{
+               all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+               color: 'var(--accent)', padding: '4px 10px', borderRadius: 6,
+              }}>
+               {t('hoy.optimizer_convert_to_po')}
+              </button>
+             )}
             </div>
            ))}
           </div>

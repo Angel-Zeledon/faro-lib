@@ -1722,7 +1722,18 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {tab === 'edit' && !isSql && (
  <DatasetEditorPanel
  source={source}
- onCreated={(created) => { onUpdated(created) }}
+ onCreated={(created) => {
+  // "Guardar como nuevo" creates a NEW source; it does not modify this one.
+  // Routed through onUpdated alone, the sidebar never learned about it: that
+  // handler maps the list by id, and a just-created id matches nothing. The
+  // screen then said "1 FUENTE" while the second source was already open on
+  // the right — a false count immediately after a successful action.
+  // onDatasetCreated is the same channel the SQL snapshot path already uses.
+  onDatasetCreated?.(created)
+  // Runs second on purpose: by now `created` IS in the list, so this replaces
+  // it with itself and selects it — which is what the user expects after save.
+  onUpdated(created)
+ }}
  />
  )}
 
