@@ -45,18 +45,18 @@ del tamaño de la superficie, no de su riesgo.
 | Integraciones | `/integraciones` | 3 | 2026-08-10 (solo el muro) | Muro de plan para tenant Starter, y **verificado contra el código que lo que promete existe**: conectores Alegra/Siigo reales, credenciales cifradas, y `run_daily_integration_syncs` corriendo desde el bucle diario del worker | **La pantalla entera con un plan que la incluya**: conectar, probar conexión, sincronizar, ver errores de credenciales. Nada del flujo real está caminado |
 | Mensajes | `/mensajes` | 4 | — | — | Todo |
 | Registro | `/signup` | 2 | 2026-08-09 | Alta completa (tenant + admin), rechazo por WhatsApp duplicado sin dejar filas varadas, aviso honesto cuando no se puede enviar el correo | Correo duplicado, validaciones de contraseña una por una, reenvío de verificación |
-| Recuperar contraseña | `/forgot-password` | 4 | — | — | Todo (el arreglo de sesión se verificó en código, no caminado) |
+| Recuperar contraseña | `/forgot-password` | 4 | 2026-08-10 | Los **3 pasos completos**: correo desconocido (no filtra si la cuenta existe), código equivocado, código válido, contraseña corta, contraseñas que no coinciden, cambio exitoso y redirección. Verificado en base: OTP quemado (`used=t`), refresh revocado, contraseña vieja rechazada, nueva aceptada | Reenviar código ("Prueba de nuevo"), OTP vencido, límite de intentos |
 | Historial | `/historial` | 7 | 2026-08-09 | Motivo de fallo en sesiones fallidas; lista completa con archivo, horizonte, granularidad y SKUs | Renombrar, eliminar, comparar. **"Activar sesión" no existe** — la sesión activa se deriva de la familia más nueva + el período activo, no se elige; estaba mal listada como acción pendiente |
 | Scorecard proveedor | `/proveedores/scorecard` | 0 | — | — | Todo |
 | Iniciar sesión | `/login` | 3 | 2026-08-06 | Login de tres cuentas con roles distintos | Credenciales malas, cuenta suspendida, cierre entre pestañas (verificado por evento, no con dos pestañas reales) |
 | Pedidos | `/pedidos` | 3 | 2026-08-09 | Lista con OC generada (número, urgentes, unidades, estado "En camino"); registrar llegada **parcial** — suma solo lo recibido y deja la OC en `partial` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp (abrir/copiar/enviarme), recibir de más |
 | Planes | `/planes` | 0 | — | — | Todo |
-| Restablecer contraseña | `/reset-password` | 2 | — | — | Todo |
+| Restablecer contraseña | `/reset-password` | 2 | — | — | Todo. **Ojo:** el paso 3 de `/forgot-password` ya cubre el cambio en sí; esta ruta es la del enlace por correo con token, que es otra entrada |
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** 17 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 8 restantes están **sin medir**.
+**Resumen honesto (2026-08-10):** 19 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 6 restantes están **sin medir**.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
@@ -349,6 +349,39 @@ viejo—.
 aparece en el semáforo", y en realidad **sí** aparece, marcado `SIN_DATOS`. Es
 mejor así —el producto no se esconde, se declara sin medir, que es la línea de
 todo el producto— pero la frase promete otra cosa. No lo toqué.
+
+## Recuperar contraseña: "todas las sesiones fueron revocadas" no era cierto (2026-08-10)
+
+Caminados los 3 pasos con una cuenta real. **Casi todo aguanta**, incluidos los
+caminos infelices: un correo inexistente avanza igual (no filtra si la cuenta
+existe — deliberado y documentado en `auth.py`), el código equivocado se rechaza
+sin dar pistas, la contraseña corta y las que no coinciden se frenan en el
+cliente. Verificado en base después del cambio: el OTP quedó `used=t`, el
+refresh token devuelve 401, la contraseña vieja devuelve 401 y la nueva entra.
+
+**Lo que no era cierto.** `POST /auth/reset-password` respondía:
+
+> `"Password updated. All sessions have been revoked."`
+
+`update_password` borra los **refresh tokens** y nada más. Medido: con la sesión
+abierta antes del cambio, después del reset el **access token seguía dando 200**
+mientras su refresh daba 401. O sea: la sesión no se puede *renovar*, pero quien
+ya tenga un access token conserva acceso completo —incluido escribir— hasta que
+venza (15 minutos). Para el caso que motiva un reset ("creo que alguien entró"),
+esos minutos son justo los que importan.
+
+**Por qué no lo arreglé de fondo.** No es una línea. `/logout` sí revoca el
+access token porque es una petición *autenticada*: tiene el `jti` en la mano y lo
+mete en la lista negra que `guards.py` consulta en cada request. El reset es un
+flujo **sin autenticar**: no hay `jti` que revocar. Matar tokens vivos ajenos
+exige invalidar por usuario-y-fecha (un campo tipo `sessions_invalid_before`
+comparado contra el `iat` del token — que hoy los tokens ni siquiera llevan).
+Eso es capacidad nueva, así que es decisión del dueño.
+
+**Lo que sí se hizo:** dejar de afirmarlo. El endpoint ahora responde lo que
+realmente pasa — que la sesión no se puede renovar y que los access tokens ya
+emitidos siguen válidos hasta vencer. La promesa falsa era el defecto que sí me
+tocaba.
 
 ## Por qué la suite no sustituye esto
 
