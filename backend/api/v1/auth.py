@@ -425,9 +425,33 @@ async def reset_password(body: ResetPasswordRequest):
     if payload.get("purpose") != "password_reset":
         raise AppError("reset_token_invalid", "Invalid token", status_code=400)
 
+    # One reset per token. The OTP that buys this token is burned on use
+    # (`pw_change_codes.used`), but the token itself was a plain signed JWT with
+    # nothing marking it spent — so it kept working for its full 15 minutes.
+    # Walked 2026-08-10: replaying the very same token after a completed reset
+    # returned 200 and changed the password a second time, locking the real
+    # owner out of the account they had just recovered.
+    #
+    # It matters more than a generic replay because this token travels in the
+    # URL of /reset-password: it survives in browser history, in a shared
+    # screen, in whatever logs a proxy keeps.
+    #
+    # The blocklist `/logout` already uses is exactly the right store, and the
+    # token already carries a `jti` — no new machinery.
+    from backend.auth.blocklist import is_revoked, revoke
+
+    jti = payload.get("jti")
+    if jti and is_revoked(jti):
+        raise AppError("reset_token_invalid", "This reset link was already used",
+                       status_code=400)
+
+    # Deliberately BEFORE the burn: a password rejected for being weak must
+    # leave the token usable, or the user's first typo costs them the link.
     _reject_weak_password(body.new_password)
 
     user_svc.update_password(payload["tenant_id"], payload["sub"], body.new_password)
+    if jti and payload.get("exp"):
+        revoke(jti, datetime.fromtimestamp(payload["exp"], tz=timezone.utc))
     # This claim is now true, and was not until 2026-08-10. `update_password`
     # used to delete refresh tokens only, so a session could not be RENEWED
     # while an access token already in someone's hands kept full write access

@@ -106,6 +106,60 @@ class TestAPasswordChangeEndsOpenSessions:
         assert client.get("/api/v1/me/preferences", headers=headers).status_code == 401
 
 
+class TestAResetLinkWorksExactlyOnce:
+    """Walked 2026-08-10: replaying the same reset token after a completed reset
+    returned 200 and changed the password again. The OTP that buys the token is
+    burned; the token was not. It travels in the URL of /reset-password, so it
+    outlives the reset in browser history."""
+
+    def _reset_token(self, user: dict) -> str:
+        from backend.auth.jwt_handler import create_signed_token
+        return create_signed_token({
+            "sub": user["id"], "tenant_id": user["tenant_id"],
+            "purpose": "password_reset",
+        }, expires_minutes=15)
+
+    def test_the_same_link_cannot_change_the_password_twice(
+        self, client, registered_user
+    ):
+        user = registered_user["user"]
+        token = self._reset_token(user)
+
+        first = client.post("/api/v1/auth/reset-password",
+                            json={"token": token, "new_password": "OwnerPass123!"})
+        assert first.status_code == 200, first.text
+
+        second = client.post("/api/v1/auth/reset-password",
+                             json={"token": token, "new_password": "Intruder123!"})
+        assert second.status_code == 400, (
+            f"the same reset link was accepted twice ({second.status_code}); "
+            f"whoever finds it in the URL history owns the account"
+        )
+
+        # The owner's password, not the replayer's, is the one that stands.
+        assert client.post("/api/v1/auth/login", json={
+            "email": user["email"], "password": "OwnerPass123!",
+        }).status_code == 200
+        assert client.post("/api/v1/auth/login", json={
+            "email": user["email"], "password": "Intruder123!",
+        }).status_code == 401
+
+    def test_a_weak_password_does_not_burn_the_link(self, client, registered_user):
+        """A first typo must not cost the user their only way back in."""
+        user = registered_user["user"]
+        token = self._reset_token(user)
+
+        weak = client.post("/api/v1/auth/reset-password",
+                           json={"token": token, "new_password": "abc"})
+        assert weak.status_code >= 400
+
+        ok_try = client.post("/api/v1/auth/reset-password",
+                             json={"token": token, "new_password": "OwnerPass123!"})
+        assert ok_try.status_code == 200, (
+            f"the link was spent by a rejected password ({ok_try.status_code})"
+        )
+
+
 class TestTheEndpointStillTellsTheTruth:
     def test_reset_password_reports_the_sign_out_it_now_performs(
         self, client, registered_user

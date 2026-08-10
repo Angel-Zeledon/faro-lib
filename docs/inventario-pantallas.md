@@ -51,13 +51,13 @@ del tamaño de la superficie, no de su riesgo.
 | Iniciar sesión | `/login` | 3 | 2026-08-06 | Login de tres cuentas con roles distintos | Credenciales malas, cuenta suspendida, cierre entre pestañas (verificado por evento, no con dos pestañas reales) |
 | Pedidos | `/pedidos` | 3 | 2026-08-09 | Lista con OC generada (número, urgentes, unidades, estado "En camino"); registrar llegada **parcial** — suma solo lo recibido y deja la OC en `partial` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp (abrir/copiar/enviarme), recibir de más |
 | Planes | `/planes` | 0 | 2026-08-10 | **Los límites anunciados contrastados contra los que el backend aplica** (`entitlements/plans.py`: 1000/2/1, 5000/10/5, ilimitado) — coinciden exactos; "Tu plan actual" cae en la tarjeta correcta (tenant `professional`); los dos CTA son `mailto:` reales, coherentes con "el cobro automático llega pronto" | Verlo desde un tenant Starter y desde uno Enterprise; el aviso al chocar contra un límite |
-| Restablecer contraseña | `/reset-password` | 2 | — | — | Todo. **Ojo:** el paso 3 de `/forgot-password` ya cubre el cambio en sí; esta ruta es la del enlace por correo con token, que es otra entrada |
+| Restablecer contraseña | `/reset-password` | 2 | 2026-08-10 | Sin token (avisa y **deshabilita** el botón — no ofrece lo que no puede cumplir); con un token real del propio producto: cambio exitoso, contraseña vieja rechazada, sesiones cortadas; **replay del mismo enlace** (ver abajo) | Token vencido, token de otro propósito, enlace por correo — **que hoy nadie envía** |
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** 20 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 5 restantes están **sin medir**: Landing `/`,
-Asistente IA, Mensajes, Scorecard proveedor y Restablecer contraseña.
+**Resumen honesto (2026-08-10):** 21 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 4 restantes están **sin medir**: Landing `/`,
+Asistente IA, Mensajes y Scorecard proveedor.
 
 Descartado al comprobarlo en `/planes`, para que nadie lo persiga: parecía que
 dos tarjetas decían "Tu plan actual". Es una lectura mía del texto aplanado —
@@ -404,6 +404,37 @@ devuelve **200**, sin bloqueo. El endpoint volvió a poder decir "All sessions
 have been signed out" porque ahora es cierto. Cinco tests nombrados por el fallo,
 con compuerta de mutación (comentar la llamada del guard pone dos en rojo), y 222
 tests de la vecindad de auth en verde.
+
+## `/reset-password`: el enlace servía dos veces (2026-08-10)
+
+Caminada con un token real emitido por el propio producto. Lo que aguanta: sin
+token la pantalla avisa **y deshabilita** el botón —no ofrece lo que no puede
+cumplir, que es el patrón contrario al que hubo que corregir en `/inventario`—;
+con token válido cambia la contraseña, rechaza la anterior y corta las sesiones.
+
+**ARREGLADO — el mismo enlace cambiaba la contraseña dos veces.** El OTP sí se
+quema (`pw_change_codes.used`), pero el token que se recibe a cambio era un JWT
+firmado sin nada que lo marcara gastado: seguía valiendo sus 15 minutos.
+Reproducido contra el servidor: tras un reset completo, **reenviar el mismo
+token devolvía 200** y dejaba la contraseña en otra distinta, sacando de la
+cuenta al dueño que acababa de recuperarla.
+
+Pesa más que un replay cualquiera porque **ese token viaja en la URL** de esta
+pantalla: sobrevive en el historial del navegador, en una pantalla compartida, en
+los registros de cualquier proxy.
+
+El arreglo no necesitó maquinaria nueva: el token ya lleva `jti` y la lista negra
+que usa `/logout` es exactamente el almacén correcto. Se quema **después** de un
+cambio exitoso, nunca antes — una contraseña rechazada por débil debe dejar el
+enlace usable, o el primer error de tecleo le cuesta al usuario su única vuelta.
+Verificado en vivo: primer uso 200, replay rechazado con `reset_token_invalid`
+(que sí tiene copy en español), la contraseña del dueño entra y la del replay no.
+
+**Anotado, no es defecto pero conviene saberlo:** `send_password_reset_email`
+—la que manda un *enlace*— existe y tiene test, pero **nadie la llama**. El
+producto manda un código de 6 dígitos, no un enlace. O sea que esta pantalla hoy
+solo se alcanza con un token que ningún correo produce; el endpoint detrás, en
+cambio, es el que usa el paso 3 de `/forgot-password` y está muy vivo.
 
 ## Por qué la suite no sustituye esto
 
