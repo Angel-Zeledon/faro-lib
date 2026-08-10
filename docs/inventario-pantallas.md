@@ -50,13 +50,18 @@ del tamaño de la superficie, no de su riesgo.
 | Scorecard proveedor | `/proveedores/scorecard` | 0 | — | — | Todo |
 | Iniciar sesión | `/login` | 3 | 2026-08-06 | Login de tres cuentas con roles distintos | Credenciales malas, cuenta suspendida, cierre entre pestañas (verificado por evento, no con dos pestañas reales) |
 | Pedidos | `/pedidos` | 3 | 2026-08-09 | Lista con OC generada (número, urgentes, unidades, estado "En camino"); registrar llegada **parcial** — suma solo lo recibido y deja la OC en `partial` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp (abrir/copiar/enviarme), recibir de más |
-| Planes | `/planes` | 0 | — | — | Todo |
+| Planes | `/planes` | 0 | 2026-08-10 | **Los límites anunciados contrastados contra los que el backend aplica** (`entitlements/plans.py`: 1000/2/1, 5000/10/5, ilimitado) — coinciden exactos; "Tu plan actual" cae en la tarjeta correcta (tenant `professional`); los dos CTA son `mailto:` reales, coherentes con "el cobro automático llega pronto" | Verlo desde un tenant Starter y desde uno Enterprise; el aviso al chocar contra un límite |
 | Restablecer contraseña | `/reset-password` | 2 | — | — | Todo. **Ojo:** el paso 3 de `/forgot-password` ya cubre el cambio en sí; esta ruta es la del enlace por correo con token, que es otra entrada |
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** 19 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 6 restantes están **sin medir**.
+**Resumen honesto (2026-08-10):** 20 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 5 restantes están **sin medir**: Landing `/`,
+Asistente IA, Mensajes, Scorecard proveedor y Restablecer contraseña.
+
+Descartado al comprobarlo en `/planes`, para que nadie lo persiga: parecía que
+dos tarjetas decían "Tu plan actual". Es una lectura mía del texto aplanado —
+las dos ocurrencias viven dentro de la misma tarjeta, la correcta.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
