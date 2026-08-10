@@ -70,8 +70,23 @@ function ScorecardTable({ rows, alerts }: {
                 {/* The divider is on the <tr>, so the cells do not draw their own. */}
                 <Td size="lg" divider={false} style={{ fontWeight: 600 }}>{row.supplier}</Td>
                 <Td size="lg" divider={false}>{row.n_receptions}</Td>
+                {/* Every delivery landed the same day it was ordered, so the
+                    observed average is 0 and measures nothing. /proveedores
+                    already refuses to learn from this and says why; printing
+                    "0d" here beside "10d declarado" invited the buyer to lower
+                    their lead time to zero and order too late. Same sentence as
+                    that screen — it exists, and it is the one that prevents the
+                    wrong move. */}
                 <Td size="lg" divider={false} mono>
-                  {fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
+                  {row.lead_time_unusable ? (
+                    <span
+                      style={{ color: C.dim }}
+                      title={t('suppliers.learning_unusable',
+                        { n: row.n_receptions, days: row.lead_time_declarado ?? '—' })}
+                    >
+                      {t('scorecard.lead_time_says_nothing')}
+                    </span>
+                  ) : fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
                 </Td>
                 <Td size="lg" divider={false} mono style={{ color: C.muted }}>
                   {row.lead_time_declarado != null ? `${row.lead_time_declarado}d` : '—'}
@@ -89,6 +104,14 @@ function ScorecardTable({ rows, alerts }: {
                       }}
                     >
                       <TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d
+                    </span>
+                  ) : !row.trend_measurable ? (
+                    // "Estable" over a single reception is a claim about a shape
+                    // nobody has seen. The comment above says absence of an
+                    // alert means "within its normal range" — which is only true
+                    // once there IS a range.
+                    <span style={{ color: C.dim }} title={t('scorecard.trend_needs_two_hint')}>
+                      {t('scorecard.trend_not_measurable')}
                     </span>
                   ) : (
                     <span style={{ color: C.dim }}>{t('scorecard.stable')}</span>

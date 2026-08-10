@@ -1439,6 +1439,12 @@ export interface SupplierScorecardRow {
   fill_rate:            number | null
   purchased_value:       number
   last_reception:     string | null
+  /** Enough receptions, none of them saying anything: every delivery landed the
+   *  same day it was ordered, so the observed average is 0. Same rule as
+   *  `lead_time_learned_unusable` on the supplier card — one definition. */
+  lead_time_unusable?:  boolean
+  /** A trend needs two points. False on 0 or 1 reception. */
+  trend_measurable?:    boolean
 }
 
 // Feature 2.5 — a supplier the PO-send path would silently skip.

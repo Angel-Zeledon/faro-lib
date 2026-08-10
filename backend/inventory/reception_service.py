@@ -421,6 +421,26 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
         avg = d.get("lead_time_real_avg")
         d["deviation_days"] = round(avg - declared, 1) if (declared is not None and avg is not None) else None
 
+        # Enough receptions, none of them saying anything: every delivery landed
+        # the same day it was ordered, so the average is 0 and measures nothing.
+        # /proveedores already refuses to learn from this and explains why; the
+        # scorecard printed "LEAD TIME REAL 0d" flat beside "DECLARADO 10d",
+        # which invites the buyer to lower their lead time to zero and order too
+        # late — the exact decision the other screen works to prevent.
+        #
+        # Same rule as `supplier_service.list_suppliers`, deliberately: a second
+        # definition of "usable" is how two screens start disagreeing.
+        from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
+
+        d["lead_time_unusable"] = bool(
+            int(d.get("n_receptions") or 0) >= MIN_LEAD_TIME_OBSERVATIONS
+            and (avg is None or float(avg) <= 0)
+        )
+        # A trend needs at least two points to be a trend. Reported over a single
+        # reception it read "Estable", which is a claim about a shape nobody has
+        # seen yet.
+        d["trend_measurable"] = int(d.get("n_receptions") or 0) >= 2
+
         fill = fill_by_supplier.get(d["supplier"])
         order_total = float(fill["order_total"]) if fill else 0.0
         d["fill_rate"] = round(float(fill["total_received"]) / order_total, 3) if fill and order_total > 0 else None
@@ -451,6 +471,11 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "deviation_days": None,
             "fill_rate": round(float(fill["total_received"]) / order_total, 3) if order_total > 0 else None,
             "purchased_value": round(float(fill["purchased_value"]), 2),
+            # No lead-time observations at all, so nothing to disbelieve and no
+            # trend to report. Keys present on every row so the UI never has to
+            # tell "false" from "absent".
+            "lead_time_unusable": False,
+            "trend_measurable": False,
         })
     return out
 

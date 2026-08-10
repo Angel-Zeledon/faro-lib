@@ -480,7 +480,7 @@ Eso es exactamente la promesa de la landing, cumplida y además protegida contra
 datos degenerados: tiene sus 3 recepciones, y aun así se niega a aprender de
 ellas porque no miden nada.
 
-**SIN ARREGLAR — el scorecard presenta esos mismos números planos.** Para ese
+**ARREGLADO el mismo día — el scorecard presentaba esos mismos números planos.** Para ese
 proveedor muestra `LEAD TIME REAL 0d` junto a `DECLARADO 10d`, sin una palabra
 del matiz que la otra pantalla acaba de dar. Un comprador que entra directo al
 scorecard concluye que Andina entrega el mismo día y baja su plazo — que es
@@ -493,11 +493,29 @@ Y hay una segunda: **`TENDENCIA: Estable` calculada sobre UNA recepción**
 palabra honesta es "todavía no sé".
 
 Es la misma familia que los 5-vs-0 atípicos de `/pronosticos`: dos superficies
-sobre el mismo dato, una con criterio y la otra sin él. **No lo arreglé porque
-qué mostrar cuando el dato es degenerado es decisión de producto** — se puede
-ocultar la cifra, marcarla como no concluyente, o reusar literalmente la frase de
-`/proveedores`. Mi recomendación es la tercera: la frase ya existe, ya está
-probada con usuarios reales y es la que evita la compra tardía.
+sobre el mismo dato, una con criterio y la otra sin él.
+
+**Cómo quedó** (opción elegida por el dueño: reusar la frase que ya existe). El
+backend expone dos banderas nuevas en el scorecard, calculadas con **la misma
+regla** que `supplier_service` —a propósito: una segunda definición de "usable"
+es exactamente como dos pantallas empiezan a contradecirse—:
+
+- `lead_time_unusable` (≥3 recepciones y promedio ≤ 0) → la celda dice "No
+  concluyente" y el tooltip es **literalmente** la frase de `/proveedores`:
+  "Registré 3 entregas, pero todas llegaron el mismo día que las pediste…".
+- `trend_measurable` (≥2 recepciones) → con una sola, la tendencia dice "Aún no"
+  en vez de "Estable", con su explicación. El comentario del código decía que la
+  ausencia de alerta significa "dentro de su rango normal, no falta de datos" —
+  cierto solo cuando ya *hay* rango.
+
+Caminado con los datos reales que lo destaparon: Andina pasó de `0d` a "No
+concluyente"; Granos del Valle, de "Estable" a "Aún no".
+
+**Residuo anotado, no tapado:** con **menos de 3** recepciones la columna todavía
+puede mostrar `0d` (Granos del Valle, n=1). Ampliar la regla aquí habría creado
+justo la segunda definición contra la que advierte el comentario; hacerlo bien es
+cambiar el umbral compartido en los dos lados, y eso es decisión de producto, no
+un arreglo local.
 
 ## Por qué la suite no sustituye esto
 
