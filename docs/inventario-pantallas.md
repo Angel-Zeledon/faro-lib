@@ -35,7 +35,7 @@ del tamaño de la superficie, no de su riesgo.
 | Panel de compras | `/compras` | 14 | 2026-08-10 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC (queda en la base: 348 und, ₡417 600); resumen ejecutivo con datos reales; **permisos ejercidos con viewer y admin reales, en ancho normal y angosto** (ver abajo) | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación. El gate de "Crear transferencia" quedó **sin caminar**: la sesión activa no trae sugerencias de traslado en el briefing |
 | Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
-| Landing | `/` | 8 | — | — | Todo |
+| Landing | `/` | 8 | 2026-08-10 | **Las promesas funcionales contrastadas contra el código**: "a la tercera recepción" = `MIN_LEAD_TIME_OBSERVATIONS = 3` exacto, y "viene en todos los planes" es cierto (no hay gate); los CTA apuntan a `/signup?demo=1`, que signup sí lee y enlaza con `demo_quickstart` | Correr el demo de verdad (crearía otro tenant), navegación por anclas, formulario de contacto, vista móvil. **La fila de cifras del hero está sin respaldo — ver abajo** |
 | Asistente IA | `/asistente` | 14 | — | — | Todo (necesita Ollama o clave Anthropic) |
 | Usuarios | `/usuarios` | 19 | 2026-08-09 | Crear usuario con rol (queda `pending_confirmation`, sin verificar); filtros de estado y rol; **permisos ejercidos como viewer real**: escrituras rechazadas con 403 y estado sin cambiar (ver abajo) | Editar usuario, suspender/reactivar, cambiar rol de otro, reenviar invitación, no poder degradarse a sí mismo |
 | Escenarios | `/escenarios` | 6 | 2026-08-06 (parcial) | Solo el muro de plan para tenant Starter | La pantalla entera con un plan que la incluya |
@@ -43,11 +43,11 @@ del tamaño de la superficie, no de su riesgo.
 | Proveedores | `/proveedores` | 6 | 2026-08-06 (solo API) | Campos de lead time aprendido/inutilizable | La pantalla; alta y edición de proveedor; scorecard |
 | Impacto | `/impacto` | 0 | 2026-08-10 | **Los cuatro números de portada reconciliados contra la base uno por uno** (ver abajo); resumen mensual; tabla de evolución; estados vacíos | Tutorial, enlaces de navegación, un mes con capital liberado real (necesita dos mediciones mensuales seguidas) |
 | Integraciones | `/integraciones` | 3 | 2026-08-10 (solo el muro) | Muro de plan para tenant Starter, y **verificado contra el código que lo que promete existe**: conectores Alegra/Siigo reales, credenciales cifradas, y `run_daily_integration_syncs` corriendo desde el bucle diario del worker | **La pantalla entera con un plan que la incluya**: conectar, probar conexión, sincronizar, ver errores de credenciales. Nada del flujo real está caminado |
-| Mensajes | `/mensajes` | 4 | — | — | Todo |
+| Mensajes | `/mensajes` | 4 | 2026-08-10 | Lista de conversaciones, abrir una (**marca leído de verdad en la base**), enviar — el mensaje llega a `direct_messages` con acentos, guion largo y € intactos, y queda no-leído para la destinataria | Buscar persona, iniciar conversación nueva, mensajes largos, adjuntos si existen |
 | Registro | `/signup` | 2 | 2026-08-09 | Alta completa (tenant + admin), rechazo por WhatsApp duplicado sin dejar filas varadas, aviso honesto cuando no se puede enviar el correo | Correo duplicado, validaciones de contraseña una por una, reenvío de verificación |
 | Recuperar contraseña | `/forgot-password` | 4 | 2026-08-10 | Los **3 pasos completos**: correo desconocido (no filtra si la cuenta existe), código equivocado, código válido, contraseña corta, contraseñas que no coinciden, cambio exitoso y redirección. Verificado en base: OTP quemado (`used=t`), refresh revocado, contraseña vieja rechazada, nueva aceptada | Reenviar código ("Prueba de nuevo"), OTP vencido, límite de intentos |
 | Historial | `/historial` | 7 | 2026-08-09 | Motivo de fallo en sesiones fallidas; lista completa con archivo, horizonte, granularidad y SKUs | Renombrar, eliminar, comparar. **"Activar sesión" no existe** — la sesión activa se deriva de la familia más nueva + el período activo, no se elige; estaba mal listada como acción pendiente |
-| Scorecard proveedor | `/proveedores/scorecard` | 0 | — | — | Todo |
+| Scorecard proveedor | `/proveedores/scorecard` | 0 | 2026-08-10 | Tabla completa con datos reales (recepciones, lead time real vs declarado, tendencia, % a tiempo, fill rate, valor comprado) | Un proveedor con entregas que sí midan algo; ordenar/filtrar si existe. **Dos cifras se presentan sin el matiz que la propia app aplica — ver abajo** |
 | Iniciar sesión | `/login` | 3 | 2026-08-06 | Login de tres cuentas con roles distintos | Credenciales malas, cuenta suspendida, cierre entre pestañas (verificado por evento, no con dos pestañas reales) |
 | Pedidos | `/pedidos` | 3 | 2026-08-09 | Lista con OC generada (número, urgentes, unidades, estado "En camino"); registrar llegada **parcial** — suma solo lo recibido y deja la OC en `partial` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp (abrir/copiar/enviarme), recibir de más |
 | Planes | `/planes` | 0 | 2026-08-10 | **Los límites anunciados contrastados contra los que el backend aplica** (`entitlements/plans.py`: 1000/2/1, 5000/10/5, ilimitado) — coinciden exactos; "Tu plan actual" cae en la tarjeta correcta (tenant `professional`); los dos CTA son `mailto:` reales, coherentes con "el cobro automático llega pronto" | Verlo desde un tenant Starter y desde uno Enterprise; el aviso al chocar contra un límite |
@@ -55,9 +55,9 @@ del tamaño de la superficie, no de su riesgo.
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** 21 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 4 restantes están **sin medir**: Landing `/`,
-Asistente IA, Mensajes y Scorecard proveedor.
+**Resumen honesto (2026-08-10):** 24 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. La única **sin medir** es `/asistente`, que
+necesita Ollama corriendo o una clave de Anthropic.
 
 Descartado al comprobarlo en `/planes`, para que nadie lo persiga: parecía que
 dos tarjetas decían "Tu plan actual". Es una lectura mía del texto aplanado —
@@ -435,6 +435,69 @@ Verificado en vivo: primer uso 200, replay rechazado con `reset_token_invalid`
 producto manda un código de 6 dígitos, no un enlace. O sea que esta pantalla hoy
 solo se alcanza con un token que ningún correo produce; el endpoint detrás, en
 cambio, es el que usa el paso 3 de `/forgot-password` y está muy vivo.
+
+## Landing: lo específico se cumple, la cifra del hero no (2026-08-10)
+
+Lo llamativo es que **las promesas concretas aguantan**. La landing describe el
+aprendizaje de plazos con un detalle que se puede falsear:
+
+> "A la tercera recepción de ese proveedor deja de usar el plazo que escribiste
+> y empieza a usar el promedio observado — y te dice cuál de los dos está
+> aplicando. Esto viene en todos los planes."
+
+`MIN_LEAD_TIME_OBSERVATIONS = 3` — la tercera recepción, exacto. Y no hay ningún
+gate de plan sobre eso, así que "todos los planes" es cierto. Los CTA apuntan a
+`/signup?demo=1`, bandera que la pantalla de registro sí lee y que enlaza con el
+endpoint `demo_quickstart`. Nada de eso es humo.
+
+**Lo que sí conviene mirar: "94% Precisión promedio de pronóstico".** Esta semana
+el producto le mostró a su propio usuario 75.1%, 75.2% y 89% en sesiones reales.
+La cifra del hero no es la que la aplicación enseña. Puede que salga de un
+benchmark o de una aspiración legítima —eso no lo sé—, pero hoy un comprador que
+entra por la landing y llega a `/pronosticos` ve dos números distintos sobre lo
+mismo.
+
+Las otras tres del hero (−75% de tiempo, 50K+ SKUs por instancia, 1 día de
+implementación) no tienen dentro del repositorio nada contra qué contrastarlas.
+Ojo con la de 50K+: los planes topan en 5.000 SKUs salvo Enterprise, así que
+"soportados por instancia" y "lo que tu plan te deja" no son lo mismo y están a
+dos clics de distancia.
+
+**No lo toqué.** Una cifra de marketing es una decisión de negocio —y
+potencialmente un compromiso legal—, no un defecto que me corresponda corregir
+por mi cuenta. Queda anotado con la evidencia medida.
+
+## Proveedores y su scorecard: el mismo dato, con matiz y sin él (2026-08-10)
+
+`/proveedores` tiene la mejor columna de copy del producto. Explica **por qué**
+no aprendió todavía, proveedor por proveedor:
+
+> "Registré 3 entregas, pero todas llegaron el mismo día que las pediste, así que
+> no dicen nada del plazo de este proveedor. Sigo usando los 10 días que
+> configuraste."
+
+Eso es exactamente la promesa de la landing, cumplida y además protegida contra
+datos degenerados: tiene sus 3 recepciones, y aun así se niega a aprender de
+ellas porque no miden nada.
+
+**SIN ARREGLAR — el scorecard presenta esos mismos números planos.** Para ese
+proveedor muestra `LEAD TIME REAL 0d` junto a `DECLARADO 10d`, sin una palabra
+del matiz que la otra pantalla acaba de dar. Un comprador que entra directo al
+scorecard concluye que Andina entrega el mismo día y baja su plazo — que es
+precisamente la decisión equivocada que `/proveedores` se esfuerza en evitar. El
+`% A TIEMPO 100%` sale de lo mismo: entregas de cero días son trivialmente
+puntuales.
+
+Y hay una segunda: **`TENDENCIA: Estable` calculada sobre UNA recepción**
+(Granos del Valle). Una tendencia necesita al menos dos puntos; con uno, la
+palabra honesta es "todavía no sé".
+
+Es la misma familia que los 5-vs-0 atípicos de `/pronosticos`: dos superficies
+sobre el mismo dato, una con criterio y la otra sin él. **No lo arreglé porque
+qué mostrar cuando el dato es degenerado es decisión de producto** — se puede
+ocultar la cifra, marcarla como no concluyente, o reusar literalmente la frase de
+`/proveedores`. Mi recomendación es la tercera: la frase ya existe, ya está
+probada con usuarios reales y es la que evita la compra tardía.
 
 ## Por qué la suite no sustituye esto
 
