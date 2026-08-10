@@ -2289,8 +2289,49 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
 
 // ── Quality panel ─────────────────────────────────────────────────────────────
 
+/** The per-SKU quality warnings, in the reader's language.
+ *
+ * The engine emits them as English sentences — `"1 outliers"`,
+ * `"3 missing dates"`, `"Only 12 rows (min=20)"` — and this panel printed the
+ * list verbatim. A Spanish user with a spiky series read "1 outliers" beside
+ * fully translated labels.
+ *
+ * Rebuilding them here needs no new backend field and, crucially, invents no
+ * thresholds: every line below is driven by a decision the ENGINE already
+ * published — its own outlier count, its own missing-date count, its own
+ * `has_min_history` boolean, its own `series_flags`. Re-deriving "is this
+ * intermittent?" from `zero_ratio` and a guessed cutoff would recreate exactly
+ * the 1.5-vs-3.0 IQR split this screen just finished repairing.
+ *
+ * Anything the engine warns about that we have not modelled still surfaces, in
+ * English, rather than disappearing: a warning we drop is a warning the user
+ * never learns about.
+ */
+function useQualityWarnings() {
+  const { t } = useLanguage()
+  return (q: QualityReport[string]): string[] => {
+    const lines: string[] = []
+    const raw: string[] = Array.isArray(q?.warnings) ? q.warnings as string[] : []
+
+    if (q?.has_min_history === false) lines.push(t('skus.quality_warn_short_history', { n: q.n_rows }))
+    if ((q?.n_outliers ?? 0) > 0)     lines.push(t('skus.quality_warn_outliers', { n: q.n_outliers }))
+    if ((q?.missing_dates ?? 0) > 0)  lines.push(t('skus.quality_warn_missing_dates', { n: q.missing_dates }))
+    if (Array.isArray(q?.series_flags) && q.series_flags.includes('intermittent')) {
+      lines.push(t('skus.quality_warn_intermittent', { pct: pct(q.zero_ratio) }))
+    }
+
+    // Markers of the four the engine currently emits (quality.py `_check_sku`).
+    // Used only to answer "did we already say this?" — never to build a
+    // sentence — so an engine that grows a fifth warning still shows it.
+    const covered = /outliers|missing dates|rows \(min=|Intermittent:/
+    lines.push(...raw.filter(w => !covered.test(w)))
+    return lines
+  }
+}
+
 function QualityPanel({ q }: { q: QualityReport[string] }) {
   const { t } = useLanguage()
+  const warningLines = useQualityWarnings()(q)
   return (
     <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
@@ -2319,16 +2360,16 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
           </div>
         </div>
       ))}
-      {q.warnings?.length > 0 && (
+      {warningLines.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {q.warnings.map((w, i) => (
+          {warningLines.map((w, i) => (
             <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: '#f59e0b' }}>
               <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{w}
             </div>
           ))}
         </div>
       )}
-      {q.is_valid && !q.warnings?.length && (
+      {q.is_valid && warningLines.length === 0 && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#22c55e' }}>
           <CheckCircle2 size={12} /> {t('skus.series_clean_no_warnings')}
         </div>
@@ -2865,6 +2906,7 @@ export default function SkusPage() {
   const skuMetrics   = useMemo(() => metrics.filter(r => r.sku === selectedSku), [metrics, selectedSku])
   const skuInventory = useMemo(() => inventory.find(r => r.sku === selectedSku), [inventory, selectedSku])
   const skuQuality   = useMemo(() => selectedSku ? quality[selectedSku] : undefined, [quality, selectedSku])
+  const qualityWarnings = useQualityWarnings()
   const statusBySku  = useMemo(() => new Map(invStatus.map(i => [i.sku, i])), [invStatus])
   const skuStatus    = useMemo(() => selectedSku ? statusBySku.get(selectedSku) : undefined, [statusBySku, selectedSku])
   // Both keyed by the raw SKU, and both legitimately missing for a SKU whose
@@ -3295,14 +3337,18 @@ export default function SkusPage() {
                             </div>
                           ))}
                         </div>
-                        {skuQuality.is_valid && !skuQuality.warnings?.length && (
+                        {skuQuality.is_valid && qualityWarnings(skuQuality).length === 0 && (
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#22c55e', marginBottom: 12 }}>
                             <CheckCircle2 size={12} /> {t('skus.series_clean_no_warnings')}
                           </div>
                         )}
-                        {skuQuality.warnings?.length > 0 && (
+                        {/* Same localized lines as QualityPanel — this block is
+                            a second rendering of the same report, and it was
+                            the one actually on screen when "1 outliers" showed
+                            up in Spanish. */}
+                        {qualityWarnings(skuQuality).length > 0 && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
-                            {skuQuality.warnings.map((w, i) => (
+                            {qualityWarnings(skuQuality).map((w, i) => (
                               <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: '#f59e0b' }}>
                                 <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{w}
                               </div>

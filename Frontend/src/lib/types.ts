@@ -204,6 +204,12 @@ export interface CanonicalColumnsBody {
   defaults_override?: Record<string, unknown>
 }
 
+// Mirrors `SKUReport.to_dict()` in the engine
+// (ForecastingCore/forecasting_core/data/quality.py). The fields below the
+// original seven were always sent and simply undeclared, so the UI could not
+// reach the engine's own decisions — which is why the quality panel ended up
+// re-printing its English sentences instead of rebuilding them from the data.
+// Optional because a session trained before a field existed lacks it.
 export interface QualityReport {
   [sku: string]: {
     quality_score: number
@@ -213,6 +219,15 @@ export interface QualityReport {
     n_outliers:    number
     warnings:      string[]
     is_valid:      boolean
+    /** The engine's own "is there enough history" verdict, not a threshold the
+     *  UI may re-derive. */
+    has_min_history?: boolean
+    missing_dates?:   number
+    zero_ratio?:      number
+    /** Multi-label classification: 'seasonal', 'intermittent', 'volatile', … */
+    series_flags?:    string[]
+    /** flag → why the engine assigned it, e.g. "STL strength=0.32 > 0.3". */
+    series_reasons?:  Record<string, string>
   }
 }
 

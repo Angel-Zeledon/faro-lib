@@ -232,8 +232,38 @@ documentada: quedarse corto cuesta más que sobrar— así que gana Modelo 2. Pe
    siguen ubicando en el frontend y por eso la constante tiene que seguir
    igualando la del motor; queda dicho en el comentario. Verificado: el pie ya
    no reporta atípicos para el SKU-A y la pestaña Calidad sigue diciendo 0.
-   **Sin caminar:** ningún SKU de las sesiones de prueba supera el cerco de 3×,
-   así que no vi los marcadores dibujados bajo la regla nueva.
+   **Caminado del todo el 2026-08-10.** Ninguna serie del tenant cruzaba 3× en
+   ninguna granularidad, así que se entrenó una sesión con el pico a propósito
+   ("Outlier demo": 150 días, un SKU que vende ~40 y un día 400). El motor
+   cuenta 1, el pie dice "1 valor atípico detectado", la pestaña Calidad dice 1
+   y el punto ámbar aparece dibujado sobre el pico. Las dos definiciones
+   coinciden sobre datos reales, en el caso positivo y en el negativo.
+
+   Quedó medido de paso que la contradicción era **sistemática**, no anecdótica:
+   con el cerco viejo el frontend marcaba puntos en 8 de 12 series mientras el
+   motor reportaba 0 en las 12.
+
+5. **La pestaña Calidad decía "1 outliers". ARREGLADO.** Encontrado justo al
+   crear esos datos: las advertencias por SKU son frases en inglés que el motor
+   arma a mano (`quality.py`: `f"{outliers} outliers"`, `f"{missing} missing
+   dates"`, `"Only {n} rows (min={min})"`, `"Intermittent: {pct} zeros"`) y la
+   pantalla las imprimía tal cual, junto a etiquetas traducidas. Se reconstruyen
+   ahora desde los campos que el motor **ya publica** —su propio conteo de
+   atípicos, su propio conteo de fechas faltantes, su `has_min_history`, sus
+   `series_flags`— sin inventar ni un umbral: re-derivar "¿es intermitente?"
+   desde `zero_ratio` y un corte adivinado habría recreado exactamente la
+   división 1.5 vs 3.0 que se acababa de reparar. Lo que el motor advierta y no
+   esté modelado sigue apareciendo, en inglés, en vez de desaparecer.
+
+   El bloque estaba **duplicado** en el archivo y el primer arreglo tocó la copia
+   que no se ve; caminarlo fue lo que lo destapó. Verificado en los dos idiomas
+   y en los dos casos: SPIKE-01 dice "1 venta(s) muy fuera de lo normal…" /
+   "1 sale(s) far outside the normal range…", CALM-02 dice "Serie limpia".
+
+   El tipo `QualityReport` declaraba 7 campos de los 12 que la API manda; los
+   otros 5 estaban ahí desde siempre, solo invisibles para el frontend — que es
+   por qué esta pantalla terminó reimprimiendo las frases del motor en vez de
+   rearmarlas.
 
 **Además, no era un número pero sí una mentira de idioma. ARREGLADO.** "Ver
 detalle" imprimía el texto crudo del motor, en inglés, a un usuario español —
@@ -282,13 +312,15 @@ orden de compra **en este mes**" — mientras la tabla de evolución, cinco
 centímetros abajo, listaba agosto con 4 pedidos. Las dos frases con "este mes"
 ahora nombran el mes: "…ninguna orden de compra en julio de 2026". Caminado.
 
-**SIN ARREGLAR — "5 días activo" no son días activos.** `roi_service.py:278`
-calcula `(última orden − primera orden).days`, o sea el **lapso** entre la
-primera y la última orden. Aquí da 5 (4 → 10 de agosto), pero un tenant que
-pidiera una vez y repitiera al año leería "365 días activo" habiendo usado Faro
-dos días. El valor es medible y útil; la etiqueta promete otra cosa. Es la misma
-familia que el "Mejor WAPE" de `/pronosticos`. Qué debería decir es decisión del
-dueño, así que queda anotado.
+**ARREGLADO — "5 días activo" no eran días activos.** `roi_service.py` calculaba
+`(última orden − primera orden).days`, o sea el **lapso** entre la primera y la
+última orden. Daba 5 y parecía correcto, pero un tenant que pidiera una vez y
+repitiera al año habría leído "365 días activo" habiendo usado Faro dos días.
+Ahora es `COUNT(DISTINCT generated_at::date)`, que no puede exagerar: está
+acotado por los días en que el comprador apareció. En pantalla pasó de 5 a **2**,
+que es exactamente lo que dice la base (4 y 10 de agosto). Con test nombrado por
+el fallo (`test_roi_active_days.py`) y compuerta de mutación: restaurando el
+cálculo viejo se ponen rojos dos de los tres.
 
 ## Por qué la suite no sustituye esto
 

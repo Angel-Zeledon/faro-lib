@@ -239,7 +239,14 @@ def get_roi_summary(tenant_id: str) -> dict:
                COALESCE(SUM(approved_count), 0)::int  AS total_approved,
                COALESCE(SUM(rejected_count), 0)::int  AS total_rejected,
                MIN(generated_at)                AS first_po_at,
-               MAX(generated_at)                AS last_po_at
+               MAX(generated_at)                AS last_po_at,
+               -- Days the buyer actually DID something, which is what the
+               -- screen's "días activo" claims. It used to be the span between
+               -- the first and last order, so a tenant who ordered once and
+               -- again a year later read "365 días activo" after using Faro on
+               -- two days. A distinct-day count cannot overstate: it is bounded
+               -- by the number of days they showed up.
+               COUNT(DISTINCT generated_at::date)::int AS active_days
            FROM inventory_po_log
            WHERE tenant_id = %s""",
         (tenant_id,),
@@ -268,14 +275,15 @@ def get_roi_summary(tenant_id: str) -> dict:
     first_po_at = agg.get("first_po_at") if agg else None
     last_po_at  = agg.get("last_po_at")  if agg else None
 
-    active_days = 0
-    if first_po_at and last_po_at and first_po_at != last_po_at:
-        # Both may be timezone-aware or naive depending on DB config; normalise to UTC
-        def _to_dt(v):
-            if isinstance(v, datetime):
-                return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v
-            return datetime.fromisoformat(str(v)).replace(tzinfo=timezone.utc)
-        active_days = max(0, (_to_dt(last_po_at) - _to_dt(first_po_at)).days)
+    # Counted in SQL as distinct calendar days with a generated order — see the
+    # comment on the aggregate. Deliberately NOT the first-to-last span: that
+    # number grows while the buyer is away, which is the opposite of what a
+    # figure called "days active" is read to mean.
+    # Counted in SQL as distinct calendar days with a generated order — see the
+    # comment on the aggregate. Deliberately NOT the first-to-last span: that
+    # number grows while the buyer is away, which is the opposite of what a
+    # figure called "days active" is read to mean.
+    active_days = int(agg.get("active_days") or 0) if agg else 0
 
     total_suggested = int(agg.get("total_suggested") or 0) if agg else 0
     total_approved  = int(agg.get("total_approved")  or 0) if agg else 0
