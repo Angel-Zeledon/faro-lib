@@ -156,10 +156,14 @@ pantalla quedó en `inventory_po_log` con 348 unidades, ₡417 600 y
 `approved_count = 1`. En angosto, el viewer pierde el stepper y "Agregar al
 pedido"; el admin los conserva. Cero errores de consola.
 
-**Lo que no se caminó:** el gate de "Crear transferencia". La sesión activa del
-tenant de prueba no trae `transfer_suggestions` en el briefing, así que ese
-componente nunca se dibujó — el gate está puesto y compila, pero no lo vi
-oculto en el navegador. Casilla vacía, no casilla correcta.
+**"Crear transferencia", caminado el mismo día:** el componente no se dibujaba
+porque la sesión activa no traía sugerencias de traslado. Se provocó la
+condición real —dejar excedente de SKU-A en Bodega Cartago mientras principal
+está en cero— y el briefing la produjo sola. El viewer lee la sugerencia
+completa (mover 226 desde Bodega Cartago, la cobertura que le queda al donante,
+y por qué trasladar gana a comprar) **sin** el botón; el admin lo tiene, y al
+pulsarlo quedó en `inventory_transfer_log` la fila Cartago → principal en
+`in_transit` con 226 unidades de SKU-A. Casilla cerrada.
 
 Dos casillas que la tabla daba por pendientes y que **no existen como acción**:
 "activar sesión" en `/historial`, y el borrado de cuenta — `DELETE /tenant` y
