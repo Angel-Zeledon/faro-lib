@@ -36,7 +36,7 @@ del tamaño de la superficie, no de su riesgo.
 | Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
 | Landing | `/` | 8 | 2026-08-10 | **Las promesas funcionales contrastadas contra el código**: "a la tercera recepción" = `MIN_LEAD_TIME_OBSERVATIONS = 3` exacto, y "viene en todos los planes" es cierto (no hay gate); los CTA apuntan a `/signup?demo=1`, que signup sí lee y enlaza con `demo_quickstart` | Correr el demo de verdad (crearía otro tenant), navegación por anclas, formulario de contacto, vista móvil. **La fila de cifras del hero está sin respaldo — ver abajo** |
-| Asistente IA | `/asistente` | 14 | — | — | Todo (necesita Ollama o clave Anthropic) |
+| Asistente IA | `/asistente` | 14 | 2026-08-10 | Lista de conversaciones, abrir una, selector de sesión, **enviar una pregunta sin LLM detrás**: responde en español, honesto y etiquetado como Error ("El asistente tardó demasiado… tu pregunta sigue aquí") | Una respuesta real (necesita Ollama o clave Anthropic), nueva conversación, buscador, renombrar/eliminar |
 | Usuarios | `/usuarios` | 19 | 2026-08-09 | Crear usuario con rol (queda `pending_confirmation`, sin verificar); filtros de estado y rol; **permisos ejercidos como viewer real**: escrituras rechazadas con 403 y estado sin cambiar (ver abajo) | Editar usuario, suspender/reactivar, cambiar rol de otro, reenviar invitación, no poder degradarse a sí mismo |
 | Escenarios | `/escenarios` | 6 | 2026-08-06 (parcial) | Solo el muro de plan para tenant Starter | La pantalla entera con un plan que la incluya |
 | Automatización | `/automatizacion` | 14 | 2026-08-06 | Programaciones armadas, historial, zona horaria, re-anclaje | Llaves de API, webhooks, pausar/eliminar programación |
@@ -55,9 +55,29 @@ del tamaño de la superficie, no de su riesgo.
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** 24 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. La única **sin medir** es `/asistente`, que
-necesita Ollama corriendo o una clave de Anthropic.
+**Resumen honesto (2026-08-10):** **las 25 pantallas tienen alguna caminata.**
+Ninguna está caminada entera — la columna "qué falta" sigue siendo la parte
+honesta de la tabla, y una casilla vacía ahí significa desconocido, no correcto.
+
+### Barrido de regresión del 2026-08-10
+
+Después de un día de cambios que tocan cada request (dos en autenticación), se
+recorrieron **21 rutas seguidas** con sesión de admin: todas renderizan, **cero
+errores de consola, cero claves i18n crudas en pantalla**. Y se reverificó como
+viewer real que los gates de `/compras` siguen en pie tras tocar auth: cero
+controles de escritura, cero botones de acción, el aviso de rol presente y las
+lecturas intactas.
+
+**`/asistente`, la última que faltaba.** Sin LLM detrás, la ruta viva responde
+**en español y con etiqueta de Error**: "El asistente tardó demasiado en
+responder y se cortó la consulta. Tu pregunta sigue aquí — vuelve a intentarla, o
+hazla más corta." Eso está bien.
+
+En el hilo guardado sí se leen respuestas en inglés crudo ("The AI service is
+temporarily unavailable…") y un par de preguntas sin ninguna respuesta. **No es
+un defecto vivo:** esa frase ya **no existe en el código**. Son fósiles de una
+versión anterior, y el historial no se reescribe. Anotado para que nadie lo
+persiga al verlo en pantalla.
 
 Descartado al comprobarlo en `/planes`, para que nadie lo persiga: parecía que
 dos tarjetas decían "Tu plan actual". Es una lectura mía del texto aplanado —
