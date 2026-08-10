@@ -53,10 +53,10 @@ del tamaño de la superficie, no de su riesgo.
 | Planes | `/planes` | 0 | — | — | Todo |
 | Restablecer contraseña | `/reset-password` | 2 | — | — | Todo |
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
-| Configurar inventario | `/configurar-inventario` | 0 | — | — | Todo |
+| Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** 16 pantallas de 25 tienen alguna caminata, y
-ninguna está caminada entera. Las 9 restantes están **sin medir**.
+**Resumen honesto (2026-08-10):** 17 pantallas de 25 tienen alguna caminata, y
+ninguna está caminada entera. Las 8 restantes están **sin medir**.
 
 Lo que sí quedó cubierto de punta a punta el 2026-08-09 es **la cadena que
 produce el dinero**, con un tenant nuevo y datos propios: registro → verificar
@@ -321,6 +321,34 @@ acotado por los días en que el comprador apareció. En pantalla pasó de 5 a **
 que es exactamente lo que dice la base (4 y 10 de agosto). Con test nombrado por
 el fallo (`test_roi_active_days.py`) y compuerta de mutación: restaurando el
 cálculo viejo se ponen rojos dos de los tres.
+
+## `/configurar-inventario`: una frase que se vuelve falsa al avanzar (2026-08-10)
+
+Primera caminata, con la sesión "Outlier demo" de 2 productos. Lo sustantivo
+aguanta: la lista prioriza por plata, guardar una fila la escribe exacta en la
+base (`250`, `12.5`, `9`) —incluido el **"12,50" con coma**, que es lo que el
+copy promete leer— y la promesa central se cumple de punta a punta: el producto
+configurado aparece en el semáforo con señal real y el otro queda `SIN_DATOS`.
+
+**ARREGLADO — el encabezado se volvía falso justo al avanzar.** Decía "Con
+{n} de tus {total} productos cubres el {pct}% de tu compra del mes". Con nada
+configurado era cierto por coincidencia (2 de 2 = 100%). Después de configurar
+el primero pasó a decir "Con **1** de tus 2 productos cubres el **100%** de tu
+compra del mes" — mientras la barra, dos líneas abajo, decía "65% ya
+configurado" y ese producto restante valía 34.8%.
+
+El cálculo del backend está bien: `cumulative_pct` incluye lo ya cubierto, así
+que el 100% es el total al que llegarías. Lo que fallaba era la redacción, que
+lo presentaba como cobertura de un subconjunto. Ahora: "**Completando** 1 de tus
+2 productos **llegas al** 100% de tu compra del mes". Las dos variantes (plata y
+unidades), en los dos catálogos —`translations.ts` y el de respaldo
+`i18n/stockSetup.ts`, que hay que tocar juntos o el respaldo revive el texto
+viejo—.
+
+**Observación, no defecto:** el copy dice "mientras falten, ese producto no
+aparece en el semáforo", y en realidad **sí** aparece, marcado `SIN_DATOS`. Es
+mejor así —el producto no se esconde, se declara sin medir, que es la línea de
+todo el producto— pero la frase promete otra cosa. No lo toqué.
 
 ## Por qué la suite no sustituye esto
 

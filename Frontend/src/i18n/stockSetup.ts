@@ -19,8 +19,8 @@ export const stockSetupEs = {
 
   // ── Pareto gaps ─────────────────────────────────────────────────────────
   'setupStock.gaps.title': 'Empieza por estos',
-  'setupStock.gaps.headline': 'Con {count} de tus {total} productos cubres el {pct}% de tu compra del mes.',
-  'setupStock.gaps.headline_units': 'Con {count} de tus {total} productos cubres el {pct}% de las unidades que vas a mover este mes.',
+  'setupStock.gaps.headline': 'Completando {count} de tus {total} productos llegas al {pct}% de tu compra del mes.',
+  'setupStock.gaps.headline_units': 'Completando {count} de tus {total} productos llegas al {pct}% de las unidades que vas a mover este mes.',
   'setupStock.gaps.basis_units': 'Todavía no nos has dado costos ni precios, así que ordenamos por volumen. Cuando subas los costos, ordenamos por plata.',
   'setupStock.gaps.progress_label': '{pct}% de tu compra del mes ya configurado',
   'setupStock.gaps.progress_hint': 'La barra mide plata, no filas: {done} de {total} productos listos.',
@@ -145,8 +145,8 @@ export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
   'setupStock.page.why': 'Faro already knows how much of each product you will sell. To tell you what to order it needs three more things per product: how much you hold today, what it costs you, and how many days it takes to arrive. Until those are there, that product cannot appear in the traffic light.',
 
   'setupStock.gaps.title': 'Start with these',
-  'setupStock.gaps.headline': 'With {count} of your {total} products you cover {pct}% of this month\'s purchase.',
-  'setupStock.gaps.headline_units': 'With {count} of your {total} products you cover {pct}% of the units you will move this month.',
+  'setupStock.gaps.headline': 'Completing {count} of your {total} products gets you to {pct}% of this month\'s purchase.',
+  'setupStock.gaps.headline_units': 'Completing {count} of your {total} products gets you to {pct}% of the units you will move this month.',
   'setupStock.gaps.basis_units': 'You have not given us costs or prices yet, so we rank by volume. Upload costs and we rank by money.',
   'setupStock.gaps.progress_label': '{pct}% of this month\'s purchase already configured',
   'setupStock.gaps.progress_hint': 'The bar measures money, not rows: {done} of {total} products done.',
