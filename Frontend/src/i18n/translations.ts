@@ -1814,6 +1814,14 @@ export const translations = {
 
     // ── Run warnings (engine validation layers; keys are the English codes) ──
     // ── API pública (/api) ─────────────────────────────────
+    'apidocs.try_truncated':      'La respuesta es demasiado grande para mostrarla entera. Se cortó aquí; pídela desde tu sistema para verla completa.',
+    'apidocs.body_invalid':       'El cuerpo no es JSON válido. Corrígelo antes de ejecutar: así no sabrías si el error es tuyo o del servidor.',
+    'apidocs.confirm_generic':    'Esta llamada modifica tus datos reales.',
+    'apidocs.consequence_logpo_all': 'OJO: dejaste el cuerpo vacío o sin la lista items. Eso NO significa «no mandar nada»: Faro va a registrar una orden con TODOS los productos en PEDIR_YA y PEDIR_PRONTO de esa sesión, no solo los que escribiste. Va a aparecer en Pedidos y va a contar para el aprendizaje del plazo de tus proveedores.',
+    'apidocs.try_missing_fields': 'Faltan campos por llenar:',
+    'apidocs.try_missing_file':   'Elige un archivo.',
+    'apidocs.base_url_heading':   'La URL base',
+    'apidocs.base_url_desc':      'Las rutas de esta página se escriben sin prefijo, pero tus llamadas van a la base de abajo — con /v1 incluido. Es el valor de $FARO en los ejemplos.',
     'apidocs.title':              'API pública',
     'apidocs.intro':              'Tu sistema empuja los datos y se lleva la decisión, sin que nadie abra Faro.',
     'apidocs.get_your_key':       'Generar una clave',
@@ -5124,6 +5132,14 @@ export const translations = {
 
     // ── Run warnings (engine validation layers; keys are the English codes) ──
     // ── Public API (/api) — see the `es` block for the notes.
+    'apidocs.try_truncated':      'The response is too large to display in full. It was cut here; call it from your own system to see all of it.',
+    'apidocs.body_invalid':       'The body is not valid JSON. Fix it before running: otherwise you cannot tell whether the error is yours or the server’s.',
+    'apidocs.confirm_generic':    'This call modifies your real data.',
+    'apidocs.consequence_logpo_all': 'CAREFUL: you left the body empty or without an items list. That does NOT mean “send nothing”: Faro will record an order containing EVERY PEDIR_YA and PEDIR_PRONTO product in that session, not only the ones you typed. It will show up in Orders and count towards learning your supplier lead times.',
+    'apidocs.try_missing_fields': 'Fields still to fill in:',
+    'apidocs.try_missing_file':   'Choose a file.',
+    'apidocs.base_url_heading':   'The base URL',
+    'apidocs.base_url_desc':      'The paths on this page are written without a prefix, but your calls go to the base below — including /v1. That is the $FARO value in the examples.',
     'apidocs.title':              'Public API',
     'apidocs.intro':              'Your system pushes the data and takes the decision, without anyone opening Faro.',
     'apidocs.get_your_key':       'Generate a key',

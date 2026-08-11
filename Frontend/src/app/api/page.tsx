@@ -21,7 +21,7 @@
 //    Hiding those buttons would have been the timid choice and a useless
 //    console; firing them silently would be worse. It is the customer's own
 //    tenant — they are owed the button and the truth about it.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Play, Copy, Check, KeyRound, AlertTriangle } from 'lucide-react'
 import Card from '@/components/ui/Card'
@@ -185,12 +185,27 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
   const [result, setResult] = useState<{ status: number; ms: number; body: string } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
 
-  const set = (name: string, v: string) => setValues(prev => ({ ...prev, [name]: v }))
+  // Touching any input drops the previous result. Leaving it on screen let a
+  // green 201 from the last run sit beside freshly edited inputs, which reads
+  // as "your edit was recorded" — the most expensive possible misreading on a
+  // page whose writes are real.
+  function invalidate() {
+    setResult(null)
+    setFailure(null)
+  }
+  const set = (name: string, v: string) => {
+    invalidate()
+    setValues(prev => ({ ...prev, [name]: v }))
+  }
 
   function buildPath(): string {
     let path = endpoint.path
     for (const p of endpoint.pathParams ?? []) {
-      path = path.replace(`{${p.name}}`, encodeURIComponent(values[p.name] ?? ''))
+      // Trimmed, like the enable-check at the bottom of this component. They
+      // disagreed: Run lit up on a trimmed value while the URL was built from
+      // the raw one, so an id pasted with a trailing space produced a 404 that
+      // told the customer their session did not exist.
+      path = path.replace(`{${p.name}}`, encodeURIComponent((values[p.name] ?? '').trim()))
     }
     const qs = (endpoint.query ?? [])
       .filter(p => (values[p.name] ?? '').trim() !== '')
@@ -203,10 +218,36 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
     // A write touches the customer's live tenant, so it asks first — and the
     // question names the actual consequence rather than "are you sure?". Reads
     // never ask: nothing to undo.
+    // Bad JSON must be caught HERE, before the dialog. Otherwise the user
+    // accepts "this records a real purchase order" and receives a 422 — and the
+    // console cannot tell them whether they typed it wrong or the server said
+    // no.
+    let parsed: unknown = undefined
+    if (endpoint.bodyTemplate !== undefined && body.trim() !== '') {
+      try {
+        parsed = JSON.parse(body)
+      } catch {
+        setFailure(t('apidocs.body_invalid'))
+        return
+      }
+    }
+
     if (endpoint.write) {
+      // An EMPTY body on log-po is not "send nothing". The backend reads a body
+      // without `items` as the legacy export path and writes a purchase order
+      // containing every actionable SKU in the session — lines the user never
+      // typed, which then feed reception tracking and lead-time learning. The
+      // console may still do it; it may not do it quietly.
+      const ordersEverything =
+        endpoint.id === 'logpo' &&
+        !Array.isArray((parsed as { items?: unknown } | undefined)?.items)
+      const consequence = ordersEverything
+        ? t('apidocs.consequence_logpo_all')
+        : safe(endpoint.consequenceKey ?? '', t('apidocs.confirm_generic'))
+
       const go = await confirm({
         title: t('apidocs.confirm_title'),
-        message: safe(endpoint.consequenceKey!, t('apidocs.confirm_title')),
+        message: consequence,
         danger: true,
       })
       if (!go) return
@@ -233,8 +274,21 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
       // 401 stays here instead of signing the user out.
       const res = await fetch(`/api${buildPath()}`, { method: endpoint.method, headers, body: payload })
       const text = await res.text()
+      // `/inventory/status` has no pagination — the page's own copy says so. A
+      // tenant with tens of thousands of SKUs returns a body that, parsed and
+      // pretty-printed, roughly doubles and lands in the DOM as one text node.
+      // Capped, because a console that freezes the tab is worse than one that
+      // shows less: the tail is truncated, and it says that it truncated.
+      const MAX_SHOWN = 200_000
       let shown = text
-      try { shown = JSON.stringify(JSON.parse(text), null, 2) } catch { /* not JSON: show it raw */ }
+      if (text.length <= MAX_SHOWN) {
+        try { shown = JSON.stringify(JSON.parse(text), null, 2) } catch { /* not JSON: show it raw */ }
+      }
+      if (shown.length > MAX_SHOWN) {
+        shown = shown.slice(0, MAX_SHOWN) + `
+
+… ${t('apidocs.try_truncated')}`
+      }
       setResult({ status: res.status, ms: Math.round(performance.now() - started), body: shown })
     } catch (e) {
       setFailure(e instanceof Error ? e.message : String(e))
@@ -246,6 +300,9 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
   const missingPathParam = (endpoint.pathParams ?? []).some(p => p.required && !(values[p.name] ?? '').trim())
   const missingQueryParam = (endpoint.query ?? []).some(p => p.required && !(values[p.name] ?? '').trim())
   const missingFile = Boolean(endpoint.multipart) && file === null
+  const missingNames = [...(endpoint.pathParams ?? []), ...(endpoint.query ?? [])]
+    .filter(p => p.required && !(values[p.name] ?? '').trim())
+    .map(p => p.name)
   const canRun = token.trim() !== '' && !missingPathParam && !missingQueryParam && !missingFile
   const statusColor = !result ? 'var(--dim)'
     : result.status < 300 ? 'var(--success)'
@@ -280,7 +337,11 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
               <Input
                 size="sm"
                 name={`${endpoint.id}_${p.name}`}
-                aria-label={p.name}
+                // Not `p.name`: an aria-label OVERRIDES the visible text, so
+                // labelling it with the bare name hid the `*` from every screen
+                // reader while showing it to everyone else.
+                aria-label={p.required ? `${p.name} *` : p.name}
+                required={p.required}
                 placeholder={p.placeholder ?? ''}
                 value={values[p.name] ?? ''}
                 onChange={e => set(p.name, e.target.value)}
@@ -313,7 +374,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
             name={`${endpoint.id}_file`}
             aria-label={t('apidocs.try_file_label')}
             accept=".csv,.xlsx,.xls,.parquet,.json"
-            onChange={e => setFile(e.target.files?.[0] ?? null)}
+            onChange={e => { invalidate(); setFile(e.target.files?.[0] ?? null) }}
             style={{ fontSize: 12, color: 'var(--text)' }}
           />
         </label>
@@ -326,7 +387,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
             name={`${endpoint.id}_body`}
             aria-label={t('apidocs.try_body_label')}
             value={body}
-            onChange={e => setBody(e.target.value)}
+            onChange={e => { invalidate(); setBody(e.target.value) }}
             rows={endpoint.id === 'logpo' ? 7 : 2}
             style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.7 }}
           />
@@ -341,11 +402,23 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
         >
           {busy ? t('apidocs.try_running') : t('apidocs.try_run')}
         </Button>
-        {!token.trim() && (
-          <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('apidocs.try_empty')}</span>
+        {/* The only hint used to be the missing token. With a valid key and a
+            blank required field the button was simply grey and mute, which
+            gives the user nothing to act on. */}
+        {!canRun && (
+          <span style={{ fontSize: 12, color: 'var(--dim)' }}>
+            {!token.trim()
+              ? t('apidocs.try_empty')
+              : missingFile
+                ? t('apidocs.try_missing_file')
+                : `${t('apidocs.try_missing_fields')} ${missingNames.join(', ')}`}
+          </span>
         )}
         {result && (
-          <span style={{ fontSize: 12, color: 'var(--dim)' }}>
+          // Announced, like `automatizacion` and `pronosticos` already do. A
+          // screen-reader user pressed Run and got total silence — on success
+          // AND on failure.
+          <span role="status" aria-live="polite" style={{ fontSize: 12, color: 'var(--dim)' }}>
             {t('apidocs.try_status')}: <strong style={{ color: statusColor }}>{result.status}</strong>
             {'  ·  '}{t('apidocs.try_duration_ms', { ms: result.ms })}
           </span>
@@ -353,7 +426,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
       </div>
 
       {failure && (
-        <div style={{ fontSize: 12, color: 'var(--danger)' }}>{t('apidocs.try_error')} {failure}</div>
+        <div role="alert" style={{ fontSize: 12, color: 'var(--danger)' }}>{t('apidocs.try_error')} {failure}</div>
       )}
 
       {result && (
@@ -380,6 +453,10 @@ function ApiDocsPage() {
   // server stores a hash — so persisting it here would be the only copy at rest,
   // reachable by any script on the page.
   const [token, setToken] = useState('')
+  // Read on the client only — there is no window during SSR, and hardcoding a
+  // host would be wrong on every deployment but one.
+  const [baseUrl, setBaseUrl] = useState('')
+  useEffect(() => { setBaseUrl(`${window.location.origin}/api/v1`) }, [])
 
   return (
     <div style={{ padding: '32px 40px', maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -395,6 +472,16 @@ function ApiDocsPage() {
             <Input
               type="password"
               name="api_console_token"
+              // An unmarked password field is an invitation in BOTH directions:
+              // the manager offers to save the raw sk_live_ key (which exists
+              // nowhere else — the server keeps only a hash), and it autofills
+              // the user's saved Faro PASSWORD into it, which would then travel
+              // in an Authorization header. `integraciones/page.tsx` already
+              // does this on its credential input; this page had omitted it.
+              autoComplete="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
               aria-label={t('apidocs.try_token_label')}
               placeholder={t('apidocs.try_token_ph')}
               value={token}
@@ -422,6 +509,17 @@ function ApiDocsPage() {
         </div>
         <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.7 }}>
           <strong>{t('apidocs.envelope_heading')}. </strong>{t('apidocs.envelope_desc')} {t('apidocs.envelope_errors')}
+        </div>
+        {/* Every curl snippet on this page says `$FARO/planning`, and until now
+            nothing on the page said what $FARO is. The console itself calls a
+            RELATIVE path through the Next rewrite, so the one thing a customer
+            must know to wire up their ERP — that the real base carries the /v1
+            these `path` fields omit — was the one thing never stated. */}
+        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.7 }}>
+          <strong>{t('apidocs.base_url_heading')}. </strong>{t('apidocs.base_url_desc')}
+          <div style={{ marginTop: 6 }}>
+            <code style={{ fontFamily: MONO, fontSize: 12, color: 'var(--accent)' }}>{baseUrl}</code>
+          </div>
         </div>
       </Card>
 

@@ -7,7 +7,8 @@ decide **qué comprar** encima del sistema que ya tienes. Esta API es esa costur
 tu ERP empuja lo que ya sabe y se lleva la decisión, sin que nadie abra la
 aplicación.
 
-Son cinco llamadas, en el orden en que ocurre el trabajo:
+Seis llamadas, en el orden en que ocurre el trabajo (la lista completa son
+ocho — las otras dos están más abajo):
 
 ```
 0. GET  /planning                      qué sesión estoy mirando  ← empieza aquí
@@ -37,9 +38,23 @@ bajo tus pies a mitad de un ciclo.
 }
 ```
 
-Los errores traen `detail`, `error_code` y `error_params` en el nivel superior,
-sin `data`. Ramifica por `error_code`, nunca por el texto de `detail`: ese está
-escrito para personas y se reescribe.
+Los errores traen `detail`, y **algunos** traen además `error_code` y
+`error_params` en el nivel superior, sin `data`. Cuando venga `error_code`,
+ramifica por él y nunca por el texto de `detail`: ese está escrito para personas
+y se reescribe.
+
+Conviene saber cuáles **no** lo traen, porque son justo los tres con los que te
+vas a topar al integrar:
+
+| Caso | Qué llega de verdad |
+|---|---|
+| `401` clave inválida o vencida | Solo `detail` en texto. Sin `error_code` |
+| `403` plan sin API | El código viene **dentro** de `detail`: `detail.code = "PLAN_UPGRADE_REQUIRED"` |
+| `429` pasaste el límite | Solo `detail` en texto. Sin `error_code`; usa la cabecera `Retry-After` |
+| `403` clave de solo lectura escribiendo | `error_code = "role_not_permitted"` |
+| `409` sesión no entrenable | `error_code = "session_not_trainable"` |
+
+Para los tres primeros ramifica por el **status HTTP**, que sí es estable.
 
 La quinta no es opcional aunque lo parezca: sin ella la orden no existe para
 Faro, y es de ahí que sale el aprendizaje del plazo real de cada proveedor. Es
@@ -70,8 +85,10 @@ Al crearla se eligen dos cosas:
   es lo que una integración de verdad necesita. Por defecto viene en solo
   lectura, así que hay que cambiarlo a propósito.
 
-**La clave se muestra una sola vez.** No se guarda en ningún lado —ni en el
-servicio ni en la base—, así que se copia en ese momento. Si se pierde: se crea
+**La clave se muestra una sola vez.** De la clave en claro no queda copia en
+ninguna parte: guardamos solo un hash y los últimos 4 caracteres, que son los que
+te dejan reconocerla en la lista. Ni nosotros podemos volver a mostrártela, así
+que se copia en ese momento. Si se pierde: se crea
 otra y se revoca la anterior desde esa misma pantalla, donde además se ve cuándo
 se usó cada una por última vez.
 
@@ -115,9 +132,17 @@ Tres cosas que conviene saber antes de integrar:
 
   **Y deja rastro.** Toda escritura de una llave queda registrada a su nombre —
   no al de la persona que la creó — con la ruta, el resultado y la hora. Un
-  intento **fallido** también se registra, marcado como error: eso es justo lo
-  que necesitas ver cuando una integración parece muda. Las lecturas no se
-  registran, porque a 120 llamadas por minuto enterrarían lo que importa.
+  intento que llegó a ejecutarse y falló también queda, marcado como error.
+
+  Con una excepción que conviene conocer: **lo rechazado en la puerta no deja
+  fila.** Un `401` (clave mala), un `403` (plan sin API, o clave de solo lectura
+  intentando escribir) y un `429` no se registran, porque se cortan antes de
+  llegar al endpoint. Es decir: si tu integración escribe con una clave de solo
+  lectura, no vas a ver nada en el registro — vas a ver el `403` en tu lado.
+  Empieza por ahí antes de sospechar del registro.
+
+  Las lecturas tampoco se registran, porque a 120 llamadas por minuto
+  enterrarían lo que importa.
 
 ## Límites
 
@@ -129,7 +154,7 @@ El techo es **por llave y por plan**:
 | Enterprise | sin tope |
 
 Al pasarse: `429` con `Retry-After: 60`, y el mensaje nombra **el techo que te
-aplica a vos**, no una constante genérica. Los 120 están pensados para el trabajo
+aplica a ti**, no una constante genérica. Los 120 están pensados para el trabajo
 real de una integración —un empuje nocturno y el sondeo alrededor—, no para ser
 generosos: si hacen falta más, casi siempre hay un bucle. En Enterprise no se
 cuenta nada, porque un catálogo ilimitado produce un volumen de llamadas que
@@ -138,7 +163,7 @@ ningún número fijo acierta.
 Si el limitador no puede escribir, **deja pasar**. La sincronización de un
 cliente no se cae porque un contador esté caído.
 
-## Los cinco trabajos
+## Los trabajos, en orden
 
 ### 0. Saber de qué sesión estamos hablando
 
@@ -240,7 +265,21 @@ Por producto. Los campos que una integración necesita, con sus nombres reales
 | `reorder_point` | El nivel donde conviene pedir |
 | `has_stock`, `has_forecast` | Si falta alguno, lo de arriba puede venir vacío |
 | `explanation_code` + `explanation_params` | El porqué, **estructurado** |
-| `lead_time_source`, `unit_cost_source`, `moq_source` | De dónde salió cada supuesto: `user` (lo cargaste vos), `learned` (lo aprendimos) o `default` (lo inventamos nosotros) |
+| `lead_time_source`, `unit_cost_source`, `moq_source` | De dónde salió cada supuesto. Son **cinco** valores, no tres |
+
+De más tuyo a más nuestro:
+
+| Valor | Qué significa |
+|---|---|
+| `user` | Lo escribiste en Faro |
+| `file` | Vino en tu propio archivo |
+| `supplier_rule` | Sale de una regla del proveedor que configuraste |
+| `learned` | Lo aprendimos de tus recepciones. **Solo aparece en `lead_time_source`** |
+| `default` | No teníamos el dato y pusimos un supuesto |
+
+Contempla los cinco. Una integración escrita solo para `user`/`learned`/`default`
+se cae justo en `file` y `supplier_rule`, que son los dos casos no-`default` más
+frecuentes.
 
 Los tres campos `*_source` son la parte que más conviene usar y la que más se
 ignora: distinguen un número que diste de uno que nos inventamos. Una integración
@@ -309,11 +348,16 @@ curl -sf -X POST "$API/data-sources/$SOURCE_ID/file" \
 # 2. Si la sesión tiene una programación, saltate esto: Faro reentrena solo.
 curl -sf -X POST "$API/sessions/$SESSION/train" \
      -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{}'
-until [ "$(curl -sf "$API/sessions/$SESSION/train/status" \
-           -H "Authorization: Bearer $KEY" | jq -r '.data.status')" \
-        != "RUNNING" ]; do sleep 5; done
+# Espera a QUEUED *y* a RUNNING. Recién posteado el estado es QUEUED, así que
+# un bucle que solo mire RUNNING sale en la primera vuelta y el paso 3 lee el
+# semáforo de la corrida ANTERIOR.
+while :; do
+  ST=$(curl -sf "$API/sessions/$SESSION/train/status" \
+       -H "Authorization: Bearer $KEY" | jq -r '.data.status')
+  case "$ST" in QUEUED|RUNNING) sleep 5 ;; *) break ;; esac
+done
 
-# 3. Qué comprar. Ojo con `*_source`: separa lo que diste vos de lo que
+# 3. Qué comprar. Ojo con `*_source`: separa lo que diste tú de lo que
 #    supusimos nosotros.
 curl -sf "$API/inventory/status?session_id=$SESSION" \
      -H "Authorization: Bearer $KEY" \
@@ -363,7 +407,7 @@ No hace falta otro proyecto ni otro código: es **la misma imagen con otra
 configuración**.
 
 ```bash
-PUBLIC_API_ONLY=true      # solo las 7 rutas públicas + /health
+PUBLIC_API_ONLY=true      # solo las 8 rutas públicas + /health
 WORKER_ENABLED=false      # no reclama trabajos de entrenamiento
 SCHEDULER_ENABLED=false   # no corre crons — debe haber exactamente UNA
                           # instancia con esto en true, o los correos diarios
@@ -373,7 +417,7 @@ SCHEDULER_ENABLED=false   # no corre crons — debe haber exactamente UNA
 Arrancada así, la instancia lo dice en su propio log:
 
 ```
-PUBLIC_API_ONLY: serving 12 of 269 routes (7 public endpoints + health)
+PUBLIC_API_ONLY: serving 13 of 269 routes (8 public endpoints + health)
 Worker components: none (API-only instance)
 ```
 

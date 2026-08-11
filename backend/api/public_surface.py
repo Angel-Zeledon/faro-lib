@@ -1,7 +1,8 @@
 """The endpoints Faro promises to a customer's own system.
 
 Everything in `backend/api/v1` is reachable with an API key. That is not the
-same as being PUBLIC: 246 routes exist to serve this product's own screens, and
+same as being PUBLIC: the other 261 routes exist to serve this product's own
+screens, and
 they change whenever a screen changes — several changed this week. An integration
 built against one of those breaks without warning and without anyone deciding to
 break it.
