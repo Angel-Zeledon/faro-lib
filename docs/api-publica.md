@@ -51,7 +51,9 @@ noche y no hacer nada más es la integración más simple que funciona.
 
 **Base URL:** `https://<tu-instancia>/api/v1`
 **Autenticación:** `Authorization: Bearer sk_live_…`
-**Límite:** 120 llamadas por minuto por clave.
+**Límite:** por plan — 120 llamadas por minuto en Professional, sin tope en
+Enterprise. Al pasarse: `429` con `Retry-After`, y el mensaje dice el techo que
+te aplica a vos.
 **Incluida desde:** plan Professional.
 
 ## Dónde sacar tu clave
@@ -111,21 +113,27 @@ Tres cosas que conviene saber antes de integrar:
   el actor es `api_key:<id>`, así que la integración sigue funcionando cuando esa
   persona se va de la empresa y no hereda permisos si la ascienden.
 
-  **Rastro, con matices** (comprobado llamando la API de punta a punta): un
-  entrenamiento **sí** queda atribuido — el job guarda
-  `created_by: "api_key:<id>"`, y lo ves en `GET /sessions/{id}/train/status`.
-  Lo que **no** deja rastro es subir el archivo ni registrar la orden, y el
-  historial de actividad de la aplicación (`activity_logs`) no recoge ninguna de
-  las tres. O sea: hay atribución donde el trabajo es un job, y no la hay donde
-  es una escritura directa. Si necesitás auditar una integración de punta a
-  punta, hoy no alcanza.
+  **Y deja rastro.** Toda escritura de una llave queda registrada a su nombre —
+  no al de la persona que la creó — con la ruta, el resultado y la hora. Un
+  intento **fallido** también se registra, marcado como error: eso es justo lo
+  que necesitás ver cuando una integración parece muda. Las lecturas no se
+  registran, porque a 120 llamadas por minuto enterrarían lo que importa.
 
 ## Límites
 
-**120 llamadas por minuto por llave.** Al pasarse, la respuesta es `429` con
-cabecera `Retry-After: 60`. Está pensado para el trabajo real de una integración
-—un empuje nocturno y el sondeo alrededor— no para ser generoso: si hacen falta
-más de 120 por minuto, casi siempre hay un bucle.
+El techo es **por llave y por plan**:
+
+| Plan | Llamadas por minuto |
+|---|---|
+| Professional | 120 |
+| Enterprise | sin tope |
+
+Al pasarse: `429` con `Retry-After: 60`, y el mensaje nombra **el techo que te
+aplica a vos**, no una constante genérica. Los 120 están pensados para el trabajo
+real de una integración —un empuje nocturno y el sondeo alrededor—, no para ser
+generosos: si hacen falta más, casi siempre hay un bucle. En Enterprise no se
+cuenta nada, porque un catálogo ilimitado produce un volumen de llamadas que
+ningún número fijo acierta.
 
 Si el limitador no puede escribir, **deja pasar**. La sincronización de un
 cliente no se cae porque un contador esté caído.
@@ -343,7 +351,7 @@ Honestidad por delante, para que nadie diseñe contra algo que no existe:
 
 - **No hay webhooks en Professional.** Hoy son Enterprise, así que en
   Professional la integración tiene que sondear. Está bajo revisión.
-- **No hay auditoría de lo que hace una llave.** Ver la nota en Autenticación.
+
 - **No hay sandbox.** Se prueba contra el tenant real.
 - **No hay versionado real todavía.** El prefijo `/api/v1` existe, pero la
   promesa de estabilidad la da esta lista, no el número. Si alguna vez hace falta

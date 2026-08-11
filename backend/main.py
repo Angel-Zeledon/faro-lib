@@ -24,6 +24,7 @@ from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, da
 from backend.errors import AppError
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
+from backend.middleware.machine_audit import MachineAuditMiddleware
 from backend.middleware.request_logger import RequestLoggerMiddleware
 from backend.middleware.tenant_context import TenantContextMiddleware
 from backend.workers import worker
@@ -155,6 +156,10 @@ app.add_middleware(
 )
 app.add_middleware(TenantContextMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
+# Added last so it wraps OUTERMOST: the actor ContextVar is set deep inside, by
+# the guard, and this has to still be on the stack when the response comes back
+# out to read it.
+app.add_middleware(MachineAuditMiddleware)
 
 # ── Error envelope ─────────────────────────────────────────────────────────
 # A user-facing AppError becomes a JSON error response that keeps the existing

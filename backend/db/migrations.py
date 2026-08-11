@@ -1335,7 +1335,58 @@ class MigrationError(RuntimeError):
     """One or more migrations failed for a reason other than 'already applied'."""
 
 
+# Any constant works as long as every instance agrees; this one is just a fixed
+# 64-bit id nothing else in the product uses.
+_MIGRATION_LOCK_ID = 8_412_330_071_004_517
+
+
+def _with_migration_lock(fn):
+    """Run `fn` while holding a cluster-wide advisory lock.
+
+    Every instance runs migrations at boot. With one process that is harmless;
+    the moment a public-API container and the app container start together, both
+    walk the same list against the same database at the same time. Today the
+    statements are idempotent and the losers get "already exists", which is why
+    it has held — but "it works because every statement happens to be
+    re-runnable" is a property nobody is checking, and the first migration that
+    is not re-runnable turns a deploy into a coin flip.
+
+    `pg_advisory_lock` is the right tool: it is held by the SESSION, released
+    automatically if the process dies, and costs nothing when uncontended. The
+    second instance BLOCKS here rather than racing, then finds every migration
+    already applied and moves on.
+
+    A database that cannot grant the lock is not a reason to skip migrating —
+    that would trade a rare race for a silent half-built schema — so a failure
+    to acquire falls through to running unlocked, exactly as before.
+    """
+    from backend.db.connection import get_conn
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_lock(%s)", (_MIGRATION_LOCK_ID,))
+            try:
+                return fn()
+            finally:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_ID,))
+    except MigrationError:
+        raise
+    except Exception as exc:
+        log.warning(
+            "Could not take the migration advisory lock (%s) — migrating without "
+            "it, as before", exc,
+        )
+        return fn()
+
+
 def run_all(*, strict: bool = True) -> None:
+    """Apply every migration, serialised across instances. See `_run_all`."""
+    return _with_migration_lock(lambda: _run_all(strict=strict))
+
+
+def _run_all(*, strict: bool = True) -> None:
     """
     Apply every migration in order.
 

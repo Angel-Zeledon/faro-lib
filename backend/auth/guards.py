@@ -15,7 +15,7 @@ Usage:
         ...
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.errors import AppError
@@ -48,7 +48,7 @@ class CurrentUser:
         return self.api_key_id is not None
 
 
-def _authenticate_api_key(credential: str) -> CurrentUser:
+def _authenticate_api_key(credential: str, scope: dict | None = None) -> CurrentUser:
     """Turn an `sk_live_*` credential into the same CurrentUser a login yields.
 
     The plan is checked HERE, on every request, not only when the key was
@@ -65,12 +65,16 @@ def _authenticate_api_key(credential: str) -> CurrentUser:
             detail="API key is invalid or expired",
         )
 
+    rate_limit = api_key_auth.RATE_MAX_PER_MINUTE
     if not settings.testing_mode:
         from backend.entitlements.plans import Feature
         from backend.entitlements.service import has_feature
         from backend.tenants.service import get_tenant
 
         tenant = get_tenant(key["tenant_id"]) or {}
+        # The plan row is already in hand for the feature check, so the rate
+        # ceiling comes from the same read rather than a second one.
+        rate_limit = api_key_auth.rate_limit_for(tenant.get("plan"))
         if not has_feature(tenant, Feature.API_ACCESS):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -85,17 +89,27 @@ def _authenticate_api_key(credential: str) -> CurrentUser:
     # counter read, not a forecast. 429 with Retry-After is the answer an
     # integration can act on — a bare 429 makes it guess, and a guessing client
     # retries in a tighter loop than the one being limited.
-    if not settings.testing_mode and not api_key_auth.check_rate(key["id"]):
+    if not settings.testing_mode and not api_key_auth.check_rate(key["id"], rate_limit):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            # The ceiling that ACTUALLY applied, not the module default: on a
+            # plan with a different allowance the constant would have told the
+            # integrator a number they never hit.
             detail=(
-                f"Rate limit exceeded: {api_key_auth.RATE_MAX_PER_MINUTE} requests "
-                f"per minute per API key."
+                f"Rate limit exceeded: {rate_limit} requests per minute per API "
+                f"key on this plan."
             ),
             headers={"Retry-After": str(api_key_auth.RATE_WINDOW_SECONDS)},
         )
 
     api_key_auth.touch(key["id"])
+    # Publish who is acting so the audit middleware does not have to resolve the
+    # credential a second time. Set after every check has passed: a refused
+    # request has no actor to record.
+    if scope is not None:
+        from backend.auth.actor_context import set_machine_actor
+        set_machine_actor(scope, key["tenant_id"], api_key_auth.actor_id(key["id"]))
+
     return CurrentUser(
         user_id=api_key_auth.actor_id(key["id"]),
         tenant_id=key["tenant_id"],
@@ -158,6 +172,7 @@ def _reject_if_predates_password_change(payload: dict) -> None:
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> CurrentUser:
     # One header, two kinds of caller. Dispatching on the prefix keeps a JWT
@@ -165,7 +180,7 @@ def get_current_user(
     # being reported as a malformed token.
     from backend.auth.api_key_auth import looks_like_api_key
     if looks_like_api_key(credentials.credentials):
-        return _authenticate_api_key(credentials.credentials)
+        return _authenticate_api_key(credentials.credentials, request.scope)
 
     try:
         payload = decode_token(credentials.credentials)

@@ -42,6 +42,11 @@ class PlanDef:
     max_sessions: int | None
     max_concurrent_jobs: int | None
     max_dataset_size_mb: int | None
+    # API calls per minute per key. Shipped as one number for everybody, which
+    # meant an Enterprise paying ten times as much got the same allowance as the
+    # plan below it — and the tenant with the biggest catalogue is the one whose
+    # nightly sync needs the most calls. None is unlimited.
+    api_rate_per_minute: int | None
     features: frozenset[Feature]
 
 
@@ -67,16 +72,25 @@ PLAN_CATALOG: dict[str, PlanDef] = {
     "starter": PlanDef(
         max_skus=1000, max_users=2, max_locations=1,
         max_sessions=20, max_concurrent_jobs=2, max_dataset_size_mb=200,
+        # Starter has no API access at all; the number is here so the field is
+        # never None-by-accident if that ever changes.
+        api_rate_per_minute=60,
         features=_CORE,
     ),
     "professional": PlanDef(
         max_skus=5000, max_users=10, max_locations=5,
         max_sessions=100, max_concurrent_jobs=4, max_dataset_size_mb=500,
+        # The plan the API is sold on. 120/min covers a nightly push over a few
+        # thousand SKUs and the polling around it, with room to retry.
+        api_rate_per_minute=120,
         features=_CORE | _PRO_EXTRA,
     ),
     "enterprise": PlanDef(
         max_skus=None, max_users=None, max_locations=None,
         max_sessions=None, max_concurrent_jobs=8, max_dataset_size_mb=2000,
+        # Unlimited SKUs means unpredictable call volume; a fixed ceiling here
+        # would throttle the customer paying most to avoid being throttled.
+        api_rate_per_minute=None,
         features=_CORE | _PRO_EXTRA | _ENT_EXTRA,
     ),
 }

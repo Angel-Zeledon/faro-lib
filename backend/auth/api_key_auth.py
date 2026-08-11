@@ -84,11 +84,31 @@ def touch(key_id: str) -> None:
 # to do — a nightly ERP push and the polling around it — not to be generous: an
 # integration that needs more than this per minute is looping, and a loop with a
 # valid key is exactly what nothing currently stops.
+# Fallback ceiling: used when the caller does not resolve a plan, and for a
+# plan name the catalog does not recognise. Per-plan numbers live in
+# `entitlements/plans.py` — this is the floor under them, not the policy.
 RATE_MAX_PER_MINUTE = 120
+
+# Distinguishes "caller passed nothing" from "this plan is unlimited (None)".
+_UNSPECIFIED = object()
 RATE_WINDOW_SECONDS = 60
 
 
-def check_rate(key_id: str) -> bool:
+def rate_limit_for(plan: str | None) -> int | None:
+    """Calls per minute this plan allows, or None for unlimited.
+
+    Falls back to the shipped default for a plan name the catalog does not know
+    — a tenant row with an unexpected value must not silently become unlimited.
+    """
+    from backend.entitlements.plans import PLAN_CATALOG
+
+    definition = PLAN_CATALOG.get((plan or "").strip().lower())
+    if definition is None:
+        return RATE_MAX_PER_MINUTE
+    return definition.api_rate_per_minute
+
+
+def check_rate(key_id: str, limit=_UNSPECIFIED) -> bool:
     """Whether this key may make one more call now; records it when it may.
 
     Reuses `auth_rate_events`, the same window the login endpoints use, keyed by
@@ -100,6 +120,13 @@ def check_rate(key_id: str) -> bool:
     integration in the product is a far worse outcome than briefly not counting.
     The customer's nightly sync must not go down because a limiter cannot write.
     """
+    # `None` has to mean UNLIMITED here, because that is what an Enterprise plan
+    # stores. So "caller did not say" needs its own value, or the two collapse
+    # and an unlimited plan would silently get the default ceiling.
+    ceiling = RATE_MAX_PER_MINUTE if limit is _UNSPECIFIED else limit
+    if ceiling is None:
+        return True
+
     bucket = f"apikey:{key_id}"
     try:
         execute(
@@ -108,7 +135,7 @@ def check_rate(key_id: str) -> bool:
         )
         row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s", (bucket,))
         used = int(row["n"]) if row else 0
-        if used >= RATE_MAX_PER_MINUTE:
+        if used >= ceiling:
             return False
         execute("INSERT INTO auth_rate_events (key) VALUES (%s)", (bucket,))
         return True
