@@ -52,6 +52,22 @@ class Settings(BaseSettings):
     #                       EXACTLY ONE instance or daily emails go out twice.
     worker_enabled: bool = True
     scheduler_enabled: bool = True
+    # Serve ONLY the endpoints in `backend/api/public_surface.py` — the seven a
+    # customer's own system is invited to call. Off by default, so a plain
+    # `uvicorn backend.main:app` is the whole product exactly as before.
+    #
+    # This is what lets the public API live on its own infrastructure without a
+    # second codebase: same image, `PUBLIC_API_ONLY=true`, worker and scheduler
+    # off. What it buys is that the promise stops being a list somebody has to
+    # respect and becomes a wall — an integration cannot reach an internal route
+    # on that host even by guessing, and a UI-shaped endpoint cannot acquire a
+    # user by accident.
+    #
+    # What it does NOT buy, and nobody should assume it does: isolation from the
+    # database. Both instances still share one Postgres, so a database problem
+    # takes down the customer's integration and the app together. Splitting that
+    # is a different, much larger decision.
+    public_api_only: bool = False
     # Identity used to claim jobs and to recover this instance's orphans after a
     # crash. Empty falls back to the container/host name. Give each long-lived
     # worker a FIXED id (e.g. "worker-1") so its orphaned RUNNING jobs are still

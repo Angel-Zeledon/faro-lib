@@ -230,6 +230,47 @@ Honestidad por delante, para que nadie diseñe contra algo que no existe:
   promesa de estabilidad la da esta lista, no el número. Si alguna vez hace falta
   romper algo, habrá `/v2` y aviso previo.
 
+## Correrla en infraestructura separada
+
+No hace falta otro proyecto ni otro código: es **la misma imagen con otra
+configuración**.
+
+```bash
+PUBLIC_API_ONLY=true      # solo las 7 rutas públicas + /health
+WORKER_ENABLED=false      # no reclama trabajos de entrenamiento
+SCHEDULER_ENABLED=false   # no corre crons — debe haber exactamente UNA
+                          # instancia con esto en true, o los correos diarios
+                          # salen dos veces
+```
+
+Arrancada así, la instancia lo dice en su propio log:
+
+```
+PUBLIC_API_ONLY: serving 12 of 269 routes (7 public endpoints + health)
+Worker components: none (API-only instance)
+```
+
+**Qué compra.** La promesa deja de ser una lista que alguien tiene que respetar y
+pasa a ser un muro: en ese host las rutas internas responden **404, no 403** —
+no existen. Un integrador no llega a un endpoint interno ni adivinando, y un
+endpoint pensado para una pantalla no puede recibir tráfico de máquina por
+accidente. Además la integración del cliente deja de competir por CPU con la
+aplicación, y un despliegue de la UI no reinicia su conexión.
+
+**Qué NO compra, y conviene decirlo antes de que alguien lo asuma:**
+
+- **No aísla la base de datos.** Las dos instancias comparten el mismo Postgres.
+  Si la base se cae, se cae la integración del cliente y la aplicación juntas.
+  Partir eso es una decisión mucho más grande y probablemente equivocada para
+  este producto.
+- **Las migraciones corren en cada arranque**, en toda instancia. Con dos
+  servicios levantando a la vez hay una carrera. Hoy son idempotentes
+  (`IF NOT EXISTS`), así que en la práctica aguanta, pero lo correcto es que una
+  sola instancia las corra y las demás esperen. **Sin resolver.**
+- **No cambia la autenticación ni los permisos.** Es menor alcance, no un
+  segundo modelo de seguridad: lo que era alcanzable ahí lo sigue siendo con las
+  mismas credenciales y los mismos guardas.
+
 ## Cómo se verificó esto
 
 No está escrito de memoria. El 2026-08-11 se recorrieron los cinco trabajos con
@@ -259,3 +300,12 @@ generado su clave, la habría puesto en su ERP y habría recibido 403 al primer
 intento de subir el export, sin nada que le dijera por qué. Ahora se elige, y se
 verificó: clave "Leer y escribir" creada desde la pantalla → `201` al registrar
 una orden, y `role = analyst` en la base.
+
+**El límite de tasa, en vivo.** Se levantó una instancia con `TESTING_MODE=false`
+—porque en desarrollo el limitador se salta— y se gastó el cupo con una clave
+real: **429 en la llamada 121**, con `Retry-After: 60`. Exactamente el diseño
+(120 pasan, la siguiente no).
+
+**El modo `PUBLIC_API_ONLY`, en vivo.** Instancia levantada con la bandera: las
+rutas públicas responden 200 y las internas —`/auth/login`, `/users`, `/tenant`,
+`/api-keys`, `/messages`— responden **404**. No están montadas.

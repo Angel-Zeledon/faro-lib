@@ -291,3 +291,42 @@ def health():
         "version": settings.app_version,
         "queued_jobs": row["n"] if row else 0,
     }
+
+
+# ── Public-API-only mode ───────────────────────────────────────────────────
+#
+# Everything above mounts the whole product. When `PUBLIC_API_ONLY` is set this
+# strips the app back to the endpoints in `backend/api/public_surface.py` — the
+# seven a customer's own system is invited to call — plus /health, which the
+# load balancer needs.
+#
+# Pruning after mounting rather than choosing routers up front is deliberate:
+# the public list names individual (method, path) pairs, and those live in
+# routers full of internal siblings. Picking routers would let an internal
+# neighbour ride along, which is the exact thing this mode exists to prevent.
+#
+# Nothing about authentication or permissions changes. This is narrower reach,
+# not a second security model: an endpoint that was reachable here is reachable
+# in the same way, by the same credentials, with the same guards.
+if settings.public_api_only:
+    from backend.api.public_surface import PUBLIC_ENDPOINTS
+
+    _allowed = {(m, f"{_PREFIX}{p}") for m, p in PUBLIC_ENDPOINTS}
+
+    def _survives(route) -> bool:
+        path = getattr(route, "path", None)
+        if path in ("/health", "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"):
+            return True
+        methods = getattr(route, "methods", None)
+        if not methods or path is None:
+            # Not an HTTP route (mounts, websockets): removed, because this mode
+            # is about a small, stated surface and anything unexamined is not it.
+            return False
+        return any((m.upper(), path) in _allowed for m in methods)
+
+    _before = len(app.router.routes)
+    app.router.routes = [r for r in app.router.routes if _survives(r)]
+    log.info(
+        "PUBLIC_API_ONLY: serving %d of %d routes (%d public endpoints + health)",
+        len(app.router.routes), _before, len(PUBLIC_ENDPOINTS),
+    )
