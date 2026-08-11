@@ -7,7 +7,7 @@ import {
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight, X,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
-  FlaskConical, ListChecks, MessageSquare, Target, Clock,
+  FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -76,6 +76,11 @@ const NAV: NavItem[] = [
   // the only live tab is scheduled retraining — a Professional feature — so a
   // Professional tenant was sold recurring retraining and given no door to it.
   { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true, feature: 'scheduled_reports' },
+  // Gated on the feature it documents, so a tenant without API access is not
+  // shown a console they could not authenticate against. NOT adminOnly: an
+  // analyst is exactly who wires an integration, and the page only ever acts
+  // with the key the reader pastes into it — never with their session.
+  { href: '/api',                 labelKey: 'nav.api',         Icon: Code2,           group: 'system',  feature: 'api_access' },
 ]
 
 const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']
