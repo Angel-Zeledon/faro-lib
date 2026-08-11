@@ -18,8 +18,12 @@ Son cinco llamadas, en el orden en que ocurre el trabajo:
 5. POST /inventory/log-po              la orden que se emitió
 ```
 
-La 0 es la que hay que hacer primero y la más fácil de pasar por alto: cinco de
-las otras necesitan un `session_id`, y este es el endpoint que lo dice.
+La 0 es la que conviene hacer primero. `log-po` y las dos de entrenamiento
+**exigen** un `session_id`, y este es el único endpoint público que lo entrega.
+En `status` y `morning-briefing` es opcional: si lo omitís, usan la sesión activa
+del tenant — o sea, lo mismo que devuelve `/planning`. Pedirlo explícito igual
+tiene una ventaja: sabés contra qué corrida estás leyendo, en vez de que cambie
+bajo tus pies a mitad de un ciclo.
 
 ## El envoltorio
 
@@ -205,6 +209,16 @@ llamadas.
 ```http
 GET /api/v1/inventory/status?session_id={id}
 ```
+
+Devuelve **todos** los productos: no hay paginación. Con catálogos grandes
+conviene filtrar en el servidor en vez de traer todo y descartar:
+
+```http
+GET /api/v1/inventory/status?signal=PEDIR_YA
+GET /api/v1/inventory/status?supplier=Andina
+```
+
+`session_id` es opcional acá; sin él usa la sesión activa.
 
 Por producto. Los campos que una integración necesita, con sus nombres reales
 (verificados contra una respuesta viva, no contra la memoria de nadie):
