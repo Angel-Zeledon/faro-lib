@@ -717,11 +717,23 @@ export default function LandingPage() {
  {/* ── STATS STRIP ──────────────────────────────────────────────────── */}
  <div className="strip-shell" style={{ background: T.text, padding: '40px 48px' }}>
  <div className="strip-grid" data-reveal style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
+ {/* Every figure here has to be one the product can back, because the buyer
+     who believes it lands two clicks later on /pronosticos and checks.
+     This strip used to lead with "94% Precisión promedio de pronóstico" and
+     "−75% Tiempo invertido en planificación": nobody has measured either, and
+     on real sessions the app shows its own users 75–89%. Advertising 94% while
+     the screen says 75% is the one thing this product cannot afford to do —
+     its whole argument is that it tells you the truth about your numbers.
+     What replaces them is countable: how many models compete per SKU
+     (MODEL_ORDER), the deliveries it takes to learn a supplier's real lead time
+     (MIN_LEAD_TIME_OBSERVATIONS = 3), and the plan limits on /planes.
+     If a real average accuracy ever gets measured across customers, it belongs
+     here — with the number the app actually shows. */}
  {[
- { value: '94%', label: 'Precisión promedio de pronóstico' },
- { value: '−75%', label: 'Tiempo invertido en planificación' },
- { value: '50K+', label: 'SKUs soportados por instancia' },
- { value: '1 día', label: 'Tiempo promedio de implementación' },
+ { value: '9', label: 'Modelos compitiendo por producto' },
+ { value: '3', label: 'Entregas para aprender el plazo real de un proveedor' },
+ { value: '5K+', label: 'SKUs por instancia' },
+ { value: 'CSV', label: 'Lo único que necesitas para empezar' },
  ].map(({ value, label }, i) => (
  <div key={label} className="strip-cell" style={{ textAlign: 'center', padding: '0 32px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
  <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', letterSpacing: '-0.04em', marginBottom: 6 }}>{value}</div>

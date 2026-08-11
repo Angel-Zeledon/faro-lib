@@ -421,21 +421,20 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
         avg = d.get("lead_time_real_avg")
         d["deviation_days"] = round(avg - declared, 1) if (declared is not None and avg is not None) else None
 
-        # Enough receptions, none of them saying anything: every delivery landed
-        # the same day it was ordered, so the average is 0 and measures nothing.
-        # /proveedores already refuses to learn from this and explains why; the
-        # scorecard printed "LEAD TIME REAL 0d" flat beside "DECLARADO 10d",
-        # which invites the buyer to lower their lead time to zero and order too
-        # late — the exact decision the other screen works to prevent.
+        # Every delivery landed the same day it was ordered, so the observed
+        # average is 0 and measures nothing. The scorecard printed "LEAD TIME
+        # REAL 0d" flat beside "DECLARADO 10d", which invites the buyer to lower
+        # their lead time to zero and order too late — the exact decision
+        # /proveedores works to prevent by explaining why it will not learn.
         #
-        # Same rule as `supplier_service.list_suppliers`, deliberately: a second
-        # definition of "usable" is how two screens start disagreeing.
-        from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
-
-        d["lead_time_unusable"] = bool(
-            int(d.get("n_receptions") or 0) >= MIN_LEAD_TIME_OBSERVATIONS
-            and (avg is None or float(avg) <= 0)
-        )
+        # NOT gated on MIN_LEAD_TIME_OBSERVATIONS, and the distinction matters:
+        # that constant answers "have I seen enough to REPLACE the declared lead
+        # time?", which is about learning. This answers "does this measurement
+        # say anything at all?", which is about display. A zero average says
+        # nothing whether it came from one delivery or ten — a first cut did
+        # require >= 3 and left a supplier with a single same-day reception still
+        # showing `0d`.
+        d["lead_time_unusable"] = bool(avg is not None and float(avg) <= 0)
         # A trend needs at least two points to be a trend. Reported over a single
         # reception it read "Estable", which is a claim about a shape nobody has
         # seen yet.

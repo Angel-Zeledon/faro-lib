@@ -81,8 +81,7 @@ function ScorecardTable({ rows, alerts }: {
                   {row.lead_time_unusable ? (
                     <span
                       style={{ color: C.dim }}
-                      title={t('suppliers.learning_unusable',
-                        { n: row.n_receptions, days: row.lead_time_declarado ?? '—' })}
+                      title={t('scorecard.lead_time_says_nothing_hint')}
                     >
                       {t('scorecard.lead_time_says_nothing')}
                     </span>
