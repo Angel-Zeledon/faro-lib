@@ -115,11 +115,19 @@ nocturno de su sistema, y Faro reentrena solo.
 
 - **Nadie lo sabe.** No hay en la interfaz nada que diga "podés automatizar esto"
   ni que explique cómo. Está construido y es invisible.
-- **La llave está en el plan más caro.** Subir por API necesita una API key, que
-  es `Feature.API_ACCESS` — Enterprise. Igual que los conectores. Es decir: **las
-  dos formas de que los datos entren solos están detrás del plan más caro**,
-  mientras teclear a mano está en todos. Ese reparto es la decisión que de
-  verdad mueve la aguja, no un desarrollo.
+- **La llave NO está en el plan más caro** — y esto es una corrección a lo que
+  este mismo documento afirmó primero. `Feature.API_ACCESS` vive en
+  `_PRO_EXTRA`: **Professional**. El código ya trae el razonamiento escrito:
+  *"el cliente que más necesita dejar de subir archivos a mano es el que tiene
+  un ERP y unos miles de SKUs — y ese es un Professional, no un Enterprise"*.
+  Lo que sí es Enterprise es `_ENT_EXTRA`: BOM, **webhooks** e **integraciones**
+  (Alegra/Siigo).
+
+  Así que el reparto real es: **la vía API está a un plan de distancia y la vía
+  conector no**. Eso es bastante mejor de lo que decía el párrafo anterior, y
+  deja una sola pregunta de empaquetado: si los webhooks —el camino para que
+  Faro *avise* en vez de que le pregunten— deberían acompañar a la API en
+  Professional.
 
 *Verificado leyendo el código, no caminado de punta a punta:* falta ejercitar
 subida-por-API-key + reentrenamiento programado en una corrida real.
