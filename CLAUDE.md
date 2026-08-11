@@ -50,11 +50,32 @@ backend/.venv/Scripts/python.exe -m uvicorn backend.main:app --host 127.0.0.1 --
 # Frontend (port 5000; proxies /api/* to BACKEND_URL, default 127.0.0.1:8010)
 cd Frontend && npm run dev
 
-# Tests
+# Tests — one command, everything, in the right order
+python scripts/run_tests.py        # backend, then engine, then typecheck
+python scripts/run_tests.py --backend      # or one part at a time
+```
+
+`run_tests.py` exists because "the full suite" used to mean only
+`backend/tests`, and the engine's 56 test files were a second command you had to
+remember — which is how a change to `ForecastingCore` once shipped with just a
+`-k` subset run against it. The script also **refuses to start while a dev
+server is listening**: the job queue IS the `jobs` table, so a running backend
+claims jobs the tests create and flips their sessions to FAILED, reporting
+defects that are not there. And it never runs the two suites concurrently — the
+timing-sensitive ones then fail for load.
+
+The parts, if you need them individually:
+
+```bash
 cd backend && python -m pytest tests/ -q          # needs local Postgres on :5544
 cd ForecastingCore && python -m pytest tests/ -q  # pure Python, no DB
-cd Frontend && npx tsc --noEmit                   # typecheck
+cd Frontend && npx tsc --noEmit                   # typecheck — NOT tests
 ```
+
+**The frontend has no tests.** `tsc` checks types, not behaviour, and there is
+no end-to-end suite: every screen walk in `docs/inventario-pantallas.md` was done
+by hand in a browser. A green run means the backend behaves — not that the
+product works. On 2026-08-06 it was green while 27 real defects were live.
 
 Local test Postgres: docker container **faro_db** (user/pass `postgres`/`postgres`, port 5544). An empty DB self-bootstraps: `backend/db/migrations.py run_all()` creates all tables at startup.
 
