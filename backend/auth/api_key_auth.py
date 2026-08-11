@@ -80,6 +80,42 @@ def touch(key_id: str) -> None:
     )
 
 
+# How many calls one key may make per minute. Chosen for the job the API exists
+# to do — a nightly ERP push and the polling around it — not to be generous: an
+# integration that needs more than this per minute is looping, and a loop with a
+# valid key is exactly what nothing currently stops.
+RATE_MAX_PER_MINUTE = 120
+RATE_WINDOW_SECONDS = 60
+
+
+def check_rate(key_id: str) -> bool:
+    """Whether this key may make one more call now; records it when it may.
+
+    Reuses `auth_rate_events`, the same window the login endpoints use, keyed by
+    `apikey:<id>`. A second table would have been a second definition of "a
+    window", with its own pruning to forget.
+
+    Fails OPEN on a database problem, deliberately. This runs on every
+    authenticated machine call: if the rate store is unreachable, refusing every
+    integration in the product is a far worse outcome than briefly not counting.
+    The customer's nightly sync must not go down because a limiter cannot write.
+    """
+    bucket = f"apikey:{key_id}"
+    try:
+        execute(
+            "DELETE FROM auth_rate_events WHERE key = %s AND created_at < NOW() - make_interval(secs => %s)",
+            (bucket, RATE_WINDOW_SECONDS),
+        )
+        row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s", (bucket,))
+        used = int(row["n"]) if row else 0
+        if used >= RATE_MAX_PER_MINUTE:
+            return False
+        execute("INSERT INTO auth_rate_events (key) VALUES (%s)", (bucket,))
+        return True
+    except Exception:
+        return True
+
+
 def actor_id(key_id: str) -> str:
     """The identity a key acts under.
 

@@ -81,6 +81,20 @@ def _authenticate_api_key(credential: str) -> CurrentUser:
                 },
             )
 
+    # After the plan check, before any work: a key over its window costs one
+    # counter read, not a forecast. 429 with Retry-After is the answer an
+    # integration can act on — a bare 429 makes it guess, and a guessing client
+    # retries in a tighter loop than the one being limited.
+    if not settings.testing_mode and not api_key_auth.check_rate(key["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Rate limit exceeded: {api_key_auth.RATE_MAX_PER_MINUTE} requests "
+                f"per minute per API key."
+            ),
+            headers={"Retry-After": str(api_key_auth.RATE_WINDOW_SECONDS)},
+        )
+
     api_key_auth.touch(key["id"])
     return CurrentUser(
         user_id=api_key_auth.actor_id(key["id"]),
