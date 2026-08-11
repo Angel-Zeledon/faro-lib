@@ -1,7 +1,7 @@
 """
 Data freshness: the two clocks, the degraded semáforo, and the reminder that
 fires when the user has stopped opening the app (plan #6 of
-docs/friccion-onboarding-2026-07-27.md).
+the 2026-07-27 onboarding-friction review, retired 2026-08-11).
 
 What is pinned here:
 

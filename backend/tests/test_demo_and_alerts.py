@@ -1,7 +1,8 @@
 """
 Tests for the one-click demo endpoint (POST /demo/quickstart) and the
 WhatsApp-alert plumbing (users.whatsapp_number + alert send-now endpoint).
-Feature spec: docs/features_propuestas_faro_2026-07-05.md (1.1 / 1.2).
+Feature spec: the 2026-07-05 proposals, sections 1.1 / 1.2 (doc retired in the
+2026-08-11 docs cleanup; still in git history).
 """
 
 from unittest import mock

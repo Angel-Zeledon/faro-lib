@@ -482,7 +482,7 @@ class TestTenantIsolation:
 
 # ── Inventory permissions: mutations require analyst or above ────────────────
 #
-# 2026-07-04 audit (docs/auditoria_integral_faro_2026-07-04.md, finding #1):
+# 2026-07-04 audit, finding #1 (doc retired 2026-08-11; see git history):
 # the previous "intentionally ungated" decision was reversed — inventory data
 # drives real purchase orders, so a read-only viewer must not be able to mutate
 # stock, events, suppliers, BOM or run bulk imports. Every mutation now depends

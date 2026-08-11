@@ -1,5 +1,6 @@
 """
-One-click demo (quick-start feature 1.2, docs/features_propuestas_faro_2026-07-05.md).
+One-click demo (quick-start feature 1.2 of the 2026-07-05 proposals; that doc
+ was retired in the 2026-08-11 docs cleanup and lives in git history).
 
 POST /demo/quickstart seeds everything a new user would otherwise have to
 prepare by hand — bundled sales dataset, column mapping, model/validation

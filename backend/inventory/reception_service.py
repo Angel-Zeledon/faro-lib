@@ -1,5 +1,6 @@
 """
-PO reception (feature 1.4, docs/features_propuestas_faro_2026-07-05.md).
+PO reception (feature 1.4 of the 2026-07-05 proposals; that doc was retired in
+the 2026-08-11 docs cleanup and lives in git history).
 
 Closes the purchase loop: when the order physically arrives, the buyer records
 what came in. Two effects that compound Faro's value over time:
