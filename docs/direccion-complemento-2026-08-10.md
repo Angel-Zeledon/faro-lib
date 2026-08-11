@@ -95,10 +95,41 @@ Además, Alegra y Siigo son software contable **colombiano**, y el mercado ancla
 declarado es **Costa Rica** (ver la memoria de estrategia, que ya marcaba esta
 desalineación el 2026-07-19). Sigue sin definirse el equivalente real para CR.
 
+### Segunda corrección: el ciclo de archivo tampoco está por construir
+
+Al ir a implementarlo, resultó que **las tres piezas ya existen y ya componen**:
+
+1. `POST /datasources/{source_id}/file` reemplaza el archivo **en su sitio**, de
+   forma atómica (escribe `.tmp`, verifica el tamaño, y recién ahí hace swap).
+   La fuente conserva su identidad, su id y su mapeo.
+2. `scheduled_jobs` + `_run_due_scheduled_jobs` reentrenan **una sesión** por
+   cron. La sesión apunta a ese dataset.
+3. `/ventas` ya ofrece clonar una sesión completada reusando **dataset y mapeo
+   de columnas**.
+
+Entonces: reemplazar el archivo + una programación = importación automática, sin
+código nuevo. Un cliente puede poner un cron de su lado que suba el export
+nocturno de su sistema, y Faro reentrena solo.
+
+**Lo que falta no es maquinaria, son dos cosas más baratas y más incómodas:**
+
+- **Nadie lo sabe.** No hay en la interfaz nada que diga "podés automatizar esto"
+  ni que explique cómo. Está construido y es invisible.
+- **La llave está en el plan más caro.** Subir por API necesita una API key, que
+  es `Feature.API_ACCESS` — Enterprise. Igual que los conectores. Es decir: **las
+  dos formas de que los datos entren solos están detrás del plan más caro**,
+  mientras teclear a mano está en todos. Ese reparto es la decisión que de
+  verdad mueve la aguja, no un desarrollo.
+
+*Verificado leyendo el código, no caminado de punta a punta:* falta ejercitar
+subida-por-API-key + reentrenamiento programado en una corrida real.
+
 ## Qué sí, por orden de rendimiento
 
-1. **Que la carga de archivo sea un ciclo.** Sobre todo cableado de piezas que
-   ya existen.
+1. **Decidir el reparto por plan de la entrada automática de datos** (API key y
+   conectores), y **decirlo en la interfaz**. Esto sustituye a lo que este
+   documento pedía originalmente como "convertir la carga en un ciclo": el ciclo
+   ya está.
 2. **Procedencia y fecha en todo número que mueva plata.** Ya está a medias
    (badges de "estimado", "con un costo estimado", "no sabemos" en vez de "no
    hay riesgo") y es lo mejor del producto. Un ERP da un número; Faro dice de
