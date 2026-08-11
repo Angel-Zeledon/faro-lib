@@ -668,7 +668,7 @@ export const translations = {
     'settings.events_to_subscribe':   'Eventos a suscribir',
     'settings.event_job_completed':   'Trabajo completado',
     'settings.event_job_failed':      'Trabajo fallido',
-    'settings.api_keys_shown_once':    'La clave se muestra una sola vez, al crearla: no la guardamos en ningún lado, así que copiala en ese momento. Si se pierde, se crea otra y se revoca la anterior.',
+    'settings.api_keys_shown_once':    'La clave se muestra una sola vez, al crearla: no la guardamos en ningún lado, así que cópiala en ese momento. Si se pierde, se crea otra y se revoca la anterior.',
     'settings.key_role_label':         'Qué puede hacer la clave',
     'settings.key_role_viewer':        'Solo leer',
     'settings.key_role_analyst':       'Leer y escribir',

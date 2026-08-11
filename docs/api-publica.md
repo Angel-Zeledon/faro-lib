@@ -3,14 +3,14 @@
 ## En resumen
 
 Faro no quiere ser el sistema donde vive tu inventario. Quiere ser la capa que
-decide **qué comprar** encima del sistema que ya tenés. Esta API es esa costura:
+decide **qué comprar** encima del sistema que ya tienes. Esta API es esa costura:
 tu ERP empuja lo que ya sabe y se lleva la decisión, sin que nadie abra la
 aplicación.
 
 Son cinco llamadas, en el orden en que ocurre el trabajo:
 
 ```
-0. GET  /planning                      qué sesión estoy mirando  ← empezá acá
+0. GET  /planning                      qué sesión estoy mirando  ← empieza aquí
 1. POST /data-sources/{id}/file        el export de anoche
 2. POST /sessions/{id}/train           reentrenar    (opcional: ver abajo)
 3. GET  /inventory/status              el semáforo
@@ -20,9 +20,9 @@ Son cinco llamadas, en el orden en que ocurre el trabajo:
 
 La 0 es la que conviene hacer primero. `log-po` y las dos de entrenamiento
 **exigen** un `session_id`, y este es el único endpoint público que lo entrega.
-En `status` y `morning-briefing` es opcional: si lo omitís, usan la sesión activa
+En `status` y `morning-briefing` es opcional: si lo omites, usan la sesión activa
 del tenant — o sea, lo mismo que devuelve `/planning`. Pedirlo explícito igual
-tiene una ventaja: sabés contra qué corrida estás leyendo, en vez de que cambie
+tiene una ventaja: sabes contra qué corrida estás leyendo, en vez de que cambie
 bajo tus pies a mitad de un ciclo.
 
 ## El envoltorio
@@ -38,7 +38,7 @@ bajo tus pies a mitad de un ciclo.
 ```
 
 Los errores traen `detail`, `error_code` y `error_params` en el nivel superior,
-sin `data`. Ramificá por `error_code`, nunca por el texto de `detail`: ese está
+sin `data`. Ramifica por `error_code`, nunca por el texto de `detail`: ese está
 escrito para personas y se reescribe.
 
 La quinta no es opcional aunque lo parezca: sin ella la orden no existe para
@@ -53,7 +53,7 @@ noche y no hacer nada más es la integración más simple que funciona.
 **Autenticación:** `Authorization: Bearer sk_live_…`
 **Límite:** por plan — 120 llamadas por minuto en Professional, sin tope en
 Enterprise. Al pasarse: `429` con `Retry-After`, y el mensaje dice el techo que
-te aplica a vos.
+te aplica.
 **Incluida desde:** plan Professional.
 
 ## Dónde sacar tu clave
@@ -62,7 +62,7 @@ En la aplicación: **Automatización → pestaña "API Keys" → "Generar key"**
 
 Al crearla se eligen dos cosas:
 
-- **Nombre.** Poné el del sistema que la va a usar ("ERP nocturno"), no el de la
+- **Nombre.** Pon el del sistema que la va a usar ("ERP nocturno"), no el de la
   persona. La clave no pertenece a quien la crea: sigue funcionando cuando esa
   persona se va, y no gana permisos si la ascienden.
 - **Qué puede hacer.** *Solo leer* alcanza para el semáforo y el briefing.
@@ -116,7 +116,7 @@ Tres cosas que conviene saber antes de integrar:
   **Y deja rastro.** Toda escritura de una llave queda registrada a su nombre —
   no al de la persona que la creó — con la ruta, el resultado y la hora. Un
   intento **fallido** también se registra, marcado como error: eso es justo lo
-  que necesitás ver cuando una integración parece muda. Las lecturas no se
+  que necesitas ver cuando una integración parece muda. Las lecturas no se
   registran, porque a 120 llamadas por minuto enterrarían lo que importa.
 
 ## Límites
@@ -194,7 +194,7 @@ GET  /api/v1/sessions/{session_id}/train/status
 ```
 
 El entrenamiento es asíncrono: el `POST` encola y el `GET` informa el estado.
-`status` pasa por `QUEUED` → `RUNNING` → `COMPLETED` o `FAILED`; sondealo cada
+`status` pasa por `QUEUED` → `RUNNING` → `COMPLETED` o `FAILED`; sondéalo cada
 pocos segundos hasta uno de los dos últimos.
 
 ```json
@@ -247,7 +247,7 @@ ignora: distinguen un número que diste de uno que nos inventamos. Una integraci
 que trate ambos igual va a confiar en supuestos nuestros como si fueran datos
 suyos.
 
-`explanation_code` es un código estable con sus parámetros aparte — ramificá por
+`explanation_code` es un código estable con sus parámetros aparte — ramifica por
 ahí, nunca por el texto.
 
 Los productos sin stock registrado aparecen como `SIN_DATOS`, no como "sin
