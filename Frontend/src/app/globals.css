@@ -204,6 +204,22 @@
      real height instead of reporting a box smaller than what it paints. */
   .page-content > .page-enter { flex: 1 0 auto; }
 
+  /* The endpoint rail on /api. A class rather than an inline style because the
+     whole point is :hover and :focus-visible, which inline styles cannot
+     express — and a navigation list that does not answer the cursor reads as
+     decoration rather than as something you can click. */
+  .api-nav-link {
+    transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+  }
+  .api-nav-link:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .api-nav-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
   /* Card */
   .card {
     background: var(--surface);

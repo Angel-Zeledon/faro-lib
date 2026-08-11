@@ -30,6 +30,7 @@ import Input, { Textarea } from '@/components/ui/Input'
 import FeatureGate from '@/components/ui/FeatureGate'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const MONO = "ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, 'Liberation Mono', monospace"
 
@@ -146,6 +147,38 @@ function useSafeCopy() {
   }
 }
 
+/** The method is the first thing read on every row, so it carries the colour. */
+function MethodChip({ method }: { method: 'GET' | 'POST' }) {
+  const read = method === 'GET'
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, fontFamily: MONO, letterSpacing: '0.04em',
+      padding: '4px 9px', borderRadius: 6, minWidth: 48, textAlign: 'center',
+      color: read ? 'var(--info)' : 'var(--warning)',
+      background: read
+        ? 'color-mix(in srgb, var(--info) 12%, transparent)'
+        : 'color-mix(in srgb, var(--warning) 14%, transparent)',
+      border: `1px solid ${read
+        ? 'color-mix(in srgb, var(--info) 30%, transparent)'
+        : 'color-mix(in srgb, var(--warning) 34%, transparent)'}`,
+    }}>
+      {method}
+    </span>
+  )
+}
+
+/** The small uppercase label that names a region of a section. */
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontSize: 10.5, fontWeight: 700, letterSpacing: '0.09em',
+      textTransform: 'uppercase', color: 'var(--dim)',
+    }}>
+      {children}
+    </div>
+  )
+}
+
 function CodeBlock({ text }: { text: string }) {
   const { t } = useLanguage()
   const [copied, setCopied] = useState(false)
@@ -176,6 +209,7 @@ function CodeBlock({ text }: { text: string }) {
 
 function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const safe = useSafeCopy()
   const confirm = useConfirm()
   const [values, setValues] = useState<Record<string, string>>({})
@@ -308,147 +342,187 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
     : result.status < 300 ? 'var(--success)'
     : result.status < 500 ? 'var(--warning)' : 'var(--danger)'
 
+  // The section is the unit of the reference now, not a card in a stack: a
+  // header that states the contract, then the console and the curl side by side
+  // so the page uses the width it has, then the response spanning the full
+  // width underneath — JSON is the widest thing here and it was the thing being
+  // squeezed into the narrowest column.
+  const split = !narrow
   return (
-    <Card padding="16px 18px" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{
-          fontSize: 11, fontWeight: 700, fontFamily: MONO, padding: '2px 8px', borderRadius: 6,
-          color: endpoint.method === 'GET' ? 'var(--info)' : 'var(--warning)',
-          background: endpoint.method === 'GET'
-            ? 'color-mix(in srgb, var(--info) 12%, transparent)'
-            : 'color-mix(in srgb, var(--warning) 14%, transparent)',
+    <section
+      id={`ep-${endpoint.id}`}
+      // scrollMarginTop clears the sticky key bar: without it the rail jumps to
+      // a heading the bar is covering.
+      style={{
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 12, overflow: 'hidden', scrollMarginTop: 92,
+      }}
+    >
+      <header style={{ padding: '20px 24px 18px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <MethodChip method={endpoint.method} />
+          <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text)' }}>
+            {endpoint.path}
+          </span>
+          {endpoint.write && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+              padding: '3px 8px', borderRadius: 5, color: 'var(--warning)',
+              border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+            }}>
+              {t('apidocs.badge_write')}
+            </span>
+          )}
+        </div>
+        <p style={{ margin: '10px 0 0', fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.65, maxWidth: 780 }}>
+          {safe(`apidocs.${endpoint.id}_desc`)}
+        </p>
+      </header>
+
+      <div style={{ display: 'grid', gridTemplateColumns: split ? 'minmax(0,1fr) minmax(0,1fr)' : '1fr' }}>
+        <div style={{
+          padding: '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 12,
+          borderRight: split ? '1px solid var(--border)' : 'none',
+          borderBottom: split ? 'none' : '1px solid var(--border)',
         }}>
-          {endpoint.method}
-        </span>
-        <span style={{ fontFamily: MONO, fontSize: 13, color: 'var(--text)' }}>{endpoint.path}</span>
-      </div>
+          <Eyebrow>{t('apidocs.section_console')}</Eyebrow>
 
-      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
-        {safe(`apidocs.${endpoint.id}_desc`)}
-      </div>
+          {(endpoint.pathParams ?? []).concat(endpoint.query ?? []).length > 0 && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {(endpoint.pathParams ?? []).concat(endpoint.query ?? []).map(p => (
+                <label key={p.name} style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 190px', minWidth: 0 }}>
+                  <span style={{ fontSize: 11, color: 'var(--dim)', fontFamily: MONO }}>
+                    {p.name}{p.required ? ' *' : ''}
+                  </span>
+                  <Input
+                    size="sm"
+                    name={`${endpoint.id}_${p.name}`}
+                    // Not `p.name`: an aria-label OVERRIDES the visible text, so
+                    // labelling it with the bare name hid the `*` from every
+                    // screen reader while showing it to everyone else.
+                    aria-label={p.required ? `${p.name} *` : p.name}
+                    required={p.required}
+                    placeholder={p.placeholder ?? ''}
+                    value={values[p.name] ?? ''}
+                    onChange={e => set(p.name, e.target.value)}
+                    style={{ width: '100%', fontFamily: MONO, fontSize: 12 }}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
 
-      {(endpoint.pathParams ?? []).concat(endpoint.query ?? []).length > 0 && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {(endpoint.pathParams ?? []).concat(endpoint.query ?? []).map(p => (
-            <label key={p.name} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: 11, color: 'var(--dim)', fontFamily: MONO }}>
-                {p.name}{p.required ? ' *' : ''}
-              </span>
-              <Input
-                size="sm"
-                name={`${endpoint.id}_${p.name}`}
-                // Not `p.name`: an aria-label OVERRIDES the visible text, so
-                // labelling it with the bare name hid the `*` from every screen
-                // reader while showing it to everyone else.
-                aria-label={p.required ? `${p.name} *` : p.name}
-                required={p.required}
-                placeholder={p.placeholder ?? ''}
-                value={values[p.name] ?? ''}
-                onChange={e => set(p.name, e.target.value)}
-                style={{ width: 170, fontFamily: MONO, fontSize: 12 }}
+          {endpoint.multipart && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('apidocs.try_file_label')} *</span>
+              <input
+                type="file"
+                name={`${endpoint.id}_file`}
+                aria-label={t('apidocs.try_file_label')}
+                accept=".csv,.xlsx,.xls,.parquet,.json"
+                onChange={e => { invalidate(); setFile(e.target.files?.[0] ?? null) }}
+                style={{ fontSize: 12, color: 'var(--text)' }}
               />
             </label>
-          ))}
+          )}
+
+          {endpoint.bodyTemplate !== undefined && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('apidocs.try_body_label')}</span>
+              <Textarea
+                name={`${endpoint.id}_body`}
+                aria-label={t('apidocs.try_body_label')}
+                value={body}
+                onChange={e => { invalidate(); setBody(e.target.value) }}
+                rows={endpoint.id === 'logpo' ? 8 : 3}
+                style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.7 }}
+              />
+            </label>
+          )}
+
+          {endpoint.write && (
+            <div style={{
+              display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, lineHeight: 1.6,
+              color: 'var(--text)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: 'var(--warning)' }} aria-hidden="true" />
+              <span>{safe(endpoint.consequenceKey ?? '', t('apidocs.confirm_generic'))}</span>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 4 }}>
+            <Button
+              variant={endpoint.write ? 'danger' : 'primary'}
+              size="sm" icon={<Play size={12} />}
+              disabled={!canRun} loading={busy} onClick={run}
+            >
+              {busy ? t('apidocs.try_running') : t('apidocs.try_run')}
+            </Button>
+            {/* The only hint used to be the missing token. With a valid key and
+                a blank required field the button was simply grey and mute,
+                which gives the user nothing to act on. */}
+            {!canRun && (
+              <span style={{ fontSize: 12, color: 'var(--dim)' }}>
+                {!token.trim()
+                  ? t('apidocs.try_empty')
+                  : missingFile
+                    ? t('apidocs.try_missing_file')
+                    : `${t('apidocs.try_missing_fields')} ${missingNames.join(', ')}`}
+              </span>
+            )}
+            {result && (
+              // Announced, like `automatizacion` and `pronosticos` already do. A
+              // screen-reader user pressed Run and got total silence — on
+              // success AND on failure.
+              <span role="status" aria-live="polite" style={{ fontSize: 12, color: 'var(--dim)' }}>
+                {t('apidocs.try_status')}: <strong style={{ color: statusColor }}>{result.status}</strong>
+                {'  ·  '}{t('apidocs.try_duration_ms', { ms: result.ms })}
+              </span>
+            )}
+          </div>
+
+          {failure && (
+            <div role="alert" style={{ fontSize: 12, color: 'var(--danger)', lineHeight: 1.6 }}>
+              {t('apidocs.try_error')} {failure}
+            </div>
+          )}
         </div>
-      )}
 
-      <CodeBlock text={endpoint.curl} />
-
-      {endpoint.write && (
-        <div style={{
-          display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, lineHeight: 1.6,
-          color: 'var(--text)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
-          border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
-          borderRadius: 8, padding: '10px 12px',
-        }}>
-          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: 'var(--warning)' }} aria-hidden="true" />
-          <span>{safe(endpoint.consequenceKey!)}</span>
+        <div style={{ padding: '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          <Eyebrow>{t('apidocs.section_example')}</Eyebrow>
+          <CodeBlock text={endpoint.curl} />
         </div>
-      )}
-
-      {endpoint.multipart && (
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('apidocs.try_file_label')} *</span>
-          <input
-            type="file"
-            name={`${endpoint.id}_file`}
-            aria-label={t('apidocs.try_file_label')}
-            accept=".csv,.xlsx,.xls,.parquet,.json"
-            onChange={e => { invalidate(); setFile(e.target.files?.[0] ?? null) }}
-            style={{ fontSize: 12, color: 'var(--text)' }}
-          />
-        </label>
-      )}
-
-      {endpoint.bodyTemplate !== undefined && (
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('apidocs.try_body_label')}</span>
-          <Textarea
-            name={`${endpoint.id}_body`}
-            aria-label={t('apidocs.try_body_label')}
-            value={body}
-            onChange={e => { invalidate(); setBody(e.target.value) }}
-            rows={endpoint.id === 'logpo' ? 7 : 2}
-            style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.7 }}
-          />
-        </label>
-      )}
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Button
-          variant={endpoint.write ? 'danger' : 'primary'}
-          size="sm" icon={<Play size={12} />}
-          disabled={!canRun} loading={busy} onClick={run}
-        >
-          {busy ? t('apidocs.try_running') : t('apidocs.try_run')}
-        </Button>
-        {/* The only hint used to be the missing token. With a valid key and a
-            blank required field the button was simply grey and mute, which
-            gives the user nothing to act on. */}
-        {!canRun && (
-          <span style={{ fontSize: 12, color: 'var(--dim)' }}>
-            {!token.trim()
-              ? t('apidocs.try_empty')
-              : missingFile
-                ? t('apidocs.try_missing_file')
-                : `${t('apidocs.try_missing_fields')} ${missingNames.join(', ')}`}
-          </span>
-        )}
-        {result && (
-          // Announced, like `automatizacion` and `pronosticos` already do. A
-          // screen-reader user pressed Run and got total silence — on success
-          // AND on failure.
-          <span role="status" aria-live="polite" style={{ fontSize: 12, color: 'var(--dim)' }}>
-            {t('apidocs.try_status')}: <strong style={{ color: statusColor }}>{result.status}</strong>
-            {'  ·  '}{t('apidocs.try_duration_ms', { ms: result.ms })}
-          </span>
-        )}
       </div>
 
-      {failure && (
-        <div role="alert" style={{ fontSize: 12, color: 'var(--danger)' }}>{t('apidocs.try_error')} {failure}</div>
-      )}
-
       {result && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--dim)', textTransform: 'uppercase', marginBottom: 6 }}>
-            {t('apidocs.try_response')}
+        <div style={{ borderTop: '1px solid var(--border)', padding: '16px 24px 20px', background: 'var(--surface-2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <Eyebrow>{t('apidocs.try_response')}</Eyebrow>
+            <span style={{
+              fontFamily: MONO, fontSize: 11, fontWeight: 700, color: statusColor,
+              border: `1px solid ${statusColor}`, borderRadius: 5, padding: '1px 7px',
+            }}>
+              {result.status}
+            </span>
           </div>
           <pre style={{
-            margin: 0, padding: '12px 14px', maxHeight: 320, overflow: 'auto',
-            background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 8,
+            margin: 0, padding: '14px 16px', maxHeight: 420, overflow: 'auto',
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
             fontFamily: MONO, fontSize: 12, lineHeight: 1.7, color: 'var(--text)',
           }}>
             {result.body}
           </pre>
         </div>
       )}
-    </Card>
+    </section>
   )
 }
 
 function ApiDocsPage() {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   // React state only, never localStorage. The raw key exists nowhere else — the
   // server stores a hash — so persisting it here would be the only copy at rest,
   // reachable by any script on the page.
@@ -458,17 +532,112 @@ function ApiDocsPage() {
   const [baseUrl, setBaseUrl] = useState('')
   useEffect(() => { setBaseUrl(`${window.location.origin}/api/v1`) }, [])
 
-  return (
-    <div style={{ padding: '32px 40px', maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{t('apidocs.title')}</h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)', margin: '6px 0 0', lineHeight: 1.6 }}>{t('apidocs.intro')}</p>
-      </div>
+  // The three facts an integrator checks before writing a line of code. They sit
+  // in the header rather than in prose further down because they are the terms
+  // of the contract, not commentary on it.
+  const specs = [
+    { label: t('apidocs.spec_auth'), value: 'Bearer sk_live_…', mono: true },
+    { label: t('apidocs.spec_rate'), value: t('apidocs.spec_rate_value'), mono: false },
+    { label: t('apidocs.spec_plan'), value: t('apidocs.spec_plan_value'), mono: false },
+  ]
 
-      <Card padding="16px 18px" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 260 }}>
-            <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('apidocs.try_token_label')}</span>
+  return (
+    // `-24px` cancels `.page-content`'s own padding so the header band reaches
+    // the edges. Full bleed is the point: a reference that starts with a
+    // floating card reads as one more screen, and this one is a contract with
+    // somebody else's engineering team.
+    <div style={{ margin: narrow ? 0 : -24 }}>
+      <header style={{ background: 'var(--sidebar-bg)', color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+        <div style={{ maxWidth: 1440, margin: '0 auto', padding: narrow ? '28px 20px 24px' : '44px 48px 34px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <span style={{
+              fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase',
+              color: 'var(--sidebar-beam)',
+            }}>
+              {t('apidocs.eyebrow')}
+            </span>
+            <span style={{
+              fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.72)',
+              border: '1px solid rgba(255,255,255,0.24)', borderRadius: 5, padding: '2px 7px',
+            }}>
+              v1
+            </span>
+          </div>
+
+          <h1 style={{
+            fontSize: narrow ? 26 : 36, fontWeight: 700, letterSpacing: '-0.025em',
+            color: '#fff', margin: 0, lineHeight: 1.15,
+          }}>
+            {t('apidocs.title')}
+          </h1>
+          <p style={{
+            fontSize: narrow ? 14 : 16, color: 'rgba(255,255,255,0.72)',
+            margin: '12px 0 0', lineHeight: 1.6, maxWidth: 660,
+          }}>
+            {t('apidocs.intro')}
+          </p>
+
+          {/* The base URL, stated once and prominently. Every curl on this page
+              says `$FARO`, and the console itself calls a RELATIVE path through
+              the Next rewrite — so the /v1 an integrator must type was the one
+              thing the page never showed. */}
+          <div style={{ marginTop: 26, display: 'flex', flexWrap: 'wrap', gap: narrow ? 18 : 40, alignItems: 'flex-end' }}>
+            <div>
+              <div style={{
+                fontSize: 10.5, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.50)', marginBottom: 7,
+              }}>
+                {t('apidocs.base_url_heading')}
+              </div>
+              <code style={{
+                display: 'inline-block', fontFamily: MONO, fontSize: 13.5, color: '#fff',
+                background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.16)',
+                borderRadius: 7, padding: '7px 12px',
+              }}>
+                {baseUrl || '…'}
+              </code>
+              <div style={{
+                fontSize: 11.5, color: 'rgba(255,255,255,0.55)', lineHeight: 1.55,
+                marginTop: 8, maxWidth: 380,
+              }}>
+                {t('apidocs.base_url_desc')}
+              </div>
+            </div>
+            {specs.map(sp => (
+              <div key={sp.label}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.50)', marginBottom: 7,
+                }}>
+                  {sp.label}
+                </div>
+                <div style={{
+                  fontSize: 13.5, color: 'rgba(255,255,255,0.92)', paddingBottom: 7,
+                  fontFamily: sp.mono ? MONO : undefined,
+                }}>
+                  {sp.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {/* The key follows you down the page. Eight sections is more than one
+          screen, and a console whose credential scrolls out of reach makes you
+          hunt for it before every call. */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 6,
+        background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+      }}>
+        <div style={{
+          maxWidth: 1440, margin: '0 auto', padding: narrow ? '12px 20px' : '14px 48px',
+          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+        }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260 }}>
+            <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
+              {t('apidocs.try_token_label')}
+            </span>
             <Input
               type="password"
               name="api_console_token"
@@ -482,11 +651,12 @@ function ApiDocsPage() {
               spellCheck={false}
               data-1p-ignore
               data-lpignore="true"
+              size="sm"
               aria-label={t('apidocs.try_token_label')}
               placeholder={t('apidocs.try_token_ph')}
               value={token}
               onChange={e => setToken(e.target.value)}
-              style={{ fontFamily: MONO, fontSize: 12 }}
+              style={{ flex: 1, minWidth: 0, fontFamily: MONO, fontSize: 12 }}
             />
           </label>
           <Link href="/automatizacion" style={{ textDecoration: 'none' }}>
@@ -495,38 +665,77 @@ function ApiDocsPage() {
             </Button>
           </Link>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.6 }}>
-          {t('apidocs.try_token_warning')}
-        </div>
-      </Card>
+      </div>
 
-      <Card padding="16px 18px" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.7 }}>
-          <strong>{t('apidocs.auth_heading')}. </strong>{t('apidocs.auth_desc')} {t('apidocs.auth_role_note')}
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.7 }}>
-          <strong>{t('apidocs.limits_heading')}. </strong>{t('apidocs.limits_desc')} {t('apidocs.limits_429')}
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.7 }}>
-          <strong>{t('apidocs.envelope_heading')}. </strong>{t('apidocs.envelope_desc')} {t('apidocs.envelope_errors')}
-        </div>
-        {/* Every curl snippet on this page says `$FARO/planning`, and until now
-            nothing on the page said what $FARO is. The console itself calls a
-            RELATIVE path through the Next rewrite, so the one thing a customer
-            must know to wire up their ERP — that the real base carries the /v1
-            these `path` fields omit — was the one thing never stated. */}
-        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.7 }}>
-          <strong>{t('apidocs.base_url_heading')}. </strong>{t('apidocs.base_url_desc')}
-          <div style={{ marginTop: 6 }}>
-            <code style={{ fontFamily: MONO, fontSize: 12, color: 'var(--accent)' }}>{baseUrl}</code>
+      <div style={{
+        maxWidth: 1440, margin: '0 auto',
+        padding: narrow ? '20px' : '32px 48px 64px',
+        display: 'grid',
+        gridTemplateColumns: narrow ? '1fr' : '218px minmax(0,1fr)',
+        gap: narrow ? 20 : 44,
+        alignItems: 'start',
+      }}>
+        {!narrow && (
+          <nav aria-label={t('apidocs.nav_label')} style={{ position: 'sticky', top: 84 }}>
+            <div style={{
+              fontSize: 10.5, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
+              color: 'var(--dim)', marginBottom: 12,
+            }}>
+              {t('apidocs.nav_label')}
+            </div>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {ENDPOINTS.map(ep => (
+                <li key={ep.id}>
+                  <a
+                    href={`#ep-${ep.id}`}
+                    className="api-nav-link"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
+                      borderRadius: 6, textDecoration: 'none', color: 'var(--muted)',
+                    }}
+                  >
+                    <span style={{
+                      fontFamily: MONO, fontSize: 9.5, fontWeight: 700, width: 30, flexShrink: 0,
+                      color: ep.method === 'GET' ? 'var(--info)' : 'var(--warning)',
+                    }}>
+                      {ep.method}
+                    </span>
+                    <span style={{
+                      fontFamily: MONO, fontSize: 11.5, overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {ep.path}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: narrow ? '1fr' : 'repeat(3, minmax(0,1fr))',
+            gap: 14,
+          }}>
+            {[
+              { h: t('apidocs.auth_heading'), b: `${t('apidocs.auth_desc')} ${t('apidocs.auth_role_note')}` },
+              { h: t('apidocs.limits_heading'), b: `${t('apidocs.limits_desc')} ${t('apidocs.limits_429')}` },
+              { h: t('apidocs.envelope_heading'), b: `${t('apidocs.envelope_desc')} ${t('apidocs.envelope_errors')}` },
+            ].map(c => (
+              <Card key={c.h} padding="16px 18px" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{c.h}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.65 }}>{c.b}</div>
+              </Card>
+            ))}
+          </div>
+
+          {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} />)}
+          <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7 }}>
+            {t('apidocs.footer_promise')}
           </div>
         </div>
-      </Card>
-
-      {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} />)}
-
-      <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7, paddingBottom: 20 }}>
-        {t('apidocs.footer_promise')}
       </div>
     </div>
   )
