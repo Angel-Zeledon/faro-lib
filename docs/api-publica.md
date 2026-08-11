@@ -33,9 +33,15 @@ Tres cosas que conviene saber antes de integrar:
 - **El plan se verifica en cada llamada**, no solo al crear la llave. Si el
   tenant baja de plan, la llave deja de funcionar ese mismo día. La API está
   incluida desde **Professional**.
-- **La llave actúa como sí misma**, no como la persona que la creó. En el
-  historial de actividad las acciones aparecen a nombre de la integración, y
-  siguen funcionando cuando esa persona se va de la empresa.
+- **La llave actúa como sí misma**, no como la persona que la creó: internamente
+  el actor es `api_key:<id>`, así que la integración sigue funcionando cuando esa
+  persona se va de la empresa y no hereda permisos si la ascienden.
+
+  **Ojo:** eso *no* significa que hoy quede rastro visible. Comprobado el
+  2026-08-11 llamando la API de punta a punta: subir el archivo, entrenar y
+  registrar la orden **no escriben nada** en el historial de actividad —
+  `activity_logs` solo recoge alertas salientes y creación de sesiones. Si
+  necesitás auditar lo que hace una integración, hoy no lo tenés.
 
 ## Límites
 
@@ -91,12 +97,31 @@ llamadas.
 GET /api/v1/inventory/status?session_id={id}
 ```
 
-Por producto: en qué estado está (`PEDIR_YA`, `PEDIR_PRONTO`, `OK`,
-`SOBRESTOCK`), cuántos días de cobertura le quedan y cuánto conviene pedir.
+Por producto. Los campos que una integración necesita, con sus nombres reales
+(verificados contra una respuesta viva, no contra la memoria de nadie):
 
-Los productos sin stock registrado aparecen marcados como **sin datos**, no como
-"sin riesgo". Es una distinción deliberada: no saber y estar bien no son lo
-mismo, y una integración que los confunda va a comprar tarde.
+| Campo | Qué es |
+|---|---|
+| `signal` | `PEDIR_YA`, `PEDIR_PRONTO`, `OK`, `SOBRESTOCK` o `SIN_DATOS` |
+| `recommended_qty` | Cuánto pedir. **No** `order_qty` ni `suggested_qty` |
+| `coverage_days` | Días de stock que quedan al ritmo pronosticado |
+| `current_stock` | Lo que hay hoy |
+| `reorder_point` | El nivel donde conviene pedir |
+| `has_stock`, `has_forecast` | Si falta alguno, lo de arriba puede venir vacío |
+| `explanation_code` + `explanation_params` | El porqué, **estructurado** |
+| `lead_time_source`, `unit_cost_source`, `moq_source` | De dónde salió cada supuesto: `user` (lo cargaste vos), `learned` (lo aprendimos) o `default` (lo inventamos nosotros) |
+
+Los tres campos `*_source` son la parte que más conviene usar y la que más se
+ignora: distinguen un número que diste de uno que nos inventamos. Una integración
+que trate ambos igual va a confiar en supuestos nuestros como si fueran datos
+suyos.
+
+`explanation_code` es un código estable con sus parámetros aparte — ramificá por
+ahí, nunca por el texto.
+
+Los productos sin stock registrado aparecen como `SIN_DATOS`, no como "sin
+riesgo". Es una distinción deliberada: no saber y estar bien no son lo mismo, y
+una integración que los confunda va a comprar tarde.
 
 ### 4. Leer qué comprar
 
@@ -149,7 +174,24 @@ Honestidad por delante, para que nadie diseñe contra algo que no existe:
 
 - **No hay webhooks en Professional.** Hoy son Enterprise, así que en
   Professional la integración tiene que sondear. Está bajo revisión.
+- **No hay auditoría de lo que hace una llave.** Ver la nota en Autenticación.
 - **No hay sandbox.** Se prueba contra el tenant real.
 - **No hay versionado real todavía.** El prefijo `/api/v1` existe, pero la
   promesa de estabilidad la da esta lista, no el número. Si alguna vez hace falta
   romper algo, habrá `/v2` y aviso previo.
+
+## Cómo se verificó esto
+
+No está escrito de memoria. El 2026-08-11 se recorrieron los cinco trabajos con
+una llave real contra el servidor, en este orden: crear la llave → listar
+fuentes → reemplazar el archivo por un export nuevo de 360 filas (la fuente
+conservó su id) → reentrenar y esperar `COMPLETED` → leer el semáforo → leer el
+briefing → registrar la orden, que quedó en la base como OC-000005 con 250
+unidades y `modified_count = 1`.
+
+También los caminos infelices: una llave `viewer` lee (200) y no escribe (403 en
+subir archivo y en registrar orden), y una llave inventada da 401.
+
+Lo que **no** se ejercitó contra el servidor: el 429 del límite de tasa —está
+cubierto por tests, incluida su compuerta de mutación, pero gastar 120 llamadas
+por minuto contra el entorno de desarrollo no aportaba nada.
