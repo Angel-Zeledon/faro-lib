@@ -133,6 +133,19 @@ const ENDPOINTS: Endpoint[] = [
   },
 ]
 
+/** `t()` echoes an unmapped key back, and the two lookups on this page are built
+ *  at runtime — `apidocs.<id>_desc` and the consequence key — so the catalogue
+ *  checker, which only matches literal t('…') calls, cannot see them. Adding a
+ *  ninth endpoint would therefore print `apidocs.foo_desc` at a customer with
+ *  every check green. This is the guard that makes that impossible. */
+function useSafeCopy() {
+  const { t } = useLanguage()
+  return (key: string, fallback = '') => {
+    const text = t(key)
+    return text === key ? fallback : text
+  }
+}
+
 function CodeBlock({ text }: { text: string }) {
   const { t } = useLanguage()
   const [copied, setCopied] = useState(false)
@@ -163,6 +176,7 @@ function CodeBlock({ text }: { text: string }) {
 
 function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }) {
   const { t } = useLanguage()
+  const safe = useSafeCopy()
   const confirm = useConfirm()
   const [values, setValues] = useState<Record<string, string>>({})
   const [body, setBody] = useState(endpoint.bodyTemplate ?? '')
@@ -192,7 +206,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
     if (endpoint.write) {
       const go = await confirm({
         title: t('apidocs.confirm_title'),
-        message: t(endpoint.consequenceKey!),
+        message: safe(endpoint.consequenceKey!, t('apidocs.confirm_title')),
         danger: true,
       })
       if (!go) return
@@ -253,7 +267,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
       </div>
 
       <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
-        {t(`apidocs.${endpoint.id}_desc`)}
+        {safe(`apidocs.${endpoint.id}_desc`)}
       </div>
 
       {(endpoint.pathParams ?? []).concat(endpoint.query ?? []).length > 0 && (
@@ -287,13 +301,13 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
           borderRadius: 8, padding: '10px 12px',
         }}>
           <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: 'var(--warning)' }} aria-hidden="true" />
-          <span>{t(endpoint.consequenceKey!)}</span>
+          <span>{safe(endpoint.consequenceKey!)}</span>
         </div>
       )}
 
       {endpoint.multipart && (
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: 'var(--dim)', fontFamily: MONO }}>file *</span>
+          <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('apidocs.try_file_label')} *</span>
           <input
             type="file"
             name={`${endpoint.id}_file`}
@@ -307,7 +321,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
 
       {endpoint.bodyTemplate !== undefined && (
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: 'var(--dim)', fontFamily: MONO }}>body</span>
+          <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('apidocs.try_body_label')}</span>
           <Textarea
             name={`${endpoint.id}_body`}
             aria-label={t('apidocs.try_body_label')}
@@ -333,7 +347,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
         {result && (
           <span style={{ fontSize: 12, color: 'var(--dim)' }}>
             {t('apidocs.try_status')}: <strong style={{ color: statusColor }}>{result.status}</strong>
-            {'  ·  '}{t('apidocs.try_duration')}: {result.ms} ms
+            {'  ·  '}{t('apidocs.try_duration_ms', { ms: result.ms })}
           </span>
         )}
       </div>

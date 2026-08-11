@@ -74,7 +74,21 @@ def _run(label: str, cwd: Path, args: list[str]) -> tuple[str, bool, float]:
     print(f"\n{'=' * 70}\n{label}\n{'=' * 70}", flush=True)
     started = time.time()
     result = subprocess.run(args, cwd=cwd)
-    return label, result.returncode == 0, time.time() - started
+    elapsed = time.time() - started
+
+    # Checked again at the END, not only before starting. A dev server that came
+    # up DURING the run poisons it exactly as much as one that was already
+    # there, and a start-up check cannot see the future — which is how a run was
+    # left competing with a browser session somebody opened mid-way to look at a
+    # page. A green result from a poisoned run is worse than no run at all, so
+    # this reports FAIL and says why rather than letting it pass quietly.
+    intruders = [name for port, name in DEV_PORTS.items() if _listening(port)]
+    if intruders:
+        print(f"\n  !! A dev server came up during this stage ({', '.join(intruders)}).")
+        print("     It claims jobs these tests create, so this result is NOT trustworthy.")
+        return f"{label}  [POISONED]", False, elapsed
+
+    return label, result.returncode == 0, elapsed
 
 
 def main() -> int:

@@ -53,9 +53,10 @@ del tamaño de la superficie, no de su riesgo.
 | Planes | `/planes` | 0 | 2026-08-10 | **Los límites anunciados contrastados contra los que el backend aplica** (`entitlements/plans.py`: 1000/2/1, 5000/10/5, ilimitado) — coinciden exactos; "Tu plan actual" cae en la tarjeta correcta (tenant `professional`); los dos CTA son `mailto:` reales, coherentes con "el cobro automático llega pronto" | Verlo desde un tenant Starter y desde uno Enterprise; el aviso al chocar contra un límite |
 | Restablecer contraseña | `/reset-password` | 2 | 2026-08-10 | Sin token (avisa y **deshabilita** el botón — no ofrece lo que no puede cumplir); con un token real del propio producto: cambio exitoso, contraseña vieja rechazada, sesiones cortadas; **replay del mismo enlace** (ver abajo) | Token vencido, token de otro propósito, enlace por correo — **que hoy nadie envía** |
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
+| API pública | `/api` | 8 | 2026-08-11 | **Nueva.** Render en ES y EN sin claves crudas; token pegado; `GET /planning` ejecutado de verdad (200 en 177 ms, JSON formateado); **clave inválida → 401 en pantalla sin cerrar la sesión**; confirmación de escritura nombrando la consecuencia | Ejecutar una escritura hasta el final (muta datos reales), subida de archivo, `train`, vista angosta, y el caso de plan sin `api_access` |
 | Configurar inventario | `/configurar-inventario` | 0 | 2026-08-10 | Lista priorizada por plata; guardar una fila completa (**"12,50" se guarda como 12.5**, como promete el copy); barra de avance y su recálculo; la promesa central verificada de punta a punta — el producto configurado entra al semáforo (`PEDIR_PRONTO`) y el otro queda `SIN_DATOS` | Subir archivo ("Elegir archivo"), guardar filas incompletas, el tutorial, el caso de catálogo grande |
 
-**Resumen honesto (2026-08-10):** **las 25 pantallas tienen alguna caminata.**
+**Resumen honesto (2026-08-11):** **las 26 pantallas tienen alguna caminata.**
 Ninguna está caminada entera — la columna "qué falta" sigue siendo la parte
 honesta de la tabla, y una casilla vacía ahí significa desconocido, no correcto.
 
