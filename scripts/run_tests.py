@@ -29,6 +29,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import shutil
 import socket
 import subprocess
 import sys
@@ -70,10 +71,31 @@ def _refuse_if_dev_servers_are_up() -> None:
     sys.exit(2)
 
 
+def _resolve(program: str) -> str | None:
+    """Absolute path to `program`, or None.
+
+    On Windows `npx` is `npx.cmd`, and `subprocess.run` without a shell asks
+    CreateProcess for the literal name — which fails with WinError 2. The first
+    run that ever reached the frontend stage died there with a traceback, after
+    the backend and the engine had already passed: forty minutes of real work
+    thrown away by a lookup. `shutil.which` finds the `.cmd`.
+    """
+    return shutil.which(program)
+
+
 def _run(label: str, cwd: Path, args: list[str]) -> tuple[str, bool, float]:
     print(f"\n{'=' * 70}\n{label}\n{'=' * 70}", flush=True)
     started = time.time()
-    result = subprocess.run(args, cwd=cwd)
+
+    # A stage that cannot even START is a FAIL with a reason, never a crash.
+    # Raising here loses every result already collected and prints a traceback
+    # where a summary belongs.
+    resolved = _resolve(args[0]) if not Path(args[0]).exists() else args[0]
+    if resolved is None:
+        print(f"\n  !! `{args[0]}` not found on PATH — this stage did not run.")
+        return f"{label}  [NOT RUN]", False, 0.0
+
+    result = subprocess.run([resolved, *args[1:]], cwd=cwd)
     elapsed = time.time() - started
 
     # Checked again at the END, not only before starting. A dev server that came
