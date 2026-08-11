@@ -720,8 +720,13 @@ export const uploadActuals = (sessionId: string, file: File) => {
 }
 
 // ── API Keys ──────────────────────────────────────────────────────────────────
-export const createApiKey = (name: string) =>
-  request<{ key: string; name: string }>('POST', '/api-keys', { name })
+// The role travels. It always could — the backend has validated it since keys
+// existed — but this helper dropped it, so every key minted from the UI silently
+// took the default: `viewer`. A read-only key cannot upload the nightly export
+// or record a purchase order, which is the entire job an integration has, and
+// the screen gave no hint that it had chosen for you.
+export const createApiKey = (name: string, role: 'viewer' | 'analyst' = 'viewer') =>
+  request<{ key: string; name: string; role: string }>('POST', '/api-keys', { name, role })
 
 export const listApiKeys = () =>
   request<import('./types').ApiKey[]>('GET', '/api-keys')

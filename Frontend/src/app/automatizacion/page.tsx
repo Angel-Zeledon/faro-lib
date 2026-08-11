@@ -44,6 +44,10 @@ function ApiKeysTab() {
   const [error,   setError]   = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
+  // Defaults to read-only, the safer of the two. The choice is explicit because
+  // the two kinds do different jobs: a viewer key can read the semáforo, and
+  // only an analyst key can push the nightly export or record an order.
+  const [newRole, setNewRole] = useState<'viewer' | 'analyst'>('viewer')
   const [creating, setCreating] = useState(false)
   const [newKey,  setNewKey]  = useState<string | null>(null)
   const [copied,  setCopied]  = useState(false)
@@ -62,9 +66,10 @@ function ApiKeysTab() {
     if (!newName.trim()) return
     setCreating(true); setError(null)
     try {
-      const result = await createApiKey(newName.trim())
+      const result = await createApiKey(newName.trim(), newRole)
       setNewKey(result.key)
       setNewName('')
+      setNewRole('viewer')
       load()
     } catch (e: any) { setError(e.message) }
     finally { setCreating(false) }
@@ -84,9 +89,14 @@ function ApiKeysTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: 'var(--text)' }}>
-        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1, color: '#f59e0b' }} aria-hidden="true" />
-        <span>{t('settings.api_keys_coming_soon')}</span>
+      {/* Was an amber "coming soon — keys cannot authenticate yet". That stopped
+          being true: the public surface was walked end to end with a real key.
+          Leaving the warning up would have told customers the working thing does
+          not work. What replaces it is the one fact they need before minting
+          one — the secret is shown once and never again. */}
+      <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--text)' }}>
+        <Key size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent)' }} aria-hidden="true" />
+        <span>{t('settings.api_keys_shown_once')}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12, color: 'var(--dim)' }}>
@@ -106,6 +116,20 @@ function ApiKeysTab() {
             onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
             style={{ flex: 1, fontSize: 12 }}
           />
+          <select
+            name="api_key_role"
+            aria-label={t('settings.key_role_label')}
+            value={newRole}
+            onChange={e => setNewRole(e.target.value as 'viewer' | 'analyst')}
+            style={{
+              fontSize: 12, padding: '0 8px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text)',
+            }}
+          >
+            <option value="viewer">{t('settings.key_role_viewer')}</option>
+            <option value="analyst">{t('settings.key_role_analyst')}</option>
+          </select>
           <Button variant="primary" size="sm" loading={creating} disabled={!newName.trim()} onClick={handleCreate}>
             {t('settings.create')}
           </Button>
@@ -581,7 +605,12 @@ function SchedulesTab() {
  * the tabs and their components are untouched underneath.
  */
 const ENABLED: Record<Tab, boolean> = {
-  'api-keys':  false,
+  // Turned on 2026-08-11. It was off because keys could not authenticate against
+  // the API — true when the flag was written, false now: the public surface was
+  // walked end to end with a real key (docs/api-publica.md). With the tab off
+  // there was no way to obtain a key from the product at all, so the API existed
+  // for nobody.
+  'api-keys':  true,
   'webhooks':  false,
   'schedules': true,
 }

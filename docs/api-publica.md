@@ -1,5 +1,59 @@
 # API pública de Faro
 
+## En resumen
+
+Faro no quiere ser el sistema donde vive tu inventario. Quiere ser la capa que
+decide **qué comprar** encima del sistema que ya tenés. Esta API es esa costura:
+tu ERP empuja lo que ya sabe y se lleva la decisión, sin que nadie abra la
+aplicación.
+
+Son cinco llamadas, en el orden en que ocurre el trabajo:
+
+```
+1. POST /data-sources/{id}/file        el export de anoche
+2. POST /sessions/{id}/train           reentrenar    (opcional: ver abajo)
+3. GET  /inventory/status              el semáforo
+4. GET  /inventory/morning-briefing    qué comprar y por qué
+5. POST /inventory/log-po              la orden que se emitió
+```
+
+La quinta no es opcional aunque lo parezca: sin ella la orden no existe para
+Faro, y es de ahí que sale el aprendizaje del plazo real de cada proveedor. Es
+decir, es la llamada que hace que el próximo pronóstico sea mejor que este.
+
+La segunda **sí** suele ser innecesaria. Si la sesión tiene una programación,
+Faro reentrena solo después de que el archivo cambió: subir el export por la
+noche y no hacer nada más es la integración más simple que funciona.
+
+**Base URL:** `https://<tu-instancia>/api/v1`
+**Autenticación:** `Authorization: Bearer sk_live_…`
+**Límite:** 120 llamadas por minuto por clave.
+**Incluida desde:** plan Professional.
+
+## Dónde sacar tu clave
+
+En la aplicación: **Automatización → pestaña "API Keys" → "Generar key"**.
+
+Al crearla se eligen dos cosas:
+
+- **Nombre.** Poné el del sistema que la va a usar ("ERP nocturno"), no el de la
+  persona. La clave no pertenece a quien la crea: sigue funcionando cuando esa
+  persona se va, y no gana permisos si la ascienden.
+- **Qué puede hacer.** *Solo leer* alcanza para el semáforo y el briefing.
+  Para subir el export o registrar órdenes hace falta **Leer y escribir** — que
+  es lo que una integración de verdad necesita. Por defecto viene en solo
+  lectura, así que hay que cambiarlo a propósito.
+
+**La clave se muestra una sola vez.** No se guarda en ningún lado —ni en el
+servicio ni en la base—, así que se copia en ese momento. Si se pierde: se crea
+otra y se revoca la anterior desde esa misma pantalla, donde además se ve cuándo
+se usó cada una por última vez.
+
+Ninguna clave puede ser administrador. No existe forma de que una integración
+borre el tenant, cree usuarios o toque la facturación.
+
+---
+
 **Para quién es:** el sistema que ya usa el cliente —su ERP, su POS, su script de
 exportación— para que los datos entren y las decisiones salgan sin que nadie
 abra la aplicación.
@@ -16,10 +70,6 @@ semana. Construir sobre ellos es construir sobre algo que nadie se comprometió 
 mantener.
 
 ## Autenticación
-
-Se crea una llave desde la aplicación (Automatización → llaves de API). Se
-muestra **una sola vez**: nada la guarda, ni este servicio ni la base. Quien la
-pierde crea otra.
 
 ```
 Authorization: Bearer sk_live_xxxxxxxxxxxxxxxxxxxxxxxx
@@ -195,3 +245,17 @@ subir archivo y en registrar orden), y una llave inventada da 401.
 Lo que **no** se ejercitó contra el servidor: el 429 del límite de tasa —está
 cubierto por tests, incluida su compuerta de mutación, pero gastar 120 llamadas
 por minuto contra el entorno de desarrollo no aportaba nada.
+
+**La pantalla también se caminó** el mismo día, y encontró lo que hacía falta
+para que todo esto sirviera: la pestaña de API Keys estaba **apagada**
+(`ENABLED['api-keys'] = false`), así que no había forma de obtener una clave
+desde el producto — la API existía para nadie. Además avisaba "Próximamente, las
+claves aún no permiten autenticarse", que era cierto cuando se escribió y falso
+ahora.
+
+Y una tercera, la que de verdad importaba: la pantalla **no mandaba el rol**, así
+que toda clave creada desde ahí salía `viewer` en silencio. Un cliente habría
+generado su clave, la habría puesto en su ERP y habría recibido 403 al primer
+intento de subir el export, sin nada que le dijera por qué. Ahora se elige, y se
+verificó: clave "Leer y escribir" creada desde la pantalla → `201` al registrar
+una orden, y `role = analyst` en la base.
