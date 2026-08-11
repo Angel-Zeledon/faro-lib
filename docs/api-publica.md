@@ -10,12 +10,32 @@ aplicación.
 Son cinco llamadas, en el orden en que ocurre el trabajo:
 
 ```
+0. GET  /planning                      qué sesión estoy mirando  ← empezá acá
 1. POST /data-sources/{id}/file        el export de anoche
 2. POST /sessions/{id}/train           reentrenar    (opcional: ver abajo)
 3. GET  /inventory/status              el semáforo
 4. GET  /inventory/morning-briefing    qué comprar y por qué
 5. POST /inventory/log-po              la orden que se emitió
 ```
+
+La 0 es la que hay que hacer primero y la más fácil de pasar por alto: cinco de
+las otras necesitan un `session_id`, y este es el endpoint que lo dice.
+
+## El envoltorio
+
+**Toda** respuesta viene envuelta. Lo que te interesa está siempre en `data`:
+
+```json
+{
+  "success": true,
+  "data": { "…lo tuyo…" },
+  "meta": { "timestamp": "2026-08-11T16:45:10.783947+00:00" }
+}
+```
+
+Los errores traen `detail`, `error_code` y `error_params` en el nivel superior,
+sin `data`. Ramificá por `error_code`, nunca por el texto de `detail`: ese está
+escrito para personas y se reescribe.
 
 La quinta no es opcional aunque lo parezca: sin ella la orden no existe para
 Faro, y es de ahí que sale el aprendizaje del plazo real de cada proveedor. Es
@@ -87,11 +107,14 @@ Tres cosas que conviene saber antes de integrar:
   el actor es `api_key:<id>`, así que la integración sigue funcionando cuando esa
   persona se va de la empresa y no hereda permisos si la ascienden.
 
-  **Ojo:** eso *no* significa que hoy quede rastro visible. Comprobado el
-  2026-08-11 llamando la API de punta a punta: subir el archivo, entrenar y
-  registrar la orden **no escriben nada** en el historial de actividad —
-  `activity_logs` solo recoge alertas salientes y creación de sesiones. Si
-  necesitás auditar lo que hace una integración, hoy no lo tenés.
+  **Rastro, con matices** (comprobado llamando la API de punta a punta): un
+  entrenamiento **sí** queda atribuido — el job guarda
+  `created_by: "api_key:<id>"`, y lo ves en `GET /sessions/{id}/train/status`.
+  Lo que **no** deja rastro es subir el archivo ni registrar la orden, y el
+  historial de actividad de la aplicación (`activity_logs`) no recoge ninguna de
+  las tres. O sea: hay atribución donde el trabajo es un job, y no la hay donde
+  es una escritura directa. Si necesitás auditar una integración de punta a
+  punta, hoy no alcanza.
 
 ## Límites
 
@@ -104,6 +127,31 @@ Si el limitador no puede escribir, **deja pasar**. La sincronización de un
 cliente no se cae porque un contador esté caído.
 
 ## Los cinco trabajos
+
+### 0. Saber de qué sesión estamos hablando
+
+```http
+GET /api/v1/planning
+```
+
+```json
+{
+  "period": "daily",
+  "horizon": 14,
+  "available_periods": ["daily", "weekly"],
+  "max_horizon": 90,
+  "period_source": "auto",
+  "active_session_id": "sess_718a890426d4"
+}
+```
+
+`active_session_id` es el que va en las llamadas siguientes. **No lo guardes
+fijo en tu configuración**: cambia cuando se entrena una corrida nueva, y es
+justamente el que la aplicación está mostrando en pantalla. Pedirlo cada vez es
+lo que mantiene a tu integración y a la persona que mira Faro viendo lo mismo.
+
+`period` y `horizon` te dicen a qué granularidad y a cuántos períodos está
+calculado lo que vas a leer después.
 
 ### 1. Meter los datos
 
@@ -134,6 +182,17 @@ GET  /api/v1/sessions/{session_id}/train/status
 ```
 
 El entrenamiento es asíncrono: el `POST` encola y el `GET` informa el estado.
+`status` pasa por `QUEUED` → `RUNNING` → `COMPLETED` o `FAILED`; sondealo cada
+pocos segundos hasta uno de los dos últimos.
+
+```json
+{
+  "session_id": "sess_718a890426d4",
+  "status": "COMPLETED",
+  "job_id": "job_55989f9d2809",
+  "job": { "created_by": "api_key:11c76a09-…", "started_at": "…" }
+}
+```
 
 **Casi siempre no hace falta llamarlos.** Si la sesión tiene una programación
 —Automatización → programar—, Faro reentrena solo después de que el archivo
@@ -205,6 +264,52 @@ la señal de adopción—:
   ]
 }
 ```
+
+## La integración completa, de una vez
+
+Esto es el cron nocturno entero. No hay nada más que hacer.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+API=https://tu-instancia/api/v1
+KEY=$FARO_API_KEY          # de tu gestor de secretos, no del repositorio
+
+# 0. La sesión que la app está mirando. Se pide cada vez, no se guarda fija.
+SESSION=$(curl -sf "$API/planning" -H "Authorization: Bearer $KEY" \
+          | jq -r '.data.active_session_id')
+
+# 1. El export que tu ERP dejó anoche. Reemplaza en su sitio: mismo id, mismo
+#    mapeo de columnas, sin asistente.
+curl -sf -X POST "$API/data-sources/$SOURCE_ID/file" \
+     -H "Authorization: Bearer $KEY" -F "file=@/exports/ventas.csv"
+
+# 2. Si la sesión tiene una programación, saltate esto: Faro reentrena solo.
+curl -sf -X POST "$API/sessions/$SESSION/train" \
+     -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{}'
+until [ "$(curl -sf "$API/sessions/$SESSION/train/status" \
+           -H "Authorization: Bearer $KEY" | jq -r '.data.status')" \
+        != "RUNNING" ]; do sleep 5; done
+
+# 3. Qué comprar. Ojo con `*_source`: separa lo que diste vos de lo que
+#    supusimos nosotros.
+curl -sf "$API/inventory/status?session_id=$SESSION" \
+     -H "Authorization: Bearer $KEY" \
+  | jq '.data.items[] | select(.signal == "PEDIR_YA")
+        | {sku, recommended_qty, lead_time_source, unit_cost_source}'
+
+# 4. Y cuando emitas la orden, decíselo. Sin esto la orden no existe para Faro
+#    y el plazo real de tus proveedores nunca se aprende.
+curl -sf -X POST "$API/inventory/log-po?session_id=$SESSION" \
+     -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+     -d '{"items":[{"sku":"ABC-1","recommended_qty":120,"final_qty":100,
+                    "status":"modified","unit_cost":12.5}]}'
+```
+
+Dos cosas que este script hace a propósito y conviene copiar: pide el
+`session_id` en cada corrida en vez de fijarlo, y manda `final_qty` distinto de
+`recommended_qty` cuando el comprador ajusta — eso es lo que mide si Faro te
+está sirviendo.
 
 ## Errores
 

@@ -31,6 +31,14 @@ PUBLIC_ENDPOINTS: tuple[tuple[str, str], ...] = (
     # without a human reading it off a screen.
     ("GET", "/data-sources"),
 
+    # ── Which session am I talking about ──────────────────────────────────
+    # Five of the endpoints below take a session_id, and until this was added
+    # nothing on the list returned one: the published API demanded an id it gave
+    # no way to obtain. `active_session_id` here is the same session the app's
+    # own screens are showing, so an integration and a human looking at Faro see
+    # the same numbers instead of quietly diverging.
+    ("GET", "/planning"),
+
     # ── Turn it into decisions ────────────────────────────────────────────
     ("POST", "/sessions/{session_id}/train"),
     ("GET", "/sessions/{session_id}/train/status"),
