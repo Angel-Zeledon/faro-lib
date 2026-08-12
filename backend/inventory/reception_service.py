@@ -36,7 +36,24 @@ _DEFAULT_LEAD_TIME_DAYS = float(DEFAULT_LEAD_TIME_DAYS)
 # Line statuses that were actually ordered (mirrors roi_service._ORDERED)
 _ORDERED = ("approved", "modified")
 
-RECEIVABLE_STATES = ("pending", "partial")
+# PO header states that can still take goods in. 'not_received' belongs here:
+# "nothing arrived today" is a statement about a delivery that did not happen,
+# not about an order that never will. Leaving it out turned that entry into a
+# one-way door — the 409 guard in receive_po rejected the PO forever, so when the
+# goods finally turned up there was no way to record them: no stock increment, no
+# lead-time observation, and the buyer's only escape was to re-create the order.
+# It also governs get_overdue_receptions, which is exactly the list an order
+# nobody has delivered belongs on.
+RECEIVABLE_STATES = ("pending", "partial", "not_received")
+
+# Minimum receptions before a PERCENTAGE on the scorecard is allowed to speak.
+# Same reasoning as `trend_measurable` two columns over: one event is not a rate.
+# A supplier with a single reception printed "100%" in the on-time column, in
+# bold green — a claim about a habit, made from one delivery. The stricter
+# MIN_LEAD_TIME_OBSERVATIONS (3) answers a different question, "may this REPLACE
+# the declared lead time?", which is about what the planner acts on rather than
+# what the table prints; a displayed average only needs to be an average.
+MIN_RATE_OBSERVATIONS = 2
 
 
 def _line_warehouse(item: dict, po: dict) -> str:
@@ -319,42 +336,72 @@ def receive_po(
             conn=conn,
         )
 
-        # 4. Learn real lead times — one observation per supplier, taken on THAT
-        # supplier's own first delivery against this PO. Gating this on whether
-        # the PO HEADER was still 'pending' (its state before this event) is
-        # wrong for a multi-supplier PO: if supplier A delivers in event 1 (PO
-        # goes pending -> partial) and supplier B only delivers in event 2, a
-        # pending-only gate would silently never observe B — the PO is no longer
-        # 'pending' by the time B's first delivery happens. Instead, gate per
-        # supplier on whether THIS po_log_id already has an observation for them.
+        # 4. Learn real lead times — one observation per supplier, written only
+        # when the PO reaches 'received', dated by the event that completed it.
+        #
+        # It used to be taken on that supplier's FIRST delivery against the PO,
+        # which let the opening trickle fix the lead time forever: on an order of
+        # 5000 units where 20 samples arrive in 2 days and the rest in 40, the
+        # first event taught "this supplier takes 2 days" and the per-PO
+        # already-observed gate then skipped every later delivery. The lead time
+        # that matters for planning is when the buyer can actually COUNT on the
+        # order being there — the moment the last unit lands — so that is the
+        # moment measured. A PO that never completes yields no observation at
+        # all, which is the honest answer: we do not know yet how long it took.
+        #
+        # Two consequences worth naming. A PO that arrives complete in one event
+        # still writes exactly one observation per supplier, as before. And on a
+        # multi-supplier PO every supplier is dated by the completion of the
+        # whole order, even one who delivered early — deliberate, because a
+        # partial order is not an order the buyer can sell from, and per-supplier
+        # completion would reintroduce the same ambiguity for any supplier whose
+        # own lines are still open.
         lead_days = max(0.0, (received_at - generated_at).total_seconds() / 86400.0)
-        observed_suppliers = sorted({
-            (i.get("supplier") or "").strip()
-            for i in ordered
-            if (i.get("supplier") or "").strip() and received_by_item[i["id"]] > 0
-        })
-        already_observed = {
-            r["supplier"] for r in query(
-                """SELECT DISTINCT supplier FROM supplier_lead_time_obs
-                   WHERE tenant_id = %s AND po_log_id = %s""",
-                (tenant_id, po_log_id),
-                conn=conn,
-            )
-        }
-        for prov in observed_suppliers:
-            if prov in already_observed:
-                continue  # this supplier already has its first-delivery observation for this PO
-            execute(
-                """INSERT INTO supplier_lead_time_obs
-                       (tenant_id, supplier, po_log_id, lead_time_days)
-                   VALUES (%s, %s, %s, %s)""",
-                (tenant_id, prov, po_log_id, round(lead_days, 2)),
-                conn=conn,
-            )
+        observed_suppliers: list[str] = []
+        if status == "received":
+            # Suppliers are matched case-insensitively, the way every reader of
+            # this table already groups it (service.get_learned_lead_times and
+            # _effective_lead_time both use LOWER). A PO spelling the same
+            # supplier "Acme" on one line and "ACME" on another used to write TWO
+            # observations for one delivery and double-weight it in the average.
+            # The stored spelling is the alphabetically first one seen, purely so
+            # the row is deterministic — no reader depends on its case.
+            supplier_by_key: dict[str, str] = {}
+            for i in fresh_ordered:
+                name = (i.get("supplier") or "").strip()
+                if not name or float(i["received_qty"] or 0) <= 0:
+                    continue
+                key = name.lower()
+                if key not in supplier_by_key or name < supplier_by_key[key]:
+                    supplier_by_key[key] = name
+            already_observed = {
+                (r["supplier"] or "").strip().lower()
+                for r in query(
+                    """SELECT DISTINCT supplier FROM supplier_lead_time_obs
+                       WHERE tenant_id = %s AND po_log_id = %s""",
+                    (tenant_id, po_log_id),
+                    conn=conn,
+                )
+            }
+            for key in sorted(supplier_by_key):
+                if key in already_observed:
+                    continue  # this PO already taught us this supplier's lead time
+                prov = supplier_by_key[key]
+                execute(
+                    """INSERT INTO supplier_lead_time_obs
+                           (tenant_id, supplier, po_log_id, lead_time_days)
+                       VALUES (%s, %s, %s, %s)""",
+                    (tenant_id, prov, po_log_id, round(lead_days, 2)),
+                    conn=conn,
+                )
+                observed_suppliers.append(prov)
 
     log.info("[reception] tenant=%s po=%s status=%s lead_days=%.1f suppliers=%s",
              tenant_id, po_log_id, status, lead_days, observed_suppliers)
 
+    # `lead_time_days` is the elapsed time of THIS event (order date -> today).
+    # `suppliers_observed` lists only the suppliers an observation was actually
+    # stored for, which is empty until the PO is complete — see step 4.
     return {
         "po_log_id": po_log_id,
         "reception_status": status,
@@ -365,6 +412,25 @@ def receive_po(
     }
 
 
+def _fill_rate(total_received: float, order_total: float) -> Optional[float]:
+    """
+    Share of what was ordered that actually arrived, capped at 1.0.
+
+    Over-delivery is not better service: a supplier who ships 120 against an
+    order of 100 filled the order — and sent 20 units nobody asked for, which is
+    a stock problem, not a fulfilment merit. Printed as "120%" in a column headed
+    "% fill rate" it reads as the supplier outperforming, and it breaks the
+    column's own promise, since a share of the order cannot exceed the order.
+    Capped rather than reported as a separate over-delivery figure because the
+    reception path already refuses to book more than a line's outstanding
+    quantity: the only way past 100% is data that predates that guard, and a
+    new column for a residue of old rows is not worth the screen space.
+    """
+    if order_total <= 0:
+        return None
+    return round(min(1.0, float(total_received) / order_total), 3)
+
+
 def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     """
     Per-supplier performance: real lead time range (min-max observed, not a
@@ -372,27 +438,60 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     and value purchased. Anchored to suppliers with at least one recorded
     reception — nothing to score before that.
     """
+    # Grouped by LOWER(supplier), like every other reader of this data
+    # (service.get_learned_lead_times, _effective_lead_time). A CSV import that
+    # spells the same supplier "Acme" and "ACME" used to produce two scorecard
+    # rows, each with half the deliveries, while the planner had long since
+    # merged them into one lead time — two answers to "how does this supplier
+    # perform?" on two screens.
+    #
+    # The suppliers side is collapsed by LOWER(name) in a subquery BEFORE the
+    # join for the same reason it matters here: joining a case-insensitive name
+    # against a table that may hold both spellings would multiply every
+    # observation row and inflate n_receptions.
+    #
+    # `lead_time_set_by` gates the declared value exactly as _effective_lead_time
+    # does further down: `suppliers.lead_time_days` is INT NOT NULL DEFAULT 15,
+    # so "the card says 15 days" and "nobody ever filled the card" are the same
+    # row. Without the gate, a supplier imported by CSV was shown "DECLARADO 15d"
+    # and graded on punctuality against a promise they never made — Faro's own
+    # assumption, scored as if it were theirs. NULL here lets the UI say "no
+    # declarado" instead of inventing one, and takes on_time_rate and
+    # deviation_days down with it.
     lead_rows = query(
-        """SELECT o.supplier,
-                  COUNT(*)::int                      AS n_receptions,
-                  MIN(o.lead_time_days)              AS lead_time_real_min,
-                  MAX(o.lead_time_days)              AS lead_time_real_max,
-                  AVG(o.lead_time_days)              AS lead_time_real_avg,
-                  MAX(o.observed_at)                 AS last_reception,
-                  s.lead_time_days                   AS lead_time_declarado,
-                  AVG(CASE WHEN o.lead_time_days <= s.lead_time_days THEN 1.0 ELSE 0.0 END)
-                      FILTER (WHERE s.lead_time_days IS NOT NULL) AS on_time_rate
+        """SELECT LOWER(o.supplier)                 AS supplier_key,
+                  MIN(o.supplier)                   AS supplier,
+                  COUNT(*)::int                     AS n_receptions,
+                  MIN(o.lead_time_days)             AS lead_time_real_min,
+                  MAX(o.lead_time_days)             AS lead_time_real_max,
+                  AVG(o.lead_time_days)             AS lead_time_real_avg,
+                  MAX(o.observed_at)                AS last_reception,
+                  s.declared_lead_time              AS lead_time_declarado,
+                  AVG(CASE WHEN o.lead_time_days <= s.declared_lead_time THEN 1.0 ELSE 0.0 END)
+                      FILTER (WHERE s.declared_lead_time IS NOT NULL) AS on_time_rate
            FROM supplier_lead_time_obs o
-           LEFT JOIN suppliers s
-             ON s.tenant_id = o.tenant_id AND LOWER(s.name) = LOWER(o.supplier)
+           LEFT JOIN (
+               SELECT tenant_id,
+                      LOWER(name) AS name_key,
+                      MIN(CASE WHEN COALESCE(lead_time_set_by, '') <> ''
+                               THEN lead_time_days END) AS declared_lead_time
+                 FROM suppliers
+                WHERE tenant_id = %s
+                GROUP BY tenant_id, LOWER(name)
+           ) s ON s.tenant_id = o.tenant_id AND s.name_key = LOWER(o.supplier)
            WHERE o.tenant_id = %s
-           GROUP BY o.supplier, s.lead_time_days
-           ORDER BY n_receptions DESC, o.supplier""",
-        (tenant_id,),
+           GROUP BY LOWER(o.supplier), s.declared_lead_time
+           ORDER BY n_receptions DESC, supplier""",
+        (tenant_id, tenant_id),
     )
 
+    # Same LOWER() grouping as above, so a supplier's fill data lands on their
+    # one row. `n_orders` is not returned to the UI; it is the sample size behind
+    # fill_rate — how many orders that percentage averages over.
     fill_rows = query(
-        """SELECT poi.supplier,
+        """SELECT LOWER(poi.supplier)                AS supplier_key,
+                  MIN(poi.supplier)                  AS supplier,
+                  COUNT(DISTINCT poi.po_log_id)::int AS n_orders,
                   COALESCE(SUM(poi.received_qty), 0) AS total_received,
                   COALESCE(SUM(poi.final_qty), 0)    AS order_total,
                   COALESCE(SUM(poi.final_qty * poi.unit_cost), 0) AS purchased_value
@@ -402,14 +501,16 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
              AND poi.status IN ('approved', 'modified')
              AND poi.supplier IS NOT NULL AND poi.supplier <> ''
              AND pol.reception_status <> 'pending'
-           GROUP BY poi.supplier""",
+           GROUP BY LOWER(poi.supplier)""",
         (tenant_id,),
     )
-    fill_by_supplier = {r["supplier"]: r for r in fill_rows}
+    fill_by_supplier = {r["supplier_key"]: r for r in fill_rows}
 
     out = []
     for r in lead_rows:
         d = dict(r)
+        # Internal join key: the UI keys its rows on the display name.
+        supplier_key = d.pop("supplier_key")
         if isinstance(d.get("last_reception"), datetime):
             d["last_reception"] = d["last_reception"].isoformat()
         for k in ("lead_time_real_avg", "lead_time_real_min", "lead_time_real_max"):
@@ -440,27 +541,41 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
         # reception it read "Estable", which is a claim about a shape nobody has
         # seen yet.
         d["trend_measurable"] = int(d.get("n_receptions") or 0) >= 2
+        # The two percentages on this row had no sample floor at all while the
+        # columns beside them refuse to speak below n=2 and n=3: one reception
+        # printed "100%" in bold green. Reported the way `lead_time_unusable` and
+        # `trend_measurable` are — the number stays, a boolean says whether it
+        # means anything — so the UI keeps one convention for "we are not sure".
+        d["on_time_measurable"] = bool(
+            d.get("on_time_rate") is not None
+            and int(d.get("n_receptions") or 0) >= MIN_RATE_OBSERVATIONS
+        )
 
-        fill = fill_by_supplier.get(d["supplier"])
-        order_total = float(fill["order_total"]) if fill else 0.0
-        d["fill_rate"] = round(float(fill["total_received"]) / order_total, 3) if fill and order_total > 0 else None
+        fill = fill_by_supplier.get(supplier_key)
+        d["fill_rate"] = _fill_rate(fill["total_received"], float(fill["order_total"])) if fill else None
+        d["fill_rate_measurable"] = bool(
+            fill
+            and d["fill_rate"] is not None
+            and int(fill["n_orders"] or 0) >= MIN_RATE_OBSERVATIONS
+        )
         d["purchased_value"] = round(float(fill["purchased_value"]), 2) if fill else 0.0
 
         out.append(d)
 
     # Suppliers with fill/value data (a reception event happened — the PO left
-    # 'pending') but zero lead-time observations (e.g. everything received was
-    # 0 units, so receive_po never wrote a supplier_lead_time_obs row). They
+    # 'pending') but zero lead-time observations: everything received was 0
+    # units, or the PO is still part-delivered and receive_po only measures a
+    # lead time once the order is complete. Either way no obs row exists. They
     # still belong on the scorecard with a real fill_rate/purchased_value;
     # lead-time fields are simply unknown. Appended after the lead-time group,
     # ordered by supplier.
-    lead_suppliers = {r["supplier"] for r in lead_rows}
-    fill_only_suppliers = sorted(p for p in fill_by_supplier if p not in lead_suppliers)
-    for prov in fill_only_suppliers:
-        fill = fill_by_supplier[prov]
-        order_total = float(fill["order_total"])
+    lead_supplier_keys = {r["supplier_key"] for r in lead_rows}
+    fill_only_keys = sorted(k for k in fill_by_supplier if k not in lead_supplier_keys)
+    for key in fill_only_keys:
+        fill = fill_by_supplier[key]
+        fill_rate = _fill_rate(fill["total_received"], float(fill["order_total"]))
         out.append({
-            "supplier": prov,
+            "supplier": fill["supplier"],
             "n_receptions": 0,
             "lead_time_real_min": None,
             "lead_time_real_max": None,
@@ -469,13 +584,18 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "lead_time_declarado": None,
             "on_time_rate": None,
             "deviation_days": None,
-            "fill_rate": round(float(fill["total_received"]) / order_total, 3) if order_total > 0 else None,
+            "fill_rate": fill_rate,
             "purchased_value": round(float(fill["purchased_value"]), 2),
-            # No lead-time observations at all, so nothing to disbelieve and no
-            # trend to report. Keys present on every row so the UI never has to
-            # tell "false" from "absent".
+            # No lead-time observations at all, so nothing to disbelieve, no
+            # trend to report and no punctuality to grade. Keys present on every
+            # row so the UI never has to tell "false" from "absent".
             "lead_time_unusable": False,
             "trend_measurable": False,
+            "on_time_measurable": False,
+            "fill_rate_measurable": bool(
+                fill_rate is not None
+                and int(fill["n_orders"] or 0) >= MIN_RATE_OBSERVATIONS
+            ),
         })
     return out
 
@@ -506,12 +626,22 @@ def _effective_lead_time(tenant_id: str, supplier: str) -> tuple[float, str]:
     # "overdue" verdict because of an accident. Same threshold the semaphore
     # calc uses (service.get_learned_lead_times) — trusting at n=1 here while
     # that path waits for MIN_LEAD_TIME_OBSERVATIONS was an inconsistency.
+    #
+    # And the average has to be POSITIVE. Three same-day counter pickups
+    # (ordered and collected the same morning — routine in this market) average
+    # to 0.0, and a zero lead time makes expected_arrival == generated_at, so
+    # get_overdue_receptions flagged every open PO from that supplier as overdue
+    # the instant it was created. service.resolve_lead_time (`learned > 0`) and
+    # supplier_service.list_suppliers (`float(average) > 0`) both already refuse
+    # a non-positive average; the latter's comment even states that this
+    # function does the same, which until now it did not.
     from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
     if (
         obs
         and obs.get("n")
         and obs["n"] >= MIN_LEAD_TIME_OBSERVATIONS
         and obs.get("avg_days") is not None
+        and float(obs["avg_days"]) > 0
     ):
         return float(obs["avg_days"]), SOURCE_LEARNED
 
@@ -530,9 +660,11 @@ def _effective_lead_time(tenant_id: str, supplier: str) -> tuple[float, str]:
 
 def get_overdue_receptions(tenant_id: str) -> list[dict]:
     """
-    POs still pending/partial whose expected arrival — generation date plus
-    the supplier's already-learned lead time (see _effective_lead_time) — has
-    passed without any recorded reception. One row per (po_log_id, supplier)
+    POs that still have something to receive (RECEIVABLE_STATES — pending,
+    partial, and not_received: an order the buyer already reported as "nothing
+    arrived" is late by definition, not closed) whose expected arrival —
+    generation date plus the supplier's already-learned lead time (see
+    _effective_lead_time) — has passed. One row per (po_log_id, supplier)
     pair, since a single PO can span several suppliers with different lead
     times and only some of them may actually be late.
     """

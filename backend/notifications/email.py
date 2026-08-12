@@ -341,11 +341,28 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
         return False
 
 
+# Period -> the locale catalog's unit key stem. Unknown/legacy degrades to
+# "day", matching how the service layer's _days_per_period degrades.
+_COVERAGE_UNIT_STEM = {"daily": "day", "weekly": "week", "monthly": "month"}
+
+
+def _coverage_label(value: float, period: str) -> str:
+    """"4" + weekly -> "4 semanas". Singular handled, because "1 semanas" in a
+    digest a buyer reads at 8 in the morning is the kind of sloppiness that
+    makes the rest of the number look untrustworthy too."""
+    stem = _COVERAGE_UNIT_STEM.get(period or "daily", "day")
+    rounded = round(value)
+    if rounded == 1:
+        return render_es(f"unit_{stem}_one")
+    return render_es(f"unit_{stem}_many", n=f"{value:.0f}")
+
+
 def send_inventory_alert_email(
     to: str,
     critical_items: list[dict],
     warning_items: list[dict],
     inventory_url: str,
+    period: str = "daily",
 ) -> bool:
     """
     Daily digest: SKUs at risk of stockout. Returns True if sent.
@@ -365,10 +382,11 @@ def send_inventory_alert_email(
         days  = item.get("coverage_days")
         recom = item.get("recommended_qty")
         prov  = item.get("supplier") or "—"
-        days_str  = (
-            render_es("alert_email_coverage_days", days=f"{days:.0f}")
-            if days is not None else "—"
-        )
+        # Coverage is expressed in the tenant's OWN planning unit. This used to
+        # render "días" whatever the period was, so a weekly tenant read "4
+        # días" for four WEEKS of cover — the digest understating the cushion by
+        # a factor of seven, on the one screen that tells a buyer to act today.
+        days_str  = _coverage_label(days, period) if days is not None else "—"
         recom_str = f"{recom:,.0f}" if recom else "—"
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'

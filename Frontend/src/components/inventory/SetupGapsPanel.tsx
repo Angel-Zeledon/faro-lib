@@ -22,14 +22,20 @@ import Tooltip from '@/components/ui/Tooltip'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
 import { getSetupGaps, patchInventoryStock, upsertInventoryStock } from '@/lib/api'
 import type { SetupGapItem, SetupGapsResponse } from '@/lib/stockSetupTypes'
+import type { InventoryStock } from '@/lib/types'
 
 const GREEN = '#22c55e'
 const AMBER = '#f59e0b'
 
-type RowState = { stock: string; cost: string; lead: string; saving: boolean; saved: boolean; failed: boolean }
+type RowState = {
+  stock: string; cost: string; lead: string
+  saving: boolean; saved: boolean; failed: boolean
+  /** The row does not exist yet and the user saved without a stock count. */
+  needsStock: boolean
+}
 
 const emptyRow = (): RowState =>
-  ({ stock: '', cost: '', lead: '', saving: false, saved: false, failed: false })
+  ({ stock: '', cost: '', lead: '', saving: false, saved: false, failed: false, needsStock: false })
 
 export default function SetupGapsPanel({
   sessionId, horizonDays = 30, onChanged,
@@ -70,25 +76,49 @@ export default function SetupGapsPanel({
     const lead  = state.lead.trim()  === '' ? null : Number(state.lead.replace(',', '.'))
     if (stock === null && cost === null && lead === null) return
 
-    setRows(r => ({ ...r, [item.sku]: { ...state, saving: true, failed: false } }))
-    try {
-      const body: Record<string, number> = {}
-      if (stock !== null && Number.isFinite(stock)) body.current_stock = stock
-      if (cost !== null && Number.isFinite(cost))   body.unit_cost = cost
-      if (lead !== null && Number.isFinite(lead))   body.lead_time_days = Math.round(lead)
+    const body: Partial<InventoryStock> = {}
+    if (stock !== null && Number.isFinite(stock)) body.current_stock = stock
+    if (cost !== null && Number.isFinite(cost))   body.unit_cost = cost
+    if (lead !== null && Number.isFinite(lead))   body.lead_time_days = Math.round(lead)
 
+    // A product with no stock row yet can only be CREATED with a count, and we
+    // ask for it rather than inventing one.
+    //
+    // `PUT /inventory/stock/{sku}` requires `current_stock` (it is the one
+    // non-optional field of StockUpsert), so this panel used to send a 0 when
+    // the user had filled in only the cost. Nothing downstream can tell that
+    // invented 0 from a counted one — there is no column recording who supplied
+    // it — and 0 units means 0 days of coverage, which is exactly what makes the
+    // semáforo shout PEDIR_YA. Someone typing costs for thirty products he has
+    // full pallets of got thirty emergency purchase orders for goods already on
+    // his shelf. Asking for one more number is cheaper than that.
+    if (!item.has_row && body.current_stock == null) {
+      setRows(r => ({
+        ...r,
+        [item.sku]: { ...state, saving: false, saved: false, failed: false, needsStock: true },
+      }))
+      return
+    }
+
+    setRows(r => ({ ...r, [item.sku]: { ...state, saving: true, failed: false, needsStock: false } }))
+    try {
       if (item.has_row) {
         await patchInventoryStock(item.sku, body)
       } else {
-        // PUT requires a stock figure; a row created here starts at 0 when the
-        // user only filled in the cost, which is still more than we had.
-        await upsertInventoryStock(item.sku, { current_stock: 0, ...body })
+        // Guarded above: `body.current_stock` is a number the user counted.
+        await upsertInventoryStock(item.sku, body)
       }
-      setRows(r => ({ ...r, [item.sku]: { ...state, saving: false, saved: true, failed: false } }))
+      setRows(r => ({
+        ...r,
+        [item.sku]: { ...state, saving: false, saved: true, failed: false, needsStock: false },
+      }))
       onChanged?.()
       void load()
     } catch {
-      setRows(r => ({ ...r, [item.sku]: { ...state, saving: false, saved: false, failed: true } }))
+      setRows(r => ({
+        ...r,
+        [item.sku]: { ...state, saving: false, saved: false, failed: true, needsStock: false },
+      }))
     }
   }
 
@@ -281,9 +311,12 @@ export default function SetupGapsPanel({
                             these carry it to a screen reader per row. */}
                         <input
                           value={state.stock}
-                          onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, stock: e.target.value, saved: false } }))}
+                          onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, stock: e.target.value, saved: false, needsStock: false } }))}
                           placeholder={c('setupStock.gaps.field_stock')}
                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_stock')}`}
+                          // A product with no row yet cannot be created without
+                          // this box — see `save()`.
+                          aria-required={!item.has_row}
                           inputMode="decimal"
                           style={inputStyle}
                         />
@@ -310,6 +343,11 @@ export default function SetupGapsPanel({
                             : c('setupStock.gaps.save')}
                         </Button>
                       </div>
+                      {state.needsStock && (
+                        <div role="alert" style={{ color: AMBER, fontSize: 11, marginTop: 3, maxWidth: 320, lineHeight: 1.45 }}>
+                          {c('setupStock.gaps.stock_required')}
+                        </div>
+                      )}
                       {state.failed && (
                         <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>
                           {c('setupStock.gaps.save_error')}

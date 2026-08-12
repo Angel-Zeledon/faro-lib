@@ -303,7 +303,11 @@ def get_incoming_qty(tenant_id: str) -> dict[tuple[str, str], float]:
              JOIN inventory_po_log pol ON pol.id = poi.po_log_id
             WHERE poi.tenant_id = %s
               AND pol.sent_at IS NOT NULL
-              AND pol.reception_status IN ('pending', 'partial')
+              -- `not_received` is included on purpose: it means "nothing had
+              -- arrived when I looked", not "this will never arrive". Excluding
+              -- it made the units vanish from incoming stock the moment the
+              -- buyer recorded a no-show, so the semaforo ordered them again.
+              AND pol.reception_status IN ('pending', 'partial', 'not_received')
               AND poi.status IN ('approved', 'modified')
             GROUP BY poi.sku, poi.warehouse""",
         (tenant_id,),
@@ -1560,7 +1564,15 @@ def _compute_inventory_status(
             "has_forecast":       has_forecast,
             "has_stock":          has_stock,
             "daily_demand":     round(avg_daily, 4) if avg_daily is not None else None,
-            "lead_time_demand":  round(avg_daily * lead_time, 2) if avg_daily is not None else None,
+            # `_demand_lt`, not a second computation. This line used to be
+            # `avg_daily * lead_time` — per-PERIOD demand multiplied by
+            # CALENDAR DAYS — while the reorder point and the "cómo se calcula"
+            # breakdown both used `avg_daily * lt_periods`. Both values reached
+            # the same screen from the same dict: for a weekly tenant with 10
+            # units/week and a 14-day lead time the "Demanda LT" column read
+            # 140 and expanding that very row read 20. Factor of 7 weekly, 30
+            # monthly, and the CSV export inherited the wrong one.
+            "lead_time_demand":  _demand_lt if avg_daily is not None else None,
             "coverage_days":     round(coverage_days, 1) if coverage_days is not None and coverage_days < 9990 else None,
             "signal":             signal,
             "recommended_qty": recommended,
@@ -1636,6 +1648,20 @@ def get_inventory_status_by_warehouse(
         learned_lead_times = get_learned_lead_times(tenant_id)
     rule_index = _sd_svc.build_rule_index(tenant_id)
 
+    # The primary-supplier map, for the same reason the aggregated view loads
+    # it: a SKU with a blank `supplier` on its stock row still has a supplier
+    # configured under /proveedores, and that name is what every supplier-scoped
+    # rule and the learned lead time are keyed on. Without it these rows
+    # resolved `supplier = None` and silently lost the learned lead time, the
+    # supplier rule for lead_time_days, moq and service_level — so one SKU in
+    # one warehouse could read PEDIR_YA on the "Todas" tab and PEDIR_PRONTO on
+    # the warehouse tab of the same page.
+    try:
+        primary_suppliers = _sup_svc.get_primary_suppliers_map(tenant_id)
+    except Exception as e:
+        log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
+        primary_suppliers = {}
+
     # Same best-model-per-SKU selection as the aggregated view. These rows must
     # not disagree with it: a warehouse row and the tenant total for the same
     # SKU would otherwise be computed from different models.
@@ -1693,7 +1719,10 @@ def get_inventory_status_by_warehouse(
             if stock is None and (not model_forecasts or share == 0.0):
                 continue
 
-            supplier = stock.get("supplier") if stock else None
+            # Identical resolution to the aggregated view (see the primary map
+            # above): stock row first, configured primary supplier second.
+            primary  = primary_suppliers.get(sku) or {}
+            supplier = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
             category = stock.get("category") if stock else None
             # Same SKU > supplier > category > global > system cascade as the
             # aggregated view; the per-warehouse rows must not disagree with it.
@@ -3380,6 +3409,7 @@ def run_daily_inventory_alerts() -> None:
     log.info("inventory_alert: checking %d tenants", len(tenants))
 
     from backend.db import session_store
+    from backend.sessions import planning_service
     from backend.sessions.planning_service import resolve_active_session
 
     for tenant in tenants:
@@ -3402,11 +3432,25 @@ def run_daily_inventory_alerts() -> None:
             learned_lead_times = get_learned_lead_times(tid)
             incoming_qty = get_incoming_qty(tid)
 
+            # The SAME period the screens use. `resolve_active_session` above
+            # deliberately returns the session the app is showing — and this
+            # loop then read it as if it were daily, because `period` defaults
+            # to "daily" in the signature and nobody passed one.
+            #
+            # For a weekly tenant that inverts the verdict: a SKU with 4 weeks
+            # of cover against a 2-week lead time is OK on screen, and the
+            # same numbers read as days are 4 against 14 — PEDIR_YA. The buyer
+            # got an 8:00 email calling a SKU critical, opened /inventario, and
+            # saw green. Every HTTP entry point passes the period
+            # (api/v1/inventory.py:693); the two schedulers were the gap.
+            period = planning_service.get_planning(tid).get("period", "daily")
+
             items = _compute_inventory_status(
                 tid, sid,
                 forecasts=forecasts, stock_rows=stock_rows,
                 learned_lead_times=learned_lead_times,
                 incoming_qty=incoming_qty,
+                period=period,
             )
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
@@ -3425,6 +3469,7 @@ def run_daily_inventory_alerts() -> None:
                         forecasts=forecasts, stock_rows=stock_rows,
                         learned_lead_times=learned_lead_times,
                         incoming_qty=incoming_qty,
+                        period=period,          # same reason as above
                     )
                     transfer_count = sum(
                         1 for i in wh_items if i.get("recommended_action") == "transfer")
@@ -3447,6 +3492,7 @@ def run_daily_inventory_alerts() -> None:
                     critical_items=critical,
                     warning_items=warning,
                     inventory_url=inventory_url,
+                    period=period,      # so coverage reads "4 semanas", not "4 días"
                 )
                 if not delivered:
                     log.warning("alert email not delivered to=%s", r["email"])
@@ -3535,6 +3581,7 @@ def run_monthly_overstock_snapshot() -> None:
     tenants = get_tenants_with_active_sessions()
     log.info("overstock_snapshot: checking %d tenants", len(tenants))
 
+    from backend.sessions import planning_service
     from backend.sessions.planning_service import resolve_active_session
 
     for tenant in tenants:
@@ -3544,7 +3591,13 @@ def run_monthly_overstock_snapshot() -> None:
             if not sid:
                 continue
 
-            items = get_inventory_status(tid, sid)
+            # Read at the tenant's own planning grain, like every screen does.
+            # Without this a weekly session was classified as daily, so the
+            # SOBRESTOCK population this snapshot measures was not the one the
+            # app calls overstocked — and the monthly difference between two
+            # such snapshots is what /impacto headlines as "capital liberado".
+            period = planning_service.get_planning(tid).get("period", "daily")
+            items = get_inventory_status(tid, sid, period=period)
             overstock_value = _sum_overstock_value(items)
 
             execute(

@@ -10,8 +10,14 @@ from backend.db.connection import execute
 
 
 def _make_supplier(tenant_id: str, name: str, lead_time_days: int = 10) -> None:
+    # `lead_time_set_by` matters: the column is NOT NULL DEFAULT 15, so without
+    # this stamp "the card says 10" and "nobody filled the card" are the same
+    # row, and the scorecard now refuses to report an unset value as the
+    # supplier's DECLARED promise. These tests model a supplier who really did
+    # declare one, so they have to say so.
     execute(
-        "INSERT INTO suppliers (tenant_id, name, lead_time_days) VALUES (%s, %s, %s)",
+        """INSERT INTO suppliers (tenant_id, name, lead_time_days, lead_time_set_by)
+           VALUES (%s, %s, %s, 'user')""",
         (tenant_id, name, lead_time_days),
     )
 

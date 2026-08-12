@@ -59,6 +59,11 @@ export const stockSetupEs = {
   'setupStock.gaps.legend_lead_time': 'cuántos días pasan desde que le haces el pedido a tu proveedor hasta que la mercadería está en tu bodega.',
   'setupStock.gaps.save': 'Guardar',
   'setupStock.gaps.saved': 'Guardado',
+  // Shown when a product has no inventory row yet and the user saved without
+  // a count. The panel refuses to invent a 0: an invented zero is
+  // indistinguishable from a counted one and turns the semáforo red for
+  // goods sitting on the shelf.
+  'setupStock.gaps.stock_required': 'Escribe cuánto tienes hoy de este producto. Si lo dejamos en blanco tendríamos que suponer cero, y el semáforo te lo pediría de urgencia aunque tengas bodega llena.',
   'setupStock.gaps.save_error': 'No se pudo guardar. Revisa los valores e inténtalo de nuevo.',
   'setupStock.gaps.units_suffix': 'unidades',
   'setupStock.gaps.price_source.unit_cost': 'con tu costo',
@@ -183,6 +188,7 @@ export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
 
   'setupStock.gaps.save': 'Save',
   'setupStock.gaps.saved': 'Saved',
+  'setupStock.gaps.stock_required': 'Enter how much of this product you have today. Left blank we would have to assume zero, and the traffic light would flag it as urgent even with a full warehouse.',
   'setupStock.gaps.save_error': 'Could not save. Check the values and try again.',
   'setupStock.gaps.units_suffix': 'units',
   'setupStock.gaps.price_source.unit_cost': 'using your cost',

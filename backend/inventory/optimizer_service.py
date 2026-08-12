@@ -20,10 +20,31 @@ import math as _math
 
 from backend.db import session_store
 from backend.inventory import transfer_lane_service as lane_svc
+from backend.inventory import warehouse_service as wh_svc
 from backend.inventory.defaults import DEFAULT_LEAD_TIME_DAYS as _DEFAULT_LEAD_TIME_DAYS
+from backend.inventory.series import for_store, rollup_by_sku, stores_in
 from backend.inventory.service import list_stock, _avg_forecast_curve, _days_per_period
 
 _DEFAULT_UNIT_COST = 1.0
+
+
+def _usable_unit_cost(value) -> Optional[float]:
+    """The unit cost the optimizer can actually reason with, or None.
+
+    Zero is not a price, it is a blank that happens to be a number — and to a
+    cost minimizer the difference is total. With unit_cost = 0 the SKU's order
+    cost, holding cost and stockout penalty are ALL zero, so leaving its demand
+    unmet costs the objective nothing: the solver drops it, `/planning` shows
+    no line for it, and `/hoy` goes on painting it PEDIR_YA. The old check was
+    `if row["unit_cost"] is not None`, and a stored 0.0 sailed through it, so
+    the SKU vanished from the plan without ever being flagged as assumed.
+    Negative costs are refused for the same reason: they would pay the solver
+    to buy.
+    """
+    if value is None:
+        return None
+    cost = float(value)
+    return cost if cost > 0 else None
 
 # A MILP solve is CPU-bound and can take tens of seconds. FastAPI runs sync
 # endpoints on a bounded thread pool, so an unthrottled burst of /optimize
@@ -130,6 +151,40 @@ def skus_missing_stock(forecasts, stock_rows: list[dict]) -> list[str]:
     return sorted(sku for sku in forecasts if sku not in measurable)
 
 
+def _demand_shares_for(tenant_id: str, warehouses: list[str]) -> dict[str, float]:
+    """How a SKU's demand divides across `warehouses` — fractions summing to 1.
+
+    Demand used to be split by where the stock already SAT
+    (`stock0[(sku,w)] / total_stock`), which made the transfer half of the model
+    self-defeating: a warehouse's need was defined as proportional to what it
+    already had, so a store holding 0 units of a SKU it sells was assigned 0
+    demand and could never be a transfer destination, while the central depot
+    that already held everything got 100% of the demand and was told to buy
+    more. The one real signal the product has for "where does this sell" is
+    `warehouses.demand_share` (set in /bodegas), which is what the per-warehouse
+    semáforo reads — so the optimizer reads the same thing and the two screens
+    can no longer contradict each other.
+
+    Restricted and renormalized to the warehouses the optimizer is planning for
+    (those with stock rows): a share configured for a location that has no
+    inventory row at all would otherwise silently swallow part of the demand.
+    """
+    raw = wh_svc.get_demand_shares(tenant_id)
+    shares = {w: float(raw.get(w, 0.0)) for w in warehouses}
+    total = sum(shares.values())
+    if total > 0:
+        return {w: s / total for w, s in shares.items()}
+    # Every configured share belongs to a warehouse with no stock rows, so the
+    # tenant has told us nothing about the locations we can actually plan for.
+    # The whole demand goes to the default warehouse — the same answer
+    # get_demand_shares itself gives when nobody has configured anything, and
+    # the same name precedence the rest of the codebase uses. Deliberately NOT
+    # an even split: spreading demand across warehouses on no evidence orders a
+    # SKU into locations that have never stocked it.
+    default = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+    return {w: (1.0 if w == default else 0.0) for w in warehouses}
+
+
 def build_optimization_input(
     tenant_id: str,
     session_id: str,
@@ -139,6 +194,25 @@ def build_optimization_input(
     lanes: Optional[dict] = None,
 ) -> Optional[OptimizationInput]:
     """
+    `horizon_days` is in CALENDAR DAYS, whatever the active period is — it is
+    the caller's natural unit and the endpoint's query parameter. The MILP's
+    buckets, however, are the ACTIVE PERIOD's buckets, because that is the unit
+    every other input already speaks: a period-trained session forecasts
+    per-period demand (a monthly session's values are units/month), and lead
+    times are converted with `ceil(days / days_per_period)`. So the conversion
+    happens here, once, and everything downstream is in buckets.
+
+    This used to be the other way round and nothing agreed. The endpoint passed
+    `horizon * days_per_period` (120 for a monthly plan of 4) and it was used
+    as the bucket count, while the buckets were filled from a per-MONTH forecast
+    curve and lead time was divided DOWN into 1 bucket. A monthly tenant got 120
+    buckets of which four carried any demand, a 30-day supplier that appeared to
+    deliver within one bucket, holding cost charged per DAY across buckets that
+    were really months (understating carrying cost ~30x), and `n_vars` inflated
+    30x — enough for six SKUs to cross the engine's `max_vars_before_fallback`
+    and land every real weekly/monthly tenant permanently in the transfer-blind
+    greedy fallback.
+
     `lanes`: preloaded transfer_lane_service.lane_map ({(from,to): lane}); when
     omitted it is fetched here. Lanes are what give a transfer a price and a
     transit time in the MILP — the engine stays DB-free, so this function
@@ -153,7 +227,14 @@ def build_optimization_input(
     use, so trimming redundant queries reduces the chance this path tips it.
     Omit it and the function fetches the snapshot itself, as before.
     """
-    forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
+    raw_forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
+    # A session trained on sales history with a store column is keyed
+    # "sku│store", not "sku". Read raw, those keys match no stock row, so every
+    # SKU looked uncounted and the optimizer planned nothing at all. The rollup
+    # is the SKU-level total (what `skus` and the shares path need); the raw
+    # dict is kept because the per-store split below is the best demand signal
+    # this product has.
+    forecasts: dict = rollup_by_sku(raw_forecasts)
 
     if stock_rows is None:
         stock_rows = list_stock(tenant_id)
@@ -182,6 +263,33 @@ def build_optimization_input(
     holding_cost_pct = float(business_cfg.get("holding_cost_pct", 0.20))
     stockout_cost_multiplier = float(business_cfg.get("stockout_cost_multiplier", 3.0))
 
+    # ONE unit for the whole model: buckets of the active period. See the
+    # docstring — the forecast curve and the lead-time conversion both speak it
+    # already, so the horizon is what has to move.
+    days_per_period = _days_per_period(period)
+    horizon_buckets = max(1, _math.ceil(horizon_days / days_per_period))
+
+    # Where each SKU's demand lives, in preference order — the SAME order the
+    # per-warehouse semáforo uses (service.get_inventory_status_by_warehouse),
+    # so a warehouse's need means the same thing on both screens:
+    #   1. store-keyed forecasts, matched to warehouse names case-insensitively
+    #      — a real per-location measurement of what sells there;
+    #   2. the SKU-global forecast split by warehouses.demand_share.
+    wh_by_lower = {w.lower().strip(): w for w in warehouses}
+    per_wh_forecasts: dict[str, dict] = {}
+    for store in stores_in(raw_forecasts):
+        wh = wh_by_lower.get(store.lower().strip())
+        # A store with no warehouse of that name has no stock rows either, so
+        # there is nothing to plan for it — it is not a location this model can
+        # buy into. Its demand is left out rather than reassigned to a
+        # warehouse that does not serve it.
+        if wh is not None:
+            per_wh_forecasts[wh] = for_store(raw_forecasts, store)
+    # If not one store name matched a warehouse, the store split would zero out
+    # every location and the optimizer would confidently recommend nothing.
+    # Fall back to the configured shares instead.
+    shares = {} if per_wh_forecasts else _demand_shares_for(tenant_id, warehouses)
+
     # rows_by_sku[sku] -> {warehouse: row}, only for warehouses that actually have a row.
     rows_by_sku: dict[str, dict[str, dict]] = {}
     for r in stock_rows:
@@ -194,43 +302,62 @@ def build_optimization_input(
     stockout_cost: dict[str, float] = {}
     order_cost: dict[str, float] = {}
 
+    def _bucketed(model_forecasts: dict) -> list[float]:
+        """One forecast curve laid into the horizon's buckets, padded with 0.
+
+        The curve's points are one per bucket of the active period already —
+        a monthly session's step 0 is next month's units — so no rescaling
+        happens here; step index IS bucket index.
+        """
+        series = [0.0] * horizon_buckets
+        for point in _avg_forecast_curve(model_forecasts, max_steps=horizon_buckets):
+            step = point["step"]
+            if step < horizon_buckets:
+                series[step] = point["value"]
+        return series
+
     for sku in skus:
         sku_rows = rows_by_sku.get(sku, {})
 
+        # The MILP needs an opening balance for every (sku, warehouse) pair it
+        # indexes, and a warehouse with no row for this SKU has no counted
+        # quantity. 0 is the only assumption available — and it is now
+        # harmless where it used to compound, because demand is no longer
+        # derived from these numbers: a location with no share of the demand
+        # gets no order regardless of what its opening balance says. A SKU
+        # counted NOWHERE never reaches this loop (see skus_missing_stock).
         for w in warehouses:
             stock0[(sku, w)] = float(sku_rows[w]["current_stock"] or 0) if w in sku_rows else 0.0
 
-        total_stock = sum(stock0[(sku, w)] for w in warehouses)
-
-        model_forecasts = forecasts.get(sku, {})
-        curve = _avg_forecast_curve(model_forecasts, max_steps=horizon_days)
-        daily_total = [0.0] * horizon_days
-        for point in curve:
-            step = point["step"]
-            if step < horizon_days:
-                daily_total[step] = point["value"]
-
-        for w in warehouses:
-            if total_stock > 0:
-                share = stock0[(sku, w)] / total_stock
-            else:
-                share = 1.0 / len(warehouses)
-            demand[(sku, w)] = [v * share for v in daily_total]
+        if per_wh_forecasts:
+            for w in warehouses:
+                demand[(sku, w)] = _bucketed(per_wh_forecasts.get(w, {}).get(sku, {}))
+        else:
+            total_curve = _bucketed(forecasts.get(sku, {}))
+            for w in warehouses:
+                share = shares.get(w, 0.0)
+                demand[(sku, w)] = [v * share for v in total_curve]
 
         lead_times = [int(row["lead_time_days"]) for row in sku_rows.values() if row.get("lead_time_days") is not None]
         raw_lead = max(lead_times) if lead_times else _DEFAULT_LEAD_TIME_DAYS
-        # Lead time in the horizon's own buckets: for daily this is the day
-        # count (unchanged); for weekly/monthly it is the lead time rounded up
-        # to whole periods, staying commensurable with horizon_days (which the
-        # endpoint expresses in that period's buckets when a coarser period is
-        # active).
-        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / _days_per_period(period)))
+        # Lead time in the model's own buckets: for daily this is the day count
+        # (unchanged); for weekly/monthly it is the lead time rounded up to
+        # whole periods. Commensurable with `horizon_buckets` above — both are
+        # counts of the same bucket now.
+        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / days_per_period))
 
-        costs = [float(row["unit_cost"]) for row in sku_rows.values() if row.get("unit_cost") is not None]
+        costs = [c for c in (_usable_unit_cost(row.get("unit_cost"))
+                             for row in sku_rows.values()) if c is not None]
         unit_cost = max(costs) if costs else _DEFAULT_UNIT_COST
 
         order_cost[sku] = unit_cost
-        holding_cost[sku] = unit_cost * holding_cost_pct / 365
+        # Carrying cost per unit per BUCKET, not per day: the objective charges
+        # holding_cost once per bucket, and for a monthly plan a bucket is 30
+        # days of warehousing. Left as the daily rate it understated the cost of
+        # sitting on stock by exactly days_per_period (~30x monthly), which is
+        # the side of the trade-off that decides between buying now and buying
+        # later.
+        holding_cost[sku] = unit_cost * holding_cost_pct / 365 * days_per_period
         # short[i,w,t] in the optimizer is a PER-BUCKET unmet-demand penalty,
         # not an accumulating backorder — each day's shortfall is evaluated
         # independently, it doesn't compound across days. So the right
@@ -271,13 +398,13 @@ def build_optimization_input(
             lane = lane_svc.lane_for(lanes, a, b)
             transfer_cost_by_lane[(a, b)] = float(lane["cost_per_unit"])
             transfer_lead_buckets[(a, b)] = int(
-                _math.ceil(int(lane["lead_time_days"]) / _days_per_period(period)))
+                _math.ceil(int(lane["lead_time_days"]) / days_per_period))
             transfer_fixed_cost_by_lane[(a, b)] = float(lane["fixed_cost"])
 
     return OptimizationInput(
         skus=skus,
         warehouses=warehouses,
-        horizon=horizon_days,
+        horizon=horizon_buckets,
         demand=demand,
         stock0=stock0,
         lead_time_buckets=lead_time_buckets,
@@ -292,15 +419,25 @@ def build_optimization_input(
     )
 
 
-def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
+def serialize_optimization_result(inp, result, stock_rows: list[dict],
+                                  horizon_days: Optional[int] = None) -> dict:
     """
     Collapses an OptimizationResult into one actionable total per (sku, warehouse) order
     and per (sku, from_warehouse, to_warehouse) transfer, dropping any with qty == 0.
 
     Args:
-        inp: OptimizationInput (used for horizon_days)
+        inp: OptimizationInput — `inp.horizon` is a count of BUCKETS
         result: OptimizationResult from MILP solver
         stock_rows: list of dicts with {sku, warehouse, unit_cost, supplier}
+        horizon_days: the horizon in CALENDAR DAYS, as the caller asked for it.
+
+    `horizon_days` has to be passed in rather than read off `inp`, because
+    `inp.horizon` counts buckets and a bucket is a month on a monthly plan. The
+    response key is named `horizon_days` and the screen renders it straight into
+    "cubrir los próximos {n} días" — so returning `inp.horizon` would have told a
+    tenant on a four-month plan that the plan covers the next 4 DAYS. Falls back
+    to the bucket count only when the caller gives nothing, which is the daily
+    case where the two are equal anyway.
 
     Returns:
         dict with keys: status, total_cost, horizon_days, orders[], transfers[]
@@ -355,7 +492,7 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
     return {
         "status": result.status,
         "total_cost": round(result.total_cost, 2),
-        "horizon_days": inp.horizon,
+        "horizon_days": horizon_days if horizon_days is not None else inp.horizon,
         "orders": orders,
         "transfers": transfers,
     }

@@ -46,8 +46,12 @@ _SEND_BLOCKING_REASONS = {
 # PO line statuses that were actually ordered (mirrors reception_service._ORDERED)
 _ORDERED = ("approved", "modified")
 
-# PO header states that still have something to send / receive
-_OPEN_PO_STATES = ("pending", "partial")
+# PO header states that still have something to send / receive.
+# `not_received` belongs here: it records "nothing arrived on the day I looked",
+# which is a LATE order, not a closed one. Treating it as terminal dropped the
+# order out of every open-PO count at the exact moment the supplier was most
+# obviously failing to deliver.
+_OPEN_PO_STATES = ("pending", "partial", "not_received")
 
 
 def get_contact_health(tenant_id: str) -> list[dict]:

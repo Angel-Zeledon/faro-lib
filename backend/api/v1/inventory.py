@@ -1788,7 +1788,15 @@ def cash_calendar_fit(
     elif session_id:
         from forecasting_core.business.optimizer import optimize
 
-        inp = opt_svc.build_optimization_input(user.tenant_id, session_id, 30)
+        # The caller's own horizon and the tenant's planning period — not a
+        # hardcoded 30 days at the default daily grain. This path answers "does
+        # the recommended purchase fit in the cash I have?", so it has to price
+        # the SAME plan /compras is showing; solving a different horizon at a
+        # different grain answered a question nobody asked, and the answer was
+        # then labelled with this endpoint's horizon_days.
+        fit_period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        inp = opt_svc.build_optimization_input(
+            user.tenant_id, session_id, horizon_days, period=fit_period)
         if inp is None:
             lines = []
         else:
@@ -1809,7 +1817,8 @@ def cash_calendar_fit(
                     status_code=503,
                 )
             stock_rows = svc.list_stock(user.tenant_id)
-            serialized = opt_svc.serialize_optimization_result(inp, result, stock_rows)
+            serialized = opt_svc.serialize_optimization_result(
+                inp, result, stock_rows, horizon_days=horizon_days)
             lines = [
                 {
                     "sku": o["sku"],
@@ -2651,6 +2660,7 @@ def optimize_inventory(
             status_code=503,
         )
     return ok({
-        **opt_svc.serialize_optimization_result(inp, result, stock_rows),
+        **opt_svc.serialize_optimization_result(
+            inp, result, stock_rows, horizon_days=horizon_days),
         "needs_stock": needs_stock,
     })
