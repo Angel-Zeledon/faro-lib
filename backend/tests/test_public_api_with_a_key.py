@@ -27,7 +27,6 @@ def key_headers(client, auth_headers, test_tenant):
     Minted through the same endpoint the screen calls, so a change that breaks
     key creation breaks these tests too — which is the point.
     """
-    execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
     r = client.post("/api/v1/api-keys",
                     json={"name": "erp-integration-test", "role": "analyst"},
                     headers=auth_headers)
@@ -38,7 +37,6 @@ def key_headers(client, auth_headers, test_tenant):
 
 @pytest.fixture
 def read_only_headers(client, auth_headers, test_tenant):
-    execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
     r = client.post("/api/v1/api-keys",
                     json={"name": "dashboard-readonly", "role": "viewer"},
                     headers=auth_headers)
@@ -123,7 +121,6 @@ class TestTheCredentialIsHonouredAsDocumented:
     ):
         """Revocation is the only recourse when a key leaks, so it has to bite on
         the next call — not when some cache expires."""
-        execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
         created = client.post("/api/v1/api-keys",
                               json={"name": "leaked", "role": "analyst"},
                               headers=auth_headers).json()["data"]
@@ -138,28 +135,3 @@ class TestTheCredentialIsHonouredAsDocumented:
         assert client.get("/api/v1/data-sources", headers=headers).status_code == 401
 
 
-class TestThePlanGateIsRealForMachines:
-    def test_a_starter_tenant_key_is_refused_with_a_reason(
-        self, client, auth_headers, test_tenant, monkeypatch
-    ):
-        """Documented as "included from Professional". A starter key must be
-        refused, and refused in a way the integrator can act on rather than a
-        bare 403."""
-        from backend.config import settings
-
-        execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
-        raw = client.post("/api/v1/api-keys",
-                          json={"name": "downgraded", "role": "analyst"},
-                          headers=auth_headers).json()["data"]["key"]
-
-        # The downgrade happens AFTER the key exists — the case a customer hits
-        # when they change plan, not a key that was never valid.
-        execute("UPDATE tenants SET plan = 'starter' WHERE id = %s", (test_tenant["id"],))
-        monkeypatch.setattr(settings, "testing_mode", False)
-
-        r = client.get("/api/v1/data-sources",
-                       headers={"Authorization": f"Bearer {raw}"})
-        assert r.status_code == 403, (
-            f"a key kept working after its plan lost API access ({r.status_code})"
-        )
-        assert "PLAN_UPGRADE_REQUIRED" in r.text

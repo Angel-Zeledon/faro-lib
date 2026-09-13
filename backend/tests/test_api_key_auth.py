@@ -189,31 +189,6 @@ class TestAKeyIsBoundToItsTenant:
             execute("DELETE FROM tenants WHERE id = %s", (other["id"],))
 
 
-class TestAKeyDiesWithThePlan:
-
-    def test_a_downgraded_tenant_loses_api_access(self, client, test_tenant, monkeypatch):
-        """A paid capability must not outlive the plan that paid for it.
-
-        Keys are rows: cancelling a plan does not delete them. Checking the
-        entitlement only when the key is MINTED would leave every existing key
-        working forever after a downgrade.
-        """
-        # The local .env runs with TESTING_MODE=true, which bypasses every
-        # entitlement check — this test is about the check, so it must turn the
-        # bypass off itself.
-        monkeypatch.setattr(settings, "testing_mode", False)
-
-        raw = _mint(test_tenant["id"], "viewer")
-        execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
-        assert client.get("/api/v1/inventory/stock", headers=_headers(raw)).status_code == 200
-
-        execute("UPDATE tenants SET plan = 'starter' WHERE id = %s", (test_tenant["id"],))
-        resp = client.get("/api/v1/inventory/stock", headers=_headers(raw))
-
-        assert resp.status_code == 403
-        assert "PLAN_UPGRADE_REQUIRED" in resp.text
-
-
 class TestLastUsed:
 
     def test_first_call_stamps_last_used(self, client, test_tenant):

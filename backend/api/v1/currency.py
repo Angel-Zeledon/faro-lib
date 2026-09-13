@@ -4,7 +4,7 @@ Two different kinds of money live in this product and they must not share a
 setting:
 
   · What Faro COSTS is priced in USD — the plans are the same price for everyone,
-    and that lives in Stripe (backend/billing), not here.
+    and that is a conversation with us, not a setting here.
   · What the customer's OWN money is worth — inventory value, unit costs, a
     purchase order's total — is in whatever currency that business actually
     trades in, and only they know which.

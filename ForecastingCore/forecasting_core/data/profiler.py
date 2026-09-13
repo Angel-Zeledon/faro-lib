@@ -588,16 +588,19 @@ class DataProfiler:
         gap_skus: List[str] = []
         outlier_per_sku: dict = {}
 
-        # Detect native frequency from first non-trivial group
+        # Detect native frequency from first non-trivial group. Shared with
+        # DataQualityChecker._missing_dates through quality.infer_freq_days, so
+        # "how often does this series report" has one answer — this inference
+        # and that checker used to disagree by construction, and the user could
+        # read both numbers one tab apart.
+        from forecasting_core.data.quality import infer_freq_days
+
         freq_days: Optional[int] = None
         for g in groups[:5]:
             sub = df if g is None else df[df[group_col] == g]
-            d = sub[date_col].dropna().sort_values().drop_duplicates()
-            if len(d) >= 3:
-                md = int(d.diff().dropna().dt.days.median())
-                if md >= 1:
-                    freq_days = md
-                    break
+            freq_days = infer_freq_days(sub[date_col])
+            if freq_days:
+                break
 
         for g in groups[:50]:  # cap for performance
             sub = df if g is None else df[df[group_col] == g]

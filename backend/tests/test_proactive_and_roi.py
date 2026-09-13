@@ -112,6 +112,20 @@ def test_avg_forecast_curve_averages_across_models():
 
 # ── Fase 1/2: PO line-item logging + adoption aggregates ─────────────────────
 
+def _header_values(sql: str, params: tuple) -> dict:
+    """Map the header INSERT's column names to the values bound to them.
+
+    These assertions used to index `params` positionally (`p[8] == 3`), which
+    silently shifts the moment a column is added to the INSERT — every later
+    assertion then checks a different field than its comment claims, and the
+    test either fails for an unrelated reason or, worse, passes. Reading the
+    column list out of the SQL keeps each assertion attached to its field.
+    """
+    cols = sql.split("(", 1)[1].split(")", 1)[0]
+    names = [c.strip() for c in cols.split(",")]
+    return dict(zip(names, params))
+
+
 def test_log_po_generation_persists_decisions_and_aggregates(monkeypatch):
     from backend.inventory import roi_service
 
@@ -139,20 +153,17 @@ def test_log_po_generation_persists_decisions_and_aggregates(monkeypatch):
 
     result = roi_service.log_po_generation("t", "s", items)
 
-    # Header params order:
-    # (tenant, session, sku_count, total_units, total_value,
-    #  skus_order_now, skus_order_soon,
-    #  suggested_count, approved_count, modified_count, rejected_count)
-    p = captured_header["params"]
-    assert p[2] == 3            # sku_count = approved + modified
-    assert p[3] == 22           # total_units = 10 + 8 + 4
-    assert p[4] == 44           # total_value = 20 + 24 (C has no cost)
-    assert p[5] == 2            # skus_order_now among ordered = A, C
-    assert p[6] == 1            # skus_order_soon among ordered = B
-    assert p[7] == 4            # suggested_count = all lines
-    assert p[8] == 3            # approved_count (approved + modified)
-    assert p[9] == 1            # modified_count
-    assert p[10] == 1           # rejected_count
+    v = _header_values(captured_header["sql"], captured_header["params"])
+    assert v["sku_count"] == 3            # approved + modified
+    assert v["total_units"] == 22         # 10 + 8 + 4
+    assert v["total_value"] == 44         # 20 + 24 (C has no cost)
+    assert v["skus_order_now"] == 2       # among ordered = A, C
+    assert v["skus_order_soon"] == 1      # among ordered = B
+    assert v["suggested_count"] == 4      # all lines
+    assert v["approved_count"] == 3       # approved + modified
+    assert v["modified_count"] == 1
+    assert v["rejected_count"] == 1
+    assert v["source"] == "forecast"      # the buyer decided line by line
 
     # Every line is persisted, including the rejected one (for adoption audit).
     assert len(line_inserts) == 4
@@ -164,8 +175,9 @@ def test_log_po_generation_legacy_items_default_to_approved(monkeypatch):
     from backend.inventory import roi_service
 
     header: dict = {}
-    monkeypatch.setattr(roi_service, "query_one",
-                        lambda sql, params: header.update(params=params) or {"id": "po2"})
+    monkeypatch.setattr(
+        roi_service, "query_one",
+        lambda sql, params: header.update(sql=sql, params=params) or {"id": "po2"})
     monkeypatch.setattr(roi_service, "execute", lambda sql, params: None)
 
     items = [
@@ -173,11 +185,57 @@ def test_log_po_generation_legacy_items_default_to_approved(monkeypatch):
     ]
     roi_service.log_po_generation("t", "s", items)
 
-    p = header["params"]
-    assert p[2] == 1     # counted as ordered
-    assert p[3] == 5.0   # falls back to recommended_qty when no final_qty
-    assert p[8] == 1     # approved_count
-    assert p[10] == 0    # rejected_count
+    v = _header_values(header["sql"], header["params"])
+    assert v["sku_count"] == 1           # counted as ordered
+    assert v["total_units"] == 5.0       # falls back to recommended_qty
+    assert v["approved_count"] == 1
+    assert v["rejected_count"] == 0
+
+
+def test_an_export_with_no_decisions_records_the_order_but_not_an_adoption_reading(
+    monkeypatch,
+):
+    """
+    The download path. The caller sent no per-line decisions, so the endpoint
+    re-derived every actionable line and the normalizer defaults them all to
+    'approved'. Counting that as "the buyer followed every recommendation" gave
+    a tenant working from /inventario a permanent green 100% — with 'rejected'
+    unreachable by construction — and every urgent line also counted as a risk
+    acted on. Pressing Export three times tripled the month.
+
+    The ORDER is still recorded in full: they downloaded it and will act on it.
+    Only the four DECISION counters are withheld, exactly as create_manual_po
+    already withholds them for orders written from scratch.
+    """
+    from backend.inventory import roi_service
+
+    header: dict = {}
+    monkeypatch.setattr(
+        roi_service, "query_one",
+        lambda sql, params: header.update(sql=sql, params=params) or {"id": "po3"})
+    lines: list = []
+    monkeypatch.setattr(roi_service, "execute", lambda sql, params: lines.append(params))
+
+    items = [
+        {"sku": "A", "signal": "PEDIR_YA",     "recommended_qty": 5, "unit_cost": 2},
+        {"sku": "B", "signal": "PEDIR_PRONTO", "recommended_qty": 3, "unit_cost": 4},
+    ]
+    roi_service.log_po_generation("t", "s", items, decisions_recorded=False)
+
+    v = _header_values(header["sql"], header["params"])
+    # The order is real and complete.
+    assert v["sku_count"] == 2
+    assert v["total_units"] == 8.0
+    assert v["total_value"] == 22.0
+    assert v["skus_order_now"] == 1
+    assert v["source"] == "export"
+    # The adoption reading is not.
+    assert v["suggested_count"] == 0
+    assert v["approved_count"] == 0
+    assert v["modified_count"] == 0
+    assert v["rejected_count"] == 0
+    # Lines are still persisted so the order can be received and audited.
+    assert len(lines) == 2
 
 
 def test_normalize_decisions_downgrades_zero_qty_orders():

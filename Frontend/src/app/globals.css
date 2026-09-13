@@ -869,3 +869,19 @@
     margin-block: -13px;   /* the taller box grows over its own row, not the layout */
   }
 }
+
+/* The product tour on the landing: image on one side, explanation on the other,
+   sides alternating. `direction: rtl` on the grid is what flips a row without
+   duplicating the markup — every child resets to `ltr` so only the COLUMN ORDER
+   swaps, never the text.
+   Below 900px there is no room for two columns, and an alternating layout that
+   has collapsed to one column would show half its rows with the caption above
+   the screenshot it describes. So: one column, image always first. */
+@media (max-width: 900px) {
+  .tour-row {
+    grid-template-columns: 1fr !important;
+    direction: ltr !important;
+    gap: 22px !important;
+    margin-bottom: 44px !important;
+  }
+}

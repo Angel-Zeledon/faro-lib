@@ -217,7 +217,12 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                 <Td size="lg" divider={false} mono={row.capital_freed != null} style={{ color: row.capital_freed != null ? C.green : C.dim, fontWeight: row.capital_freed != null ? 600 : 400 }}>
                   {row.capital_freed != null
                     ? formatMoney(row.capital_freed)
-                    : t('roi.capital_freed_pending')}
+                    /* Two different nulls. Saying "not enough history" to a
+                       tenant whose dead stock just GREW is the column
+                       reporting only good news. */
+                    : row.capital_freed_status === 'grew'
+                      ? t('roi.capital_freed_grew')
+                      : t('roi.capital_freed_pending')}
                 </Td>
               </tr>
             ))}
@@ -337,20 +342,30 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
             dataTour="roi.recap_capital"
             value={report.capital_freed != null ? formatMoney(report.capital_freed) : t('recap.unavailable')}
             label={t('recap.metric_capital')}
-            note={report.capital_freed != null ? t('recap.metric_capital_note') : t('recap.unavailable_capital')}
+            note={report.capital_freed != null
+              ? t('recap.metric_capital_note')
+              : report.capital_freed_status === 'grew'
+                ? t('recap.capital_grew')
+                : t('recap.unavailable_capital')}
             color={report.capital_freed != null ? C.green : C.dim}
             muted={report.capital_freed == null}
           />
 
           <RecapTile
             dataTour="roi.recap_managed"
-            value={report.managed_purchase_value != null
-              ? formatMoney(report.managed_purchase_value)
-              : t('recap.unavailable')}
+            value={report.managed_purchase_value == null
+              ? t('recap.unavailable')
+              /* Only some lines carried a cost, so this is a floor. Same "≥"
+                 convention the supplier scorecard uses for the same reason. */
+              : report.managed_purchase_value_complete
+                ? formatMoney(report.managed_purchase_value)
+                : `≥ ${formatMoney(report.managed_purchase_value)}`}
             label={t('recap.metric_managed')}
-            note={report.managed_purchase_value != null
-              ? t('recap.metric_managed_note')
-              : t('recap.unavailable_managed')}
+            note={report.managed_purchase_value == null
+              ? t('recap.unavailable_managed')
+              : report.managed_purchase_value_complete
+                ? t('recap.metric_managed_note')
+                : t('recap.metric_managed_partial_note')}
             color={report.managed_purchase_value != null ? C.text : C.dim}
             muted={report.managed_purchase_value == null}
           />

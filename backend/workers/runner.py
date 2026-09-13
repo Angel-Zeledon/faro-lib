@@ -1532,6 +1532,15 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         if not metrics.get("rows"):
             raise TrainingDataError("no_models_trained")
 
+        # Diagnostics only: keeps this run's per-model accuracy comparable
+        # against the tenant's other sessions (docs/estabilidad.md, "no
+        # registro de métricas de entrenamiento"). Must never fail training.
+        try:
+            from backend.training.metrics_history import record_training_metrics
+            record_training_metrics(tenant_id, session_id, metrics.get("by_model") or {})
+        except Exception as e:
+            log.warning(f"Recording training metrics history failed (non-fatal): {e}")
+
         inventory = engine.get_inventory_report()
 
         _emit(tenant_id, session_id, job_id, 90, "saving", "Saving results...")

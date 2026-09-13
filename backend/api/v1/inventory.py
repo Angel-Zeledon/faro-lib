@@ -30,10 +30,6 @@ from backend.auth.guards import (
 )
 from backend.config import settings
 from backend.errors import AppError
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
-from backend.entitlements.service import has_feature
-from backend.tenants.service import get_tenant
 from backend.sessions import planning_service
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
@@ -127,40 +123,64 @@ def upsert_stock(
     body: StockUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, limit_guard
 
     # Resolve to the canonical spelling FIRST so the pre-checks below judge
     # the same (sku, warehouse) row svc.upsert_stock will actually write —
     # 'norte' with an existing 'Norte' is an update, not a new location.
     warehouse = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
-    existing = svc.get_stock(user.tenant_id, sku, warehouse=warehouse)
-    if not existing:
-        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
-    # A new warehouse name would otherwise be auto-created for free by
-    # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations entirely.
-    # Enforce BEFORE the write so a blocked request never creates the row.
-    if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
-        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
 
     data = body.model_dump(exclude_none=True)
-    if existing:
-        # Only what the caller ACTUALLY SENT touches an existing row.
-        #
-        # `exclude_none` alone could not tell "omitted" from "sent": the three
-        # fields that are not Optional (`min_stock`, `lead_time_days`, `moq`)
-        # arrive already materialised to their model defaults, so a body naming
-        # only the stock count silently wrote 0 / 15 / 1 over them. Measured on
-        # the daily "update stock" screen, which posts exactly
-        # {current_stock, lead_time_days, supplier}: a supplier minimum of 100
-        # became 1 and the recommendation went from 100 units to 81 — below a
-        # minimum the supplier will not ship. The stock count and the supplier's
-        # minimum have nothing to do with each other; counting stock must not
-        # rewrite the purchasing rules.
-        #
-        # A row that does NOT exist yet still gets the documented defaults —
-        # a new row has to start somewhere.
-        data = {k: v for k, v in data.items() if k in body.model_fields_set}
-    row = svc.upsert_stock(user.tenant_id, sku, data)
+    # Only what the caller ACTUALLY SENT is written — on a new row as much as
+    # on an existing one.
+    #
+    # `exclude_none` alone cannot tell "omitted" from "sent": the three fields
+    # that are not Optional (`min_stock`, `lead_time_days`, `moq`) arrive
+    # already materialised to their model defaults, so a body naming only the
+    # stock count silently wrote 0 / 15 / 1 over them. Measured on the daily
+    # "update stock" screen, which posts exactly {current_stock,
+    # lead_time_days, supplier}: a supplier minimum of 100 became 1 and the
+    # recommendation went from 100 units to 81 — below a minimum the supplier
+    # will not ship. The stock count and the supplier's minimum have nothing to
+    # do with each other; counting stock must not rewrite the purchasing rules.
+    #
+    # This filter used to apply ONLY to existing rows, on the reasoning that "a
+    # new row has to start somewhere". It does — but the place it starts is the
+    # SCHEMA default (`lead_time_days INT NOT NULL DEFAULT 15`), which is
+    # already exactly what omitting the column produces. What the old branch
+    # actually added was the provenance stamp: upsert_stock stamps
+    # `<field>_set_by = 'user'` for every tracked field present in `data`, so a
+    # materialised default arrived labelled as a value a human had chosen.
+    #
+    # That lie has teeth. `stock_defaults_service.resolve_field` lets the SKU
+    # row win over a rule only when its `_set_by` says somebody set it — so a
+    # tenant who configures "Acme delivers in 45 days" as a supplier rule had it
+    # silently overridden, on every SKU created through this endpoint, by a 15
+    # nobody ever typed. It also defeated the whole point of the provenance
+    # columns: "the user chose 15" and "nobody ever touched this" became
+    # indistinguishable again, which is the exact bug they were migrated in to
+    # kill (see defaults.py, SOURCE_DEFAULT).
+    #
+    # Omitting them leaves `<field>_set_by` NULL, which is what "we assumed
+    # this" is spelled as, and the value on the row is unchanged either way.
+    data = {k: v for k, v in data.items() if k in body.model_fields_set}
+    # The ceiling and the write, inside one transaction holding one per-tenant
+    # lock. Split apart — the way this endpoint used to do it — twelve
+    # simultaneous requests against a ceiling of five left ten rows: every one
+    # of them counted before any of them had committed. See
+    # entitlements.service.limit_guard.
+    with limit_guard(user.tenant_id) as conn:
+        if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse, conn=conn):
+            enforce_limit(user.tenant_id, "max_skus",
+                          svc.count_stock(user.tenant_id, conn=conn), conn=conn)
+        # A new warehouse name would otherwise be auto-created for free by
+        # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations
+        # entirely. Enforced BEFORE the write so a blocked request never
+        # creates the row.
+        if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
+            enforce_limit(user.tenant_id, "max_locations",
+                          wh_svc.count_warehouses(user.tenant_id), conn=conn)
+        row = svc.upsert_stock(user.tenant_id, sku, data, conn=conn)
     return ok(row)
 
 
@@ -332,6 +352,17 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
         sku = row.get("sku", "").strip()
         if not sku:
             skipped_no_sku += 1
+            continue
+
+        # A NUL anywhere in the row means the export is corrupt. This path
+        # keeps the byte (the stdlib csv reader does not truncate the way
+        # pandas does), so the row is rejected by name instead of being stored
+        # as a different product code than the file says.
+        if any("\x00" in str(v) for v in raw_row.values() if v is not None):
+            errors.append(_row_error(
+                line_no, sku.replace("\x00", ""), "inventory_import_row_has_nul",
+                {}, "the row contains a NUL byte and was not imported",
+            ))
             continue
 
         parsed: dict = {"sku": sku}
@@ -509,7 +540,7 @@ async def bulk_import(
     # This is what the stress test caught. bulk_upsert was already offloaded,
     # but /health still stalled 5.4s against a 0.02s baseline during a 3k-row
     # import, because the loop was waiting on these.
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, limit_guard
 
     def _check_and_write() -> int:
         # Resolve every distinct warehouse spelling in the CSV to its canonical
@@ -523,10 +554,17 @@ async def bulk_import(
         for r in rows:
             r["warehouse"] = resolved_wh[r.get("warehouse")]
 
+        # One lock for the whole import. Without it, two CSVs uploaded at the
+        # same moment each counted the catalogue before either had written, and
+        # a tenant capped at 100 SKUs ended up with 200.
+        with limit_guard(user.tenant_id) as conn:
+            return _check_and_write_locked(conn)
+
+    def _check_and_write_locked(conn) -> int:
         existing_keys = svc.list_stock_keys(user.tenant_id)
         new_keys = {(r["sku"], r["warehouse"]) for r in rows} - existing_keys
-        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id),
-                      adding=len(new_keys))
+        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id, conn=conn),
+                      adding=len(new_keys), conn=conn)
 
         # Same bypass risk as PUT /stock: a CSV with N distinct new warehouse
         # names would otherwise create all N for free via
@@ -537,7 +575,7 @@ async def bulk_import(
         existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
         new_wh_names = {r["warehouse"] for r in rows} - existing_wh_names
         enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id),
-                      adding=len(new_wh_names))
+                      adding=len(new_wh_names), conn=conn)
 
         # bulk_upsert does one synchronous DB round-trip per row.
         return svc.bulk_upsert(user.tenant_id, rows)
@@ -630,36 +668,6 @@ def setup_gaps(
 
 # ── Status endpoint — the core of the product ─────────────────────────────────
 
-def _strip_abc_xyz_unless_entitled(
-    items: list[dict], tenant_id: str, extra_keys: tuple[str, ...] = (),
-) -> list[dict]:
-    """
-    ABC-XYZ classification is a Professional+ feature (Feature.ABC_XYZ), but
-    it rides along as extra keys on otherwise-core inventory items rather than
-    living behind its own endpoint. Starter tenants must still get the core
-    signal/coverage/recommendation data — so we omit the classification keys
-    (graceful degradation) instead of 403-ing the whole read. No-op in
-    testing_mode, matching every other entitlement check.
-
-    ``extra_keys`` lets a call site drop additional fields that are DERIVED
-    from the classification (e.g. dead-stock's ``action_suggested``, which is
-    picked from ``item['abc']``) — otherwise a non-entitled tenant could
-    reverse-engineer the stripped classification from those derived fields.
-    """
-    if settings.testing_mode:
-        return items
-    tenant = get_tenant(tenant_id) or {}
-    if has_feature(tenant, Feature.ABC_XYZ):
-        return items
-    for item in items:
-        item.pop("abc", None)
-        item.pop("xyz", None)
-        item.pop("abc_xyz", None)
-        for key in extra_keys:
-            item.pop(key, None)
-    return items
-
-
 _COVERAGE_UNIT = {"daily": "day", "weekly": "week", "monthly": "month"}
 
 
@@ -693,13 +701,11 @@ def inventory_status(
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
 
     # Both views share the source-then-filter shape; only the response
-    # envelope differs. abc/xyz stripping applies to the aggregated view only
-    # — per-warehouse rows never carry classification fields.
+    # envelope differs.
     if by_warehouse:
         items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level, period)
     else:
         items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
-        items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
 
     if signal:
         signal_up = signal.upper()
@@ -838,7 +844,8 @@ def dashboard_summary(
     Lightweight endpoint for the dashboard widget.
     Returns only the summary counts without the full item list.
     """
-    items = svc.get_inventory_status(user.tenant_id, session_id)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
     total_value = sum(i["inventory_value"] for i in items if i.get("inventory_value"))
     return ok({
         "session_id":   session_id,
@@ -929,7 +936,7 @@ class SimulateEventRequest(BaseModel):
     name:       Optional[str]   = None
 
 
-@router.post("/events/simulate", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.post("/events/simulate")
 def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_current_user)):
     """
     What-if simulator — project a promo/season's impact per SKU: extra demand,
@@ -954,6 +961,7 @@ def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_c
         result = svc.simulate_event_impact(
             user.tenant_id, body.session_id, start, end, mult,
             event_name=name, event_id=body.event_id,
+            period=planning_service.get_planning(user.tenant_id).get("period", "daily"),
         )
     except AppError:
         # Already carries its own code/params — wrapping it would strip them.
@@ -972,7 +980,7 @@ class EventMultiplierUpsert(BaseModel):
     multiplier:  float = Field(ge=0.1, le=10.0)
 
 
-@router.get("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events/{event_id}/multipliers")
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
     """Per-SKU, per-family or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
@@ -980,7 +988,7 @@ def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_curren
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
 
 
-@router.put("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.put("/events/{event_id}/multipliers")
 def upsert_event_multiplier(
     event_id: str,
     body: EventMultiplierUpsert,
@@ -1006,7 +1014,6 @@ def upsert_event_multiplier(
 
 @router.delete(
     "/events/{event_id}/multipliers/{override_id}", status_code=204,
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def remove_event_multiplier(
     event_id: str,
@@ -1020,12 +1027,12 @@ def remove_event_multiplier(
         )
 
 
-@router.get("/events", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events")
 def list_events(user: CurrentUser = Depends(get_current_user)):
     return ok(svc.list_events(user.tenant_id))
 
 
-@router.get("/events/upcoming", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events/upcoming")
 def upcoming_events(
     days: int = Query(default=60, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -1035,14 +1042,13 @@ def upcoming_events(
 
 @router.post(
     "/events", status_code=201,
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def create_event(body: EventCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     ev = svc.create_event(user.tenant_id, body.model_dump())
     return ok(ev)
 
 
-@router.patch("/events/{event_id}", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.patch("/events/{event_id}")
 def patch_event(
     event_id: str,
     body: EventPatch,
@@ -1070,7 +1076,6 @@ def patch_event(
 
 @router.delete(
     "/events/{event_id}", status_code=204,
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     svc.delete_event(user.tenant_id, event_id)
@@ -1087,7 +1092,7 @@ class CatalogToggleRequest(BaseModel):
     active: bool
 
 
-@router.get("/events/catalog", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events/catalog")
 def get_event_catalog(
     country: str = Query(default="CR", max_length=4),
     user: CurrentUser = Depends(get_current_user),
@@ -1125,7 +1130,7 @@ def get_event_catalog(
     })
 
 
-@router.post("/events/catalog/seed", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.post("/events/catalog/seed")
 def seed_event_catalog(
     body: CalendarSeedRequest,
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -1143,7 +1148,6 @@ def seed_event_catalog(
 
 @router.patch(
     "/events/catalog/{catalog_key}",
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def toggle_catalog_entry(
     catalog_key: str,
@@ -1171,8 +1175,9 @@ def download_pdf_report(
     user: CurrentUser = Depends(get_current_user),
 ):
     """Generates and streams a one-page executive PDF inventory summary."""
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     try:
-        pdf_bytes = svc.generate_inventory_pdf(user.tenant_id, session_id, service_level)
+        pdf_bytes = svc.generate_inventory_pdf(user.tenant_id, session_id, service_level, period)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
@@ -1228,10 +1233,12 @@ def log_po(
     """
     from backend.inventory.roi_service import log_po_generation
 
-    if body and body.items:
+    decisions_recorded = bool(body and body.items)
+    if decisions_recorded:
         po_items = [i.model_dump() for i in body.items]
     else:
-        items = svc.get_inventory_status(user.tenant_id, session_id)
+        period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
         po_items = [
             i for i in items
             if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("recommended_qty") or 0) > 0
@@ -1240,6 +1247,11 @@ def log_po(
     record = log_po_generation(
         user.tenant_id, session_id, po_items,
         destination_warehouse=body.destination_warehouse if body else None,
+        # The order is recorded either way; only the ADOPTION reading is
+        # withheld. Nobody told us what the buyer decided here — the server
+        # re-derived the list — so counting all of it as "followed" was the
+        # product marking its own homework. See log_po_generation.
+        decisions_recorded=decisions_recorded,
     )
     return ok(record)
 
@@ -1542,13 +1554,16 @@ def send_po_to_suppliers(
                 to=supplier["email"], supplier_name=supplier_name, po_log_id=po_log_id,
                 items=supplier_items, pdf_bytes=pdf_bytes, pdf_filename=pdf_path.name,
                 po_ref=format_po_number(po.get("po_number"), po_log_id),
+                tenant_id=user.tenant_id,
             )
 
         whatsapp_ok = False
         if supplier.get("whatsapp"):
             media_url = f"{settings.frontend_url}/api/v1/inventory/po/{po_log_id}/pdf/{slug}"
             text = wa_mod.build_po_supplier_text(supplier_name, po_log_id, supplier_items)
-            whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text, media_url=media_url)
+            whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text,
+                                               media_url=media_url,
+                                               tenant_id=user.tenant_id)
 
         if email_ok or whatsapp_ok:
             sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
@@ -1703,7 +1718,8 @@ def evaluate_price_breaks(
     Falls back to the session's own recommended quantities when no cart is sent,
     which is what the daily briefing surface needs.
     """
-    status_items = svc.get_inventory_status(user.tenant_id, session_id)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    status_items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
 
     if body and body.items:
         cart = [{"sku": i.sku, "quantity": i.quantity} for i in body.items]
@@ -1774,6 +1790,8 @@ def cash_calendar_fit(
     business can pay for it in the window it lands in.
     """
     budget = body.budget if body else None
+    # None on the cart path: nothing was solved, so there is no plan to qualify.
+    plan_status: Optional[str] = None
 
     if body and body.items:
         lines = [
@@ -1795,8 +1813,14 @@ def cash_calendar_fit(
         # different grain answered a question nobody asked, and the answer was
         # then labelled with this endpoint's horizon_days.
         fit_period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        fit_stock_rows = svc.list_stock(user.tenant_id)
+        # Same resolution as /inventory/optimize, for the same reason: this
+        # endpoint prices the plan /compras is showing, so it has to be built
+        # on the lead times and MOQs that plan is built on.
+        fit_planning = opt_svc.resolve_planning_inputs(user.tenant_id, fit_stock_rows)
         inp = opt_svc.build_optimization_input(
-            user.tenant_id, session_id, horizon_days, period=fit_period)
+            user.tenant_id, session_id, horizon_days, stock_rows=fit_stock_rows,
+            period=fit_period, planning=fit_planning)
         if inp is None:
             lines = []
         else:
@@ -1816,9 +1840,9 @@ def cash_calendar_fit(
                     "Optimizer busy (too many concurrent requests); please retry.",
                     status_code=503,
                 )
-            stock_rows = svc.list_stock(user.tenant_id)
             serialized = opt_svc.serialize_optimization_result(
-                inp, result, stock_rows, horizon_days=horizon_days)
+                inp, result, fit_stock_rows, horizon_days=horizon_days,
+                planning=fit_planning)
             lines = [
                 {
                     "sku": o["sku"],
@@ -1828,12 +1852,26 @@ def cash_calendar_fit(
                 }
                 for o in serialized["orders"]
             ]
+            plan_status = result.status
     else:
         lines = []
 
-    return ok(cash_service.evaluate_purchase_fit(
+    fit = cash_service.evaluate_purchase_fit(
         user.tenant_id, lines, budget, horizon_days,
-    ))
+    )
+    # WHICH plan was priced, not just what it costs.
+    #
+    # `/inventory/optimize` degrades to a greedy shortcut when the solver cannot
+    # finish in time, and says so — this endpoint threw that away, so a cash
+    # answer built on the shortcut was presented with the same confidence as one
+    # built on the optimum. The number is not wrong; the thing it describes is a
+    # different plan, and the user had no way to tell.
+    #
+    # Only set on the path that actually solves. A caller who sent their own
+    # cart is being told about THEIR cart, and there is no plan status to report.
+    if plan_status is not None:
+        fit["plan_status"] = plan_status
+    return ok(fit)
 
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
@@ -1962,6 +2000,24 @@ def delete_supplier(supplier_id: str, user: CurrentUser = Depends(require_analys
     sup_svc.delete_supplier(user.tenant_id, supplier_id)
 
 
+@router.post("/suppliers/{supplier_id}/reactivate")
+def reactivate_supplier(supplier_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+    """Undo a deactivation.
+
+    Deactivation was always logical (`active = FALSE`) and never had an undo, so
+    dropping a supplier by mistake was a one-way door. It also left the create
+    endpoint's `supplier_name_taken_by_deactivated` (409) naming a row the user
+    could not reach — the error told them the answer and gave them no verb.
+
+    Looked up WITHOUT the `active` filter on purpose: the row this acts on is
+    precisely the one every other read hides.
+    """
+    row = sup_svc.reactivate_supplier(user.tenant_id, supplier_id)
+    if row is None:
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
+    return ok(row)
+
+
 # ── Warehouses ────────────────────────────────────────────────────────────────
 
 class WarehouseCreate(BaseModel):
@@ -1969,14 +2025,13 @@ class WarehouseCreate(BaseModel):
     is_default: bool = False
 
 
-@router.get("/warehouses", dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))])
+@router.get("/warehouses")
 def list_warehouses(user: CurrentUser = Depends(get_current_user)):
     return ok(wh_svc.list_warehouses(user.tenant_id))
 
 
 @router.post(
     "/warehouses", status_code=201,
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     if not (body.name or "").strip():
@@ -1988,9 +2043,22 @@ def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_
     # location for the max_locations pre-check.
     name = wh_svc.resolve_canonical_name(user.tenant_id, body.name)
     if not wh_svc.get_warehouse_by_name(user.tenant_id, name):
-        from backend.entitlements.service import enforce_limit
-        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
-    warehouse = wh_svc.create_warehouse(user.tenant_id, name, is_default=body.is_default)
+        from backend.entitlements.service import enforce_limit, limit_guard
+        # The write stays INSIDE the block: the lock has to still be held when
+        # the warehouse row commits, or the next caller counts a catalogue that
+        # does not yet include it and the ceiling is back to being advisory.
+        with limit_guard(user.tenant_id) as _conn:
+            enforce_limit(user.tenant_id, "max_locations",
+                          wh_svc.count_warehouses(user.tenant_id), conn=_conn)
+            warehouse = wh_svc.create_warehouse(
+                user.tenant_id, name, is_default=body.is_default,
+            )
+    else:
+        # Already exists: an idempotent re-create that consumes no ceiling, so
+        # it has no business waiting on another tenant's import for a lock.
+        warehouse = wh_svc.create_warehouse(
+            user.tenant_id, name, is_default=body.is_default,
+        )
     return ok(warehouse)
 
 
@@ -2000,7 +2068,6 @@ class WarehousePatch(BaseModel):
 
 @router.patch(
     "/warehouses/{name}",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def patch_warehouse(
     name: str,
@@ -2027,7 +2094,6 @@ class TransferLaneUpsert(BaseModel):
 
 @router.get(
     "/warehouses/lanes",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def list_transfer_lanes(user: CurrentUser = Depends(get_current_user)):
     """Configured lanes only. A pair with no row falls back to the documented
@@ -2038,7 +2104,6 @@ def list_transfer_lanes(user: CurrentUser = Depends(get_current_user)):
 
 @router.put(
     "/warehouses/lanes",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def upsert_transfer_lane(
     body: TransferLaneUpsert,
@@ -2055,7 +2120,6 @@ def upsert_transfer_lane(
 
 @router.delete(
     "/warehouses/lanes", status_code=204,
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def delete_transfer_lane(
     from_warehouse: str = Query(min_length=1),
@@ -2110,7 +2174,6 @@ def _svc_error(e: ValueError) -> Exception:
 
 @router.post(
     "/transfers", status_code=201,
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def create_transfer(
     body: TransferCreate,
@@ -2127,7 +2190,6 @@ def create_transfer(
 
 @router.get(
     "/transfers",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def list_transfers(
     status: Optional[str] = Query(default=None),
@@ -2138,7 +2200,6 @@ def list_transfers(
 
 @router.post(
     "/transfers/{transfer_id}/receive",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def receive_transfer(
     transfer_id: str,
@@ -2154,7 +2215,6 @@ def receive_transfer(
 
 @router.post(
     "/transfers/{transfer_id}/cancel",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def cancel_transfer(
     transfer_id: str,
@@ -2169,7 +2229,6 @@ def cancel_transfer(
 
 @router.post(
     "/transfers/{transfer_id}/close",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def close_transfer(
     transfer_id: str,
@@ -2217,17 +2276,18 @@ def send_alert_now(
     user: CurrentUser = Depends(require_verified_analyst_or_above),
 ):
     """
-    Fire the daily inventory alert immediately for this tenant (email to all
-    plans + WhatsApp to opted-in admins on Professional+). Lets the user
-    verify their channels without waiting for the 8:00 UTC scheduler run.
+    Fire the daily inventory alert immediately for this tenant — email to the
+    admins, WhatsApp to the ones who opted in. Lets the user verify their
+    channels without waiting for the 8:00 UTC scheduler run.
 
-    Email is core to every plan and always test-fired here. WhatsApp is a
-    Professional+ feature (Feature.WHATSAPP_ALERTS) — only that slice is
-    gated, mirroring the daily loop in backend/inventory/service.py's
-    run_daily_inventory_alerts(). The endpoint itself must never 403 a
-    Starter tenant out of its core email alert.
+    Both channels mirror the daily loop in backend/inventory/service.py's
+    run_daily_inventory_alerts(): a test fire that skipped one of them would
+    prove less than it appears to.
     """
-    items = svc.get_inventory_status(user.tenant_id, session_id)
+    # Same grain the 8:00 loop uses, so the test send previews the real thing
+    # rather than a differently-computed one.
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
     critical = [i for i in items if i["signal"] == "PEDIR_YA"]
     warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
     if not critical and not warning:
@@ -2244,19 +2304,17 @@ def send_alert_now(
         1 for email in emails
         if send_inventory_alert_email(
             to=email, critical_items=critical, warning_items=warning,
-            inventory_url=inventory_url,
+            inventory_url=inventory_url, tenant_id=user.tenant_id,
         )
     )
 
-    wa_sent = 0
-    tenant = get_tenant(user.tenant_id) or {}
-    if has_feature(tenant, Feature.WHATSAPP_ALERTS):
-        from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+    from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
 
-        numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
-        if numbers:
-            text = build_inventory_alert_text(critical, warning, inventory_url)
-            wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
+    wa_sent = 0
+    numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
+    if numbers:
+        text = build_inventory_alert_text(critical, warning, inventory_url)
+        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id))
 
     # The point of a test fire is to prove the channel works, so its outcome is
     # recorded like a real send instead of only being echoed in the response.
@@ -2347,7 +2405,7 @@ class BomItemUpsert(BaseModel):
     notes:    Optional[str] = None
 
 
-@router.get("/bom/{parent_sku}", dependencies=[Depends(require_feature(Feature.BOM))])
+@router.get("/bom/{parent_sku}")
 def get_bom(parent_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns BOM (Bill of Materials) for a finished good."""
     return ok(bom_svc.list_bom(user.tenant_id, parent_sku))
@@ -2355,7 +2413,6 @@ def get_bom(parent_sku: str, user: CurrentUser = Depends(get_current_user)):
 
 @router.put(
     "/bom/{parent_sku}/{child_sku}", status_code=200,
-    dependencies=[Depends(require_feature(Feature.BOM))],
 )
 def upsert_bom_item(
     parent_sku: str,
@@ -2377,7 +2434,6 @@ def upsert_bom_item(
 
 @router.delete(
     "/bom/{parent_sku}/{child_sku}", status_code=204,
-    dependencies=[Depends(require_feature(Feature.BOM))],
 )
 def delete_bom_item(
     parent_sku: str,
@@ -2387,7 +2443,7 @@ def delete_bom_item(
     bom_svc.delete_bom_item(user.tenant_id, parent_sku, child_sku)
 
 
-@router.get("/bom/{child_sku}/used-in", dependencies=[Depends(require_feature(Feature.BOM))])
+@router.get("/bom/{child_sku}/used-in")
 def where_used(child_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns all finished goods that use this component."""
     return ok(bom_svc.get_parents_using(user.tenant_id, child_sku))
@@ -2406,7 +2462,8 @@ def production_requirements(
     returns required quantities of each component and raw material,
     flagging shortages and purchase requirements.
     """
-    result = bom_svc.explode_requirements(user.tenant_id, session_id, horizon_days)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    result = bom_svc.explode_requirements(user.tenant_id, session_id, horizon_days, period)
     return ok(result)
 
 
@@ -2426,7 +2483,20 @@ def dead_stock(
     """
     from backend.inventory.service import get_inventory_status, get_stock_history
 
-    items = get_inventory_status(user.tenant_id, session_id)
+    # One holding rate per tenant. This endpoint used to price dead stock at a
+    # hardcoded 25% a year while the price-break panel and the MILP optimizer
+    # priced the SAME warehouse at the tenant's `holding_cost_pct` (0.20 by
+    # default) — so a buyer read "cuesta X al mes tenerlo" on /inventario and
+    # got purchase advice built on a different cost of money on /compras. The
+    # rate is resolved here exactly as `/price-breaks/evaluate` resolves it, and
+    # it is RETURNED, because the footer that narrates it must name the number
+    # actually used instead of a literal baked into the sentence.
+    from backend.db import session_store
+    business_cfg = session_store.get_field(user.tenant_id, session_id, "business_cfg") or {}
+    holding_cost_pct = float(business_cfg.get("holding_cost_pct", pb_svc.DEFAULT_HOLDING_COST_PCT))
+
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    items = get_inventory_status(user.tenant_id, session_id, period=period)
     dead_items = []
 
     for item in items:
@@ -2456,7 +2526,7 @@ def dead_stock(
         if expected > 0 and depletion < expected * 0.20:
             days_static = len(history)
             capital = round(float(item.get('current_stock', 0)) * float(item.get('unit_cost') or 0), 2)
-            holding_cost_annual = capital * 0.25  # 25% annual holding cost estimate
+            holding_cost_annual = capital * holding_cost_pct
             holding_cost_monthly = round(holding_cost_annual / 12, 2)
 
             dead_items.append({
@@ -2489,10 +2559,6 @@ def dead_stock(
             })
 
     dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
-    dead_items = _strip_abc_xyz_unless_entitled(
-        dead_items, user.tenant_id,
-        extra_keys=("action_suggested", "action_suggested_code"),
-    )
 
     total_capital = sum(d['capital_trapped'] for d in dead_items)
     total_holding = sum(d['holding_cost_monthly'] for d in dead_items)
@@ -2503,6 +2569,7 @@ def dead_stock(
         'total_holding_cost_monthly': round(total_holding, 2),
         'sku_count':            len(dead_items),
         'min_days_static':      min_days_static,
+        'holding_cost_pct':     holding_cost_pct,
     })
 
 
@@ -2515,9 +2582,18 @@ def export_po(
     signals: str = Query(default="PEDIR_YA,PEDIR_PRONTO", description="Comma-separated signals to include"),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Export purchase order as CSV, filtered to actionable SKUs."""
+    """Export purchase order as CSV, filtered to actionable SKUs.
+
+    The period is resolved here for the same reason `GET /status` resolves it:
+    this endpoint does NOT export what the buyer is looking at, it re-derives
+    the list server-side. Without the period that re-derivation reads a weekly
+    tenant's per-week demand as per-day, so the screen offered nothing to order
+    and the CSV came back with a hundred units — plus a purchase order in
+    /pedidos the buyer never saw on screen.
+    """
     include_signals = {s.strip().upper() for s in signals.split(",")}
-    items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
     po_items = [i for i in items if i["signal"] in include_signals and (i.get("recommended_qty") or 0) > 0]
 
     output = io.StringIO()
@@ -2578,7 +2654,7 @@ def export_po(
 
 # ── MILP purchasing/transfers optimizer (MW-3) ───────────────────────────────
 
-@router.get("/optimize", dependencies=[Depends(require_feature(Feature.MILP_OPTIMIZER))])
+@router.get("/optimize")
 def optimize_inventory(
     session_id:   Optional[str] = Query(default=None),
     # Cap raised from 30 to 360 (multi-period Phase C): a monthly horizon of 12
@@ -2615,8 +2691,14 @@ def optimize_inventory(
     # connection checkouts for no benefit.
     try:
         stock_rows = svc.list_stock(user.tenant_id)
+        # The supplier inputs the semáforo plans on — lead time (rules +
+        # learned receptions) and MOQ — resolved ONCE and handed to both the
+        # build and the serialize, so the plan is solved and reported on the
+        # same numbers /hoy shows.
+        planning_inputs = opt_svc.resolve_planning_inputs(user.tenant_id, stock_rows)
         inp = opt_svc.build_optimization_input(
             user.tenant_id, session_id, horizon_days, stock_rows=stock_rows, period=period,
+            planning=planning_inputs,
         )
     except PoolError:
         # The DB pool (ThreadedConnectionPool, max=10) raises rather than
@@ -2661,6 +2743,7 @@ def optimize_inventory(
         )
     return ok({
         **opt_svc.serialize_optimization_result(
-            inp, result, stock_rows, horizon_days=horizon_days),
+            inp, result, stock_rows, horizon_days=horizon_days,
+            planning=planning_inputs),
         "needs_stock": needs_stock,
     })

@@ -138,7 +138,7 @@ class TestFailedSendsAreVisible:
         _arrange_daily_loop(monkeypatch, tid, _critical(5))
         monkeypatch.setattr(
             "backend.notifications.email.send_inventory_alert_email", lambda **kw: False)
-        monkeypatch.setattr("backend.notifications.email.is_configured", lambda: True)
+        monkeypatch.setattr("backend.notifications.email.is_configured", lambda *_a, **_kw: True)
 
         inv_svc.run_daily_inventory_alerts()
 

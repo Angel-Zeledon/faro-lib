@@ -359,25 +359,30 @@ function TrainingLoader({ message, pct, multiPeriod }: { message: string; pct: n
 }
 
 // ── Canonical field definitions ────────────────────────────────────────────────
+// Labels and prose defaults go through i18n: they were hardcoded Spanish, so
+// the mapping step of the wizard stayed in Spanish for an English user — on the
+// one screen where getting a column wrong costs a whole training run.
+// `defaultLiteral` is for the values that are not prose (a number, `false`,
+// `0%`), which read the same in both languages.
 const CANONICAL_FIELDS = [
- { name: 'sku',           label: 'SKU / Producto',     required: true  },
- { name: 'date',          label: 'Fecha',              required: true  },
- { name: 'demand',        label: 'Demanda',            required: true  },
- { name: 'store',         label: 'Tienda',             required: false, default: 'Tienda única' },
- { name: 'region',        label: 'Región',             required: false, default: 'Sin región' },
- { name: 'inventory',     label: 'Inventario',         required: false, default: '0' },
+ { name: 'sku',           labelKey: 'qs.field_sku',           required: true  },
+ { name: 'date',          labelKey: 'qs.field_date',          required: true  },
+ { name: 'demand',        labelKey: 'qs.field_demand',        required: true  },
+ { name: 'store',         labelKey: 'qs.field_store',         required: false, defaultKey: 'qs.default_single_store' },
+ { name: 'region',        labelKey: 'qs.field_region',        required: false, defaultKey: 'qs.default_no_region' },
+ { name: 'inventory',     labelKey: 'qs.field_inventory',     required: false, defaultLiteral: '0' },
  // The default shown here is what the engine actually broadcasts into an
  // unmapped lead_time column. It said 7 while the DB, this wizard's business
  // config and /inventory all said 15 — the mapping step was promising the user
  // a number no other screen would honour.
- { name: 'lead_time',     label: 'Lead Time (días)',   required: false, default: String(DEFAULT_LEAD_TIME_DAYS) },
- { name: 'price',         label: 'Precio',             required: false, default: 'Desconocido' },
- { name: 'cost',          label: 'Costo',              required: false, default: 'Desconocido' },
- { name: 'regular_price', label: 'Precio Regular',     required: false, default: 'Desconocido' },
- { name: 'promo_price',   label: 'Precio Promocional', required: false, default: '= Precio Regular' },
- { name: 'promo',         label: 'Promoción',          required: false, default: 'false' },
- { name: 'promo_type',    label: 'Tipo de Promoción',  required: false, default: 'Sin promoción' },
- { name: 'discount',      label: 'Descuento',          required: false, default: '0%' },
+ { name: 'lead_time',     labelKey: 'qs.field_lead_time',     required: false, defaultLiteral: String(DEFAULT_LEAD_TIME_DAYS) },
+ { name: 'price',         labelKey: 'qs.field_price',         required: false, defaultKey: 'qs.default_unknown' },
+ { name: 'cost',          labelKey: 'qs.field_cost',          required: false, defaultKey: 'qs.default_unknown' },
+ { name: 'regular_price', labelKey: 'qs.field_regular_price', required: false, defaultKey: 'qs.default_unknown' },
+ { name: 'promo_price',   labelKey: 'qs.field_promo_price',   required: false, defaultKey: 'qs.default_same_as_regular' },
+ { name: 'promo',         labelKey: 'qs.field_promo',         required: false, defaultLiteral: 'false' },
+ { name: 'promo_type',    labelKey: 'qs.field_promo_type',    required: false, defaultKey: 'qs.default_no_promo' },
+ { name: 'discount',      labelKey: 'qs.field_discount',      required: false, defaultLiteral: '0%' },
 ] as const
 
 // ── Plan settings (name + horizon + granularity, step 1) ───────────────────────
@@ -1488,11 +1493,14 @@ function QuickStartPageContent() {
    <div>
    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
     {field.required && <span style={{ color: '#ef4444', marginRight: 4 }}>★</span>}
-    {field.label}
+    {t(field.labelKey)}
    </span>
    {!field.required && isNone && (
     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-    {t('qs.default_prefix')} {(field as { default?: string }).default}
+    {t('qs.default_prefix')}{' '}
+    {'defaultKey' in field
+     ? t((field as { defaultKey: string }).defaultKey)
+     : (field as { defaultLiteral?: string }).defaultLiteral}
     </div>
    )}
    </div>

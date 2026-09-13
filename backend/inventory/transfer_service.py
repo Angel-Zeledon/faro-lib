@@ -198,7 +198,7 @@ def receive_transfer(
     Record arrival at the destination. lines: [{sku, received_qty}]; None means
     "everything outstanding arrived". Partial receptions accumulate.
     """
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, take_tenant_lock
     from backend.inventory import service as inv_svc
 
     t = get_transfer(tenant_id, transfer_id)
@@ -236,13 +236,20 @@ def receive_transfer(
     # rules (and all-or-nothing guarantee) as PO reception. No max_locations
     # check is needed: create_transfer already validated the destination
     # warehouse exists, and warehouses cannot be deleted.
-    existing_keys = inv_svc.list_stock_keys(tenant_id)
-    new_pairs = {(sku, dest) for sku in to_receive} - existing_keys
-    if new_pairs:
-        enforce_limit(tenant_id, "max_skus", inv_svc.count_stock(tenant_id),
-                      adding=len(new_pairs))
-
     with transaction() as conn:
+        # The lock and the check moved INSIDE this block. Outside it, two
+        # receptions landing together each counted a catalogue neither had
+        # written to yet and both were allowed through. `existing_keys` is read
+        # here too, under the lock, so the "how many are new" figure is not
+        # already stale by the time it is enforced.
+        take_tenant_lock(tenant_id, conn)
+        existing_keys = inv_svc.list_stock_keys(tenant_id, conn=conn)
+        new_pairs = {(sku, dest) for sku in to_receive} - existing_keys
+        if new_pairs:
+            enforce_limit(tenant_id, "max_skus",
+                          inv_svc.count_stock(tenant_id, conn=conn),
+                          adding=len(new_pairs), conn=conn)
+
         for sku, qty in sorted(to_receive.items()):
             # Atomic cap: only accept this receipt if it keeps qty_received
             # <= qty_sent. Two concurrent full-receives of the same transfer

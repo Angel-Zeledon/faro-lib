@@ -53,6 +53,7 @@ import {
   tOr, type ActionItem, type ActionStatus,
 } from './shared'
 import HoyMobile from './HoyMobile'
+import { fmtNum } from '@/lib/numberLocale'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 // Money formatting lives in lib/currency.ts — one source of truth for the whole
@@ -397,7 +398,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
         {t('hoy.why_demand_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {item.daily_demand.toLocaleString('es', { maximumFractionDigits: 1 })} {t('hoy.why_units_day')}
+        {fmtNum(item.daily_demand, { maximumFractionDigits: 1 })} {t('hoy.why_units_day')}
        </div>
       </div>
      )}
@@ -448,7 +449,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
         MOQ
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.moq).toLocaleString('es')}
+        {fmtNum(Math.round(item.moq))}
         <SourceBadge source={item.moq_source} />
        </div>
        <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
@@ -462,7 +463,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
         {t('hoy.why_stock_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.current_stock).toLocaleString('es')} {t('hoy.why_units')}
+        {fmtNum(Math.round(item.current_stock))} {t('hoy.why_units')}
        </div>
       </div>
      )}
@@ -472,7 +473,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
         {t('hoy.why_reorder_point_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.reorder_point).toLocaleString('es')} {t('hoy.why_units')}
+        {fmtNum(Math.round(item.reorder_point))} {t('hoy.why_units')}
        </div>
       </div>
      )}
@@ -495,7 +496,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
           for someone whose role can never generate one. */}
       {!canDecide ? (
        <span style={{ fontSize: 18, fontWeight: 800, color: accent, lineHeight: 1 }}>
-        {item.qty.toLocaleString('es')}
+        {fmtNum(item.qty)}
        </span>
       ) : editing ? (
        <input
@@ -520,7 +521,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
         all: 'unset', cursor: 'pointer', fontSize: 18, fontWeight: 800, color: accent,
         borderBottom: '2px dashed ' + accent + '60', lineHeight: 1,
        }}>
-        {item.qty.toLocaleString('es')}
+        {fmtNum(item.qty)}
        </button>
       )}
       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.label_units')}</span>
@@ -944,9 +945,15 @@ export default function HoyPage() {
   const timeout = setTimeout(() => {
    setNarrative(buildFallbackNarrative(briefing))
    setLoadingNarrative(false)
-  }, 8000)
+  }, 11000)
   // `lang` reaches the model as the language to answer in. Measured before it
   // did: the whole narrative came back in Spanish under an English heading.
+  // The timeout above used to be 8000ms — measured against the real
+  // DeepSeek call, it answers in ~8.8s on the normal path, so the fallback
+  // was firing before the real response most of the time: the screen showed
+  // the rule-based sentence for a beat, then swapped it for the real one the
+  // instant the request landed. 11000ms gives headroom over that measured
+  // latency (docs/estabilidad.md, section 7).
   getMorningNarrative(sessionId, 'distributor', lang)
    // `fallback: true` means the AI was unreachable and the backend answered with
    // its rule-based sentence. That one is written in English for API clients,
@@ -1653,7 +1660,7 @@ export default function HoyPage() {
             {approved.length} {t('hoy.cart_products_approved')}
            </div>
            <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
-            {approved.map(i => `${i.name}: ${i.qty.toLocaleString('es')} ${t('hoy.cart_unit_abbrev')}`).join(' · ')}
+            {approved.map(i => `${i.name}: ${fmtNum(i.qty)} ${t('hoy.cart_unit_abbrev')}`).join(' · ')}
             {/* The eye is on the card that was just approved, not down here.
                 A background flash points at the figure that changed; `key` is
                 the value itself, so React remounts the span and the animation
@@ -1768,7 +1775,7 @@ export default function HoyPage() {
               {supplier || t('hoy.generate_send_no_supplier')}
              </span>
              <span style={{ color: 'var(--dim)' }}>
-              {lines.map(l => `${l.name} (${l.qty.toLocaleString('es')} ${t('hoy.generate_send_units_abbrev')})`).join(' · ')}
+              {lines.map(l => `${l.name} (${fmtNum(l.qty)} ${t('hoy.generate_send_units_abbrev')})`).join(' · ')}
              </span>
             </div>
            ))}
@@ -1860,7 +1867,14 @@ export default function HoyPage() {
        </section>
       )}
 
-      {optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0) && (
+      {/* `status === 'fallback'` is part of the condition, not just of the notice
+          inside it. The whole section used to render only when there were lines
+          to show — so a greedy fallback that produced an EMPTY plan drew nothing
+          at all, and the buyer read that silence as "nothing to order". The
+          truth was "the optimiser gave up and we do not know", which is a
+          different sentence and the more expensive one to get wrong. */}
+      {optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0
+                        || optimization.status === 'fallback') && (
         <section style={{ marginTop: 32, marginBottom: 28 }}>
          <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
           {t('hoy.optimizer_title')}
@@ -1889,7 +1903,12 @@ export default function HoyPage() {
                       borderRadius: 8, color: 'var(--text)',
                       background: 'color-mix(in srgb, var(--signal-order-soon-fg) 12%, transparent)',
                       border: '1px solid color-mix(in srgb, var(--signal-order-soon-fg) 35%, transparent)' }}>
-           {t('hoy.optimizer_fallback_notice')}
+           {/* An empty fallback needs its own sentence. The standard notice says
+               "this list was built by a simpler rule" — about a list that is not
+               there, which reads as reassurance instead of a warning. */}
+           {optimization.orders.length === 0 && optimization.transfers.length === 0
+             ? t('hoy.optimizer_fallback_empty')
+             : t('hoy.optimizer_fallback_notice')}
           </p>
          )}
 

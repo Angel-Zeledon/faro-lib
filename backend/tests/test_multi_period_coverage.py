@@ -182,6 +182,94 @@ class TestWeeklyCoverage:
         assert daily["coverage_days"] == 2.0 and weekly["coverage_days"] == 2.0
 
 
+class TestEverySurfaceReadsTheTenantsGrain:
+    """
+    `get_inventory_status` defaults `period` to "daily", so any caller that
+    forgets to pass it silently re-derives a weekly or monthly tenant's numbers
+    as daily. Ten call sites did.
+
+    The one that cost money: `GET /export-po` does NOT export what the buyer is
+    looking at — it re-derives the list server-side. For the tenant below the
+    screen offers nothing to order (4 weeks of cover against a 2-week lead) and
+    the CSV came back with an order, plus a purchase order in /pedidos they
+    never saw. Same shape for the PDF (which had no `period` parameter at all),
+    dashboard-summary, dead-stock, the price-break cart, the alert test send,
+    production-requirements and the event simulator.
+
+    These assert through the HTTP endpoints on purpose: the defect was never in
+    the calculation, it was in what the endpoint passed to it.
+    """
+
+    def _weekly_tenant(self, client, auth_headers, test_tenant, monkeypatch):
+        from backend.sessions import planning_service
+
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "grain-surfaces")["id"]
+        # 40 units, 10/week, 14-day lead. Weekly: 4 weeks of cover against 2
+        # weeks of lead -> OK. Read as daily: 4 "days" against 14 -> PEDIR_YA.
+        _put_stock(client, auth_headers, "GRAIN", current_stock=40,
+                   lead_time_days=14, moq=1, unit_cost=5.0)
+        session_store.set_forecasts(tid, sid, {"GRAIN": _forecast(10.0, 0.0)})
+        monkeypatch.setattr(
+            planning_service, "get_planning",
+            lambda t: {"period": "weekly", "horizon": 4},
+        )
+        return tid, sid
+
+    def test_the_screen_and_the_csv_export_agree(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        tid, sid = self._weekly_tenant(client, auth_headers, test_tenant, monkeypatch)
+
+        on_screen = next(i for i in svc.get_inventory_status(tid, sid, period="weekly")
+                         if i["sku"] == "GRAIN")
+        assert on_screen["signal"] == "OK", "the premise: nothing to order on screen"
+
+        resp = client.get(f"/api/v1/inventory/status/export-po?session_id={sid}",
+                          headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        assert "GRAIN" not in resp.text, (
+            "the CSV re-derived the list as daily and exported an order the "
+            "screen never showed")
+
+    def test_the_dashboard_summary_counts_the_same_signals(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        tid, sid = self._weekly_tenant(client, auth_headers, test_tenant, monkeypatch)
+
+        resp = client.get(f"/api/v1/inventory/dashboard-summary?session_id={sid}",
+                          headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["order_now"] == 0, (
+            "the widget called a SKU critical that the screen calls OK")
+        assert data["ok"] == 1
+
+    def test_the_pdf_is_generated_at_the_tenants_grain(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        """The PDF had no `period` parameter at all — it was ALWAYS daily. It is
+        the one copy of these numbers that leaves the app, forwarded to people
+        who cannot check it against a screen."""
+        import inspect
+
+        tid, sid = self._weekly_tenant(client, auth_headers, test_tenant, monkeypatch)
+        assert "period" in inspect.signature(svc.generate_inventory_pdf).parameters
+
+        captured = {}
+        real = svc.get_inventory_status
+
+        def _spy(tenant_id, session_id, service_level=0.95, period="daily"):
+            captured["period"] = period
+            return real(tenant_id, session_id, service_level, period)
+
+        monkeypatch.setattr(svc, "get_inventory_status", _spy)
+        resp = client.get(f"/api/v1/inventory/report/pdf?session_id={sid}",
+                          headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        assert captured.get("period") == "weekly"
+
+
 class TestDailyRegression:
     def test_period_daily_is_byte_identical_to_default(
         self, client, auth_headers, test_tenant
@@ -306,7 +394,7 @@ class TestOptimizerHorizonConversion:
         import backend.api.v1.inventory as inv_api
         captured = {}
 
-        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None, period="daily"):
+        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None, period="daily", **kwargs):
             captured["horizon_days"] = horizon_days
             captured["period"] = period
             return None

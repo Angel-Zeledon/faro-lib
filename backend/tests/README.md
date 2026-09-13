@@ -90,10 +90,10 @@ defect is only visible in a browser, it belongs there and nowhere else.
 
 ## Existing standards that still apply
 
-- Tests depending on quotas must `monkeypatch settings.testing_mode = False`
-  themselves — the local `.env` runs with `TESTING_MODE=true`, and with it on
-  `require_feature` returns the user untouched, so every plan gate reads as open.
-  A plan test that skips this passes on a Starter tenant and proves nothing.
+- Tests depending on quotas or rate limits must `monkeypatch
+  settings.testing_mode = False` themselves — the local `.env` runs with
+  `TESTING_MODE=true`, and with it on every limit check returns early. A limit
+  test that skips this passes without ever reaching the guard it names.
 - conftest patches `backend.notifications.email._send` session-wide; transport
   tests must target `_transport_send`.
 - Test email addresses use `@faro-e2e.io`, a domain with no MX record, so nothing

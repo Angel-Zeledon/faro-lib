@@ -10,7 +10,6 @@ import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
-import { useEntitlements } from '@/lib/entitlements'
 import { getUser } from '@/lib/auth'
 import { visibleCommands, scoreCommand, scoreSku, type Command } from '@/components/command/commands'
 
@@ -153,7 +152,6 @@ export default function SkuSearchOverlay() {
   const { isOpen, close, toggle } = useSkuSearch()
   const { t, lang, setLang } = useLanguage()
   const { toggle: toggleTheme } = useTheme()
-  const { ent, has } = useEntitlements()
   const router = useRouter()
   const role = getUser()?.role
 
@@ -263,14 +261,8 @@ export default function SkuSearchOverlay() {
       .finally(() => setLoadingList(false))
   }, [sessionId, t])
 
-  // ── Commands available to this tenant/role ─────────────────────────────────
-  // `has` is a fresh closure on every entitlements render, so the memo keys off
-  // the entitlements payload itself — which settles once, right after login.
-  const commands = useMemo(
-    () => visibleCommands(has, role),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ent, role],
-  )
+  // ── Commands available to this role ────────────────────────────────────────
+  const commands = useMemo(() => visibleCommands(role), [role])
 
   // ── Ranking ────────────────────────────────────────────────────────────────
   // Commands and SKUs are scored on one scale and then shown as two blocks,

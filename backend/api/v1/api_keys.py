@@ -9,13 +9,10 @@ from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
 )
 from backend.db.connection import execute, query, query_one
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 
 router = APIRouter(
     prefix="/api-keys", tags=["api-keys"],
-    dependencies=[Depends(require_feature(Feature.API_ACCESS))],
 )
 log = logging.getLogger(__name__)
 
@@ -54,19 +51,35 @@ class CreateKeyRequest(BaseModel):
 
 @router.post("")
 def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_analyst_or_above)):
+    # How many machine credentials this tenant may hold. The free tier gets one
+    # — enough for the nightly ERP push it is meant to run — and minting a
+    # second is the moment to talk to us, not a silent extra.
+    from backend.entitlements.service import enforce_limit, limit_guard
+
     raw = KEY_PREFIX + secrets.token_urlsafe(32)
     # No role check beyond the guard on this endpoint, deliberately: 'analyst'
     # is the strongest role a key can hold, and `require_analyst_or_above` has
     # already refused anyone weaker than that. A key can never outrank the
     # person who minted it because there is no rank above the one they hold.
-    execute(
-        """INSERT INTO api_keys (id, tenant_id, name, key_hash, role, created_by, last4, expires_at)
-           VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s,
-                   CASE WHEN %s IS NULL THEN NULL
-                        ELSE NOW() + (%s || ' days')::INTERVAL END)""",
-        (user.tenant_id, body.name, hash_key(raw), body.role, user.user_id, raw[-4:],
-         body.expires_in_days, body.expires_in_days),
-    )
+    # Counted and minted under one per-tenant lock. Two clicks on "create key"
+    # otherwise both read "0 keys" and the free tier's single credential
+    # becomes two.
+    with limit_guard(user.tenant_id) as conn:
+        existing = query_one(
+            "SELECT COUNT(*) AS n FROM api_keys WHERE tenant_id = %s",
+            (user.tenant_id,), conn=conn,
+        )
+        enforce_limit(user.tenant_id, "max_api_keys",
+                      int(existing["n"]) if existing else 0, conn=conn)
+        execute(
+            """INSERT INTO api_keys (id, tenant_id, name, key_hash, role, created_by, last4, expires_at)
+               VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s,
+                       CASE WHEN %s IS NULL THEN NULL
+                            ELSE NOW() + (%s || ' days')::INTERVAL END)""",
+            (user.tenant_id, body.name, hash_key(raw), body.role, user.user_id, raw[-4:],
+             body.expires_in_days, body.expires_in_days),
+            conn=conn,
+        )
     # The name and role are safe to log; the key itself never is, not even
     # truncated, and not even at DEBUG.
     log.info("[api-keys] created name=%s role=%s tenant=%s", body.name, body.role, user.tenant_id)

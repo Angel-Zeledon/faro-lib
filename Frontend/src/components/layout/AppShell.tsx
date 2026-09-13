@@ -18,6 +18,8 @@ import TourOverlay from '@/components/tour/TourOverlay'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
 import { EntitlementsProvider } from '@/lib/entitlements'
+import { CapabilitiesProvider } from '@/lib/capabilities'
+import { UpgradeProvider } from '@/components/limits/UpgradeDialog'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import VerifyEmailBanner from './VerifyEmailBanner'
 import MobileNavButton from '@/components/mobile/MobileNavButton'
@@ -28,9 +30,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
       <EntitlementsProvider>
+      <CapabilitiesProvider>
       <WarehousesProvider>
       <PlanningProvider>
         <ToastProvider>
+          {/* Above ApiErrorBridge, which opens it when the backend answers
+              PLAN_LIMIT_REACHED, and above the screens that open it by hand. */}
+          <UpgradeProvider>
           <ConfirmProvider>
           <SidebarProvider>
             <SkuSearchProvider>
@@ -47,9 +53,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </SkuSearchProvider>
           </SidebarProvider>
           </ConfirmProvider>
+          </UpgradeProvider>
         </ToastProvider>
       </PlanningProvider>
       </WarehousesProvider>
+      </CapabilitiesProvider>
       </EntitlementsProvider>
     </AuthGuard>
   )

@@ -10,6 +10,7 @@ does the translation between the database and that model.
 
 from __future__ import annotations
 
+import logging
 import threading
 from contextlib import contextmanager
 from typing import Optional
@@ -19,11 +20,23 @@ from forecasting_core.business.optimizer import OptimizationInput
 import math as _math
 
 from backend.db import session_store
+from backend.inventory import stock_defaults_service as sd_svc
+from backend.inventory import supplier_service as sup_svc
 from backend.inventory import transfer_lane_service as lane_svc
 from backend.inventory import warehouse_service as wh_svc
 from backend.inventory.defaults import DEFAULT_LEAD_TIME_DAYS as _DEFAULT_LEAD_TIME_DAYS
+from backend.inventory.defaults import DEFAULT_MOQ as _DEFAULT_MOQ
 from backend.inventory.series import for_store, rollup_by_sku, stores_in
-from backend.inventory.service import list_stock, _avg_forecast_curve, _days_per_period
+from backend.inventory.service import (
+    _aggregate_stock_rows_by_sku,
+    _avg_forecast_curve,
+    _days_per_period,
+    get_learned_lead_times,
+    list_stock,
+    resolve_lead_time,
+)
+
+log = logging.getLogger(__name__)
 
 _DEFAULT_UNIT_COST = 1.0
 
@@ -52,7 +65,31 @@ def _usable_unit_cost(value) -> Optional[float]:
 # (QA drove /health to time out for 8+ minutes). This bounded gate caps how
 # many solves run concurrently; requests beyond the cap are rejected fast
 # (OptimizerBusy -> 503 retry) instead of piling onto the thread pool.
-_MAX_CONCURRENT_SOLVES = 2
+#
+# ONE, because one is how many solves the engine can actually run.
+#
+# Every HiGHS solve in the process is submitted to a single dedicated thread
+# (`forecasting_core.business.optimizer._SOLVE_EXECUTOR`, max_workers=1 — see the
+# long comment there; entering HiGHS from different OS threads is what deadlocked
+# it, and that fix must not be undone). The cap was 2, so a second admitted
+# caller did not solve in parallel: it QUEUED behind the first on that thread.
+# And the caller's wait — `.result(timeout=time_limit_s + grace)` — starts when
+# the future is SUBMITTED, so the queue time is spent out of it. A first solve
+# that runs near its 10s limit expires the second caller's 15s wait before its
+# own solve has begun, and `optimize()` treats a timed-out wait like any other
+# unsolved case: it returns the greedy `status="fallback"` plan, which ignores
+# transfers entirely.
+#
+# The result was two buyers hitting /planning seconds apart and getting two
+# different answers for the same catalogue, each with a button that turns it
+# into a purchase order — and the divergence depended on who arrived second.
+#
+# With the cap at 1 the second caller is refused immediately and honestly (503,
+# retry) instead of being served a silently different plan. Nothing is lost:
+# the second slot never bought concurrency, only a wait that ended in a
+# downgrade. `test_solver_gate_is_total.py` pins the cap to the executor's real
+# width, so raising one without the other fails there.
+_MAX_CONCURRENT_SOLVES = 1
 _solve_gate = threading.BoundedSemaphore(_MAX_CONCURRENT_SOLVES)
 
 
@@ -185,6 +222,82 @@ def _demand_shares_for(tenant_id: str, warehouses: list[str]) -> dict[str, float
     return {w: (1.0 if w == default else 0.0) for w in warehouses}
 
 
+def resolve_planning_inputs(
+    tenant_id: str,
+    stock_rows: list[dict],
+    *,
+    learned_lead_times: Optional[dict] = None,
+) -> dict[str, dict]:
+    """Per-SKU lead time and MOQ — the SAME numbers the semáforo plans on.
+
+    `{sku: {"supplier", "lead_time_days", "lead_time_source", "moq"}}`.
+
+    This function exists because the optimizer used to answer these two
+    questions by itself, and its answers were not the product's answers. It read
+    `inventory_stock.lead_time_days` RAW — the column whose value is 15 for
+    every row nobody has ever edited, because that is the schema default — and
+    it never read an MOQ at all. Meanwhile `/hoy` resolves both through the
+    cascade in `stock_defaults_service.resolve_field` (SKU row that somebody
+    actually set > supplier rule > category rule > global rule > system default)
+    and then lets real receptions override the lead time
+    (`service.resolve_lead_time`).
+
+    Measured on one SKU: `/hoy` planned on 45 days *"aprendido de tus
+    recepciones"* with a supplier MOQ of 500, while `/planning` solved on 15 days
+    and offered 137 units. Both screens print a "convertir en OC" button. Two
+    screens, two different purchase orders, same product, same afternoon.
+
+    So there is no second resolution path here: this calls the semáforo's own
+    resolvers, on the same representative row per SKU
+    (`service._aggregate_stock_rows_by_sku`, anchored on the tenant's default
+    warehouse) and the same supplier fallback (the stock row's free-text
+    supplier, else the SKU's configured primary). Any future change to the
+    cascade moves both screens at once, which is the only way they can stay
+    equal.
+
+    Every query here is once per request, never once per SKU — the same
+    discipline `_compute_inventory_status` follows.
+    """
+    stock_map = _aggregate_stock_rows_by_sku(
+        stock_rows, wh_svc.get_default_warehouse_name(tenant_id),
+    )
+    if learned_lead_times is None:
+        learned_lead_times = get_learned_lead_times(tenant_id)
+    try:
+        primary_suppliers = sup_svc.get_primary_suppliers_map(tenant_id)
+    except Exception as e:
+        log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
+        primary_suppliers = {}
+    rule_index = sd_svc.build_rule_index(tenant_id)
+
+    resolved: dict[str, dict] = {}
+    for sku, stock in stock_map.items():
+        primary = primary_suppliers.get(sku) or {}
+        supplier = (stock.get("supplier") or None) or primary.get("supplier_name")
+        category = stock.get("category")
+
+        lt_cfg, lt_cfg_source, _scope = sd_svc.resolve_field(
+            "lead_time_days", stock, rule_index, supplier=supplier, category=category,
+        )
+        lead_time_config = int(lt_cfg if lt_cfg is not None else _DEFAULT_LEAD_TIME_DAYS)
+        lead_time, lead_time_source, _learned = resolve_lead_time(
+            lead_time_config, supplier, learned_lead_times, lt_cfg_source,
+        )
+
+        moq_val, _moq_source, _moq_scope = sd_svc.resolve_field(
+            "moq", stock, rule_index, supplier=supplier, category=category,
+        )
+        moq = float(moq_val if moq_val is not None else _DEFAULT_MOQ)
+
+        resolved[sku] = {
+            "supplier": supplier,
+            "lead_time_days": max(1, int(lead_time)),
+            "lead_time_source": lead_time_source,
+            "moq": moq if moq > 0 else 1.0,
+        }
+    return resolved
+
+
 def build_optimization_input(
     tenant_id: str,
     session_id: str,
@@ -192,6 +305,7 @@ def build_optimization_input(
     stock_rows: Optional[list[dict]] = None,
     period: str = "daily",
     lanes: Optional[dict] = None,
+    planning: Optional[dict[str, dict]] = None,
 ) -> Optional[OptimizationInput]:
     """
     `horizon_days` is in CALENDAR DAYS, whatever the active period is — it is
@@ -226,6 +340,12 @@ def build_optimization_input(
     max=10) raises PoolError rather than blocking once every connection is in
     use, so trimming redundant queries reduces the chance this path tips it.
     Omit it and the function fetches the snapshot itself, as before.
+
+    `planning`: preloaded `resolve_planning_inputs` output ({sku: {lead_time_days,
+    moq, ...}}) — the semáforo's own resolution of the supplier inputs. Same
+    reason as `stock_rows`: the endpoint resolves it once and hands it to both
+    this function and `serialize_optimization_result`, so the plan is BUILT and
+    REPORTED on one set of numbers. Omit it and it is resolved here.
     """
     raw_forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
     # A session trained on sales history with a store column is keyed
@@ -258,6 +378,11 @@ def build_optimization_input(
 
     if not skus or not warehouses:
         return None
+
+    # Lead time and MOQ come from the semáforo's cascade, not from the raw
+    # column — see resolve_planning_inputs for what reading the column raw cost.
+    if planning is None:
+        planning = resolve_planning_inputs(tenant_id, stock_rows)
 
     business_cfg: dict = session_store.get_field(tenant_id, session_id, "business_cfg") or {}
     holding_cost_pct = float(business_cfg.get("holding_cost_pct", 0.20))
@@ -338,8 +463,15 @@ def build_optimization_input(
                 share = shares.get(w, 0.0)
                 demand[(sku, w)] = [v * share for v in total_curve]
 
-        lead_times = [int(row["lead_time_days"]) for row in sku_rows.values() if row.get("lead_time_days") is not None]
-        raw_lead = max(lead_times) if lead_times else _DEFAULT_LEAD_TIME_DAYS
+        # The lead time this SKU is planned on, resolved ONCE for the whole
+        # product (see resolve_planning_inputs). It used to be
+        # `max(raw lead_time_days across the SKU's rows)`, which answered a
+        # different question from every other screen: it ignored supplier and
+        # category rules, ignored what the supplier's real receptions have
+        # taught us, and could not tell a lead time somebody typed from the
+        # schema's untouched 15.
+        raw_lead = int((planning.get(sku) or {}).get("lead_time_days")
+                       or _DEFAULT_LEAD_TIME_DAYS)
         # Lead time in the model's own buckets: for daily this is the day count
         # (unchanged); for weekly/monthly it is the lead time rounded up to
         # whole periods. Commensurable with `horizon_buckets` above — both are
@@ -420,7 +552,8 @@ def build_optimization_input(
 
 
 def serialize_optimization_result(inp, result, stock_rows: list[dict],
-                                  horizon_days: Optional[int] = None) -> dict:
+                                  horizon_days: Optional[int] = None,
+                                  planning: Optional[dict[str, dict]] = None) -> dict:
     """
     Collapses an OptimizationResult into one actionable total per (sku, warehouse) order
     and per (sku, from_warehouse, to_warehouse) transfer, dropping any with qty == 0.
@@ -430,6 +563,12 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict],
         result: OptimizationResult from MILP solver
         stock_rows: list of dicts with {sku, warehouse, unit_cost, supplier}
         horizon_days: the horizon in CALENDAR DAYS, as the caller asked for it.
+        planning: `resolve_planning_inputs` output. It carries the MOQ, which
+            the MILP itself cannot express (the model has no minimum-order
+            variable), so the floor is applied here — exactly as `/hoy` applies
+            it, in `service._calc_recommended`. Omit it and no floor is applied,
+            which is only correct for a caller that has no tenant to resolve
+            one for; both endpoints pass it.
 
     `horizon_days` has to be passed in rather than read off `inp`, because
     `inp.horizon` counts buckets and a bucket is a month on a monthly plan. The
@@ -458,6 +597,28 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict],
     # In daily mode the solve already lands on integers, so ceil is a no-op there;
     # coarser periods (weekly/monthly) carry larger per-bucket demand and can
     # produce fractional totals, which must round up so we never under-order.
+    # Whole units first, then the supplier's minimum. A SKU's MOQ is the floor
+    # under ONE purchase order to that supplier — not a floor per warehouse and
+    # not a pack multiple (`service._calc_recommended` says why: applied as
+    # `ceil(need/moq)*moq` a need of 520 against a MOQ of 500 ordered 1000). So
+    # the SKU's whole planned quantity is compared against the MOQ once, and any
+    # shortfall is added to its largest line — the line most likely to be the
+    # one actually placed, and a deterministic choice either way.
+    qty_by_line: dict[tuple[str, str], int] = {
+        line: int(_math.ceil(total)) for line, total in order_totals.items()
+    }
+    lines_by_sku: dict[str, list[tuple[str, str]]] = {}
+    for line in qty_by_line:
+        lines_by_sku.setdefault(line[0], []).append(line)
+    for sku, lines in lines_by_sku.items():
+        moq = int(_math.ceil(float((planning or {}).get(sku, {}).get("moq") or 0)))
+        planned = sum(qty_by_line[line] for line in lines)
+        # `planned > 0` keeps "nothing to order" meaning nothing: a well-stocked
+        # SKU must not be handed a full minimum order out of nowhere.
+        if planned > 0 and moq > planned:
+            biggest = sorted(lines, key=lambda line: (-qty_by_line[line], line[1]))[0]
+            qty_by_line[biggest] += moq - planned
+
     orders = []
     for (sku, w) in sorted(order_totals):
         row = row_by_sku_warehouse.get((sku, w), {})
@@ -477,14 +638,20 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict],
         # about nothing. The flags say which, so the screen can be honest
         # instead of the caller having to infer it from a null.
         orders.append({
-            "sku": sku, "warehouse": w, "qty": int(_math.ceil(order_totals[(sku, w)])),
+            "sku": sku, "warehouse": w, "qty": qty_by_line[(sku, w)],
             "unit_cost": row.get("unit_cost"),
             "supplier": row.get("supplier"),
             # The solve ran on _DEFAULT_UNIT_COST = 1.0 for this line, so its
             # share of `total_cost` is a number about nothing. Stock is not
             # flagged here because a SKU with no stock on file never reaches
             # the solve at all — see skus_missing_stock.
-            "assumed_unit_cost": row.get("unit_cost") is None,
+            #
+            # `_usable_unit_cost`, not `is None`: a stored 0.0 is a blank that
+            # happens to be a number, and the solve substitutes the placeholder
+            # for it exactly like a NULL (see that function). Checking `is None`
+            # here reported those lines as priced on a real cost — the screen
+            # printed a total and no warning, over a plan built on 1.0.
+            "assumed_unit_cost": _usable_unit_cost(row.get("unit_cost")) is None,
         })
 
     transfers = _net_transfer_moves(transfer_totals)

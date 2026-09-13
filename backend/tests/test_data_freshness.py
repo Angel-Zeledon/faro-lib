@@ -23,6 +23,7 @@ from uuid import uuid4
 
 import pytest
 
+from backend.config import settings as config_settings
 from backend.db.connection import _json, execute, query, query_one
 from backend.notifications import freshness_service as fs
 
@@ -308,7 +309,7 @@ def _capture_emails(monkeypatch) -> list[dict]:
     from backend.notifications import email as email_mod
     monkeypatch.setattr(
         email_mod, "_send",
-        lambda to, subject, html, attachment=None: sent.append(
+        lambda to, subject, html, attachment=None, **_kw: sent.append(
             {"to": to, "subject": subject, "html": html}),
     )
     return sent
@@ -429,13 +430,13 @@ class TestFreshnessReminder:
         tid = test_tenant["id"]
         _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
         _only_this_tenant(monkeypatch, tid)
-        monkeypatch.setattr("backend.notifications.email.is_configured", lambda: True)
+        monkeypatch.setattr("backend.notifications.email.is_configured", lambda *_a, **_kw: True)
 
         # A transport that is down today and back up tomorrow.
         up = {"value": False}
         sent: list[dict] = []
 
-        def _sender(*, to, sales_age_days, stock_age_days, upload_url):
+        def _sender(*, to, sales_age_days, stock_age_days, upload_url, **_kw):
             if not up["value"]:
                 return False
             sent.append({"to": to, "sales_age_days": sales_age_days})
@@ -467,9 +468,9 @@ class TestFreshnessReminder:
         tid = test_tenant["id"]
         _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
         _only_this_tenant(monkeypatch, tid)
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "")
+        monkeypatch.setattr(config_settings, "smtp_pass", "")
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
         assert fs.run_daily_freshness_reminders(NOW) == 0
@@ -508,7 +509,6 @@ class TestFreshnessReminder:
         _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
         _only_this_tenant(monkeypatch, tid)
         _capture_emails(monkeypatch)
-        monkeypatch.setattr("backend.entitlements.service.has_feature", lambda *a, **kw: True)
 
         wa_sent: list[tuple] = []
         monkeypatch.setattr(
@@ -528,23 +528,6 @@ class TestFreshnessReminder:
         assert rows[0]["user_id"] == uid
         assert rows[0]["status"] == "success"
         assert rows[0]["context"]["recipient"] == "+573001112222"
-
-    def test_whatsapp_is_not_sent_without_the_entitlement(
-        self, monkeypatch, registered_user, test_tenant,
-    ):
-        tid = test_tenant["id"]
-        uid = registered_user["user"]["id"]
-        execute("UPDATE users SET whatsapp_number = %s WHERE id = %s", ("+573001112222", uid))
-        _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
-        _only_this_tenant(monkeypatch, tid)
-        _capture_emails(monkeypatch)
-        monkeypatch.setattr("backend.entitlements.service.has_feature", lambda *a, **kw: False)
-        monkeypatch.setattr(
-            "backend.notifications.whatsapp.send_whatsapp",
-            lambda *a, **kw: pytest.fail("WhatsApp sent without the plan feature"))
-
-        fs.run_daily_freshness_reminders(NOW)
-        assert _activity(tid, fs.REMINDER_WHATSAPP_ACTION) == []
 
     def test_one_tenants_failure_does_not_stop_the_others(
         self, monkeypatch, registered_user, test_tenant,
@@ -640,9 +623,9 @@ class TestReminderMessages:
         """Same contract as every other sender: a non-delivery is never a send."""
         from backend.notifications import email as email_mod
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "")
+        monkeypatch.setattr(config_settings, "smtp_pass", "")
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
         assert email_mod.send_data_freshness_reminder_email(

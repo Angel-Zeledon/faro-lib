@@ -49,12 +49,11 @@ vas a topar al integrar:
 | Caso | Qué llega de verdad |
 |---|---|
 | `401` clave inválida o vencida | Solo `detail` en texto. Sin `error_code` |
-| `403` plan sin API | El código viene **dentro** de `detail`: `detail.code = "PLAN_UPGRADE_REQUIRED"` |
 | `429` pasaste el límite | Solo `detail` en texto. Sin `error_code`; usa la cabecera `Retry-After` |
 | `403` clave de solo lectura escribiendo | `error_code = "role_not_permitted"` |
 | `409` sesión no entrenable | `error_code = "session_not_trainable"` |
 
-Para los tres primeros ramifica por el **status HTTP**, que sí es estable.
+Para los dos primeros ramifica por el **status HTTP**, que sí es estable.
 
 La quinta no es opcional aunque lo parezca: sin ella la orden no existe para
 Faro, y es de ahí que sale el aprendizaje del plazo real de cada proveedor. Es
@@ -66,10 +65,9 @@ noche y no hacer nada más es la integración más simple que funciona.
 
 **Base URL:** `https://<tu-instancia>/api/v1`
 **Autenticación:** `Authorization: Bearer sk_live_…`
-**Límite:** por plan — 120 llamadas por minuto en Professional, sin tope en
-Enterprise. Al pasarse: `429` con `Retry-After`, y el mensaje dice el techo que
-te aplica.
-**Incluida desde:** plan Professional.
+**Límite:** 120 llamadas por minuto por llave, igual para todos. Al pasarse:
+`429` con `Retry-After`.
+**Incluida:** siempre. No hay plan que no la traiga.
 
 ## Dónde sacar tu clave
 
@@ -123,9 +121,6 @@ Tres cosas que conviene saber antes de integrar:
 - **Una llave es `viewer` o `analyst`, nunca administrador.** No existe forma de
   que una llave borre el tenant, cree usuarios ni toque facturación. Para
   escribir (subir archivos, entrenar, registrar órdenes) hace falta `analyst`.
-- **El plan se verifica en cada llamada**, no solo al crear la llave. Si el
-  tenant baja de plan, la llave deja de funcionar ese mismo día. La API está
-  incluida desde **Professional**.
 - **La llave actúa como sí misma**, no como la persona que la creó: internamente
   el actor es `api_key:<id>`, así que la integración sigue funcionando cuando esa
   persona se va de la empresa y no hereda permisos si la ascienden.
@@ -135,9 +130,9 @@ Tres cosas que conviene saber antes de integrar:
   intento que llegó a ejecutarse y falló también queda, marcado como error.
 
   Con una excepción que conviene conocer: **lo rechazado en la puerta no deja
-  fila.** Un `401` (clave mala), un `403` (plan sin API, o clave de solo lectura
-  intentando escribir) y un `429` no se registran, porque se cortan antes de
-  llegar al endpoint. Es decir: si tu integración escribe con una clave de solo
+  fila.** Un `401` (clave mala), un `403` (clave de solo lectura intentando
+  escribir) y un `429` no se registran, porque se cortan antes de llegar al
+  endpoint. Es decir: si tu integración escribe con una clave de solo
   lectura, no vas a ver nada en el registro — vas a ver el `403` en tu lado.
   Empieza por ahí antes de sospechar del registro.
 
@@ -146,19 +141,13 @@ Tres cosas que conviene saber antes de integrar:
 
 ## Límites
 
-El techo es **por llave y por plan**:
+El techo es **por llave**, y es uno solo: **120 llamadas por minuto**.
 
-| Plan | Llamadas por minuto |
-|---|---|
-| Professional | 120 |
-| Enterprise | sin tope |
-
-Al pasarse: `429` con `Retry-After: 60`, y el mensaje nombra **el techo que te
-aplica a ti**, no una constante genérica. Los 120 están pensados para el trabajo
-real de una integración —un empuje nocturno y el sondeo alrededor—, no para ser
-generosos: si hacen falta más, casi siempre hay un bucle. En Enterprise no se
-cuenta nada, porque un catálogo ilimitado produce un volumen de llamadas que
-ningún número fijo acierta.
+Al pasarse: `429` con `Retry-After: 60`, y el mensaje nombra el techo. Los 120
+están pensados para el trabajo real de una integración —un empuje nocturno y el
+sondeo alrededor—, no para ser generosos: si hacen falta más, casi siempre hay
+un bucle. Si tu operación necesita otro techo, se habla con nosotros: es un
+número de infraestructura, no una función que se venda.
 
 Si el limitador no puede escribir, **deja pasar**. La sincronización de un
 cliente no se cae porque un contador esté caído.
@@ -382,7 +371,7 @@ está sirviendo.
 | Código | Qué pasó |
 |---|---|
 | `401` | Llave desconocida, revocada o vencida. No se distingue cuál, a propósito. |
-| `403` | El plan no incluye la API, o la llave es `viewer` y la operación escribe. |
+| `403` | La llave es `viewer` y la operación escribe. |
 | `429` | Se pasó de 120 por minuto. Reintentar después de `Retry-After`. |
 | `409` | La sesión no está en un estado que permita eso (entrenar una que ya corre). |
 
@@ -393,8 +382,9 @@ por el código, no por el texto: el texto está pensado para personas y se reesc
 
 Honestidad por delante, para que nadie diseñe contra algo que no existe:
 
-- **No hay webhooks en Professional.** Hoy son Enterprise, así que en
-  Professional la integración tiene que sondear. Está bajo revisión.
+- **Los webhooks disparan una sola vez, sin reintento.** Si tu endpoint estaba
+  caído en ese momento, el evento se perdió: para lo que no se puede perder,
+  sondea.
 
 - **No hay sandbox.** Se prueba contra el tenant real.
 - **No hay versionado real todavía.** El prefijo `/api/v1` existe, pero la

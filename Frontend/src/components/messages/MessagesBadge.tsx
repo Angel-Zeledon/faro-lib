@@ -2,27 +2,23 @@
 /**
  * Unread direct-messages indicator for the top bar.
  *
- * Polls GET /messages/unread-count (silent — a failed poll must not toast) and
- * renders nothing at all when the plan lacks team_messaging, so the icon is
- * never a dead control on Starter tenants.
+ * Polls GET /messages/unread-count (silent — a failed poll must not toast).
+ * It used to render nothing at all for plans without team_messaging; there is
+ * one plan now, and every tenant has the screen this points at.
  */
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
 import { getDmUnreadCount } from '@/lib/api'
-import { useEntitlements } from '@/lib/entitlements'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 const POLL_MS = 30000
 
 export default function MessagesBadge() {
-  const { has } = useEntitlements()
   const { t } = useLanguage()
-  const enabled = has('team_messaging')
   const [unread, setUnread] = useState(0)
 
   useEffect(() => {
-    if (!enabled) return
     let cancelled = false
     const poll = () =>
       getDmUnreadCount()
@@ -31,9 +27,8 @@ export default function MessagesBadge() {
     poll()
     const id = setInterval(poll, POLL_MS)
     return () => { cancelled = true; clearInterval(id) }
-  }, [enabled])
+  }, [])
 
-  if (!enabled) return null
 
   return (
     <Link

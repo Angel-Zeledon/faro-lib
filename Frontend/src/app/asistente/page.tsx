@@ -1,5 +1,4 @@
 'use client'
-import FeatureGate from '@/components/ui/FeatureGate'
 import {
   useState, useEffect, useRef, useCallback,
   type KeyboardEvent, type UIEvent,
@@ -13,6 +12,7 @@ import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion 
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useCapabilities } from '@/lib/capabilities'
 import { useToast } from '@/contexts/ToastContext'
 import { chatSourceLabel, chatDataSourceLabel } from '@/lib/enumLabels'
 import {
@@ -68,6 +68,20 @@ function Md({ text }: { text: string }) {
           s.split(/(\*\*[^*]+\*\*)/).map((p, j) =>
             p.startsWith('**') ? <strong key={j}>{p.slice(2, -2)}</strong> : p,
           )
+        // Headings. The model writes `### Capital tied up`, and without this
+        // the hashes were printed to the user as literal text.
+        const heading = line.trim().match(/^(#{1,6})\s+(.*)$/)
+        if (heading) {
+          const level = heading[1].length
+          return (
+            <div key={i} style={{
+              fontSize: level <= 2 ? 15 : 14,
+              fontWeight: 700,
+              margin: i === 0 ? '0 0 4px' : '14px 0 4px',
+              color: 'var(--text)',
+            }}>{bold(heading[2])}</div>
+          )
+        }
         if (/^(\*|-|\d+\.) /.test(line.trim())) {
           return (
             <div key={i} style={{ display: 'flex', gap: 7, margin: '2px 0' }}>
@@ -412,9 +426,15 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-function AnalystPage() {
+export default function AnalystPage() {
   const { t } = useLanguage()
   const { undoable, addToast } = useToast()
+  // Whether this deployment HAS a language model at all. Without it the answer
+  // is always the same and always late: the user writes a question, waits out
+  // the request, and reads "the assistant could not answer". Asking first turns
+  // that into a sentence at the top of the screen, before anybody types.
+  const { can } = useCapabilities()
+  const assistantOff = !can('assistant')
   const [chats,       setChats]       = useState<Chat[]>([])
   const [activeChatId, setActive]     = useState<string | null>(null)
   const [messages,    setMessages]    = useState<ChatMessage[]>([])
@@ -821,6 +841,22 @@ function AnalystPage() {
           flex: 1, display: 'flex', flexDirection: 'column',
           background: 'var(--bg)', overflow: 'hidden',
         }}>
+          {/* Above the branch on purpose. This used to sit inside the composer,
+              which only renders once a chat is open — so the reader met an
+              inviting empty state, created a chat, typed a question, and only
+              THEN learned that this installation has no model. The sentence
+              belongs before the first click, not after the third. */}
+          {assistantOff && (
+            <div role="status" style={{
+              display: 'flex', gap: 8, alignItems: 'flex-start',
+              padding: '12px 16px', margin: '12px 16px 0', borderRadius: 8,
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+              fontSize: 12, color: 'var(--text)', lineHeight: 1.55, flexShrink: 0,
+            }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#f59e0b' }} aria-hidden="true" />
+              <span>{t('analyst.unavailable_banner')}</span>
+            </div>
+          )}
           {!activeChatId ? (
             <EmptyState onCreate={() => handleNewChat()} />
           ) : (
@@ -1040,8 +1076,12 @@ function AnalystPage() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKeyDown}
-                    placeholder={creatingChat ? t('analyst.creating_chat_placeholder') : t('analyst.input_placeholder')}
-                    disabled={creatingChat}
+                    placeholder={
+                      assistantOff ? t('analyst.unavailable_placeholder')
+                      : creatingChat ? t('analyst.creating_chat_placeholder')
+                      : t('analyst.input_placeholder')
+                    }
+                    disabled={creatingChat || assistantOff}
                     rows={1}
                     style={{
                       flex: 1, resize: 'none', minHeight: 40, maxHeight: 160,
@@ -1050,7 +1090,7 @@ function AnalystPage() {
                       fontSize: 13, color: 'var(--text)', lineHeight: 1.5,
                       outline: 'none', fontFamily: 'inherit',
                       transition: 'border-color 0.15s',
-                      opacity: creatingChat ? 0.6 : 1,
+                      opacity: creatingChat || assistantOff ? 0.6 : 1,
                     }}
                     onFocus={e => { e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)' }}
                     onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
@@ -1058,7 +1098,7 @@ function AnalystPage() {
 
                   <button
                     onClick={() => { handleSend(input); setInput('') }}
-                    disabled={!input.trim() || sending || creatingChat}
+                    disabled={!input.trim() || sending || creatingChat || assistantOff}
                     style={{
                       all: 'unset', width: 40, height: 40, borderRadius: 10,
                       background: input.trim() && !sending && !creatingChat ? 'var(--accent)' : 'var(--surface-2)',
@@ -1078,15 +1118,5 @@ function AnalystPage() {
       </div>
 
     </>
-  )
-}
-
-// Typing the URL (or keeping a bookmark from the trial) used to render this page
-// in full on a plan that does not include it; the wall came later, from the API.
-export default function AnalystPageGated() {
-  return (
-    <FeatureGate feature="ai_analyst">
-      <AnalystPage />
-    </FeatureGate>
   )
 }

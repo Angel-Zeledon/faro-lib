@@ -7,7 +7,7 @@ import {
 } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
-import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
+import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable, useErrorDetail } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { DEFAULT_LEAD_TIME_DAYS } from '@/lib/inventoryDefaults'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
@@ -391,6 +391,13 @@ function SuppliersPageInner() {
   // `actionError` is a save/delete failure over an already-rendered list.
   const [loadError,   setLoadError]   = useState<unknown>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // The banner used to print `e.message`, which for an AppError is the ENGLISH
+  // fallback the backend ships for clients that have no catalogue. This screen
+  // has one. The global toast was already rendering `errors.<code>` in the
+  // user's language, so the same failure read Spanish in the corner and English
+  // in the panel — and the panel is the one attached to the form you are
+  // looking at. `useErrorDetail` is the shared resolver both now use.
+  const errorDetail = useErrorDetail()
   const [saving,    setSaving]    = useState(false)
   const [showForm,  setShowForm]  = useState(false)
   const [editing,   setEditing]   = useState<Supplier | null>(null)
@@ -442,7 +449,7 @@ function SuppliersPageInner() {
       setShowForm(false); setEditing(null)
       await load()
     } catch (e: unknown) {
-      setActionError(e instanceof Error ? e.message : t('suppliers.err_saving'))
+      setActionError(errorDetail(e) || t('suppliers.err_saving'))
     } finally {
       setSaving(false)
     }
@@ -457,7 +464,7 @@ function SuppliersPageInner() {
     }))) return
     setActionError(null)
     try { await deleteSupplier(id); await load() }
-    catch (e: unknown) { setActionError(e instanceof Error ? e.message : t('suppliers.err_deleting')) }
+    catch (e: unknown) { setActionError(errorDetail(e) || t('suppliers.err_deleting')) }
   }
 
   function handleEdit(s: Supplier) { setEditing(s); setShowForm(true) }

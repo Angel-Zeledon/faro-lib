@@ -15,6 +15,7 @@ import logging
 from fastapi import APIRouter, Request, Response
 
 from backend.config import settings
+from backend.service_config.resolver import effective
 from backend.db.connection import execute, query_one
 from backend.notifications.whatsapp import send_whatsapp
 from backend.notifications.locale import render_es
@@ -57,7 +58,7 @@ def _signed_url(request: Request) -> str:
     the public ``https://.../api/v1/whatsapp/inbound`` Twilio signed, so the HMAC
     would never match. Resolution order (first wins):
 
-      1. ``settings.whatsapp_webhook_base_url`` — authoritative external base.
+      1. ``WHATSAPP_WEBHOOK_BASE_URL`` — authoritative external base.
       2. ``X-Forwarded-Proto`` + ``X-Forwarded-Host`` set by the proxy.
       3. ``request.url`` — today's behaviour (local/dev, no proxy).
 
@@ -68,7 +69,7 @@ def _signed_url(request: Request) -> str:
     if request.url.query:
         path_qs = f"{path_qs}?{request.url.query}"
 
-    base = settings.whatsapp_webhook_base_url.strip()
+    base = (effective().whatsapp_webhook_base_url or "").strip()
     if base:
         return base.rstrip("/") + path_qs
 
@@ -109,7 +110,7 @@ async def inbound(request: Request):
     url = _signed_url(request)
 
     # 1. Signature — invalid/missing → 403, no processing.
-    if not verify_twilio_signature(url, params, signature, settings.twilio_auth_token):
+    if not verify_twilio_signature(url, params, signature, effective().twilio_auth_token):
         return Response(status_code=403)
 
     from_raw = params.get("From", "")
@@ -131,7 +132,7 @@ async def inbound(request: Request):
 
     # 4. Rate limit — over cap → friendly wait, no LLM call.
     if _rate_limited(phone):
-        send_whatsapp(phone, _RATE_LIMITED)
+        send_whatsapp(phone, _RATE_LIMITED, tenant_id=ctx.tenant_id)
         return Response(status_code=200)
 
     # 5-7. Load state, run agent, persist.
@@ -140,5 +141,5 @@ async def inbound(request: Request):
     cs.save(ctx.tenant_id, ctx.user_id, phone, history, pending, message_sid)
 
     # 8. Reply via the existing outbound path (logged no-op without TWILIO creds).
-    send_whatsapp(phone, reply)
+    send_whatsapp(phone, reply, tenant_id=ctx.tenant_id)
     return Response(status_code=200)

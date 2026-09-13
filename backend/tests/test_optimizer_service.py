@@ -1,5 +1,7 @@
 from uuid import uuid4
 
+import pytest
+
 
 def _sku():
     return f"OPT_{uuid4().hex[:8]}"
@@ -15,7 +17,9 @@ class TestBuildOptimizationInput:
         result = build_optimization_input(tid, sid, horizon_days=7)
         assert result is None
 
-    def test_splits_demand_proportional_to_stock_share(self, test_tenant, test_session):
+    def test_demand_follows_configured_shares_not_where_the_stock_sits(
+        self, test_tenant, test_session,
+    ):
         from backend.inventory import service as inv_svc
         from backend.db import session_store
         from backend.inventory.optimizer_service import build_optimization_input
@@ -24,7 +28,7 @@ class TestBuildOptimizationInput:
         sid = test_session["id"]
         sku = _sku()
 
-        # Norte holds 3x the stock of Sur -> demand should split 75/25.
+        # Norte holds 3x the stock of Sur, which must NOT move the demand split.
         inv_svc.upsert_stock(tid, sku, {
             "current_stock": 300, "lead_time_days": 10, "unit_cost": 20.0, "warehouse": "Norte",
         })
@@ -42,14 +46,29 @@ class TestBuildOptimizationInput:
         assert set(inp.warehouses) == {"Norte", "Sur"}
         assert inp.stock0[(sku, "Norte")] == 300.0
         assert inp.stock0[(sku, "Sur")] == 100.0
-        assert inp.demand[(sku, "Norte")][0] == 30.0  # 40 * (300/400)
-        assert inp.demand[(sku, "Sur")][0] == 10.0     # 40 * (100/400)
-        assert inp.lead_time_buckets[sku] == 10        # max(10, 5)
+        # Demand follows the tenant's configured demand shares, NOT the stock
+        # split. This assertion used to read 30/10 — 40 * (300/400) — which
+        # pinned the defect: a warehouse's need was defined as proportional to
+        # what it already held, so the depot holding everything was told to buy
+        # more and a store holding none of a SKU it sells was assigned zero
+        # demand and could never be a transfer destination. Neither warehouse
+        # here has a `demand_share`, so `get_demand_shares` gives the whole
+        # demand to the default one — the same answer the per-warehouse
+        # semáforo gives, which is the point: one authority, not two.
+        assert inp.demand[(sku, "Norte")][0] == 40.0
+        assert inp.demand[(sku, "Sur")][0] == 0.0
+        # The SKU's lead time, resolved once for the whole product by
+        # `resolve_planning_inputs` — the same cascade `/hoy` runs, on the same
+        # representative row (`service._aggregate_stock_rows_by_sku` picks
+        # Norte: no anchored default warehouse, and "norte" sorts before "sur").
+        # It used to be `max(10, 5)` across the raw rows, which was the
+        # optimizer answering a question every other screen answers differently.
+        assert inp.lead_time_buckets[sku] == 10
         assert inp.holding_cost[sku] == 20.0 * 0.20 / 365
         assert inp.stockout_cost[sku] == 20.0 * 3.0  # order_cost * multiplier
         assert inp.order_cost[sku] == 20.0
 
-    def test_splits_evenly_when_sku_has_zero_stock_everywhere(self, test_tenant, test_session):
+    def test_zero_stock_everywhere_does_not_invent_an_even_split(self, test_tenant, test_session):
         from backend.inventory import service as inv_svc
         from backend.db import session_store
         from backend.inventory.optimizer_service import build_optimization_input
@@ -66,8 +85,112 @@ class TestBuildOptimizationInput:
 
         inp = build_optimization_input(tid, sid, horizon_days=7)
 
-        assert inp.demand[(sku, "Norte")][0] == 5.0
-        assert inp.demand[(sku, "Sur")][0] == 5.0
+        # This used to assert 5.0 / 5.0 — an even split invented because the
+        # stock-share denominator was zero. Splitting evenly is not a neutral
+        # default: it orders a SKU into warehouses that have never stocked it.
+        # With no demand shares configured the demand belongs to the default
+        # warehouse, and that is a statement the tenant can see and change.
+        assert inp.demand[(sku, "Norte")][0] == 10.0
+        assert inp.demand[(sku, "Sur")][0] == 0.0
+        # Whatever the split, it must still be the whole demand — never more.
+        assert (inp.demand[(sku, "Norte")][0] + inp.demand[(sku, "Sur")][0]) == 10.0
+
+    def test_configured_shares_are_what_actually_splits_the_demand(
+        self, test_tenant, test_session,
+    ):
+        """The other half of the fix: /bodegas is the one place a tenant says
+        where a SKU sells, and the optimizer must read it — the same numbers the
+        per-warehouse semáforo reads, so a buy line and a semáforo row can no
+        longer disagree about the same warehouse."""
+        from backend.inventory import service as inv_svc
+        from backend.inventory import warehouse_service as wh_svc
+        from backend.db import session_store
+        from backend.inventory.optimizer_service import build_optimization_input
+
+        tid, sid = test_tenant["id"], test_session["id"]
+        sku = _sku()
+
+        # Sur holds far more stock; the shares say the demand is mostly Norte's.
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 10, "warehouse": "Norte"})
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 900, "warehouse": "Sur"})
+        wh_svc.set_demand_share(tid, "Norte", 80)
+        wh_svc.set_demand_share(tid, "Sur", 20)
+        session_store.set_forecasts(tid, sid, {
+            sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
+        })
+
+        inp = build_optimization_input(tid, sid, horizon_days=7)
+
+        assert inp.demand[(sku, "Norte")][0] == pytest.approx(8.0)
+        assert inp.demand[(sku, "Sur")][0] == pytest.approx(2.0)
+
+    def test_a_share_on_a_warehouse_with_no_stock_rows_is_not_swallowed(
+        self, test_tenant, test_session,
+    ):
+        """Shares are configured over ALL warehouses; the optimizer only plans
+        for the ones that have inventory rows. Applied raw, the half assigned to
+        a warehouse the model cannot buy into would simply vanish and every
+        remaining location would be planned short of what it sells."""
+        from backend.inventory import service as inv_svc
+        from backend.inventory import warehouse_service as wh_svc
+        from backend.db import session_store
+        from backend.inventory.optimizer_service import build_optimization_input
+
+        tid, sid = test_tenant["id"], test_session["id"]
+        sku = _sku()
+
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 10, "warehouse": "Norte"})
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 10, "warehouse": "Sur"})
+        wh_svc.create_warehouse(tid, "Bodega Vacia")
+        wh_svc.set_demand_share(tid, "Norte", 25)
+        wh_svc.set_demand_share(tid, "Sur", 25)
+        wh_svc.set_demand_share(tid, "Bodega Vacia", 50)
+        session_store.set_forecasts(tid, sid, {
+            sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
+        })
+
+        inp = build_optimization_input(tid, sid, horizon_days=7)
+
+        assert "Bodega Vacia" not in inp.warehouses
+        # Renormalized over the two planned warehouses: 50/50 of the whole
+        # demand, not 25/25 of it with half quietly dropped on the floor.
+        assert inp.demand[(sku, "Norte")][0] == pytest.approx(5.0)
+        assert inp.demand[(sku, "Sur")][0] == pytest.approx(5.0)
+        total = sum(inp.demand[(sku, w)][0] for w in inp.warehouses)
+        assert total == pytest.approx(10.0)
+
+    def test_store_keyed_forecasts_beat_the_configured_shares(
+        self, test_tenant, test_session,
+    ):
+        """A measurement of what a location actually sold outranks a percentage
+        somebody typed — the same preference order the per-warehouse semáforo
+        uses, deliberately."""
+        from backend.inventory import service as inv_svc
+        from backend.inventory import warehouse_service as wh_svc
+        from backend.db import session_store
+        from backend.inventory.series import SERIES_SEPARATOR
+        from backend.inventory.optimizer_service import build_optimization_input
+
+        tid, sid = test_tenant["id"], test_session["id"]
+        sku = _sku()
+
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 10, "warehouse": "Norte"})
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 10, "warehouse": "Sur"})
+        wh_svc.set_demand_share(tid, "Norte", 90)
+        wh_svc.set_demand_share(tid, "Sur", 10)
+        session_store.set_forecasts(tid, sid, {
+            f"{sku}{SERIES_SEPARATOR}Norte": {
+                "lightgbm": {"forecast": [{"date": "2026-01-01", "value": 3.0}] * 7},
+            },
+            f"{sku}{SERIES_SEPARATOR}Sur": {
+                "lightgbm": {"forecast": [{"date": "2026-01-01", "value": 7.0}] * 7},
+            },
+        })
+
+        inp = build_optimization_input(tid, sid, horizon_days=7)
+
+        assert inp.demand[(sku, "Norte")][0] == pytest.approx(3.0)
+        assert inp.demand[(sku, "Sur")][0] == pytest.approx(7.0)
 
     def test_a_sku_with_no_stock_on_file_is_not_optimized_at_all(
         self, test_tenant, test_session,

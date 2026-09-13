@@ -139,6 +139,7 @@ def build_export_zip(tenant_id: str) -> bytes:
 # explicitly, children-before-parents so no live FK constraint is ever
 # tripped (see module docstring for the verification against migrations.py).
 _DELETE_ORDER: list[str] = [
+    "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",
     "chats",
@@ -179,7 +180,6 @@ _DELETE_ORDER: list[str] = [
     "jobs",
     "sessions",
     "datasets",
-    "stripe_events",
     "direct_messages",
     "activity_logs",
     "user_preferences",

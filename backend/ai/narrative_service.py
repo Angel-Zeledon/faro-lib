@@ -81,8 +81,8 @@ def _answer_language(language: str | None) -> str:
 #
 # 12s is chosen against the client, not the model: the frontend stops waiting at
 # 8s and renders its own fallback, so anything slower than that is already too
-# late to be shown. A real Anthropic call returns well inside it; the local
-# Ollama fallback either does too or was never going to.
+# late to be shown. A DeepSeek call returns well inside it; one that does not
+# was never going to.
 _NARRATIVE_TIMEOUT_SECONDS = 12.0
 
 
@@ -105,6 +105,32 @@ def _call_llm(client, user_message: str, max_tokens: int = 600,
         messages=[{"role": "user", "content": user_message}],
     )
     return resp.content[0].text
+
+
+def _has_money(value) -> bool:
+    """Whether a money field holds a non-zero amount, formatted or not.
+
+    A formatted amount is a string, so the `> 0` that used to guard these
+    sentences raises `TypeError` on it. Zero is reported as "0" / "₡0" and must
+    still read as nothing to report.
+    """
+    if isinstance(value, str):
+        return any(c.isdigit() and c != "0" for c in value)
+    return (value or 0) > 0
+
+
+def _as_money(value, currency: dict | None) -> str:
+    """Format `value` as money unless it already is.
+
+    The data summaries now carry pre-formatted strings so the LLM cannot invent
+    a currency symbol. The rule-based fallback and the key-point extractor read
+    those SAME dicts, and `money()` on an already-formatted string raises. This
+    is the one place that has to tolerate both, so callers never have to know
+    which side of the formatting they are on.
+    """
+    if isinstance(value, str):
+        return value
+    return money(value or 0, currency=currency)
 
 
 # ── Morning Briefing Narrative ────────────────────────────────────────────────
@@ -157,8 +183,15 @@ def generate_morning_narrative(briefing: dict, profile: str = 'distributor',
         "products_ok": kpis.get('ok', 0),
         "products_overstock": kpis.get('overstock', 0),
         "average_forecast_accuracy": f"{(kpis.get('avg_accuracy') or 0) * 100:.1f}%" if kpis.get('avg_accuracy') else "not available",
-        "total_inventory_value": kpis.get('total_inventory_value', 0),
-        "capital_trapped_in_overstock": kpis.get('capital_in_overstock', 0),
+        # Pre-formatted, in the tenant's currency, for the same reason
+        # `key_points` are: only the backend knows what money looks like here.
+        # Sent as bare numbers, these two reached the model with no currency
+        # attached and it supplied its own — a CRC tenant was shown its
+        # inventory valued in euros, ten pixels under a KPI reading colones.
+        "total_inventory_value": money(kpis.get('total_inventory_value', 0) or 0,
+                                       currency=currency),
+        "capital_trapped_in_overstock": money(kpis.get('capital_in_overstock', 0) or 0,
+                                              currency=currency),
         "product_names_at_immediate_risk": risk_names,
         "products_urgent_order": [w.get('display_name') or w.get('sku') for w in warnings[:3]],
         "demand_rising": demand_up,
@@ -194,7 +227,10 @@ with the four headings translated into the answer language:
 **Recommended actions for today**
 [2-3 concrete actions, ordered by urgency]
 
-Be specific, use the numbers from the context, no technical jargon."""
+Be specific, use the numbers from the context, no technical jargon.
+Monetary amounts arrive already formatted in the reader's own currency: copy
+them exactly as they appear, symbol included. Never convert them, never swap the
+symbol, and never re-format the digits."""
 
     try:
         text = _call_llm(client, prompt, max_tokens=700, language=language)
@@ -247,7 +283,9 @@ def generate_inventory_insight(items: list[dict], profile: str = 'distributor',
         "total_skus": len(items),
         "abc_distribution": abc_dist,
         "products_a_at_critical_risk": critical_a_items,
-        "overstock_value": overstock_value,
+        # Formatted here for the same reason as the morning briefing's two
+        # money fields — see the comment there.
+        "overstock_value": money(overstock_value, currency=currency),
         "skus_without_stock_data": signals.get('SIN_DATOS', 0),
     }
 
@@ -423,8 +461,8 @@ def _extract_key_points(data: dict, currency: dict | None = None) -> list[dict]:
             "code": "immediate_stockout_risk", "params": {"n": n},
             "text": f"{n} product(s) at immediate risk of running out",
         })
-    if data.get('capital_trapped_in_overstock', 0) > 0:
-        amount = money(data['capital_trapped_in_overstock'], currency=currency)
+    if _has_money(data.get('capital_trapped_in_overstock', 0)):
+        amount = _as_money(data['capital_trapped_in_overstock'], currency)
         points.append({
             "code": "capital_in_overstock", "params": {"amount": amount},
             "text": f"{amount} tied up in overstock",
@@ -446,6 +484,11 @@ def _build_fallback_narrative(data: dict, currency: dict | None = None) -> str:
     ya = data.get('products_at_immediate_risk', 0)
     soon = data.get('products_to_order_this_week', 0)
     total = data.get('total_skus_monitored', 0)
+    # Already a formatted string when it comes from the data summary the LLM
+    # path builds, still a number when a caller assembles the dict by hand.
+    # `_has_money` answers "is there anything to report" for both, because a
+    # `> 0` on the formatted version raises TypeError — which is exactly what
+    # this line did the first time the formatting moved upstream.
     capital = data.get('capital_trapped_in_overstock', 0)
 
     parts = [f"Of {total} products monitored, "]
@@ -454,8 +497,8 @@ def _build_fallback_narrative(data: dict, currency: dict | None = None) -> str:
         parts.append(f"{ya} are at immediate risk of running out ({names}). ")
     if soon > 0:
         parts.append(f"{soon} need an order this week. ")
-    if capital > 0:
-        parts.append(f"There is {money(capital, currency=currency)} tied up in overstock that can be freed. ")
+    if _has_money(capital):
+        parts.append(f"There is {_as_money(capital, currency)} tied up in overstock that can be freed. ")
 
     demand_up = data.get('demand_rising', [])
     if demand_up:
@@ -474,4 +517,4 @@ def _build_inventory_fallback(data: dict, currency: dict | None = None) -> str:
     over = signals.get('SOBRESTOCK', 0)
     return (f"Of {total} SKUs: {ya} at immediate risk, {soon} need an order this week, "
             f"{ok} are well covered and {over} are overstocked. "
-            f"Overstock value: {money(data.get('overstock_value', 0), currency=currency)}.")
+            f"Overstock value: {_as_money(data.get('overstock_value', 0), currency)}.")

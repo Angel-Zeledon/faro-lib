@@ -1,7 +1,13 @@
 'use client'
+// The landing is inside LanguageProvider (see app/layout.tsx), so it reads the
+// same `lang` the app does — a visitor who switches here stays switched after
+// signing in. The copy itself lives in i18n/landing.ts, typed so the two
+// languages cannot drift apart.
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { LANDING } from '@/i18n/landing'
 
 const T = {
  bg: '#ffffff',
@@ -25,16 +31,36 @@ const T = {
 }
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
-const NAV_LINKS: [string, string][] = [
- ['#problema', 'El problema'],
- ['#solucion', 'Cómo funciona'],
- ['#casos', 'Industrias'],
- ['#prices', 'Precios'],
- ['#que-plan', 'Qué plan'],
- ['mailto:hola@usefaro.io', 'Contacto'],
-]
+// Two letters, not a dropdown with flags. A flag is a country and this is a
+// language — Spanish is not Spain here, and English is not the United States.
+// The choice persists through LanguageProvider, so it also follows the visitor
+// into the app after they sign in.
+function LangToggle({ lang, setLang }: { lang: 'es' | 'en'; setLang: (l: 'es' | 'en') => void }) {
+ return (
+  <div role="group" aria-label="Language" style={{ display: 'flex', alignItems: 'center', gap: 2, border: `1px solid ${T.border}`, borderRadius: 7, padding: 2 }}>
+   {(['es', 'en'] as const).map(code => (
+    <button
+     key={code}
+     type="button"
+     onClick={() => setLang(code)}
+     aria-pressed={lang === code}
+     style={{
+      border: 'none', cursor: 'pointer', borderRadius: 5,
+      padding: '4px 9px', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.03em',
+      background: lang === code ? T.text : 'transparent',
+      color: lang === code ? '#fff' : T.muted,
+     }}
+    >{code.toUpperCase()}</button>
+   ))}
+  </div>
+ )
+}
 
 function Nav() {
+ const { lang, setLang } = useLanguage()
+ const L = LANDING[lang]
+ const NAV_LINKS = L.nav.links
+
  // Below 900px the inline link row does not fit and is hidden. It used to be
  // hidden with nothing in its place, so a phone had no way to reach Precios,
  // Industrias or any other section short of scrolling the whole page — 22,000px
@@ -77,11 +103,12 @@ function Nav() {
  ))}
  </div>
  <div className="nav-cta" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+ <LangToggle lang={lang} setLang={setLang} />
  <Link href="/login" className="nav-tap" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
- Iniciar sesión
+ {L.nav.signIn}
  </Link>
  <Link href="/signup" className="nav-signup" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
- Crear cuenta
+ {L.nav.signUp}
  </Link>
  </div>
 
@@ -89,7 +116,7 @@ function Nav() {
  <button
  type="button"
  className="nav-burger"
- aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+ aria-label={L.nav.menu}
  aria-expanded={menuOpen}
  onClick={() => setMenuOpen(v => !v)}
  >
@@ -104,13 +131,13 @@ function Nav() {
  <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>
  ))}
  <div className="nav-sheet-sep" />
- <Link href="/login" onClick={() => setMenuOpen(false)}>Iniciar sesión</Link>
+ <Link href="/login" onClick={() => setMenuOpen(false)}>{L.nav.signIn}</Link>
  <Link
  href="/signup"
  onClick={() => setMenuOpen(false)}
  className="nav-sheet-cta"
  >
- Crear cuenta
+ {L.nav.signUp}
  </Link>
  </div>
  </div>
@@ -225,7 +252,7 @@ function useScrollReveal() {
  // a trackpad fling, PageDown, dragging the scrollbar — can carry a short card
  // from below the viewport to above it between two frames, and an observer
  // watching only the viewport never sees it, so it stays invisible forever.
- // Two cards in the Profesional grid did exactly that, reproducibly, and a
+ // Two cards in the "qué incluye" grid did exactly that, reproducibly, and a
  // single fling past the whole page left twenty behind. The document's own
  // height is the largest jump that can exist, so nothing can outrun it.
  rootMargin: `${Math.ceil(document.documentElement.scrollHeight)}px 0px -6% 0px`,
@@ -248,294 +275,80 @@ function useScrollReveal() {
  }, [])
 }
 
+// The free tier's ceilings, as advertised. MUST match
+// backend/entitlements/plans.py — a landing page promising 200 SKUs while the
+// product stops at 100 turns the first real import into a broken promise.
+// E.164 without the '+', which is what wa.me expects.
+const CONTACT_WHATSAPP = '50671862820'
+
+// A guided tour of the product, chapter by chapter.
+//
+// The chapters are the app's OWN sidebar groups, in the app's own order: it is
+// the map this reader will have five minutes after signing up, so the structure
+// carries information rather than decorating. Each chapter says WHEN you use
+// it, which is the question a buyer is actually asking.
+//
+// Captured 2026-08-23 on the seeded demo tenant, light theme, 3200x2000. Rule
+// for whoever retakes them: the tenant must have DATA on every screen. An empty
+// state on a landing page reads as an unfinished product. And no modal or
+// tutorial overlay — two of the first batch caught one and had to be redone.
+interface TourScreen {
+  img:   string
+  name:  string
+  does:  string
+  finds: string[]
+  alt:   string
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
+  const { lang, setLang } = useLanguage()
+  const L = LANDING[lang]
+
+  // Same names the render code already used, now sourced from the active
+  // language. Nothing below this line had to change.
+  const NAV_LINKS  = L.nav.links
+  const FREE_LIMITS = L.pricing.limits
+  const PROBLEMS   = L.problem.items
+  const STEPS      = L.how.steps
+  const CASES      = L.cases.items
+  const BENEFITS   = L.benefits
+  const COMPARE    = L.compare.rows
+  const ROLES      = L.includes.roles
+  const INCLUDES   = L.includes.items
+  const NEED       = L.start.need
+  const NOT_NEED   = L.start.notNeed
+  const FAQS       = L.faq.items
+  const TOUR       = L.tour.chapters
+  // The hero frame IS the first screen of the tour, so it follows the
+  // language with everything else instead of pointing at a fixed file.
+  const HERO_SHOT  = L.tour.chapters[0].screens[0]
+  // The four signal colours are design, not copy, so they stay here and are
+  // zipped onto the translated rows by position.
+  const SIGNAL_COLORS = [T.red, T.amber, T.green, T.muted]
+  const SIGNALS = L.decide.signals.map((sig, i) => ({ ...sig, color: SIGNAL_COLORS[i] }))
+
  const [activeCase, setActiveCase] = useState(0)
  const [openFaq, setOpenFaq] = useState<number | null>(null)
  useScrollReveal()
 
- const PROBLEMS = [
- { title: 'Ruptura de stock en temporadas clave', desc: 'En retail y distribución, un quiebre durante temporada alta no es solo una venta perdida — el cliente va a la competencia y no regresa. La demanda no espera al próximo ciclo de reposición.' },
- { title: 'Capital atrapado en sobreinventario', desc: 'Para mayoristas y manufactureros, el exceso de inventario ocupa bodega, consume línea de crédito y en categorías perecederas o de moda, termina en pérdida directa por liquidación.' },
- { title: 'Compras reactivas en lugar de planificadas', desc: 'Comprar cuando el inventario ya está crítico obliga a aceptar condiciones desfavorables: precios spot, fletes de emergencia y tiempos de entrega fuera del ciclo normal.' },
- { title: 'Conocimiento concentrado en una sola persona', desc: 'El comprador más experimentado lleva en la cabeza la estacionalidad, los ciclos del proveedor y las anomalías históricas de cada producto. Ese conocimiento no está en ningún sistema.' },
- { title: 'Forecasts manuales que no escalan', desc: 'Un analista puede mantener 30 SKUs en Excel con rigor razonable. Con 300 productos los modelos se simplifican. Con 3,000 SKUs, la mayoría se administra por intuición.' },
- ]
-
- const STEPS = [
- { n: '01', title: 'Carga tu historial de ventas', desc: 'Sube un archivo CSV o Excel con tus ventas. El sistema identifica automáticamente las columnas de fecha, producto y cantidad vendida.' },
- { n: '02', title: 'Análisis automático por producto', desc: 'Faro detecta la tendencia, estacionalidad y variabilidad de cada SKU de forma independiente. Sin configuración manual por producto.' },
- { n: '03', title: 'Pronóstico con intervalos de confianza', desc: 'Genera proyecciones de demanda para cada producto con rangos alto y bajo. Identifica qué SKUs tienen demanda predecible y cuáles son volátiles.' },
- { n: '04', title: 'Recomendaciones de compra', desc: 'El sistema calcula cuánto pedir, cuándo pedir y qué productos están en riesgo de quiebre según el plazo de entrega de cada proveedor.' },
- ]
-
- const CASES = [
- {
- label: 'Retail',
- title: 'Gestión de inventario por tienda y categoría',
- desc: 'Un retailer con múltiples puntos de venta enfrenta patrones de demanda distintos por ubicación, categorías con estacionalidades diferentes y un ciclo de reposición que no puede fallar. Faro genera pronósticos individuales por tienda y por SKU, detecta cambios en la tendencia de venta y permite planificar con anticipación las temporadas de alta demanda.',
- metrics: [
- { metric: 'Reducción de quiebres de stock', value: '20–35%' },
- { metric: 'Reducción de sobreinventario', value: '15–25%' },
- { metric: 'Tiempo en planificación de compras', value: '−70%' },
- ],
- },
- {
- label: 'Distribuidores',
- title: 'Reposición optimizada y menos emergencias',
- desc: 'Los distribuidores trabajan con márgenes ajustados, proveedores con plazos variables y clientes que no toleran faltantes. El error de inventario se paga caro: un cliente insatisfecho migra. Faro calcula el punto de reorden correcto para cada producto según su velocidad de venta real y el lead time del proveedor, reduciendo las compras de emergencia.',
- metrics: [
- { metric: 'Reducción de compras de emergencia', value: '30–50%' },
- { metric: 'Nivel de servicio (fill rate)', value: '+8–15 pp' },
- { metric: 'Tiempo de ciclo de compra', value: '−60%' },
- ],
- },
- {
- label: 'Mayoristas',
- title: 'Balance de inventario entre bodegas',
- desc: 'Los mayoristas compran en volumen para obtener mejores precios, pero esa ventaja desaparece cuando el inventario no rota o está mal distribuido. Faro identifica qué productos tienen exceso antes de que llegue la fecha de vencimiento o se vuelvan obsoletos, y señala qué referencias priorizar en la siguiente orden.',
- metrics: [
- { metric: 'Reducción de merma por vencimiento', value: '25–40%' },
- { metric: 'Rotación de inventario', value: '+10–20%' },
- { metric: 'Reducción de sobreinventario', value: '15–30%' },
- ],
- },
- {
- label: 'Manufactura',
- title: 'Planificación de producción y materias primas',
- desc: 'Una línea de producción parada por falta de material tiene un costo que va mucho más allá del material: horas hombre perdidas, penalizaciones por entrega tardía y clientes que pierden confianza. Faro convierte el pronóstico de demanda del producto terminado en un plan de requerimientos de materias primas, considerando tiempos de producción y plazos de proveedores.',
- metrics: [
- { metric: 'Reducción de paros por falta de material', value: '40–60%' },
- { metric: 'Eficiencia de planificación de compras', value: '+25%' },
- { metric: 'Reducción de inventario de seguridad', value: '15–20%' },
- ],
- },
- {
- label: 'E-commerce',
- title: 'Preparación para picos de demanda',
- desc: 'En e-commerce, llegar sin inventario a un Black Friday o campaña de descuentos es dejar dinero sobre la mesa. Llegar con demasiado significa capital atrapado y liquidación a pérdida. Faro analiza el comportamiento histórico durante eventos promocionales y genera estimaciones para los próximos picos con tiempo suficiente para hacer pedidos.',
- metrics: [
- { metric: 'Preparación para picos estacionales', value: '+30%' },
- { metric: 'Reducción de liquidaciones post-temporada', value: '20–35%' },
- { metric: 'Tasa de faltantes en eventos clave', value: '−45%' },
- ],
- },
- ]
-
- const BENEFITS = [
- 'Pronóstico por SKU y por familia de productos',
- 'Proyecciones semanales, mensuales y por temporada',
- 'Alertas de productos en riesgo de quiebre',
- 'Métricas de precisión y backtesting por modelo',
- 'Cantidad recomendada por orden de compra',
- 'Clasificación automática ABC-XYZ (desde Profesional)',
- 'Detección de cambios y anomalías de demanda',
- 'Exportación a Excel y PDF',
- 'Escala desde 50 hasta 50,000 SKUs',
- 'Actualización automática con nuevas ventas',
- ]
-
- const COMPARE = [
- { feature: 'Tiempo para generar pronóstico', excel: 'Días', faro: 'Minutos' },
- { feature: 'Cantidad de SKUs manejables', excel: 'Decenas', faro: 'Miles' },
- { feature: 'Actualización del modelo', excel: 'Manual', faro: 'Automática' },
- { feature: 'Detección de estacionalidad', excel: 'Manual', faro: 'Automática' },
- { feature: 'Alertas de riesgo de quiebre', excel: 'No disponible', faro: 'Incluido' },
- { feature: 'Precisión optimizada por SKU', excel: 'Depende del analista', faro: 'Sí' },
- { feature: 'Trazabilidad y auditoría', excel: 'Difícil', faro: 'Incluido' },
- { feature: 'Escala sin costo de mantenimiento', excel: 'No', faro: 'Sí' },
- ]
-
- // Limits below mirror backend/entitlements/plans.py — keep the two in sync.
- //
- // This page only sells what a paying customer can use on day one. The five
- // capabilities that used to be advertised here and were not shippable — API
- // keys that authenticate nothing, the hidden Alegra/Siigo integrations,
- // single-shot webhooks with no retry, document search with no upload UI, and
- // BOM with no screen at all — have been removed rather than footnoted. If any
- // of them ships, it gets added back here, not before.
- const PLANS = [
- {
- name: 'Starter',
- price: 99 as number | null,
- priceLabel: null as string | null,
- priceHint: null as string | null,
- desc: 'Para una operación de una bodega que hoy decide sus compras en Excel.',
- skus: 'Hasta 1.000 SKUs · 2 usuarios · 1 bodega',
- features: ['Semáforo de inventario por producto', 'Órdenes de compra con cantidad sugerida', 'Recepciones que aprenden el plazo real del proveedor', 'Ficha de proveedores y reportes', 'Exportación a Excel y PDF', 'Alertas por correo, todos los días', 'Archivos de hasta 200 MB · 20 entrenamientos guardados'],
- cta: 'Empezar gratis',
- ctaHref: '/signup?demo=1',
- highlight: false,
- },
- {
- name: 'Profesional',
- price: 649 as number | null,
- priceLabel: null as string | null,
- priceHint: null as string | null,
- desc: 'Para quien ya tiene varias bodegas y más catálogo del que una persona puede vigilar.',
- skus: 'Hasta 5.000 SKUs · 10 usuarios · 5 ubicaciones',
- features: ['Todo lo del plan Starter', 'Clasificación ABC-XYZ automática', 'Multibodega con sugerencias de transferencia', 'Optimizador de compra por costo', 'Simulador de escenarios', 'Alertas por WhatsApp', 'Analista con IA y búsqueda en tus documentos', 'Recálculo programado', 'Mensajes de equipo — nuevo', 'Archivos de hasta 500 MB · 100 entrenamientos guardados', 'Soporte prioritario'],
- cta: 'Empezar gratis',
- ctaHref: '/signup?demo=1',
- highlight: true,
- },
- {
- name: 'Empresarial',
- price: null as number | null,
- priceLabel: 'Personalizado',
- priceHint: 'Desde $1.990/mes',
- desc: 'Para operaciones sin techo de catálogo, o que producen en lugar de solo revender.',
- skus: 'SKUs, usuarios y ubicaciones ilimitados',
- // Nothing here is unbuilt. BOM, API keys, webhooks and the Alegra/Siigo
- // integrations used to be listed and are not: the BOM has no screen, an API
- // key authenticates nothing, webhooks fire once with no retry, and the
- // integrations page is hidden pending a pricing decision. Selling them from
- // this page is a promise the product cannot keep on the day someone pays.
- features: ['Todo lo del plan Profesional', 'Integración a medida (ERP, WMS, BI)', 'Archivos de hasta 2 GB', 'Onboarding con equipo técnico dedicado', 'SLA de disponibilidad garantizado', 'Gerente de cuenta asignado'],
- cta: 'Hablar con el equipo',
- ctaHref: 'mailto:hola@usefaro.io?subject=Faro%20%E2%80%94%20activar%20plan%20Empresarial',
- highlight: false,
- },
- ]
+ // Same rule as the stats strip below (see the comment there): a figure on this
+ // page has to be one the product can back. This block used to carry fifteen
+ // result percentages — "reducción de quiebres 20–35%", "compras de emergencia
+ // −30–50%", "merma −25–40%" and twelve more. Faro has never measured a single
+ // one: there is no customer outcome study, no before/after dataset, nothing in
+ // the repo that produces them. They were written to look like a case study.
+ // What replaces them is what the product actually DOES for that operation,
+ // each item checkable against code (signal thresholds and the 3-reception rule
+ // in backend/inventory/service.py, the 30-day donor floor in the transfer
+ // service, the BOM explosion in backend/inventory/bom_service.py).
+ // If real customer outcomes ever get measured, they belong here — with the
+ // customer, the period and the baseline named. A percentage with no source
+ // does not go back in.
 
  // ── Content for the long-form sections ───────────────────────────────────────
- // Every number here is checkable against code: limits from entitlements/plans.py,
- // signal thresholds and the 3-reception rule from backend/inventory/service.py.
-
- const PLAN_FIT = [
- {
- plan: 'Starter',
- headline: 'Una bodega y un catálogo que todavía cabe en la cabeza de una persona',
- who: 'Una ferretería, un minisúper, una farmacia o una distribuidora chica: un local o una bodega, entre 300 y 1.000 códigos activos, y dos personas que tocan el sistema — casi siempre quien compra y quien recibe la mercadería.',
- why: 'Con una sola bodega no tienes que decidir dónde poner cada producto, y con menos de 1.000 códigos todavía reconoces la mayoría por nombre. Lo que no puedes hacer es revisarlos todos cada semana. Para eso está Starter: el semáforo marca cuáles se van a quedar sin existencias antes de que alcance a llegar el próximo pedido, y te lo manda por correo todos los días sin que tengas que entrar a buscarlo.',
- outgrow: 'Abres una segunda bodega, pasas de 1.000 códigos activos, o necesitas que entre una tercera persona al sistema.',
- note: null as string | null,
- },
- {
- plan: 'Profesional',
- headline: 'Varias ubicaciones y más catálogo del que alguien puede vigilar a mano',
- who: 'Una distribuidora de consumo masivo, una cadena de 3 a 5 tiendas, un mayorista de abarrotes o de repuestos: entre 1.000 y 5.000 códigos, hasta 5 bodegas, y un equipo de compras, bodega y administración que hoy se coordina por WhatsApp y correo.',
- why: 'Pasando los 1.500 códigos ya no puedes mirarlos uno por uno, así que necesitas que el sistema te diga en cuáles vale la pena gastar atención: eso hace la clasificación ABC-XYZ. Y con más de una bodega la pregunta cambia de fondo — deja de ser “¿cuánto compro?” y pasa a ser “¿compro, o muevo lo que ya tengo en la otra bodega?”. Esa segunda pregunta es la que te ahorra plata, y es la que responde Profesional.',
- outgrow: 'Pasas de 5.000 códigos o de 10 usuarios, necesitas más de 5 bodegas, o ensamblas y produces en vez de solo revender.',
- note: null as string | null,
- },
- {
- plan: 'Empresarial',
- headline: 'Sin techo de catálogo, o produciendo en lugar de solo revender',
- who: 'Una cadena con decenas de puntos de venta, un distribuidor nacional con catálogo de cinco cifras, o una planta que arma producto terminado a partir de materias primas.',
- why: 'Aquí desaparecen los topes: códigos, usuarios y ubicaciones ilimitados, y archivos de hasta 2 GB para historiales largos. La conexión con los sistemas que ya usas se arma con nuestro equipo sobre tu operación, no se activa desde un panel.',
- outgrow: null as string | null,
- note: 'No hay un escalón siguiente: el precio se arma sobre tu operación. Escríbenos y lo vemos con números tuyos.',
- },
- ]
-
- const PLAN_LIMITS = [
- { label: 'Códigos de producto (SKUs)', starter: '1.000', pro: '5.000', ent: 'Ilimitado' },
- { label: 'Usuarios', starter: '2', pro: '10', ent: 'Ilimitado' },
- { label: 'Bodegas o ubicaciones', starter: '1', pro: '5', ent: 'Ilimitado' },
- { label: 'Entrenamientos guardados', starter: '20', pro: '100', ent: 'Ilimitado' },
- { label: 'Tamaño máximo por archivo', starter: '200 MB', pro: '500 MB', ent: '2 GB' },
- ]
-
- const PRO_ROLES = [
- {
- role: 'Dueño o gerente general',
- pain: 'Te enteras del quiebre cuando te llama el vendedor, y del sobrestock cuando ves cuánta plata hay parada en bodega.',
- gain: 'Un resumen diario de los productos en rojo, al correo y al WhatsApp. Y un simulador para probar “¿qué pasa si la promoción duplica la venta de esta categoría?” antes de comprometer el dinero.',
- },
- {
- role: 'Encargado de compras',
- pain: 'Revisas miles de códigos en una hoja de cálculo y terminas comprando por costumbre: lo mismo del mes pasado, más un poco.',
- gain: 'La lista llega ordenada por urgencia, con la cantidad sugerida por proveedor. El optimizador arma el pedido tomando en cuenta lo que cuesta tener inventario parado, lo que cuesta quedarse sin producto y el flete fijo del camión.',
- },
- {
- role: 'Jefe de bodega',
- pain: 'Anotas las recepciones en un cuaderno, y nadie en la empresa sabe cuánto tarda de verdad cada proveedor.',
- gain: 'Cada recepción que registras se vuelve dato. A partir de la tercera entrega de un proveedor, Faro deja de usar el plazo que te prometieron y empieza a usar el que cumplen.',
- },
- {
- role: 'Administración y finanzas',
- pain: 'Sabes cuánto vale el inventario, pero no cuánto de eso es capital atrapado en productos que no rotan.',
- gain: 'La clasificación ABC-XYZ separa lo que mueve tu venta de lo que solo ocupa espacio, y los reportes que exportas a Excel y PDF salen con esa marca en cada producto.',
- },
- ]
-
- const PRO_INCLUDES = [
- { title: 'Clasificación ABC-XYZ', desc: 'A son los productos que concentran el 80 % de tu venta; C es la cola larga. X es demanda estable, Z es errática. Un producto AZ vende mucho y de forma impredecible: ahí conviene el colchón de seguridad, en vez de repartirlo parejo en todo el catálogo.', isNew: false },
- { title: 'Multibodega y transferencias', desc: 'Hasta 5 ubicaciones, con rutas entre ellas: días de tránsito y costo. Cuando un producto está corto en una bodega y sobrado en otra, Faro propone mover en vez de comprar — y solo lo propone si a la bodega que presta le quedan al menos 30 días de cobertura.', isNew: false },
- { title: 'Optimizador de compra por costo', desc: 'Arma el pedido buscando el menor costo total, no la menor cantidad de unidades: suma el costo de mantener inventario, la penalización por quedarse sin producto, el costo de compra, el costo por unidad transferida y el costo fijo del envío, que se paga una sola vez aunque el camión lleve veinte productos.', isNew: false },
- { title: 'Simulador de escenarios', desc: 'Hasta 50 reglas por escenario: multiplicar la demanda, marcar una promoción, atrasar a un proveedor o cambiar el stock de seguridad, filtrando por producto, categoría, proveedor o rango de fechas. Compara el escenario contra la base sin tocar nada de lo real, y lo puedes guardar para volver a correrlo.', isNew: false },
- { title: 'Alertas por WhatsApp', desc: 'El mismo resumen diario de productos en riesgo que llega por correo, ahora al teléfono de quien decide. Cada persona vincula y verifica su propio número desde su configuración.', isNew: false },
- { title: 'Analista con IA', desc: 'Preguntas en español sobre tus propios datos — “¿por qué subió la demanda de esta categoría?”, “¿qué proveedores me están atrasando?” — y cada respuesta viene marcada con de dónde salió, para que sepas cuándo se apoya en tus datos y cuándo no.', isNew: false },
- { title: 'Recálculo programado', desc: 'En vez de acordarte de reentrenar, lo dejas corriendo solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes. La pantalla te muestra cuándo corrió, cuándo vuelve a correr y si falló.', isNew: false },
- { title: 'Mensajes de equipo', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de Faro, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
- ]
-
- const SIGNALS = [
- { signal: 'PEDIR YA', rule: 'La cobertura no llega ni a la mitad del plazo del proveedor', example: 'Menos de 7,5 días · menos de 150 unidades', color: T.red },
- { signal: 'PEDIR PRONTO', rule: 'La cobertura es menor a 1,2 veces el plazo', example: 'Entre 7,5 y 18 días · 150 a 360 unidades', color: T.amber },
- { signal: 'OK', rule: 'La cobertura va de 1,2 a 3 veces el plazo', example: 'Entre 18 y 45 días · 360 a 900 unidades', color: T.green },
- { signal: 'SOBRESTOCK', rule: 'La cobertura es de 3 veces el plazo o más', example: '45 días o más · más de 900 unidades', color: T.muted },
- ]
-
- const NEED = [
- 'Un archivo CSV o Excel con tu historial de ventas.',
- 'Tres columnas como mínimo: fecha, código de producto y cantidad vendida.',
- 'Idealmente 12 meses o más, para que se alcance a ver la estacionalidad completa.',
- 'Las existencias actuales, para que el semáforo tenga contra qué comparar.',
- 'El plazo de entrega aproximado de cada proveedor. Aproximado basta: se corrige solo.',
- ]
-
- const NOT_NEED = [
- 'No necesitas conectar tu ERP para empezar: exportas de tu sistema y subes el archivo.',
- 'No necesitas configurar un modelo por producto ni saber qué es una serie de tiempo.',
- 'No necesitas una persona de tecnología dedicada.',
- 'No necesitas el catálogo limpio ni completo: los productos con poco historial se marcan como de alta incertidumbre en vez de quedar fuera.',
- 'No necesitas un mínimo de productos. Funciona igual con 80 códigos que con 4.000.',
- ]
-
- const FAQS = [
- {
- q: '¿Necesito conocimientos estadísticos o de programación para usar Faro?',
- a: 'No. Faro está diseñado para que cualquier persona del equipo de compras o planificación pueda usarlo. No hay configuración de modelos ni código. Solo cargas tus datos y el sistema genera los pronósticos automáticamente.',
- },
- {
- q: '¿En qué formato debo tener mis datos de ventas?',
- a: 'Faro acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.',
- },
- {
- q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?',
- a: 'Faro identifica automáticamente los SKUs con historial insuficiente y ajusta el nivel de confianza del pronóstico. Los productos con menos de 6 meses de datos se clasifican como "alta incertidumbre" y se recomiendan márgenes de seguridad mayores.',
- },
- {
- q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?',
- a: 'Los datos que subes a Faro son exclusivamente tuyos. No se comparten con terceros ni se usan para entrenar modelos de otras empresas. La transmisión y almacenamiento están cifrados. Puedes solicitar la eliminación completa de tus datos en cualquier momento.',
- },
- {
- q: '¿Cuánto tiempo toma implementar Faro en mi empresa?',
- a: 'En la mayoría de casos, menos de un día. Si tienes un archivo de ventas histórico, puedes subir los datos y ver tus primeros pronósticos en menos de una hora. Para integraciones con ERP o sistemas propios, el tiempo varía según la complejidad.',
- },
- {
- q: '¿Se puede integrar con nuestro ERP o sistema de inventario actual?',
- a: 'En el plan Empresarial lo armamos con nuestro equipo técnico sobre tu operación, caso por caso — escríbenos y lo vemos. En Starter y Profesional la carga es por archivo: exportas de tu sistema y subes el CSV o Excel. También puedes conectar Faro directamente a tu base de datos Postgres o MySQL y traer las ventas con una consulta, sin archivos de por medio.',
- },
- {
- q: '¿Con qué frecuencia se actualizan los pronósticos?',
- a: 'Cada vez que cargas ventas nuevas. En Starter lo lanzas tú cuando subes el archivo del mes. Desde Profesional puedes además dejar el recálculo programado para que corra solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes.',
- },
- {
- q: '¿Faro sirve si tengo más de una bodega?',
- a: 'Sí, desde el plan Profesional: hasta 5 ubicaciones, con rutas entre bodegas donde defines los días de tránsito y el costo. Cuando un producto está corto en una bodega y sobrado en otra, Faro sugiere mover en lugar de comprar, y solo lo sugiere si a la bodega que presta le quedan al menos 30 días de cobertura. En Empresarial las ubicaciones son ilimitadas. En Starter trabajas con una sola bodega.',
- },
- {
- q: '¿De dónde saca Faro el plazo de entrega de cada proveedor?',
- a: 'Al principio, del que escribes tú en la ficha del proveedor. Cada vez que registras una recepción, Faro guarda cuántos días pasaron de verdad entre la orden y la entrega. A partir de la tercera recepción de ese proveedor empieza a usar el promedio real en lugar del plazo declarado, y te muestra cuál de los dos está usando. Esto viene en todos los planes.',
- },
- {
- q: '¿Qué tan grande puede ser el archivo de ventas que subo?',
- a: 'Hasta 200 MB en Starter, 500 MB en Profesional y 2 GB en Empresarial. Para dimensionarlo: 3 años de historial con 5.000 productos y venta diaria son unos 5 millones de filas, del orden de 200 MB en CSV.',
- },
- ]
+ // Every number here is checkable against code: signal thresholds and the
+ // 3-reception rule from backend/inventory/service.py.
 
  return (
  <>
@@ -543,6 +356,14 @@ export default function LandingPage() {
  * { box-sizing: border-box; }
  body { margin: 0; background: ${T.bg}; color: ${T.text}; font-family: system-ui, -apple-system, sans-serif; }
  html { scroll-behavior: smooth; }
+
+ /* The nav is fixed, so an anchor jump parks the target under it: click Precio
+    in the menu and the eyebrow and half the headline are behind the bar. The
+    offset is the bar height plus a little air, and it belongs on the TARGET,
+    not on the scroll — scroll-margin is the one mechanism that also fixes the
+    keyboard focus jump and the browser restoring a #hash on reload. */
+ section[id], #demo { scroll-margin-top: 88px; }
+ @media (max-width: 900px) { section[id], #demo { scroll-margin-top: 76px; } }
  .btn-primary {
  display: inline-flex; align-items: center; gap: 7px;
  padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer;
@@ -679,19 +500,21 @@ export default function LandingPage() {
  <div className="hero-inner" style={{ maxWidth: 1100, width: '100%', margin: '0 auto', padding: '0 48px' }}>
 
  <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, marginBottom: 24, background: T.greenBg, border: `1px solid ${T.greenBd}`, fontSize: 11, fontWeight: 700, color: T.green, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
- Para distribuidores, retail y manufactura
+ {L.hero.eyebrow}
  </div>
 
  <h1 className="hero-h1" style={{ fontSize: 56, fontWeight: 900, color: T.text, margin: '0 0 18px', letterSpacing: '-0.05em', lineHeight: 1.1, maxWidth: 720 }}>
- Deja de gestionar el inventario<br />a base de intuición.
+ {L.hero.title1}
+ <br />
+ {L.hero.title2}
  </h1>
 
  <p style={{ fontSize: 18, color: T.body, lineHeight: 1.65, maxWidth: 560, margin: '0 0 36px' }}>
- Faro analiza tus ventas históricas y genera pronósticos de demanda por producto — para que sepas cuánto comprar, cuándo comprar y qué productos están en riesgo de quiebre.
+ {L.hero.lead}
  </p>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 60 }}>
- <Link href="/signup?demo=1" className="btn-primary">Empezar gratis con datos de ejemplo</Link>
+ <Link href="/signup?demo=1" className="btn-primary">{L.hero.cta}</Link>
  </div>
 
  {/* Framed real product screenshot */}
@@ -700,14 +523,14 @@ export default function LandingPage() {
  <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#f87171' }} />
  <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#fbbf24' }} />
  <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#34d399' }} />
- <span style={{ marginLeft: 12, fontSize: 11.5, color: T.dim, fontWeight: 500 }}>Faro · Panel de compras</span>
+ <span style={{ marginLeft: 12, fontSize: 11.5, color: T.dim, fontWeight: 500 }}>{L.hero.frame}</span>
  </div>
- <img src="/shot-panel.png" alt="Panel de compras de Faro con datos reales: KPIs de SKUs, riesgo, precisión y valor de inventario, resumen ejecutivo y productos urgentes." style={{ display: 'block', width: '100%', height: 'auto' }} />
+ <img src={HERO_SHOT.img} alt={HERO_SHOT.alt} style={{ display: 'block', width: '100%', height: 'auto' }} />
  </div>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginTop: 36, paddingBottom: 72, flexWrap: 'wrap' }}>
- <div style={{ fontSize: 12, color: T.dim }}>Industrias:</div>
- {['Distribución', 'Retail', 'Manufactura', 'Mayoristas', 'E-commerce'].map(s => (
+ <div style={{ fontSize: 12, color: T.dim }}>{L.misc.industriesLabel}</div>
+ {L.heroPills.map(s => (
  <span key={s} style={{ fontSize: 12, fontWeight: 500, color: T.muted, padding: '4px 12px', borderRadius: 20, border: `1px solid ${T.border}` }}>{s}</span>
  ))}
  </div>
@@ -726,14 +549,15 @@ export default function LandingPage() {
      its whole argument is that it tells you the truth about your numbers.
      What replaces them is countable: how many models compete per SKU
      (MODEL_ORDER), the deliveries it takes to learn a supplier's real lead time
-     (MIN_LEAD_TIME_OBSERVATIONS = 3), and the plan limits on /planes.
+     (MIN_LEAD_TIME_OBSERVATIONS = 3), and the catalogue size the product is
+     exercised against.
      If a real average accuracy ever gets measured across customers, it belongs
      here — with the number the app actually shows. */}
  {[
- { value: '9', label: 'Modelos compitiendo por producto' },
- { value: '3', label: 'Entregas para aprender el plazo real de un proveedor' },
- { value: '5K+', label: 'SKUs por instancia' },
- { value: 'CSV', label: 'Lo único que necesitas para empezar' },
+ { value: '9', label: L.strip.models },
+ { value: '3', label: L.strip.deliveries },
+ { value: '5K+', label: L.strip.skus },
+ { value: 'CSV', label: L.strip.csv },
  ].map(({ value, label }, i) => (
  <div key={label} className="strip-cell" style={{ textAlign: 'center', padding: '0 32px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
  <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', letterSpacing: '-0.04em', marginBottom: 6 }}>{value}</div>
@@ -745,11 +569,10 @@ export default function LandingPage() {
 
  {/* ── EL PROBLEMA ──────────────────────────────────────────────────── */}
  <Section id="problema" alt>
- <Tag>El problema</Tag>
- <H2>El inventario mal planificado tiene un costo concreto.</H2>
+ <Tag>{L.problem.tag}</Tag>
+ <H2>{L.problem.title}</H2>
  <Lead>
- La mayoría de empresas toma decisiones de compra con Excel, intuición acumulada y el criterio del comprador de turno.
- Eso funciona hasta cierto punto — y después, los errores se vuelven sistemáticos.
+ {L.problem.lead}
  </Lead>
  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
  {PROBLEMS.map(({ title, desc }) => (
@@ -764,9 +587,11 @@ export default function LandingPage() {
 
  {/* ── CÓMO FUNCIONA ────────────────────────────────────────────────── */}
  <Section id="solucion">
- <Tag>Cómo funciona</Tag>
- <H2>De tus datos históricos a decisiones de compra.</H2>
- <Lead>Faro transforma el historial de ventas en pronósticos precisos por producto. Sin configuración estadística, sin necesitar un analista dedicado.</Lead>
+ <Tag>{L.how.tag}</Tag>
+ <H2>{L.how.title}</H2>
+ <Lead>
+ {L.how.lead}
+ </Lead>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
  {STEPS.map(({ n, title, desc }) => (
  <div key={n} data-reveal className="card-pad" style={{ display: 'flex', gap: 18, alignItems: 'flex-start', background: T.bg2, borderRadius: 10, padding: '22px 24px', border: `1px solid ${T.border}` }}>
@@ -779,48 +604,107 @@ export default function LandingPage() {
  ))}
  </div>
 
- {/* Plain app samples — simple framed screenshots, not a headlined feature */}
- <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginTop: 32 }}>
- {[
- // Real screenshots of the running app on the demo tenant's own data,
- // taken in the light theme so they sit in this page instead of punching
- // a dark hole in it. Nothing here is a mockup.
- { img: '/shot-inventory.png', caption: 'Semáforo de inventario', alt: 'Tabla de inventario de Faro con semáforo de colores: estados PEDIR YA, OK y SOBRESTOCK por SKU y bodega.' },
- { img: '/shot-forecast.png', caption: 'Pronóstico por producto', alt: 'Gráfico de pronóstico por SKU de Faro: ventas históricas, pronóstico y el rango de venta probable.' },
- { img: '/shot-pattern.png', caption: 'Cómo se vende cada producto', alt: 'Pantalla de Faro que separa la tendencia real de un producto del patrón que se repite cada semana, con el promedio por día de la semana debajo.' },
- ].map(({ img, caption, alt }) => (
- <figure key={img} data-reveal style={{ margin: 0 }}>
- <div style={{ borderRadius: 12, border: `1px solid ${T.border}`, overflow: 'hidden', boxShadow: '0 12px 32px rgba(15,23,42,0.10)' }}>
- <img src={img} alt={alt} style={{ display: 'block', width: '100%', height: 'auto' }} />
+ {/* The guided tour: its own heading, so the reader knows a long stretch of
+     screens is starting and is not still inside "how it works". */}
+ <div style={{ marginTop: 88, maxWidth: 720 }}>
+  <h3 style={{ fontSize: 30, fontWeight: 800, color: T.text, letterSpacing: '-0.025em', margin: '0 0 12px', lineHeight: 1.2 }}>
+   {L.tour.title}
+  </h3>
+  <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.tour.lead}</p>
  </div>
- <figcaption style={{ fontSize: 12, color: T.dim, marginTop: 8 }}>{caption}</figcaption>
- </figure>
+
+ {/* One row per screen: the capture on one side, what it does on the other.
+     Sides alternate for rhythm and collapse to one column on narrow viewports
+     (`tour-row`, in globals.css). */}
+ {TOUR.map(({ chapter, when, screens }) => (
+  <div key={chapter} style={{ marginTop: 64 }}>
+   <div style={{ borderTop: `2px solid ${T.text}`, paddingTop: 14, marginBottom: 40, maxWidth: 620 }}>
+    <h3 style={{ fontSize: 22, fontWeight: 800, color: T.text, letterSpacing: '-0.02em', margin: '0 0 6px' }}>
+     {chapter}
+    </h3>
+    <p style={{ fontSize: 14, color: T.muted, margin: 0, lineHeight: 1.6 }}>{when}</p>
+   </div>
+
+   {screens.map(({ img, name, does, finds, alt }, i) => (
+    <div
+     key={img}
+     data-reveal
+     className="tour-row"
+     style={{
+      display: 'grid',
+      gridTemplateColumns: '1.25fr 1fr',
+      gap: 44,
+      alignItems: 'center',
+      marginBottom: 56,
+      direction: i % 2 === 1 ? 'rtl' : 'ltr',
+     }}
+    >
+     <div style={{ direction: 'ltr', borderRadius: 12, border: `1px solid ${T.border}`, overflow: 'hidden', boxShadow: '0 14px 40px rgba(15,23,42,0.11)' }}>
+      <img src={img} alt={alt} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+     </div>
+     <div style={{ direction: 'ltr' }}>
+      <h4 style={{ fontSize: 19, fontWeight: 700, color: T.text, letterSpacing: '-0.01em', margin: '0 0 10px' }}>
+       {name}
+      </h4>
+      <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.7, margin: '0 0 16px' }}>{does}</p>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 9 }}>
+       {finds.map((f) => (
+        <li key={f} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13.5, color: T.body, lineHeight: 1.6 }}>
+         <span aria-hidden style={{ flexShrink: 0, width: 5, height: 5, borderRadius: 999, background: T.accent, marginTop: 8 }} />
+         {f}
+        </li>
+       ))}
+      </ul>
+     </div>
+    </div>
+   ))}
+  </div>
  ))}
+
+ {/* The manual closes the tour: the visitor has just scrolled nineteen
+     screens, and this is where wanting the whole thing on paper happens.
+     The file follows the language — `faro-manual-es.pdf` / `-en.pdf`, both
+     built by `backend/scripts/build_manual.py` from `docs/manual/`. */}
+ <div data-reveal style={{ marginTop: 80, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '34px 36px', display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+  <div style={{ flex: '1 1 380px', minWidth: 0 }}>
+   <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 8, letterSpacing: '-0.015em' }}>{L.manual.title}</div>
+   <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.manual.body}</p>
+  </div>
+  <div style={{ flexShrink: 0 }}>
+   <a
+    href={`/faro-manual-${lang}.pdf`}
+    download
+    style={{ display: 'inline-block', background: T.accent, color: '#fff', fontSize: 14, fontWeight: 700, padding: '13px 24px', borderRadius: 9, textDecoration: 'none' }}
+   >
+    {L.manual.cta}
+   </a>
+   <div style={{ fontSize: 12, color: T.muted, marginTop: 9 }}>{L.manual.note}</div>
+  </div>
  </div>
  </Section>
 
  {/* ── CÓMO DECIDE ──────────────────────────────────────────────────── */}
  <Section id="como-decide" alt>
- <Tag>La regla, sin misterio</Tag>
- <H2>Cómo decide Faro que un producto está en rojo.</H2>
+ <Tag>{L.decide.tag}</Tag>
+ <H2>{L.decide.title}</H2>
  <Lead maxWidth={680}>
- Ninguna recomendación sale de una caja negra. Todo el semáforo se apoya en una sola cuenta, y la puedes hacer a mano para comprobar que da lo mismo.
+ {L.decide.lead}
  </Lead>
 
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start', marginBottom: 32 }}>
  <div>
- <H3>La cuenta</H3>
+ <H3>{L.decide.formulaTitle}</H3>
  <p style={{ fontSize: 14, color: T.body, lineHeight: 1.75, margin: '0 0 14px' }}>
- <strong style={{ color: T.text }}>Cobertura = existencias ÷ demanda diaria pronosticada.</strong> Eso te da cuántos días aguantas si no llega nada más. Esa cifra se compara contra el plazo de tu proveedor: los días que tarda en entregarte desde que le pasas la orden.
+ {L.decide.formulaBody}
  </p>
  <p style={{ fontSize: 14, color: T.body, lineHeight: 1.75, margin: 0 }}>
- La lógica es la que ya usas de cabeza, solo que aplicada a los miles de códigos que no alcanzas a revisar: si aguantas menos de lo que tarda en llegar el pedido, ya vas tarde.
+ {L.decide.formulaBody2}
  </p>
  </div>
  <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Un ejemplo</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>{L.misc.exampleTitle}</div>
  <p style={{ fontSize: 14, color: T.body, lineHeight: 1.75, margin: 0 }}>
- Vendes <strong style={{ color: T.text }}>20 unidades al día</strong> de un producto y tu proveedor tarda <strong style={{ color: T.text }}>15 días</strong> en entregar. Con esos dos números, los cuatro estados del semáforo quedan en cantidades concretas — las de la tabla de abajo. Cambia cualquiera de los dos y los cortes se mueven solos, producto por producto.
+ {L.misc.exampleBody}
  </p>
  </div>
  </div>
@@ -828,9 +712,9 @@ export default function LandingPage() {
  <Scroller minWidth={660}>
  <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
  <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 250px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Señal</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cuándo aparece</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>En el ejemplo</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.misc.signalHead[0]}</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.misc.signalHead[1]}</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.misc.signalHead[2]}</div>
  </div>
  {SIGNALS.map(({ signal, rule, example, color }, i) => (
  <div key={signal} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 250px', padding: '15px 24px', alignItems: 'center', background: i % 2 === 0 ? T.bg : T.bg2, borderBottom: i < SIGNALS.length - 1 ? `1px solid ${T.border}` : 'none' }}>
@@ -844,9 +728,9 @@ export default function LandingPage() {
 
  <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px', marginTop: 20 }}>
  <div style={{ width: 32, height: 3, background: T.accent, borderRadius: 2, marginBottom: 16 }} />
- <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 8 }}>Y el plazo no es el que te prometieron, es el que cumplen</div>
+ <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 8 }}>{L.misc.leadTimeNote}</div>
  <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7 }}>
- El plazo de entrega es la mitad de la cuenta, así que conviene que sea el real. Cada vez que registras una recepción, Faro guarda cuántos días pasaron de verdad entre la orden y la entrega. A la tercera recepción de ese proveedor deja de usar el plazo que escribiste y empieza a usar el promedio observado — y te dice cuál de los dos está aplicando. Si un proveedor te dice ocho días y entrega en catorce, el semáforo se ajusta sin que tengas que reclamar primero. Esto viene en todos los planes.
+ {L.decide.leadTimeBody}
  </div>
  </div>
  </Section>
@@ -855,22 +739,24 @@ export default function LandingPage() {
  <Section id="nosotros">
  {/* TODO: el dueño puede personalizar la historia/equipo real aquí */}
  <div style={{ maxWidth: 760 }}>
- <Tag>Nosotros</Tag>
- <H2>Construido para quien decide las compras, no para científicos de datos.</H2>
+ <Tag>{L.about.tag}</Tag>
+ <H2>{L.about.title}</H2>
  <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
- Faro nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría opera con Excel e intuición porque las herramientas de forecasting fueron hechas para grandes empresas con equipos de datos — no para una operación que maneja miles de SKUs con un equipo pequeño.
+ {L.about.body1}
  </p>
  <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: 0 }}>
- Faro toma el historial de ventas que ya tienes (un CSV o Excel), lo convierte en pronósticos por producto y en decisiones concretas de compra, sin que necesites un analista dedicado. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.
+ {L.about.body2}
  </p>
  </div>
  </Section>
 
  {/* ── INDUSTRIAS ───────────────────────────────────────────────────── */}
  <Section id="casos" alt>
- <Tag>Industrias</Tag>
- <H2>Diseñado para operaciones reales.</H2>
- <Lead>El problema de inventario no es el mismo en un mayorista que en un retailer o en una planta de producción. Faro se adapta a las características de cada operación.</Lead>
+ <Tag>{L.cases.tag}</Tag>
+ <H2>{L.cases.title}</H2>
+ <Lead>
+ {L.cases.lead}
+ </Lead>
  <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
  {CASES.map(({ label }, i) => (
  <button key={label} className="case-tab" onClick={() => setActiveCase(i)} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600, background: activeCase === i ? T.accentBg : T.bg, border: `1px solid ${activeCase === i ? T.accentBd : T.border}`, color: activeCase === i ? T.accent : T.muted, transition: 'all 0.15s' }}>
@@ -885,11 +771,14 @@ export default function LandingPage() {
  <div style={{ fontSize: 14, color: T.body, lineHeight: 1.75 }}>{CASES[activeCase].desc}</div>
  </div>
  <div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Impacto típico en {CASES[activeCase].label.toLowerCase()}</div>
- {CASES[activeCase].metrics.map(({ metric, value }) => (
- <div key={metric} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: `1px solid ${T.border}` }}>
- <span style={{ fontSize: 13, color: T.body }}>{metric}</span>
- <span style={{ fontSize: 14, fontWeight: 700, color: T.green }}>{value}</span>
+ {/* Was "Impacto típico en …" over a column of green percentages. The
+     heading promised a measured outcome, so the numbers under it read as
+     measurements; none of them were. It now says what the product does. */}
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>{L.cases.doesLabel}  {CASES[activeCase].label.toLowerCase()}</div>
+ {CASES[activeCase].does.map(item => (
+ <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '14px 0', borderBottom: `1px solid ${T.border}` }}>
+ <span style={{ flexShrink: 0, width: 6, height: 6, marginTop: 7, borderRadius: '50%', background: T.green }} />
+ <span style={{ fontSize: 13, color: T.body, lineHeight: 1.65 }}>{item}</span>
  </div>
  ))}
  </div>
@@ -900,9 +789,11 @@ export default function LandingPage() {
  <Section>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 72, alignItems: 'start' }}>
  <div>
- <Tag>Lo que incluye</Tag>
- <H2>Todo lo necesario para planificar con datos.</H2>
- <Lead>Sin integraciones complicadas, sin semanas de implementación, sin depender de un consultor externo. Faro funciona desde el primer archivo que cargas.</Lead>
+ <Tag>{L.includes.tag}</Tag>
+ <H2>{L.includes.title}</H2>
+ <Lead>
+ {L.includes.lead}
+ </Lead>
  </div>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
  {BENEFITS.map(b => (
@@ -917,9 +808,11 @@ export default function LandingPage() {
 
  {/* ── VS EXCEL ─────────────────────────────────────────────────────── */}
  <Section id="comparacion" alt>
- <Tag>Comparación</Tag>
- <H2>Excel vs Faro.</H2>
- <Lead>Excel es una herramienta de análisis, no un sistema de pronóstico. Funciona para unos pocos productos. El problema aparece cuando el negocio crece y los modelos manuales no escalan.</Lead>
+ <Tag>{L.compare.tag}</Tag>
+ <H2>{L.compare.title}</H2>
+ <Lead>
+ {L.compare.lead}
+ </Lead>
  <Scroller minWidth={620}>
  <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
@@ -940,14 +833,14 @@ export default function LandingPage() {
 
  {/* ── QUÉ NECESITAS ────────────────────────────────────────────────── */}
  <Section id="empezar">
- <Tag>Antes de empezar</Tag>
- <H2>Qué necesitas para arrancar — y qué no.</H2>
+ <Tag>{L.start.tag}</Tag>
+ <H2>{L.start.title}</H2>
  <Lead maxWidth={680}>
- La razón más común por la que una herramienta así se queda sin usar no es el precio: es descubrir, tres semanas después, que hacía falta un proyecto de datos antes de poder abrirla. Esta es la lista completa, para que la revises ahora.
+ {L.start.lead}
  </Lead>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
  <div>
- <H3>Lo que sí necesitas</H3>
+ <H3>{L.start.needTitle}</H3>
  {NEED.map(n => (
  <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 0' }}>
  <div style={{ marginTop: 3 }}><Check /></div>
@@ -956,7 +849,7 @@ export default function LandingPage() {
  ))}
  </div>
  <div>
- <H3>Lo que no necesitas</H3>
+ <H3>{L.start.notNeedTitle}</H3>
  {NOT_NEED.map(n => (
  <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 0' }}>
  <div style={{ marginTop: 3 }}><Dash /></div>
@@ -967,161 +860,101 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── PRECIOS ──────────────────────────────────────────────────────── */}
- <Section id="prices">
- <Tag>Precios</Tag>
- <H2>Planes que se adaptan al tamaño de tu operación.</H2>
- <Lead maxWidth={680}>Todos los planes pronostican, generan órdenes de compra y aprenden el plazo de cada proveedor. Lo que cambia es hasta dónde escalan y qué se agrega cuando tienes varias bodegas. Si no sabes cuál te toca, <a href="#que-plan" style={{ color: T.accent, fontWeight: 600, textDecoration: 'none' }}>abajo está el detalle por tipo de operación</a>.</Lead>
- <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
- {PLANS.map(({ name, price, priceLabel, priceHint, desc, skus, features, cta, ctaHref, highlight }) => (
- <div key={name} data-reveal className="card-pad" style={{
- borderRadius: 12, padding: '32px 28px',
- background: highlight ? T.text : T.bg,
- border: `1px solid ${highlight ? T.text : T.border}`,
- display: 'flex', flexDirection: 'column', gap: 0,
- }}>
- {highlight && (
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, background: T.accentBg, display: 'inline-block', padding: '3px 10px', borderRadius: 20, alignSelf: 'flex-start' }}>
- Más popular
+ {/* ── PRECIO ───────────────────────────────────────────────────────── */}
+ <Section id="precio">
+ <Tag>{L.pricing.tag}</Tag>
+ <H2>{L.pricing.title}</H2>
+ <Lead maxWidth={720}>
+ {L.pricing.lead}
+ </Lead>
+
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, maxWidth: 860, marginBottom: 28 }}>
+ <div data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '28px 26px' }}>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>{L.pricing.freeLabel}</div>
+ <div style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: '-0.02em', marginBottom: 4 }}>{L.pricing.freePrice}</div>
+ <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7, marginBottom: 18 }}>
+ {L.pricing.freeNote}
  </div>
- )}
- <div style={{ fontSize: 20, fontWeight: 800, color: highlight ? '#fff' : T.text, marginBottom: 6 }}>{name}</div>
- <div style={{ fontSize: 13, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted, marginBottom: 16, lineHeight: 1.5 }}>{desc}</div>
- {priceLabel ? (
- <div style={{ marginBottom: 18 }}>
- <div style={{ fontSize: 34, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{priceLabel}</div>
- {priceHint && (
- <div style={{ fontSize: 14, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted, marginTop: 4 }}>{priceHint}</div>
- )}
- </div>
- ) : (
- <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 18 }}>
- <span style={{ fontSize: 40, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em' }}>${price}</span>
- <span style={{ fontSize: 14, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted }}>/mes</span>
- </div>
- )}
- <div style={{ fontSize: 12, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.5)' : T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${highlight ? 'rgba(255,255,255,0.1)' : T.border}` }}>
- {skus}
- </div>
- <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28, flex: 1 }}>
- {features.map(f => (
- <div key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
- <svg width={14} height={14} viewBox="0 0 14 14" style={{ flexShrink: 0, marginTop: 2 }}>
- <circle cx={7} cy={7} r={7} fill={highlight ? 'rgba(255,255,255,0.1)' : T.greenBg} />
- <path d="M3.5 7 L6 9.5 L10.5 5" stroke={highlight ? '#fff' : T.green} strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
- </svg>
- <span style={{ fontSize: 13, color: highlight ? 'rgba(255,255,255,0.8)' : T.body, lineHeight: 1.45 }}>{f}</span>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+ {FREE_LIMITS.map(([label, value]) => (
+ <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: T.body, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+ <span>{label}</span>
+ <span style={{ fontWeight: 700, color: T.text, whiteSpace: 'nowrap' }}>{value}</span>
  </div>
  ))}
  </div>
- <a href={ctaHref} style={{
- display: 'block', textAlign: 'center', padding: '11px 20px', borderRadius: 8,
+ </div>
+
+ <div data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.accentBd}`, borderRadius: 12, padding: '28px 26px' }}>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>{L.pricing.paidLabel}</div>
+ <div style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: '-0.02em', marginBottom: 4 }}>{L.pricing.paidPrice}</div>
+ <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7, marginBottom: 18 }}>
+ {L.pricing.paidNote}
+ </div>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+ {FREE_LIMITS.map(([label]) => (
+ <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: T.body, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+ <span>{label}</span>
+ <span style={{ fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{L.pricing.unlimited}</span>
+ </div>
+ ))}
+ </div>
+ </div>
+ </div>
+
+ <div data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '28px 32px', maxWidth: 860 }}>
+ <div style={{ fontSize: 13, color: T.body, lineHeight: 1.75, marginBottom: 20 }}>
+ {L.pricing.closing}
+ </div>
+ <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+ <Link href="/signup" style={{
+ display: 'inline-block', padding: '11px 20px', borderRadius: 8,
  fontSize: 13, fontWeight: 700, textDecoration: 'none',
- background: highlight ? '#fff' : T.text,
- color: highlight ? T.text : '#fff',
- transition: 'opacity 0.15s',
- }}
- onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
- onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
- >
- {cta}
- </a>
+ background: T.text, color: '#fff',
+ }}>{L.pricing.ctaSignup}</Link>
+ <a href={`https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent('Hola, quiero ampliar los limites de Faro.')}`} target="_blank" rel="noopener noreferrer" style={{
+ display: 'inline-block', padding: '11px 20px', borderRadius: 8,
+ fontSize: 13, fontWeight: 700, textDecoration: 'none',
+ background: T.bg, color: T.text, border: `1px solid ${T.border}`,
+ }}>{L.pricing.ctaWhatsapp}</a>
+ <a href="mailto:hola@usefaro.io?subject=Faro%20%E2%80%94%20quiero%20una%20cotizaci%C3%B3n" style={{
+ display: 'inline-block', padding: '11px 20px', borderRadius: 8,
+ fontSize: 13, fontWeight: 700, textDecoration: 'none',
+ background: T.bg, color: T.text, border: `1px solid ${T.border}`,
+ }}>{L.pricing.ctaEmail}</a>
  </div>
- ))}
  </div>
- <p style={{ fontSize: 13, color: T.dim, marginTop: 24, textAlign: 'center' }}>
- Precios en USD por mes. Empieza gratis con datos de ejemplo o escríbenos a hola@usefaro.io para una cotización a medida.
- </p>
  </Section>
 
- {/* ── QUÉ PLAN ─────────────────────────────────────────────────────── */}
- <Section id="que-plan" alt>
- <Tag>Qué plan te sirve</Tag>
- <H2>Cuál es para ti, y por qué.</H2>
+ {/* ── QUÉ INCLUYE ──────────────────────────────────────────────────── */}
+ <Section id="incluye">
+ <Tag>{L.includes.tag}</Tag>
+ <H2>{L.includes.title}</H2>
  <Lead maxWidth={700}>
- El plan no se decide por el tamaño de la empresa sino por la forma de tu inventario: cuántas bodegas mueves, cuántos códigos tienes activos y cuánta gente necesita entrar. Busca abajo el párrafo que describe tu operación.
- </Lead>
- <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
- {PLAN_FIT.map(({ plan, headline, who, why, outgrow, note }) => (
- <div key={plan} data-reveal className="card-pad" style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: '28px 26px', display: 'flex', flexDirection: 'column' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>{plan}</div>
- <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 16, letterSpacing: '-0.02em', lineHeight: 1.35 }}>{headline}</div>
-
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>Si te reconoces en esto</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7, marginBottom: 18 }}>{who}</div>
-
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>Por qué este y no otro</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7, marginBottom: 18, flex: 1 }}>{why}</div>
-
- {outgrow && (
- <div style={{ background: T.amberBg, border: `1px solid ${T.amberBd}`, borderRadius: 8, padding: '12px 14px' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.amber, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Se te queda corto cuando</div>
- <div style={{ fontSize: 12.5, color: T.body, lineHeight: 1.6 }}>{outgrow}</div>
- </div>
- )}
- {note && (
- <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 14px' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Cómo se activa</div>
- <div style={{ fontSize: 12.5, color: T.body, lineHeight: 1.6 }}>{note}</div>
- </div>
- )}
- </div>
- ))}
- </div>
-
- <H3 style={{ margin: '44px 0 16px' }}>Los límites, en números</H3>
- <Scroller minWidth={640}>
- <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 130px 130px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Límite</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Starter</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Profesional</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Empresarial</div>
- </div>
- {PLAN_LIMITS.map(({ label, starter, pro, ent }, i) => (
- <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 130px 130px', padding: '15px 24px', alignItems: 'center', background: i % 2 === 0 ? T.bg : T.bg2, borderBottom: i < PLAN_LIMITS.length - 1 ? `1px solid ${T.border}` : 'none' }}>
- <span style={{ fontSize: 13, color: T.body }}>{label}</span>
- <span style={{ fontSize: 13, color: T.muted, textAlign: 'center', fontWeight: 500 }}>{starter}</span>
- <span style={{ fontSize: 13, color: T.text, textAlign: 'center', fontWeight: 700 }}>{pro}</span>
- <span style={{ fontSize: 13, color: T.muted, textAlign: 'center', fontWeight: 500 }}>{ent}</span>
- </div>
- ))}
- </div>
- </Scroller>
- <p style={{ fontSize: 12.5, color: T.dim, lineHeight: 1.7, margin: '14px 0 0', maxWidth: 760 }}>
- Un “entrenamiento guardado” es cada corrida que dejas archivada con su configuración y sus resultados, para poder volver a ella o compararla. Las 20 de Starter alcanzan para casi dos años de recálculo mensual.
- </p>
- </Section>
-
- {/* ── PLAN PROFESIONAL ─────────────────────────────────────────────── */}
- <Section id="profesional">
- <Tag>Plan Profesional</Tag>
- <H2>El plan Profesional, en detalle.</H2>
- <Lead maxWidth={700}>
- Es el plan que compra la mayoría, y también el que más se malinterpreta: no es “Starter con más cupo”. Lo que agrega resuelve dos problemas que solo aparecen cuando creces — no poder mirar todos los productos, y tener el inventario repartido en varios lugares.
+ {L.includes.lead}
  </Lead>
 
- <H3>A quién le resuelve algo, y qué</H3>
+ <H3>{L.includes.rolesTitle}</H3>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 48 }}>
- {PRO_ROLES.map(({ role, pain, gain }) => (
+ {ROLES.map(({ role, pain, gain }) => (
  <div key={role} data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
  <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>{role}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Hoy</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{L.misc.roleToday}</div>
  <div style={{ fontSize: 13, color: T.body, lineHeight: 1.65, marginBottom: 14 }}>{pain}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Con Faro</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{L.misc.roleWith}</div>
  <div style={{ fontSize: 13, color: T.body, lineHeight: 1.65 }}>{gain}</div>
  </div>
  ))}
  </div>
 
- <H3>Qué incluye, concretamente</H3>
+ <H3>{L.includes.itemsTitle}</H3>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
- {PRO_INCLUDES.map(({ title, desc, isNew }) => (
+ {INCLUDES.map(({ title, desc, isNew }) => (
  <div key={title} data-reveal className="card-pad" style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
  <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{title}</span>
  {isNew && (
- <span style={{ fontSize: 10, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Nuevo</span>
+ <span style={{ fontSize: 10, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{L.includes.isNew}</span>
  )}
  </div>
  <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7 }}>{desc}</div>
@@ -1130,7 +963,7 @@ export default function LandingPage() {
  </div>
 
  <p style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, margin: '28px 0 0', maxWidth: 760 }}>
- Todo lo anterior va además de lo que ya trae Starter: el semáforo, las órdenes de compra, las recepciones que aprenden el plazo del proveedor, los reportes y las alertas por correo. <a href="#prices" style={{ color: T.accent, fontWeight: 600, textDecoration: 'none' }}>Ver el precio →</a>
+ {L.includes.tail}
  </p>
  </Section>
 
@@ -1138,10 +971,10 @@ export default function LandingPage() {
  <Section alt>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 72, alignItems: 'start' }}>
  <div className="faq-side" style={{ position: 'sticky', top: 80 }}>
- <Tag>Preguntas frecuentes</Tag>
- <H2>Respuestas a las dudas más comunes.</H2>
+ <Tag>{L.faq.tag}</Tag>
+ <H2>{L.faq.title}</H2>
  <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 24px' }}>
- Si tienes alguna pregunta que no está aquí, escríbenos directamente. Respondemos en menos de 24 horas.
+ {L.faq.lead}
  </p>
  <a href="mailto:hola@usefaro.io" className="cta-link" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
  Escribir al equipo →
@@ -1177,12 +1010,12 @@ export default function LandingPage() {
  <span style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: '-0.02em' }}>Faro</span>
  </div>
  <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, margin: 0 }}>
- Pronóstico de demanda e inteligencia de inventario para distribuidores, retail y manufactura.
+ {L.footer.tagline}
  </p>
  </div>
  <div>
- <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Producto</div>
- {[['#solucion','Cómo funciona'],['#casos','Industrias'],['#prices','Precios'],['#comparacion','vs Excel']].map(([href, label]) => (
+ <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>{L.footer.product}</div>
+ {L.footerLinks.product.map(([href, label]) => (
  <a key={href} href={href} className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
@@ -1190,8 +1023,8 @@ export default function LandingPage() {
  ))}
  </div>
  <div>
- <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Empresa</div>
- {[['#problema','El problema'],['#nosotros','Nosotros'],['mailto:hola@usefaro.io','Contacto']].map(([href, label]) => (
+ <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>{L.footer.company}</div>
+ {L.footerLinks.company.map(([href, label]) => (
  <a key={label} href={href} className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
@@ -1199,7 +1032,7 @@ export default function LandingPage() {
  ))}
  </div>
  <div>
- <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Contacto</div>
+ <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>{L.footer.contact}</div>
  <a href="mailto:angel.zeledon.fernandez@gmail.com" className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 8, wordBreak: 'break-word' }}
  onMouseEnter={e => (e.currentTarget.style.color = T.accent)}
  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
@@ -1211,8 +1044,8 @@ export default function LandingPage() {
  </div>
  </div>
  <div className="footer-bottom" style={{ borderTop: `1px solid ${T.border}`, paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
- <div style={{ fontSize: 12, color: T.dim }}>© 2026 Faro. Todos los derechos reservados.</div>
- <div style={{ fontSize: 12, color: T.dim }}>Hecho en Costa Rica</div>
+ <div style={{ fontSize: 12, color: T.dim }}>{L.footer.rights}</div>
+ <div style={{ fontSize: 12, color: T.dim }}>{L.footer.madeIn}</div>
  </div>
  </div>
  </footer>

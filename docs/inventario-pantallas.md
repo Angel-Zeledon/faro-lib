@@ -16,7 +16,7 @@ Abrir la pantalla **no** cuenta. Una caminata es:
    La mayoría de los defectos de este producto no lanzan error: muestran un
    número equivocado con toda calma.
 3. Provocar el camino infeliz al menos una vez — el archivo mal formado, el rol
-   sin permiso, la red caída, el plan que no incluye la función.
+   sin permiso, la red caída, la fecha que ya pasó.
 4. Anotar aquí la fecha y **qué se miró**, no solo que se miró.
 
 Una pantalla caminada por un camino no queda caminada por los demás. La columna
@@ -29,20 +29,20 @@ del tamaño de la superficie, no de su riesgo.
 
 | Pantalla | Ruta | Acciones | Última caminata | Qué se verificó | Qué falta |
 |---|---|---:|---|---|---|
-| Inventario | `/inventario` | 60 | 2026-08-09 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación; edición masiva de stock/lead time y semáforo recalculado con datos reales (cobertura, cantidad a pedir) | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas, importar CSV de stock |
+| Inventario | `/inventario` | 60 | 2026-08-09 | Semáforo, pestaña por bodega, edición de stock, "Todas" de solo lectura, etiqueta "Aún no", hint de importación; edición masiva de stock/lead time y semáforo recalculado con datos reales (cobertura, cantidad a pedir) | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, importar CSV de stock. **Eventos y temporadas caminado el 2026-08-16** (crear evento, simular, multiplicador por SKU; tres defectos encontrados y arreglados — ver `estabilidad.md`); falta el Calendario LatAm, editar/borrar evento y el multiplicador por familia y categoría |
 | Pronósticos | `/pronosticos` | 17 | 2026-08-10 | Aviso de calidad y sus 5 detalles; pestañas Forecast / Cómo se vende / Métricas / Calidad / Inventario; granularidad D/W/M/Q/Y (la agregación es coherente: 180 → 26 → 6 → 2 → 1 puntos y el promedio escala); multi-selección de modelos y banda de confianza; buscador; comparación de dos sesiones lado a lado; panel de backtest; tabla de métricas contra la API | Las tres exportaciones (Excel por SKU, "Todos los SKUs", PDF), pantalla completa, el tutorial, "Ver análisis estadístico detallado". **Cuatro hallazgos, uno arreglado y tres abiertos — ver abajo** |
 | Archivos / Fuentes | `/archivos` | 40 | 2026-08-09 | Vista previa (archivo cp1252 con acentos intactos — lector distinto al del entrenamiento); editor de columnas y filas con las 360 filas; "Guardar como nuevo"; renombrar (persiste `Ñ`, `ú` y guion largo); eliminar con confirmación que nombra el archivo y limpia base **y disco**; pestaña Análisis | Conectar fuente SQL ("Nuevo elemento"), "Reemplazar archivo", buscador, tutorial de 9 pasos, correr un Análisis completo |
 | Panel de compras | `/compras` | 14 | 2026-08-10 | Optimizador (horizonte, transferencias sin ciclos, explicación vs semáforo); aprobar y rechazar recomendaciones; carrito de aprobados; generar OC (queda en la base: 348 und, ₡417 600); resumen ejecutivo con datos reales; **permisos ejercidos con viewer y admin reales, en ancho normal y angosto** (ver abajo) | Envío a proveedores, selección de bodega destino, edición de cantidades, deshacer aprobación. El gate de "Crear transferencia" quedó **sin caminar**: la sesión activa no trae sugerencias de traslado en el briefing |
 | Mis ventas | `/ventas` | 11 | 2026-08-09 | Subida, mapeo, gate con remediaciones, entrenamiento completo; **archivo cp1252 con `;`, fechas dd/mm/yyyy y SKUs acentuados** — acentos intactos y día-primero resuelto solo | Reusar archivo ya subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
 | Mi cuenta | `/mi-cuenta` | 23 | 2026-08-06 | Zona horaria (lectura y cambio), lista de modelos | Moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros de actividad |
 | Landing | `/` | 8 | 2026-08-10 | **Las promesas funcionales contrastadas contra el código**: "a la tercera recepción" = `MIN_LEAD_TIME_OBSERVATIONS = 3` exacto, y "viene en todos los planes" es cierto (no hay gate); los CTA apuntan a `/signup?demo=1`, que signup sí lee y enlaza con `demo_quickstart` | Correr el demo de verdad (crearía otro tenant), navegación por anclas, formulario de contacto, vista móvil. **La fila de cifras del hero está sin respaldo — ver abajo** |
-| Asistente IA | `/asistente` | 14 | 2026-08-10 | Lista de conversaciones, abrir una, selector de sesión, **enviar una pregunta sin LLM detrás**: responde en español, honesto y etiquetado como Error ("El asistente tardó demasiado… tu pregunta sigue aquí") | Una respuesta real (necesita Ollama o clave Anthropic), nueva conversación, buscador, renombrar/eliminar |
+| Asistente IA | `/asistente` | 14 | 2026-08-10 | Lista de conversaciones, abrir una, selector de sesión, **enviar una pregunta sin LLM detrás**: responde en español, honesto y etiquetado como Error ("El asistente tardó demasiado… tu pregunta sigue aquí") | Nueva conversación, nueva conversación, buscador, renombrar/eliminar |
 | Usuarios | `/usuarios` | 19 | 2026-08-09 | Crear usuario con rol (queda `pending_confirmation`, sin verificar); filtros de estado y rol; **permisos ejercidos como viewer real**: escrituras rechazadas con 403 y estado sin cambiar (ver abajo) | Editar usuario, suspender/reactivar, cambiar rol de otro, reenviar invitación, no poder degradarse a sí mismo |
-| Escenarios | `/escenarios` | 6 | 2026-08-06 (parcial) | Solo el muro de plan para tenant Starter | La pantalla entera con un plan que la incluya |
+| Escenarios | `/escenarios` | 6 | 2026-08-16 | Ya no hay muro (se quitaron los planes). Regla de **cambio de demanda** ×1,4 (38,8 → 54,4 diarios, 131 → 240 unidades) y **atraso de proveedor** +7 días (plazo 9 → 16, Pedir pronto → **Pedir YA**, 131 → 422): las dos comparadas contra el plan actual y contra la aritmética | Promoción e inventario de seguridad, guardar y volver a correr un escenario, varias reglas a la vez, filtros por SKU/categoría/fechas, el tope de 50 reglas |
 | Automatización | `/automatizacion` | 14 | 2026-08-06 | Programaciones armadas, historial, zona horaria, re-anclaje | Llaves de API, webhooks, pausar/eliminar programación |
 | Proveedores | `/proveedores` | 6 | 2026-08-06 (solo API) | Campos de lead time aprendido/inutilizable | La pantalla; alta y edición de proveedor; scorecard |
 | Impacto | `/impacto` | 0 | 2026-08-10 | **Los cuatro números de portada reconciliados contra la base uno por uno** (ver abajo); resumen mensual; tabla de evolución; estados vacíos | Tutorial, enlaces de navegación, un mes con capital liberado real (necesita dos mediciones mensuales seguidas) |
-| Integraciones | `/integraciones` | 3 | 2026-08-10 (solo el muro) | Muro de plan para tenant Starter, y **verificado contra el código que lo que promete existe**: conectores Alegra/Siigo reales, credenciales cifradas, y `run_daily_integration_syncs` corriendo desde el bucle diario del worker | **La pantalla entera con un plan que la incluya**: conectar, probar conexión, sincronizar, ver errores de credenciales. Nada del flujo real está caminado |
+| Integraciones | `/integraciones` | 3 | 2026-08-10 (solo el muro) | **Verificado contra el código que lo que promete existe**: conectores Alegra/Siigo reales, credenciales cifradas, y `run_daily_integration_syncs` corriendo desde el bucle diario del worker. El muro de plan se quitó el 2026-08-16 | **La pantalla entera**: conectar, probar conexión, sincronizar, ver errores de credenciales. Nada del flujo real está caminado, y la pantalla sigue fuera del menú |
 | Mensajes | `/mensajes` | 4 | 2026-08-10 | Lista de conversaciones, abrir una (**marca leído de verdad en la base**), enviar — el mensaje llega a `direct_messages` con acentos, guion largo y € intactos, y queda no-leído para la destinataria | Buscar persona, iniciar conversación nueva, mensajes largos, adjuntos si existen |
 | Registro | `/signup` | 2 | 2026-08-09 | Alta completa (tenant + admin), rechazo por WhatsApp duplicado sin dejar filas varadas, aviso honesto cuando no se puede enviar el correo | Correo duplicado, validaciones de contraseña una por una, reenvío de verificación |
 | Recuperar contraseña | `/forgot-password` | 4 | 2026-08-10 | Los **3 pasos completos**: correo desconocido (no filtra si la cuenta existe), código equivocado, código válido, contraseña corta, contraseñas que no coinciden, cambio exitoso y redirección. Verificado en base: OTP quemado (`used=t`), refresh revocado, contraseña vieja rechazada, nueva aceptada | Reenviar código ("Prueba de nuevo"), OTP vencido, límite de intentos |
@@ -50,7 +50,6 @@ del tamaño de la superficie, no de su riesgo.
 | Scorecard proveedor | `/proveedores/scorecard` | 0 | 2026-08-10 | Tabla completa con datos reales (recepciones, lead time real vs declarado, tendencia, % a tiempo, fill rate, valor comprado) | Un proveedor con entregas que sí midan algo; ordenar/filtrar si existe. Los dos matices que faltaban quedaron **ARREGLADOS el 2026-08-10**; el barrido del 2026-08-11 encontró **otras dos** cifras con el mismo defecto (`% a tiempo` contra un declarado de 15 que nadie declaró, y `valor comprado` como ₡0 confiado) — ver `estabilidad.md` |
 | Iniciar sesión | `/login` | 3 | 2026-08-06 | Login de tres cuentas con roles distintos | Credenciales malas, cuenta suspendida, cierre entre pestañas (verificado por evento, no con dos pestañas reales) |
 | Pedidos | `/pedidos` | 3 | 2026-08-09 | Lista con OC generada (número, urgentes, unidades, estado "En camino"); registrar llegada **parcial** — suma solo lo recibido y deja la OC en `partial` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp (abrir/copiar/enviarme), recibir de más |
-| Planes | `/planes` | 0 | 2026-08-10 | **Los límites anunciados contrastados contra los que el backend aplica** (`entitlements/plans.py`: 1000/2/1, 5000/10/5, ilimitado) — coinciden exactos; "Tu plan actual" cae en la tarjeta correcta (tenant `professional`); los dos CTA son `mailto:` reales, coherentes con "el cobro automático llega pronto" | Verlo desde un tenant Starter y desde uno Enterprise; el aviso al chocar contra un límite |
 | Restablecer contraseña | `/reset-password` | 2 | 2026-08-10 | Sin token (avisa y **deshabilita** el botón — no ofrece lo que no puede cumplir); con un token real del propio producto: cambio exitoso, contraseña vieja rechazada, sesiones cortadas; **replay del mismo enlace** (ver abajo) | Token vencido, token de otro propósito, enlace por correo — **que hoy nadie envía** |
 | Verificar correo | `/verify-email` | 1 | 2026-08-09 | Token válido activa la cuenta y habilita el login | Token vencido, token ya usado, token manipulado |
 | API pública | `/api` | 8 | 2026-08-11 | **Nueva.** Render en ES y EN sin claves crudas; token pegado; `GET /planning` ejecutado de verdad (200 en 177 ms, JSON formateado); **clave inválida → 401 en pantalla sin cerrar la sesión**; confirmación de escritura nombrando la consecuencia | Ejecutar una escritura hasta el final (muta datos reales), subida de archivo, `train`, vista angosta, y el caso de plan sin `api_access` |
@@ -566,3 +565,21 @@ no de una función: `test_notification_delivery_honesty`,
 4. **Nada de topes silenciosos.** Si una pasada cubre solo parte de una
    pantalla, se anota en "qué falta". Una casilla vacía significa desconocido,
    nunca correcto.
+
+
+## Actualización 2026-08-23
+
+- **`Planes` se eliminó de la tabla.** La pantalla no existe: se fue con los
+  tiers el 2026-08-16, y lo que la reemplaza es el panel «Uso y límites» dentro
+  de `Mi cuenta`, ya listado aquí.
+- **El Asistente IA ya no depende de Ollama ni de una clave de Anthropic.** El
+  único backend es DeepSeek (`DEEPSEEK_API_KEY`); sin clave, las funciones de IA
+  fallan en voz alta en vez de contestar desde otro proveedor.
+- **Caminadas hoy, con el tenant demo sembrado**: las 16 pantallas del menú, para
+  capturar el recorrido de la landing. Salieron cinco defectos, todos arreglados
+  y anotados en `estabilidad.md`: el chat moría por depender de Pinecone; leía el
+  resultado de entrenamiento en vez del semáforo, y afirmaba que el 100% del
+  catálogo estaba en riesgo; estaba colgado de la sesión equivocada; el panel de
+  claves de API seguía ofreciendo copiar una credencial recién revocada; y la
+  página de API prometía un límite que dejó de ser cierto al aparecer el plan
+  gratis.

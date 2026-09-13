@@ -152,7 +152,7 @@ export default function PedidosMobile(props: PedidosMobileProps) {
                 {awaiting.length === 0 ? (
                   <p style={{ margin: 0, fontSize: 12.5, color: C.dim, lineHeight: 1.5 }}>
                     {tOr(t, 'mobile.pedidos_awaiting_none',
-                      'Nothing to receive: every order you generated has already been recorded as arrived.')}
+                      'Nothing to receive among your recent orders. If you are expecting something older, look for it on the desktop screen.')}
                   </p>
                 ) : awaiting.map(entry => (
                   <OrderCard key={entry.id} entry={entry} onReceive={() => onReceive(entry.id)} />

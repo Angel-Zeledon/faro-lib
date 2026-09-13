@@ -1,6 +1,7 @@
 'use client'
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { translations, type Lang } from '@/i18n/translations'
+import { setNumberLocale } from '@/lib/numberLocale'
 
 interface LangCtx {
   lang: Lang
@@ -15,6 +16,11 @@ const Ctx = createContext<LangCtx>({ lang: 'es', t: (k: string) => k, setLang: (
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>('es')
+
+  // Set during render, not in an effect: children format numbers on their very
+  // first paint, and an effect would run after them — showing one frame of
+  // Spanish separators on an English screen. See lib/numberLocale.ts.
+  setNumberLocale(lang)
 
   useEffect(() => {
     const saved = (localStorage.getItem('lang') as Lang | null) ?? 'es'

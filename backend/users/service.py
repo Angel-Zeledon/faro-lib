@@ -168,8 +168,13 @@ def update_last_login(tenant_id: str, user_id: str) -> None:
     )
 
 
-def count_users(tenant_id: str) -> int:
-    row = query_one("SELECT COUNT(*) AS c FROM users WHERE tenant_id = %s", (tenant_id,))
+def count_users(tenant_id: str, conn=None) -> int:
+    """`conn` matters when this count is about to be enforced as a ceiling: it
+    has to be read on the connection holding the tenant's limit_guard lock, or
+    the count and the write it authorises are two different moments again."""
+    row = query_one(
+        "SELECT COUNT(*) AS c FROM users WHERE tenant_id = %s", (tenant_id,), conn=conn,
+    )
     return row["c"] if row else 0
 
 

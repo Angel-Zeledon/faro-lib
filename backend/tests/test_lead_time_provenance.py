@@ -158,6 +158,65 @@ class TestProvenanceIsPersisted:
         assert item["lead_time_source"] == SOURCE_DEFAULT
         assert item["lead_time_days"] == DEFAULT_LEAD_TIME_DAYS
 
+    def test_creating_a_row_over_http_does_not_claim_the_defaults_it_never_sent(
+        self, client, auth_headers, test_tenant,
+    ):
+        """
+        The service-level test above passes a bare dict, so the untouched fields
+        are simply absent. Over HTTP they are not: `min_stock`, `lead_time_days`
+        and `moq` are the three non-Optional fields on StockUpsert, so Pydantic
+        materialises them to 0 / 15 / 1 and `model_dump` hands them over as if
+        the caller had typed them.
+
+        The endpoint filtered that back out for EXISTING rows only — a new row
+        "has to start somewhere" — which stamped `lead_time_set_by = 'user'` on
+        an assumption. The value is the same either way (the column is NOT NULL
+        DEFAULT 15); the stamp is not, and `resolve_field` reads the stamp.
+        """
+        tid, sku = test_tenant["id"], _sku()
+        resp = client.put(
+            f"/api/v1/inventory/stock/{sku}",
+            json={"current_stock": 20, "unit_cost": 5.0},
+            headers=auth_headers,
+        )
+        assert resp.status_code in (200, 201), resp.text
+
+        row = _row(tid, sku)
+        assert int(row["lead_time_days"]) == DEFAULT_LEAD_TIME_DAYS, (
+            "the schema default still fills the column")
+        assert row["lead_time_set_by"] is None, (
+            "nobody sent a lead time — it must not be claimed as theirs")
+        assert row["moq_set_by"] is None
+        # What the caller DID send is written, and claimed as theirs.
+        assert float(row["unit_cost"]) == 5.0
+        assert row["unit_cost_set_by"] == SOURCE_USER
+
+    def test_a_supplier_rule_is_not_overridden_by_a_default_nobody_typed(
+        self, client, auth_headers, test_tenant,
+    ):
+        """
+        What the false 'user' stamp actually cost. A tenant configures "Acme
+        delivers in 45 days" as a supplier rule, then adds a SKU through the
+        normal stock screen without mentioning a lead time. `resolve_field` lets
+        the SKU row beat the rule only when its provenance says a human set it —
+        so the rule was silently discarded on every SKU created this way, and
+        the buyer planned on 15 days against a supplier who takes 45.
+        """
+        from backend.inventory import stock_defaults_service as sd_svc
+
+        tid, sku = test_tenant["id"], _sku()
+        sd_svc.set_stock_default(tid, "supplier", "Acme", {"lead_time_days": 45})
+        resp = client.put(
+            f"/api/v1/inventory/stock/{sku}",
+            json={"current_stock": 20, "supplier": "Acme", "unit_cost": 5.0},
+            headers=auth_headers,
+        )
+        assert resp.status_code in (200, 201), resp.text
+
+        item = _status_item(client, auth_headers, tid, sku)
+        assert item["lead_time_days"] == 45
+        assert item["lead_time_source"] == "supplier_rule"
+
     def test_a_sku_the_user_set_to_exactly_the_default_reports_user(
         self, client, auth_headers, test_tenant,
     ):

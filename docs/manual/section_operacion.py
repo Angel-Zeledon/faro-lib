@@ -1,0 +1,1210 @@
+"""Daily-operation section of the Faro user manual (Spanish + English).
+
+Content only: no imports, no logic. The PDF assembler reads SECTION.
+Image keys are fixed: panel, inventory, pedidos, mensajes.
+The four stock signals (PEDIR_YA, PEDIR_PRONTO, OK, SOBRESTOCK) are stored
+values and stay in Spanish in both languages.
+"""
+
+SECTION = {
+    "id": "operacion",
+    "es": {
+        "title": "Operación diaria",
+        "intro": (
+            "Estas cuatro pantallas son la rutina de todos los días: abres el Panel de "
+            "compras en la mañana para decidir qué pedir, entras a Inventario cuando "
+            "necesitas revisar o corregir un producto en particular, pasas por Pedidos "
+            "cuando llega la mercadería, y usas Mensajes para coordinar con tu equipo sin "
+            "salir de Faro. Las tres primeras trabajan sobre los mismos datos —el "
+            "pronóstico de demanda y el stock que tienes registrado— así que lo que "
+            "corriges en una se ve en las otras."
+        ),
+        "screens": [
+            {
+                "name": "Panel de compras",
+                "route": "/compras",
+                "image": "panel",
+                "purpose": (
+                    "Es la pantalla con la que empiezas el día. Toma el pronóstico de "
+                    "demanda y el stock que tienes registrado, y te entrega una lista corta "
+                    "de decisiones: qué productos hay que pedir hoy, cuáles pueden esperar a "
+                    "esta semana, cuánto pedir de cada uno y a qué proveedor. Apruebas o "
+                    "rechazas línea por línea y al final generas la orden de compra."
+                ),
+                "walkthrough": [
+                    "Arriba a la izquierda está la insignia «Panel de compras» con el "
+                    "subtítulo «Tus próximas compras, calculadas.», y debajo el saludo con "
+                    "tu nombre y cuántas acciones tienes pendientes hoy.",
+                    "Bajo el saludo aparece la fecha y «Datos en uso», que es el nombre de "
+                    "la carga de ventas con la que se calculó todo lo que ves; a la derecha, "
+                    "el indicador de qué tan frescos están esos datos.",
+                    "Si tu stock o tus ventas llevan mucho tiempo sin actualizarse, antes de "
+                    "cualquier otra cosa aparece un aviso: el semáforo de abajo se calculó "
+                    "sobre datos viejos y no se puede presentar como confiable.",
+                    "El aviso de supuestos («Estas recomendaciones usan N supuestos "
+                    "nuestros») aparece cuando parte del cálculo se hizo con valores que "
+                    "nunca nos diste, e incluye un enlace para ver qué configurar primero.",
+                    "Después vienen los avisos de proveedores: los que se están tardando más "
+                    "que de costumbre, y los pedidos cuya llegada ya se pasó de fecha "
+                    "(«¿Llegaron estos pedidos?») con un botón «Registrar llegada».",
+                    "La fila de indicadores muestra Total SKUs monitoreados, Riesgo hoy, "
+                    "Esta semana, Precisión promedio y Valor en bodega, con una nota debajo "
+                    "cuando hay productos sin conteo de stock.",
+                    "«Resumen ejecutivo del día» es un párrafo que explica en palabras la "
+                    "situación; tiene un botón para volver a generarlo.",
+                    "Si tienes más de una bodega, antes de las compras aparecen las "
+                    "sugerencias de traslado: mover stock de una bodega a otra sale gratis, "
+                    "así que se propone antes que comprar.",
+                    "«Urgente — actúa hoy» lista los productos con señal PEDIR_YA y «Esta "
+                    "semana» los de señal PEDIR_PRONTO. Cada tarjeta trae el nombre, la "
+                    "señal, el SKU, el motivo, el proveedor, la cantidad y los botones "
+                    "«Aprobar» y «Rechazar».",
+                    "«Ver por qué» abre el desglose de la tarjeta: cobertura actual, demanda "
+                    "diaria pronosticada, lead time del proveedor, nivel de servicio, costo "
+                    "unitario, MOQ, stock actual y punto de reorden.",
+                    "Al aprobar la primera línea aparece abajo la barra del carrito, con la "
+                    "cantidad de productos aprobados, el total, el margen que protege el "
+                    "pedido y el botón «Descargar orden de compra».",
+                    "Más abajo están «Compras y transferencias sugeridas» (el plan del "
+                    "optimizador para todo el horizonte), «Anticípate — picos de demanda "
+                    "próximos», «Cambios en demanda», «Recomendaciones del sistema» y "
+                    "«Oportunidades de capital»."
+                ],
+                "fields": [
+                    ("Total SKUs monitoreados",
+                     "Cuántos productos cubre la carga de ventas que está en uso."),
+                    ("Riesgo hoy",
+                     "Cuántos productos tienen señal PEDIR_YA. Muestra «—» cuando ningún "
+                     "producto tiene stock registrado, porque entonces el cero no significa "
+                     "«no hay riesgo» sino «no sabemos»."),
+                    ("Esta semana",
+                     "Cuántos productos tienen señal PEDIR_PRONTO."),
+                    ("Precisión promedio",
+                     "Qué tan cerca estuvo el pronóstico de las ventas reales en las pruebas, "
+                     "medido sobre datos que el modelo no vio al entrenar. 85% o más es "
+                     "bueno; por debajo de 70% conviene revisar la historia de ese producto."),
+                    ("Valor en bodega",
+                     "Stock actual por costo unitario, sumado. Muestra «—» si no registraste "
+                     "el costo de ningún producto: el valor es desconocido, no cero."),
+                    ("Ver por qué",
+                     "Abre el desglose de la tarjeta con los seis u ocho valores sobre los "
+                     "que se construyó la recomendación. Todos vienen calculados del "
+                     "servidor; la pantalla no inventa ninguno."),
+                    ("Cobertura actual",
+                     "Cuánto te dura el stock que tienes al ritmo de venta pronosticado. La "
+                     "unidad sigue el período de tu sesión (días en una sesión diaria)."),
+                    ("Lead time del proveedor",
+                     "Días entre que haces el pedido y llega a tu bodega. Si aparece la "
+                     "etiqueta «estimado», es el supuesto de Faro (15 días) porque nadie lo "
+                     "configuró todavía."),
+                    ("Nivel de servicio",
+                     "Probabilidad con la que quieres cubrir la demanda durante el lead time. "
+                     "Si no lo configuraste, Faro usa 95% y lo marca como estimado."),
+                    ("Costo unitario / MOQ",
+                     "El costo que registraste para ese producto y la compra mínima que exige "
+                     "el proveedor. Si no los diste, se marcan como estimados (la compra "
+                     "mínima por defecto es 1)."),
+                    ("Punto de reorden",
+                     "Nivel de stock al que hay que pedir para que la mercadería llegue antes "
+                     "de quedarte en cero: demanda durante el lead time más el colchón de "
+                     "seguridad."),
+                    ("Pedir:",
+                     "La cantidad sugerida. Puedes hacer clic sobre el número y escribir "
+                     "otro; al cambiarlo la línea queda marcada como modificada y entra al "
+                     "carrito."),
+                    ("Proveedor:",
+                     "Lista desplegable para mandar esa línea a otro proveedor antes de "
+                     "generar la orden. Cambiarlo también marca la línea como modificada."),
+                    ("Aprobar / Rechazar / Deshacer / Restaurar",
+                     "Aprobar mete la línea al carrito; Rechazar la saca y queda registrado "
+                     "como que no seguiste la recomendación; Deshacer y Restaurar revierten "
+                     "cada uno de los dos."),
+                    ("Este pedido protege … en ventas con … en margen",
+                     "Ventas y margen de las líneas aprobadas que tienen precio de venta y "
+                     "costo registrados. Las que no los tienen quedan fuera y se reportan "
+                     "aparte, para no inflar ni desinflar la cifra."),
+                    ("Entregar en",
+                     "Bodega de destino de la orden. Solo aparece si tienes dos o más "
+                     "bodegas."),
+                    ("Descargar orden de compra",
+                     "Baja el CSV de la orden y, al mismo tiempo, registra la orden en Faro "
+                     "para que aparezca en Pedidos y se le pueda registrar la llegada."),
+                    ("Enviar a proveedores ahora",
+                     "Aparece justo después de generar la orden. Manda la orden por email o "
+                     "WhatsApp a cada proveedor que tenga datos de contacto en su ficha."),
+                    ("Compras y transferencias sugeridas",
+                     "Plan del optimizador: qué comprar y qué mover para cubrir todo tu "
+                     "horizonte de planificación al menor costo total. «Convertir en OC» "
+                     "vuelve una línea en orden de compra sin pasar por el carrito."),
+                    ("Anticípate — picos de demanda próximos",
+                     "Picos que el pronóstico ve antes de que el semáforo se ponga rojo, con "
+                     "la fecha límite para pedir según el lead time del proveedor."),
+                    ("Oportunidades de capital",
+                     "Cuánto dinero tienes inmovilizado en productos con cobertura excesiva, "
+                     "y cuáles son."),
+                    ("Última actualización / Actualizar datos",
+                     "Hace cuánto se cargó lo que ves, y el botón para volver a pedirlo."),
+                ],
+                "tasks": [
+                    ("Generar la orden de compra del día",
+                     " 1. Revisa las tarjetas de «Urgente — actúa hoy» y «Esta semana». "
+                     "2. En cada una, ajusta la cantidad o el proveedor si hace falta. "
+                     "3. Pulsa «Aprobar» en las que vas a pedir y «Rechazar» en las que no. "
+                     "4. Revisa la barra del carrito abajo: productos aprobados, total y "
+                     "margen protegido. 5. Si tienes varias bodegas, elige la bodega en "
+                     "«Entregar en». 6. Pulsa «Descargar orden de compra»: baja el CSV y la "
+                     "orden queda registrada en Pedidos."),
+                    ("Cambiar la cantidad que Faro sugiere",
+                     " 1. Haz clic sobre el número que está junto a «Pedir:». 2. Escribe la "
+                     "cantidad que vas a pedir. 3. Pulsa Enter o haz clic fuera del campo. "
+                     "4. La línea queda marcada como modificada y entra al carrito con tu "
+                     "cantidad."),
+                    ("Enviar la orden al proveedor",
+                     " 1. Genera la orden con «Descargar orden de compra». 2. En el panel "
+                     "«Orden de compra generada» revisa qué líneas le tocan a cada "
+                     "proveedor. 3. Pulsa «Enviar a proveedores ahora». 4. Si algún proveedor "
+                     "aparece omitido por falta de contacto, usa «Enviarme por WhatsApp» o "
+                     "«Copiar mensaje» y reenvíaselo tú."),
+                    ("Registrar la llegada de un pedido atrasado",
+                     " 1. Busca el bloque «¿Llegaron estos pedidos?» arriba de la pantalla. "
+                     "2. Pulsa «Registrar llegada» en la línea del proveedor. 3. En la "
+                     "ventana que se abre, escribe cuánto llegó de cada producto. 4. Pulsa "
+                     "«Llegó todo completo» si llegó la orden entera, o «Guardar cantidades» "
+                     "si llegó parcial."),
+                    ("Entender por qué se recomienda un producto",
+                     " 1. En la tarjeta del producto, pulsa «Ver por qué». 2. Lee la frase de "
+                     "explicación y revisa los valores del desglose. 3. Fíjate en cuáles "
+                     "llevan la etiqueta «estimado»: esos son supuestos nuestros, no datos "
+                     "tuyos. 4. Si alguno está mal, corrígelo en Inventario y vuelve a "
+                     "cargar esta pantalla."),
+                ],
+                "gotchas": [
+                    "«Descargar orden de compra» hace dos cosas a la vez: baja el archivo y "
+                    "registra la orden. Si el registro falla verás un aviso de error: en ese "
+                    "caso tienes el CSV pero la orden NO existe en Faro, y hay que generarla "
+                    "de nuevo.",
+                    "«Compras y transferencias sugeridas» normalmente pide más unidades que "
+                    "las tarjetas de arriba. No es una contradicción: las tarjetas responden "
+                    "«qué pido hoy» y el optimizador responde «cómo cubro todo el horizonte "
+                    "de planificación».",
+                    "Un «Riesgo hoy» en cero no siempre significa que estés tranquilo. Si tus "
+                    "productos no tienen stock registrado, el indicador muestra «—» y una "
+                    "nota: no hay riesgo detectado porque no hay nada medido.",
+                    "Con rol de viewer ves todas las recomendaciones pero no puedes "
+                    "aprobarlas: en lugar de los botones aparece «Tu rol no puede generar "
+                    "órdenes».",
+                    "La etiqueta «estimado» junto a un número no es un error. Significa que "
+                    "ese valor lo puso Faro porque nadie lo configuró; en cuanto lo "
+                    "registres, deja de aparecer.",
+                ],
+            },
+            {
+                "name": "Inventario",
+                "route": "/inventario",
+                "image": "inventory",
+                "purpose": (
+                    "Es la lista completa de tus productos con el semáforo de stock. Aquí "
+                    "revisas producto por producto cuánta cobertura te queda, cuánto habría "
+                    "que pedir y de dónde sale ese número; y aquí corriges los datos sobre "
+                    "los que descansa todo lo demás: stock actual, proveedor, lead time, "
+                    "costo, precio de venta y compra mínima."
+                ),
+                "walkthrough": [
+                    "El encabezado dice «Inventario» con el subtítulo «Semáforo de stock · "
+                    "Recomendaciones de compra», y a la derecha el indicador de frescura de "
+                    "los datos.",
+                    "Junto a él está el selector de vistas: Tabla, Simple, Proveedor, "
+                    "Actualizar stock (solo si tu rol puede editar) e Inmovilizado.",
+                    "La barra de herramientas trae el botón de recarga, la importación de "
+                    "CSV, «Plantilla», «Exportar OC», «Exportar OC (editada)», PDF, y los "
+                    "accesos a Impacto, Proveedores y «Registrar salida».",
+                    "Si hay productos que quedaron fuera del pronóstico, aparece un aviso con "
+                    "la lista y el motivo de cada uno.",
+                    "Debajo va la frase de situación en lenguaje llano («N producto(s) se "
+                    "agotan antes de que llegue tu próximo pedido…») y, si corresponde, el "
+                    "aviso de cuántos SKUs no tienen stock registrado.",
+                    "La fila de seis tarjetas —Total SKUs, Pedir YA, Pedir pronto, OK, "
+                    "Sobrestock y Valor inventario— también funciona como filtro: al hacer "
+                    "clic en una, la tabla muestra solo esa señal.",
+                    "Si tienes dos o más bodegas, el selector de bodega va justo debajo; al "
+                    "elegir una, la tabla principal se reemplaza por el semáforo de esa "
+                    "bodega.",
+                    "En la barra de la tabla hay un buscador por SKU, nombre o proveedor, y a "
+                    "la derecha cuántos SKUs quedan tras el filtro.",
+                    "La tabla lista un producto por fila: Señal, SKU / Nombre, Stock, "
+                    "Tendencia, Cobertura, Dem. (LT), Cantidad a pedir, Lead time, MOQ, "
+                    "ABC-XYZ y Valor bodega.",
+                    "La flecha ▶ del inicio de la fila abre «Cómo se calculó esta "
+                    "recomendación»: la resta paso a paso, desde las ventas diarias promedio "
+                    "hasta la cantidad final.",
+                    "Los iconos del final de la fila abren el simulador de escenarios (lead "
+                    "time, variación de demanda y stock extra) y el editor del producto, "
+                    "donde se cambian nombre, categoría, stock, proveedor, lead time, MOQ, "
+                    "costo, precio de venta y nivel de servicio.",
+                    "Al pie de la pantalla están «Eventos y temporadas», para registrar "
+                    "Black Friday o fin de año con su multiplicador, y la leyenda que explica "
+                    "las cinco señales.",
+                ],
+                "fields": [
+                    ("Señal",
+                     "El semáforo del producto, calculado comparando su cobertura con su lead "
+                     "time: PEDIR_YA por debajo de medio lead time, PEDIR_PRONTO por debajo "
+                     "de 1,2 lead times, OK por debajo de 3, y SOBRESTOCK de 3 lead times en "
+                     "adelante. Sin datos aparece cuando falta el stock o el pronóstico."),
+                    ("SKU / Nombre",
+                     "El código del producto, el nombre que le pusiste y su proveedor."),
+                    ("Stock",
+                     "Unidades en bodega hoy. Dice «Sin registro» cuando nunca se cargó ese "
+                     "dato."),
+                    ("Tendencia",
+                     "Miniatura de cómo se movió tu stock en los últimos 14 días."),
+                    ("Cobertura",
+                     "Cuánto te dura el stock actual al ritmo pronosticado. El encabezado "
+                     "indica la unidad, que sigue el período de tu sesión."),
+                    ("Dem. (LT)",
+                     "Cuánto esperas vender mientras esperas que llegue el pedido."),
+                    ("Cantidad a pedir",
+                     "Lo que deberías pedir hoy: demanda durante el lead time más colchón de "
+                     "seguridad, menos el stock actual y menos lo que ya viene en camino; "
+                     "nunca por debajo del MOQ. Se puede editar haciendo clic sobre el "
+                     "número."),
+                    ("No pedir / Aún no · al bajar a N",
+                     "Lo que aparece en lugar de una cantidad cuando todavía no toca pedir. "
+                     "«Aún no» indica a qué nivel de stock habrá que hacerlo."),
+                    ("Lead time",
+                     "Días que tarda el proveedor. Lleva la etiqueta «estimado» mientras sea "
+                     "el supuesto de Faro (15 días); pasa a ser aprendido cuando registras "
+                     "3 recepciones de ese proveedor."),
+                    ("MOQ",
+                     "Compra mínima por pedido. Nunca te recomendamos menos que ese número; "
+                     "por encima pedimos lo que realmente hace falta (no es un múltiplo de "
+                     "caja)."),
+                    ("ABC-XYZ",
+                     "A/B/C es importancia en ingresos y X/Y/Z qué tan predecible es la "
+                     "demanda. AZ —valor alto y demanda errática— es el más delicado."),
+                    ("Valor bodega",
+                     "Stock actual por costo unitario. Solo aparece si registraste el costo."),
+                    ("Cómo se calculó esta recomendación",
+                     "El desglose que abre la flecha ▶: ventas diarias promedio × días de "
+                     "entrega, + colchón de seguridad, − stock actual, = antes de redondear, "
+                     "y el redondeo al MOQ cuando aplica."),
+                    ("Simulador de escenarios",
+                     "Deslizadores de lead time, variación de demanda y stock extra que "
+                     "muestran cómo cambiaría la cantidad recomendada. No guarda nada: es "
+                     "para mirar."),
+                    ("Vista Simple",
+                     "La misma información reducida a cuatro columnas —producto, señal, "
+                     "cantidad a pedir y proveedor— para leer rápido."),
+                    ("Vista Proveedor",
+                     "Agrupa los productos por proveedor, con cuántos urgentes y cuántos "
+                     "próximos tiene cada uno."),
+                    ("Vista Actualizar stock",
+                     "Tabla editable de stock, lead time y proveedor para corregir muchos "
+                     "productos seguidos y guardarlos de una vez. Solo para roles que pueden "
+                     "editar."),
+                    ("Vista Inmovilizado",
+                     "Productos con menos del 20% de la depleción esperada en los últimos "
+                     "30 días, con el capital atrapado y el costo de bodegaje mensual "
+                     "estimado al 25% anual del valor del inventario."),
+                    ("Exportar OC / Exportar OC (editada)",
+                     "La primera baja la orden que calcula el servidor; la segunda baja la "
+                     "orden con las cantidades que tú editaste en la tabla. Ambas registran "
+                     "la orden en Pedidos."),
+                    ("Plantilla / CSV / PDF",
+                     "«Plantilla» baja un CSV vacío con las columnas correctas; el botón CSV "
+                     "importa tu inventario (sku, current_stock, lead_time_days); PDF baja el "
+                     "semáforo completo como informe."),
+                    ("Registrar salida",
+                     "Descuenta unidades que salieron de bodega por algo distinto a una venta "
+                     "—rotura, vencimiento, consumo propio, obsequio o muestra— y acumula su "
+                     "costo en el resumen de mermas."),
+                    ("Eventos y temporadas",
+                     "Temporadas altas con un multiplicador de demanda (×1.2 a ×3.0) para "
+                     "que el sistema te avise con anticipación. Se pueden simular sobre tu "
+                     "inventario real."),
+                ],
+                "tasks": [
+                    ("Corregir el stock de un producto",
+                     " 1. Búscalo por SKU o nombre en el buscador. 2. Pulsa el icono de lápiz "
+                     "al final de la fila. 3. Cambia el «Stock actual» y cualquier otro dato "
+                     "que esté mal. 4. Pulsa «Guardar». 5. La señal y la cantidad a pedir se "
+                     "recalculan con el dato nuevo."),
+                    ("Cargar todo tu inventario de una vez",
+                     " 1. Pulsa «Plantilla» y abre el archivo que se descarga. 2. Llena las "
+                     "columnas sku, current_stock y lead_time_days. 3. Pulsa el botón CSV y "
+                     "elige tu archivo. 4. Revisa el aviso que dice cuántas filas se "
+                     "importaron de cuántas."),
+                    ("Ver de dónde sale una cantidad sugerida",
+                     " 1. Pulsa la flecha ▶ al inicio de la fila del producto. 2. Lee la "
+                     "resta paso a paso. 3. Fíjate en el origen del lead time que aparece "
+                     "junto a los días de entrega. 4. Si quieres probar otro escenario, abre "
+                     "el simulador con el icono de deslizadores."),
+                    ("Registrar una merma",
+                     " 1. Pulsa «Registrar salida» en la barra superior. 2. Escribe el SKU y "
+                     "elige el producto. 3. Escribe cuántas unidades salieron y elige el "
+                     "motivo. 4. Confirma: el stock baja de inmediato y el costo queda "
+                     "registrado."),
+                    ("Encontrar el capital atrapado",
+                     " 1. Cambia a la vista «Inmovilizado». 2. Revisa los tres indicadores: "
+                     "SKUs inmovilizados, capital atrapado y costo de bodegaje al mes. "
+                     "3. Ordena la tabla por capital atrapado y trabaja de arriba hacia "
+                     "abajo con la acción sugerida de cada fila."),
+                ],
+                "gotchas": [
+                    "«Sin datos» no es un error de Faro: es un producto al que nunca le "
+                    "registraste el stock. Mientras esté así queda fuera de las "
+                    "recomendaciones de compra, porque cuánto pedir depende justamente de "
+                    "cuánto te queda.",
+                    "Una fila puede decir «Pedir pronto» y a la vez «Aún no» en la cantidad. "
+                    "No se contradicen: la señal avisa que el colchón está corto, y la "
+                    "cantidad dice que todavía estás por encima del punto de reorden.",
+                    "Dos productos con la misma cobertura pueden tener señales distintas. El "
+                    "semáforo compara la cobertura contra el lead time de cada producto, así "
+                    "que 10 días de stock son cómodos con un proveedor de 5 días y críticos "
+                    "con uno de 30.",
+                    "Editar la cantidad directamente en la tabla no guarda nada en el "
+                    "producto: ese número solo se usa si bajas «Exportar OC (editada)».",
+                    "La vista «Actualizar stock» no aparece con rol de viewer. Es un editor, "
+                    "no una vista, y guardar sería rechazado de todos modos.",
+                ],
+            },
+            {
+                "name": "Pedidos",
+                "route": "/pedidos",
+                "image": "pedidos",
+                "purpose": (
+                    "Aquí vive todo lo que ya pediste. Cada orden que generaste queda "
+                    "registrada con lo que pediste, a quién y cuándo; desde esta pantalla la "
+                    "envías al proveedor y registras la llegada de la mercadería. Registrar "
+                    "la llegada es lo que actualiza tu stock y lo que le enseña a Faro cuánto "
+                    "tarda de verdad cada proveedor."
+                ),
+                "walkthrough": [
+                    "El encabezado dice «Pedidos» con el subtítulo «Órdenes generadas y "
+                    "registro de llegadas».",
+                    "A la derecha aparece el contador «N por recibir» y el botón «Nueva "
+                    "orden», que abre el formulario de orden manual.",
+                    "Si tienes dos o más bodegas, debajo hay dos pestañas: «Órdenes de "
+                    "compra» y «Transferencias».",
+                    "Antes de la tabla se muestran los avisos de proveedores: los que no "
+                    "tienen email ni WhatsApp registrados y tienen órdenes abiertas, y los "
+                    "que se están tardando más que su propio historial.",
+                    "Si nunca has generado una orden, en lugar de la tabla verás una pantalla "
+                    "de bienvenida con el botón «Ir al Panel de Compras».",
+                    "La tabla lista una orden por fila, de la más reciente a la más antigua, "
+                    "con su número, fecha, cantidad de SKUs, urgentes, próximos, unidades y "
+                    "valor total.",
+                    "La última columna es la de recepción: una etiqueta de estado y, a su "
+                    "lado, los botones «Registrar llegada», «Enviar pedido», «Enviarme por "
+                    "WhatsApp», «Abrir en WhatsApp» y «Copiar mensaje».",
+                    "«Registrar llegada» abre una ventana con las líneas de la orden: para "
+                    "cada producto ves lo pedido, lo recibido antes, y escribes lo que llega "
+                    "ahora.",
+                    "Esa ventana se cierra con «Guardar cantidades», si llegó parte, o con "
+                    "«Llegó todo completo», si llegó la orden entera.",
+                    "«Enviar pedido» primero te muestra a qué proveedores se va a enviar y a "
+                    "cuáles se va a omitir por falta de contacto, y recién entonces pide "
+                    "confirmación.",
+                    "«Enviarme por WhatsApp», «Abrir en WhatsApp» y «Copiar mensaje» te "
+                    "entregan a ti el texto de la orden para que lo reenvíes tú; no dependen "
+                    "de que el proveedor esté configurado.",
+                    "«Nueva orden» abre un formulario donde eliges proveedor, bodega de "
+                    "destino y escribes las líneas a mano: SKU, cantidad y costo unitario. No "
+                    "necesita ningún pronóstico.",
+                ],
+                "fields": [
+                    ("N por recibir",
+                     "Cuántas órdenes siguen esperando mercadería. Cuenta las que están en "
+                     "camino, las parciales y las marcadas como «No llegó»."),
+                    ("Orden",
+                     "El número de la orden de compra, tal como quedó al generarse."),
+                    ("Fecha y hora",
+                     "Cuándo se generó la orden."),
+                    ("SKUs en la orden",
+                     "Cuántos productos distintos lleva la orden."),
+                    ("Urgentes",
+                     "Cuántas de sus líneas venían con señal PEDIR_YA cuando se generó."),
+                    ("Próximos",
+                     "Cuántas de sus líneas venían con señal PEDIR_PRONTO."),
+                    ("Unidades totales",
+                     "La suma de unidades pedidas en toda la orden."),
+                    ("Valor total",
+                     "La suma de cantidad por costo unitario. Muestra «—» si las líneas no "
+                     "traían costo."),
+                    ("Recepción: En camino / Parcial / Recibida / No llegó",
+                     "El estado de la mercadería. «En camino» es también el estado de una "
+                     "orden a la que nunca se le registró nada: la ausencia de registro no "
+                     "prueba que haya llegado."),
+                    ("Registrar llegada",
+                     "Abre la ventana de recepción. Aparece mientras la orden esté en camino "
+                     "o parcial."),
+                    ("Pedido / Recibido antes / Llega ahora",
+                     "Las tres columnas de la ventana de recepción: lo que pediste, lo que ya "
+                     "habías registrado y lo que estás recibiendo en este momento. El campo "
+                     "viene precargado con lo que falta."),
+                    ("Guardar cantidades / Llegó todo completo",
+                     "El primero registra exactamente lo que escribiste línea por línea; el "
+                     "segundo da por recibida la orden entera sin escribir nada."),
+                    ("Enviar pedido",
+                     "Manda la orden por email o WhatsApp a los proveedores de sus líneas. "
+                     "Antes de enviar te muestra quién la recibirá y quién quedará omitido."),
+                    ("Enviarme por WhatsApp / Abrir en WhatsApp / Copiar mensaje",
+                     "Te entregan a ti el texto de la orden: a tu WhatsApp, abriendo WhatsApp "
+                     "con el mensaje listo, o al portapapeles."),
+                    ("Nueva orden",
+                     "Formulario de orden manual: proveedor, bodega de destino y una línea "
+                     "por producto con SKU, cantidad y costo unitario opcional."),
+                    ("Pestaña Transferencias",
+                     "Los traslados de stock entre tus bodegas, con su propio ciclo de envío "
+                     "y recepción. Solo aparece con dos o más bodegas."),
+                ],
+                "tasks": [
+                    ("Registrar que llegó todo el pedido",
+                     " 1. Busca la orden en la tabla. 2. Pulsa «Registrar llegada» en la "
+                     "columna de recepción. 3. Revisa que las líneas sean las correctas. "
+                     "4. Pulsa «Llegó todo completo». 5. El stock de cada producto sube y la "
+                     "orden pasa a «Recibida»."),
+                    ("Registrar una llegada parcial",
+                     " 1. Pulsa «Registrar llegada» en la orden. 2. En «Llega ahora», escribe "
+                     "las unidades que realmente llegaron de cada producto. 3. Deja en cero "
+                     "las que no llegaron. 4. Pulsa «Guardar cantidades». 5. La orden queda "
+                     "como «Parcial» y conserva el botón para registrar el resto cuando "
+                     "llegue."),
+                    ("Enviar una orden a sus proveedores",
+                     " 1. Pulsa «Enviar pedido» en la fila de la orden. 2. Lee el resumen: a "
+                     "quién se enviará y a quién se omitirá. 3. Pulsa «Enviar» para "
+                     "confirmar. 4. Para los proveedores omitidos, usa «Copiar mensaje» y "
+                     "mándaselo por tu cuenta."),
+                    ("Crear una orden manual",
+                     " 1. Pulsa «Nueva orden». 2. Elige el proveedor y, si tienes varias "
+                     "bodegas, la de destino. 3. Escribe el SKU, la cantidad y —si la "
+                     "tienes— el costo unitario de cada línea. 4. Pulsa «Agregar producto» "
+                     "para las líneas siguientes. 5. Pulsa «Crear orden»."),
+                ],
+                "gotchas": [
+                    "Marcar «No llegó» no cierra la orden. Es un dato sobre una entrega que "
+                    "no ocurrió, no sobre una orden cancelada, así que la orden sigue "
+                    "contando en «por recibir».",
+                    "Registrar la llegada no es papeleo: es lo que sube tu stock y lo que le "
+                    "enseña a Faro el plazo real de ese proveedor. Con 3 recepciones "
+                    "registradas Faro reemplaza el lead time configurado por el promedio "
+                    "real.",
+                    "«Enviar pedido» omite en silencio a los proveedores sin email ni "
+                    "WhatsApp en su ficha; por eso la confirmación te los nombra antes. Para "
+                    "esos, la salida es reenviar tú el mensaje.",
+                    "Una orden sin proveedor asignado en ninguna de sus líneas no se puede "
+                    "enviar a nadie, y la confirmación te lo dice antes de intentarlo.",
+                    "Con rol de viewer no verás «Nueva orden» ni podrás registrar llegadas: "
+                    "ambas escriben datos del negocio.",
+                ],
+            },
+            {
+                "name": "Mensajes",
+                "route": "/mensajes",
+                "image": "mensajes",
+                "purpose": (
+                    "Mensajería uno a uno entre las personas de tu empresa, dentro de Faro. "
+                    "Sirve para lo que ocurre alrededor de una decisión de compra —«ya "
+                    "confirmé con el proveedor», «esa cantidad la bajé a la mitad»— sin "
+                    "salir a otra aplicación ni perder el contexto."
+                ),
+                "walkthrough": [
+                    "La columna izquierda empieza con el título «Mensajes» y, a su derecha, "
+                    "cuántas personas hay en tu equipo.",
+                    "Debajo está el buscador de personas, que siempre está a la vista y no "
+                    "mueve la lista al usarlo.",
+                    "Luego viene la lista de conversaciones, ordenada por la más reciente: "
+                    "inicial de la persona, su nombre, la hora del último mensaje y una "
+                    "vista previa de ese mensaje.",
+                    "Cuando tienes mensajes sin leer de alguien, su fila se muestra en "
+                    "negrita y con un contador redondo a la derecha.",
+                    "Al escribir en el buscador aparece además el bloque «Escribirle por "
+                    "primera vez» con los colegas con los que todavía no has hablado.",
+                    "La zona derecha, mientras no elijas a nadie, dice «Elige una "
+                    "conversación».",
+                    "Al abrir una conversación, arriba queda el nombre de la persona; en "
+                    "pantallas angostas aparece además una flecha para volver a la lista.",
+                    "Los mensajes se leen de arriba abajo: los tuyos alineados a la derecha "
+                    "y en color de acento, los de la otra persona a la izquierda, cada uno "
+                    "con su hora.",
+                    "Una conversación nueva se abre con la frase «Este es el inicio de la "
+                    "conversación».",
+                    "Abajo está el campo «Escribe un mensaje…»: Enter envía, y el mensaje "
+                    "admite hasta 4.000 caracteres.",
+                    "Al abrir la conversación, los mensajes que te habían enviado quedan "
+                    "marcados como leídos y el contador desaparece.",
+                    "En la barra superior de la aplicación hay un sobre con el total de "
+                    "mensajes sin leer, que te trae de vuelta a esta pantalla desde "
+                    "cualquier parte.",
+                ],
+                "fields": [
+                    ("N en tu equipo",
+                     "Cuántas personas activas hay en tu empresa a las que puedes "
+                     "escribirles."),
+                    ("Buscar persona…",
+                     "Filtra a la vez tus conversaciones y el resto de tus colegas, por "
+                     "nombre o por correo."),
+                    ("Fila de conversación",
+                     "Inicial, nombre, hora del último mensaje y su vista previa. Si el "
+                     "último mensaje es tuyo, la vista previa empieza con «Tú:»."),
+                    ("Contador de no leídos",
+                     "El círculo con un número a la derecha de la fila: cuántos mensajes de "
+                     "esa persona no has abierto."),
+                    ("Escribirle por primera vez",
+                     "Bloque que solo aparece mientras buscas, con los colegas con los que "
+                     "todavía no tienes conversación."),
+                    ("Elige una conversación",
+                     "El estado inicial del panel derecho, mientras no has abierto ningún "
+                     "hilo."),
+                    ("Este es el inicio de la conversación",
+                     "Lo que dice un hilo recién abierto, sin mensajes todavía."),
+                    ("Escribe un mensaje…",
+                     "El campo de escritura. Enter envía; el límite es de 4.000 caracteres "
+                     "por mensaje."),
+                    ("Botón de enviar",
+                     "El botón redondo junto al campo. Queda deshabilitado mientras el "
+                     "mensaje esté vacío o se esté enviando."),
+                    ("Sobre de la barra superior",
+                     "El indicador global de mensajes sin leer; muestra «99+» cuando pasan "
+                     "de noventa y nueve."),
+                    ("Recibir aviso cuando te escriban",
+                     "Interruptor que vive en Mi cuenta, no aquí. Cuando está encendido y "
+                     "tienes tu número vinculado, recibes un aviso por WhatsApp (o SMS si "
+                     "WhatsApp no está disponible) si te escriben mientras no estás en "
+                     "Faro."),
+                ],
+                "tasks": [
+                    ("Escribirle a alguien por primera vez",
+                     " 1. Escribe su nombre o su correo en el buscador. 2. Búscalo bajo "
+                     "«Escribirle por primera vez». 3. Haz clic en su nombre. 4. Escribe el "
+                     "mensaje y pulsa Enter."),
+                    ("Retomar una conversación y marcarla como leída",
+                     " 1. Busca la fila en negrita con el contador de no leídos. 2. Haz clic "
+                     "en ella. 3. Al abrirse, los mensajes quedan marcados como leídos y el "
+                     "contador desaparece, también el del sobre de arriba."),
+                    ("Activar el aviso por WhatsApp",
+                     " 1. Ve a Mi cuenta. 2. Vincula tu número de WhatsApp si todavía no lo "
+                     "hiciste. 3. Busca «Mensajes del equipo» y enciende «Recibir aviso "
+                     "cuando te escriban»."),
+                ],
+                "gotchas": [
+                    "No hay grupos ni canales: solo conversaciones de una persona con otra, "
+                    "y siempre dentro de tu misma empresa.",
+                    "La lista de colegas con los que no has hablado solo aparece mientras "
+                    "escribes en el buscador. Sin buscar, la columna muestra únicamente tus "
+                    "conversaciones.",
+                    "La pantalla se actualiza sola —la lista cada 15 segundos y el hilo "
+                    "abierto cada 5— así que un mensaje nuevo puede tardar unos segundos en "
+                    "aparecer. No hay «escribiendo…» ni confirmación de lectura para quien "
+                    "envía.",
+                    "El aviso por WhatsApp viene apagado y necesita tu número vinculado en "
+                    "Mi cuenta. Además solo se dispara si no estás en la conversación: si "
+                    "acabas de leer a esa persona, no te vuelve a avisar.",
+                    "Los usuarios con rol de viewer también pueden escribir y recibir "
+                    "mensajes. El límite aquí es la empresa, no el rol.",
+                ],
+            },
+        ],
+    },
+    "en": {
+        "title": "Daily operation",
+        "intro": (
+            "These four screens are your everyday routine: you open the Purchasing Panel "
+            "in the morning to decide what to order, go into Inventory when you need to "
+            "check or fix a particular product, pass through Orders when goods arrive, and "
+            "use Messages to coordinate with your team without leaving Faro. The first "
+            "three work on the same data — the demand forecast and the stock you have on "
+            "record — so what you fix in one shows up in the others."
+        ),
+        "screens": [
+            {
+                "name": "Purchasing Panel",
+                "route": "/compras",
+                "image": "panel",
+                "purpose": (
+                    "This is the screen you start the day with. It takes the demand forecast "
+                    "and the stock you have on record and hands you a short list of "
+                    "decisions: which products to order today, which ones can wait until "
+                    "this week, how much of each, and from which supplier. You approve or "
+                    "reject line by line and generate the purchase order at the end."
+                ),
+                "walkthrough": [
+                    "Top left is the “Purchasing Dashboard” badge with the subtitle "
+                    "“Your upcoming purchases, calculated.”, and below it the "
+                    "greeting with your name and how many actions are pending today.",
+                    "Under the greeting sit the date and “Data in use”, the name of "
+                    "the sales upload everything you see was computed from; on the right, the "
+                    "indicator of how fresh that data is.",
+                    "If your stock or your sales have gone a long time without an update, a "
+                    "notice appears before anything else: the traffic light below was "
+                    "computed on stale data and cannot be presented as trustworthy.",
+                    "The assumptions notice (“These recommendations use N assumptions of "
+                    "ours”) shows up when part of the calculation used values you never "
+                    "gave us, and links to what to configure first.",
+                    "Then come the supplier warnings: suppliers running later than usual, and "
+                    "orders whose arrival date has already passed (“Did these orders "
+                    "arrive?”) with a “Record arrival” button.",
+                    "The indicator row shows Total SKUs monitored, Risk today, This week, "
+                    "Average accuracy and Warehouse value, with a note underneath when some "
+                    "products have no stock count.",
+                    "“Executive summary of the day” is a paragraph explaining the "
+                    "situation in words; it has a button to generate it again.",
+                    "If you have more than one warehouse, transfer suggestions appear before "
+                    "the purchases: moving stock between your own warehouses is free, so it "
+                    "is proposed before buying.",
+                    "“Urgent — act today” lists the products with the PEDIR_YA "
+                    "signal and “This week” the PEDIR_PRONTO ones. Each card "
+                    "carries the name, the signal, the SKU, the reason, the supplier, the "
+                    "quantity and the “Approve” and “Reject” buttons.",
+                    "“Why?” opens the card's breakdown: current coverage, "
+                    "forecasted daily demand, supplier lead time, service level, unit cost, "
+                    "MOQ, current stock and reorder point.",
+                    "As soon as you approve the first line, the cart bar appears at the "
+                    "bottom with the number of approved products, the total, the margin the "
+                    "order protects and the “Download purchase order” button.",
+                    "Further down are “Suggested purchases and transfers” (the "
+                    "optimiser's plan for the whole horizon), “Get ahead — upcoming "
+                    "demand peaks”, “Demand changes”, “System "
+                    "recommendations” and “Capital opportunities”."
+                ],
+                "fields": [
+                    ("Total SKUs monitored",
+                     "How many products the sales upload in use covers."),
+                    ("Risk today",
+                     "How many products carry the PEDIR_YA signal. It shows “—” "
+                     "when no product has stock on file, because a zero then does not mean "
+                     "“no risk” but “we do not know”."),
+                    ("This week",
+                     "How many products carry the PEDIR_PRONTO signal."),
+                    ("Average accuracy",
+                     "How close the forecast was to actual sales in testing, measured on data "
+                     "the model did not see during training. 85% or more is good; below 70% "
+                     "it is worth reviewing that product's history."),
+                    ("Warehouse value",
+                     "Current stock times unit cost, summed. It shows “—” if "
+                     "you have not recorded a cost for any product: the value is unknown, not "
+                     "zero."),
+                    ("Why?",
+                     "Opens the card's breakdown with the six to eight values the "
+                     "recommendation was built on. All of them come computed from the server; "
+                     "the screen invents none of them."),
+                    ("Current coverage",
+                     "How long the stock you have lasts at the forecasted sales rate. The "
+                     "unit follows your session's period (days in a daily session)."),
+                    ("Supplier lead time",
+                     "Days between placing the order and it reaching your warehouse. If it "
+                     "carries the “estimated” tag, it is Faro's assumption (15 "
+                     "days) because nobody has configured it yet."),
+                    ("Service level",
+                     "The probability you want to cover demand with during the lead time. If "
+                     "you have not configured it, Faro uses 95% and marks it as estimated."),
+                    ("Unit cost / MOQ",
+                     "The cost you recorded for that product and the minimum order the "
+                     "supplier requires. If you did not provide them, they are marked as "
+                     "estimated (the default minimum order is 1)."),
+                    ("Reorder point",
+                     "The stock level at which you must order so the goods arrive before you "
+                     "hit zero: demand during the lead time plus the safety buffer."),
+                    ("Order:",
+                     "The suggested quantity. You can click the number and type another one; "
+                     "changing it marks the line as modified and puts it in the cart."),
+                    ("Supplier:",
+                     "Dropdown to point that line at a different supplier before the order is "
+                     "generated. Changing it also marks the line as modified."),
+                    ("Approve / Reject / Undo / Restore",
+                     "Approve puts the line in the cart; Reject takes it out and records that "
+                     "you did not follow the recommendation; Undo and Restore reverse each of "
+                     "the two."),
+                    ("This order protects … in sales with … in margin",
+                     "Sales and margin of the approved lines that have both a sale price and "
+                     "a cost on file. Lines missing either are left out and reported "
+                     "separately, so the figure is neither inflated nor deflated."),
+                    ("Deliver to",
+                     "The order's destination warehouse. Only appears if you have two or more "
+                     "warehouses."),
+                    ("Download purchase order",
+                     "Downloads the order's CSV and, at the same time, records the order in "
+                     "Faro so it shows up in Orders and its arrival can be logged."),
+                    ("Send to suppliers now",
+                     "Appears right after the order is generated. Sends the order by email or "
+                     "WhatsApp to every supplier that has contact details on their record."),
+                    ("Suggested purchases and transfers",
+                     "The optimiser's plan: what to buy and what to move to cover your whole "
+                     "planning horizon at the lowest total cost. “Convert to PO” "
+                     "turns one line into a purchase order without going through the cart."),
+                    ("Get ahead — upcoming demand peaks",
+                     "Peaks the forecast sees before the traffic light turns red, with the "
+                     "deadline to order based on the supplier's lead time."),
+                    ("Capital opportunities",
+                     "How much money you have tied up in products with excessive coverage, "
+                     "and which ones they are."),
+                    ("Last updated / Refresh data",
+                     "How long ago what you see was loaded, and the button to request it "
+                     "again."),
+                ],
+                "tasks": [
+                    ("Generate today's purchase order",
+                     " 1. Go through the cards under “Urgent — act today” and "
+                     "“This week”. 2. On each one, adjust the quantity or the "
+                     "supplier if needed. 3. Press “Approve” on the ones you will "
+                     "order and “Reject” on the ones you will not. 4. Check the "
+                     "cart bar at the bottom: approved products, total and protected margin. "
+                     "5. If you have several warehouses, pick one under “Deliver "
+                     "to”. 6. Press “Download purchase order”: the CSV "
+                     "downloads and the order is recorded in Orders."),
+                    ("Change the quantity Faro suggests",
+                     " 1. Click the number next to “Order:”. 2. Type the quantity "
+                     "you are going to order. 3. Press Enter or click outside the field. "
+                     "4. The line is marked as modified and goes into the cart with your "
+                     "quantity."),
+                    ("Send the order to the supplier",
+                     " 1. Generate the order with “Download purchase order”. 2. In "
+                     "the “Purchase order generated” panel, check which lines go to "
+                     "which supplier. 3. Press “Send to suppliers now”. 4. If a "
+                     "supplier is listed as skipped for missing contact details, use "
+                     "“Send to my WhatsApp” or “Copy message” and forward "
+                     "it yourself."),
+                    ("Record the arrival of a late order",
+                     " 1. Find the “Did these orders arrive?” block near the top of "
+                     "the screen. 2. Press “Record arrival” on the supplier's line. "
+                     "3. In the window that opens, type how much of each product arrived. "
+                     "4. Press “Everything arrived” if the whole order came in, or "
+                     "“Save quantities” if it arrived partially."),
+                    ("Understand why a product is recommended",
+                     " 1. On the product's card, press “Why?”. 2. Read the "
+                     "explanation sentence and go through the breakdown values. 3. Notice "
+                     "which ones carry the “estimated” tag: those are our "
+                     "assumptions, not your data. 4. If any of them is wrong, fix it in "
+                     "Inventory and reload this screen."),
+                ],
+                "gotchas": [
+                    "“Download purchase order” does two things at once: it "
+                    "downloads the file and records the order. If the recording fails you "
+                    "will see an error notice: in that case you have the CSV but the order "
+                    "does NOT exist in Faro, and you have to generate it again.",
+                    "“Suggested purchases and transfers” usually asks for more "
+                    "units than the cards above. That is not a contradiction: the cards "
+                    "answer “what do I order today” and the optimiser answers "
+                    "“how do I cover the whole planning horizon”.",
+                    "A “Risk today” of zero does not always mean you are safe. If "
+                    "your products have no stock on record, the indicator shows "
+                    "“—” and a note: no risk was detected because nothing was "
+                    "measured.",
+                    "With the viewer role you see every recommendation but cannot approve "
+                    "them: instead of the buttons you get “Your role cannot generate "
+                    "orders”.",
+                    "The “estimated” tag next to a number is not an error. It means "
+                    "Faro chose that value because nobody configured it; as soon as you "
+                    "record yours, it stops appearing.",
+                ],
+            },
+            {
+                "name": "Inventory",
+                "route": "/inventario",
+                "image": "inventory",
+                "purpose": (
+                    "This is the full list of your products with the stock traffic light. "
+                    "Here you check product by product how much coverage is left, how much "
+                    "should be ordered and where that number comes from; and here you fix "
+                    "the data everything else rests on: current stock, supplier, lead time, "
+                    "cost, sale price and minimum order."
+                ),
+                "walkthrough": [
+                    "The header reads “Inventory” with the subtitle “Stock "
+                    "signal · Purchase recommendations”, and the data-freshness "
+                    "indicator on the right.",
+                    "Next to it is the view switcher: Table, Simple, Provider, Update stock "
+                    "(only if your role can edit) and Dead stock.",
+                    "The toolbar holds the refresh button, the CSV import, "
+                    "“Template”, “Export PO”, “Export PO "
+                    "(edited)”, PDF, and the links to Impact, Suppliers and “Log "
+                    "stock-out”.",
+                    "If some products were left out of the forecast, a notice lists them with "
+                    "the reason for each one.",
+                    "Below that comes the plain-language situation line (“N product(s) "
+                    "will run out before your next order arrives…”) and, when "
+                    "relevant, the notice of how many SKUs have no stock on record.",
+                    "The row of six cards — Total SKUs, Order NOW, Order soon, OK, "
+                    "Overstock and Inventory value — also works as a filter: click one "
+                    "and the table shows only that signal.",
+                    "If you have two or more warehouses, the warehouse selector sits right "
+                    "below; picking one replaces the main table with that warehouse's traffic "
+                    "light.",
+                    "The table's own bar has a search box for SKU, name or supplier, and on "
+                    "the right how many SKUs are left after the filter.",
+                    "The table lists one product per row: Signal, SKU / Name, Stock, Trend, "
+                    "Coverage, Demand (LT), Qty to order, Lead time, MOQ, ABC-XYZ and "
+                    "Warehouse value.",
+                    "The ▶ arrow at the start of the row opens “How this "
+                    "recommendation was calculated”: the subtraction step by step, from "
+                    "average daily sales down to the final quantity.",
+                    "The icons at the end of the row open the scenario simulator (lead time, "
+                    "demand variation and extra stock) and the product editor, where you "
+                    "change name, category, stock, supplier, lead time, MOQ, cost, sale price "
+                    "and service level.",
+                    "At the foot of the screen are “Events and seasons”, to record "
+                    "Black Friday or year-end with their multiplier, and the legend explaining "
+                    "the five signals.",
+                ],
+                "fields": [
+                    ("Signal",
+                     "The product's traffic light, computed by comparing its coverage against "
+                     "its lead time: PEDIR_YA below half a lead time, PEDIR_PRONTO below 1.2 "
+                     "lead times, OK below 3, and SOBRESTOCK from 3 lead times up. No data "
+                     "appears when the stock or the forecast is missing."),
+                    ("SKU / Name",
+                     "The product code, the name you gave it and its supplier."),
+                    ("Stock",
+                     "Units on hand today. It says “No record” when that figure was "
+                     "never loaded."),
+                    ("Trend",
+                     "A thumbnail of how your stock moved over the last 14 days."),
+                    ("Coverage",
+                     "How long your current stock lasts at the forecasted rate. The header "
+                     "states the unit, which follows your session's period."),
+                    ("Demand (LT)",
+                     "How much you expect to sell while waiting for the order to arrive."),
+                    ("Qty to order",
+                     "What you should order today: demand over the lead time plus the safety "
+                     "buffer, minus current stock and minus what is already on the way; never "
+                     "below the MOQ. You can edit it by clicking the number."),
+                    ("Don't order / Not yet · once it drops to N",
+                     "What appears instead of a quantity when it is not time to order yet. "
+                     "“Not yet” states the stock level at which it will be."),
+                    ("Lead time",
+                     "Days your supplier takes. It carries the “estimated” tag "
+                     "while it is Faro's assumption (15 days); it becomes learned once you "
+                     "record 3 receptions from that supplier."),
+                    ("MOQ",
+                     "Minimum units per order. We never recommend less than that number; "
+                     "above it we ask for what you actually need (it is not a pack "
+                     "multiple)."),
+                    ("ABC-XYZ",
+                     "A/B/C is revenue importance and X/Y/Z is how predictable demand is. AZ "
+                     "— high value and erratic demand — is the trickiest."),
+                    ("Warehouse value",
+                     "Current stock times unit cost. It only appears if you recorded the "
+                     "cost."),
+                    ("How this recommendation was calculated",
+                     "The breakdown the ▶ arrow opens: average daily sales × lead "
+                     "time days, + safety stock, − current stock, = before rounding, and "
+                     "the rounding up to the MOQ when it applies."),
+                    ("Scenario simulator",
+                     "Sliders for lead time, demand variation and extra stock that show how "
+                     "the recommended quantity would change. It saves nothing: it is for "
+                     "looking."),
+                    ("Simple view",
+                     "The same information cut down to four columns — product, signal, "
+                     "qty to order and supplier — for a quick read."),
+                    ("Provider view",
+                     "Groups products by supplier, showing how many urgent and how many "
+                     "upcoming each one has."),
+                    ("Update stock view",
+                     "An editable table of stock, lead time and supplier so you can fix many "
+                     "products in a row and save them at once. Only for roles that can "
+                     "edit."),
+                    ("Dead stock view",
+                     "Products with less than 20% of expected depletion over the last 30 "
+                     "days, with the capital trapped and the monthly holding cost estimated "
+                     "at 25% annual of the inventory value."),
+                    ("Export PO / Export PO (edited)",
+                     "The first downloads the order the server computes; the second "
+                     "downloads the order with the quantities you edited in the table. Both "
+                     "record the order in Orders."),
+                    ("Template / CSV / PDF",
+                     "“Template” downloads an empty CSV with the right columns; the "
+                     "CSV button imports your inventory (sku, current_stock, "
+                     "lead_time_days); PDF downloads the whole traffic light as a report."),
+                    ("Log stock-out",
+                     "Deducts units that left the warehouse for a reason other than a sale "
+                     "— breakage, expiry, self-consumption, gift or sample — and "
+                     "accumulates their cost in the shrinkage summary."),
+                    ("Events and seasons",
+                     "High-demand seasons with a demand multiplier (×1.2 to ×3.0) "
+                     "so the system warns you in advance. They can be simulated against your "
+                     "real inventory."),
+                ],
+                "tasks": [
+                    ("Fix a product's stock",
+                     " 1. Find it by SKU or name in the search box. 2. Press the pencil icon "
+                     "at the end of the row. 3. Change “Current stock” and anything "
+                     "else that is wrong. 4. Press “Save”. 5. The signal and the "
+                     "quantity to order are recomputed with the new figure."),
+                    ("Load your whole inventory at once",
+                     " 1. Press “Template” and open the file that downloads. "
+                     "2. Fill in the sku, current_stock and lead_time_days columns. 3. Press "
+                     "the CSV button and pick your file. 4. Check the notice telling you how "
+                     "many rows were imported out of how many."),
+                    ("See where a suggested quantity comes from",
+                     " 1. Press the ▶ arrow at the start of the product's row. 2. Read "
+                     "the subtraction step by step. 3. Look at the origin of the lead time "
+                     "shown next to the lead-time days. 4. To try another scenario, open the "
+                     "simulator with the sliders icon."),
+                    ("Log shrinkage",
+                     " 1. Press “Log stock-out” in the top bar. 2. Type the SKU and "
+                     "pick the product. 3. Enter how many units left and choose the reason. "
+                     "4. Confirm: stock drops immediately and the cost is recorded."),
+                    ("Find your trapped capital",
+                     " 1. Switch to the “Dead stock” view. 2. Check the three "
+                     "indicators: dead stock SKUs, capital trapped and holding cost per "
+                     "month. 3. Sort the table by capital trapped and work top down using "
+                     "each row's suggested action."),
+                ],
+                "gotchas": [
+                    "“No data” is not a Faro error: it is a product whose stock you "
+                    "never recorded. While it stays that way it is left out of the purchase "
+                    "recommendations, because how much to order depends on exactly how much "
+                    "you have left.",
+                    "A row can say “Order soon” and “Not yet” in the "
+                    "quantity at the same time. They do not contradict each other: the signal "
+                    "warns the buffer is thin, and the quantity says you are still above the "
+                    "reorder point.",
+                    "Two products with the same coverage can carry different signals. The "
+                    "traffic light compares coverage against each product's own lead time, so "
+                    "10 days of stock are comfortable with a 5-day supplier and critical with "
+                    "a 30-day one.",
+                    "Editing the quantity directly in the table saves nothing on the product: "
+                    "that number is only used if you download “Export PO (edited)”.",
+                    "The “Update stock” view does not appear for the viewer role. It "
+                    "is an editor, not a view, and saving would be refused anyway.",
+                ],
+            },
+            {
+                "name": "Orders",
+                "route": "/pedidos",
+                "image": "pedidos",
+                "purpose": (
+                    "This is where everything you have already ordered lives. Every order "
+                    "you generated is recorded with what you bought, from whom and when; "
+                    "from this screen you send it to the supplier and log the arrival of the "
+                    "goods. Logging the arrival is what updates your stock and what teaches "
+                    "Faro how long each supplier really takes."
+                ),
+                "walkthrough": [
+                    "The header reads “Orders” with the subtitle “Generated "
+                    "orders and reception tracking”.",
+                    "On the right sit the “N awaiting reception” counter and the "
+                    "“New order” button, which opens the manual order form.",
+                    "If you have two or more warehouses, two tabs appear below: “Purchase "
+                    "orders” and “Transfers”.",
+                    "Before the table come the supplier warnings: those with no email or "
+                    "WhatsApp on file that have open orders, and those running later than "
+                    "their own history.",
+                    "If you have never generated an order, instead of the table you get a "
+                    "welcome screen with the “Go to the Purchasing Panel” button.",
+                    "The table lists one order per row, newest first, with its number, date, "
+                    "number of SKUs, urgent, upcoming, units and total value.",
+                    "The last column is the reception one: a status badge and, beside it, the "
+                    "“Log arrival”, “Send order”, “Send to my "
+                    "WhatsApp”, “Open in WhatsApp” and “Copy message” "
+                    "buttons.",
+                    "“Log arrival” opens a window with the order's lines: for each "
+                    "product you see what was ordered, what was received before, and you type "
+                    "what is arriving now.",
+                    "That window closes with “Save quantities”, if part of it "
+                    "arrived, or with “Everything arrived”, if the whole order came "
+                    "in.",
+                    "“Send order” first shows you which suppliers it will be sent to "
+                    "and which will be skipped for missing contact details, and only then "
+                    "asks for confirmation.",
+                    "“Send to my WhatsApp”, “Open in WhatsApp” and "
+                    "“Copy message” hand the order's text to you so you can forward "
+                    "it yourself; they do not depend on the supplier being configured.",
+                    "“New order” opens a form where you pick the supplier and the "
+                    "destination warehouse and type the lines by hand: SKU, quantity and unit "
+                    "cost. No forecast required.",
+                ],
+                "fields": [
+                    ("N awaiting reception",
+                     "How many orders are still waiting for goods. It counts the ones on the "
+                     "way, the partial ones and the ones marked “Did not arrive”."),
+                    ("Order",
+                     "The purchase order's number, exactly as assigned when it was "
+                     "generated."),
+                    ("Date & time",
+                     "When the order was generated."),
+                    ("SKUs in order",
+                     "How many distinct products the order carries."),
+                    ("Urgent",
+                     "How many of its lines carried the PEDIR_YA signal when it was "
+                     "generated."),
+                    ("Upcoming",
+                     "How many of its lines carried the PEDIR_PRONTO signal."),
+                    ("Total units",
+                     "The sum of units ordered across the whole order."),
+                    ("Total value",
+                     "The sum of quantity times unit cost. It shows “—” if the "
+                     "lines carried no cost."),
+                    ("Reception: On the way / Partial / Received / Did not arrive",
+                     "The state of the goods. “On the way” is also the state of an "
+                     "order nothing was ever logged against: the absence of a record is not "
+                     "proof the shipment arrived."),
+                    ("Log arrival",
+                     "Opens the reception window. It appears while the order is on the way or "
+                     "partial."),
+                    ("Ordered / Received before / Arriving now",
+                     "The three columns of the reception window: what you ordered, what you "
+                     "had already logged and what you are receiving right now. The field "
+                     "comes pre-filled with what is still outstanding."),
+                    ("Save quantities / Everything arrived",
+                     "The first records exactly what you typed line by line; the second marks "
+                     "the whole order as received without typing anything."),
+                    ("Send order",
+                     "Sends the order by email or WhatsApp to the suppliers on its lines. "
+                     "Before sending it shows you who will receive it and who will be "
+                     "skipped."),
+                    ("Send to my WhatsApp / Open in WhatsApp / Copy message",
+                     "These hand the order's text to you: to your WhatsApp, by opening "
+                     "WhatsApp with the message ready, or to the clipboard."),
+                    ("New order",
+                     "The manual order form: supplier, destination warehouse and one line per "
+                     "product with SKU, quantity and an optional unit cost."),
+                    ("Transfers tab",
+                     "Stock moves between your own warehouses, with their own send and "
+                     "reception cycle. Only appears with two or more warehouses."),
+                ],
+                "tasks": [
+                    ("Record that the whole order arrived",
+                     " 1. Find the order in the table. 2. Press “Log arrival” in the "
+                     "reception column. 3. Check the lines are the right ones. 4. Press "
+                     "“Everything arrived”. 5. Each product's stock goes up and the "
+                     "order becomes “Received”."),
+                    ("Record a partial arrival",
+                     " 1. Press “Log arrival” on the order. 2. Under “Arriving "
+                     "now”, type the units that actually arrived for each product. "
+                     "3. Leave the ones that did not arrive at zero. 4. Press “Save "
+                     "quantities”. 5. The order stays “Partial” and keeps the "
+                     "button to log the rest when it comes in."),
+                    ("Send an order to its suppliers",
+                     " 1. Press “Send order” on the order's row. 2. Read the "
+                     "summary: who it will be sent to and who will be skipped. 3. Press "
+                     "“Send” to confirm. 4. For the skipped suppliers, use "
+                     "“Copy message” and send it yourself."),
+                    ("Create a manual order",
+                     " 1. Press “New order”. 2. Pick the supplier and, if you have "
+                     "several warehouses, the destination one. 3. Type the SKU, the quantity "
+                     "and — if you have it — the unit cost of each line. 4. Press "
+                     "“Add product” for the next lines. 5. Press “Create "
+                     "order”."),
+                ],
+                "gotchas": [
+                    "Marking “Did not arrive” does not close the order. It is a "
+                    "statement about a delivery that did not happen, not about a cancelled "
+                    "order, so the order keeps counting under “awaiting reception”.",
+                    "Logging the arrival is not paperwork: it is what raises your stock and "
+                    "what teaches Faro that supplier's real lead time. After 3 recorded "
+                    "receptions Faro replaces the configured lead time with the real "
+                    "average.",
+                    "“Send order” silently skips suppliers with no email or "
+                    "WhatsApp on their record; that is why the confirmation names them "
+                    "beforehand. For those, the way out is forwarding the message yourself.",
+                    "An order with no supplier assigned on any of its lines cannot be sent to "
+                    "anyone, and the confirmation tells you so before you try.",
+                    "With the viewer role you will not see “New order” and cannot "
+                    "log arrivals: both write business data.",
+                ],
+            },
+            {
+                "name": "Messages",
+                "route": "/mensajes",
+                "image": "mensajes",
+                "purpose": (
+                    "One-to-one messaging between the people in your company, inside Faro. "
+                    "It is for what happens around a purchasing decision — “already "
+                    "confirmed with the supplier”, “I halved that quantity” "
+                    "— without leaving for another app or losing the context."
+                ),
+                "walkthrough": [
+                    "The left column starts with the “Messages” title and, on its "
+                    "right, how many people are on your team.",
+                    "Below it is the people search box, always on screen and never shifting "
+                    "the list under your cursor as you use it.",
+                    "Then comes the conversation list, most recent first: the person's "
+                    "initial, their name, the time of the last message and a preview of it.",
+                    "When you have unread messages from someone, their row is shown in bold "
+                    "with a round counter on the right.",
+                    "As soon as you type in the search box, a “Write to them for the "
+                    "first time” block also appears with the colleagues you have not "
+                    "talked to yet.",
+                    "The right-hand area, until you pick someone, says “Pick a "
+                    "conversation”.",
+                    "When you open a conversation, the person's name stays at the top; on "
+                    "narrow screens a back arrow to the list appears as well.",
+                    "Messages read top to bottom: yours aligned right in the accent colour, "
+                    "theirs on the left, each one with its time.",
+                    "A brand-new conversation opens with the line “This is the start of "
+                    "the conversation”.",
+                    "At the bottom is the “Write a message…” field: Enter "
+                    "sends, and a message can be up to 4,000 characters.",
+                    "Opening the conversation marks the messages sent to you as read and the "
+                    "counter disappears.",
+                    "The application's top bar carries an envelope with your total unread "
+                    "count, which brings you back to this screen from anywhere.",
+                ],
+                "fields": [
+                    ("N on your team",
+                     "How many active people there are in your company that you can write "
+                     "to."),
+                    ("Search for a person…",
+                     "Filters your conversations and the rest of your colleagues at the same "
+                     "time, by name or by email."),
+                    ("Conversation row",
+                     "Initial, name, time of the last message and its preview. If the last "
+                     "message is yours, the preview starts with “You:”."),
+                    ("Unread counter",
+                     "The circle with a number on the right of the row: how many messages "
+                     "from that person you have not opened."),
+                    ("Write to them for the first time",
+                     "A block that only appears while you are searching, listing the "
+                     "colleagues you have no conversation with yet."),
+                    ("Pick a conversation",
+                     "The right panel's initial state, before you have opened any thread."),
+                    ("This is the start of the conversation",
+                     "What a freshly opened thread says when it has no messages yet."),
+                    ("Write a message…",
+                     "The composer. Enter sends; the limit is 4,000 characters per message."),
+                    ("Send button",
+                     "The round button next to the field. It stays disabled while the message "
+                     "is empty or while it is being sent."),
+                    ("Top-bar envelope",
+                     "The global unread indicator; it shows “99+” past ninety-"
+                     "nine."),
+                    ("Get a heads-up when someone writes to you",
+                     "A switch that lives in My account, not here. When it is on and your "
+                     "number is linked, you get a WhatsApp heads-up (or an SMS if WhatsApp is "
+                     "unavailable) if someone writes to you while you are away from Faro."),
+                ],
+                "tasks": [
+                    ("Write to someone for the first time",
+                     " 1. Type their name or email in the search box. 2. Find them under "
+                     "“Write to them for the first time”. 3. Click their name. "
+                     "4. Type the message and press Enter."),
+                    ("Pick a conversation back up and mark it read",
+                     " 1. Look for the bold row with the unread counter. 2. Click it. 3. As "
+                     "it opens, the messages are marked as read and the counter disappears, "
+                     "along with the one on the envelope above."),
+                    ("Turn on the WhatsApp heads-up",
+                     " 1. Go to My account. 2. Link your WhatsApp number if you have not "
+                     "already. 3. Find “Team messages” and switch on “Get a "
+                     "heads-up when someone writes to you”."),
+                ],
+                "gotchas": [
+                    "There are no groups and no channels: only one-person-to-one-person "
+                    "conversations, always within your own company.",
+                    "The list of colleagues you have not talked to only appears while you are "
+                    "typing in the search box. Without searching, the column shows just your "
+                    "conversations.",
+                    "The screen refreshes itself — the list every 15 seconds and the "
+                    "open thread every 5 — so a new message can take a few seconds to "
+                    "show up. There is no “typing…” and no read receipt for "
+                    "the sender.",
+                    "The WhatsApp heads-up is off by default and needs your number linked in "
+                    "My account. It also only fires when you are away from the conversation: "
+                    "if you have just read that person, you are not notified again.",
+                    "Users with the viewer role can send and receive messages too. The "
+                    "boundary here is the company, not the role.",
+                ],
+            },
+        ],
+    },
+}

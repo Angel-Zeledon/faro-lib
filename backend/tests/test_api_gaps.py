@@ -12,7 +12,6 @@ from backend.db.connection import execute, query, query_one
 
 @pytest.fixture
 def machine(client, auth_headers, test_tenant):
-    execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
     raw = client.post("/api/v1/api-keys",
                       json={"name": "erp", "role": "analyst"},
                       headers=auth_headers).json()["data"]["key"]
@@ -79,37 +78,16 @@ class TestAnIntegrationLeavesATrail:
         assert len(_audit_rows(test_tenant["id"])) == before
 
 
-class TestTheCeilingFollowsThePlan:
-    """One number for everybody meant an Enterprise paying ten times as much got
-    the same allowance as the plan below it."""
+class TestTheCeilingIsOneNumber:
+    """It was 60 / 120 / unlimited per tier. One plan, one ceiling — and the
+    thing worth guarding is that it still refuses, because a limit that stops
+    refusing is indistinguishable from no limit."""
 
-    def test_each_plan_has_its_own(self):
-        assert api_key_auth.rate_limit_for("starter") == 60
-        assert api_key_auth.rate_limit_for("professional") == 120
-        assert api_key_auth.rate_limit_for("enterprise") is None, "enterprise is unlimited"
-
-    def test_an_unknown_plan_falls_back_instead_of_becoming_unlimited(self):
-        """A tenant row with an unexpected value must not silently escape the
-        limiter — that is how a limit quietly stops existing."""
-        assert api_key_auth.rate_limit_for("pro-max-ultra") == api_key_auth.RATE_MAX_PER_MINUTE
-        assert api_key_auth.rate_limit_for(None) == api_key_auth.RATE_MAX_PER_MINUTE
-
-    def test_unlimited_costs_nothing_and_never_refuses(self, monkeypatch):
+    def test_a_key_over_the_window_is_refused(self, monkeypatch):
         monkeypatch.setattr(settings, "testing_mode", False)
-        for _ in range(api_key_auth.RATE_MAX_PER_MINUTE + 20):
-            assert api_key_auth.check_rate("key_enterprise", None) is True
-        assert query_one(
-            "SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s",
-            ("apikey:key_enterprise",))["n"] == 0, (
-            "an unlimited plan still wrote counter rows"
-        )
-
-    def test_a_lower_ceiling_bites_earlier(self, monkeypatch):
-        monkeypatch.setattr(settings, "testing_mode", False)
-        execute("DELETE FROM auth_rate_events WHERE key = %s", ("apikey:key_starter",))
-        allowed = sum(1 for _ in range(80) if api_key_auth.check_rate("key_starter", 60))
-        assert allowed == 60, f"a 60/min ceiling allowed {allowed}"
-
+        allowed = sum(1 for _ in range(api_key_auth.RATE_MAX_PER_MINUTE + 20)
+                      if api_key_auth.check_rate("key_one_ceiling"))
+        assert allowed == api_key_auth.RATE_MAX_PER_MINUTE
 
 class TestOnlyOneInstanceMigrates:
     def test_run_all_takes_the_advisory_lock(self, monkeypatch):

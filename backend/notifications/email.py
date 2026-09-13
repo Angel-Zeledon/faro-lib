@@ -21,9 +21,9 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from backend.config import settings
 from backend.formatting import DEFAULT_CURRENCY
 from backend.notifications.locale import render_es, render_month
+from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
 
@@ -36,18 +36,25 @@ class EmailNotConfigured(EmailDeliveryError):
     """Neither Resend nor SMTP credentials are set — nothing can be sent."""
 
 
-def is_configured() -> bool:
-    """True when some transport can actually deliver. Mirrors whatsapp.is_configured()."""
-    return bool(settings.resend_api_key or (settings.smtp_user and settings.smtp_pass))
+def is_configured(tenant_id: str | None = None) -> bool:
+    """True when some transport can actually deliver. Mirrors whatsapp.is_configured().
+
+    `tenant_id` asks the question for a tenant that configured its own sender:
+    a deployment with no instance-level transport can still be able to mail
+    THIS tenant's people, and answering "not configured" there would hide a
+    channel that works.
+    """
+    cfg = effective(tenant_id)
+    return bool(cfg.resend_api_key or (cfg.smtp_user and cfg.smtp_pass))
 
 
-def failure_reason() -> str:
+def failure_reason(tenant_id: str | None = None) -> str:
     """
     Stable code for why a send failed, for API payloads and activity rows.
     The two are fixed by different people: `not_configured` is an operator
     setting up credentials, `transport_error` is the provider rejecting us.
     """
-    return "transport_error" if is_configured() else "not_configured"
+    return "transport_error" if is_configured(tenant_id) else "not_configured"
 
 _APP_NAME = "ForecastPlatform"
 _PRIMARY   = "#818cf8"
@@ -117,12 +124,16 @@ def _setup_link_ttl_label() -> str:
     return render_es("hours_duration", hours=SETUP_LINK_EXPIRE_HOURS)
 
 
-def _send_resend(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _send_resend(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """Send via the Resend HTTP API. Raises on failure."""
     import httpx
 
+    cfg = effective(tenant_id)
     payload = {
-        "from": settings.email_from,
+        "from": cfg.email_from,
         "to": [to],
         "subject": f"[{_APP_NAME}] {subject}",
         "html": html,
@@ -135,18 +146,22 @@ def _send_resend(to: str, subject: str, html: str, attachment: dict | None = Non
 
     resp = httpx.post(
         "https://api.resend.com/emails",
-        headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+        headers={"Authorization": f"Bearer {cfg.resend_api_key}"},
         json=payload,
         timeout=15,
     )
     resp.raise_for_status()
 
 
-def _send_smtp(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _send_smtp(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """Send via SMTP TLS (fallback transport). Raises on failure."""
+    cfg = effective(tenant_id)
     msg = MIMEMultipart("mixed" if attachment else "alternative")
     msg["Subject"] = f"[{_APP_NAME}] {subject}"
-    msg["From"]    = f"{_APP_NAME} <{settings.smtp_user}>"
+    msg["From"]    = f"{_APP_NAME} <{cfg.smtp_user}>"
     msg["To"]      = to
 
     if attachment:
@@ -159,14 +174,17 @@ def _send_smtp(to: str, subject: str, html: str, attachment: dict | None = None)
     else:
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-    with smtplib.SMTP(settings.smtp_server, settings.smtp_port) as smtp:
+    with smtplib.SMTP(cfg.smtp_server, cfg.smtp_port) as smtp:
         smtp.ehlo()
         smtp.starttls()
-        smtp.login(settings.smtp_user, settings.smtp_pass)
-        smtp.sendmail(settings.smtp_user, to, msg.as_string())
+        smtp.login(cfg.smtp_user, cfg.smtp_pass)
+        smtp.sendmail(cfg.smtp_user, to, msg.as_string())
 
 
-def _transport_send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _transport_send(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """
     Dispatch an email: Resend when RESEND_API_KEY is set, SMTP as fallback.
     Raises on transport failure so callers can report `email_sent=False`.
@@ -175,25 +193,37 @@ def _transport_send(to: str, subject: str, html: str, attachment: dict | None = 
     and returning quietly here made every `try: _send() ... return True`
     caller claim it had mailed an invite / a verification link / a purchase
     order that no one ever received.
+
+    `tenant_id` selects a tenant's own transport when it configured one. It is
+    passed by the sends that carry the TENANT's identity to the tenant's own
+    people — an inventory alert, a purchase order to a supplier. Platform mail
+    (verification, password reset, invitations) deliberately stays on the
+    instance transport: those speak for the installation, not for a customer,
+    and a tenant must not be able to send the address that resets a password.
     """
-    if settings.resend_api_key:
-        _send_resend(to, subject, html, attachment)
+    cfg = effective(tenant_id)
+
+    if cfg.resend_api_key:
+        _send_resend(to, subject, html, attachment, tenant_id)
         log.info("Email sent via Resend → %s | subject: %s", to, subject)
         return
 
-    if not settings.smtp_user or not settings.smtp_pass:
+    if not cfg.smtp_user or not cfg.smtp_pass:
         raise EmailNotConfigured(
             f"No email transport configured (RESEND_API_KEY / SMTP) — nothing sent to {to}"
         )
 
-    _send_smtp(to, subject, html, attachment)
+    _send_smtp(to, subject, html, attachment, tenant_id)
     log.info("Email sent via SMTP → %s | subject: %s", to, subject)
 
 
-def _send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _send(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
     # while the dispatch logic in _transport_send stays independently testable.
-    _transport_send(to, subject, html, attachment)
+    _transport_send(to, subject, html, attachment, tenant_id)
 
 
 # Rows an inventory digest lists before collapsing the rest into a "+N more"
@@ -363,6 +393,7 @@ def send_inventory_alert_email(
     warning_items: list[dict],
     inventory_url: str,
     period: str = "daily",
+    tenant_id: str | None = None,
 ) -> bool:
     """
     Daily digest: SKUs at risk of stockout. Returns True if sent.
@@ -475,7 +506,7 @@ def send_inventory_alert_email(
         """,
     )
     try:
-        _send(to, subject_prefix, html)
+        _send(to, subject_prefix, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send inventory alert to %s: %s", to, exc)
@@ -486,6 +517,7 @@ def send_supplier_lead_time_alert_email(
     to: str,
     deviations: list[dict],
     scorecard_url: str,
+    tenant_id: str | None = None,
 ) -> bool:
     """
     Daily digest: suppliers whose recent lead time drifted significantly off
@@ -552,7 +584,7 @@ def send_supplier_lead_time_alert_email(
         """,
     )
     try:
-        _send(to, subject, html)
+        _send(to, subject, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send supplier lead-time alert to %s: %s", to, exc)
@@ -564,6 +596,7 @@ def send_data_freshness_reminder_email(
     sales_age_days: int | None,
     stock_age_days: int | None,
     upload_url: str,
+    tenant_id: str | None = None,
 ) -> bool:
     """
     The reminder that reaches a buyer who stopped opening the app.
@@ -604,14 +637,17 @@ def send_data_freshness_reminder_email(
         else render_es("freshness_email_subject_stock", days=stock_age_days)
     )
     try:
-        _send(to, subject, html)
+        _send(to, subject, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send data-freshness reminder to %s: %s", to, exc)
         return False
 
 
-def send_training_complete_email(to: str, session_name: str, dashboard_url: str) -> bool:
+def send_training_complete_email(
+    to: str, session_name: str, dashboard_url: str,
+    tenant_id: str | None = None,
+) -> bool:
     """Notify user when a training job finishes. Returns True if sent."""
     html = _base_html(
         "Training complete",
@@ -626,7 +662,7 @@ def send_training_complete_email(to: str, session_name: str, dashboard_url: str)
         """,
     )
     try:
-        _send(to, f"Training complete — {session_name}", html)
+        _send(to, f"Training complete — {session_name}", html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send training complete email to %s: %s", to, exc)
@@ -642,6 +678,7 @@ def send_po_to_supplier_email(
     pdf_bytes: bytes,
     pdf_filename: str,
     po_ref: str | None = None,
+    tenant_id: str | None = None,
 ) -> bool:
     """Send a purchase order's PDF to its supplier. Returns True if sent."""
     ref = po_ref or po_log_id
@@ -687,7 +724,8 @@ def send_po_to_supplier_email(
     )
     try:
         _send(to, render_es("po_email_subject", reference=ref), html,
-              attachment={"filename": pdf_filename, "content_bytes": pdf_bytes})
+              attachment={"filename": pdf_filename, "content_bytes": pdf_bytes},
+              tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send PO email to supplier %s <%s>: %s", supplier_name, to, exc)
@@ -733,7 +771,8 @@ def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:
 
 
 def send_monthly_roi_email(to: str, report: dict, roi_url: str,
-                           currency: dict | None = None) -> bool:
+                           currency: dict | None = None,
+                           tenant_id: str | None = None) -> bool:
     """
     Monthly recap of what the buyer did with Faro.
 
@@ -825,8 +864,48 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str,
         else render_es("roi_email_subject_default", month=month_label)
     )
     try:
-        _send(to, subject, html)
+        _send(to, subject, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send monthly recap to %s: %s", to, exc)
+        return False
+
+
+def send_upgrade_request_email(
+    *,
+    to: str,
+    tenant_name: str,
+    tenant_id: str,
+    requester: str,
+    limit_key: str | None,
+    message: str,
+    contact: str,
+) -> bool:
+    """Tell us that a customer wants to pay. Returns True if sent.
+
+    Deliberately in English and deliberately plain: this one goes to us, not to
+    a customer, so it is not end-user copy and needs no locale catalog. It is
+    also not the record — `upgrade_requests` is. If this send fails the row is
+    already committed, which is the whole point: the most expensive silent
+    failure this product could have is losing an "I want to pay you".
+    """
+    html = _base_html(
+        "Upgrade request",
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">{tenant_name} wants more room</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Tenant: <strong style="color:{_TEXT};">{tenant_name}</strong> ({tenant_id})</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Asked by: <strong style="color:{_TEXT};">{requester}</strong></p>
+        <p style="color:{_DIM};margin:0 0 4px;">Reach them at: <strong style="color:{_TEXT};">{contact or "—"}</strong></p>
+        <p style="color:{_DIM};margin:0 0 20px;">Hit the limit: <strong style="color:{_TEXT};">{limit_key or "—"}</strong></p>
+        <p style="color:{_TEXT};margin:0 0 8px;white-space:pre-wrap;">{message or "(no message)"}</p>
+        <p style="color:{_DIM};font-size:12px;">
+          Move them over with: UPDATE tenants SET tier = 'paid' WHERE id = '{tenant_id}';
+        </p>
+        """,
+    )
+    try:
+        _send(to, f"Upgrade request — {tenant_name}", html)
+        return True
+    except Exception as exc:
+        log.error("Failed to send upgrade request email to %s: %s", to, exc)
         return False

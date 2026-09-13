@@ -19,8 +19,10 @@ const C = {
   red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
 }
 
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('es', {
+// The locale has to follow the interface language: hardcoding 'es' printed
+// "22 ago 2026" to a user reading an English screen.
+function fmtDateTime(iso: string, lang: string): string {
+  return new Date(iso).toLocaleString(lang === 'en' ? 'en-US' : 'es-CR', {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -350,7 +352,7 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
   onReceive: (id: string) => void
   suppliersWithoutContact?: string[]
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   if (entries.length === 0) {
     return (
       <div style={{ padding: '40px 24px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
@@ -399,7 +401,7 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                 {formatPoNumber(entry.po_number)}
               </td>
               <td style={{ padding: '11px 14px', color: C.text, fontVariantNumeric: 'tabular-nums' }}>
-                {fmtDateTime(entry.generated_at)}
+                {fmtDateTime(entry.generated_at, lang)}
               </td>
               <td style={{ padding: '11px 14px', fontWeight: 600, color: C.text }}>
                 {entry.sku_count}

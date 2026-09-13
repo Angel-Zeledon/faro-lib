@@ -1,35 +1,47 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { getEntitlements, type Entitlements } from "./api";
 
 type Ctx = {
   ent: Entitlements | null;
-  has: (f: string) => boolean;
   readOnly: boolean;
   loading: boolean;
+  /** Re-read the ceilings. Call it after anything that consumes one, so a
+   *  usage bar is never stale by a whole page load. */
+  refresh: () => Promise<void>;
 };
 
-// Fail CLOSED. `has` used to answer `true` whenever entitlements were absent —
-// both before the request finished and after it failed — so a dropped
-// /entitlements call showed a Starter tenant the whole Professional navigation
-// (Mensajes, Asistente IA, Escenarios, Automatización). A permission check that
-// opens up when it cannot verify is not a check; the backend then refused the
-// calls and the user met a wall behind a link the app had just offered them.
-// Callers that would rather wait than show a padlock read `loading`.
+// This used to carry `has(feature)`, and it failed CLOSED on purpose: a dropped
+// /entitlements call must not hand a tenant a navigation full of things the
+// backend would then refuse. Both tiers include every feature now, so there is
+// nothing left to hide — what this carries is *how much*: the tier, the
+// ceilings, the usage against them, and the channels to ask for more.
+//
+// It still fails closed in the way that matters. With no answer, `ent` is null
+// and the UI shows no limits at all rather than inventing generous ones.
 const EntitlementsContext = createContext<Ctx>({
-  ent: null, has: () => false, readOnly: false, loading: true,
+  ent: null, readOnly: false, loading: true, refresh: async () => {},
 });
 
 export function EntitlementsProvider({ children }: { children: React.ReactNode }) {
   const [ent, setEnt] = useState<Entitlements | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    getEntitlements().then(setEnt).catch(() => setEnt(null)).finally(() => setLoading(false));
+
+  const refresh = useCallback(async () => {
+    try {
+      setEnt(await getEntitlements());
+    } catch {
+      setEnt(null);
+    }
   }, []);
-  const has = (f: string) => (ent ? !!ent.features[f] : false);
+
+  useEffect(() => {
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
+
   return (
     <EntitlementsContext.Provider
-      value={{ ent, has, readOnly: ent?.read_only ?? false, loading }}
+      value={{ ent, readOnly: ent?.read_only ?? false, loading, refresh }}
     >
       {children}
     </EntitlementsContext.Provider>
@@ -37,3 +49,8 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
 }
 
 export const useEntitlements = () => useContext(EntitlementsContext);
+
+/** The limits a user can see themselves approaching, in the order they hit them. */
+export const LIMIT_KEYS = [
+  "max_skus", "max_users", "max_locations", "max_sessions", "max_api_keys",
+] as const;

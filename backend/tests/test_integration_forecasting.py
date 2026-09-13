@@ -52,7 +52,13 @@ def _make_mock_engine(n_skus: int = 3, horizon: int = 14):
     engine._df = mock_df
     engine._run_id = "mock_run_001"
     engine.get_forecast.return_value = {"rows": fc_rows, "n_skus": n_skus, "horizon": horizon}
-    engine.get_metrics.return_value = {"rows": metrics_rows, "n_models": 1, "n_skus": n_skus}
+    engine.get_metrics.return_value = {
+        "rows": metrics_rows, "n_models": 1, "n_skus": n_skus,
+        "by_model": {"lightgbm": {
+            "avg_mae": 3.5, "avg_rmse": 5.1, "avg_wape": 0.12,
+            "avg_bias": 0.01, "avg_mape": 0.15, "avg_smape": 0.14,
+        }},
+    }
     engine.get_inventory_report.return_value = {"rows": inventory_rows}
     engine.generate_report.return_value = {}
     engine.get_routing_plan.return_value = {"rows": [{"sku": s, "assigned_model": "lightgbm"} for s in skus]}
@@ -176,6 +182,50 @@ class TestMockedTrainingE2E:
         rows = resp.json()["data"]["rows"]
         skus_in_metrics = {r["sku"] for r in rows}
         assert len(skus_in_metrics) == 3
+
+    def test_e2e_training_records_model_metrics_history(
+        self, client, auth_headers, configured_session, registered_user
+    ):
+        """docs/estabilidad.md 6.b: a training run's per-model accuracy must
+        land in training_run_metrics, not only in the session's own JSONB —
+        that table is the only place accuracy can be compared across runs."""
+        from backend.db.connection import query_one
+
+        tid = registered_user["tenant"]["id"]
+        sid = configured_session["id"]
+        mock_engine = _make_mock_engine(n_skus=2)
+
+        client.post(f"/api/v1/sessions/{sid}/train", headers=auth_headers)
+        self._run_training_synchronously(tid, sid, mock_engine)
+
+        row = query_one(
+            "SELECT * FROM training_run_metrics WHERE tenant_id = %s AND session_id = %s AND model = %s",
+            (tid, sid, "lightgbm"),
+        )
+        assert row is not None
+        assert row["avg_mae"] == 3.5
+        assert row["avg_wape"] == 0.12
+
+    def test_retraining_the_same_session_overwrites_its_metrics_row(
+        self, client, auth_headers, configured_session, registered_user
+    ):
+        """UNIQUE (session_id, model) must upsert, not duplicate or reject."""
+        from backend.db.connection import query
+
+        tid = registered_user["tenant"]["id"]
+        sid = configured_session["id"]
+
+        client.post(f"/api/v1/sessions/{sid}/train", headers=auth_headers)
+        self._run_training_synchronously(tid, sid, _make_mock_engine(n_skus=2))
+
+        client.post(f"/api/v1/sessions/{sid}/train", headers=auth_headers)
+        self._run_training_synchronously(tid, sid, _make_mock_engine(n_skus=2))
+
+        rows = query(
+            "SELECT * FROM training_run_metrics WHERE tenant_id = %s AND session_id = %s AND model = %s",
+            (tid, sid, "lightgbm"),
+        )
+        assert len(rows) == 1
 
 
 @pytest.mark.integration

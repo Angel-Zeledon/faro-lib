@@ -3,8 +3,8 @@
  *
  * Two different kinds of money exist in this product and they do NOT share a
  * setting:
- *  - What Faro costs is priced in USD for everyone. That lives in Stripe and is
- *    rendered by the billing panel, never through here.
+ *  - What Faro costs is priced in USD for everyone, and it is a conversation
+ *    with us — not a number this app renders, and never through here.
  *  - What the CUSTOMER's money is worth — inventory value, unit costs, a purchase
  *    order's total — is in whatever currency that business trades in. That is the
  *    tenant setting this module reads.

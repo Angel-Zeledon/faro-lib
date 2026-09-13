@@ -136,6 +136,83 @@ class TestGetSupplierScorecard:
         assert row["last_reception"] is None
         assert row["fill_rate"] == 0.0
         assert row["purchased_value"] == 200.0  # 40 * 5.0, based on what was ordered
+        assert row["purchased_value_complete"] is True
+
+
+class TestPurchasedValueDoesNotInventAZero:
+    """
+    `SUM(final_qty * unit_cost)` drops any line whose cost is NULL, because NULL
+    annuls the product. COALESCEd to 0, a supplier you bought ₡40M from with no
+    costs on file printed a confident ₡0 in bold green — while /impacto, one
+    screen away, reports None for exactly the same quantity and says the figure
+    is unavailable. Same data, two policies.
+    """
+
+    def _po_without_costs(self, client, auth_headers, *, sku, qty, supplier):
+        resp = client.post(
+            "/api/v1/inventory/log-po",
+            params={"session_id": f"sess_test_{uuid.uuid4().hex[:6]}"},
+            json={"items": [{
+                "sku": sku, "display_name": f"Prod {sku}", "supplier": supplier,
+                "signal": "PEDIR_YA", "recommended_qty": qty,
+                "final_qty": qty, "status": "approved",
+            }]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["data"]["id"]
+
+    def test_no_costs_at_all_reports_none_not_zero(self, client, auth_headers, test_tenant):
+        from backend.inventory.reception_service import get_supplier_scorecard
+
+        tid = test_tenant["id"]
+        prov = f"NoCost-{uuid.uuid4().hex[:6]}"
+        _make_supplier(tid, prov, lead_time_days=7)
+
+        sku = f"NC-{uuid.uuid4().hex[:6]}"
+        po = self._po_without_costs(client, auth_headers, sku=sku, qty=40, supplier=prov)
+        resp = client.post(
+            f"/api/v1/inventory/po/{po}/receive",
+            json={"lines": [{"sku": sku, "received_qty": 40}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        row = next(r for r in get_supplier_scorecard(tid) if r["supplier"] == prov)
+        assert row["purchased_value"] is None, (
+            "a zero here reads as 'you bought nothing from them' — 40 units were ordered")
+        assert row["purchased_value_complete"] is False
+
+    def test_partial_cost_coverage_is_marked_rather_than_passed_off_as_the_total(
+        self, client, auth_headers, test_tenant,
+    ):
+        from backend.inventory.reception_service import get_supplier_scorecard
+
+        tid = test_tenant["id"]
+        prov = f"HalfCost-{uuid.uuid4().hex[:6]}"
+        _make_supplier(tid, prov, lead_time_days=7)
+
+        sku_costed, sku_bare = f"HC-{uuid.uuid4().hex[:6]}", f"HB-{uuid.uuid4().hex[:6]}"
+        po = _make_po(client, auth_headers, sku=sku_costed, qty=10,
+                      supplier=prov, unit_cost=3.0)
+        po_bare = self._po_without_costs(
+            client, auth_headers, sku=sku_bare, qty=500, supplier=prov)
+        # BOTH orders have to be received: the fill query only counts lines from
+        # POs that left 'pending', so an untouched order contributes nothing at
+        # all — including nothing to the cost-coverage count.
+        for po_id, sku, qty in ((po, sku_costed, 10), (po_bare, sku_bare, 500)):
+            resp = client.post(
+                f"/api/v1/inventory/po/{po_id}/receive",
+                json={"lines": [{"sku": sku, "received_qty": qty}]},
+                headers=auth_headers,
+            )
+            assert resp.status_code == 200, resp.text
+
+        row = next(r for r in get_supplier_scorecard(tid) if r["supplier"] == prov)
+        # The 500 uncosted units contribute nothing, so 30 is a floor and the
+        # flag is what stops the UI presenting it as the whole story.
+        assert row["purchased_value"] == 30.0
+        assert row["purchased_value_complete"] is False
 
 
 class TestSupplierScorecardEndpoint:

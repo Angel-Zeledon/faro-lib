@@ -11,6 +11,7 @@
 import { TrendingDown, Info } from 'lucide-react'
 import type { PriceBreakOpportunity, PriceBreakReason } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { fmtNum } from '@/lib/numberLocale'
 
 const GREEN = '#22c55e'
 const DIM   = 'var(--dim)'
@@ -64,9 +65,9 @@ export function PriceBreakPanel({
         >
           <div style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>
             <strong>{o.sku}</strong>{': '}
-            {t('pricebreaks.step_prefix')} {o.extra_units.toLocaleString('es-419')}{' '}
-            {t('pricebreaks.step_more_units')} ({o.current_quantity.toLocaleString('es-419')}
-            {' → '}{o.step_quantity.toLocaleString('es-419')}){', '}
+            {t('pricebreaks.step_prefix')} {fmtNum(o.extra_units)}{' '}
+            {t('pricebreaks.step_more_units')} ({fmtNum(o.current_quantity)}
+            {' → '}{fmtNum(o.step_quantity)}){', '}
             {t('pricebreaks.unit_price_falls')}{' '}
             <strong style={{ color: GREEN }}>
               {o.unit_price_drop_pct != null ? `${(o.unit_price_drop_pct * 100).toFixed(1)}%` : '—'}
@@ -111,7 +112,7 @@ export function PriceBreakPanel({
                   <>
                     {t('pricebreaks.blocked_discount_prefix')}{' '}
                     {(o.unit_price_drop_pct * 100).toFixed(1)}%{' '}
-                    {t('pricebreaks.blocked_at')} {o.step_quantity.toLocaleString('es-419')}
+                    {t('pricebreaks.blocked_at')} {fmtNum(o.step_quantity)}
                     {' '}{t('pricebreaks.step_more_units')}{', '}
                   </>
                 )}

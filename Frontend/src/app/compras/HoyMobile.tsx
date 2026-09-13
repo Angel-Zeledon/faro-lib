@@ -40,6 +40,7 @@ import StaleDataBanner, { StaleSignalChip } from '@/components/ui/StaleDataBanne
 import { ErrorState, LoadingState, SkeletonCards } from '@/components/ui/States'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { fmtNum } from '@/lib/numberLocale'
 import {
   C, AllClear, AssumptionsBanner, SourceBadge, provenanceText, summarizeAssumptions,
   tOr, type ActionItem,
@@ -393,7 +394,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
       {!canDecide ? (
         <div style={{ marginTop: 12, textAlign: 'center' }}>
           <div style={{ color: accent, fontSize: 22, fontWeight: 800 }}>
-            {item.qty.toLocaleString('es')}
+            {fmtNum(item.qty)}
           </div>
           <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>
             {t('hoy.label_units')}
@@ -522,7 +523,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
           {item.moq != null && (
             <WhyRow
               label="MOQ"
-              value={Math.round(item.moq).toLocaleString('es')}
+              value={fmtNum(Math.round(item.moq))}
               source={item.moq_source}
               note={provenanceText(t, item.moq_source, item.moq_rule_scope)}
             />
@@ -530,19 +531,19 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
           {item.current_stock != null && (
             <WhyRow
               label={t('hoy.why_stock_label')}
-              value={`${Math.round(item.current_stock).toLocaleString('es')} ${t('hoy.why_units')}`}
+              value={`${fmtNum(Math.round(item.current_stock))} ${t('hoy.why_units')}`}
             />
           )}
           {item.daily_demand != null && (
             <WhyRow
               label={t('hoy.why_demand_label')}
-              value={`${item.daily_demand.toLocaleString('es', { maximumFractionDigits: 1 })} ${t('hoy.why_units_day')}`}
+              value={`${fmtNum(item.daily_demand, { maximumFractionDigits: 1 })} ${t('hoy.why_units_day')}`}
             />
           )}
           {item.reorder_point != null && (
             <WhyRow
               label={t('hoy.why_reorder_point_label')}
-              value={`${Math.round(item.reorder_point).toLocaleString('es')} ${t('hoy.why_units')}`}
+              value={`${fmtNum(Math.round(item.reorder_point))} ${t('hoy.why_units')}`}
             />
           )}
           {item.supplier && (

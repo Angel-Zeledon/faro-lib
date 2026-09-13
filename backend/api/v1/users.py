@@ -215,13 +215,25 @@ def create_user_admin(
             "email_already_registered", "Email already registered", status_code=409,
         )
 
-    from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
+    from backend.entitlements.service import enforce_limit, limit_guard
 
-    temp_password = secrets.token_urlsafe(16)
-    new_user = user_svc.create_user_admin(
-        user.tenant_id, body.email, temp_password, body.role, body.full_name
-    )
+    # Seats are the ceiling a growing team hits first, so this is the one people
+    # race by accident: two admins inviting the last two members at the same
+    # time. Eight simultaneous invitations against a ceiling of two used to
+    # leave NINE users, because all eight counted before any had committed.
+    #
+    # The guard's lock is held across the create, and `create_user_admin`
+    # commits on its own connection INSIDE the block — which is all the
+    # ordering this needs: the next waiter cannot start counting until this
+    # user is both written and visible.
+    with limit_guard(user.tenant_id) as conn:
+        enforce_limit(user.tenant_id, "max_users",
+                      user_svc.count_users(user.tenant_id, conn=conn), conn=conn)
+
+        temp_password = secrets.token_urlsafe(16)
+        new_user = user_svc.create_user_admin(
+            user.tenant_id, body.email, temp_password, body.role, body.full_name
+        )
 
     from backend.auth.jwt_handler import create_signed_token
     verify_token = create_signed_token(
@@ -482,13 +494,20 @@ def invite_user(
             "email_already_registered", "Email already registered", status_code=409,
         )
 
-    from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
+    from backend.entitlements.service import enforce_limit, limit_guard
 
-    temp_password = secrets.token_urlsafe(16)
-    new_user = user_svc.create_user_admin(
-        user.tenant_id, body.email, temp_password, body.role, body.full_name
-    )
+    # The second seat-consuming path (POST /users is the other). Both have to
+    # be guarded, or the ceiling is only as strong as whichever one a racing
+    # client happens to call.
+    with limit_guard(user.tenant_id) as _seat_conn:
+        enforce_limit(user.tenant_id, "max_users",
+                      user_svc.count_users(user.tenant_id, conn=_seat_conn),
+                      conn=_seat_conn)
+
+        temp_password = secrets.token_urlsafe(16)
+        new_user = user_svc.create_user_admin(
+            user.tenant_id, body.email, temp_password, body.role, body.full_name
+        )
 
     from backend.auth.jwt_handler import create_signed_token
     verify_token = create_signed_token(

@@ -10,7 +10,8 @@ import {
 import type { Warehouse, TransferLane } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
-import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight } from 'lucide-react'
+import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight, Settings2 } from 'lucide-react'
+import MenuButton from '@/components/ui/MenuButton'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -106,13 +107,23 @@ export function useWarehouses(): WarehousesValue {
   return { warehouses, multi: warehouses.length >= 2, reload }
 }
 
-function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: boolean }) {
+function AddWarehouse({ onCreated, subtle, open, onOpenChange }: {
+  onCreated: () => void
+  subtle?: boolean
+  /** Controlled mode: the trigger lives elsewhere (the setup menu) and
+   *  only the inline editor renders here. Uncontrolled when omitted. */
+  open?: boolean
+  onOpenChange?: (v: boolean) => void
+}) {
   // The chicken-and-egg closer (walkthrough finding #14): warehouses used to
   // be creatable only via API or a stock CSV, so a customer clicking around
   // could never START using multi-warehouse. For mono-warehouse tenants this
   // renders as one subtle pill — the only multi-warehouse affordance they see.
   const { t } = useLanguage()
-  const [adding, setAdding] = useState(false)
+  const [addingLocal, setAddingLocal] = useState(false)
+  const controlled = open !== undefined
+  const adding = controlled ? open : addingLocal
+  const setAdding = (v: boolean) => { controlled ? onOpenChange?.(v) : setAddingLocal(v) }
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -139,6 +150,8 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
   if (role !== 'admin' && role !== 'analyst') return null
 
   if (!adding) {
+    // Controlled: the menu owns the trigger, so render nothing here.
+    if (controlled) return null
     return (
       <button onClick={() => setAdding(true)}
               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
@@ -309,6 +322,10 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   // callbacks are for page-specific side effects (e.g. reloading status).
   const { reload } = useWarehouses()
   const [editingShares, setEditingShares] = useState(false)
+  const [addingWarehouse, setAddingWarehouse] = useState(false)
+  // Same gate AddWarehouse applies to itself: a viewer offered these three
+  // can only ever reach a 403.
+  const canConfigure = ['admin', 'analyst'].includes(getUser()?.role ?? '')
   const [editingLanes, setEditingLanes] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -392,17 +409,30 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
             {w.name}
           </button>
         ))}
-        <button onClick={() => { setEditingShares(v => !v); setDraft({}) }}
-                aria-label={t('inventory.wh_shares_edit_aria')}
-                style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Percent size={12} /> {t('inventory.wh_shares_btn')}
-        </button>
-        <button onClick={() => setEditingLanes(v => !v)}
-                aria-label={t('transfers.lanes_edit_aria')}
-                style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
-          <ArrowLeftRight size={12} /> {t('transfers.lanes_btn')}
-        </button>
-        <AddWarehouse onCreated={() => { reload(); onCreated?.() }} />
+        {/* These three are SETUP, not the daily read, and they used to sit in
+            the tab row pretending to be warehouses — three extra pills between
+            "Norte" and "Sur". Behind one icon they stop competing with the
+            thing this row is for: choosing which warehouse you are looking at. */}
+        {canConfigure && (
+          <MenuButton
+            icon={<Settings2 size={13} />}
+            title={t('inventory.wh_setup_menu')}
+            align="left"
+            items={[
+              { label: t('inventory.wh_shares_btn'), icon: <Percent size={12} />,
+                onSelect: () => { setEditingShares(v => !v); setDraft({}) } },
+              { label: t('transfers.lanes_btn'), icon: <ArrowLeftRight size={12} />,
+                onSelect: () => setEditingLanes(v => !v) },
+              { label: t('inventory.wh_add_btn'), icon: <Plus size={12} />,
+                onSelect: () => setAddingWarehouse(true) },
+            ]}
+          />
+        )}
+        <AddWarehouse
+          onCreated={() => { reload(); onCreated?.() }}
+          open={canConfigure ? addingWarehouse : undefined}
+          onOpenChange={setAddingWarehouse}
+        />
       </div>
 
       {editingLanes && <TransferLanesEditor warehouses={warehouses} />}

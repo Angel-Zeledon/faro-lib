@@ -158,7 +158,6 @@ _BASE_SCHEMA = [
          id         TEXT PRIMARY KEY,
          name       TEXT NOT NULL,
          slug       TEXT UNIQUE NOT NULL,
-         plan       TEXT NOT NULL DEFAULT 'starter',
          status     TEXT NOT NULL DEFAULT 'active',
          quota      JSONB NOT NULL DEFAULT '{}',
          settings   JSONB NOT NULL DEFAULT '{}',
@@ -733,21 +732,31 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_terms_days INT"),
     # Backfill of what users already captured. Mirrors parse_payment_terms_days()
     # in backend/inventory/cash_service.py (same cases, same rule order):
-    #   cash-on-delivery/prepaid → 0 · "N mes(es)" → N*30 · "quincenal" → 15 ·
-    #   first number found → N days · anything else → NULL.
+    #   cash-on-delivery/prepaid/anticipo → 0 · instalment schedule → NULL ·
+    #   "N mes(es)" → N*30 · "quincenal" → 15 · first number that is not a
+    #   percentage → N days · anything else → NULL.
     # Unparseable text stays NULL on purpose: the cash calendar reports it under
-    # "missing terms" instead of inventing a due date.
+    # "missing terms" instead of inventing a due date. A test asserts this SQL
+    # and the Python parser agree case by case
+    # (tests/test_cash_calendar.py::test_backfill_matches_the_python_parser) —
+    # change one and you must change the other.
+    # The `%%` are deliberate: every statement goes through psycopg2, which
+    # treats a lone `%` as a parameter placeholder. Postgres sees one `%`.
     ("backfill_suppliers_payment_terms_days",
      """UPDATE suppliers
            SET payment_terms_days = CASE
-               WHEN payment_terms ~* '(contado|cash|anticipad|prepag|inmediat|contra ?entrega|\\mcod\\M)'
+               WHEN payment_terms ~* '(contado|cash|anticip|adelant|prepag|inmediat|contra ?entrega|\\mcod\\M)'
                     THEN 0
+               WHEN payment_terms ~* '[0-9]+[[:space:]]*[x/×-][[:space:]]*[0-9]+'
+                    THEN NULL
                WHEN payment_terms ~* '([0-9]+)\\s*mes'
                     THEN LEAST((substring(payment_terms from '([0-9]+)\\s*mes'))::int * 30, 365)
                WHEN payment_terms ~* 'quincen'
                     THEN 15
-               WHEN payment_terms ~ '[0-9]+'
-                    THEN LEAST((substring(payment_terms from '[0-9]+'))::int, 365)
+               WHEN regexp_replace(payment_terms, '[0-9]+[[:space:]]*%%', ' ', 'g') ~ '[0-9]+'
+                    THEN LEAST((substring(
+                             regexp_replace(payment_terms, '[0-9]+[[:space:]]*%%', ' ', 'g')
+                             from '[0-9]+'))::int, 365)
                ELSE NULL
            END
          WHERE payment_terms_days IS NULL
@@ -773,56 +782,13 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      """CREATE UNIQUE INDEX IF NOT EXISTS inventory_roi_email_log_uniq
         ON inventory_roi_email_log (tenant_id, month)"""),
 
-    # ── Plan-based entitlements (feature: plan catalog) ──────────────────────
-    # New tenants start on a time-boxed Starter trial; trial_ends_at is NULL
-    # once the trial converts/expires-to-paid. Existing 'free' tenants had no
-    # trial concept, so they are migrated straight to 'enterprise' (no
-    # feature loss for accounts that predate this plan model) with no trial.
+    # ── Trial clock ──────────────────────────────────────────────────────────
+    # A new tenant starts on a time-boxed trial; NULL means the clock does not
+    # apply to this account. This is all that is left of what used to be a
+    # three-tier plan model with a Stripe subscription behind it.
     ("add_tenants_trial_ends_at",
      "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ"),
-    ("migrate_free_plan_to_enterprise",
-     "UPDATE tenants SET plan = 'enterprise', trial_ends_at = NULL "
-     "WHERE plan = 'free'"),
-    # CREATE TABLE IF NOT EXISTS above never runs again on an existing
-    # database, so its DEFAULT 'free' (now updated to 'starter' in the
-    # CREATE TABLE itself, for fresh databases) never reaches a database that
-    # already has the tenants table — only an explicit ALTER does.
-    ("alter_tenants_plan_default_starter",
-     "ALTER TABLE tenants ALTER COLUMN plan SET DEFAULT 'starter'"),
 
-    # ── Billing (Stripe) ─────────────────────────────────────────────────────
-    # `plan` stays the single source of truth for what a tenant may DO — every
-    # entitlement already reads it. These columns only record who the tenant is
-    # over at Stripe and what its subscription is doing, so a plan change can be
-    # traced back to the event that caused it.
-    ("add_tenants_stripe_customer_id",
-     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT"),
-    ("add_tenants_stripe_subscription_id",
-     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT"),
-    # Stripe's own vocabulary (trialing/active/past_due/canceled/unpaid), stored
-    # verbatim rather than mapped, so a support question can be answered against
-    # what the dashboard shows.
-    ("add_tenants_subscription_status",
-     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status TEXT"),
-    ("create_tenants_stripe_customer_uniq",
-     """CREATE UNIQUE INDEX IF NOT EXISTS tenants_stripe_customer_uniq
-        ON tenants (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL"""),
-
-    # Stripe retries a webhook until it gets a 2xx, and it may deliver the same
-    # event more than once even after success. Every delivery is recorded here
-    # BEFORE it is applied, so a repeat is a no-op instead of a second plan
-    # change — the primary key is the whole guard.
-    ("create_stripe_events",
-     """CREATE TABLE IF NOT EXISTS stripe_events (
-            id           TEXT PRIMARY KEY,
-            type         TEXT        NOT NULL,
-            tenant_id    TEXT,
-            received_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            applied_at   TIMESTAMPTZ,
-            payload      JSONB
-        )"""),
-    ("create_stripe_events_tenant_idx",
-     "CREATE INDEX IF NOT EXISTS stripe_events_tenant_idx ON stripe_events (tenant_id)"),
     ("create_integration_connections",
      """CREATE TABLE IF NOT EXISTS integration_connections (
          id           TEXT PRIMARY KEY,
@@ -1320,6 +1286,152 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # changed its password — their tokens are untouched.
     ("add_users_sessions_invalid_before",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_invalid_before TIMESTAMPTZ"),
+
+    # ── One plan, and no Stripe (2026-08-16) ─────────────────────────────────
+    # Faro sold three tiers with a subscription behind them. It sells one
+    # product now, and there is nothing to buy in the app: a customer who needs
+    # something writes to us. So the columns that only existed to answer "which
+    # tier is this tenant on" and "what is its subscription doing" go, rather
+    # than sit in the schema holding a value nothing reads — which is how a
+    # dead column gets read again by mistake two years later.
+    #
+    # `trial_ends_at` and `quota` stay: the first is still enforced, the second
+    # is how one account's limits get widened without a deploy.
+    ("drop_stripe_events", "DROP TABLE IF EXISTS stripe_events"),
+    ("drop_tenants_stripe_customer_uniq",
+     "DROP INDEX IF EXISTS tenants_stripe_customer_uniq"),
+    ("drop_tenants_stripe_customer_id",
+     "ALTER TABLE tenants DROP COLUMN IF EXISTS stripe_customer_id"),
+    ("drop_tenants_stripe_subscription_id",
+     "ALTER TABLE tenants DROP COLUMN IF EXISTS stripe_subscription_id"),
+    ("drop_tenants_subscription_status",
+     "ALTER TABLE tenants DROP COLUMN IF EXISTS subscription_status"),
+    ("drop_tenants_plan", "ALTER TABLE tenants DROP COLUMN IF EXISTS plan"),
+
+    # ── Free tier with short limits, paid tier without (2026-08-22) ──────────
+    # Still no checkout and still no feature gates: both tiers include every
+    # feature, and `tier` only decides how much of it fits (see
+    # backend/entitlements/plans.py). A tenant becomes 'paid' because somebody
+    # talked to us and we wrote it here.
+    #
+    # These steps re-run on every boot — this module has no applied-ledger — so
+    # each one is written to touch a row exactly once, ever. The whole one-time
+    # window is "tier IS NULL", which is true only for rows that predate the
+    # column. Without that guard, a boot would re-promote an account we had
+    # deliberately moved back to free, and clear a suspension somebody set by
+    # hand this morning.
+    ("add_tenants_tier", "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tier TEXT"),
+    # Nobody is on a countdown any more: free is a permanent home, so the
+    # 14-day trial every existing tenant carries stops being enforced. The
+    # column stays — writing a past date into it is still how one account gets
+    # suspended by hand.
+    ("clear_legacy_trials_on_tier_backfill",
+     "UPDATE tenants SET trial_ends_at = NULL WHERE tier IS NULL"),
+    # Grandfathering, the owner's call: everything that existed when the tiers
+    # landed keeps unlimited access. Only accounts created from here on start
+    # free.
+    ("backfill_existing_tenants_to_paid",
+     "UPDATE tenants SET tier = 'paid' "
+     "WHERE tier IS NULL AND created_at < TIMESTAMPTZ '2026-08-22 00:00:00+00'"),
+    ("backfill_remaining_tenants_to_free",
+     "UPDATE tenants SET tier = 'free' WHERE tier IS NULL"),
+    ("tenants_tier_default_free",
+     "ALTER TABLE tenants ALTER COLUMN tier SET DEFAULT 'free'"),
+    ("tenants_tier_not_null",
+     "ALTER TABLE tenants ALTER COLUMN tier SET NOT NULL"),
+
+    # Who asked to pay. There is no checkout, so this IS the funnel: the row is
+    # written when a tenant asks for more room, and we answer it by hand. It
+    # keeps the ask even when the notification email fails to leave — a lost
+    # "I want to pay you" is the most expensive silent failure in the product.
+    ("create_upgrade_requests", """
+        CREATE TABLE IF NOT EXISTS upgrade_requests (
+            id          TEXT PRIMARY KEY,
+            tenant_id   TEXT NOT NULL,
+            user_id     TEXT,
+            limit_key   TEXT,
+            message     TEXT,
+            contact     TEXT,
+            status      TEXT NOT NULL DEFAULT 'new',
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            handled_at  TIMESTAMPTZ
+        )
+    """),
+    ("idx_upgrade_requests_tenant",
+     "CREATE INDEX IF NOT EXISTS idx_upgrade_requests_tenant "
+     "ON upgrade_requests (tenant_id, created_at DESC)"),
+    # "One open ask per tenant" was enforced by SELECT-then-INSERT, which under
+    # six simultaneous clicks produced four rows (measured 2026-08-22 by
+    # tests/test_chaos_concurrency.py). A rule that only holds when nobody is in
+    # a hurry is not a rule — so the database enforces it, and the endpoint uses
+    # ON CONFLICT instead of a read. Anything already duplicated is collapsed
+    # first, newest kept, or the index cannot be built.
+    ("collapse_duplicate_open_upgrade_requests", """
+        UPDATE upgrade_requests SET status = 'superseded'
+         WHERE status = 'new' AND id NOT IN (
+             SELECT DISTINCT ON (tenant_id) id FROM upgrade_requests
+              WHERE status = 'new' ORDER BY tenant_id, created_at DESC
+         )
+    """),
+    ("uniq_upgrade_requests_open",
+     "CREATE UNIQUE INDEX IF NOT EXISTS uniq_upgrade_requests_open "
+     "ON upgrade_requests (tenant_id) WHERE status = 'new'"),
+
+    # Nothing recorded a training run's accuracy anywhere comparable: a
+    # session's metrics lived only in session_results.training_result, one
+    # JSONB blob overwritten by the next run, with no way to ask "is this
+    # worse than last week's". engine.get_metrics()["by_model"] already
+    # computes these aggregates every run; this just keeps them queryable.
+    # UNIQUE (session_id, model) mirrors session_results itself: retraining
+    # the same session overwrites its row instead of accumulating duplicates.
+    ("create_training_run_metrics", """
+        CREATE TABLE IF NOT EXISTS training_run_metrics (
+            id          TEXT PRIMARY KEY,
+            tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            model       TEXT NOT NULL,
+            avg_mae     DOUBLE PRECISION,
+            avg_rmse    DOUBLE PRECISION,
+            avg_wape    DOUBLE PRECISION,
+            avg_bias    DOUBLE PRECISION,
+            avg_mape    DOUBLE PRECISION,
+            avg_smape   DOUBLE PRECISION,
+            trained_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (session_id, model)
+        )
+    """),
+    ("idx_training_run_metrics_tenant_model",
+     "CREATE INDEX IF NOT EXISTS idx_training_run_metrics_tenant_model "
+     "ON training_run_metrics (tenant_id, model, trained_at DESC)"),
+
+    # Configuration overrides written from the admin panel — the layer that sits
+    # above the environment so a deployment can turn a service on without
+    # editing a file and restarting a container. See
+    # `backend/service_config/store.py` for the precedence rules.
+    #
+    # `tenant_id NULL` is the instance scope. Exactly one of value_plain /
+    # value_encrypted is ever populated: secrets are Fernet-encrypted with
+    # INTEGRATIONS_SECRET_KEY, and a write of a secret with no key configured is
+    # refused rather than downgraded to plaintext.
+    ("create_service_config", """
+        CREATE TABLE IF NOT EXISTS service_config (
+            id              TEXT PRIMARY KEY,
+            tenant_id       TEXT REFERENCES tenants(id) ON DELETE CASCADE,
+            service         TEXT NOT NULL,
+            field           TEXT NOT NULL,
+            value_plain     TEXT,
+            value_encrypted TEXT,
+            updated_by      TEXT,
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """),
+    # Uniqueness is over COALESCE(tenant_id, '') because a NULL does not
+    # collide with itself: a plain UNIQUE (tenant_id, field) would happily
+    # accept four instance-level values for the same field, and the resolver
+    # would then pick whichever the planner returned first.
+    ("uniq_service_config_scope_field",
+     "CREATE UNIQUE INDEX IF NOT EXISTS uniq_service_config_scope_field "
+     "ON service_config (COALESCE(tenant_id, ''), field)"),
 ]
 
 

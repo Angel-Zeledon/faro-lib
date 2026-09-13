@@ -23,6 +23,7 @@ import { useWarehouses, WarehouseSelector } from '@/components/inventory/Warehou
 import { WarehouseStatusTable } from '@/components/inventory/WarehouseStatusTable'
 import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
+import MenuButton from '@/components/ui/MenuButton'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonCards, SkeletonTable } from '@/components/ui/States'
 import HelpTip from '@/components/ui/HelpTip'
 import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
@@ -36,9 +37,10 @@ import {
   DEFAULT_LEAD_TIME_DAYS, DEFAULT_MOQ, DEFAULT_SERVICE_LEVEL,
   isAssumed, sourceLabelKey, type ValueSource,
 } from '@/lib/inventoryDefaults'
+import { fmtNum } from '@/lib/numberLocale'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
- ChevronDown, ChevronRight, RefreshCw, Upload, Download, Edit2, Trash2,
+ ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
  Zap, PackageMinus, Search, PackagePlus,
 } from 'lucide-react'
@@ -517,15 +519,36 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
 // ── Plain-language situation ────────────────────────────────────────────────
 function ContextMessage({ summary }: { summary: Record<string, number> }) {
  const { t } = useLanguage()
+ // The three signal lines that used to live here are gone: they repeated the
+ // PEDIR_YA / PEDIR_PRONTO / SOBRESTOCK cards word for word, one row below.
+ // Their sentences now sit under the number they describe, which is where a
+ // reader was going to look anyway. What is left is the cases with NO card of
+ // their own — the ones about SKUs the semáforo cannot judge.
  const lines: { text: string; color: string }[] = []
- if (summary.order_now > 0)
- lines.push({ text: `${summary.order_now} ${t('inventory.ctx_order_now_suffix')}`, color: '#ef4444' })
- if (summary.order_soon > 0)
- lines.push({ text: `${summary.order_soon} ${t('inventory.ctx_order_soon_suffix')}`, color: '#f59e0b' })
- if (summary.overstock > 0)
- lines.push({ text: `${summary.overstock} ${t('inventory.ctx_overstock_suffix')}`, color: '#3b82f6' })
- if (!lines.length && summary.ok > 0)
- lines.push({ text: t('inventory.ctx_all_covered'), color: '#22c55e' })
+ // "Nothing to do today" is gated on the SIGNALS, never on whether this box
+ // happens to have printed something. It used to read `!lines.length`, which
+ // was only ever true when the three actionable lines above had not fired —
+ // and the moment those lines moved into the KPI cards, the guard silently
+ // became "always", so the panel wrote "Todo el inventario está bien cubierto"
+ // in green over a screen showing four PEDIR_YA. A condition that depends on a
+ // sibling's side effect is a trap; this one is the count itself.
+ const actionable = (summary.order_now ?? 0) + (summary.order_soon ?? 0) + (summary.overstock ?? 0)
+ // SIN_DATOS travels in the payload and was never read here, so five SKUs in
+ // OK and five hundred with no stock on file produced a green sentence saying
+ // ALL the inventory was covered. It says nothing about those five hundred —
+ // they have no signal at all — and "todo" was the word doing the damage.
+ const unknown = summary.sin_datos ?? 0
+ if (actionable === 0 && summary.ok > 0)
+ lines.push({
+   text: unknown > 0
+     ? `${summary.ok} ${t('inventory.ctx_covered_partial_suffix')} ${unknown} ${t('inventory.ctx_no_signal_suffix')}`
+     : t('inventory.ctx_all_covered'),
+   color: unknown > 0 ? '#f59e0b' : '#22c55e',
+ })
+ // Nothing actionable, nothing OK, and SKUs we cannot judge: the panel used to
+ // render nothing at all, which reads as "no news is good news".
+ if (actionable === 0 && !lines.length && unknown > 0)
+ lines.push({ text: `${unknown} ${t('inventory.ctx_only_no_signal_suffix')}`, color: '#f59e0b' })
  if (!lines.length) return null
  return (
  <div style={{ padding: '10px 16px', borderRadius: 9, background: C.surface, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -752,7 +775,11 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  const [result, setResult] = useState<EventSimulationResult | null>(null)
  const [error, setError] = useState<string | null>(null)
 
- useEffect(() => {
+ // Deliberately does NOT clear `result` first: re-running keeps the numbers on
+ // screen until the new ones land, so the per-product editor the user is typing
+ // in (rendered only when there is a result) does not vanish under them.
+ const runSimulation = useCallback(() => {
+ setError(null)
  simulateEvent({ session_id: sessionId, event_id: ev.id })
  .then(setResult)
  .catch(e => setError(e instanceof Error ? e.message : t('inventory.sim_err_failed')))
@@ -761,8 +788,48 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [ev.id, sessionId])
 
+ useEffect(() => { runSimulation() }, [runSimulation])
+
  const fmtD = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long' })
- const pctExtra = Math.round((ev.multiplier - 1) * 100)
+
+ // What the simulation ACTUALLY ran with, not what the event header says.
+ //
+ // `ev.multiplier` is the event's own number, and a per-SKU or per-category
+ // override replaces it for the products it covers. Measured: with SPIKE-01
+ // overridden to x3.0, the headline still announced "+100% de demanda" and the
+ // footnote still explained "× 4 días × 2.0" while the only row on screen said
+ // x3.0 and carried 466 units. The two sentences that frame the table described
+ // a calculation that did not happen.
+ //
+ // `multipliers_applied` is the breakdown the backend already sends. One entry
+ // means every product ran on the same number and the sentences can name it;
+ // more than one means there is no single uplift to claim, and saying so is the
+ // only honest option.
+ const applied = result?.multipliers_applied ?? []
+ const uniformMult = applied.length === 1 ? applied[0].multiplier
+                   : applied.length === 0 ? ev.multiplier
+                   : null
+ const pctExtra = uniformMult != null ? Math.round((uniformMult - 1) * 100) : null
+
+ // The date the headline may still ask for.
+ //
+ // `summary.order_before` is the EARLIEST order_by among the products at risk,
+ // past or not, so an event three days away with a nine-day supplier produced
+ // "Pide antes del 10 de agosto" on the 16th — an instruction nobody can carry
+ // out, printed in the most prominent sentence on the screen, while the row for
+ // that same product said "¡hoy mismo!" and the line underneath said it was
+ // already too late. Three statements about one product, one of them impossible.
+ //
+ // So the sentence takes the earliest deadline that has NOT passed: the rows
+ // that are late are covered by the red line below, which is the honest thing
+ // to say about them. When every deadline is behind us there is no date to ask
+ // for and the sentence drops out entirely.
+ const orderBefore = result
+   ? result.items
+       .filter(r => r.en_risk && !r.llega_tarde && r.order_by)
+       .map(r => r.order_by)
+       .sort()[0] ?? null
+   : null
 
  return (
  <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -775,7 +842,9 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}><X size={16} aria-hidden="true" /></button>
  </div>
  <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim }}>
- {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · {tOr(t, 'inventory.sim_modal_uplift', `estimated demand +${pctExtra}%`, { pct: pctExtra })}
+ {fmtD(ev.start_date)} → {fmtD(ev.end_date)} · {pctExtra != null
+  ? tOr(t, 'inventory.sim_modal_uplift', `estimated demand +${pctExtra}%`, { pct: pctExtra })
+  : tOr(t, 'inventory.sim_modal_uplift_mixed', "demand estimated with each product's own multiplier")}
  </p>
 
  {!result && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
@@ -794,19 +863,21 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  <>
  <Emphasized text={tOr(
   t,
-  result.summary.skus_at_risk === 1 ? 'inventory.sim_headline_risk_one' : 'inventory.sim_headline_risk_many',
-  `With *${ev.name}* (+${pctExtra}% demand) you would need to order *${result.summary.total_to_order.toLocaleString()} extra units* across *${result.summary.skus_at_risk} ${result.summary.skus_at_risk === 1 ? 'product' : 'products'}*.`,
+  pctExtra != null
+   ? (result.summary.skus_at_risk === 1 ? 'inventory.sim_headline_risk_one' : 'inventory.sim_headline_risk_many')
+   : (result.summary.skus_at_risk === 1 ? 'inventory.sim_headline_risk_one_mixed' : 'inventory.sim_headline_risk_many_mixed'),
+  `With *${ev.name}* you would need to order *${result.summary.total_to_order.toLocaleString()} extra units* across *${result.summary.skus_at_risk} ${result.summary.skus_at_risk === 1 ? 'product' : 'products'}*.`,
   {
    event: ev.name,
-   pct:   pctExtra,
+   pct:   pctExtra ?? 0,
    units: result.summary.total_to_order.toLocaleString(),
    skus:  result.summary.skus_at_risk,
   },
  )} />
- {result.summary.order_before && (
+ {orderBefore && (
   <Emphasized text={tOr(t, 'inventory.sim_headline_order_before',
-   ` Order before *${fmtD(result.summary.order_before)}*.`,
-   { date: fmtD(result.summary.order_before) })} />
+   ` Order before *${fmtD(orderBefore)}*.`,
+   { date: fmtD(orderBefore) })} />
  )}
  {result.summary.total_order_value > 0 && (
   <Emphasized text={tOr(t, 'inventory.sim_headline_value',
@@ -821,14 +892,24 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  )}
  </>
  ) : (
- <Emphasized text={tOr(t, 'inventory.sim_headline_safe',
-  `Your current stock survives *${ev.name}* (+${pctExtra}% demand) with no extra orders.`,
-  { event: ev.name, pct: pctExtra })} />
+ <Emphasized text={tOr(t,
+  pctExtra != null ? 'inventory.sim_headline_safe' : 'inventory.sim_headline_safe_mixed',
+  `Your current stock survives *${ev.name}* with no extra orders.`,
+  { event: ev.name, pct: pctExtra ?? 0 })} />
  )}
  </div>
 
  {/* Why this multiplier — never show a x2.2 without justifying it */}
- <MultiplierExplainer result={result} eventId={ev.id} onEdited={onReload} />
+ {/* Editing a multiplier has to re-run the simulation, not just reload the
+     event list behind the modal. Measured: setting SPIKE-01 to x3.0 saved the
+     override and left the table showing x2.0 and 311 units — the user changes
+     the number the whole screen is derived from and the screen keeps the old
+     answer, with nothing saying it is stale. */}
+ <MultiplierExplainer
+ result={result}
+ eventId={ev.id}
+ onEdited={() => { onReload(); runSimulation() }}
+ />
 
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
  <thead>
@@ -870,10 +951,12 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  </table>
  <p style={{ margin: '14px 0 0', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
  {tOr(t, 'inventory.sim_footer_note',
-  `Calculation: forecast daily demand × ${result.event_days} days × ${ev.multiplier.toFixed(1)}, against the stock projected at the start of the event. Quantities respect each product's MOQ. Nothing is saved — this is only a simulation.`,
+  `Calculation: forecast daily demand × ${result.event_days} days × ${uniformMult != null ? uniformMult.toFixed(1) : "each product's own multiplier"}, against the stock projected at the start of the event. Quantities respect each product's MOQ. Nothing is saved — this is only a simulation.`,
   {
    days: `${result.event_days} ${tOr(t, result.event_days === 1 ? 'inventory.sim_day_one' : 'inventory.sim_day_many', result.event_days === 1 ? 'day' : 'days')}`,
-   mult: ev.multiplier.toFixed(1),
+   mult: uniformMult != null
+    ? uniformMult.toFixed(1)
+    : tOr(t, 'inventory.sim_footer_mult_mixed', "each product's own multiplier"),
   },
  )}
  </p>
@@ -1479,18 +1562,18 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
    }}>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_original_rec')}</div>
-     <div style={{ fontSize: 20, fontWeight: 800, color: C.muted }}>{originalRec.toLocaleString('es')} {t('inventory.unit_und')}</div>
+     <div style={{ fontSize: 20, fontWeight: 800, color: C.muted }}>{fmtNum(originalRec)} {t('inventory.unit_und')}</div>
     </div>
     <div style={{ fontSize: 20, color: C.dim }}>→</div>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_with_changes')}</div>
      <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
-      {simRecommended.toLocaleString('es')} {t('inventory.unit_und')}
+      {fmtNum(simRecommended)} {t('inventory.unit_und')}
      </div>
     </div>
     {delta !== 0 && (
      <div style={{ fontSize: 13, color: deltaColor, fontWeight: 600 }}>
-      {delta > 0 ? `+${delta.toLocaleString('es')} ${t('inventory.sim_units_more')}` : `${Math.abs(delta).toLocaleString('es')} ${t('inventory.sim_units_less')}`}
+      {delta > 0 ? `+${fmtNum(delta)} ${t('inventory.sim_units_more')}` : `${fmtNum(Math.abs(delta))} ${t('inventory.sim_units_less')}`}
      </div>
     )}
     <button onClick={() => { setLtDelta(0); setDemandMult(100); setStockDelta(0) }}
@@ -1911,8 +1994,17 @@ export default function InventoryPage() {
  // edited amounts are reflected in adoption tracking.
  function exportEditedPO() {
  if (!sessionId || !data) return
- const orderItems = data.items
-  .filter(i => (i.signal === 'PEDIR_YA' || i.signal === 'PEDIR_PRONTO') && effectiveQty(i) > 0)
+ // Every actionable line Faro put in front of the buyer, whatever they did
+ // with it. Splitting here rather than filtering once is what makes
+ // 'rejected' reachable at all: a line the buyer zeroed out used to be
+ // dropped before the decisions were built, so this export could only ever
+ // emit 'approved' or 'modified'. Adoption was structurally incapable of
+ // recording a refusal, and a tenant working from this screen saw a green
+ // 100% forever — with every urgent SKU also counted as a risk acted on.
+ const actionable = data.items
+  .filter(i => i.signal === 'PEDIR_YA' || i.signal === 'PEDIR_PRONTO')
+ const orderItems = actionable.filter(i => effectiveQty(i) > 0)
+ const declined = actionable.filter(i => effectiveQty(i) <= 0)
  if (orderItems.length === 0) return
  // Same artifact as the export on /hoy — same filename, same columns — so it
  // must use the same header keys. This one hardcoded Spanish, so an English
@@ -1927,17 +2019,32 @@ export default function InventoryPage() {
  const url = URL.createObjectURL(blob)
  const a = document.createElement('a'); a.href = url; a.download = 'purchase_order.csv'; a.click()
  URL.revokeObjectURL(url)
- // Log decisions (edited => 'modified', otherwise 'approved')
- const decisions: POLineDecision[] = orderItems.map(i => ({
-  sku: i.sku,
-  display_name: i.display_name ?? undefined,
-  supplier: i.supplier ?? undefined,
-  signal: i.signal,
-  recommended_qty: i.recommended_qty ?? 0,
-  final_qty: effectiveQty(i),
-  status: (editedQty[i.sku] != null ? 'modified' : 'approved') as 'approved' | 'modified',
-  unit_cost: i.unit_cost ?? undefined,
- }))
+ // Log decisions: ordered (edited => 'modified', otherwise 'approved') AND
+ // the actionable lines the buyer zeroed out, which are refusals and have to
+ // be recorded as such — they are the only thing that can move adoption off
+ // 100% from this screen.
+ const decisions: POLineDecision[] = [
+  ...orderItems.map(i => ({
+   sku: i.sku,
+   display_name: i.display_name ?? undefined,
+   supplier: i.supplier ?? undefined,
+   signal: i.signal,
+   recommended_qty: i.recommended_qty ?? 0,
+   final_qty: effectiveQty(i),
+   status: (editedQty[i.sku] != null ? 'modified' : 'approved') as 'approved' | 'modified',
+   unit_cost: i.unit_cost ?? undefined,
+  })),
+  ...declined.map(i => ({
+   sku: i.sku,
+   display_name: i.display_name ?? undefined,
+   supplier: i.supplier ?? undefined,
+   signal: i.signal,
+   recommended_qty: i.recommended_qty ?? 0,
+   final_qty: 0,
+   status: 'rejected' as const,
+   unit_cost: i.unit_cost ?? undefined,
+  })),
+ ]
  logPOGeneration(sessionId, decisions, undefined, { silent: true })
   .catch(() => warnPONotLogged())
  }
@@ -2001,55 +2108,39 @@ export default function InventoryPage() {
  ))}
  </div>
 
- <button onClick={() => sessionId && load(sessionId)} disabled={loading} title={t('inventory.btn_refresh')} style={{ all: 'unset', cursor: loading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', padding: '7px 10px', border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, opacity: loading ? 0.5 : 1 }}><RefreshCw size={13} /></button>
- {/* Getting data in and out: import, template, and the three exports. They
-     were loose children of the toolbar, so the tour step about exporting had
-     to highlight the whole bar — refresh, links and all. Grouping them costs
-     one flex box and makes them wrap together instead of splitting mid-group,
-     which is what you want from a set of related controls anyway. */}
- <div data-tour="inv.export" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
- {/* Import, not export — it writes stock. The download beside it ("Plantilla")
-     and the three exports are reads, so they stay for everyone. */}
- {canEdit && <>
+ {/* Getting data in and out used to be eleven loose controls in this bar:
+     five of them exports, two of them links to screens already sitting in the
+     sidebar two inches to the left. Counted on the running app it was 26
+     controls and 7 colours before the buyer reached the first row, which is
+     why the owner could not read his own screen. They collapse into two
+     menus. Nothing was removed except the duplicated navigation — every
+     action still exists, one click deeper. */}
  <input ref={importRef} type="file" name="inventory_csv_import" aria-label={t('inventory.btn_import_csv_arrow')} accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
- <button onClick={() => importRef.current?.click()} disabled={importing} style={{ all: 'unset', cursor: importing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted, opacity: importing ? 0.6 : 1 }}>
- {importing ? <Spinner size={12} /> : <Upload size={12} />} CSV
- </button>
- </>}
- <button onClick={() => downloadInventoryTemplate().catch(err => setError(err instanceof Error ? err.message : String(err)))} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: `1px solid ${C.border}`, color: C.muted }}>
- <Download size={12} /> {t('inventory.btn_template')}
- </button>
- <button onClick={handleExport} disabled={exporting || !sessionId} style={{ all: 'unset', cursor: exporting || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, opacity: exporting || !sessionId ? 0.5 : 1 }}>
- {exporting ? <Spinner size={12} /> : <Download size={12} />} {t('inventory.btn_export_po')}
- </button>
- <button onClick={exportEditedPO} disabled={!sessionId} style={{ all: 'unset', cursor: !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', color: C.indigo, opacity: !sessionId ? 0.5 : 1 }}>
- <Download size={12} /> {t('inventory.btn_export_edited')}
- </button>
- <button onClick={handlePDF} disabled={pdfLoading || !sessionId} title={t('inventory.title_download_pdf')} style={{ all: 'unset', cursor: pdfLoading || !sessionId ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', color: C.indigo, opacity: pdfLoading || !sessionId ? 0.5 : 1 }}>
- {pdfLoading ? <Spinner size={12} /> : <FileText size={12} />} PDF
- </button>
+
+ <div data-tour="inv.export">
+  <MenuButton
+   label={t('inventory.menu_download')}
+   icon={<Download size={12} />}
+   items={[
+    { label: t('inventory.btn_template'),      icon: <Download size={12} />,  onSelect: () => downloadInventoryTemplate().catch(err => setError(err instanceof Error ? err.message : String(err))) },
+    { label: t('inventory.btn_export_po'),     icon: <Download size={12} />,  onSelect: handleExport,   disabled: exporting || !sessionId },
+    { label: t('inventory.btn_export_edited'), icon: <Download size={12} />,  onSelect: exportEditedPO, disabled: !sessionId },
+    { label: t('inventory.menu_pdf'),          icon: <FileText size={12} />,  onSelect: handlePDF,      disabled: pdfLoading || !sessionId },
+   ]}
+  />
  </div>
- <Link href="/impacto" style={{
- display: 'flex', alignItems: 'center', gap: 5,
- fontSize: 11, color: C.dim, textDecoration: 'none',
- padding: '7px 10px', border: `1px solid ${C.border}`,
- borderRadius: 8,
- }} title={t('inventory.title_view_impact')}>
- <TrendingUp size={12} /> {t('inventory.btn_impact')}
- </Link>
- <Link href="/proveedores" style={{
- display: 'flex', alignItems: 'center', gap: 5,
- fontSize: 11, color: C.dim, textDecoration: 'none',
- padding: '7px 10px', border: `1px solid ${C.border}`,
- borderRadius: 8,
- }} title={t('inventory.title_manage_suppliers')}>
- <Truck size={12} /> {t('inventory.btn_suppliers')}
- </Link>
- {canEdit && (
- <button onClick={() => setShowShrinkageModal(true)} title={t('inventory.shrinkage_title_register')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: C.red }}>
- <PackageMinus size={12} /> {t('inventory.shrinkage_btn_register')}
- </button>
- )}
+
+ <MenuButton
+  icon={<MoreHorizontal size={14} />}
+  title={t('inventory.menu_more')}
+  items={[
+   { label: t('inventory.btn_refresh'), icon: <RefreshCw size={12} />, onSelect: () => sessionId && load(sessionId), disabled: loading },
+   ...(canEdit ? [
+    { label: t('inventory.menu_import_csv'),        icon: <Upload size={12} />,       onSelect: () => importRef.current?.click(), disabled: importing },
+    { label: t('inventory.shrinkage_btn_register'), icon: <PackageMinus size={12} />, onSelect: () => setShowShrinkageModal(true), danger: true },
+   ] : []),
+  ]}
+ />
  </div>
  </div>
 
@@ -2127,10 +2218,10 @@ export default function InventoryPage() {
  // transition reads as the placeholders resolving into numbers.
  <div data-tour="inv.filters" className="page-enter" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
  <KPICard label={t('inventory.kpi_total_skus')} value={summary.total_skus} color={C.indigo} onClick={() => setSignalFilter('')} active={!signalFilter} />
- <KPICard label={t('inventory.signal_order_now')} value={summary.order_now} color={C.red} onClick={() => setSignalFilter(signalFilter === 'PEDIR_YA' ? '' : 'PEDIR_YA')} active={signalFilter === 'PEDIR_YA'} sub={summary.order_now > 0 ? t('inventory.kpi_immediate_risk') : undefined} />
- <KPICard label={t('inventory.signal_order_soon')} value={summary.order_soon} color={C.amber} onClick={() => setSignalFilter(signalFilter === 'PEDIR_PRONTO' ? '' : 'PEDIR_PRONTO')} active={signalFilter === 'PEDIR_PRONTO'} />
+ <KPICard label={t('inventory.signal_order_now')} value={summary.order_now} color={C.red} onClick={() => setSignalFilter(signalFilter === 'PEDIR_YA' ? '' : 'PEDIR_YA')} active={signalFilter === 'PEDIR_YA'} sub={summary.order_now > 0 ? t('inventory.kpi_sub_order_now') : undefined} />
+ <KPICard label={t('inventory.signal_order_soon')} value={summary.order_soon} color={C.amber} onClick={() => setSignalFilter(signalFilter === 'PEDIR_PRONTO' ? '' : 'PEDIR_PRONTO')} active={signalFilter === 'PEDIR_PRONTO'} sub={summary.order_soon > 0 ? t('inventory.kpi_sub_order_soon') : undefined} />
  <KPICard label={t('inventory.signal_ok')} value={summary.ok} color={C.green} onClick={() => setSignalFilter(signalFilter === 'OK' ? '' : 'OK')} active={signalFilter === 'OK'} />
- <KPICard label={t('inventory.signal_overstock')} value={summary.overstock} color={C.blue} onClick={() => setSignalFilter(signalFilter === 'SOBRESTOCK' ? '' : 'SOBRESTOCK')} active={signalFilter === 'SOBRESTOCK'} />
+ <KPICard label={t('inventory.signal_overstock')} value={summary.overstock} color={C.blue} onClick={() => setSignalFilter(signalFilter === 'SOBRESTOCK' ? '' : 'SOBRESTOCK')} active={signalFilter === 'SOBRESTOCK'} sub={summary.overstock > 0 ? t('inventory.kpi_sub_overstock') : undefined} />
  <KPICard label={t('inventory.kpi_inventory_value')} value={summary.total_inventory_value > 0 ? fmtCurrency(summary.total_inventory_value) : '—'} color={C.indigo} sub={t('inventory.kpi_skus_with_cost')} />
  </div>
  )}
@@ -2580,7 +2671,7 @@ export default function InventoryPage() {
 
     <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>
      {t('inventory.dead_footer_note_1')}
-     {t('inventory.dead_footer_note_2')}
+     {t('inventory.dead_footer_note_2', { pct: fmt((deadStock.holding_cost_pct ?? 0.2) * 100, 0) })}
     </div>
    </>
   )}

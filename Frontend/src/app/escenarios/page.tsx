@@ -7,7 +7,6 @@
  * every number comes from `/sessions/{id}/scenarios/preview|run`, which reuses
  * the same semáforo the rest of the app shows.
  */
-import FeatureGate from '@/components/ui/FeatureGate'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FlaskConical, Plus, Play, Save, Trash2, X } from 'lucide-react'
 import {
@@ -331,7 +330,7 @@ function ChangesTable({ rows }: { rows: ScenarioChangeRow[] }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-function ScenariosPage() {
+export default function ScenariosPage() {
   const { t }       = useLanguage()
   const { addToast, undoable } = useToast()
   const user        = getUser()
@@ -647,15 +646,5 @@ function ScenariosPage() {
         </div>
       </div>
     </div>
-  )
-}
-
-// Typing the URL (or keeping a bookmark from the trial) used to render this page
-// in full on a plan that does not include it; the wall came later, from the API.
-export default function ScenariosPageGated() {
-  return (
-    <FeatureGate feature="event_simulator">
-      <ScenariosPage />
-    </FeatureGate>
   )
 }

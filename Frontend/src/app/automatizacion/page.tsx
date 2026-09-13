@@ -1,5 +1,4 @@
 'use client'
-import FeatureGate from '@/components/ui/FeatureGate'
 import { useState, useEffect, useCallback } from 'react'
 import {
   listApiKeys, createApiKey, revokeApiKey,
@@ -78,7 +77,17 @@ function ApiKeysTab() {
   const handleRevoke = async (id: string) => {
     if (!(await confirm({ title: t('settings.revoke_title'), message: t('settings.revoke_confirm'), danger: true }))) return
     setRevoking(id)
-    try { await revokeApiKey(id); load() }
+    try {
+      await revokeApiKey(id)
+      // Drop the "copy it now" banner. It survived a revoke, so the screen went
+      // on offering to copy a credential that had just been killed — and a key
+      // that 401s reads as a broken integration, not as a revoked key. Cleared
+      // unconditionally: the banner only ever holds the key from THIS session,
+      // and after any revoke the safe assumption is that it is the one that
+      // just died.
+      setNewKey(null)
+      load()
+    }
     catch (e: any) { setError(e.message) }
     finally { setRevoking(null) }
   }
@@ -622,7 +631,7 @@ const ALL_TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] 
 ]
 const TABS = ALL_TABS.filter(tab => ENABLED[tab.id])
 
-function SettingsPage() {
+export default function SettingsPage() {
   const { t } = useLanguage()
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? 'schedules')
 
@@ -675,15 +684,5 @@ function SettingsPage() {
         {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
       </Card>
     </div>
-  )
-}
-
-// Typing the URL (or keeping a bookmark from the trial) used to render this page
-// in full on a plan that does not include it; the wall came later, from the API.
-export default function SettingsPageGated() {
-  return (
-    <FeatureGate feature="scheduled_reports">
-      <SettingsPage />
-    </FeatureGate>
   )
 }

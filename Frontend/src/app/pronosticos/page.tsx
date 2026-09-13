@@ -28,6 +28,7 @@ import { granularityLabel, seriesTypeLabel } from '@/lib/enumLabels'
 import { modelLabel, type Translate as TranslateFn } from '@/lib/modelLabel'
 import { coverageUnitShort } from '@/lib/period'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
+import { localeFor } from '@/lib/numberLocale'
 import {
   Search, Package, ChevronDown, RefreshCw,
   AlertTriangle, CheckCircle2, TrendingUp, BarChart2,
@@ -68,8 +69,33 @@ const EMPTY_METRICS: MetricRow[] = []
 // _CHAMPION_METRICS; WAPE is the fallback for sessions trained before `cost`
 // existed. One definition, because those two already drifted apart once and
 // disagreed on 8 of 13 SKUs, and this screen is the third copy of the question.
-const championRank = (r: MetricRow): number | null | undefined =>
-  r.cost_horizon ?? r.cost ?? r.wape
+const CHAMPION_METRICS = ['cost_horizon', 'cost', 'wape', 'mae'] as const
+
+// ONE metric for the whole set, then compare within it.
+//
+// This used to be `r.cost_horizon ?? r.cost ?? r.wape` evaluated PER ROW, which
+// silently compared one model's cost_horizon against another model's cost — two
+// different quantities on two different scales — and `test_horizon_comparability`
+// says the second is systematically the smaller of the two. So a model the
+// server had excluded could win the browser's comparison: the stats strip
+// announced "Mejor modelo: XGBoost" with its WAPE while the curve drawn on the
+// same screen, and the purchase order behind it, came from Prophet.
+//
+// The server picks the first metric ANY row carries and drops the rows that
+// lack it (`service._champion_metric`); this mirrors that. One remaining
+// difference, deliberately not papered over: the server chooses over the whole
+// session's rows and this chooses over the rows in hand (one SKU's, on most of
+// these surfaces). They only diverge for a session where some SKUs carry
+// `cost_horizon` and others do not.
+const championMetric = (rows: MetricRow[]): (typeof CHAMPION_METRICS)[number] =>
+  CHAMPION_METRICS.find(m => rows.some(r => r[m] !== null && r[m] !== undefined))
+  ?? 'wape'
+
+const makeChampionRank = (rows: MetricRow[]) => {
+  const metric = championMetric(rows)
+  return (r: MetricRow): number | null | undefined =>
+    r[metric] as number | null | undefined
+}
 
 const GRANULARITY_LABELS: Record<string, string> = {
   daily:     'D',
@@ -294,7 +320,7 @@ function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-sessio
   /** Set on the primary selector only — a tour anchor has to be unique in the DOM. */
   tourAnchor?: string
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [focused, setFocused] = useState(false)
   const trained = sessions.filter(s => s.status === 'COMPLETED')
   const current = trained.find(s => s.session_id === selected)
@@ -305,7 +331,7 @@ function SessionSelector({ sessions, selected, onSelect, selectId = 'skus-sessio
   const context = current
     ? [
         current.granularity ? granularityLabel(t, current.granularity) : null,
-        current.updated_at ? new Date(current.updated_at).toLocaleDateString() : null,
+        current.updated_at ? new Date(current.updated_at).toLocaleDateString(localeFor(lang)) : null,
       ].filter(Boolean).join(' · ')
     : ''
 
@@ -400,10 +426,11 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
   // on a real SKU it read "MAE 8.61" (Modelo 9) while the orders came from a
   // model scoring 10.04, and a baseline sat 0.1 away from taking the headline —
   // the very rows the rest of the code excludes because they exist to be beaten.
+  const rankOf = makeChampionRank(metrics)
   const best = metrics.filter(r => r.type !== 'baseline').reduce<MetricRow | null>((b, r) => {
-    const value = championRank(r)
+    const value = rankOf(r)
     if (value === null || value === undefined) return b
-    const current = b === null ? null : championRank(b)
+    const current = b === null ? null : rankOf(b)
     return current === null || current === undefined || value < current ? r : b
   }, null)
   const seriesType = quality?.series_type ?? 'unknown'
@@ -510,10 +537,10 @@ function ChipGroup<T extends string>({ options, value, onChange, label, tourAnch
 function StatsStrip({ data }: { data: SkuIntelligenceData }) {
   const { t } = useLanguage()
   const { stats, metrics, historical, forecast } = data
-  // The model this SKU's orders are actually computed from — see championRank.
+  // The model this SKU's orders are actually computed from — see makeChampionRank.
   // Baselines are excluded for the same reason the engine excludes them: they
   // are the bar to clear, not a model anyone buys from.
-  const rank = championRank
+  const rank = makeChampionRank(metrics)
   const bestMetric = metrics.filter(r => r.type !== 'baseline').reduce<MetricRow | null>((b, r) => {
     const value = rank(r)
     if (value === null || value === undefined) return b
@@ -1197,8 +1224,9 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
         cols.forEach((c, i) => doc.text(c, margin + i * colW + 2, y + 5))
         y += 7
         // Same order as the screen: by the metric the champion was chosen with.
+        const pdfRank = makeChampionRank(data.metrics)
         const sorted = [...data.metrics].sort((a, b) =>
-          (championRank(a) ?? Infinity) - (championRank(b) ?? Infinity))
+          (pdfRank(a) ?? Infinity) - (pdfRank(b) ?? Infinity))
         sorted.forEach((r, ri) => {
           const even = ri % 2 === 0
           doc.setFillColor(even ? 248 : 255, even ? 250 : 255, even ? 252 : 255)
@@ -2132,8 +2160,9 @@ function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
   // WAPE put the "mejor" badge on a model that was not the one behind this
   // SKU's forecast, its reorder point or its purchase order — and nothing on
   // screen said so.
+  const tableRank = makeChampionRank(rows)
   const sorted = [...rows].sort((a, b) =>
-    (championRank(a) ?? Infinity) - (championRank(b) ?? Infinity))
+    (tableRank(a) ?? Infinity) - (tableRank(b) ?? Infinity))
   // A baseline is scored so the real models have something to beat; it is not a
   // candidate, and the engine refuses to buy from one. Badging the cheapest row
   // outright put "MEJOR" on `Referencia (temporada)` on real data — a naive
@@ -2931,14 +2960,18 @@ export default function SkusPage() {
   const seriesType   = skuQuality?.series_type ?? 'unknown'
   const skuColor     = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
   // Accuracy (1 − WAPE) of the model this SKU's chart is actually drawn from —
-  // the single discreet figure next to the chart header. Chosen by championRank,
+  // the single discreet figure next to the chart header. Chosen by makeChampionRank,
   // not by WAPE: picking the lowest-WAPE row here would quote the accuracy of a
   // model the user is not looking at, and the two differ whenever being short
   // costs more than being long.
   const skuAccuracy  = useMemo(() => {
+    // The metric is chosen over ALL of this SKU's rows, then the ranking runs
+    // over the subset that can report a WAPE — narrowing the set first would
+    // let a session pick a different metric here than the table beside it.
+    const accuracyRank = makeChampionRank(skuMetrics)
     const best = skuMetrics
       .filter(r => r.type !== 'baseline' && r.wape !== null)
-      .sort((a, b) => (championRank(a) ?? Infinity) - (championRank(b) ?? Infinity))[0]
+      .sort((a, b) => (accuracyRank(a) ?? Infinity) - (accuracyRank(b) ?? Infinity))[0]
     if (best?.wape == null) return null
     // WAPE divides by total real demand, so a SKU that never sold scores a
     // meaningless 0 error and would proudly report "100%" over a flat line of

@@ -26,11 +26,15 @@ def create_session(
     body: SessionCreate,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_sessions", session_svc.count_sessions(user.tenant_id))
-    session = session_svc.create_session(
-        user.tenant_id, user.user_id, body.name, body.description, body.tags
-    )
+    from backend.entitlements.service import enforce_limit, limit_guard
+    # Counted and created under one per-tenant lock: two tabs starting a
+    # forecast at the same moment must not both pass the same stale count.
+    with limit_guard(user.tenant_id) as conn:
+        enforce_limit(user.tenant_id, "max_sessions",
+                      session_svc.count_sessions(user.tenant_id), conn=conn)
+        session = session_svc.create_session(
+            user.tenant_id, user.user_id, body.name, body.description, body.tags
+        )
     return ok(session)
 
 

@@ -7,7 +7,7 @@ import {
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight, X,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
-  FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2,
+  FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -15,7 +15,6 @@ import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
-import { useEntitlements } from '@/lib/entitlements'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Nav definition ────────────────────────────────────────────────────────────
@@ -27,7 +26,6 @@ interface NavItem {
   adminOnly?: boolean
   /** Feature enum value gating this route (see backend `Feature`). Items
    *  without this always render as a normal link. */
-  feature?:   string
   /** Sibling routes this one entry stands for, so the item still reads as
    *  active while the user is on a tab that is not `href`. */
   alsoActive?: string[]
@@ -36,7 +34,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/compras',             labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
   { href: '/pedidos',             labelKey: 'nav.orders',      Icon: ClipboardList,   group: 'operation' },
-  { href: '/mensajes',            labelKey: 'nav.messages',    Icon: MessageSquare,   group: 'operation', feature: 'team_messaging' },
+  { href: '/mensajes',            labelKey: 'nav.messages',    Icon: MessageSquare,   group: 'operation' },
 
   // One door, not two. "Subir mis ventas" and "mis archivos" are the same
   // errand to the person doing it, so the nav carries a single entry and the
@@ -57,30 +55,31 @@ const NAV: NavItem[] = [
   { href: '/pronosticos',         labelKey: 'nav.skus',        Icon: TrendingUp,      group: 'analysis' },
   { href: '/impacto',             labelKey: 'nav.roi',         Icon: Target,          group: 'analysis' },
   { href: '/historial',           labelKey: 'nav.sessions',    Icon: History,         group: 'analysis' },
-  { href: '/asistente',           labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
-  { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis', feature: 'event_simulator' },
+  { href: '/asistente',           labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis' },
+  { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis' },
 
   { href: '/usuarios',            labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
-  // Integraciones is hidden for now, for the same reason as the API-keys and
-  // webhooks tabs: connecting Alegra or Siigo works, but whether it is sold —
-  // and to which plan — is an open business decision, so today it is an
-  // entitlement lock that upsells a thing nobody has priced. The route and its
-  // page still exist; restore this line to bring it back.
+  // Integraciones is still out of the nav. The reason used to be commercial —
+  // whether it was sold, and on which plan — and that question is gone with the
+  // tiers. What is left is that connecting Alegra or Siigo has never been walked
+  // end to end by a person. The route and its page exist; restore this line to
+  // bring it back.
   //
   // These two used to be crossed: /config held your own profile while being
   // called "Configuración", and /settings held scheduled recalculation while
   // being called "Tareas programadas". Both routes said "settings" and neither
   // matched its screen.
   { href: '/mi-cuenta',           labelKey: 'nav.account',     Icon: User,            group: 'system' },
-  // Gated on what the page actually holds. It was gated on api_access while
-  // the only live tab is scheduled retraining — a Professional feature — so a
-  // Professional tenant was sold recurring retraining and given no door to it.
-  { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true, feature: 'scheduled_reports' },
-  // Gated on the feature it documents, so a tenant without API access is not
-  // shown a console they could not authenticate against. NOT adminOnly: an
-  // analyst is exactly who wires an integration, and the page only ever acts
-  // with the key the reader pastes into it — never with their session.
-  { href: '/api',                 labelKey: 'nav.api',         Icon: Code2,           group: 'system',  feature: 'api_access' },
+  { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true },
+  // What this deployment's services are, and what is off. adminOnly hides it
+  // from an analyst; the INSTANCE tab inside it is gated again by
+  // INSTANCE_ADMIN_EMAILS, because `admin` is a role inside a tenant and the
+  // deployment's credentials are not a tenant's to read.
+  { href: '/instalacion',         labelKey: 'nav.installation', Icon: ServerCog,       group: 'system',  adminOnly: true },
+  // NOT adminOnly: an analyst is exactly who wires an integration, and the page
+  // only ever acts with the key the reader pastes into it — never with their
+  // session.
+  { href: '/api',                 labelKey: 'nav.api',         Icon: Code2,           group: 'system' },
 ]
 
 const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']
@@ -91,7 +90,6 @@ export default function Sidebar() {
   const user    = getUser()
   const { collapsed, toggle, drawerOpen, closeDrawer } = useSidebar()
   const { t, lang, setLang } = useLanguage()
-  const { has } = useEntitlements()
 
   // On a phone the rail is not a column of the layout — it is a drawer that
   // slides over the page. `collapsed` (the icons-only desktop rail) is
@@ -127,20 +125,10 @@ export default function Sidebar() {
     router.replace('/login')
   }
 
-  // Locked features are hidden, not shown padlocked. Four of the fourteen nav
-  // items were permanent locks, so the nav taught a new user more about what
-  // they do NOT have than about what they do. The upsell belongs where someone
-  // reaches for the feature, not as fixed furniture.
-  const visibleNav = NAV.filter(item => {
-    if (item.adminOnly && user?.role !== 'admin') return false
-    if (item.feature && !has(item.feature)) return false
-    return true
-  })
-
-  // ...but hiding every lock would orphan /planes, which today is only reached
-  // through the padlock's upsell (and through Integraciones, itself a lock). So
-  // the four padlocks collapse into one deliberate way in.
-  const hasLockedFeature = NAV.some(item => item.feature && !has(item.feature))
+  // Four of the fourteen entries used to be plan locks — hidden, not padlocked,
+  // because a nav full of padlocks teaches a new user what they do NOT have.
+  // There are no locks left: role is the only thing that hides an entry now.
+  const visibleNav = NAV.filter(item => !(item.adminOnly && user?.role !== 'admin'))
 
   // Off-canvas on a phone: taken out of the flex row entirely (so the page gets
   // the full width) and slid in over it. On desktop this object is empty and
@@ -292,23 +280,6 @@ export default function Sidebar() {
         >
           {collapsedNow ? <ChevronRight size={14} /> : <><ChevronLeft size={14} /><span>{t('sidebar.collapse')}</span></>}
         </button>
-        )}
-
-        {/* The single remaining way to the plan comparison. */}
-        {!collapsedNow && hasLockedFeature && (
-          <div style={{ marginTop: 8, padding: '0 10px' }}>
-            <Link
-              href="/planes"
-              style={{
-                display: 'block', textAlign: 'center',
-                padding: '7px 0', borderRadius: 7,
-                border: '1px dashed rgba(255,255,255,0.25)',
-                color: 'var(--sidebar-dim)', fontSize: 11.5, fontWeight: 600,
-              }}
-            >
-              {t('sidebar.see_plans')}
-            </Link>
-          </div>
         )}
 
         {/* Language switcher */}

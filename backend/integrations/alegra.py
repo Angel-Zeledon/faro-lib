@@ -21,7 +21,7 @@ from typing import Optional
 import requests
 from requests.auth import HTTPBasicAuth
 
-from backend.config import settings
+from backend.service_config.resolver import effective
 from backend.integrations import http
 from backend.integrations.base import (
     AccountingProvider,
@@ -40,7 +40,7 @@ class AlegraProvider(AccountingProvider):
     def __init__(self, credentials: dict):
         super().__init__(credentials)
         self._auth = HTTPBasicAuth(credentials["email"], credentials["token"])
-        self._base = settings.alegra_base_url
+        self._base = effective().alegra_base_url
         self._items_cache: Optional[list[dict]] = None
 
     def test_connection(self) -> None:

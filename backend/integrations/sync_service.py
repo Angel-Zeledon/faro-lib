@@ -11,7 +11,7 @@ import io
 import logging
 
 from backend.db.connection import execute, query, transaction
-from backend.entitlements.service import enforce_limit
+from backend.entitlements.service import enforce_limit, take_tenant_lock
 from backend.errors import AppError
 from backend.integrations import registry, store
 from backend.integrations.base import IntegrationSyncError, parse_provider_number
@@ -152,14 +152,9 @@ def sync_connection(connection_id: str) -> dict:
         # mid-loop inside upsert_stock's own per-row chokepoint (which would
         # otherwise leave a "committed prefix, aborted suffix" of partially
         # imported stock rows).
-        existing_keys = inv_svc.list_stock_keys(tenant_id)
-        new_pairs = {(sku, fields["warehouse"]) for sku, fields in merged.items()} - existing_keys
-        if new_pairs:
-            enforce_limit(tenant_id, "max_skus", inv_svc.count_stock(tenant_id), adding=len(new_pairs))
-            new_warehouses = {wh for _, wh in new_pairs} - wh_svc.list_warehouse_names(tenant_id)
-            if new_warehouses:
-                enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id),
-                              adding=len(new_warehouses))
+        # Checked under the tenant lock, inside the same transaction that
+        # writes (see below): an unattended sync is exactly the caller most
+        # likely to be running while a person imports a CSV by hand.
 
         dataset_id = generate_id("ds")
         # When the provider exposed a branch/warehouse on any sale line, the
@@ -209,6 +204,23 @@ def sync_connection(connection_id: str) -> dict:
         # worse than the pre-existing demo flow's atomicity, and recoverable
         # by re-running the sync (upsert_stock is idempotent per sku).
         with transaction() as db:
+            take_tenant_lock(tenant_id, db)
+            existing_keys = inv_svc.list_stock_keys(tenant_id, conn=db)
+            new_pairs = {
+                (sku, fields["warehouse"]) for sku, fields in merged.items()
+            } - existing_keys
+            if new_pairs:
+                enforce_limit(tenant_id, "max_skus",
+                              inv_svc.count_stock(tenant_id, conn=db),
+                              adding=len(new_pairs), conn=db)
+                new_warehouses = (
+                    {wh for _, wh in new_pairs} - wh_svc.list_warehouse_names(tenant_id)
+                )
+                if new_warehouses:
+                    enforce_limit(tenant_id, "max_locations",
+                                  wh_svc.count_warehouses(tenant_id),
+                                  adding=len(new_warehouses), conn=db)
+
             for sku, fields in merged.items():
                 inv_svc.upsert_stock(tenant_id, sku, fields, conn=db)
 

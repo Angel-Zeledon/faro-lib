@@ -121,7 +121,21 @@ function ScorecardTable({ rows, alerts }: {
                 </Td>
                 <Td size="lg" divider={false}>{fmtPct(row.fill_rate)}</Td>
                 <Td size="lg" divider={false} mono style={{ color: C.green, fontWeight: 600 }}>
-                  {formatMoney(row.purchased_value)}
+                  {row.purchased_value === null ? (
+                    // Not a zero. No line of their orders carried a unit cost,
+                    // so we do not know what we bought from them — the same
+                    // dash every other unmeasurable cell on this row uses.
+                    <span style={{ color: C.dim }} title={t('scorecard.purchased_value_unknown_hint')}>—</span>
+                  ) : !row.purchased_value_complete ? (
+                    // Some lines had costs and some did not, so this is a floor,
+                    // not the total. Shown, but marked, instead of printing a
+                    // partial sum with the confidence of a complete one.
+                    <span title={t('scorecard.purchased_value_partial_hint')}>
+                      ≥ {formatMoney(row.purchased_value)}
+                    </span>
+                  ) : (
+                    formatMoney(row.purchased_value)
+                  )}
                 </Td>
                 <Td size="lg" divider={false} style={{ color: C.dim }}>{fmtDate(row.last_reception, lang)}</Td>
               </tr>

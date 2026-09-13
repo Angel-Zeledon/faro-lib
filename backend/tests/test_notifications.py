@@ -4,7 +4,7 @@ class TestSendPOToSupplierEmail:
 
         captured = {}
 
-        def fake_send(to, subject, html, attachment=None):
+        def fake_send(to, subject, html, attachment=None, **_kw):
             captured["to"] = to
             captured["subject"] = subject
             captured["html"] = html
@@ -50,9 +50,9 @@ class TestSendWhatsAppMediaUrl:
     def test_includes_media_url_in_request_when_provided(self, monkeypatch):
         from backend.notifications import whatsapp as wa_mod
 
-        monkeypatch.setattr(wa_mod.settings, "twilio_account_sid", "ACtest")
-        monkeypatch.setattr(wa_mod.settings, "twilio_auth_token", "token")
-        monkeypatch.setattr(wa_mod.settings, "twilio_whatsapp_from", "whatsapp:+10000000000")
+        monkeypatch.setattr(config_settings, "twilio_account_sid", "ACtest")
+        monkeypatch.setattr(config_settings, "twilio_auth_token", "token")
+        monkeypatch.setattr(config_settings, "twilio_whatsapp_from", "whatsapp:+10000000000")
 
         captured = {}
 
@@ -75,9 +75,9 @@ class TestSendWhatsAppMediaUrl:
     def test_omits_media_url_key_when_not_provided(self, monkeypatch):
         from backend.notifications import whatsapp as wa_mod
 
-        monkeypatch.setattr(wa_mod.settings, "twilio_account_sid", "ACtest")
-        monkeypatch.setattr(wa_mod.settings, "twilio_auth_token", "token")
-        monkeypatch.setattr(wa_mod.settings, "twilio_whatsapp_from", "whatsapp:+10000000000")
+        monkeypatch.setattr(config_settings, "twilio_account_sid", "ACtest")
+        monkeypatch.setattr(config_settings, "twilio_auth_token", "token")
+        monkeypatch.setattr(config_settings, "twilio_whatsapp_from", "whatsapp:+10000000000")
 
         captured = {}
 
@@ -122,6 +122,7 @@ import re
 
 import pytest
 
+from backend.config import settings as config_settings
 from backend.config import OTP_EXPIRE_MINUTES, SETUP_LINK_EXPIRE_HOURS
 from backend.notifications import email as email_mod
 from backend.notifications import locale as locale_mod
@@ -137,7 +138,7 @@ def sent(monkeypatch) -> list[dict]:
     captured: list[dict] = []
     monkeypatch.setattr(
         email_mod, "_send",
-        lambda to, subject, html, attachment=None: captured.append(
+        lambda to, subject, html, attachment=None, **_kw: captured.append(
             {"to": to, "subject": subject, "html": html, "attachment": attachment}),
     )
     return captured
@@ -325,12 +326,18 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
         amount = email_mod._fmt_money(1250000.0)
         assert msg["subject"] == render_es("roi_email_subject_capital",
                                            month="junio de 2026", amount=amount)
-        assert msg["subject"] == "Faro — liberaste ₡1.250.000 en junio de 2026"
+        # The amount and the month have to survive the catalog lookup; the
+        # sentence around them is copy and belongs to the catalog, not here.
+        assert amount in msg["subject"] and "junio de 2026" in msg["subject"]
         html = msg["html"]
         assert render_es("roi_email_headline_capital",
                          month="junio de 2026", amount=amount) in html
         assert render_es("roi_email_metric_adoption_note", followed=6, shown=8) in html
-        assert "Seguiste 6 de 8 líneas" in html
+        # The two numbers have to reach the reader; the sentence around them is
+        # copy and lives in the catalog. Asserting the whole sentence here was a
+        # second copy of it, and it went stale the day the note was rewritten to
+        # stop claiming the denominator was "everything Faro suggested".
+        assert "6" in html and "8" in html
         for key in ("roi_email_metric_risks_label", "roi_email_metric_capital_note",
                     "roi_email_metric_purchases_label", "roi_email_cta", "roi_email_footer"):
             assert render_es(key) in html, key
@@ -340,7 +347,9 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
         email_mod.send_monthly_roi_email("buyer@faro-e2e.io", report, "https://faro.test/roi")
         assert sent[0]["subject"] == render_es("roi_email_subject_default",
                                                month="junio de 2026")
-        assert "liberaste" not in sent[0]["subject"]
+        # No amount may appear in a subject for a month whose capital figure we
+        # could not derive — that is what this test guards, not the wording.
+        assert "₡" not in sent[0]["subject"]
 
 
 class TestWhatsAppAlertCopyComesFromTheCatalog:

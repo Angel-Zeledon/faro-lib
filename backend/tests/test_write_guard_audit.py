@@ -70,11 +70,6 @@ INFRA = {
     # Not a user at all: Twilio posting an inbound WhatsApp message. Authorised
     # by request signature, so a role guard here would reject the only caller.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
-    # Stripe's callback, and the only path that changes tenants.plan. A role
-    # guard here would reject the only legitimate caller, so its authorisation
-    # is the signature instead — see test_billing.py, which asserts an unsigned,
-    # wrongly-signed or tampered body is refused and changes nothing.
-    "POST /api/v1/billing/webhook": "Stripe webhook, verified by signature",
 }
 
 # POSTs that read. HTTP makes you POST anything with a body, so a query, an
@@ -117,10 +112,8 @@ def _dependency_calls(dependant) -> list:
 
 
 # A dependency created by a factory is an inner function called `guard`, so the
-# name alone tells you nothing: `require_role("admin")` and
-# `require_feature(Feature.TEAM_MESSAGING)` both produce one. Only the first
-# authorises a write — a plan gate says the tenant PAID for something, not that
-# this user may change it. The qualname is what separates them.
+# name alone tells you nothing about what it authorises. The qualname is what
+# separates a role check from any other factory-made dependency.
 ROLE_FACTORIES = ("require_role", "require_analyst", "require_admin", "require_verified")
 
 

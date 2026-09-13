@@ -97,16 +97,23 @@ def get_parents_using(tenant_id: str, child_sku: str) -> list[dict]:
 
 # ── MRP Level 1 Explosion ─────────────────────────────────────────────────────
 
-def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30) -> dict:
+def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30,
+                         period: str = "daily") -> dict:
     """
     MRP Level 1 explosion:
     Given forecasted demand for finished goods + BOM,
     calculates required quantities of each component and raw material.
     Flags shortages and calculates purchase requirements.
+
+    `period` is read at the tenant's own planning grain, like every other reader
+    of the status. Without it a weekly tenant's per-week demand for finished
+    goods was treated as per-day, and every component requirement below it was
+    multiplied by the same error. Default "daily" keeps existing callers
+    byte-identical.
     """
     from backend.inventory.service import get_inventory_status
 
-    items = get_inventory_status(tenant_id, session_id)
+    items = get_inventory_status(tenant_id, session_id, period=period)
     if not items:
         return _empty_explosion(session_id, horizon_days)
 

@@ -1,0 +1,468 @@
+/**
+ * Copy for the installation panel (`/instalacion`), in both languages.
+ *
+ * Why this is NOT in `translations.ts`, for the same reason `landing.ts` is
+ * not: that catalogue is short interface strings looked up by a runtime key,
+ * and a typo there fails silently by echoing the key back. This is paragraphs,
+ * one per service and one per variable, and every one of them has to exist in
+ * both languages — so the shape is a TYPE keyed by the backend's own service
+ * and field keys. A key the registry adds and nobody translates is a COMPILE
+ * error, and a key that no longer exists is too.
+ *
+ * The backend sends the same text in English inside each field's `doc`, since
+ * it also generates `.env.example` and `docs/configuracion.md` from one source.
+ * The panel shows THIS instead, because a screen a person reads is end-user
+ * copy and the house rule is that end-user copy is localized. Keep the two
+ * saying the same thing: `backend/tests/test_service_config_i18n.py` asserts
+ * the key sets match, not the wording, so a translation may be shorter — it may
+ * not be about something else.
+ */
+import type { Lang } from './translations'
+
+/** Service keys, exactly as `backend/service_config/registry.py` declares them. */
+export type ServiceKey =
+  | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
+  | 'integrations' | 'contact' | 'worker' | 'limits' | 'api_surface'
+
+/** Field keys, exactly as the registry declares them (= `Settings` attributes). */
+export type FieldKey =
+  | 'secret_key' | 'database_url' | 'frontend_url' | 'allowed_origins'
+  | 'instance_admin_emails' | 'environment' | 'app_name' | 'app_version'
+  | 'access_token_expire_minutes' | 'algorithm' | 'storage_path' | 'testing_mode'
+  | 'deepseek_api_key' | 'deepseek_model' | 'deepseek_base_url'
+  | 'resend_api_key' | 'email_from' | 'smtp_server' | 'smtp_port'
+  | 'smtp_user' | 'smtp_pass'
+  | 'twilio_account_sid' | 'twilio_auth_token' | 'twilio_whatsapp_from'
+  | 'whatsapp_webhook_base_url' | 'whatsapp_bot_generic_mode'
+  | 'twilio_sms_from'
+  | 'voyageai_api_key' | 'pinecone_api_key' | 'pinecone_index' | 'pinecone_environment'
+  | 'integrations_secret_key' | 'alegra_base_url' | 'siigo_base_url'
+  | 'contact_whatsapp' | 'contact_email' | 'upgrade_notify_email'
+  | 'worker_enabled' | 'scheduler_enabled' | 'worker_id'
+  | 'max_concurrent_jobs' | 'worker_poll_interval_seconds'
+  | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
+  | 'sql_materialize_max_rows'
+  | 'public_api_only'
+
+export interface ServiceCopy {
+  /** Short name for the card header. */
+  name: string
+  /** One line: what the service is. */
+  summary: string
+  /** What the user loses while it is off. Shown under a service that is not ready. */
+  whatBreaks: string
+  /** Anything a reader needs that the fields do not say. Optional. */
+  note?: string
+}
+
+export interface ServiceConfigCopy {
+  services: Record<ServiceKey, ServiceCopy>
+  fields: Record<FieldKey, string>
+  ui: {
+    title: string
+    lead: string
+    tabInstance: string
+    tabTenant: string
+    /** States. */
+    stateReady: string
+    stateNotConfigured: string
+    stateDegraded: string
+    stateOff: string
+    stateOn: string
+    /** Where a value is coming from. */
+    sourceTenant: string
+    sourceInstance: string
+    sourceEnv: string
+    sourceDefault: string
+    sourceLabel: string
+    /** Field affordances. */
+    missingLabel: string
+    orElse: string
+    envOnly: string
+    envOnlyHelp: string
+    secretSet: string
+    secretInherited: string
+    secretEmpty: string
+    secretPlaceholder: string
+    clearHint: string
+    required: string
+    /** Actions. */
+    save: string
+    saving: string
+    saved: string
+    test: string
+    testing: string
+    reset: string
+    resetConfirm: string
+    /** Probe outcomes, by the backend's stable code. */
+    probeOk: string
+    probeNotConfigured: string
+    probeAuthFailed: string
+    probeUnreachable: string
+    probeTimeout: string
+    probeRejected: string
+    probeMissingDependency: string
+    probeUnexpected: string
+    lastCheck: string
+    neverChecked: string
+    /** Access and store conditions. */
+    operatorDisabledTitle: string
+    operatorDisabledBody: string
+    notOperatorTitle: string
+    notOperatorBody: string
+    storeUnavailable: string
+    encryptionUnavailable: string
+    undocumented: string
+    tenantLead: string
+    tenantEmpty: string
+    noneEditable: string
+  }
+}
+
+const es: ServiceConfigCopy = {
+  services: {
+    core: {
+      name: 'Núcleo',
+      summary: 'Identidad del proceso, base de datos y llave de firma.',
+      whatBreaks: 'No arranca nada. Se leen una sola vez, al iniciar.',
+      note: 'Solo por entorno, a propósito: el pool de conexiones y el firmador de tokens las leen al importar, así que un valor escrito desde el panel no tomaría efecto hasta reiniciar — y uno equivocado impediría que el reinicio funcione.',
+    },
+    llm: {
+      name: 'Asistente (DeepSeek)',
+      summary: 'DeepSeek, el único motor de lenguaje. Mueve todas las funciones de IA.',
+      whatBreaks: 'El asistente deja de responder, el resumen de la mañana y la lectura de inventario vuelven a su texto por reglas, el analista de documentos se apaga y el diagnóstico de datos reporta solo sus revisiones deterministas. Nada da error: cada pantalla dice que el asistente no está disponible.',
+      note: 'Hay un solo proveedor y ninguna cadena de respaldo. Una versión anterior usaba la llave que estuviera puesta, así que un error de tipeo en el nombre de la variable producía funciones de IA que respondían desde otro proveedor — visible solo en la factura.',
+    },
+    email: {
+      name: 'Correo',
+      summary: 'Correo transaccional — Resend primero, SMTP como respaldo.',
+      whatBreaks: 'No sale ningún correo: verificación de cuenta, recuperación de contraseña, invitaciones, el resumen diario de inventario, el recuento mensual y las órdenes de compra al proveedor. Cada envío queda registrado y se reporta como no entregado — la app nunca dice que mandó algo que no mandó.',
+      note: 'Resend gana cuando su llave está puesta; si no, se usa SMTP. Sin ninguno de los dos el envío falla en voz alta en vez de callar. Lo que un tenant configure aquí aplica SOLO al correo dirigido a su propia gente y a sus proveedores: la verificación, el reseteo de contraseña y las invitaciones siempre salen por el transporte de la instalación, porque un tenant no puede mandar el mensaje que da acceso a una cuenta.',
+    },
+    whatsapp: {
+      name: 'WhatsApp',
+      summary: 'WhatsApp por Twilio — alertas diarias, mensajes a proveedores y el bot.',
+      whatBreaks: 'No se manda ni se recibe ningún WhatsApp: la alerta diaria de inventario pierde ese canal (el correo sigue saliendo si está configurado), las órdenes de compra no se pueden enviar por WhatsApp y el bot nunca contesta.',
+      note: '`WHATSAPP_WEBHOOK_BASE_URL` es la que parece opcional y no lo es en cuanto el bot está en uso. Twilio firma el webhook entrante sobre la URL PÚBLICA; detrás de un proxy el backend ve una interna, la firma nunca coincide y todo mensaje entrante se rechaza con 403.',
+    },
+    sms: {
+      name: 'SMS',
+      summary: 'SMS por Twilio — aviso de los mensajes del equipo.',
+      whatBreaks: 'No se avisa por SMS de un mensaje del equipo. El mensaje se entrega igual dentro de la app; lo que se pierde es el empujón.',
+      note: 'Comparte las credenciales de Twilio con WhatsApp y agrega una sola: el remitente. Un número con prefijo «whatsapp:» NO puede mandar SMS, y por eso es una variable aparte y no una reutilización.',
+    },
+    rag: {
+      name: 'Búsqueda en documentos',
+      summary: 'Búsqueda en documentos — embeddings de Voyage AI sobre un índice de Pinecone.',
+      whatBreaks: 'Los documentos que subas dejan de indexarse y el analista ya no puede citarlos. El asistente sigue respondiendo con los datos del tenant; simplemente no tiene documentos que citar.',
+      note: 'Necesita las llaves y además los paquetes `voyageai` y `pinecone` instalados — un paquete faltante apaga el servicio igual que una llave faltante, y dice cuál. El índice debe ser de 1024 dimensiones y métrica coseno.',
+    },
+    integrations: {
+      name: 'Integraciones contables',
+      summary: 'Integraciones contables — Alegra y Siigo.',
+      whatBreaks: 'No se puede crear ni sincronizar ninguna conexión contable: las credenciales no se pueden guardar, porque guardarlas sin cifrar no es una opción que el código ofrezca.',
+      note: '`INTEGRATIONS_SECRET_KEY` es una llave Fernet y es solo de entorno a propósito: cifra toda credencial guardada en la base —incluidas las que escribe este mismo panel—, así que un panel capaz de reescribirla dejaría ilegibles sus propios secretos con un clic. Perderla significa volver a ingresar todas las credenciales.',
+    },
+    contact: {
+      name: 'Contacto comercial',
+      summary: 'Cómo te contacta un cliente para levantar los techos del plan gratis.',
+      whatBreaks: 'Desaparecen los botones de «escríbenos». Un tenant gratis que llega a un techo se queda sin forma de pedir más espacio — que es toda la superficie comercial del producto, porque no hay checkout.',
+      note: 'Un canal vacío se OCULTA en vez de mostrarse roto: un botón que abre un enlace de WhatsApp en blanco es peor que ningún botón. Configura al menos uno.',
+    },
+    worker: {
+      name: 'Worker y tareas programadas',
+      summary: 'Worker de entrenamiento y los ciclos programados.',
+      whatBreaks: 'Con el worker apagado, los entrenamientos quedan en cola para siempre: se aceptan y nunca corren. Con el programador apagado, la alerta de inventario de las 8:00 UTC, los recálculos programados, la sincronización de integraciones y el corte mensual nunca se disparan.',
+      note: 'Los dos vienen encendidos para que un `uvicorn backend.main:app` pelado se comporte como el entorno de desarrollo. En un despliegue partido el contenedor de API apaga ambos y un contenedor de worker corre los ciclos. El programador debe estar encendido en EXACTAMENTE UNA instancia: dos programadores mandan cada alerta diaria dos veces.',
+    },
+    limits: {
+      name: 'Techos de tamaño',
+      summary: 'Techos de tamaño que protegen la memoria y la base de datos.',
+      whatBreaks: 'No se apaga nada. Son rechazos, no funciones: pasarse de uno siempre es un rechazo explicado, nunca un recorte silencioso.',
+      note: 'Son techos de infraestructura y NO son los límites comerciales del plan. Esos viven en `backend/entitlements/plans.py`.',
+    },
+    api_surface: {
+      name: 'Modo solo-API',
+      summary: 'Modo de solo API pública.',
+      whatBreaks: 'Encendido, esta instancia sirve ÚNICAMENTE los endpoints que el sistema de un cliente está invitado a llamar, más /health. La aplicación web servida desde este host deja de funcionar por completo — que es justamente el punto: está pensado para correr como una segunda instancia de la misma imagen.',
+      note: 'Lo que NO compra: aislamiento de la base de datos. Las dos instancias siguen compartiendo un Postgres, así que un problema de base tumba la integración del cliente y la app juntas.',
+    },
+  },
+  fields: {
+    secret_key: 'Firma cada token de acceso y de refresco. Cambiarla cierra la sesión de todo el mundo al instante. Usa una cadena larga y aleatoria.',
+    database_url: 'Cadena de conexión a PostgreSQL. La cola de trabajos ES una tabla de esta base, así que el worker y la API tienen que apuntar a la misma.',
+    frontend_url: 'URL pública de la aplicación web. Todo enlace que el backend manda por correo se construye desde acá, así que un valor equivocado manda correo que funciona a una dirección muerta.',
+    allowed_origins: 'Orígenes CORS autorizados a llamar la API desde un navegador. El origen del frontend tiene que estar en la lista o todas las llamadas fallan en el navegador mientras funcionan perfecto desde curl.',
+    instance_admin_emails: 'Direcciones autorizadas a ver y editar la configuración de esta instalación. `admin` es un rol dentro de un tenant, así que no puede dar acceso a todo el despliegue. Vacío significa que nadie la edita desde la app.',
+    environment: 'development | staging | production. En producción el servidor se NIEGA a arrancar con TESTING_MODE=true.',
+    app_name: 'Nombre del producto en los asuntos de correo y en el título de la documentación de la API.',
+    app_version: 'Versión que reportan /health y el documento OpenAPI.',
+    access_token_expire_minutes: 'Duración del token de acceso. El frontend lo renueva en silencio, así que esto es una ventana de seguridad, no de experiencia.',
+    algorithm: 'Algoritmo de firma del JWT. Déjalo en HS256 salvo que también cambies el material de la llave.',
+    storage_path: 'Carpeta con los archivos subidos, los artefactos de modelo y los documentos. Postgres guarda los metadatos; acá están los bytes. NO entra en el respaldo de la base — respáldala aparte.',
+    testing_mode: 'Saltea TODOS los cupos, límites de tasa y topes de subida. Solo para pruebas de carga y funcionales. El servidor se niega a arrancar con esto encendido si ENVIRONMENT=production.',
+    deepseek_api_key: 'Llave de API de DeepSeek. Sin ella toda función de IA se reporta no disponible en vez de responder desde otro lado.',
+    deepseek_model: '«deepseek-chat» es el modelo general y barato. «deepseek-reasoner» cuesta más y devuelve su razonamiento aparte.',
+    deepseek_base_url: 'Base de la API. Apúntala a una pasarela compatible para enrutar por tu propio proxy — el formato es el de OpenAI.',
+    resend_api_key: 'Llave de Resend. Cuando está puesta, Resend es el transporte y no se consulta SMTP.',
+    email_from: 'Remitente que ve quien recibe. «onboarding@resend.dev» funciona sin verificar dominio y sirve para probar; un despliegue real debería mandar desde su propio dominio verificado.',
+    smtp_server: 'Servidor SMTP del transporte de respaldo.',
+    smtp_port: 'Puerto SMTP. 587 es STARTTLS, que es lo que usa el cliente.',
+    smtp_user: 'Usuario SMTP; también es la dirección remitente por esa vía.',
+    smtp_pass: 'Contraseña SMTP. En Gmail es una contraseña de aplicación, no la de la cuenta.',
+    twilio_account_sid: 'SID de la cuenta de Twilio. Compartido con el canal de SMS.',
+    twilio_auth_token: 'Token de Twilio. Es también la llave con la que Twilio firma los webhooks entrantes, así que un valor viejo rechaza los mensajes que llegan además de fallar al enviar.',
+    twilio_whatsapp_from: 'Remitente, CON el prefijo «whatsapp:». El número de pruebas de Twilio sirve para probar y solo alcanza a quien se unió a esa sandbox.',
+    whatsapp_webhook_base_url: 'Esquema y host públicos a los que Twilio hace POST, usados para reconstruir la URL firmada detrás de un proxy. Ponlo siempre que el bot corra detrás de TLS o del proxy del frontend.',
+    whatsapp_bot_generic_mode: 'Encendido, el bot se salta el modelo de lenguaje y contesta un mensaje genérico, rápido y honesto. Las confirmaciones se siguen ejecutando igual. Es un parche para cuando no hay modelo pago.',
+    twilio_sms_from: 'Remitente E.164 para SMS, sin el prefijo «whatsapp:».',
+    voyageai_api_key: 'Llave de Voyage AI, usada para representar tanto los documentos como las preguntas.',
+    pinecone_api_key: 'Llave de API de Pinecone para el almacén vectorial.',
+    pinecone_index: 'Nombre del índice. Tiene que ser de 1024 dimensiones, coseno, serverless.',
+    pinecone_environment: 'Región de Pinecone. Informativa para índices serverless.',
+    integrations_secret_key: 'Llave Fernet que cifra toda credencial guardada en la base — conexiones contables y todo lo que escribe el panel de configuración. Solo por entorno.',
+    alegra_base_url: 'Base de la API de Alegra. Cámbiala solo para apuntar a un ambiente de pruebas.',
+    siigo_base_url: 'Base de la API de Siigo. Cámbiala solo para apuntar a un ambiente de pruebas.',
+    contact_whatsapp: 'E.164 sin el «+», como lo quiere wa.me.',
+    contact_email: 'Dirección que abre el botón de «escríbenos».',
+    upgrade_notify_email: 'A dónde se envían por correo las solicitudes de más espacio. Si está vacío usa CONTACT_EMAIL. La solicitud también queda guardada en la base, así que un correo fallido nunca pierde el pedido.',
+    worker_enabled: 'Corre en este proceso el ciclo que toma y entrena los trabajos.',
+    scheduler_enabled: 'Corre los ciclos programados: trabajos agendados, alertas diarias, sincronización de integraciones y corte mensual. Solo una instancia puede tenerlo encendido.',
+    worker_id: 'Identidad con la que se toman trabajos y se recuperan los que quedaron corriendo tras una caída. Vacío usa el nombre del host — dale un id FIJO a un worker de larga vida para que sus trabajos huérfanos se sigan reconociendo después de recrear el contenedor.',
+    max_concurrent_jobs: 'Entrenamientos que este worker corre a la vez.',
+    worker_poll_interval_seconds: 'Segundos entre consultas a la tabla de trabajos.',
+    max_upload_size_mb: 'Tope duro de un archivo subido, por encima del límite del propio plan.',
+    dataset_editor_max_rows: 'Filas que el editor de datos abre. Se revisa contra el conteo guardado ANTES de leer el archivo, así que uno enorme nunca se carga en memoria solo para descubrir que no cabía.',
+    dataset_editor_max_mb: 'El mismo resguardo, por tamaño de archivo.',
+    sql_materialize_max_rows: 'Tope de filas al convertir una consulta SQL en un archivo. Pasarse es un rechazo, nunca un recorte.',
+    public_api_only: 'Servir en esta instancia únicamente la superficie pública de integración.',
+  },
+  ui: {
+    title: 'Instalación',
+    lead: 'Qué servicios tiene este despliegue, cuáles están encendidos y qué se pierde con los que no.',
+    tabInstance: 'Esta instalación',
+    tabTenant: 'Mis canales',
+    stateReady: 'Listo',
+    stateNotConfigured: 'Sin configurar',
+    stateDegraded: 'Con problemas',
+    stateOff: 'Apagado',
+    stateOn: 'Encendido',
+    sourceTenant: 'de tu empresa',
+    sourceInstance: 'de este panel',
+    sourceEnv: 'del entorno',
+    sourceDefault: 'valor por defecto',
+    sourceLabel: 'Manda',
+    missingLabel: 'Falta',
+    orElse: 'o bien',
+    envOnly: 'Solo entorno',
+    envOnlyHelp: 'Se cambia en el archivo .env y requiere reiniciar. El panel la muestra, nunca la escribe.',
+    secretSet: 'Guardada',
+    secretInherited: 'La usa la instalación. Deja esto vacío para seguir usándola.',
+    secretEmpty: 'Sin guardar',
+    secretPlaceholder: 'Pega el valor nuevo',
+    clearHint: 'Déjalo vacío y guarda para volver al valor del entorno.',
+    required: 'Obligatoria',
+    save: 'Guardar',
+    saving: 'Guardando…',
+    saved: 'Guardado',
+    test: 'Probar conexión',
+    testing: 'Probando…',
+    reset: 'Volver al entorno',
+    resetConfirm: '¿Borrar lo que este panel guardó para este servicio y volver a lo que dice el entorno?',
+    probeOk: 'Responde correctamente.',
+    probeNotConfigured: 'Falta configurarlo.',
+    probeAuthFailed: 'El proveedor rechazó la credencial.',
+    probeUnreachable: 'No se pudo alcanzar al proveedor (red o DNS).',
+    probeTimeout: 'El proveedor aceptó la conexión y no respondió a tiempo.',
+    probeRejected: 'El proveedor respondió con un error.',
+    probeMissingDependency: 'Falta instalar un paquete en el servidor.',
+    probeUnexpected: 'Error inesperado al probar.',
+    lastCheck: 'Última prueba',
+    neverChecked: 'Sin probar todavía',
+    operatorDisabledTitle: 'Esta instalación no tiene operador',
+    operatorDisabledBody: 'Nadie puede editar la configuración de servicios desde la app hasta que INSTANCE_ADMIN_EMAILS tenga al menos una dirección. Se pone en el archivo .env del backend y requiere reiniciar.',
+    notOperatorTitle: 'Esta cuenta no opera la instalación',
+    notOperatorBody: 'La configuración de servicios pertenece a quien administra el despliegue, no al rol admin de una empresa. Puedes configurar tus propios canales en la otra pestaña.',
+    storeUnavailable: 'No se pudo leer la configuración guardada en la base. Lo que ves viene del entorno.',
+    encryptionUnavailable: 'Sin INTEGRATIONS_SECRET_KEY no se puede guardar ningún secreto desde acá: se rechaza en vez de guardarse sin cifrar.',
+    undocumented: 'Hay ajustes sin documentar en el registro',
+    tenantLead: 'Los canales que llevan tu identidad a tu propia gente. Lo que dejes vacío usa lo que tenga la instalación.',
+    tenantEmpty: 'Esta instalación no expone ningún canal configurable por empresa.',
+    noneEditable: 'Este servicio se configura solo por entorno.',
+  },
+}
+
+const en: ServiceConfigCopy = {
+  services: {
+    core: {
+      name: 'Core',
+      summary: 'Process identity, database and signing key.',
+      whatBreaks: 'Nothing starts. These are read once, at boot.',
+      note: 'Environment only, on purpose: the connection pool and the token signer read them at import time, so a value written from the panel would not take effect until a restart — and a wrong one would stop the restart from succeeding.',
+    },
+    llm: {
+      name: 'Assistant (DeepSeek)',
+      summary: 'DeepSeek, the only language model. Powers every AI feature.',
+      whatBreaks: 'The assistant stops answering, the morning summary and the inventory read fall back to rule-based text, the document analyst goes off, and the data diagnosis reports only its deterministic checks. Nothing errors: each screen says the assistant is unavailable.',
+      note: 'One provider, no fallback chain. An earlier version used whichever key happened to be set, so a typo in the variable name produced working AI features answered by a different vendor — visible only on the invoice.',
+    },
+    email: {
+      name: 'Email',
+      summary: 'Transactional email — Resend first, SMTP as the fallback.',
+      whatBreaks: 'No email leaves: account verification, password reset, invitations, the daily inventory digest, the monthly recap and purchase orders to suppliers. Every send is logged and reported as not delivered — the app never claims it mailed something it did not.',
+      note: 'Resend wins when its key is set; otherwise SMTP. With neither, a send fails out loud instead of quietly. What a tenant sets here applies ONLY to mail addressed to its own people and suppliers: verification, password reset and invitations always leave through the installation transport, because a tenant must not send the message that grants access to an account.',
+    },
+    whatsapp: {
+      name: 'WhatsApp',
+      summary: 'WhatsApp through Twilio — daily alerts, supplier messages and the bot.',
+      whatBreaks: 'No WhatsApp message is sent or received: the daily inventory alert loses that channel (email still goes if configured), purchase orders cannot be sent over WhatsApp, and the bot never replies.',
+      note: '`WHATSAPP_WEBHOOK_BASE_URL` is the one that looks optional and is not, once the bot is in use. Twilio signs the inbound webhook over the PUBLIC url; behind a proxy the backend sees an internal one, the signature never matches, and every inbound message is rejected with 403.',
+    },
+    sms: {
+      name: 'SMS',
+      summary: 'SMS through Twilio — a heads-up for team messages.',
+      whatBreaks: 'No text goes out for a team message. The message itself is still delivered in the app; only the nudge is lost.',
+      note: 'Shares the Twilio credentials with WhatsApp and adds one: the sender. A number with the "whatsapp:" prefix CANNOT send SMS, which is why this is a separate variable rather than a reuse.',
+    },
+    rag: {
+      name: 'Document search',
+      summary: 'Document search — Voyage AI embeddings over a Pinecone index.',
+      whatBreaks: 'Uploaded documents stop being indexed and the analyst can no longer cite them. The assistant still answers from the tenant’s own data; it just has nothing to quote.',
+      note: 'Needs the keys and the `voyageai` and `pinecone` packages installed — a missing package disables the service the same way a missing key does, and says which. The index must be 1024 dimensions, cosine metric.',
+    },
+    integrations: {
+      name: 'Accounting integrations',
+      summary: 'Accounting integrations — Alegra and Siigo.',
+      whatBreaks: 'No accounting connection can be created or synced: the credentials cannot be stored, because storing them unencrypted is not an option the code offers.',
+      note: '`INTEGRATIONS_SECRET_KEY` is a Fernet key and is environment-only on purpose: it encrypts every credential stored in the database — including the ones this panel writes — so a panel that could rewrite it would make its own secrets unreadable with one click. Losing it means re-entering every credential.',
+    },
+    contact: {
+      name: 'Commercial contact',
+      summary: 'How a customer reaches you to lift the free tier’s ceilings.',
+      whatBreaks: 'The "write to us" buttons disappear. A free tenant that hits a ceiling then has no way to ask for more room — which is the entire commercial surface of the product, since there is no checkout.',
+      note: 'An empty channel is HIDDEN rather than shown broken: a button opening a blank WhatsApp link is worse than no button. Configure at least one.',
+    },
+    worker: {
+      name: 'Worker and scheduled jobs',
+      summary: 'Training worker and the scheduled loops.',
+      whatBreaks: 'With the worker off, training sessions queue forever: accepted and never run. With the scheduler off, the 08:00 UTC inventory alert, scheduled recalculations, integration sync and the monthly snapshot never fire.',
+      note: 'Both ship on so a bare `uvicorn backend.main:app` behaves like the development setup. In a split deployment the API container turns both off and one worker container runs the loops. The scheduler must be on in EXACTLY ONE instance: two schedulers send every daily alert twice.',
+    },
+    limits: {
+      name: 'Size ceilings',
+      summary: 'Size ceilings that protect memory and the database.',
+      whatBreaks: 'Nothing turns off. These are refusals, not features: exceeding one is always a stated rejection, never a silent truncation.',
+      note: 'These are infrastructure ceilings and NOT the commercial tier limits. Those live in `backend/entitlements/plans.py`.',
+    },
+    api_surface: {
+      name: 'Public-API-only mode',
+      summary: 'Public-API-only mode.',
+      whatBreaks: 'With it on, this instance serves ONLY the endpoints a customer’s own system is invited to call, plus /health. The web app served from this host stops working entirely — which is the point: it is meant to run as a second instance of the same image.',
+      note: 'What it does NOT buy: isolation from the database. Both instances still share one Postgres, so a database problem takes down the customer’s integration and the app together.',
+    },
+  },
+  fields: {
+    secret_key: 'Signs every access and refresh token. Changing it logs everyone out immediately. Use a long random string.',
+    database_url: 'PostgreSQL connection string. The job queue IS a table in this database, so the worker and the API must point at the same one.',
+    frontend_url: 'Public base URL of the web app. Every link the backend emails is built from it, so a wrong value sends working mail to a dead address.',
+    allowed_origins: 'CORS origins allowed to call the API from a browser. The frontend’s own origin must be in the list or every call fails in the browser while working perfectly from curl.',
+    instance_admin_emails: 'Addresses allowed to see and edit this installation’s configuration. `admin` is a role inside a tenant, so it cannot grant deployment-wide access. Empty means nobody edits it from the app.',
+    environment: 'development | staging | production. In production the server REFUSES to boot with TESTING_MODE=true.',
+    app_name: 'Product name in email subjects and in the API documentation title.',
+    app_version: 'Version reported by /health and the OpenAPI document.',
+    access_token_expire_minutes: 'Access-token lifetime. The frontend refreshes silently, so this is a security window, not a UX one.',
+    algorithm: 'JWT signing algorithm. Leave it at HS256 unless you are also changing the key material.',
+    storage_path: 'Directory holding uploaded files, model artifacts and documents. Postgres holds the metadata; these are the bytes. It is NOT in the database backup — back it up separately.',
+    testing_mode: 'Bypasses ALL quotas, rate limits and upload caps. For load and functional testing only. The server refuses to boot with this on when ENVIRONMENT=production.',
+    deepseek_api_key: 'DeepSeek API key. Without it every AI feature reports itself unavailable instead of answering from somewhere else.',
+    deepseek_model: '"deepseek-chat" is the cheap general model. "deepseek-reasoner" costs more and returns its reasoning separately.',
+    deepseek_base_url: 'API base. Point it at a compatible gateway to route through your own proxy — the wire format is OpenAI-shaped.',
+    resend_api_key: 'Resend API key. When set, Resend is the transport and SMTP is not consulted.',
+    email_from: 'Sender shown to the recipient. "onboarding@resend.dev" works without domain verification and is fine for a trial; a real deployment should send from its own verified domain.',
+    smtp_server: 'SMTP host for the fallback transport.',
+    smtp_port: 'SMTP port. 587 is STARTTLS, which is what the client uses.',
+    smtp_user: 'SMTP username; also the From address on that path.',
+    smtp_pass: 'SMTP password. For Gmail this is an app password, not the account password.',
+    twilio_account_sid: 'Twilio account SID. Shared with the SMS channel.',
+    twilio_auth_token: 'Twilio auth token. Also the key Twilio signs inbound webhooks with, so an outdated value rejects incoming messages as well as failing to send.',
+    twilio_whatsapp_from: 'Sender, WITH the "whatsapp:" prefix. Twilio’s sandbox number works for testing and only reaches people who joined that sandbox.',
+    whatsapp_webhook_base_url: 'Public scheme and host Twilio POSTs to, used to rebuild the signed url behind a proxy. Set it whenever the bot runs behind TLS termination or the frontend proxy.',
+    whatsapp_bot_generic_mode: 'When on, the bot skips the language model and replies with a fast, honest generic message. Confirmations still execute. A stopgap for when no model is funded.',
+    twilio_sms_from: 'Plain E.164 sender for SMS, without the "whatsapp:" prefix.',
+    voyageai_api_key: 'Voyage AI key, used to embed both documents and questions.',
+    pinecone_api_key: 'Pinecone API key for the vector store.',
+    pinecone_index: 'Index name. Must be 1024 dimensions, cosine, serverless.',
+    pinecone_environment: 'Pinecone region. Informational for serverless indexes.',
+    integrations_secret_key: 'Fernet key encrypting every credential stored in the database — accounting connections and everything written from the configuration panel. Environment only.',
+    alegra_base_url: 'Alegra API base. Override only to point at a sandbox.',
+    siigo_base_url: 'Siigo API base. Override only to point at a sandbox.',
+    contact_whatsapp: 'E.164 without the "+", the way wa.me wants it.',
+    contact_email: 'Address the "write to us" button opens.',
+    upgrade_notify_email: 'Where in-app requests for more room are emailed. Falls back to CONTACT_EMAIL when empty. The request is also stored, so a failed email never loses the ask.',
+    worker_enabled: 'Runs the job-claim and training loop in this process.',
+    scheduler_enabled: 'Runs the scheduled loops: scheduled jobs, daily alerts, integration sync, monthly snapshot. Exactly one instance may have this on.',
+    worker_id: 'Identity used to claim jobs and to recover the ones left running after a crash. Empty falls back to the host name — give a long-lived worker a FIXED id so its orphans are still recognised after the container is recreated.',
+    max_concurrent_jobs: 'Training jobs this worker runs at once.',
+    worker_poll_interval_seconds: 'Seconds between polls of the jobs table.',
+    max_upload_size_mb: 'Hard ceiling on an uploaded file, above the tier’s own limit.',
+    dataset_editor_max_rows: 'Rows the in-app data editor will open. Checked against the stored row count BEFORE reading the file, so a huge one is never loaded into memory just to find out it did not fit.',
+    dataset_editor_max_mb: 'The same guard, by file size.',
+    sql_materialize_max_rows: 'Row ceiling when turning a SQL query into a file. Exceeding it is a refusal, never a truncation.',
+    public_api_only: 'Serve only the public integration surface on this instance.',
+  },
+  ui: {
+    title: 'Installation',
+    lead: 'What services this deployment has, which are on, and what is lost with the ones that are not.',
+    tabInstance: 'This installation',
+    tabTenant: 'My channels',
+    stateReady: 'Ready',
+    stateNotConfigured: 'Not configured',
+    stateDegraded: 'Failing',
+    stateOff: 'Off',
+    stateOn: 'On',
+    sourceTenant: 'from your company',
+    sourceInstance: 'from this panel',
+    sourceEnv: 'from the environment',
+    sourceDefault: 'built-in default',
+    sourceLabel: 'In effect',
+    missingLabel: 'Missing',
+    orElse: 'or else',
+    envOnly: 'Environment only',
+    envOnlyHelp: 'Changed in the .env file and requires a restart. The panel reports it, never writes it.',
+    secretSet: 'Stored',
+    secretInherited: 'The installation provides it. Leave this empty to keep using it.',
+    secretEmpty: 'Not stored',
+    secretPlaceholder: 'Paste the new value',
+    clearHint: 'Leave it empty and save to go back to the environment value.',
+    required: 'Required',
+    save: 'Save',
+    saving: 'Saving…',
+    saved: 'Saved',
+    test: 'Test connection',
+    testing: 'Testing…',
+    reset: 'Back to the environment',
+    resetConfirm: 'Delete what this panel stored for this service and go back to what the environment says?',
+    probeOk: 'Answers correctly.',
+    probeNotConfigured: 'Still needs configuring.',
+    probeAuthFailed: 'The provider rejected the credential.',
+    probeUnreachable: 'The provider could not be reached (network or DNS).',
+    probeTimeout: 'The provider accepted the connection and did not answer in time.',
+    probeRejected: 'The provider answered with an error.',
+    probeMissingDependency: 'A package is missing on the server.',
+    probeUnexpected: 'Unexpected error while testing.',
+    lastCheck: 'Last test',
+    neverChecked: 'Not tested yet',
+    operatorDisabledTitle: 'This installation has no operator',
+    operatorDisabledBody: 'Nobody can edit service configuration from the app until INSTANCE_ADMIN_EMAILS holds at least one address. It goes in the backend’s .env file and requires a restart.',
+    notOperatorTitle: 'This account does not operate the installation',
+    notOperatorBody: 'Service configuration belongs to whoever administers the deployment, not to a company’s admin role. You can configure your own channels in the other tab.',
+    storeUnavailable: 'The configuration stored in the database could not be read. What you see comes from the environment.',
+    encryptionUnavailable: 'Without INTEGRATIONS_SECRET_KEY no secret can be stored from here: it is refused rather than stored unencrypted.',
+    undocumented: 'There are settings missing from the registry',
+    tenantLead: 'The channels that carry your identity to your own people. Anything left empty uses what the installation has.',
+    tenantEmpty: 'This installation exposes no per-company channel.',
+    noneEditable: 'This service is configured by environment only.',
+  },
+}
+
+export const SERVICE_CONFIG: Record<Lang, ServiceConfigCopy> = { es, en }

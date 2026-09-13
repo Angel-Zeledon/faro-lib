@@ -10,14 +10,11 @@ from pydantic import BaseModel
 
 from backend.api.v1.currency import currency_of
 from backend.auth.guards import CurrentUser, get_current_user
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 from backend.sessions import planning_service
 
 router = APIRouter(
     prefix="/ai", tags=["ai-insights"],
-    dependencies=[Depends(require_feature(Feature.AI_ANALYST))],
 )
 log = logging.getLogger(__name__)
 

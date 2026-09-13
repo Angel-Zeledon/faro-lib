@@ -207,12 +207,12 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
   hace falta:
   1. Un **túnel público** (ej. `ngrok`) apuntando al webhook del backend, porque
      Twilio necesita una URL pública para entregar los mensajes entrantes.
-  2. **Crédito de Anthropic** (`ANTHROPIC_API_KEY`) para las respuestas del bot
+  2. **Crédito de DeepSeek** (`DEEPSEEK_API_KEY`) para las respuestas del bot
      inteligente; hoy el bot corre en **modo genérico** (`WHATSAPP_BOT_GENERIC_MODE`)
      como stopgap cuando no hay LLM financiado.
 - **Recomendación para la demo:** mostrar la **UI de vinculación** en
   `/config` y **explicar** el bot. Si el presentador quiere el round-trip en vivo,
-  levantar `ngrok` + poner `ANTHROPIC_API_KEY` con crédito **antes** de la sesión.
+  levantar `ngrok` + poner `DEEPSEEK_API_KEY` con crédito **antes** de la sesión.
 
 ---
 
@@ -223,13 +223,13 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
   pintar y el scroll se siente pesado. Para la demo: abrir el editor, editar UNA
   celda visible y usar "Guardar como nuevo"; no hacer scroll por toda la tabla.
 - **"Resumen ejecutivo del día" (Panel de Compras).** El texto narrativo lo genera
-  el LLM. Si `ANTHROPIC_API_KEY` no tiene crédito, puede quedarse en
+  el LLM. Si `DEEPSEEK_API_KEY` no tiene crédito, puede quedarse en
   "Analizando datos…". No es un error de datos; el resto del panel funciona. Si
   molesta, no esperar a que cargue esa tarjeta.
 - **"Cambios en demanda" con -99%.** En el Panel de Compras, esta sección compara
   el último día real contra el pronóstico y a veces muestra caídas grandes (ruido
   del último punto). Es informativo, no un bug; conviene no detenerse ahí.
-- **Asistente IA / chat.** Igual que el bot, depende de `ANTHROPIC_API_KEY` con
+- **Asistente IA / chat.** Igual que el bot, depende de `DEEPSEEK_API_KEY` con
   crédito. Sin él, responde en modo limitado.
 - **Reseed = re-login.** Si corres `seed_demo` con la sesión abierta, el usuario se
   recrea; vuelve a iniciar sesión.

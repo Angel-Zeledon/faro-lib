@@ -29,7 +29,14 @@ def sniff_separator(sample: str) -> str:
     a single unusable column named "sku;fecha;cantidad". Picks whichever
     candidate splits the header into the most fields; ties fall back to ','.
     """
-    header = (sample or "").lstrip("﻿").splitlines()[0] if sample.strip() else ""
+    # `splitlines()[0]` is not safe on its own: a file that is nothing but the
+    # BOM Excel writes into an EMPTY export survives `sample.strip()` (U+FEFF is
+    # not whitespace to Python), and then `lstrip` leaves the empty string,
+    # whose `splitlines()` is `[]`. That was an IndexError — so uploading an
+    # empty export answered "an unexpected error occurred", blaming the server
+    # for a file the user could see was empty.
+    lines = (sample or "").lstrip("﻿").splitlines()
+    header = lines[0] if lines else ""
     best, best_count = ",", 1
     for candidate in (",", ";", "\t", "|"):
         count = len(header.split(candidate))
@@ -94,7 +101,56 @@ def _to_records(df: pd.DataFrame) -> list[dict]:
     return records
 
 
+# Formats whose bytes legitimately contain NUL. An .xlsx is a ZIP and a
+# .parquet is a binary column store — both are full of them, and scanning
+# either for NUL refuses every valid file. Only the text formats can be
+# checked, which is also the only place the truncation bug exists: the CSV/JSON
+# reader is the one that stops at a NUL mid-field.
+_BINARY_FORMATS = {"excel", "parquet"}
+
+
+def _refuse_nul_bytes(source: _Source, fmt: Optional[str] = None) -> None:
+    """Refuse a file whose cells contain NUL, before pandas silently eats them.
+
+    pandas' C parser treats NUL as end-of-field: `SKU-\x00-1` is read as
+    `SKU-`, with no error and no warning. The file says one thing and the
+    import stores another — a buyer then orders against a product code their
+    supplier has never heard of.
+
+    Refusing is the only honest option at this layer. A DataFrame has no
+    channel to report "and by the way, 12 rows were dropped", so silently
+    filtering them would trade one invisible corruption for another. The stock
+    CSV importer, which DOES have a per-row error report, rejects the
+    individual rows instead — see `_parse_stock_rows`.
+
+    Only the first 1 MB is scanned when the source is a path: a NUL is a
+    corrupt-export symptom, and a corrupt export is corrupt from the start.
+    Reading the whole file here would double the cost of every import.
+
+    Binary formats are skipped entirely — see _BINARY_FORMATS.
+    """
+    fmt = fmt or (None if isinstance(source, bytes) else _fmt_from_path(source))
+    if fmt in _BINARY_FORMATS:
+        return
+    try:
+        if isinstance(source, bytes):
+            sample = source
+        else:
+            with open(source, "rb") as fh:
+                sample = fh.read(1_048_576)
+    except OSError:
+        return                      # unreadable is the reader's problem, not ours
+    if b"\x00" in sample:
+        line = sample[: sample.index(b"\x00")].count(b"\n") + 1
+        raise ValueError(
+            f"The file contains a NUL byte (first seen on line {line}). "
+            f"Rows containing one cannot be imported, because the value would "
+            f"be silently truncated. Re-export the file from your system."
+        )
+
+
 def _read_df(source: _Source, fmt: Optional[str], nrows: Optional[int]) -> pd.DataFrame:
+    _refuse_nul_bytes(source, fmt)
     if isinstance(source, bytes):
         if fmt is None:
             raise ValueError("fmt is required when reading from bytes")
@@ -126,6 +182,7 @@ def read_dataframe(source: _Source, fmt: Optional[str] = None,
     functions that returns a DataFrame — callers pass it straight to
     ForecastingCore and never call pandas themselves. For Excel, ``sheet``
     defaults to the first sheet."""
+    _refuse_nul_bytes(source, fmt)
     if isinstance(source, bytes):
         if fmt is None:
             raise ValueError("fmt is required when reading from bytes")
@@ -169,6 +226,7 @@ def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
     plus Excel sheet names and the full row count (for the caller's DB update).
     Returns plain Python; the DB write stays in the caller."""
     fmt = _fmt_from_path(path)
+    _refuse_nul_bytes(path, fmt)
     sheets: Optional[list] = None
     total_rows: Optional[int] = None
 

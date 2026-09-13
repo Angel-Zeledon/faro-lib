@@ -101,6 +101,68 @@ class TestShares:
         assert wh_svc.get_demand_shares(tid) == {"bodega central": 1.0}
 
 
+class TestOneAnswerToWhichWarehouseIsTheDefault:
+    """
+    Two resolvers, two answers. `get_demand_shares` checks the anchored
+    `is_default` flag first; `service._aggregate_stock_rows_by_sku` — which
+    picks the row that REPRESENTS a SKU on the aggregated screen — only ever
+    consulted `name_precedence_key`, which puts DEFAULT_WAREHOUSE ("principal")
+    first whatever the flag says.
+
+    So a tenant whose first warehouse was "Zona Sur" had 100% of a SKU's demand
+    attributed there, while the row on screen took that SKU's cost, lead time,
+    MOQ and supplier — and with them the headline warehouse value — from
+    "principal". One row, describing two different buildings, and nothing on
+    screen to tell which.
+    """
+
+    def test_the_aggregated_row_represents_the_same_warehouse_that_owns_the_demand(
+        self, client, test_tenant,
+    ):
+        from backend.inventory.service import _aggregate_stock_rows_by_sku
+
+        tid = test_tenant["id"]
+        wh_svc.create_warehouse(tid, "Zona Sur")     # first -> is_default
+        wh_svc.create_warehouse(tid, "principal")    # sorts first by NAME
+
+        owner = next(iter(wh_svc.get_demand_shares(tid)))
+        assert owner == "Zona Sur", "the premise: the flag beats the alphabet"
+
+        rows = [
+            {"sku": "A", "warehouse": "Zona Sur",  "current_stock": 10,
+             "unit_cost": 100.0, "lead_time_days": 45},
+            {"sku": "A", "warehouse": "principal", "current_stock": 5,
+             "unit_cost": 1.0,  "lead_time_days": 2},
+        ]
+        agg = _aggregate_stock_rows_by_sku(
+            rows, wh_svc.get_default_warehouse_name(tid))
+
+        assert agg["A"]["warehouse"] == owner
+        assert agg["A"]["unit_cost"] == 100.0
+        assert agg["A"]["lead_time_days"] == 45
+        # The quantity is still the tenant's real total across warehouses.
+        assert agg["A"]["current_stock"] == 15.0
+
+    def test_without_the_flag_it_still_falls_back_to_the_name_order(
+        self, client, test_tenant,
+    ):
+        """Legacy tenants carry no flag anywhere, so the name key is all there
+        is — and passing None must not change that answer."""
+        from backend.inventory.service import _aggregate_stock_rows_by_sku
+
+        tid = test_tenant["id"]
+        _insert_unflagged(tid, "Tienda Norte")
+        _insert_unflagged(tid, "principal")
+
+        rows = [
+            {"sku": "A", "warehouse": "Tienda Norte", "current_stock": 1, "unit_cost": 9.0},
+            {"sku": "A", "warehouse": "principal",    "current_stock": 1, "unit_cost": 3.0},
+        ]
+        assert _aggregate_stock_rows_by_sku(rows, None)["A"]["warehouse"] == "principal"
+        assert (_aggregate_stock_rows_by_sku(
+            rows, wh_svc.get_default_warehouse_name(tid))["A"]["warehouse"] == "principal")
+
+
 class TestSharesApi:
     def test_viewer_denied_and_unchanged(self, client, viewer_headers, test_tenant):
         tid = test_tenant["id"]

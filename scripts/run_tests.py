@@ -41,9 +41,32 @@ PYTHON = ROOT / "backend" / ".venv" / "Scripts" / "python.exe"
 if not PYTHON.exists():                       # non-Windows checkout
     PYTHON = ROOT / "backend" / ".venv" / "bin" / "python"
 
+def _backend_port() -> int:
+    """The port THIS backend runs on, read from the file that actually decides.
+
+    It was hardcoded to 8010 until 2026-08-17, and by then 8010 belonged to a
+    different project's container. So the guard refused to start over a stranger
+    while the real dev server — moved to 8011 — went unwatched: both failure
+    modes at once, and the harmless one is the only one you notice.
+
+    `Frontend/.env.local` is per-machine and beats a shell variable, so it is the
+    honest source for which backend the app is talking to.
+    """
+    env_local = ROOT / "Frontend" / ".env.local"
+    if env_local.exists():
+        for line in env_local.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("BACKEND_URL="):
+                try:
+                    return int(line.split(":")[-1].strip().rstrip("/"))
+                except ValueError:
+                    break
+    return 8001
+
+
 # Ports a dev server would hold. Both matter: the backend steals jobs, and the
 # frontend keeps a backend alive behind it.
-DEV_PORTS = {8010: "backend (uvicorn)", 5000: "frontend (next dev)", 8001: "backend (alt port)"}
+DEV_PORTS = {_backend_port(): "backend (uvicorn)", 5000: "frontend (next dev)"}
 
 
 def _listening(port: int) -> bool:

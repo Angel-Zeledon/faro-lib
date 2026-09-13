@@ -27,7 +27,6 @@ def live_key(test_tenant, auth_headers, client):
     limiter is ever reached. Which is the right order — a tenant without API
     access should not spend rate budget — and is why this fixture has to say so.
     """
-    execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (test_tenant["id"],))
     r = client.post("/api/v1/api-keys",
                     json={"name": "erp-nightly", "role": "analyst"},
                     headers=auth_headers)

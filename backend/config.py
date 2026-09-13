@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     # CORS
     allowed_origins: List[str] = ["http://localhost:3000", "http://localhost:4000","http://localhost:5000"]
 
+    # Who may see and edit the INSTANCE-wide service configuration (the panel at
+    # /instalacion). `admin` is a role INSIDE a tenant, so it cannot be the
+    # answer here: every tenant that signs up gets one, and an instance-wide
+    # DeepSeek key or Twilio credential does not belong to any single tenant.
+    #
+    # Environment-only, on purpose: the list of people who can rewrite the
+    # deployment's credentials must not be editable from the screen those
+    # credentials are pasted into.
+    #
+    # Empty means NOBODY edits instance configuration from the app and the panel
+    # says so, naming this variable. It is the safe default for a multi-tenant
+    # deployment; a buyer running their own single-tenant instance puts their
+    # own address here and gets the panel.
+    instance_admin_emails: List[str] = []
+
     # Storage
     storage_path: Path = BASE_DIR / "storage"
 
@@ -82,33 +97,40 @@ class Settings(BaseSettings):
     dataset_editor_max_rows: int = 50_000
     dataset_editor_max_mb: int = 10
 
-    # ── Billing (Stripe) ────────────────────────────────────────────────────
-    # All optional: with no secret key the billing endpoints report that billing
-    # is not configured and every other part of the app is unaffected, exactly
-    # like RESEND_API_KEY and the notification senders.
-    stripe_secret_key: str = ""
-    stripe_publishable_key: str = ""
-    # Without this, webhook signatures cannot be verified — and an unverified
-    # webhook is an open endpoint for raising your own plan, so the handler
-    # REFUSES to run rather than trusting the body.
-    stripe_webhook_secret: str = ""
-    # Price IDs live in configuration, not in code: they differ between test and
-    # live mode, and the plan they map to is a commercial decision, not a
-    # deployable one. Empty means that plan cannot be bought yet.
-    stripe_price_professional_monthly: str = ""
-    stripe_price_professional_yearly: str = ""
-    # Enterprise is quoted per operation, so there is deliberately no price here.
-
-    @property
-    def billing_enabled(self) -> bool:
-        return bool(self.stripe_secret_key)
-
     # ── Testing mode ────────────────────────────────────────────────────────
     # When True, ALL commercial/business restrictions are bypassed: plan quotas,
     # rate limits, concurrent-job caps, upload-size caps and length caps. Intended
     # ONLY for load/stress/functional testing. Default False so it can never be on
     # in production by accident — flip it with TESTING_MODE=true in the env.
     testing_mode: bool = False
+
+    # DeepSeek — the ONLY LLM backend. Its API is OpenAI-shaped
+    # (`POST {base}/chat/completions`, bearer auth), so it needs no SDK:
+    # `backend/ai/local_llm.py` speaks it over httpx.
+    #
+    # With no key, AI features raise `LLMNotConfigured` at the call site rather
+    # than falling back to another provider. Every consumer already degrades to
+    # its rule-based text on an exception, so nothing breaks — but the log names
+    # the real problem instead of hiding it behind a working-but-wrong answer.
+    #   deepseek_model — 'deepseek-chat' is the cheap general model.
+    #                    'deepseek-reasoner' costs more and returns its
+    #                    reasoning separately; the factory handles both.
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com"
+
+    # How a tenant reaches us to ask for more room. There is no checkout: the
+    # free tier's ceilings are lifted by a conversation, so these three are the
+    # entire commercial surface of the product.
+    #   contact_whatsapp — E.164 without '+', the way wa.me wants it ("50688887777")
+    #   contact_email    — the address the "write to us" button opens
+    #   upgrade_notify_email — where an in-app upgrade request is emailed;
+    #                          falls back to contact_email when empty.
+    # All empty by default: a button that opens an empty wa.me link is worse
+    # than no button, so the UI hides the channels it has no address for.
+    contact_whatsapp: str = ""
+    contact_email: str = ""
+    upgrade_notify_email: str = ""
 
     # Email — Resend is the primary transport when its key is set; SMTP is the
     # fallback. With neither configured, emails are logged but not sent.
@@ -140,30 +162,20 @@ class Settings(BaseSettings):
     # replies with a fast, honest generic message (confirmations still execute
     # deterministically). Set while no hosted LLM is funded — the local model is
     # too slow for a real-time WhatsApp turn. Flip back to false once
-    # ANTHROPIC_API_KEY has credit and the smart bot returns automatically.
+    # DEEPSEEK_API_KEY has credit and the smart bot returns automatically.
     whatsapp_bot_generic_mode: bool = False
 
     # External APIs
-    # When set, backend/ai/local_llm.py::get_local_llm_client() returns a real
-    # Anthropic-backed client instead of the local Ollama shim — every AI
-    # consumer (rag_service.py, chats.py, narrator.py, narrative_service.py,
-    # configuration.py's data-quality diagnosis) goes through this one
-    # factory, so setting/unsetting this key alone switches all of them.
-    anthropic_api_key: str = ""
-    # Model used when anthropic_api_key is set — deliberately the cheapest
-    # tier, since these are high-volume, low-complexity completions (chat
-    # replies, narrative summaries, data-quality blurbs), not the kind of
-    # task that needs a frontier model.
-    anthropic_model: str = "claude-haiku-4-5-20251001"
+    # The LLM settings live further up, beside the rest of the AI config; there
+    # is exactly one backend (DeepSeek) and `backend/ai/local_llm.py` is the
+    # only place that reads them. `anthropic_api_key` / `local_llm_*` were
+    # removed on 2026-08-23: a fallback chain meant a missing DeepSeek key
+    # silently answered from somewhere else, which is the failure mode that
+    # costs the most to notice.
     voyageai_api_key: str = ""
     pinecone_api_key: str = ""
     pinecone_environment: str = ""
     pinecone_index: str = ""
-
-    # Local LLM (replaces the paid Anthropic API for text generation — see
-    # backend/ai/local_llm.py). Requires Ollama running locally with this model pulled.
-    local_llm_base_url: str = "http://localhost:11434"
-    local_llm_model: str = "deepseek-r1"
 
     # Accounting integrations (Alegra + Siigo)
     integrations_secret_key: str = ""

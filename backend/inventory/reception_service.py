@@ -225,16 +225,8 @@ def receive_po(
     # NEW warehouse names up front and enforcing here (before step 1 touches
     # inventory_po_items) keeps this reception all-or-nothing: a blocked
     # reception must not leave received_qty partially accumulated.
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, take_tenant_lock
     from backend.inventory import warehouse_service as wh_svc
-    existing_wh_names = wh_svc.list_warehouse_names(tenant_id)
-    new_wh_names = {
-        _line_warehouse(i, po)
-        for i in ordered
-        if received_by_item[i["id"]] > 0
-    } - existing_wh_names
-    if new_wh_names:
-        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id), adding=len(new_wh_names))
 
     # Pre-check max_skus BEFORE any write, mirroring the max_locations pre-check
     # above. A reception line whose (sku, warehouse) pair has no existing
@@ -249,17 +241,6 @@ def receive_po(
     # the rest of this function and upsert_stock, so "new pair" detection here
     # matches exactly what upsert_stock would actually insert.
     from backend.inventory import service as inv_svc
-    existing_stock_keys = inv_svc.list_stock_keys(tenant_id)
-    new_sku_warehouse_pairs = {
-        (i["sku"], _line_warehouse(i, po))
-        for i in ordered
-        if received_by_item[i["id"]] > 0
-    } - existing_stock_keys
-    if new_sku_warehouse_pairs:
-        enforce_limit(
-            tenant_id, "max_skus", inv_svc.count_stock(tenant_id),
-            adding=len(new_sku_warehouse_pairs),
-        )
 
     # Steps 1-4 below all run inside ONE transaction so the whole reception is
     # all-or-nothing: a failure anywhere in the sequence must leave
@@ -270,6 +251,36 @@ def receive_po(
     # reads that only need already-committed data (e.g. supplier_service
     # lookups elsewhere) don't need it.
     with transaction() as conn:
+        # 0. The ceilings, moved inside this block (they used to be checked
+        # before it). Both the counts and the writes they authorise now sit
+        # under one per-tenant lock, released by the same commit that makes the
+        # new rows visible — so a second reception landing at the same moment
+        # cannot pass a count taken before this one wrote.
+        take_tenant_lock(tenant_id, conn)
+
+        existing_wh_names = wh_svc.list_warehouse_names(tenant_id)
+        new_wh_names = {
+            _line_warehouse(i, po)
+            for i in ordered
+            if received_by_item[i["id"]] > 0
+        } - existing_wh_names
+        if new_wh_names:
+            enforce_limit(tenant_id, "max_locations",
+                          wh_svc.count_warehouses(tenant_id),
+                          adding=len(new_wh_names), conn=conn)
+
+        existing_stock_keys = inv_svc.list_stock_keys(tenant_id, conn=conn)
+        new_sku_warehouse_pairs = {
+            (i["sku"], _line_warehouse(i, po))
+            for i in ordered
+            if received_by_item[i["id"]] > 0
+        } - existing_stock_keys
+        if new_sku_warehouse_pairs:
+            enforce_limit(
+                tenant_id, "max_skus", inv_svc.count_stock(tenant_id, conn=conn),
+                adding=len(new_sku_warehouse_pairs), conn=conn,
+            )
+
         # 1. Per-line: accumulate received_qty (partial receptions add up)
         for i in ordered:
             qty = received_by_item[i["id"]]
@@ -488,13 +499,32 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     # Same LOWER() grouping as above, so a supplier's fill data lands on their
     # one row. `n_orders` is not returned to the UI; it is the sample size behind
     # fill_rate — how many orders that percentage averages over.
+    #
+    # On `purchased_value`: deliberately NOT COALESCEd to 0. A NULL unit_cost
+    # annuls the product and SQL drops it from the SUM, so a supplier you bought
+    # 40 million from with no costs on file summed to NULL and printed a
+    # confident zero in bold green. /impacto applies the opposite rule to the
+    # same quantity (roi_service's managed_purchase_value is None, not 0, when
+    # nothing carries a cost) — same data, two policies, one screen apart.
+    #
+    # `n_lines` / `n_lines_costed` are how much of the order that figure covers.
+    # Without them, 40 lines with 6 costed report those 6 as the total and it
+    # looks exact.
+    #
+    # This rationale lives OUT here rather than inside the SQL, for the same
+    # reason roi_service.get_roi_summary keeps its own out: the guard in
+    # test_currency_reaches_backend_strings scans string literals for a currency
+    # symbol, and it cannot tell a comment from copy once both are inside the
+    # same string.
     fill_rows = query(
         """SELECT LOWER(poi.supplier)                AS supplier_key,
                   MIN(poi.supplier)                  AS supplier,
                   COUNT(DISTINCT poi.po_log_id)::int AS n_orders,
                   COALESCE(SUM(poi.received_qty), 0) AS total_received,
                   COALESCE(SUM(poi.final_qty), 0)    AS order_total,
-                  COALESCE(SUM(poi.final_qty * poi.unit_cost), 0) AS purchased_value
+                  SUM(poi.final_qty * poi.unit_cost) AS purchased_value,
+                  COUNT(*)::int                      AS n_lines,
+                  COUNT(poi.unit_cost)::int          AS n_lines_costed
            FROM inventory_po_items poi
            JOIN inventory_po_log pol ON pol.id = poi.po_log_id
            WHERE poi.tenant_id = %s
@@ -558,7 +588,18 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             and d["fill_rate"] is not None
             and int(fill["n_orders"] or 0) >= MIN_RATE_OBSERVATIONS
         )
-        d["purchased_value"] = round(float(fill["purchased_value"]), 2) if fill else 0.0
+        # None — not 0 — when no line of this supplier's orders carries a unit
+        # cost. "We bought nothing from them" and "we never recorded what it
+        # cost" are different statements and the column must not merge them.
+        raw_value = fill["purchased_value"] if fill else None
+        d["purchased_value"] = round(float(raw_value), 2) if raw_value is not None else None
+        # True only when EVERY ordered line carried a cost. Partial coverage
+        # still reports the covered part — throwing away a real, if incomplete,
+        # figure helps nobody — but the row no longer presents it as the total.
+        d["purchased_value_complete"] = bool(
+            fill and int(fill["n_lines"] or 0) > 0
+            and int(fill["n_lines_costed"] or 0) == int(fill["n_lines"] or 0)
+        )
 
         out.append(d)
 
@@ -585,7 +626,14 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "on_time_rate": None,
             "deviation_days": None,
             "fill_rate": fill_rate,
-            "purchased_value": round(float(fill["purchased_value"]), 2),
+            "purchased_value": (
+                round(float(fill["purchased_value"]), 2)
+                if fill["purchased_value"] is not None else None
+            ),
+            "purchased_value_complete": bool(
+                int(fill["n_lines"] or 0) > 0
+                and int(fill["n_lines_costed"] or 0) == int(fill["n_lines"] or 0)
+            ),
             # No lead-time observations at all, so nothing to disbelieve, no
             # trend to report and no punctuality to grade. Keys present on every
             # row so the UI never has to tell "false" from "absent".

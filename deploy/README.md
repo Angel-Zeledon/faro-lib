@@ -58,6 +58,24 @@ The bundled Postgres needs an external backup. On the host's crontab:
   for the API's healthcheck. An empty database bootstraps itself.
 - `ENVIRONMENT=production` makes the server refuse to boot with
   `TESTING_MODE=true` — that refusal is a feature, not a bug to work around.
-- AI features: set `ANTHROPIC_API_KEY` (Haiku tier). Do NOT run Ollama on this
-  box — a local model needs more RAM than the entire rest of the stack.
+  It matters more since 2026-08-22: `TESTING_MODE` also bypasses **every plan
+  limit**, so a production boot with it on would hand the free tier away.
+- **Your own tenant starts on the free tier.** New tenants default to
+  `tier = 'free'` (100 SKUs, 2 users, 1 warehouse). The grandfathering
+  migration only promotes tenants that existed before 2026-08-22, and a fresh
+  production database has none — so the first account you create for yourself
+  is capped like a customer's. Flip it once, by hand:
+
+  ```sh
+  docker exec -it faro-db-1 psql -U faro -d faro     -c "UPDATE tenants SET tier = 'paid' WHERE slug = '<your-slug>';"
+  ```
+
+  That single UPDATE is the entire billing system, by design.
+- **AI features: `DEEPSEEK_API_KEY` is required, and there is no fallback.**
+  DeepSeek is the only backend as of 2026-08-23 — Anthropic and the local
+  Ollama shim were removed. With the key unset, the narrative, the analyst, the
+  chat and the data-quality diagnosis all raise `LLMNotConfigured` and degrade
+  to their rule-based text, which is honest but is not the product you are
+  selling. (Running a local model on this box was never viable anyway: it needs
+  more RAM than the entire rest of the stack.)
 - Logs: `docker compose -f docker-compose.prod.yml logs -f api worker`.

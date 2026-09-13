@@ -27,21 +27,23 @@ from backend.inventory.service import (
 # ─────────────────────────────────────────────────────────────────────────────
 # CALCULATION 1 — _calc_recommended
 # Formula: max(0, avg_daily * lead_time + z * avg_std * sqrt(lead_time) - stock)
-# Rounded up to nearest MOQ multiple.
+# Rounded up to whole units, then floored at MOQ — a MINIMUM, not a multiple.
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCalcRecommended:
     """Verify _calc_recommended produces mathematically correct results."""
 
     def test_basic_calculation(self):
-        """Formula: demand*LT + z*sigma*sqrt(LT) - stock, rounded UP to MOQ."""
+        """Formula: demand*LT + z*sigma*sqrt(LT) - stock, whole units, min MOQ."""
         # demand=10/day, lt=14, sigma=1, service=0.95 (z=1.645), stock=50, moq=10
         result = _calc_recommended(50, 10.0, 1.0, 14, 10, 0.95)
         # raw = 10*14 + 1.645*1*sqrt(14) - 50 = 140 + 6.1537... - 50 = 96.1537
-        # moq-rounded: ceil(96.15/10)*10 = ceil(9.615)*10 = 10*10 = 100
+        # -> ceil to whole units = 97, already above the MOQ of 10, so 97 stands.
+        # This used to assert ceil(96.15/10)*10 = 100: three units of pure
+        # overshoot bought because 96.15 was not a round multiple of ten.
         expected_raw = 10 * 14 + 1.645 * 1.0 * math.sqrt(14) - 50
-        expected_moq = math.ceil(expected_raw / 10) * 10
-        assert result == expected_moq
+        assert result == math.ceil(expected_raw)
+        assert result == 97
 
     def test_zero_stock_equals_full_demand_plus_safety(self):
         """With 0 stock, recommendation = full demand over LT + safety stock."""
@@ -60,24 +62,39 @@ class TestCalcRecommended:
         result = _calc_recommended(99999, 1.0, 0.1, 5, 1, 0.95)
         assert result == 0
 
-    def test_moq_rounding_up(self):
-        """Result must always be a positive multiple of MOQ."""
-        # demand=3/day, std=0.5, lt=10, moq=48, stock=0
-        result = _calc_recommended(0, 3.0, 0.5, 10, 48, 0.95)
-        assert result > 0
-        assert result % 48 == 0
+    def test_a_need_above_the_moq_is_not_rounded_up_to_a_multiple(self):
+        """
+        The overshoot this replaced, at the scale that costs money: needing
+        520 units from a supplier whose minimum is 500 used to order 1000.
+        """
+        # avg_daily=52, lt=10, sigma=0, stock=0 -> raw = 520 exactly.
+        result = _calc_recommended(0, 52.0, 0.0, 10, 500, 0.95)
+        assert result == 520
 
-    def test_moq_larger_than_raw_rounds_to_single_moq(self):
-        """If raw result < MOQ, recommendation = 1 * MOQ (one full order)."""
-        # raw = 10*10 + 0 - 95 = 5; MOQ=100 → ceil(5/100)*100 = 100
+    def test_a_need_below_the_moq_is_lifted_to_the_moq(self):
+        """The floor still binds — that is what a minimum order quantity is."""
+        # raw = 10*10 + 0 - 95 = 5; MOQ=100 -> the supplier will not sell 5.
         result = _calc_recommended(95, 10.0, 0.0, 10, 100, 0.95)
         assert result == 100
 
-    def test_moq_one_no_excessive_rounding(self):
-        """With MOQ=1, ceil(raw/1)*1 == ceil(raw) — should not over-order."""
+    def test_nothing_needed_stays_nothing_even_with_a_large_moq(self):
+        """
+        A floor applied unconditionally would hand a fully-stocked SKU a whole
+        minimum order out of nowhere. `raw > 0` is what stops that, and this is
+        the test that would catch its removal — the old ceil got this right for
+        free (ceil(0/moq)*moq == 0) so nothing guarded it.
+        """
+        assert _calc_recommended(10_000, 10.0, 1.0, 14, 500, 0.95) == 0
+
+    def test_whole_units_only(self):
+        """
+        You cannot buy 96.15 units. The ceil used to be a side effect of the MOQ
+        arithmetic; now it is explicit, and this is what pins it.
+        """
         result = _calc_recommended(50, 10.0, 1.0, 14, 1, 0.95)
         raw = 10 * 14 + 1.645 * 1.0 * math.sqrt(14) - 50
         assert result == math.ceil(raw)
+        assert result == float(int(result))
 
     def test_higher_service_level_means_more_safety_stock(self):
         """Higher service level → larger z → more safety stock → higher recommendation."""

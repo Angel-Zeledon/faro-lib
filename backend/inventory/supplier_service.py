@@ -7,10 +7,31 @@ CRUD for suppliers and sku_suppliers join table.
 import logging
 from typing import Optional
 
-from backend.db.connection import query, query_one, execute
+from backend.db.connection import query, query_one, execute, transaction
+from backend.errors import AppError
 from backend.inventory.defaults import SOURCE_USER
 
 log = logging.getLogger(__name__)
+
+_UNIQUE_VIOLATION = "23505"
+
+# Which of several primaries wins, when the data already holds more than one.
+#
+# `sku_suppliers.is_primary` is `DEFAULT TRUE` and nothing in the schema stops a
+# SKU from having two, so linking a second supplier without naming the flag used
+# to make it primary as well. From then on "the primary supplier of this SKU"
+# had no answer: the map built a dict (last row of an unordered scan won), the
+# single lookup was a `LIMIT 1` with no `ORDER BY`, and the two could disagree
+# on the same request — the screen naming one supplier while the recommendation
+# was built for another.
+#
+# OLDEST WINS, on purpose. `upsert_sku_supplier` now demotes the others when you
+# explicitly set one, so new data has a single primary; this rule only decides
+# rows that already violate the invariant. Picking the newest would let merely
+# *listing* another supplier move the whole SKU over to it; picking the oldest
+# keeps the answer stable as suppliers are added, which is the property a buyer
+# depends on. `supplier_id` breaks the tie if two rows share a timestamp.
+_PRIMARY_ORDER = "ss.is_primary DESC, ss.created_at ASC, ss.supplier_id ASC"
 
 
 def _stamp_lead_time_provenance(safe: dict, data: dict) -> dict:
@@ -122,22 +143,87 @@ def get_supplier_by_name(tenant_id: str, name: Optional[str]) -> Optional[dict]:
     )
 
 
+def find_supplier_by_name_any_state(tenant_id: str, name: Optional[str]) -> Optional[dict]:
+    """Case-insensitive lookup by name that does NOT filter on `active`.
+
+    The deliberate opposite of `get_supplier_by_name`: that one answers "who
+    should receive this PO?" and must skip a supplier the business dropped;
+    this one answers "is this name already taken in the database?", and a
+    deactivated row still occupies UNIQUE (tenant_id, name).
+    """
+    if not name:
+        return None
+    return query_one(
+        "SELECT * FROM suppliers WHERE tenant_id = %s AND LOWER(name) = LOWER(%s) "
+        "ORDER BY COALESCE(active, TRUE) DESC LIMIT 1",
+        (tenant_id, name.strip()),
+    )
+
+
+def assert_name_available(
+    tenant_id: str, name: Optional[str], *, exclude_id: Optional[str] = None,
+) -> None:
+    """Raise a named, translatable error instead of letting the UNIQUE index
+    surface as a generic 500.
+
+    Deactivating a supplier is logical (`active = FALSE`) and the unique index
+    does not exclude inactive rows, so re-registering a dropped supplier under
+    its own name hit a raw UniqueViolation: the buyer saw "error del servidor",
+    with nothing naming the row that was in the way — which is invisible,
+    because a deactivated supplier is not in any list on screen. The two cases
+    get different codes because the user's next move differs: rename, versus
+    "that supplier is deactivated, it has to be restored".
+
+    The check is case-INSENSITIVE while the index is not, on purpose: every
+    supplier-by-name resolution in the product (PO sending, the cash calendar,
+    the lead-time rule index) is case-insensitive, so 'andina' next to 'Andina'
+    is two cards competing to answer the same question — an ambiguity worth
+    refusing at the door rather than a freedom worth keeping.
+    """
+    existing = find_supplier_by_name_any_state(tenant_id, name)
+    if not existing or (exclude_id and existing["id"] == exclude_id):
+        return
+    if existing.get("active") is False:
+        raise AppError(
+            "supplier_name_taken_by_deactivated",
+            "A deactivated supplier is already registered under this name",
+            status_code=409,
+            params={"name": existing["name"]},
+        )
+    raise AppError(
+        "supplier_name_taken",
+        "A supplier is already registered under this name",
+        status_code=409,
+        params={"name": existing["name"]},
+    )
+
+
 def create_supplier(tenant_id: str, data: dict) -> dict:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
                "payment_terms", "payment_terms_days", "notes"}
     safe = _stamp_lead_time_provenance(
         {k: v for k, v in data.items() if k in allowed}, data)
 
+    assert_name_available(tenant_id, safe.get("name"))
+
     cols = ", ".join(safe.keys())
     phs  = ", ".join(["%s"] * len(safe))
     values = list(safe.values())
 
-    row = query_one(
-        f"""INSERT INTO suppliers (tenant_id, {cols})
-            VALUES (%s, {phs})
-            RETURNING *""",
-        (tenant_id, *values),
-    )
+    try:
+        row = query_one(
+            f"""INSERT INTO suppliers (tenant_id, {cols})
+                VALUES (%s, {phs})
+                RETURNING *""",
+            (tenant_id, *values),
+        )
+    except Exception as exc:
+        # The pre-check above loses to a concurrent insert of the same name.
+        # Losing that race must read the same as arriving second, not as a 500.
+        if getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
+            raise
+        assert_name_available(tenant_id, safe.get("name"))
+        raise
     return row  # type: ignore[return-value]
 
 
@@ -148,6 +234,10 @@ def update_supplier(tenant_id: str, supplier_id: str, data: dict) -> Optional[di
         {k: v for k, v in data.items() if k in allowed}, data)
     if not safe:
         return get_supplier(tenant_id, supplier_id)
+
+    # A rename hits the same unique index as a create — same 500, same fix.
+    if safe.get("name"):
+        assert_name_available(tenant_id, safe["name"], exclude_id=supplier_id)
 
     sets   = ", ".join(f"{k} = %s" for k in safe)
     values = list(safe.values())
@@ -165,11 +255,66 @@ def delete_supplier(tenant_id: str, supplier_id: str) -> None:
     )
 
 
+def get_supplier_any_state(tenant_id: str, supplier_id: str) -> Optional[dict]:
+    """A supplier by id, active or not.
+
+    `get_supplier` filters on `active` because almost everything that reads a
+    supplier is about to act towards them. Reactivation is the one operation
+    whose whole subject is a row that filter hides.
+    """
+    return query_one(
+        "SELECT * FROM suppliers WHERE tenant_id = %s AND id = %s",
+        (tenant_id, supplier_id),
+    )
+
+
+def reactivate_supplier(tenant_id: str, supplier_id: str) -> Optional[dict]:
+    """Bring a deactivated supplier back. Idempotent; returns the row.
+
+    Deactivation here is logical and always was, so it has an undo — until this
+    existed it did not, and the 409 the create endpoint now returns
+    (`supplier_name_taken_by_deactivated`) told the user about a row they had no
+    way to act on. That is a dead end the error message itself created.
+
+    There is deliberately NO name re-check here. The obvious worry — that while
+    the card sat deactivated somebody registered a live supplier under the same
+    name, so bringing it back would put two cards on screen answering the same
+    question — cannot happen: `UNIQUE (tenant_id, name)` does not exclude
+    inactive rows, so the database itself refuses the second row. That index is
+    also exactly why `create_supplier` needs its guard (it turns the resulting
+    UniqueViolation into a 409 that says something).
+
+    A check that cannot fire is worse than no check: it reads as protection and
+    protects nothing, and the next person to touch this has to prove it is dead
+    before they can simplify anything around it. If the index is ever made
+    partial (`WHERE active`), this is the function that has to grow the check
+    back — `tests/test_supplier_deactivation_is_reversible.py` pins the
+    invariant so that day is loud.
+    """
+    row = get_supplier_any_state(tenant_id, supplier_id)
+    if row is None:
+        return None
+    if row.get("active") is not False:
+        return row                      # already live — nothing to undo
+    return query_one(
+        "UPDATE suppliers SET active = TRUE "
+        "WHERE tenant_id = %s AND id = %s RETURNING *",
+        (tenant_id, supplier_id),
+    )
+
+
 # ── SKU–Supplier links ────────────────────────────────────────────────────────
 
 def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
+    """Every supplier linked to this SKU, the effective primary FIRST.
+
+    Ordered by the same rule `get_primary_suppliers_map` uses, so row `[0]` is
+    the supplier the recommendation for this SKU was actually built for. They
+    used to sort differently (this one alphabetically), which meant the list
+    could name one supplier at the top while planning used another.
+    """
     return query(
-        """SELECT
+        f"""SELECT
                ss.id,
                ss.sku,
                ss.supplier_id,
@@ -212,13 +357,27 @@ def upsert_sku_supplier(tenant_id: str, sku: str, supplier_id: str, data: dict) 
     phs    = ", ".join(["%s"] * (3 + len(safe)))
     values = [tenant_id, sku, supplier_id] + list(safe.values())
 
-    row = query_one(
-        f"""INSERT INTO sku_suppliers ({cols})
-            VALUES ({phs})
-            ON CONFLICT (tenant_id, sku, supplier_id) {conflict_action}
-            RETURNING *""",
-        tuple(values),
-    )
+    # A SKU has ONE primary supplier. Nothing in the schema said so — and both
+    # `is_primary` defaults (the column's and the request model's) are TRUE — so
+    # linking a second supplier used to leave the SKU with two, and "who supplies
+    # this SKU" stopped having an answer. Setting one primary now demotes the
+    # others, in the same transaction as the write: a reader either sees the old
+    # primary or the new one, never two and never none.
+    with transaction() as conn:
+        if safe.get("is_primary") is True:
+            execute(
+                """UPDATE sku_suppliers SET is_primary = FALSE
+                   WHERE tenant_id = %s AND sku = %s AND supplier_id <> %s
+                     AND is_primary = TRUE""",
+                (tenant_id, sku, supplier_id), conn=conn,
+            )
+        row = query_one(
+            f"""INSERT INTO sku_suppliers ({cols})
+                VALUES ({phs})
+                ON CONFLICT (tenant_id, sku, supplier_id) {conflict_action}
+                RETURNING *""",
+            tuple(values), conn=conn,
+        )
     # Enrich with supplier details
     rows = get_sku_suppliers(tenant_id, sku)
     for r in rows:
@@ -239,35 +398,28 @@ def get_primary_suppliers_map(tenant_id: str) -> dict[str, dict]:
     supplier. Loaded in one query so the recommendation pass — which walks
     every SKU — never degenerates into a per-SKU lookup."""
     rows = query(
-        """SELECT ss.sku, ss.supplier_id, s.name AS supplier_name
+        f"""SELECT ss.sku, ss.supplier_id, s.name AS supplier_name
            FROM sku_suppliers ss
            JOIN suppliers s ON s.id = ss.supplier_id
-           WHERE ss.tenant_id = %s AND ss.is_primary = TRUE AND s.active = TRUE""",
+           WHERE ss.tenant_id = %s AND ss.is_primary = TRUE AND s.active = TRUE
+           ORDER BY {_PRIMARY_ORDER}""",
         (tenant_id,),
     )
-    return {r["sku"]: {"supplier_id": r["supplier_id"],
-                       "supplier_name": r["supplier_name"]} for r in rows}
+    # First row per SKU wins — the ORDER BY above puts the winner first. A dict
+    # comprehension would have kept the LAST row instead, which is how this
+    # returned a different supplier than `get_primary_supplier` for the same SKU.
+    out: dict[str, dict] = {}
+    for r in rows:
+        out.setdefault(r["sku"], {"supplier_id": r["supplier_id"],
+                                  "supplier_name": r["supplier_name"]})
+    return out
 
 
-def get_primary_supplier(tenant_id: str, sku: str) -> Optional[dict]:
-    """Returns the primary supplier for a SKU with effective lead_time_days."""
-    return query_one(
-        """SELECT
-               ss.id,
-               ss.sku,
-               ss.supplier_id,
-               ss.is_primary,
-               ss.unit_cost,
-               ss.moq,
-               ss.lead_time_days,
-               ss.notes,
-               s.name        AS supplier_name,
-               s.email       AS supplier_email,
-               s.phone       AS supplier_phone,
-               COALESCE(ss.lead_time_days, s.lead_time_days) AS effective_lead_time
-           FROM sku_suppliers ss
-           JOIN suppliers s ON s.id = ss.supplier_id
-           WHERE ss.tenant_id = %s AND ss.sku = %s AND ss.is_primary = TRUE AND s.active = TRUE
-           LIMIT 1""",
-        (tenant_id, sku),
-    )
+# `get_primary_supplier(tenant_id, sku)` was deleted on 2026-08-23. It had no
+# caller anywhere in the repo, and it was a `LIMIT 1` with no `ORDER BY` against
+# a table that can hold two primaries — so the day somebody wired it up it would
+# have answered a different supplier than `get_primary_suppliers_map` for the
+# same SKU, on the same request. Whoever needs a single SKU's primary should
+# read it off `get_sku_suppliers(tenant_id, sku)[0]`, which orders by the same
+# rule the planning map uses. Dead code that quietly disagrees with live code is
+# worse than no code.

@@ -2,8 +2,7 @@
 Rich, repeatable demo seed for a presentation-ready Faro tenant.
 
 Builds ONE coherent demo tenant — login `demo@faro.app` / `demo1234`, email
-pre-verified, enterprise plan so every screen is unlocked — with
-business-consistent data across the whole product:
+pre-verified — with business-consistent data across the whole product:
 
   * 14 SKUs (realistic abarrotes names/categories) with ~18 months of daily
     sales history, trained through the REAL training family (daily + weekly)
@@ -169,14 +168,14 @@ def _reset_tenant() -> None:
 
 
 def _create_tenant_and_user() -> str:
-    """Create the enterprise demo tenant (fixed id) + verified admin user."""
+    """Create the demo tenant (fixed id) + verified admin user."""
     from backend.auth.password import hash_password
     from backend.db.connection import execute
     from backend.utils.ids import generate_id
 
     execute(
-        """INSERT INTO tenants (id, name, slug, plan, status, quota, settings, created_at)
-           VALUES (%s, %s, %s, 'enterprise', 'active', '{}', '{}', NOW())""",
+        """INSERT INTO tenants (id, name, slug, status, quota, settings, created_at)
+           VALUES (%s, %s, %s, 'active', '{}', '{}', NOW())""",
         (DEMO_TENANT_ID, "Faro Demo", "faro-demo"),
     )
     user_id = generate_id("usr")

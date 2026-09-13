@@ -165,21 +165,44 @@ def _db_pool_is_open():
     yield
 
 
+class _OfflineLLMMessages:
+    """The `messages.create` surface, answering without a network call."""
+
+    def create(self, model=None, max_tokens=1024, system=None, messages=None, **_):
+        from backend.ai.local_llm import _ContentBlock, _LLMResponse, _Usage
+        return _LLMResponse(
+            content=[_ContentBlock(text="offline test narrative")],
+            usage=_Usage(input_tokens=0, output_tokens=0),
+        )
+
+
+class _OfflineLLMClient:
+    """Stands in for DeepSeek across the whole suite. See
+    `_force_local_llm_in_tests` — no test may reach a billed API."""
+
+    def __init__(self, *_a, **_k):
+        self.messages = _OfflineLLMMessages()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _force_local_llm_in_tests():
     """
-    backend/ai/local_llm.py::get_local_llm_client() returns a real
-    Anthropic-backed client whenever ANTHROPIC_API_KEY is set in .env — the
-    same .env the dev server reads. Without this, any test that reaches an
-    AI call site fires a real, billed request, and stalls for a long time if
-    that key's account has no credit (observed directly: a full-suite run
-    died silently mid-test after several such calls each burned the
-    client's retry/timeout budget). Autouse + session-scoped so every test
-    is protected regardless of whether it uses the `client` fixture.
-    """
-    from backend.ai.local_llm import LocalLLMClient
+    backend/ai/local_llm.py::get_local_llm_client() returns a real DeepSeek
+    client whenever DEEPSEEK_API_KEY is set in .env — the same .env the dev
+    server reads, and it IS set on this machine. Without this, any test that
+    reaches an AI call site fires a real, billed request, and stalls for a long
+    time if that key's account has no credit (observed directly: a full-suite
+    run died silently mid-test after several such calls each burned the
+    client's retry/timeout budget). Autouse + session-scoped so every test is
+    protected regardless of whether it uses the `client` fixture.
 
-    with mock.patch("backend.ai.local_llm.get_local_llm_client", side_effect=LocalLLMClient):
+    The stub answers instead of raising, deliberately: consumers catch
+    exceptions and fall back to rule-based text, so a raising stub would test
+    the fallback everywhere and the LLM path nowhere. Tests that want the
+    fallback pin `_get_client` to None themselves.
+    """
+    with mock.patch("backend.ai.local_llm.get_local_llm_client",
+                    side_effect=lambda *a, **k: _OfflineLLMClient()):
         yield
 
 
@@ -297,12 +320,12 @@ def viewer_headers(client, viewer_user):
 @pytest.fixture
 def make_tenant_user_headers(client):
     """
-    Factory fixture for entitlements tests: creates a fresh tenant on a given
-    plan/trial state, plus a verified user with a given role, and returns
-    login headers for that user.
+    Factory fixture for entitlements tests: creates a fresh tenant in a given
+    trial state, plus a verified user with a given role, and returns login
+    headers for that user.
 
-    make_tenant_user_headers(plan="starter", role="analyst",
-                              expired_trial=False, return_tenant_id=False)
+    make_tenant_user_headers(role="analyst", expired_trial=False,
+                             return_tenant_id=False)
 
     Every tenant created through the factory is tracked and CASCADE-deleted
     on teardown, mirroring `test_tenant`.
@@ -313,7 +336,7 @@ def make_tenant_user_headers(client):
 
     created_tenant_ids: list[str] = []
 
-    def _make(plan="starter", role="analyst", expired_trial=False, return_tenant_id=False):
+    def _make(role="analyst", expired_trial=False, return_tenant_id=False):
         tenant = create_tenant(f"pytest-{uuid4().hex[:10]}")
         tenant_id = tenant["id"]
         created_tenant_ids.append(tenant_id)
@@ -323,8 +346,8 @@ def make_tenant_user_headers(client):
         else:
             trial_ends_at = None
         execute(
-            "UPDATE tenants SET plan=%s, trial_ends_at=%s WHERE id=%s",
-            (plan, trial_ends_at, tenant_id),
+            "UPDATE tenants SET trial_ends_at=%s WHERE id=%s",
+            (trial_ends_at, tenant_id),
         )
 
         email = f"{role}-{uuid4().hex[:8]}@example.com"

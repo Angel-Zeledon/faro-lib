@@ -61,6 +61,7 @@ def _normalize_decisions(items: list[dict]) -> list[dict]:
 def log_po_generation(
     tenant_id: str, session_id: str, items: list[dict],
     destination_warehouse: str | None = None,
+    decisions_recorded: bool = True,
 ) -> dict:
     """
     Called every time a user exports a PO.
@@ -73,21 +74,39 @@ def log_po_generation(
         unit_cost,
         status ∈ approved | modified | rejected.
 
-    Legacy callers (server-side CSV export) pass status-less items already
-    filtered to the order; those are treated as 'approved'.
+    `decisions_recorded=False` is the legacy server-side CSV export: the caller
+    sent no per-line decisions, so the endpoint re-derived every actionable line
+    and this function's normalizer defaults them all to 'approved'.
+
+    The ORDER is still real and is still recorded — the buyer downloaded a file
+    and will act on it. What is NOT real is the adoption reading, so the four
+    decision counters stay at 0 for these rows, exactly as `create_manual_po`
+    already does for orders written from scratch.
+
+    Without this, a tenant working from /inventario saw 100% adoption, in green,
+    permanently: every actionable line was logged as approved because nobody had
+    said otherwise, and 'rejected' was unreachable by construction. A download is
+    evidence the buyer took the list away, not evidence they agreed with every
+    line on it — and the difference is the whole meaning of the metric.
     """
     # Normalize status + forbid 0-unit orders (see _normalize_decisions).
     norm = _normalize_decisions(items)
 
     ordered = [i for i in norm if i["status"] in _ORDERED]
 
-    suggested_count = len(norm)
-    approved_count  = len(ordered)
-    modified_count  = sum(1 for i in norm if i["status"] == "modified")
-    rejected_count  = sum(1 for i in norm if i["status"] == "rejected")
+    if decisions_recorded:
+        suggested_count = len(norm)
+        approved_count  = len(ordered)
+        modified_count  = sum(1 for i in norm if i["status"] == "modified")
+        rejected_count  = sum(1 for i in norm if i["status"] == "rejected")
+    else:
+        suggested_count = approved_count = modified_count = rejected_count = 0
 
     # Header aggregates describe the *order* (approved/modified lines only).
-    sku_count         = approved_count
+    # NOT `approved_count`, which is a DECISION counter and is deliberately 0
+    # when no decisions were recorded — the order still has as many lines as it
+    # has, and /pedidos reads this to show the buyer their own order.
+    sku_count         = len(ordered)
     total_units       = sum(_ordered_qty(i) for i in ordered)
     skus_order_now     = sum(1 for i in ordered if i.get("signal") == "PEDIR_YA")
     skus_order_soon = sum(1 for i in ordered if i.get("signal") == "PEDIR_PRONTO")
@@ -106,15 +125,21 @@ def log_po_generation(
         # the unique index catches the race and we retry once.
         return query_one(
             """INSERT INTO inventory_po_log
-                   (tenant_id, session_id, sku_count, total_units, total_value,
+                   (tenant_id, session_id, source, sku_count, total_units, total_value,
                     skus_order_now, skus_order_soon,
                     suggested_count, approved_count, modified_count, rejected_count,
                     destination_warehouse, po_number)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(po_number), 0) + 1
                           FROM inventory_po_log WHERE tenant_id = %s))
                RETURNING *""",
-            (tenant_id, session_id, sku_count, total_units, total_value,
+            (tenant_id, session_id,
+             # 'forecast' is the column default and means "the buyer decided
+             # line by line". 'export' says the rows came from a download with
+             # no decisions attached, so a later reader can tell why this order
+             # contributes nothing to adoption.
+             "forecast" if decisions_recorded else "export",
+             sku_count, total_units, total_value,
              skus_order_now, skus_order_soon,
              suggested_count, approved_count, modified_count, rejected_count,
              destination_warehouse, tenant_id),
@@ -344,23 +369,43 @@ def _next_month_key(key: str) -> str:
     return f"{y + 1}-01" if m == 12 else f"{y}-{m + 1:02d}"
 
 
-def _capital_freed_during(key: str, snap_by_month: dict[str, float]) -> float | None:
+# Why `capital_freed` is None, for the UI to say the right sentence.
+#   measured     a drop was measured; the amount is in `capital_freed`
+#   not_measured one of the two monthly snapshots does not exist
+#   grew         both snapshots exist and overstock went UP
+CAPITAL_MEASURED = "measured"
+CAPITAL_NOT_MEASURED = "not_measured"
+CAPITAL_GREW = "grew"
+
+
+def _capital_freed_during(
+    key: str, snap_by_month: dict[str, float],
+) -> tuple[float | None, str]:
     """
-    Overstock capital freed during calendar month `key`, in currency units.
+    Overstock reduction during calendar month `key`, and WHY it is what it is.
 
     Derived strictly from two measured snapshots: the one opening the month and
-    the one opening the next month. Returns None when either snapshot is
-    missing (we cannot measure a change we never observed) or when overstock
-    grew instead of shrinking — an increase is not a saving, and reporting it as
-    0 would read as "we saved nothing this month" rather than "this did not
-    happen". No modelling, no assumptions: it is a difference of two
-    measurements.
+    the one opening the next month. No modelling, no assumptions — a difference
+    of two measurements.
+
+    The status is the whole point of the second return value. This used to
+    answer `None` to two completely different questions — "we never took one of
+    the measurements" and "we took both and your overstock GREW" — and the UI,
+    having only the None, printed *"Necesitamos dos mediciones mensuales
+    seguidas"* for both. A tenant whose dead stock had just grown was told we
+    lacked data. The column was structurally incapable of reporting anything but
+    good news, which is exactly the shape of a vanity metric.
+
+    An increase still does not go in `capital_freed`: that field is a reduction,
+    and a negative reduction is a different quantity wearing its name.
     """
     nxt = _next_month_key(key)
     if key not in snap_by_month or nxt not in snap_by_month:
-        return None
+        return None, CAPITAL_NOT_MEASURED
     delta = snap_by_month[key] - snap_by_month[nxt]
-    return round(delta, 2) if delta > 0 else None
+    if delta > 0:
+        return round(delta, 2), CAPITAL_MEASURED
+    return None, CAPITAL_GREW
 
 
 def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
@@ -422,7 +467,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
         total_approved  = int(po["total_approved"]) if po else 0
         adoption_rate = (total_approved / total_suggested) if total_suggested > 0 else None
 
-        capital_freed = _capital_freed_during(key, snap_by_month)
+        capital_freed, capital_status = _capital_freed_during(key, snap_by_month)
 
         result.append({
             "month":            key,
@@ -431,6 +476,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
             "total_value":      round(total_value, 2),
             "adoption_rate":    adoption_rate,
             "capital_freed":    capital_freed,
+            "capital_freed_status": capital_status,
         })
 
     result.reverse()  # most recent first
@@ -443,19 +489,38 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
 # the product already writes; none is modelled, extrapolated or assumed.
 #
 #   orders_generated        COUNT(inventory_po_log) in the month.
-#   recommendations_shown   SUM(suggested_count)  — lines Faro put in the cart.
+#   recommendations_shown   SUM(suggested_count) — lines that reached this log,
+#                           i.e. lines the buyer DECIDED on. Recommendations
+#                           they never acted on are not recorded anywhere, so
+#                           this is not "everything Faro put in front of them"
+#                           and the copy must not claim it is. Counting those
+#                           would mean persisting what was displayed, which the
+#                           product does not do.
 #   recommendations_followed SUM(approved_count)  — lines kept or modified.
 #   adoption_rate           followed / shown, None when nothing was shown.
-#   stockout_risks_handled  SUM(skus_order_now) over ordered lines: PEDIR_YA SKUs
-#                           the buyer actually ordered. This is NOT "stockouts
-#                           avoided" — we never observe the counterfactual, so
-#                           we count the action taken, not an averted outcome.
+#   stockout_risks_handled  SUM(skus_order_now) over ordered lines: PEDIR_YA
+#                           LINES the buyer actually ordered — lines, not
+#                           distinct SKUs, so the same 30 urgent products
+#                           ordered monthly for a year sum to 360. This is NOT
+#                           "stockouts avoided" (we never observe the
+#                           counterfactual) and NOT "handled on time" (nothing
+#                           here checks the order arrived).
 #   managed_purchase_value  SUM(total_value), i.e. units x unit cost. None (not
 #                           0) when no line carried a unit cost, so a tenant
 #                           without cost data is told the figure is unavailable
 #                           instead of being shown a fake zero.
+#   managed_purchase_value_complete
+#                           False when only SOME ordered lines carried a cost,
+#                           which makes the figure above a floor. Without it a
+#                           partial sum was indistinguishable from a total.
 #   capital_freed           See _capital_freed_during: difference of two
-#                           measured overstock snapshots.
+#                           measured overstock snapshots. NOT attributable to
+#                           Faro — overstock also falls on sales, shrinkage,
+#                           SKU deletion and retraining — so the copy says what
+#                           moved, not who moved it.
+#   capital_freed_status    Why capital_freed is what it is: measured /
+#                           not_measured / grew. A single None conflated "no
+#                           measurement" with "your overstock went up".
 #
 # Deliberately NOT computed: any single "Faro saved you $X" headline, and any
 # count of "stockouts avoided". Both require assumptions we cannot ground in
@@ -493,6 +558,31 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
 
     orders_generated = int(agg.get("orders_generated") or 0)
 
+    # How much of the month's ordered volume the money figure above actually
+    # covers. `total_value` per PO sums only the lines that carried a unit cost
+    # — a NULL cost annuls the product — so 40 ordered lines with 6 costed
+    # reported those 6 as the month's managed purchasing, and it looked exact:
+    # ₡30M could read as ₡2,1M. The all-missing case was already handled (None,
+    # not 0); the PARTIAL case was not, and partial is the common one while a
+    # tenant is still filling in costs.
+    #
+    # Derived from the line table at read time rather than stored on the header:
+    # `inventory_po_items` already carries every line's unit_cost, so this needs
+    # no column and no backfill, and it cannot drift from the value it qualifies.
+    coverage = query_one(
+        """SELECT COUNT(*)::int              AS n_lines,
+                  COUNT(poi.unit_cost)::int  AS n_lines_costed
+           FROM inventory_po_items poi
+           JOIN inventory_po_log pol ON pol.id = poi.po_log_id
+           WHERE poi.tenant_id = %s
+             AND poi.status IN ('approved', 'modified')
+             AND pol.generated_at >= %s AND pol.generated_at < %s""",
+        (tenant_id, start, end),
+    ) or {}
+    n_lines = int(coverage.get("n_lines") or 0)
+    n_costed = int(coverage.get("n_lines_costed") or 0)
+    managed_value_complete = bool(n_lines > 0 and n_costed == n_lines)
+
     # Overstock snapshots opening this month and the next one.
     snap_rows = query(
         """SELECT date_trunc('month', recorded_at AT TIME ZONE 'UTC') AS month,
@@ -508,7 +598,7 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
     snap_by_month = {
         r["month"].strftime("%Y-%m"): float(r["overstock_value"]) for r in snap_rows
     }
-    capital_freed = _capital_freed_during(key, snap_by_month)
+    capital_freed, capital_status = _capital_freed_during(key, snap_by_month)
 
     if orders_generated < _MIN_ORDERS_FOR_REPORT:
         return {
@@ -520,7 +610,9 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
             "adoption_rate": None,
             "stockout_risks_handled": None,
             "managed_purchase_value": None,
+            "managed_purchase_value_complete": False,
             "capital_freed": capital_freed,
+            "capital_freed_status": capital_status,
         }
 
     shown    = int(agg.get("recommendations_shown") or 0)
@@ -538,7 +630,9 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
         "managed_purchase_value": (
             round(float(raw_value), 2) if raw_value is not None else None
         ),
+        "managed_purchase_value_complete": managed_value_complete,
         "capital_freed": capital_freed,
+        "capital_freed_status": capital_status,
     }
 
 
@@ -614,7 +708,8 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
             delivered = 0
             for email in emails:
                 ok_sent = send_monthly_roi_email(to=email, report=report, roi_url=roi_url,
-                                                 currency=tenant_currency)
+                                                 currency=tenant_currency,
+                                                 tenant_id=tid)
                 if ok_sent:
                     delivered += 1
                 else:

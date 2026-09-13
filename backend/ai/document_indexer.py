@@ -182,11 +182,21 @@ class DocumentIndexer:
         self._voyage = None
         self._index  = None
         self._ready: bool | None = None
+        self._fingerprint: tuple | None = None
 
     def _init(self) -> bool:
-        if self._ready is not None:
+        # Same reasoning as RAGService._init: the verdict is cached, the
+        # credentials it was reached from are not frozen any more.
+        from backend.ai.rag_service import rag_fingerprint
+        from backend.service_config.resolver import effective
+
+        fp = rag_fingerprint()
+        if self._ready is not None and fp == self._fingerprint:
             return self._ready
-        from backend.config import settings
+        self._fingerprint = fp
+        self._voyage = None
+        self._index = None
+        settings = effective()
 
         missing = []
         if not settings.voyageai_api_key:

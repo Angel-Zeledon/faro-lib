@@ -14,8 +14,6 @@ from backend.auth.guards import (
     CurrentUser, get_current_user, require_admin,
     require_verified_admin, require_verified_analyst_or_above,
 )
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.integrations import registry, store, sync_service
 from backend.integrations.base import IntegrationAuthError, IntegrationSyncError
 from backend.integrations.crypto import integrations_enabled
@@ -24,7 +22,6 @@ from backend.schemas.common import ok
 
 router = APIRouter(
     prefix="/integrations", tags=["integrations"],
-    dependencies=[Depends(require_feature(Feature.INTEGRATIONS))],
 )
 log = logging.getLogger(__name__)
 

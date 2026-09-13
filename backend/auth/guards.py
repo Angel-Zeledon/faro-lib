@@ -49,13 +49,7 @@ class CurrentUser:
 
 
 def _authenticate_api_key(credential: str, scope: dict | None = None) -> CurrentUser:
-    """Turn an `sk_live_*` credential into the same CurrentUser a login yields.
-
-    The plan is checked HERE, on every request, not only when the key was
-    minted. A tenant that drops off Professional keeps its key rows, and a key
-    that outlived the plan that justified it would be a paid feature that
-    silently survives cancellation.
-    """
+    """Turn an `sk_live_*` credential into the same CurrentUser a login yields."""
     from backend.auth import api_key_auth
 
     key = api_key_auth.resolve(credential)
@@ -65,39 +59,19 @@ def _authenticate_api_key(credential: str, scope: dict | None = None) -> Current
             detail="API key is invalid or expired",
         )
 
-    rate_limit = api_key_auth.RATE_MAX_PER_MINUTE
-    if not settings.testing_mode:
-        from backend.entitlements.plans import Feature
-        from backend.entitlements.service import has_feature
-        from backend.tenants.service import get_tenant
-
-        tenant = get_tenant(key["tenant_id"]) or {}
-        # The plan row is already in hand for the feature check, so the rate
-        # ceiling comes from the same read rather than a second one.
-        rate_limit = api_key_auth.rate_limit_for(tenant.get("plan"))
-        if not has_feature(tenant, Feature.API_ACCESS):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "PLAN_UPGRADE_REQUIRED",
-                    "feature": Feature.API_ACCESS.value,
-                    "current_plan": tenant.get("plan", "starter"),
-                },
-            )
-
-    # After the plan check, before any work: a key over its window costs one
-    # counter read, not a forecast. 429 with Retry-After is the answer an
-    # integration can act on — a bare 429 makes it guess, and a guessing client
-    # retries in a tighter loop than the one being limited.
-    if not settings.testing_mode and not api_key_auth.check_rate(key["id"], rate_limit):
+    # Before any work: a key over its window costs one counter read, not a
+    # forecast. 429 with Retry-After is the answer an integration can act on —
+    # a bare 429 makes it guess, and a guessing client retries in a tighter
+    # loop than the one being limited.
+    if not settings.testing_mode and not api_key_auth.check_rate(
+        key["id"], key["tenant_id"]
+    ):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            # The ceiling that ACTUALLY applied, not the module default: on a
-            # plan with a different allowance the constant would have told the
-            # integrator a number they never hit.
             detail=(
-                f"Rate limit exceeded: {rate_limit} requests per minute per API "
-                f"key on this plan."
+                f"Rate limit exceeded: {api_key_auth.RATE_MAX_PER_MINUTE} "
+                f"requests per minute per API key, and the daily ceiling of "
+                f"this tenant's plan."
             ),
             headers={"Retry-After": str(api_key_auth.RATE_WINDOW_SECONDS)},
         )

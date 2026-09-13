@@ -34,7 +34,7 @@ class TestExplodeRequirementsEstimatedCost:
 
         monkeypatch.setattr(
             service, "get_inventory_status",
-            lambda t, s: [
+            lambda t, s, **_kw: [
                 {"sku": parent, "product_type": "finished_good",
                  "daily_demand": 10.0, "current_stock": 0,
                  "display_name": "Widget", "signal": "PEDIR_YA"},
@@ -66,7 +66,7 @@ class TestExplodeRequirementsEstimatedCost:
 
         monkeypatch.setattr(
             service, "get_inventory_status",
-            lambda t, s: [
+            lambda t, s, **_kw: [
                 {"sku": parent, "product_type": "finished_good",
                  "daily_demand": 10.0, "current_stock": 0,
                  "display_name": "Widget", "signal": "PEDIR_YA"},
@@ -94,7 +94,7 @@ class TestExplodeRequirementsEstimatedCost:
 
         monkeypatch.setattr(
             service, "get_inventory_status",
-            lambda t, s: [
+            lambda t, s, **_kw: [
                 {"sku": parent, "product_type": "finished_good",
                  "daily_demand": 1.0, "current_stock": 1000,
                  "display_name": "Widget", "signal": "OK"},

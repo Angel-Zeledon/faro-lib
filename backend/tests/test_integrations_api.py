@@ -1,5 +1,5 @@
 """Tests for the accounting-integrations API: connect/list/sync/delete
-(backend/api/v1/integrations.py). Gated to Enterprise (Feature.INTEGRATIONS).
+(backend/api/v1/integrations.py).
 
 registry.get_provider is monkeypatched to a FAKE provider throughout so no
 real network call is ever made; only the HTTP layer (routing, guards,
@@ -83,23 +83,22 @@ def _connection_count(tid):
     )["c"]
 
 
-# ── Gating: non-Enterprise plan ─────────────────────────────────────────────
+# ── No plan wall ────────────────────────────────────────────────────────────
 
-def test_connect_rejected_for_non_enterprise_plan(
+def test_connect_is_not_walled_by_a_plan(
     client, make_tenant_user_headers, monkeypatch, fernet_key, fake_provider,
 ):
+    """Integrations were Enterprise-only and answered 403 PLAN_UPGRADE_REQUIRED.
+    One plan, no wall: with testing_mode OFF — the switch that used to turn the
+    gate on — an ordinary tenant connects."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
-    # role="admin" so the only thing that can block this request is the
-    # plan-entitlement gate — isolates the PLAN_UPGRADE_REQUIRED assertion
-    # from role-permission behavior (covered separately below).
-    headers, tid = make_tenant_user_headers(plan="starter", role="admin", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
 
     resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=headers,
     )
-    assert resp.status_code == 403
-    assert resp.json()["detail"]["code"] == "PLAN_UPGRADE_REQUIRED"
-    assert _connection_count(tid) == 0
+    assert resp.status_code == 200, resp.text
+    assert _connection_count(tid) == 1
 
 
 # ── Permission pair: viewer denied, admin succeeds ──────────────────────────
@@ -107,7 +106,7 @@ def test_connect_rejected_for_non_enterprise_plan(
 def test_viewer_denied_connect_and_delete_no_state_change(
     client, make_tenant_user_headers, fernet_key, fake_provider,
 ):
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="viewer", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="viewer", return_tenant_id=True)
 
     resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=headers,
@@ -123,7 +122,7 @@ def test_viewer_denied_connect_and_delete_no_state_change(
 def test_admin_connect_succeeds_and_response_has_no_credentials(
     client, make_tenant_user_headers, fernet_key, fake_provider,
 ):
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
 
     resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=headers,
@@ -146,7 +145,7 @@ def test_admin_connect_succeeds_and_response_has_no_credentials(
 
 def test_analyst_denied_connect(client, make_tenant_user_headers, fernet_key, fake_provider):
     # connect is admin-only; analyst is not "admin or above" for this route
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="analyst", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="analyst", return_tenant_id=True)
     resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=headers,
     )
@@ -159,7 +158,7 @@ def test_analyst_denied_connect(client, make_tenant_user_headers, fernet_key, fa
 def test_connect_bad_credentials_returns_400_no_row(
     client, make_tenant_user_headers, fernet_key, fake_provider_bad_creds,
 ):
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
 
     resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=headers,
@@ -171,7 +170,7 @@ def test_connect_bad_credentials_returns_400_no_row(
 def test_connect_unknown_provider_returns_404(
     client, make_tenant_user_headers, fernet_key, fake_provider,
 ):
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
 
     resp = client.post(
         "/api/v1/integrations/not-a-real-provider/connect", json=CREDS, headers=headers,
@@ -185,7 +184,7 @@ def test_connect_unknown_provider_returns_404(
 def test_list_includes_providers_and_never_credentials(
     client, make_tenant_user_headers, fernet_key, fake_provider,
 ):
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
     client.post("/api/v1/integrations/alegra/connect", json=CREDS, headers=headers)
 
     resp = client.get("/api/v1/integrations", headers=headers)
@@ -202,7 +201,7 @@ def test_list_includes_providers_and_never_credentials(
 def test_sync_triggers_job_and_cross_tenant_is_404(
     client, make_tenant_user_headers, fernet_key, fake_provider,
 ):
-    admin_headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    admin_headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
     connect_resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=admin_headers,
     )
@@ -212,7 +211,7 @@ def test_sync_triggers_job_and_cross_tenant_is_404(
     jobs_before = query_one("SELECT COUNT(*) c FROM jobs WHERE tenant_id=%s", (tid,))["c"]
 
     analyst_headers, _ = make_tenant_user_headers(
-        plan="enterprise", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     # Analyst belongs to a DIFFERENT tenant than the connection here — reuse
     # the admin's own tenant instead by creating an analyst in the same tenant.
@@ -243,7 +242,7 @@ def test_sync_triggers_job_and_cross_tenant_is_404(
     # Cross-tenant: analyst from a totally different (enterprise) tenant
     # cannot sync this connection.
     other_analyst_headers, _ = make_tenant_user_headers(
-        plan="enterprise", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     resp = client.post(
         f"/api/v1/integrations/{connection_id}/sync", headers=other_analyst_headers,
@@ -252,7 +251,7 @@ def test_sync_triggers_job_and_cross_tenant_is_404(
 
 
 def test_viewer_denied_sync(client, make_tenant_user_headers, fernet_key, fake_provider):
-    admin_headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    admin_headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
     connect_resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=admin_headers,
     )
@@ -277,7 +276,7 @@ def test_viewer_denied_sync(client, make_tenant_user_headers, fernet_key, fake_p
 # ── Delete ───────────────────────────────────────────────────────────────────
 
 def test_admin_delete_removes_row(client, make_tenant_user_headers, fernet_key, fake_provider):
-    headers, tid = make_tenant_user_headers(plan="enterprise", role="admin", return_tenant_id=True)
+    headers, tid = make_tenant_user_headers(role="admin", return_tenant_id=True)
     connect_resp = client.post(
         "/api/v1/integrations/alegra/connect", json=CREDS, headers=headers,
     )

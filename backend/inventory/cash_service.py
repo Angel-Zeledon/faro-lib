@@ -31,12 +31,26 @@ log = logging.getLogger(__name__)
 MAX_CREDIT_DAYS = 365
 
 # Terms meaning "pay on the spot" — zero credit days, not unknown.
+#
+# `anticip` rather than `anticipad`: the stem covers "anticipado" AND the far
+# more common noun form "anticipo". Without it "50% anticipo" fell through to
+# the number extractor and was reported as 50 DAYS of credit — an invoice dated
+# seven weeks after money that is actually due on the spot, and reported with
+# `terms_known: True` on top.
 _IMMEDIATE_RE = re.compile(
-    r"contado|cash|anticipad|prepag|inmediat|contra\s?entrega|\bcod\b",
+    r"contado|cash|anticip|adelant|prepag|inmediat|contra\s?entrega|\bcod\b",
     re.IGNORECASE,
 )
 _MONTHS_RE = re.compile(r"(\d+)\s*mes", re.IGNORECASE)
 _FORTNIGHT_RE = re.compile(r"quincen", re.IGNORECASE)
+# Two numbers joined by x, / or -: "2x30" (two instalments of 30 days),
+# "30/60/90" (three dated instalments), "30-45 días" (a range). A schedule has
+# no single credit-day answer, and the first number in it is never that answer:
+# the old parser read "2x30" as 2 days and "30/60/90" as 30. These are exactly
+# the strings the module docstring promises to leave as None.
+_INSTALMENTS_RE = re.compile(r"\d+\s*[x/×-]\s*\d+", re.IGNORECASE)
+# A number carrying a % sign is a share of the invoice, not a day count.
+_PERCENT_RE = re.compile(r"\d+\s*%")
 _NUMBER_RE = re.compile(r"\d+")
 
 
@@ -47,14 +61,19 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     Rule order matters and mirrors the SQL backfill in db/migrations.py
     ('backfill_suppliers_payment_terms_days'):
 
-      1. "contado" / "contra entrega" / "prepago" / "COD"  -> 0
+      1. "contado" / "contra entrega" / "anticipo" / "prepago" / "COD"  -> 0
          Checked first because "pago de contado a 8 dias" must not be read as
-         8 days of credit.
-      2. "N mes(es)"                                       -> N * 30
+         8 days of credit, and "50% anticipo" must not be read as 50.
+      2. an instalment schedule ("2x30", "30/60/90", "30-45")           -> None
+         Before every number rule: the first number in a schedule is not the
+         credit period, so answering with it is worse than admitting the gap.
+      3. "N mes(es)"                                       -> N * 30
          Before the generic number rule, otherwise "2 meses" reads as 2 days.
-      3. "quincenal"                                       -> 15
-      4. first number found ("30 días", "net 30", "30d")   -> N
-      5. anything else ("a convenir")                      -> None
+      4. "quincenal"                                       -> 15
+      5. first number found ("30 días", "net 30", "30d")   -> N
+         Percentages are stripped before this rule runs: in "50% a 30 dias" the
+         day count is 30, and in a bare "50%" there is no day count at all.
+      6. anything else ("a convenir")                      -> None
 
     Results are clamped to 0..365: a typo of "3000 días" must not push an
     invoice a decade into the future.
@@ -68,6 +87,9 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     if _IMMEDIATE_RE.search(raw):
         return 0
 
+    if _INSTALMENTS_RE.search(raw):
+        return None
+
     months = _MONTHS_RE.search(raw)
     if months:
         return min(int(months.group(1)) * 30, MAX_CREDIT_DAYS)
@@ -75,7 +97,7 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     if _FORTNIGHT_RE.search(raw):
         return 15
 
-    number = _NUMBER_RE.search(raw)
+    number = _NUMBER_RE.search(_PERCENT_RE.sub(" ", raw))
     if number:
         return min(int(number.group(0)), MAX_CREDIT_DAYS)
 
@@ -99,6 +121,35 @@ def resolve_credit_days(supplier: Optional[dict]) -> Optional[int]:
 
 def _today() -> date:
     return datetime.now(timezone.utc).date()
+
+
+def _suppliers_by_name(tenant_id: str) -> dict[str, dict]:
+    """
+    Every supplier of the tenant keyed by lower-cased name — INCLUDING the
+    deactivated ones.
+
+    Deactivating a supplier is a statement about future purchases ("stop
+    ordering from them"); it says nothing about the invoices they already
+    issued. Filtering them out here moved a sent-and-unpaid PO into
+    `unknown_terms` and out of `committed_total`, so archiving a supplier card
+    silently shrank the money the buyer still owes — the one number this module
+    exists to keep honest. `supplier_service` filters on `active` on purpose
+    (a PO must not auto-send to a supplier the business dropped); accounts
+    payable is the opposite case and must not inherit that filter.
+
+    `COALESCE(active, TRUE) DESC` decides a key collision only case can produce
+    ("Andina" and "andina" are two rows under UNIQUE (tenant_id, name)): the
+    active card is the one still being maintained. The column is nullable, and
+    a NULL there has always meant active.
+    """
+    by_name: dict[str, dict] = {}
+    for supplier in query(
+        "SELECT * FROM suppliers WHERE tenant_id = %s "
+        "ORDER BY COALESCE(active, TRUE) DESC, name",
+        (tenant_id,),
+    ):
+        by_name.setdefault((supplier["name"] or "").strip().lower(), supplier)
+    return by_name
 
 
 def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
@@ -129,13 +180,7 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
         (tenant_id,),
     )
 
-    suppliers_by_name = {
-        (s["name"] or "").strip().lower(): s
-        for s in query(
-            "SELECT * FROM suppliers WHERE tenant_id = %s AND active = TRUE",
-            (tenant_id,),
-        )
-    }
+    suppliers_by_name = _suppliers_by_name(tenant_id)
 
     today = _today()
     horizon_end = today + timedelta(days=horizon_days)
@@ -249,13 +294,7 @@ def evaluate_purchase_fit(
     """
     payables = get_payables(tenant_id, horizon_days)
 
-    suppliers_by_name = {
-        (s["name"] or "").strip().lower(): s
-        for s in query(
-            "SELECT * FROM suppliers WHERE tenant_id = %s AND active = TRUE",
-            (tenant_id,),
-        )
-    }
+    suppliers_by_name = _suppliers_by_name(tenant_id)
 
     today = _today()
     horizon_end = today + timedelta(days=horizon_days)

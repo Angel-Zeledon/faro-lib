@@ -10,6 +10,7 @@ import Table, { Th, Td } from '@/components/ui/Table'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
+import { localeFor } from '@/lib/numberLocale'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -45,7 +46,7 @@ const iconBtnStyle: React.CSSProperties = {
 }
 
 export default function SessionsHistoryPage() {
-  const { t }    = useLanguage()
+  const { t, lang } = useLanguage()
   const router   = useRouter()
   const confirm  = useConfirm()
   const user     = getUser()
@@ -118,7 +119,7 @@ export default function SessionsHistoryPage() {
 
   const fmtDate = (iso: string) => {
     const d = new Date(iso)
-    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, {
+    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(localeFor(lang), {
       year: 'numeric', month: 'short', day: 'numeric',
     })
   }

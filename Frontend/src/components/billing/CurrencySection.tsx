@@ -3,7 +3,7 @@
  * Which currency the company's own figures are shown in.
  *
  * Not the same thing as what Faro costs: the plans are priced in USD for
- * everyone, and the billing panel above says so. This is for inventory value,
+ * everyone, and is agreed with us rather than shown here. This is for inventory value,
  * unit costs and purchase-order totals — the customer's money.
  *
  * It relabels, it does not convert. Faro stores the numbers it was given and

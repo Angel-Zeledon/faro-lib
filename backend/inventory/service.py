@@ -73,6 +73,16 @@ def upsert_stock(
     reports 'user' and the second 'default', and the explanation stops claiming
     a lead time was configured when it was assumed.
     """
+    # A SKU of nothing but spaces is not a SKU. `PUT /inventory/stock/%20%20%20`
+    # answered 200 and left a row whose code renders as nothing at all: it
+    # cannot be found in the list, cannot be searched for, and cannot be deleted
+    # from the UI. Refused at the chokepoint every write path funnels through,
+    # so the bulk import and the transfer path get the same answer as the
+    # screen. Non-blank SKUs are NOT trimmed — that would silently merge
+    # " SKU-1 " into an existing "SKU-1" and take its stock with it.
+    if not str(sku or "").strip():
+        raise AppError("sku_blank", "SKU cannot be blank", status_code=422)
+
     allowed = {
         "display_name", "current_stock", "min_stock",
         "lead_time_days", "unit_cost", "moq", "supplier", "notes",
@@ -144,9 +154,15 @@ def upsert_stock(
     # not a bypass.
     is_new_row = not get_stock(tenant_id, sku, warehouse=safe["warehouse"], conn=conn)
     if is_new_row:
-        enforce_limit(tenant_id, "max_skus", count_stock(tenant_id))
+        # On `conn` when there is one: under a limit_guard, the count, the check
+        # and the INSERT below are one transaction holding one lock, which is
+        # the only arrangement in which this ceiling actually holds. Without a
+        # conn it degrades to the old read-then-write, which is correct for one
+        # caller at a time and beatable by two.
+        enforce_limit(tenant_id, "max_skus", count_stock(tenant_id, conn=conn), conn=conn)
     if not wh_svc.get_warehouse_by_name(tenant_id, safe["warehouse"]):
-        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id))
+        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id),
+                      conn=conn)
 
     # Stamp provenance for exactly the tracked fields this call actually writes.
     # Added to `safe` (not written separately) so the value and its provenance
@@ -222,18 +238,29 @@ def _ensure_warehouse(tenant_id: str, name: str, conn: Optional[Any] = None) -> 
         log.warning("_ensure_warehouse: failed to upsert warehouse=%s tenant=%s err=%s", name, tenant_id, e)
 
 
-def count_stock(tenant_id: str) -> int:
-    row = query_one("SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id = %s", (tenant_id,))
+def count_stock(tenant_id: str, conn: Optional[Any] = None) -> int:
+    """`conn` matters when this count is about to be enforced as a ceiling: it
+    has to be read on the same connection that holds the tenant's limit_guard
+    lock and will perform the write, or the count and the write are two
+    different moments again."""
+    row = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id = %s",
+        (tenant_id,), conn=conn,
+    )
     return row["c"] if row else 0
 
 
-def list_stock_keys(tenant_id: str) -> set:
+def list_stock_keys(tenant_id: str, conn: Optional[Any] = None) -> set:
     """(sku, warehouse) pairs already present for this tenant — the same
     conflict target `upsert_stock` writes to, used to tell how many rows a
-    bulk import would actually ADD (vs. update in place)."""
+    bulk import would actually ADD (vs. update in place).
+
+    `conn` when the answer is about to be enforced as a ceiling: read outside
+    the lock, "how many of these are new" is already stale by the time it is
+    checked."""
     rows = query(
         "SELECT sku, warehouse FROM inventory_stock WHERE tenant_id = %s",
-        (tenant_id,),
+        (tenant_id,), conn=conn,
     )
     return {(r["sku"], r["warehouse"]) for r in rows}
 
@@ -949,8 +976,27 @@ def _calc_recommended(
     lead_time_demand = avg_daily * lead_time
     safety_stock = _safety_stock(avg_std, lead_time, service_level, risk, risk_scale)
     raw = max(0.0, lead_time_demand + safety_stock - current_stock - max(0.0, incoming))
-    if moq and moq > 0:
-        raw = math.ceil(raw / moq) * moq
+    if moq and moq > 0 and raw > 0:
+        # MOQ is a MINIMUM ORDER QUANTITY — a floor under the order — not a pack
+        # multiple. It used to be applied as `ceil(raw/moq) * moq`, which is the
+        # arithmetic for "the supplier only ships in boxes of this size", a
+        # concept this product does not have a field for and never asked the
+        # user about.
+        #
+        # The gap between the two is not cosmetic. Needing 520 with a MOQ of 500
+        # asked for 1000 — a 92% overshoot, with a button to turn it into a
+        # purchase order. Every SKU whose need lands just past a multiple was
+        # over-ordered by up to a full MOQ, on money the buyer does not get back
+        # until the units sell.
+        #
+        # `raw > 0` keeps "nothing to order" meaning nothing: the old ceil
+        # returned 0 for a raw of 0 and this must too, or a well-stocked SKU
+        # would be handed a full minimum order out of nowhere.
+        #
+        # The ceil to whole units is kept — you cannot buy 96.15 units, and the
+        # old expression rounded there as a side effect of the MOQ arithmetic.
+        # Dropping it here would have started emitting fractional order lines.
+        raw = max(float(math.ceil(raw)), float(moq))
     return float(round(raw, 2))
 
 
@@ -1200,7 +1246,9 @@ def build_explanation(
     return {"code": "inventory_explain_reorder", "params": params, "text": text}
 
 
-def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
+def _aggregate_stock_rows_by_sku(
+    stock_rows: list[dict], default_warehouse: str | None = None,
+) -> dict[str, dict]:
     """
     Collapse per-warehouse inventory_stock rows into one summary row per SKU:
     current_stock is SUMMED across warehouses (true total stock the tenant
@@ -1211,11 +1259,31 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
     catalog attributes, not per-warehouse quantities, so picking one is
     correct as long as it's deterministic.
 
-    This is a hot path fed ONLY stock rows: precedence is decided by NAME
-    (shared name_precedence_key), deliberately without a DB query for
-    warehouses.is_default — see the key's docstring.
+    `default_warehouse` is the tenant's ANCHORED default — `warehouses.is_default`
+    — and when given it wins over the name ordering. It has to, because
+    `warehouse_service.get_demand_shares` already resolves the default that way,
+    and the two answers were not the same one.
+
+    Concretely: a tenant whose first warehouse was "Bodega Sur" carries
+    is_default there, while the name key puts DEFAULT_WAREHOUSE ("principal")
+    first. So 100% of a SKU's demand was attributed to Bodega Sur while the
+    aggregated row took that SKU's cost, lead time, MOQ and supplier — and with
+    them the headline "valor en bodega" — from principal. Two warehouses, one
+    row, and no way to tell from the screen which one it was describing.
+    `get_demand_shares`' own comment claimed the question was "answered
+    identically everywhere"; this parameter is what makes that true.
+
+    Omitting it falls back to the name key alone, which is what callers holding
+    nothing but stock rows can do — that is why it is optional rather than
+    required, and why the aggregation itself still issues no query.
     """
     from backend.inventory.warehouse_service import name_precedence_key
+
+    def _key(row: dict) -> tuple:
+        wh = row.get("warehouse")
+        # The anchored default sorts ahead of everything; the rest keep the
+        # shared name ordering so ties stay deterministic.
+        return (wh != default_warehouse,) + name_precedence_key(wh)
 
     by_sku: dict[str, list[dict]] = {}
     for r in stock_rows:
@@ -1223,7 +1291,7 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
 
     result: dict[str, dict] = {}
     for sku, rows in by_sku.items():
-        rows_sorted = sorted(rows, key=lambda r: name_precedence_key(r.get("warehouse")))
+        rows_sorted = sorted(rows, key=_key)
         representative = dict(rows_sorted[0])
         representative["current_stock"] = sum(float(r["current_stock"] or 0) for r in rows)
         result[sku] = representative
@@ -1303,7 +1371,13 @@ def _compute_inventory_status(
 
     if stock_rows is None:
         stock_rows = list_stock(tenant_id)
-    stock_map = _aggregate_stock_rows_by_sku(stock_rows)
+    # One query for the whole request, not one per row: which warehouse
+    # represents a SKU must be the same warehouse that owns its demand (see
+    # _aggregate_stock_rows_by_sku).
+    from backend.inventory import warehouse_service as _wh
+    stock_map = _aggregate_stock_rows_by_sku(
+        stock_rows, _wh.get_default_warehouse_name(tenant_id),
+    )
 
     # What is already on its way: sent purchase orders and transfers in transit.
     # One query pair for the whole tenant, never inside the SKU loop.
@@ -1849,6 +1923,13 @@ def _evaluate_transfer_lane(
         "qty": round(qty, 2),
         "lane_days": lane_days,
         "purchase_days": purchase_days,
+        # Whether `lane_days` and the costs below were CONFIGURED or are the
+        # documented fallback for an unconfigured pair — transfer_lane_service
+        # resolves those to 1 day and zero cost and calls that "deliberately
+        # optimistic". The flag rode on the resolved lane and never reached the
+        # UI, so a measured lane and an invented one rendered identically, and
+        # the optimistic default is precisely the one that wins comparisons.
+        "lane_is_default": bool(lane.get("is_default")),
     }
     if lane_days >= purchase_days:
         return False, "transfer_too_slow", params
@@ -1857,16 +1938,23 @@ def _evaluate_transfer_lane(
     unit_cost = needy.get("unit_cost")
     if unit_cost is None:
         unit_cost = donor.get("unit_cost")
-    saving = None
-    if unit_cost is not None and float(unit_cost) > 0:
-        purchase_cost = qty * float(unit_cost)
-        if transfer_cost >= purchase_cost:
-            return False, "transfer_more_expensive", {
-                **params,
-                "transfer_cost": round(transfer_cost, 2),
-                "purchase_cost": round(purchase_cost, 2),
-            }
-        saving = round(purchase_cost - transfer_cost, 2)
+    if unit_cost is None or float(unit_cost) <= 0:
+        # No unit cost anywhere, so the money test never ran. The transfer is
+        # still accepted — arriving sooner is a real argument on its own — but
+        # under its OWN code, because the caller used to return
+        # "transfer_faster_and_cheaper" here and the UI duly told the buyer the
+        # move "costs less than buying". It compared nothing. `saving` stays
+        # None, which the copy for this code must not print.
+        return True, "transfer_faster_price_unknown", {**params, "saving": None}
+
+    purchase_cost = qty * float(unit_cost)
+    if transfer_cost >= purchase_cost:
+        return False, "transfer_more_expensive", {
+            **params,
+            "transfer_cost": round(transfer_cost, 2),
+            "purchase_cost": round(purchase_cost, 2),
+        }
+    saving = round(purchase_cost - transfer_cost, 2)
     return True, "transfer_faster_and_cheaper", {**params, "saving": saving}
 
 
@@ -2201,6 +2289,7 @@ def simulate_event_impact(
     multiplier: float,
     event_name: Optional[str] = None,
     event_id: Optional[str] = None,
+    period: str = "daily",
 ) -> dict:
     """
     Project what a demand event (promo, season) does to each SKU:
@@ -2261,7 +2350,10 @@ def simulate_event_impact(
     override_rows = get_event_multipliers(tenant_id, event_id) if event_id else []
     idx = _index_overrides(override_rows)
 
-    items = get_inventory_status(tenant_id, session_id)
+    # Read at the tenant's own grain, like every screen. Without it a weekly
+    # tenant's per-week demand was multiplied by the event's CALENDAR days, so
+    # the simulated extra units were off by the ratio between the two.
+    items = get_inventory_status(tenant_id, session_id, period=period)
     rows: list[dict] = []
 
     for it in items:
@@ -2546,10 +2638,17 @@ def set_catalog_group_active(tenant_id: str, catalog_prefix: str, active: bool) 
 
 # ── PDF report ────────────────────────────────────────────────────────────────
 
-def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float = 0.95) -> bytes:
+def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float = 0.95,
+                           period: str = "daily") -> bytes:
     """
     Generates a one-page executive summary PDF in Spanish.
     Returns raw bytes ready for StreamingResponse.
+
+    `period` had no parameter at all, so this document was always computed as
+    daily. It is the artifact the buyer forwards to other people — the one copy
+    of these numbers that leaves the app — and for a weekly or monthly tenant it
+    disagreed with every screen it was printed from. Default "daily" keeps every
+    existing caller byte-identical; the endpoint resolves the real one.
     """
     from io import BytesIO
     from datetime import date
@@ -2562,7 +2661,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
 
-    items = get_inventory_status(tenant_id, session_id, service_level)
+    items = get_inventory_status(tenant_id, session_id, service_level, period)
 
     # Resolved once for the whole document (one DB read), then handed to every
     # amount it renders — the report is read by whoever the buyer forwards it to,
@@ -2802,6 +2901,7 @@ def get_demand_spikes(
     uplift_threshold: float = 0.25,
     items: Optional[list[dict]] = None,
     forecasts: Optional[dict] = None,
+    period: str = "daily",
 ) -> list[dict]:
     """
     Proactive demand alerts — the value Excel can't give.
@@ -2819,7 +2919,11 @@ def get_demand_spikes(
     from datetime import date as _date
 
     if items is None:
-        items = get_inventory_status(tenant_id, session_id, service_level)
+        # Only reached by a caller that did not already have the status in hand.
+        # The briefing (the one real caller) passes `items`, computed at the
+        # tenant's grain — this path exists so a direct call cannot silently
+        # compute a different one.
+        items = get_inventory_status(tenant_id, session_id, service_level, period)
     if forecasts is None:
         from backend.db import session_store
         forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
@@ -3220,7 +3324,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     try:
         demand_spikes = get_demand_spikes(
             tenant_id, session_id, service_level,
-            items=items, forecasts=briefing_forecasts,
+            items=items, forecasts=briefing_forecasts, period=period,
         )
     except Exception as e:
         log.warning("get_demand_spikes failed for session=%s: %s", session_id, e)
@@ -3493,6 +3597,12 @@ def run_daily_inventory_alerts() -> None:
                     warning_items=warning,
                     inventory_url=inventory_url,
                     period=period,      # so coverage reads "4 semanas", not "4 días"
+                    # This message carries the TENANT's identity to the tenant's
+                    # own buyer, so it leaves through the tenant's transport when
+                    # it configured one. Without this argument the override is
+                    # stored, shown as in effect, and never used — which is the
+                    # failure this whole layer exists to prevent.
+                    tenant_id=tid,
                 )
                 if not delivered:
                     log.warning("alert email not delivered to=%s", r["email"])
@@ -3503,44 +3613,35 @@ def run_daily_inventory_alerts() -> None:
                         "recipient": r["email"],
                         "critical": len(critical),
                         "warning": len(warning),
-                        **({} if delivered else {"reason": email_mod.failure_reason()}),
+                        **({} if delivered else {"reason": email_mod.failure_reason(tid)}),
                     },
                 )
 
             # WhatsApp channel — highest open-rate in LatAm; opt-in per user
             # via users.whatsapp_number. No-op when Twilio isn't configured.
-            # Also gated by plan: WHATSAPP_ALERTS is a Professional+ feature.
-            # `tenant` here only carries tenant_id/tenant_name/last_session_at
-            # (from get_tenants_with_active_sessions), not plan/trial_ends_at,
-            # so the full tenant row must be fetched to check entitlement.
-            from backend.entitlements.service import has_feature
-            from backend.entitlements.plans import Feature
-            from backend.tenants.service import get_tenant
-            full_tenant = get_tenant(tid) or {}
-            if has_feature(full_tenant, Feature.WHATSAPP_ALERTS):
-                from backend.notifications import whatsapp as wa_mod
-                from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
-                text = build_inventory_alert_text(
-                    critical, warning, inventory_url,
-                    transfer_count=transfer_count,
+            from backend.notifications import whatsapp as wa_mod
+            from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+            text = build_inventory_alert_text(
+                critical, warning, inventory_url,
+                transfer_count=transfer_count,
+            )
+            for r in recipients:
+                number = (r.get("whatsapp_number") or "").strip()
+                if not number:
+                    continue
+                delivered = send_whatsapp(number, text, tenant_id=tid)
+                if not delivered:
+                    log.warning("alert whatsapp not delivered to=%s", number)
+                record_notification_delivery(
+                    tid, r["id"], "inventory_alert_whatsapp", delivered,
+                    context={
+                        "channel": "whatsapp",
+                        "recipient": number,
+                        "critical": len(critical),
+                        "warning": len(warning),
+                        **({} if delivered else {"reason": wa_mod.failure_reason()}),
+                    },
                 )
-                for r in recipients:
-                    number = (r.get("whatsapp_number") or "").strip()
-                    if not number:
-                        continue
-                    delivered = send_whatsapp(number, text)
-                    if not delivered:
-                        log.warning("alert whatsapp not delivered to=%s", number)
-                    record_notification_delivery(
-                        tid, r["id"], "inventory_alert_whatsapp", delivered,
-                        context={
-                            "channel": "whatsapp",
-                            "recipient": number,
-                            "critical": len(critical),
-                            "warning": len(warning),
-                            **({} if delivered else {"reason": wa_mod.failure_reason()}),
-                        },
-                    )
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)

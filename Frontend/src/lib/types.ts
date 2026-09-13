@@ -925,12 +925,24 @@ export interface Warehouse {
  * The backend NEVER ships a rendered sentence — the UI renders the Spanish
  * from `transfers.reason_<reason_code>` with these params. */
 export interface TransferReason {
-  reason_code: 'transfer_faster_and_cheaper' | 'transfer_too_slow' | 'transfer_more_expensive'
+  reason_code:
+    | 'transfer_faster_and_cheaper'
+    /** Accepted on the time argument alone — no unit cost on file, so the money
+     *  comparison never ran. This used to be reported as
+     *  `transfer_faster_and_cheaper`, which told the buyer the move "costs less
+     *  than buying" about a comparison that never happened. */
+    | 'transfer_faster_price_unknown'
+    | 'transfer_too_slow'
+    | 'transfer_more_expensive'
   params: {
     from_warehouse: string
     qty: number
     lane_days: number
     purchase_days: number
+    /** True when this pair has no configured lane, so `lane_days` and the costs
+     *  are transfer_lane_service's optimistic fallback rather than a
+     *  measurement. */
+    lane_is_default?: boolean
     /** Money saved vs buying; null when no unit cost is on file. */
     saving?: number | null
     transfer_cost?: number
@@ -1257,6 +1269,12 @@ export interface InventoryROISummary {
   pos_last_month:            number
 }
 
+/** Why `capital_freed` is what it is. A single null used to mean both "we never
+ *  took one of the two measurements" and "we took both and overstock GREW", and
+ *  the UI printed the first sentence for both cases — so the column could only
+ *  ever report good news. */
+export type CapitalFreedStatus = 'measured' | 'not_measured' | 'grew'
+
 export interface ROIMonthlyRow {
   month:             string          // 'YYYY-MM'
   pos_count:         number
@@ -1264,6 +1282,7 @@ export interface ROIMonthlyRow {
   total_value:       number
   adoption_rate:     number | null
   capital_freed:     number | null
+  capital_freed_status: CapitalFreedStatus
 }
 
 // Monthly recap (feature 3.2). A null metric means "could not be derived from
@@ -1277,7 +1296,11 @@ export interface ROIMonthReport {
   adoption_rate:           number | null
   stockout_risks_handled:  number | null
   managed_purchase_value:  number | null
+  /** false when only SOME ordered lines carried a unit cost, so the value above
+   *  is a floor rather than the month's total. */
+  managed_purchase_value_complete: boolean
   capital_freed:           number | null
+  capital_freed_status:    CapitalFreedStatus
 }
 
 export interface POLogEntry {
@@ -1437,7 +1460,13 @@ export interface SupplierScorecardRow {
   deviation_days:      number | null
   on_time_rate:         number | null
   fill_rate:            number | null
-  purchased_value:       number
+  /** null when no ordered line of this supplier carries a unit cost — the same
+   *  rule /impacto applies to managed_purchase_value. A confident 0 would read
+   *  as "you bought nothing from them", which is a different statement. */
+  purchased_value:       number | null
+  /** false when only SOME ordered lines carried a cost, so the figure above is
+   *  a floor rather than the total. */
+  purchased_value_complete: boolean
   last_reception:     string | null
   /** Enough receptions, none of them saying anything: every delivery landed the
    *  same day it was ordered, so the observed average is 0. Same rule as
@@ -1740,22 +1769,6 @@ export interface SkuIntelligenceData {
   } | null
 }
 
-// ── Billing ───────────────────────────────────────────────────────────────────
-export interface SubscriptionState {
-  plan: string | null
-  /** Stripe's own vocabulary, stored verbatim: trialing | active | past_due |
-   *  canceled | unpaid. Null when the tenant has never subscribed. */
-  subscription_status: string | null
-  has_billing_account: boolean
-  trial_ends_at: string | null
-  /** False on a deployment with no STRIPE_SECRET_KEY: show nothing rather than
-   *  a buy button that cannot work. */
-  billing_enabled: boolean
-  /** What this deployment can actually sell, plan -> interval -> price id. A
-   *  plan absent here has no configured price, so it is not offered. */
-  purchasable: Record<string, Record<string, string>>
-}
-
 // ── Series decomposition ──────────────────────────────────────────────────────
 /** One bucket of the STL split. The four values are aligned by construction on
  *  the backend — `observed === trend + seasonal + residual` for every row — so
@@ -1850,6 +1863,10 @@ export interface DeadStockResponse {
   total_holding_cost_monthly:   number
   sku_count:                    number
   min_days_static:              number
+  /** Annual holding rate this response was priced with, as a fraction
+   *  (0.20 = 20%). The footer names it: it used to say a hardcoded 25%
+   *  while /compras costed the same stock at the tenant's rate. */
+  holding_cost_pct:             number
 }
 
 // Multi-period planning (Phase B): the tenant's active view granularity.

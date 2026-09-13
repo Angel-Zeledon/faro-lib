@@ -17,16 +17,26 @@ from uuid import uuid4
 
 import pytest
 
+from backend.config import settings as config_settings
 from backend.db.connection import query, query_one
 
 
 def _no_transport(monkeypatch):
-    """Strip every credential and restore the real dispatch path."""
+    """Strip every credential and restore the real dispatch path.
+
+    Patched on `backend.config.settings` rather than on the email module: since
+    2026-09-13 the transport reads its credentials through
+    `service_config.resolver.effective()`, which resolves a stored override
+    first and falls back to this singleton. Patching the singleton is therefore
+    still the way to say "this deployment has no transport", and it is now the
+    only way that reaches every consumer.
+    """
+    from backend.config import settings
     from backend.notifications import email as email_mod
 
-    monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-    monkeypatch.setattr(email_mod.settings, "smtp_user", "")
-    monkeypatch.setattr(email_mod.settings, "smtp_pass", "")
+    monkeypatch.setattr(settings, "resend_api_key", "")
+    monkeypatch.setattr(settings, "smtp_user", "")
+    monkeypatch.setattr(settings, "smtp_pass", "")
     monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
 
@@ -78,9 +88,9 @@ class TestUnconfiguredTransportIsNotASend:
         """The fix must not turn every send into a failure."""
         from backend.notifications import email as email_mod
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "user@example.com")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "app-password")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "user@example.com")
+        monkeypatch.setattr(config_settings, "smtp_pass", "app-password")
         monkeypatch.setattr(email_mod, "_send_smtp", lambda *a, **kw: None)
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
@@ -93,7 +103,7 @@ class TestUnconfiguredTransportIsNotASend:
         _no_transport(monkeypatch)
         assert email_mod.failure_reason() == "not_configured"
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "re_live_key")
+        monkeypatch.setattr(config_settings, "resend_api_key", "re_live_key")
         assert email_mod.failure_reason() == "transport_error"
 
 
@@ -158,9 +168,9 @@ class TestAdminInviteDoesNotClaimAnUnsentInvite:
     ):
         from backend.notifications import email as email_mod
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "user@example.com")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "app-password")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "user@example.com")
+        monkeypatch.setattr(config_settings, "smtp_pass", "app-password")
         monkeypatch.setattr(email_mod, "_send_smtp", lambda *a, **kw: None)
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
@@ -236,7 +246,7 @@ class TestDigestCountsAreNotTruncated:
         captured = {}
         monkeypatch.setattr(
             email_mod, "_send",
-            lambda to, subject, html, attachment=None: captured.update(
+            lambda to, subject, html, attachment=None, **_kw: captured.update(
                 subject=subject, html=html),
         )
 
@@ -258,7 +268,7 @@ class TestDigestCountsAreNotTruncated:
         captured = {}
         monkeypatch.setattr(
             email_mod, "_send",
-            lambda to, subject, html, attachment=None: captured.update(
+            lambda to, subject, html, attachment=None, **_kw: captured.update(
                 subject=subject, html=html),
         )
         email_mod.send_inventory_alert_email("boss@acme.cr", _critical(3), [], "http://x/hoy")
@@ -335,7 +345,7 @@ class TestAlertDeliveryFailuresAreObservable:
         _arrange_daily_loop(monkeypatch, tid, _critical(47))
         monkeypatch.setattr(
             "backend.notifications.email.send_inventory_alert_email", lambda **kw: False)
-        monkeypatch.setattr("backend.notifications.email.is_configured", lambda: True)
+        monkeypatch.setattr("backend.notifications.email.is_configured", lambda *_a, **_kw: True)
 
         inv_svc.run_daily_inventory_alerts()
 
@@ -428,7 +438,6 @@ class TestAlertDeliveryFailuresAreObservable:
         _arrange_daily_loop(monkeypatch, tid, _critical(3))
         monkeypatch.setattr(
             "backend.notifications.email.send_inventory_alert_email", lambda **kw: True)
-        monkeypatch.setattr("backend.entitlements.service.has_feature", lambda *a, **kw: True)
         monkeypatch.setattr("backend.notifications.whatsapp.send_whatsapp", lambda *a, **kw: False)
 
         inv_svc.run_daily_inventory_alerts()

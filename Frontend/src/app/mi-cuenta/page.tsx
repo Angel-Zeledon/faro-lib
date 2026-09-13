@@ -4,12 +4,11 @@ import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
-  MessageCircle, Unlink, CalendarClock, MessageSquare, CreditCard, Coins,
+  MessageCircle, Unlink, CalendarClock, MessageSquare, Coins, Gauge,
 } from 'lucide-react'
-import BillingPanel from '@/components/billing/BillingPanel'
 import CurrencySection from '@/components/billing/CurrencySection'
+import LimitsSection from '@/components/limits/LimitsSection'
 import TimezoneSection from '@/components/billing/TimezoneSection'
-import { useEntitlements } from '@/lib/entitlements'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
 import BaseCard from '@/components/ui/Card'
@@ -1222,23 +1221,19 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
 
 // ── Section: SMS heads-up for team messages ──────────────────────────────────
 //
-// Professional-plan companion to /mensajes: when someone writes to you and you
-// are away, Faro sends one short SMS to the number linked above. Hidden (not
-// padlocked) on plans without team_messaging, same policy as the sidebar.
+// Companion to /mensajes: when someone writes to you and you are away, Faro
+// sends one short SMS to the number linked above. It used to be hidden for
+// plans without team_messaging; every tenant has the screen now.
 
 function DmSmsSection({ t }: { t: (k: string) => string }) {
-  const { has } = useEntitlements()
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [hasNumber, setHasNumber] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!has('team_messaging')) return
     getPreferences().then(p => setEnabled(p.dm_sms_enabled)).catch(() => setEnabled(false))
     getMe().then(u => setHasNumber(!!u.whatsapp_number)).catch(() => {})
-  }, [has])
-
-  if (!has('team_messaging')) return null
+  }, [])
 
   const on = enabled === true
   const blocked = !hasNumber
@@ -1335,24 +1330,23 @@ export default function ConfigPage() {
       </div>
 
       {/* Sections */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
         <ProfileSection t={t} lang={lang} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Company-level, but this is where the Stripe checkout returns to,
-              and where someone looks for "what am I paying". The panel renders
-              nothing at all on a deployment with no Stripe key. */}
+          {/* What the customer's own figures are worth — their choice, and
+              nothing to do with what Faro costs, which is a conversation with
+              us and not a setting on this screen. */}
+          {/* How much room is left. First in this column on purpose: a
+              ceiling nobody can see is a trap, and this is the screen where
+              somebody goes looking before they go looking for us. */}
           <Card>
             <SectionTitle
-              icon={CreditCard} color="var(--accent)"
-              title={t('billing.section_title')}
-              subtitle={t('billing.section_subtitle')}
+              icon={Gauge} color="var(--accent)"
+              title={t('limits.section.title')}
+              subtitle={t('limits.section.header_subtitle')}
             />
-            <BillingPanel />
+            <LimitsSection />
           </Card>
-          {/* Separate card on purpose: what Faro costs (above, always USD) and
-              what the customer's own figures are worth (here, their choice) are
-              two different things, and merging them invites the reading that
-              picking colones changes the price of the plan. */}
           <Card>
             <SectionTitle
               icon={Coins} color="var(--accent)"

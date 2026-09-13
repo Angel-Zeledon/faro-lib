@@ -84,63 +84,108 @@ def touch(key_id: str) -> None:
 # to do — a nightly ERP push and the polling around it — not to be generous: an
 # integration that needs more than this per minute is looping, and a loop with a
 # valid key is exactly what nothing currently stops.
-# Fallback ceiling: used when the caller does not resolve a plan, and for a
-# plan name the catalog does not recognise. Per-plan numbers live in
-# `entitlements/plans.py` — this is the floor under them, not the policy.
+#
+# It used to be a per-tier number (60 / 120 / unlimited) with this constant as
+# the floor under them. There is one plan now, so this IS the policy: one
+# ceiling, the same for everybody, living in the module that enforces it.
 RATE_MAX_PER_MINUTE = 120
 
-# Distinguishes "caller passed nothing" from "this plan is unlimited (None)".
-_UNSPECIFIED = object()
 RATE_WINDOW_SECONDS = 60
 
 
-def rate_limit_for(plan: str | None) -> int | None:
-    """Calls per minute this plan allows, or None for unlimited.
-
-    Falls back to the shipped default for a plan name the catalog does not know
-    — a tenant row with an unexpected value must not silently become unlimited.
-    """
-    from backend.entitlements.plans import PLAN_CATALOG
-
-    definition = PLAN_CATALOG.get((plan or "").strip().lower())
-    if definition is None:
-        return RATE_MAX_PER_MINUTE
-    return definition.api_rate_per_minute
+DAY_WINDOW_SECONDS = 86_400
 
 
-def check_rate(key_id: str, limit=_UNSPECIFIED) -> bool:
+def check_rate(key_id: str, tenant_id: str | None = None) -> bool:
     """Whether this key may make one more call now; records it when it may.
 
-    Reuses `auth_rate_events`, the same window the login endpoints use, keyed by
-    `apikey:<id>`. A second table would have been a second definition of "a
-    window", with its own pruning to forget.
+    Two windows, and a call has to clear both:
+
+    - **Per minute**, the same for everybody. It exists to stop a loop, not to
+      sell anything.
+    - **Per day**, only when the tenant's plan sets `max_api_calls_per_day` —
+      which is the free tier. A nightly ERP push and the polling around it fit
+      inside it; an integration that reads all day does not, and that is the
+      difference the tiers are actually selling. Pass `tenant_id` to have it
+      checked; without it only the per-minute window applies (the callers that
+      exercise the limiter directly do not know a tenant).
+
+    Reuses `auth_rate_events`, the same table the login endpoints use, keyed by
+    `apikey:<id>` and `apikeyday:<id>`. A second table would have been a second
+    definition of "a window", with its own pruning to forget.
 
     Fails OPEN on a database problem, deliberately. This runs on every
     authenticated machine call: if the rate store is unreachable, refusing every
     integration in the product is a far worse outcome than briefly not counting.
     The customer's nightly sync must not go down because a limiter cannot write.
     """
-    # `None` has to mean UNLIMITED here, because that is what an Enterprise plan
-    # stores. So "caller did not say" needs its own value, or the two collapse
-    # and an unlimited plan would silently get the default ceiling.
-    ceiling = RATE_MAX_PER_MINUTE if limit is _UNSPECIFIED else limit
-    if ceiling is None:
-        return True
-
-    bucket = f"apikey:{key_id}"
+    from backend.db.connection import query_one as _query_one, transaction
     try:
-        execute(
-            "DELETE FROM auth_rate_events WHERE key = %s AND created_at < NOW() - make_interval(secs => %s)",
-            (bucket, RATE_WINDOW_SECONDS),
-        )
-        row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s", (bucket,))
-        used = int(row["n"]) if row else 0
-        if used >= ceiling:
-            return False
-        execute("INSERT INTO auth_rate_events (key) VALUES (%s)", (bucket,))
+        daily = _daily_ceiling(tenant_id)
+        # Counting and then inserting in two steps is how a limiter admits more
+        # than its ceiling: twenty simultaneous calls against a ceiling of five
+        # let SIXTEEN through, because each read a counter none of the others
+        # had written yet (measured 2026-08-22). A machine credential — the one
+        # that runs unattended, in a cron, with retries — is precisely what
+        # arrives in parallel, so the ceiling has to be decided under a lock.
+        #
+        # The lock is keyed on the KEY, not the tenant: two integrations
+        # belonging to the same customer never wait on each other, and the
+        # section it protects is three short statements.
+        with transaction() as conn:
+            _query_one("SELECT pg_advisory_xact_lock(hashtext(%s))",
+                       (f"ratelimit:{key_id}",), conn=conn)
+            if not _within(f"apikey:{key_id}", RATE_MAX_PER_MINUTE,
+                           RATE_WINDOW_SECONDS, conn=conn):
+                return False
+            if daily is not None and not _within(f"apikeyday:{key_id}", daily,
+                                                 DAY_WINDOW_SECONDS, conn=conn):
+                return False
+            # Recorded once both windows agreed: a call refused by the daily
+            # ceiling must not also consume a slot in the minute it was refused
+            # in. Both inserts commit with the lock, so the next caller in line
+            # counts them.
+            execute("INSERT INTO auth_rate_events (key) VALUES (%s)",
+                    (f"apikey:{key_id}",), conn=conn)
+            if daily is not None:
+                execute("INSERT INTO auth_rate_events (key) VALUES (%s)",
+                        (f"apikeyday:{key_id}",), conn=conn)
         return True
     except Exception:
         return True
+
+
+def _within(bucket: str, ceiling: int, window_secs: int, conn=None) -> bool:
+    """Whether `bucket` is under `ceiling` over the last `window_secs`.
+
+    Checks only. Recording is `check_rate`'s job and happens after BOTH windows
+    have agreed, so a request refused by the daily ceiling does not also burn a
+    slot in the minute it was refused in. `conn` is the locked transaction from
+    `check_rate` — the count has to be read there, not on a connection that
+    cannot see the writes the lock is protecting.
+    """
+    execute(
+        "DELETE FROM auth_rate_events WHERE key = %s AND created_at < NOW() - make_interval(secs => %s)",
+        (bucket, window_secs), conn=conn,
+    )
+    row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s",
+                    (bucket,), conn=conn)
+    used = int(row["n"]) if row else 0
+    return used < ceiling
+
+
+def _daily_ceiling(tenant_id: str | None) -> int | None:
+    """The tenant's daily call ceiling, or None when it has none (paid tier, or
+    a per-tenant quota override that says so)."""
+    if not tenant_id:
+        return None
+    from backend.entitlements.service import tenant_limits
+    tenant = query_one(
+        "SELECT tier, quota FROM tenants WHERE id = %s", (tenant_id,)
+    )
+    if tenant is None:
+        return None
+    return tenant_limits(dict(tenant))["max_api_calls_per_day"]
 
 
 def actor_id(key_id: str) -> str:

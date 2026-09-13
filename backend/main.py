@@ -19,8 +19,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router
+from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router
 from backend.errors import AppError
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
@@ -181,6 +182,62 @@ async def app_error_handler(request: Request, exc: AppError):
     )
 
 
+@app.middleware("http")
+async def reject_nul_in_path(request: Request, call_next):
+    """A NUL byte in a URL is the caller's mistake, and must be answered as one.
+
+    `%00` decodes into the path, travels through the route as an ordinary id,
+    and dies at psycopg2 (`A string literal cannot contain NUL`). The unhandled
+    handler then dresses that as a 500 `internal_error` — so the user is told
+    the SERVER broke on a URL they malformed, and it pages whoever is on call.
+    Measured on `/sessions/%00x/results`, and reachable on every route that
+    takes an id.
+
+    Refusing it once, here, is cheaper and more honest than a guard in each of
+    the two hundred handlers that read an id. Nothing legitimate carries a NUL
+    in a path.
+    """
+    if "\x00" in request.url.path:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": "The request path contains a NUL byte.",
+                "error_code": "malformed_path",
+                "error_params": {},
+            },
+        )
+    return await call_next(request)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """FastAPI's own errors, plus a promotion for the ones that carry a code.
+
+    Several guards raise `HTTPException(detail={"code": "PLAN_LIMIT_REACHED",
+    ...})` — a machine code and its numbers, in a shape that predates
+    `AppError`. Default FastAPI hands that dict to the client as `detail` and
+    nothing else, so the frontend had a code it could not find: it looks for
+    `error_code` at the top level. The result was a tenant hitting a limit and
+    being shown a stringified Python dict, or the generic "something failed".
+
+    So: when `detail` is a dict carrying a string `code`, lift it to
+    `error_code` and the rest to `error_params`. `detail` is passed through
+    untouched, so every existing client and test keeps reading what it read.
+    Everything else — a plain 404, a 401 with a string detail — is serialized
+    exactly as before, headers included (WWW-Authenticate, Retry-After).
+    """
+    detail = exc.detail
+    body: dict = {"detail": detail}
+    if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+        body["error_code"] = detail["code"]
+        body["error_params"] = {k: v for k, v in detail.items() if k != "code"}
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_json_safe(body),
+        headers=getattr(exc, "headers", None),
+    )
+
+
 def _json_safe(value):
     """Make a validation-error payload serialisable.
 
@@ -268,8 +325,6 @@ app.include_router(scenarios_router.router, prefix=_PREFIX)
 app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)
 app.include_router(entitlements.router,    prefix=_PREFIX)
-from backend.api.v1 import billing as billing_router  # noqa: E402
-app.include_router(billing_router.router,  prefix=_PREFIX)
 from backend.api.v1 import currency as currency_router  # noqa: E402
 app.include_router(currency_router.router, prefix=_PREFIX)
 from backend.api.v1 import timezone as timezone_router  # noqa: E402
@@ -280,6 +335,7 @@ app.include_router(whatsapp_router.router, prefix=_PREFIX)
 app.include_router(freshness_router.router, prefix=_PREFIX)
 app.include_router(alerts_router.router,    prefix=_PREFIX)
 app.include_router(messages_router.router,  prefix=_PREFIX)
+app.include_router(service_config_router.router, prefix=_PREFIX)
 app.include_router(ws_router)
 
 
@@ -287,14 +343,48 @@ app.include_router(ws_router)
 
 @app.get("/health", tags=["health"])
 def health():
+    """Liveness, plus which of this deployment's services can actually work.
+
+    Two things this used to get wrong, and both cost an afternoon to diagnose:
+
+    * It answered `{"status": "ok"}` while the assistant, the alerts, the RAG
+      analyst and the integrations were all dead for want of a key. "ok" meant
+      "the process is up", which is not what anybody reads it as. The `services`
+      map is the state the panel shows, by name only — no variables, no hints,
+      nothing an operator does not already publish in `version`.
+    * A database it could not reach became an unhandled 500 with no body, which
+      is indistinguishable from the proxy-cannot-find-the-backend symptom. It
+      now answers 200 with `database: false` and `status: "degraded"`, because a
+      health endpoint that dies with the thing it is reporting on cannot report.
+    """
     from backend.db.connection import query_one
-    row = query_one(
-        "SELECT COUNT(*) AS n FROM jobs WHERE status IN ('RUNNING', 'QUEUED')"
-    )
+
+    database_ok = True
+    queued = 0
+    try:
+        row = query_one(
+            "SELECT COUNT(*) AS n FROM jobs WHERE status IN ('RUNNING', 'QUEUED')"
+        )
+        queued = row["n"] if row else 0
+    except Exception as exc:  # noqa: BLE001 — reporting IS this endpoint's job
+        log.error("Health check: database unreachable: %s", exc)
+        database_ok = False
+
+    services: dict[str, str] = {}
+    try:
+        from backend.service_config.registry import SERVICES
+        from backend.service_config.status import service_report
+
+        services = {s.key: service_report(s)["state"] for s in SERVICES}
+    except Exception as exc:  # noqa: BLE001 — never let diagnostics be the outage
+        log.error("Health check: service report failed: %s", exc)
+
     return {
-        "status": "ok",
+        "status": "ok" if database_ok else "degraded",
         "version": settings.app_version,
-        "queued_jobs": row["n"] if row else 0,
+        "queued_jobs": queued,
+        "database": database_ok,
+        "services": services,
     }
 
 

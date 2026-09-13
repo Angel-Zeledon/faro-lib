@@ -23,6 +23,7 @@ import { useSetupCopy } from '@/i18n/useSetupCopy'
 import { getSetupGaps, patchInventoryStock, upsertInventoryStock } from '@/lib/api'
 import type { SetupGapItem, SetupGapsResponse } from '@/lib/stockSetupTypes'
 import type { InventoryStock } from '@/lib/types'
+import { fmtNum } from '@/lib/numberLocale'
 
 const GREEN = '#22c55e'
 const AMBER = '#f59e0b'
@@ -67,7 +68,7 @@ export default function SetupGapsPanel({
   useEffect(() => { void load() }, [load])
 
   const money = (n: number) =>
-    n >= 1000 ? Math.round(n).toLocaleString('es') : n.toFixed(2)
+    n >= 1000 ? fmtNum(Math.round(n)) : n.toFixed(2)
 
   async function save(item: SetupGapItem) {
     const state = rows[item.sku] ?? emptyRow()
@@ -280,7 +281,7 @@ export default function SetupGapsPanel({
                       )}
                     </td>
                     <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text)' }}>
-                      {Math.round(item.projected_demand).toLocaleString('es')}{' '}
+                      {fmtNum(Math.round(item.projected_demand))}{' '}
                       <span style={{ color: 'var(--dim)', fontSize: 11 }}>
                         {c('setupStock.gaps.units_suffix')}
                       </span>

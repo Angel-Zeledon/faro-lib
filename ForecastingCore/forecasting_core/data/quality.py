@@ -19,6 +19,36 @@ SERIES_INTERMITTENT = "intermittent"
 SERIES_VOLATILE     = "volatile"
 SERIES_SHORT        = "short"
 
+# Fewest observations before a spacing is a pattern rather than a coincidence.
+# Two dates give one gap, and one gap is not a frequency.
+_MIN_POINTS_FOR_FREQ = 3
+
+
+def infer_freq_days(dates: pd.Series) -> Optional[int]:
+    """Native spacing of a date series, in whole days — or None if unknowable.
+
+    The median gap between consecutive distinct dates. Median rather than mode
+    or `pd.infer_freq`, because real sales history is not evenly spaced: one
+    long holiday shutdown must not redefine a daily series as monthly, and
+    `infer_freq` returns None outright for anything irregular, which is most
+    real files.
+
+    This is the ONE definition of "how often does this series report". It was
+    written twice: the profiler inferred it from the data (and correctly told
+    the user "7 missing dates"), while DataQualityChecker was handed
+    `date_freq: None` by the backend runner and answered 0 missing dates for
+    every session ever trained. Two numbers about the same series, one tab
+    apart. See _missing_dates for what that cost.
+    """
+    d = pd.to_datetime(dates, errors="coerce").dropna().sort_values().drop_duplicates()
+    if len(d) < _MIN_POINTS_FOR_FREQ:
+        return None
+    try:
+        median_days = int(d.diff().dropna().dt.days.median())
+    except (ValueError, TypeError):
+        return None
+    return median_days if median_days >= 1 else None
+
 
 def classify_series(
     series: pd.Series,
@@ -246,12 +276,42 @@ class DataQualityChecker:
                          series_flags=series_flags, series_reasons=series_reasons)
 
     def _missing_dates(self, g: pd.DataFrame) -> int:
-        if not self.freq:
+        """How many reporting periods this SKU has no row for.
+
+        `self.freq` used to be the only source, and it arrives None from the
+        backend runner (`workers/runner.py`, "date_freq": None — a key that is
+        read and never assigned). So this returned 0 for EVERY session the
+        product has ever trained, with three consequences that all pointed the
+        same way:
+
+          * the "missing dates" warning could never fire;
+          * the quality score never lost its `min(missing * 2, 20)` points, so
+            the floor sat at 0.65 against a "Baja" threshold of 0.45 — meaning
+            **"Baja" was unreachable** and "Serie limpia, sin advertencias" was
+            structurally incapable of saying anything else;
+          * and the chart footer, computing gaps its own way, could say "7
+            huecos detectados" about the same SKU one tab away.
+
+        Falling back to the series' own spacing is what the profiler already
+        did. A configured `freq` still wins — a caller who knows the calendar
+        knows better than an inference.
+        """
+        dates = pd.to_datetime(g[self.dt_col], errors="coerce").dropna()
+        if len(dates) < _MIN_POINTS_FOR_FREQ:
+            # One gap is not a frequency, so there is no baseline to be missing
+            # from. Reporting 0 here is a statement about what we can measure.
             return 0
+        freq = self.freq
+        if not freq:
+            days = infer_freq_days(dates)
+            if not days:
+                return 0
+            freq = f"{days}D"
         try:
-            dates = pd.to_datetime(g[self.dt_col], errors="coerce").dropna()
-            full = pd.date_range(dates.min(), dates.max(), freq=self.freq)
-            return max(0, len(full) - len(dates))
+            full = pd.date_range(dates.min(), dates.max(), freq=freq)
+            # `difference` rather than a length subtraction: duplicate dates in
+            # the input would otherwise make a complete series look short.
+            return max(0, len(full.difference(dates.drop_duplicates())))
         except Exception:
             return 0
 

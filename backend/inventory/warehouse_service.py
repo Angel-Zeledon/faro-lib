@@ -121,6 +121,30 @@ def set_demand_share(tenant_id: str, name: str, share: float | None) -> dict:
     return row
 
 
+def get_default_warehouse_name(tenant_id: str) -> str | None:
+    """The tenant's default warehouse, by the ANCHORED flag then by name.
+
+    One place, one answer. `get_demand_shares` resolves it inline below and
+    `service._aggregate_stock_rows_by_sku` takes it as an argument, so both the
+    "where does demand live" question and the "which row represents this SKU"
+    question land on the same warehouse. They did not: the flag is set on the
+    tenant's FIRST warehouse, while the name key puts DEFAULT_WAREHOUSE first,
+    so a tenant who started with "Bodega Sur" had its demand there and its
+    catalog attributes taken from "principal".
+
+    Returns None for a tenant with no warehouse rows at all, which is a caller's
+    cue to fall back to the name key alone rather than to invent a name.
+    """
+    rows = list_warehouses(tenant_id)
+    if not rows:
+        return None
+    default = (
+        next((r for r in rows if r.get("is_default")), None)
+        or sorted(rows, key=lambda r: name_precedence_key(r["name"]))[0]
+    )
+    return default["name"]
+
+
 def get_demand_shares(tenant_id: str) -> dict[str, float]:
     """
     Warehouse name -> demand fraction (sums to 1.0).
@@ -137,16 +161,14 @@ def get_demand_shares(tenant_id: str) -> dict[str, float]:
     total = sum(float(r["demand_share"]) for r in set_rows)
     if set_rows and total > 0:
         return {r["name"]: float(r["demand_share"]) / total for r in set_rows}
-    # Fallback precedence: explicit is_default flag, then name_precedence_key
-    # — the shared name-based ordering (DEFAULT_WAREHOUSE first, then
-    # casefolded alphabetical; see its docstring for the 'Tienda Norte' <
-    # 'principal' ASCII trap) also used by _aggregate_stock_rows_by_sku, so
-    # "which warehouse is the default" is answered identically everywhere.
-    default = (
-        next((r for r in rows if r.get("is_default")), None)
-        or sorted(rows, key=lambda r: name_precedence_key(r["name"]))[0]
-    )
-    return {default["name"]: 1.0}
+    # Fallback: the ONE resolver — explicit is_default flag, then
+    # name_precedence_key (DEFAULT_WAREHOUSE first, then casefolded
+    # alphabetical; see its docstring for the 'Tienda Norte' < 'principal'
+    # ASCII trap). `_aggregate_stock_rows_by_sku` is handed the same answer, so
+    # "which warehouse is the default" really is answered identically now. It
+    # was not: this branch checked the flag and that one never did.
+    default = get_default_warehouse_name(tenant_id)
+    return {default: 1.0} if default else {}
 
 
 def create_warehouse(tenant_id: str, name: str, is_default: bool = False) -> dict:

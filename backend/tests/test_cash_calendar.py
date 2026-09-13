@@ -78,6 +78,33 @@ class TestParsePaymentTerms:
     def test_zero_is_preserved_and_not_confused_with_unknown(self):
         assert cash.parse_payment_terms_days("0 dias") == 0
 
+    @pytest.mark.parametrize("text", [
+        "50% anticipo", "50% anticipo, 50% contra entrega", "anticipo del 30%",
+        "Anticipo", "pago adelantado", "50% adelantado",
+    ])
+    def test_an_advance_payment_is_zero_days_not_the_percentage(self, text):
+        """'50% anticipo' is money due on the spot. Read as a day count it
+        became 50 days of credit — an invoice dated seven weeks late, and the
+        parser claiming it understood the terms while doing it."""
+        assert cash.parse_payment_terms_days(text) == 0
+
+    @pytest.mark.parametrize("text", [
+        "2x30", "2 x 30 dias", "3X15", "30/60/90", "30/60", "30-45 dias",
+    ])
+    def test_instalment_schedules_are_unreadable_not_their_first_number(self, text):
+        """A schedule has no single credit period. Taking the first number gave
+        '2x30' -> 2 days and '30/60/90' -> 30 days: two invented due dates, both
+        reported as if the terms were understood."""
+        assert cash.parse_payment_terms_days(text) is None
+
+    def test_a_bare_percentage_is_not_a_day_count(self):
+        assert cash.parse_payment_terms_days("50%") is None
+
+    def test_a_percentage_does_not_hide_a_real_day_count(self):
+        """The percentage is dropped, not the sentence: '50% a 30 dias' still
+        has a readable credit period."""
+        assert cash.parse_payment_terms_days("50% a 30 dias") == 30
+
 
 class TestResolveCreditDays:
 
@@ -151,6 +178,11 @@ class TestBackfillMigration:
             "30 dias", "30 días", "net 45", "contado", "de contado",
             "contra entrega", "COD", "2 meses", "1 mes", "quincenal",
             "a convenir", "60d", "pago de contado a 8 dias", "3000 dias",
+            # The ambiguous family: an advance payment, instalment schedules and
+            # bare percentages. The SQL used to read them the same wrong way the
+            # Python parser did, so parity alone never caught it.
+            "50% anticipo", "pago adelantado", "2x30", "30/60/90", "30-45 dias",
+            "50%", "50% a 30 dias",
         ]
         ids = []
         for text in texts:
@@ -357,6 +389,31 @@ class TestPayables:
         assert result["this_week_total"] == 500.0
         assert result["horizon_total"] == 1400.0
 
+    def test_deactivating_a_supplier_does_not_erase_what_is_owed(self, test_tenant):
+        """Deactivating a supplier says 'stop ordering from them'. It says
+        nothing about the invoices they already issued: the PO was sent, the
+        money is owed, and the due date is still knowable from their terms.
+        Loading only active suppliers moved it into 'missing terms' and out of
+        the committed total — archiving a card made a debt disappear."""
+        name = f"Prov-{uuid4().hex[:6]}"
+        _make_supplier_row(test_tenant["id"], name, "30 dias", 30)
+        _make_po(test_tenant["id"], name, 10, 100.0, sent_days_ago=5)
+        execute(
+            "UPDATE suppliers SET active = FALSE WHERE tenant_id = %s AND name = %s",
+            (test_tenant["id"], name),
+        )
+        assert query_one(
+            "SELECT active FROM suppliers WHERE tenant_id = %s AND name = %s",
+            (test_tenant["id"], name),
+        )["active"] is False
+
+        result = cash.get_payables(test_tenant["id"], 30)
+        assert result["unknown_terms"] == [], "A known due date was thrown away"
+        assert len(result["due_items"]) == 1
+        assert result["due_items"][0]["credit_days"] == 30
+        assert result["due_items"][0]["days_until_due"] == 25
+        assert result["horizon_total"] == 1000.0
+
     def test_payables_are_tenant_scoped(self, test_tenant):
         name = f"Prov-{uuid4().hex[:6]}"
         _make_supplier_row(test_tenant["id"], name, "30 dias", 30)
@@ -426,6 +483,62 @@ class TestPurchaseFit:
         assert result["fits"] is False
         assert "Nunca Registrado" in result["suppliers_assumed_immediate"]
         assert result["lines"][0]["terms_known"] is False
+
+    def test_unreadable_terms_are_never_reported_as_known(self, test_tenant):
+        """The module promises that what it cannot read stays None. A supplier
+        whose terms are '2x30' used to come back with credit_days = 2 and
+        `terms_known: True` — a due date nobody agreed to, presented as the
+        supplier's own terms."""
+        name = f"Prov-{uuid4().hex[:6]}"
+        _make_supplier_row(test_tenant["id"], name, "2x30", None)
+
+        result = cash.evaluate_purchase_fit(
+            test_tenant["id"],
+            [{"sku": "S1", "supplier_name": name, "quantity": 10, "unit_cost": 50.0}],
+            budget=100.0, horizon_days=30,
+        )
+        line = result["lines"][0]
+        assert line["terms_known"] is False
+        assert name in result["suppliers_assumed_immediate"]
+        assert line["credit_days"] == 0, "An unknown must be treated as due now"
+
+    def test_an_advance_payment_is_known_terms_due_today(self, test_tenant):
+        """The other half of the same promise: '50% anticipo' IS readable, and
+        reading it as 50 days of credit dated the money seven weeks late."""
+        name = f"Prov-{uuid4().hex[:6]}"
+        _make_supplier_row(test_tenant["id"], name, "50% anticipo", None)
+
+        result = cash.evaluate_purchase_fit(
+            test_tenant["id"],
+            [{"sku": "S1", "supplier_name": name, "quantity": 10, "unit_cost": 50.0}],
+            budget=100.0, horizon_days=30,
+        )
+        line = result["lines"][0]
+        assert line["terms_known"] is True
+        assert line["credit_days"] == 0
+        assert name not in result["suppliers_assumed_immediate"]
+
+    def test_deactivated_supplier_still_eats_the_budget(self, test_tenant):
+        """The cash half of a deactivated supplier: an invoice already sent is
+        still owed, so it must still count against what the buyer can spend."""
+        name = f"Prov-{uuid4().hex[:6]}"
+        _make_supplier_row(test_tenant["id"], name, "contado", 0)
+        _make_po(test_tenant["id"], name, 10, 80.0, sent_days_ago=1)   # 800 owed
+        execute(
+            "UPDATE suppliers SET active = FALSE WHERE tenant_id = %s AND name = %s",
+            (test_tenant["id"], name),
+        )
+
+        result = cash.evaluate_purchase_fit(
+            test_tenant["id"],
+            [{"sku": "S1", "supplier_name": name, "quantity": 10, "unit_cost": 50.0}],
+            budget=1000.0, horizon_days=30,
+        )
+        assert result["committed_total"] == 800.0, (
+            "Deactivating the supplier deleted money already owed"
+        )
+        assert result["fits"] is False
+        assert result["shortfall"] == 300.0
 
     def test_without_a_budget_the_verdict_is_unknown_not_a_guess(self, test_tenant):
         """Faro stores no cash balance. With no budget supplied it reports the
@@ -509,3 +622,70 @@ class TestMarkPOSent:
         assert query_one(
             "SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,),
         )["sent_at"] is None, "A foreign tenant was able to stamp this PO"
+
+class TestTheCashAnswerSaysWhichPlanItPriced:
+    """`/cash-calendar/fit` prices the optimizer's plan, and the optimizer
+    degrades to a greedy shortcut when the solver runs out of time.
+
+    It used to throw `result.status` away, so a cash answer built on the
+    shortcut arrived with exactly the same confidence as one built on the
+    optimum. The number was not wrong — the plan it describes was a different
+    plan, and nothing on the wire said so.
+    """
+
+    def test_the_solved_path_reports_the_plan_status(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        from backend.sessions.service import create_session
+        from backend.db import session_store
+
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "cash-status")["id"]
+        r = client.put("/api/v1/inventory/stock/CASHST",
+                       json={"current_stock": 0, "lead_time_days": 5,
+                             "moq": 1, "unit_cost": 10.0},
+                       headers=auth_headers)
+        assert r.status_code == 200, r.text
+        session_store.set_forecasts(tid, sid, {
+            "CASHST": {"lightgbm": {"forecast": [
+                {"date": f"2026-01-{i + 1:02d}", "value": 5.0,
+                 "lower": 5.0, "upper": 5.0} for i in range(14)]}},
+        })
+
+        # Pin the status so the assertion is about the plumbing, not about
+        # whether HiGHS happens to finish on this machine today. The original is
+        # captured BEFORE patching — reading it back off the module inside the
+        # replacement is a call to the replacement.
+        import forecasting_core.business.optimizer as core_opt
+        real_optimize = core_opt.optimize
+
+        def fake_optimize(inp):
+            res = real_optimize(inp)
+            res.status = "fallback"
+            return res
+
+        monkeypatch.setattr(core_opt, "optimize", fake_optimize)
+
+        resp = client.post(f"/api/v1/inventory/cash-calendar/fit?session_id={sid}",
+                           json={"budget": 100000}, headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data.get("plan_status") == "fallback", (
+            "the cash answer does not say it priced the greedy shortcut: "
+            f"{sorted(data)}"
+        )
+
+    def test_the_cart_path_claims_no_plan_status(self, client, auth_headers):
+        """A caller who sent their own cart is being told about THEIR cart.
+        There is no optimizer plan to qualify, so inventing a status would be
+        describing something that never ran."""
+        resp = client.post(
+            "/api/v1/inventory/cash-calendar/fit",
+            json={"budget": 5000, "items": [
+                {"sku": "X-1", "supplier_name": "Andina",
+                 "quantity": 10, "unit_cost": 3.0},
+            ]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert "plan_status" not in resp.json()["data"]

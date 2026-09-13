@@ -1,11 +1,9 @@
 'use client'
 /**
  * Accounting integrations — connect Alegra/Siigo, sync stock+sales, watch
- * connection health. Enterprise-only (see `Feature.INTEGRATIONS` on the
- * backend): the whole page is gated behind `useEntitlements().has('integrations')`,
- * mirroring the Sidebar nav lock (components/layout/Sidebar.tsx) so a user who
- * navigates here directly (not just via the nav item) still sees the upsell
- * instead of a confusing empty/broken screen.
+ * connection health. This whole page used to sit behind an Enterprise
+ * entitlement, and a tenant below it met an upsell here instead of the screen.
+ * One plan, no wall: whoever reaches this route gets the real thing.
  *
  * Credentials are write-only: the connect form only ever sends field values to
  * the backend and never receives them back — `Integration` (lib/api.ts) has no
@@ -14,14 +12,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Plug, RefreshCw, Trash2, CheckCircle2, XCircle, Clock, Lock,
+  Plug, RefreshCw, Trash2, CheckCircle2, XCircle, Clock,
 } from 'lucide-react'
 import {
   listIntegrations, connectIntegration, syncIntegration, deleteIntegration,
   type Integration, type ProviderInfo,
 } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { useEntitlements } from '@/lib/entitlements'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { LoadingState, ErrorState, InlineError, EmptyState } from '@/components/ui/States'
 import Card from '@/components/ui/Card'
@@ -295,25 +292,9 @@ function ProviderCard({
   )
 }
 
-// ── Locked / upsell state for tenants without the entitlement ───────────────
-// This was a hand-rolled copy of EmptyState, down to the same 48px icon tile and
-// the same upsell button geometry. It is the shared component now.
-function LockedState() {
-  const { t } = useLanguage()
-  return (
-    <EmptyState
-      icon={<Lock size={22} aria-hidden="true" />}
-      title={t('integrations.locked_title')}
-      body={t('integrations.locked_body')}
-      actions={[{ label: t('entitlements.upsell_cta'), href: '/planes' }]}
-    />
-  )
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function IntegrationsPage() {
   const { t } = useLanguage()
-  const { has, loading: entLoading } = useEntitlements()
   const confirm = useConfirm()
 
   const [providers, setProviders] = useState<Record<string, ProviderInfo>>({})
@@ -338,7 +319,7 @@ export default function IntegrationsPage() {
     }
   }, [])
 
-  useEffect(() => { if (has('integrations')) load() }, [load, has])
+  useEffect(() => { load() }, [load])
 
   async function handleConnect(provider: string, creds: Record<string, string>) {
     setConnectingProvider(provider)
@@ -381,22 +362,6 @@ export default function IntegrationsPage() {
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : t('integrations.err_disconnecting'))
     }
-  }
-
-  if (entLoading) {
-    return (
-      <div style={{ padding: 8 }}>
-        <LoadingState label={t('integrations.loading_label')} />
-      </div>
-    )
-  }
-
-  if (!has('integrations')) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <LockedState />
-      </div>
-    )
   }
 
   const connectionByProvider = Object.fromEntries(connections.map(c => [c.provider, c]))

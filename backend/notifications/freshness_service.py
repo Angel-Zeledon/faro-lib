@@ -319,6 +319,7 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                 if not r.get("email"):
                     continue
                 delivered = email_mod.send_data_freshness_reminder_email(
+                    tenant_id=tid,
                     to=r["email"],
                     sales_age_days=sales_age if sales_late else None,
                     stock_age_days=stock_age if stock_late else None,
@@ -330,32 +331,28 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                     "recipient": r["email"],
                     "sales_age_days": sales_age,
                     "stock_age_days": stock_age,
-                    **({} if delivered else {"reason": email_mod.failure_reason()}),
+                    **({} if delivered else {"reason": email_mod.failure_reason(tid)}),
                 })
 
-            # WhatsApp is a paid feature and opt-in per user (users.whatsapp_number).
-            from backend.entitlements.plans import Feature
-            from backend.entitlements.service import has_feature
-            from backend.tenants.service import get_tenant
-            if has_feature(get_tenant(tid) or {}, Feature.WHATSAPP_ALERTS):
-                text = wa_mod.build_freshness_reminder_text(
-                    sales_age_days=sales_age if sales_late else None,
-                    stock_age_days=stock_age if stock_late else None,
-                    upload_url=upload_url,
-                )
-                for r in recipients:
-                    number = (r.get("whatsapp_number") or "").strip()
-                    if not number:
-                        continue
-                    delivered = wa_mod.send_whatsapp(number, text)
-                    any_delivered = any_delivered or delivered
-                    _record(tid, r["id"], REMINDER_WHATSAPP_ACTION, delivered, {
-                        "channel": "whatsapp",
-                        "recipient": number,
-                        "sales_age_days": sales_age,
-                        "stock_age_days": stock_age,
-                        **({} if delivered else {"reason": wa_mod.failure_reason()}),
-                    })
+            # WhatsApp is opt-in per user (users.whatsapp_number).
+            text = wa_mod.build_freshness_reminder_text(
+                sales_age_days=sales_age if sales_late else None,
+                stock_age_days=stock_age if stock_late else None,
+                upload_url=upload_url,
+            )
+            for r in recipients:
+                number = (r.get("whatsapp_number") or "").strip()
+                if not number:
+                    continue
+                delivered = wa_mod.send_whatsapp(number, text, tenant_id=tid)
+                any_delivered = any_delivered or delivered
+                _record(tid, r["id"], REMINDER_WHATSAPP_ACTION, delivered, {
+                    "channel": "whatsapp",
+                    "recipient": number,
+                    "sales_age_days": sales_age,
+                    "stock_age_days": stock_age,
+                    **({} if delivered else {"reason": wa_mod.failure_reason()}),
+                })
 
             if any_delivered:
                 notified += 1

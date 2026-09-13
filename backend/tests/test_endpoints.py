@@ -102,9 +102,18 @@ class TestSignup:
             assert user["hashed_password"] != "StrongPass123!"
             assert user["hashed_password"].startswith("$2"), "not a bcrypt hash"
 
-            tenant = query_one("SELECT name, plan FROM tenants WHERE id = %s", (tenant_id,))
+            tenant = query_one(
+                "SELECT name, tier, trial_ends_at FROM tenants WHERE id = %s", (tenant_id,))
             assert tenant is not None and tenant["name"] == tenant_name
-            assert tenant["plan"], "a new tenant was created with no plan"
+            # A new tenant lands on the free tier, and the free tier is a
+            # permanent home rather than a countdown: the 14-day trial was
+            # removed on 2026-08-22, so `trial_ends_at` is NULL on every new
+            # signup. The column survives only to suspend an account by hand.
+            assert tenant["tier"] == "free"
+            assert tenant["trial_ends_at"] is None, (
+                "a new tenant was given a trial clock — the trial was removed "
+                "on 2026-08-22 and the free tier does not expire"
+            )
         finally:
             execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
 
@@ -450,6 +459,10 @@ class TestSessionsCRUD:
         ) is None, "the session was deleted but its config blob was orphaned"
 
     def test_pagination_pages_are_disjoint_and_complete(self, client, auth_headers, test_tenant):
+        # Paid, because this test is about pagination and not about ceilings:
+        # the free tier stops at 3 saved forecasts, so the fourth POST below
+        # was refused and the failure read as a broken pagination endpoint.
+        execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (test_tenant["id"],))
         created = []
         for i in range(5):
             r = client.post(

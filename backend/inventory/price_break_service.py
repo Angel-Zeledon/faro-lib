@@ -280,6 +280,31 @@ def evaluate_step_up(
     return min(candidates, key=lambda c: c["step_quantity"]) if candidates else None
 
 
+def _ladders_for_status(ladders: list[dict], status: dict) -> list[dict]:
+    """
+    The ladders that may legitimately be quoted for this SKU: the one belonging
+    to the SKU's own supplier when there is one, otherwise all of them.
+
+    `supplier_id` is only set on a status row when the stock's supplier name and
+    the primary supplier agree (service.get_inventory_status), so the name is
+    matched too — case-insensitively, which is how every other supplier-by-name
+    lookup in the product resolves.
+    """
+    supplier_id = status.get("supplier_id")
+    if supplier_id:
+        owned = [l for l in ladders if l["supplier_id"] == supplier_id]
+        if owned:
+            return owned
+
+    name = (status.get("supplier") or "").strip().lower()
+    if name:
+        owned = [l for l in ladders if (l["supplier_name"] or "").strip().lower() == name]
+        if owned:
+            return owned
+
+    return ladders
+
+
 def evaluate_cart(
     tenant_id: str,
     cart_items: list[dict],
@@ -293,33 +318,64 @@ def evaluate_cart(
     differ from what Faro recommended — the buyer can edit quantities); the
     demand/stock/lead-time inputs come from `status_items`, i.e. from
     service.get_inventory_status, never from the client.
+
+    A ladder belongs to a (SKU, SUPPLIER) pair, never to a SKU
+    ----------------------------------------------------------
+    Two suppliers quoting the same SKU are two independent scales. Grouping the
+    rungs by SKU alone merged them into one imaginary ladder and then credited
+    the whole thing to whichever supplier happened to own the lowest rung, so
+    the panel could say "Andina: order 500 and save ~1400" about a price only
+    Norte ever quoted — a number the buyer cannot act on and a supplier who will
+    deny it on the phone.
+
+    Each supplier's ladder is therefore evaluated on its own. When the SKU has a
+    known supplier, only that supplier's ladder is considered: this panel
+    compares two quantities from the SAME supplier, not two suppliers (nothing
+    in it prices a supplier switch — see the docstring at the top of the
+    module). When it does not, every ladder is evaluated separately and the best
+    opportunity wins, still named after the supplier that actually quoted it.
     """
     status_by_sku = {i["sku"]: i for i in status_items}
-    breaks_by_sku: dict[str, list[dict]] = {}
+    ladders_by_sku: dict[str, dict[str, dict]] = {}
     for b in list_price_breaks(tenant_id):
-        breaks_by_sku.setdefault(b["sku"], []).append(b)
+        ladder = ladders_by_sku.setdefault(b["sku"], {}).setdefault(
+            b["supplier_id"],
+            {"supplier_id": b["supplier_id"],
+             "supplier_name": b.get("supplier_name"),
+             "breaks": []},
+        )
+        ladder["breaks"].append(b)
 
     results: list[dict] = []
     for line in cart_items:
         sku = line.get("sku")
         quantity = float(line.get("quantity") or 0)
-        breaks = breaks_by_sku.get(sku or "", [])
         status = status_by_sku.get(sku or "")
-        if not sku or not breaks or not status:
+        ladders = list(ladders_by_sku.get(sku or "", {}).values())
+        if not sku or not ladders or not status:
             continue
-        opportunity = evaluate_step_up(
-            sku=sku,
-            supplier_name=breaks[0].get("supplier_name") or status.get("supplier"),
-            current_quantity=quantity,
-            base_cost=status.get("unit_cost"),
-            breaks=breaks,
-            daily_demand=status.get("daily_demand"),
-            current_stock=float(status.get("current_stock") or 0),
-            lead_time_days=int(status.get("lead_time_days") or 15),
-            holding_cost_pct=holding_cost_pct,
-        )
-        if opportunity:
-            results.append(opportunity)
+
+        opportunities = [
+            opportunity
+            for ladder in _ladders_for_status(ladders, status)
+            if (opportunity := evaluate_step_up(
+                sku=sku,
+                supplier_name=ladder["supplier_name"],
+                current_quantity=quantity,
+                base_cost=status.get("unit_cost"),
+                breaks=ladder["breaks"],
+                daily_demand=status.get("daily_demand"),
+                current_stock=float(status.get("current_stock") or 0),
+                lead_time_days=int(status.get("lead_time_days") or 15),
+                holding_cost_pct=holding_cost_pct,
+            )) is not None
+        ]
+        if opportunities:
+            # One line of the cart, one recommendation: the actionable ones
+            # first, then the largest net saving — the same order the results
+            # list uses below.
+            results.append(
+                min(opportunities, key=lambda o: (not o["worth_it"], -o["net_saving"])))
 
     # Actionable ones first, then by net saving.
     results.sort(key=lambda r: (not r["worth_it"], -r["net_saving"]))

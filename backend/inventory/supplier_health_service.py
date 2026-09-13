@@ -364,6 +364,7 @@ def run_daily_supplier_lead_time_alerts() -> None:
                 if not r.get("email"):
                     continue
                 delivered = send_supplier_lead_time_alert_email(
+                    tenant_id=tid,
                     to=r["email"], deviations=deviations, scorecard_url=scorecard_url,
                 )
                 if not delivered:

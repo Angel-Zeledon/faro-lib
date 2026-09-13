@@ -131,8 +131,11 @@ def _handle(ctx, incoming_text, history, pending):
 
     # Generic mode: no hosted LLM available — reply fast and honest instead of
     # hanging on a slow local model. Confirmations above already executed.
-    from backend.config import settings
-    if settings.whatsapp_bot_generic_mode:
+    from backend.service_config.resolver import effective
+    # Read in the tenant's scope: `whatsapp_bot_generic_mode` is offered per
+    # tenant in the panel, and reading it at instance scope would store a
+    # choice nothing acts on.
+    if effective(ctx.tenant_id).whatsapp_bot_generic_mode:
         return render_es("wa_generic_mode"), None
 
     # 2. Fresh intent routing (one LLM completion).

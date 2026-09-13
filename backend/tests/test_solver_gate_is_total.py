@@ -1,7 +1,7 @@
 """
 Every MILP solve goes through the concurrency gate. No exceptions.
 
-`_MAX_CONCURRENT_SOLVES = 2` is not a tuning knob, it is the only thing standing
+`_MAX_CONCURRENT_SOLVES` is not a tuning knob, it is the only thing standing
 between the API and a wedged process. Measured locally on this machine with the
 engine's own `optimize()`:
 
@@ -11,6 +11,15 @@ engine's own `optimize()`:
 Three concurrent HiGHS solves do not raise, they stop. A wedged worker returns
 nothing at all — no 500, no 503 — so from the browser the whole backend is
 simply gone.
+
+The cap is now **1**, and for a second reason: every solve is submitted to ONE
+dedicated engine thread, so a second admitted caller does not solve in parallel,
+it queues — and its wait includes the queue, so it expires and the caller is
+served the greedy `status="fallback"` plan instead of the one the first caller
+got. `test_optimizer_agrees_with_the_semaforo.py` pins the cap to that thread
+count; this file only cares that nobody solves outside the gate, whatever the
+cap is, which is why every assertion here reads the constant instead of a
+literal.
 
 `/inventory/optimize` held the gate. `/inventory/cash-calendar/fit` did not, and
 called `optimize()` straight out, which made the cap a fiction: two purchasing

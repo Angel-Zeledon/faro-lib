@@ -387,6 +387,59 @@ class TestBriefingAndNarrativeThreadTheSetting:
         assert "$50,000.00" in blob, blob
         assert "₡" not in blob, "the colón survived in the executive summary"
 
+    def test_the_prompt_itself_carries_the_currency_not_a_bare_number(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        """The gap the two tests above could not see.
+
+        They pin the fallback (`_get_client -> None`) and read `key_points`,
+        both of which went through `money()` from the start. The LLM path did
+        not: the money fields entered the prompt as bare floats
+        (`"total_inventory_value": 195755.6`), so the model had nothing to
+        anchor a symbol to and supplied its own. Measured in a browser on
+        2026-08-22: the KPI tile read `₡196K` and the sentence directly below it
+        read "195.755,6 €", for a tenant whose books are in colones.
+
+        No amount of prompt wording fixes that reliably — the number has to
+        arrive already formatted. So this test captures the REAL prompt and
+        asserts the tenant's symbol is in it and the bare float is not.
+        """
+        import backend.ai.narrative_service as ns
+        from backend.sessions.service import create_session
+
+        captured: dict = {}
+
+        def fake_call(client_, prompt, max_tokens=700, language=None):
+            captured["prompt"] = prompt
+            return "narrative stub"
+
+        # A truthy client so the LLM branch is taken, and the call intercepted.
+        monkeypatch.setattr(ns, "_get_client", lambda: object())
+        monkeypatch.setattr(ns, "_call_llm", fake_call)
+
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "cur-prompt")["id"]
+        self._pile_of_stock(client, auth_headers, tid, sid, "CURPMT")
+        self._set_currency(client, auth_headers, "USD")
+
+        r = client.post("/api/v1/ai/narrative/morning",
+                        json={"session_id": sid, "profile": "distributor"},
+                        headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+        prompt = captured.get("prompt")
+        assert prompt, "the LLM branch was not taken — this test proves nothing"
+        assert "$50,000.00" in prompt, (
+            f"the prompt does not quote the amount in the tenant's currency: {prompt}"
+        )
+        # The bare float is what let the model choose a symbol. Its absence is
+        # the actual fix; the presence of "$" above could also be satisfied by a
+        # formatted value sitting NEXT to an unformatted one.
+        assert "50000.0" not in prompt, (
+            f"a bare, currency-less amount is still reaching the model: {prompt}"
+        )
+        assert "₡" not in prompt, "the colón reached a USD tenant's prompt"
+
     def test_the_same_tenant_on_colones_still_reads_colones(
         self, client, auth_headers, test_tenant
     ):
@@ -437,6 +490,8 @@ class TestInventoryPdfCarriesTheTenantsCurrency:
 
 # ── The monthly recap email ───────────────────────────────────────────────────
 
+from backend.notifications.locale import render_es
+
 _RECAP = {"month": "2026-06", "adoption_rate": 0.75,
           "recommendations_followed": 6, "recommendations_shown": 8,
           "stockout_risks_handled": 3, "capital_freed": 1250000.0,
@@ -448,23 +503,33 @@ class TestMonthlyRecapEmailCarriesTheTenantsCurrency:
         from backend.notifications import email as email_mod
         captured = {}
         monkeypatch.setattr(email_mod, "_send",
-                            lambda to, subject, html, attachment=None:
+                            lambda to, subject, html, attachment=None, **_kw:
                             captured.update(subject=subject, html=html))
         assert email_mod.send_monthly_roi_email(
             "buyer@faro-e2e.io", dict(_RECAP), "https://faro.test/roi",
             currency=currency) is True
         return captured
 
+    # The subject is asserted through the catalog and the AMOUNT is asserted as
+    # a literal. That split is the point of these two tests: they exist to catch
+    # a money format regressing, not to freeze the sentence around it — and
+    # pinning the whole subject made a deliberate copy correction read as one.
     def test_subject_and_tiles_use_the_tenants_symbol(self, monkeypatch):
         """Break to check: revert `_fmt_money` to the hardcoded ₡."""
         msg = self._send(monkeypatch, USD)
-        assert msg["subject"] == "Faro — liberaste $1.250.000,00 en junio de 2026"
+        assert "$1.250.000,00" in msg["subject"]
+        assert msg["subject"] == render_es(
+            "roi_email_subject_capital",
+            month="junio de 2026", amount="$1.250.000,00")
         assert "$890.000,00" in msg["html"]
         assert "₡" not in msg["subject"] and "₡" not in msg["html"]
 
     def test_the_anchor_market_recap_is_byte_identical_to_before(self, monkeypatch):
         msg = self._send(monkeypatch, None)
-        assert msg["subject"] == "Faro — liberaste ₡1.250.000 en junio de 2026"
+        assert "₡1.250.000" in msg["subject"]
+        assert msg["subject"] == render_es(
+            "roi_email_subject_capital",
+            month="junio de 2026", amount="₡1.250.000")
         assert "₡890.000" in msg["html"]
 
 

@@ -1245,23 +1245,6 @@ export const setTenantCurrency = (code: string) =>
   request<{ current: import('./currency').CurrencyInfo }>(
     'PATCH', '/tenant/currency', { code })
 
-// ── Billing ───────────────────────────────────────────────────────────────────
-export const getSubscription = (opts?: RequestOpts) =>
-  request<import('./types').SubscriptionState>('GET', '/billing/subscription',
-    undefined, opts)
-
-/** Starts a Stripe-hosted checkout and returns the URL to send the browser to.
- *
- *  Note it takes a PLAN, not a price id: the server resolves the price from its
- *  own configuration, so a client cannot check out against a price of its
- *  choosing. Admin only. */
-export const startCheckout = (plan: string, interval: 'monthly' | 'yearly' = 'monthly') =>
-  request<{ url: string }>('POST', '/billing/checkout', { plan, interval })
-
-/** Stripe's own billing portal: cards, invoices, cancellation. Admin only. */
-export const openBillingPortal = () =>
-  request<{ url: string }>('POST', '/billing/portal', {})
-
 export const analyzeDataSource = (
   id: string,
   params: { date_col: string; target_col: string; sku_col?: string; sheet?: string; date_from?: string; date_to?: string },
@@ -1414,18 +1397,32 @@ export const getSuggestedQuestions = (profile = 'distributor', hasInventory = tr
   )
 
 // ── Entitlements ──────────────────────────────────────────────────────────────
+/**
+ * What this tenant may do, and how much of it is left.
+ *
+ * `limits` and `usage` share their keys (`max_skus`, `max_users`, …) so a
+ * number is never displayed against the wrong ceiling. `null` in `limits` means
+ * unlimited — every commercial limit on the paid tier. `contact` carries only
+ * the channels the deployment actually configured; an empty string means that
+ * button is not shown at all.
+ */
 export interface Entitlements {
-  plan: string
+  tier: 'free' | 'paid'
   trial: { state: string; ends_at: string | null }
   limits: Record<string, number | null>
-  features: Record<string, boolean>
-  // Minimum plan that unlocks each feature (e.g. { ai_analyst: 'professional' }).
-  feature_plans: Record<string, string>
+  usage: Record<string, number>
+  contact: { whatsapp: string; email: string }
   read_only: boolean
 }
 
 export const getEntitlements = () =>
   request<Entitlements>('GET', '/entitlements')
+
+/** Tell us this tenant wants more room. There is no checkout — this IS it. */
+export const requestUpgrade = (body: { limit_key?: string | null; message?: string; contact?: string }) =>
+  request<{ id: string; created: boolean; notified: boolean }>(
+    'POST', '/entitlements/upgrade-request', body,
+  )
 
 // ── Accounting integrations ────────────────────────────────────────────────────
 export interface Integration {
@@ -1616,4 +1613,163 @@ export const getAlertHistory = (limit = 20, opts?: RequestOpts) =>
 export const markAlertsRead = (opts?: RequestOpts) =>
   request<import('../components/alerts/types').MarkAlertsReadResult>(
     'POST', '/alerts/read', undefined, opts,
+  )
+
+// ── Installation: which services this deployment has, and what is off ────────
+// The panel at /instalacion. Three shapes, three audiences:
+//   * `getCapabilities` — any signed-in user. Booleans only: no variable names,
+//     no sources, no hints. It exists so a screen can say "the assistant is
+//     off" instead of spinning against a service that will never answer.
+//   * `getServices` and its writes — the INSTANCE OPERATOR
+//     (`INSTANCE_ADMIN_EMAILS`), never merely a tenant admin.
+//   * `getTenantServices` — a company's own sender identity, in its own scope.
+// A stored secret never comes back: the report carries at most four trailing
+// characters, and there is no endpoint that reverses that.
+
+export type ServiceState = 'ready' | 'not_configured' | 'degraded' | 'off' | 'on'
+export type ConfigSource = 'tenant' | 'instance' | 'env' | 'default'
+
+export interface ConfigFieldView {
+  key: string
+  env: string
+  kind: 'str' | 'int' | 'float' | 'bool' | 'list'
+  secret: boolean
+  required: boolean
+  editable: boolean
+  doc: string
+  default: string
+  source: ConfigSource
+  has_value: boolean
+  /** Present only for secrets — a masked hint, never the value. Empty when the
+   *  value is inherited from the installation: a tenant may know its channel
+   *  works without being shown four characters of somebody else's credential. */
+  hint?: string
+  /** Secrets only: the value in effect belongs to the installation, not to this
+   *  tenant. */
+  inherited?: boolean
+  /** Present only for non-secrets. */
+  value?: unknown
+}
+
+export interface ProbeView {
+  ok: boolean
+  code: string
+  detail: string
+  checked_at: string
+  extra?: Record<string, unknown>
+}
+
+export interface ServiceView {
+  key: string
+  kind: 'external' | 'deployment' | 'core'
+  state: ServiceState
+  summary: string
+  what_breaks: string
+  docs_note: string
+  missing: string[]
+  /** Other ways to satisfy the same service — email runs on a Resend key OR on
+   *  SMTP credentials, so naming only one would read as the only way. */
+  missing_alternatives: string[][]
+  editable: boolean
+  tenant_scoped: boolean
+  has_probe: boolean
+  scope: 'instance' | 'tenant'
+  fields: ConfigFieldView[]
+  editable_fields: string[]
+  borrowed_fields: string[]
+  last_check: (ProbeView & { checked_at: string }) | null
+}
+
+export interface ServicesReport {
+  services: ServiceView[]
+  overrides: {
+    store_available: boolean
+    encryption_available: boolean
+    instance_fields: string[]
+    tenant_fields: string[]
+  }
+  environment: string
+  version: string
+  undocumented_settings: string[]
+  operator: { env: string; editing_enabled: boolean }
+}
+
+export interface TenantServicesReport {
+  services: ServiceView[]
+  scope: 'tenant'
+  tenant_id: string
+  is_instance_operator: boolean
+  overrides: {
+    store_available: boolean
+    encryption_available: boolean
+    tenant_fields: string[]
+  }
+}
+
+export interface Capabilities {
+  assistant: boolean
+  ai_narrative: boolean
+  documents_search: boolean
+  email: boolean
+  whatsapp: boolean
+  sms: boolean
+  whatsapp_bot: boolean
+  accounting_integrations: boolean
+  contact_channels: { whatsapp: boolean; email: boolean }
+  background_worker: boolean
+  scheduled_jobs: boolean
+}
+
+export interface ServiceWriteResult {
+  written: string[]
+  cleared: string[]
+  service: ServiceView
+}
+
+export const getCapabilities = (opts?: RequestOpts) =>
+  request<Capabilities>('GET', '/service-config/capabilities', undefined, opts)
+
+export const getServices = (opts?: RequestOpts) =>
+  request<ServicesReport>('GET', '/service-config/services', undefined, opts)
+
+/** Values are strings on the wire even for numbers and booleans — the backend
+ *  registry owns what each field's shape is, so there is exactly one place that
+ *  decides what "true" means. An empty string CLEARS the override. */
+export const saveService = (
+  serviceKey: string, values: Record<string, string>, opts?: RequestOpts,
+) =>
+  request<ServiceWriteResult>(
+    'PUT', `/service-config/services/${serviceKey}`, { values }, opts,
+  )
+
+export const resetService = (serviceKey: string, opts?: RequestOpts) =>
+  request<{ cleared: string[]; service: ServiceView }>(
+    'DELETE', `/service-config/services/${serviceKey}`, undefined, opts,
+  )
+
+export const probeService = (serviceKey: string, opts?: RequestOpts) =>
+  request<ProbeView>(
+    'POST', `/service-config/services/${serviceKey}/probe`, undefined, opts,
+  )
+
+export const getTenantServices = (opts?: RequestOpts) =>
+  request<TenantServicesReport>(
+    'GET', '/service-config/tenant/services', undefined, opts,
+  )
+
+export const saveTenantService = (
+  serviceKey: string, values: Record<string, string>, opts?: RequestOpts,
+) =>
+  request<ServiceWriteResult>(
+    'PUT', `/service-config/tenant/services/${serviceKey}`, { values }, opts,
+  )
+
+export const resetTenantService = (serviceKey: string, opts?: RequestOpts) =>
+  request<{ cleared: string[]; service: ServiceView }>(
+    'DELETE', `/service-config/tenant/services/${serviceKey}`, undefined, opts,
+  )
+
+export const probeTenantService = (serviceKey: string, opts?: RequestOpts) =>
+  request<ProbeView>(
+    'POST', `/service-config/tenant/services/${serviceKey}/probe`, undefined, opts,
   )

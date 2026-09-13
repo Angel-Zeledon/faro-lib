@@ -8,15 +8,12 @@ from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
 )
 from backend.db.connection import execute, query, query_one
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
 router = APIRouter(
     tags=["schedule"],
-    dependencies=[Depends(require_feature(Feature.SCHEDULED_REPORTS))],
 )
 log = logging.getLogger(__name__)
 

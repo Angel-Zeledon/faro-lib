@@ -666,24 +666,26 @@ class TestSignalCalculation:
         from backend.inventory.service import _calc_signal
         assert _calc_signal(coverage_days=60, lead_time=15) == "SOBRESTOCK"
 
-    def test_recommended_order_respects_moq(self):
+    def test_recommended_order_respects_moq_as_a_floor(self):
         from backend.inventory.service import _calc_recommended
-        # With avg_daily=10, lead=14, stock=50 → demand_lt=140, safety~=23 → raw~=113
+        # With avg_daily=10, lead=14, stock=50 → demand_lt=140, safety~=6 → raw~=96
         qty = _calc_recommended(current_stock=50, avg_daily=10, avg_std=1.0, lead_time=14, moq=50)
-        assert qty % 50 == 0  # must be a multiple of MOQ
-        assert qty >= 0
+        # Above the minimum, so the minimum does not move it. This used to
+        # assert `qty % 50 == 0` and got 100 — four units of real demand
+        # rounded into fifty units of purchase order.
+        assert qty == 97
+        assert qty >= 50
 
     def test_recommended_order_zero_when_overstock(self):
         from backend.inventory.service import _calc_recommended
         qty = _calc_recommended(current_stock=10_000, avg_daily=1, avg_std=0.1, lead_time=14, moq=1)
         assert qty == 0
 
-    def test_recommended_order_rounds_up_moq(self):
+    def test_recommended_order_is_lifted_to_the_moq_when_below_it(self):
         from backend.inventory.service import _calc_recommended
-        # With high demand and moq=100, result must be ceiling multiple of 100
-        qty = _calc_recommended(current_stock=0, avg_daily=50, avg_std=5, lead_time=14, moq=100)
-        assert qty > 0
-        assert qty % 100 == 0
+        # Needs ~13 units, but the supplier's minimum order is 100.
+        qty = _calc_recommended(current_stock=0, avg_daily=1, avg_std=0.5, lead_time=12, moq=100)
+        assert qty == 100
 
     def test_recommended_gated_to_ordering_signals(self):
         from backend.inventory.service import _gate_recommended_by_signal

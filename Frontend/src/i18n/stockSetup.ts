@@ -15,7 +15,11 @@ export const stockSetupEs = {
   'setupStock.page.subtitle': 'Empieza por los productos que mueven tu plata. No necesitas configurarlos todos.',
   // Why the screen exists at all. Without stock, costo y días de entrega no hay
   // semáforo: Faro sabe cuánto vas a vender, pero no con qué lo comparás.
-  'setupStock.page.why': 'Faro ya sabe cuánto vas a vender de cada producto. Para decirte qué pedir necesita tres datos más por producto: cuánto tienes hoy, cuánto te cuesta y cuántos días tarda en llegar. Mientras falten, ese producto no aparece en el semáforo.',
+  // Says exactly which of the three blocks the semáforo and which only makes it
+  // wrong. It used to promise all three blocked it — but a product with no lead
+  // time DOES appear, planned on an assumed 15 days, which is how an importer
+  // with 45 days of transit reorders a month late without ever being told.
+  'setupStock.page.why': 'Faro ya sabe cuánto vas a vender de cada producto. Para decirte qué pedir necesita tres datos más: cuánto tienes hoy, cuánto te cuesta y cuántos días tarda en llegar. Sin stock o sin costo, ese producto no aparece en el semáforo. Sin los días de entrega sí aparece, pero calculado sobre 15 días que estamos suponiendo — si tu proveedor tarda más, te va a avisar tarde.',
 
   // ── Pareto gaps ─────────────────────────────────────────────────────────
   'setupStock.gaps.title': 'Empieza por estos',
@@ -147,7 +151,7 @@ export const stockSetupEs = {
 export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
   'setupStock.page.title': 'Set up my inventory',
   'setupStock.page.subtitle': 'Start with the products that move your money. You do not need to configure them all.',
-  'setupStock.page.why': 'Faro already knows how much of each product you will sell. To tell you what to order it needs three more things per product: how much you hold today, what it costs you, and how many days it takes to arrive. Until those are there, that product cannot appear in the traffic light.',
+  'setupStock.page.why': 'Faro already knows how much of each product you will sell. To tell you what to order it needs three more things: how much you hold today, what it costs you, and how many days it takes to arrive. Without stock or cost, that product does not appear in the traffic light. Without the lead time it does appear — but planned on an assumed 15 days, so if your supplier takes longer, we will warn you late.',
 
   'setupStock.gaps.title': 'Start with these',
   'setupStock.gaps.headline': 'Completing {count} of your {total} products gets you to {pct}% of this month\'s purchase.',

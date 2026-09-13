@@ -47,7 +47,6 @@ UNAUTHENTICATED = {
     "POST /api/v1/auth/forgot-password/verify": "same flow, still locked out",
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
     # Machine callers authorised by request signature, not by a user token.
-    "POST /api/v1/billing/webhook": "Stripe webhook, verified by signature",
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
     # Deliberate: Twilio's MediaUrl fetch cannot carry a Bearer token, and the
     # id is unguessable. See the docstring on the route itself.
@@ -799,14 +798,20 @@ class TestInputValidation:
         assert resp.status_code == 422
         assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
 
-    def test_upload_oversized_file_is_blocked_by_plan_limit(self, client, auth_headers, test_tenant, monkeypatch):
+    def test_upload_oversized_file_is_blocked_by_the_size_limit(self, client, auth_headers, test_tenant, monkeypatch):
         # The size cap is bypassed under TESTING_MODE, so the test must turn it
         # off itself or it can never fail on a local .env with TESTING_MODE=true.
         from backend.config import settings
+        from backend.db.connection import execute, _json
         monkeypatch.setattr(settings, "testing_mode", False)
-        # >200MB: over the Starter plan's max_dataset_size_mb, which is now the
-        # authoritative cap (403 PLAN_LIMIT_REACHED, not the old generic 400).
-        fake_big = b"a" * (200 * 1024 * 1024 + 1)
+        # The shipped ceiling is 2 GB, which is not a file anyone wants to build
+        # in a test, so the tenant is narrowed to 1 MB through its quota — the
+        # same path a real agreement uses. What is under test is the guard, not
+        # the number: an over-size upload must be refused with the canonical
+        # error and store nothing.
+        execute("UPDATE tenants SET quota = %s WHERE id = %s",
+                (_json({"max_dataset_size_mb": 1}), test_tenant["id"]))
+        fake_big = b"sku,date,sales\n" + b"a" * (2 * 1024 * 1024)
         resp = client.post(
             "/api/v1/datasets",
             files={"file": ("big.csv", fake_big, "text/csv")},
@@ -818,7 +823,7 @@ class TestInputValidation:
         assert detail["limit"] == "max_dataset_size_mb"
         assert query_one(
             "SELECT COUNT(*) AS n FROM datasets WHERE tenant_id = %s", (test_tenant["id"],)
-        )["n"] == 0, "the upload was refused over the plan limit and stored anyway"
+        )["n"] == 0, "the upload was refused over the size limit and stored anyway"
 
     def test_attach_nonexistent_dataset_leaves_the_session_unattached(
         self, client, auth_headers, test_session,

@@ -83,10 +83,16 @@ class TestFallback:
                                 lead_time=7, moq=0, service_level=0.95, risk=risk)
         assert qty == pytest.approx(10.0 * 7 + 50.0)
 
-    def test_moq_rounds_up(self):
+    def test_the_moq_floor_does_not_move_a_need_above_it(self):
+        """
+        `moq` is a MINIMUM, not a case size. This used to assert 72.0 — 70 units
+        of real need rounded up to the next multiple of 24 — which is the
+        arithmetic for "the supplier ships in cases", a thing this product has
+        no field for and never asked the buyer about.
+        """
         qty = _calc_recommended(0.0, 10.0, 0.0, 7, moq=24, service_level=0.95,
                                 risk=_risk({"7": {"0.95": 0.0}}))
-        assert qty == 72.0        # 70 rounded up to the next case of 24
+        assert qty == 70.0        # already above the 24-unit minimum
 
 
 class TestPointSigmaIsASigma:

@@ -128,6 +128,13 @@ def test_sync_normalizes_warehouse_and_store_spellings(client, test_tenant, monk
     consistency for a warehouse first seen in this very sync ('Sur'/'sur')."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
+    # This test needs TWO warehouses, and the free tier allows one. The subject
+    # here is name normalization, not ceilings — so the tenant is given room
+    # explicitly rather than the assertion being weakened. `test_tiers.py` and
+    # `test_chaos_concurrency.py` own the ceilings.
+    from backend.db.connection import execute as _execute
+    _execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (test_tenant["id"],))
+
     from backend.integrations import store, registry, sync_service, base
     from backend.inventory import warehouse_service as wh_svc
     from backend.db.connection import execute, query, query_one
@@ -136,7 +143,6 @@ def test_sync_normalizes_warehouse_and_store_spellings(client, test_tenant, monk
     tid = test_tenant["id"]
     # testing_mode=False re-enables plan limits; the default plan allows only
     # 1 location and this scenario legitimately needs 2 ('Norte' + 'Sur').
-    execute("UPDATE tenants SET plan = 'enterprise' WHERE id = %s", (tid,))
     wh_svc.create_warehouse(tid, "Norte")  # canonical spelling on file
 
     class CaseProvider(base.AccountingProvider):

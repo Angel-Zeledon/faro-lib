@@ -136,21 +136,24 @@ _ES: dict[str, str] = {
     # ── Monthly recap email ───────────────────────────────────────────────────
     # Every tile states where its number came from, so the copy never implies a
     # saving Faro cannot measure.
+    # These four tiles mirror the /impacto recap key for key. When one changes,
+    # both change: a buyer who reads "liberaste ₡8M" in the inbox and "bajó tu
+    # sobrestock ₡8M" on screen is looking at two claims about one number.
     "roi_email_title":                  "Tu resumen de {month}",
-    "roi_email_subject_capital":        "Faro — liberaste {amount} en {month}",
+    "roi_email_subject_capital":        "Faro — tu sobrestock bajó {amount} en {month}",
     "roi_email_subject_default":        "Faro — tu resumen de {month}",
-    "roi_email_headline_capital":       "En {month} liberaste {amount} de inventario detenido.",
+    "roi_email_headline_capital":       "En {month} tu inventario detenido bajó {amount}.",
     "roi_email_headline_default":       "Esto es lo que hiciste con Faro en {month}.",
-    "roi_email_metric_adoption_label":  "de las recomendaciones que seguiste",
-    "roi_email_metric_adoption_note":   "Seguiste {followed} de {shown} líneas que Faro te propuso.",
-    "roi_email_metric_risks_label":     "riesgos de quiebre atendidos",
-    "roi_email_metric_risks_note":      "Productos marcados “Pedir ya” que sí ordenaste en el mes. Es lo que hiciste, no una estimación de quiebres evitados.",
-    "roi_email_metric_capital_label":   "capital liberado de sobrestock",
-    "roi_email_metric_capital_note":    "Diferencia medida entre el valor de tu inventario en sobrestock al inicio y al final del mes.",
+    "roi_email_metric_adoption_label":  "de las recomendaciones que decidiste",
+    "roi_email_metric_adoption_note":   "Seguiste {followed} de las {shown} líneas sobre las que llegaste a decidir. Las que dejaste pasar sin tocar no están en ninguno de los dos lados.",
+    "roi_email_metric_risks_label":     "líneas urgentes que pediste",
+    "roi_email_metric_risks_note":      "Líneas marcadas “Pedir ya” que sí ordenaste en el mes — no productos distintos. Es lo que hiciste, no una estimación de quiebres evitados, y no comprueba que hayan llegado.",
+    "roi_email_metric_capital_label":   "de baja en tu sobrestock",
+    "roi_email_metric_capital_note":    "Diferencia medida entre el valor de tu inventario en sobrestock al inicio y al final del mes. No sabemos cuánto de esa baja fue por tus compras: el sobrestock también baja al vender, al registrar merma, al borrar productos y al reentrenar.",
     "roi_email_metric_purchases_label": "en compras gestionadas",
-    "roi_email_metric_purchases_note":  "Unidades ordenadas × costo unitario de tus propios datos.",
+    "roi_email_metric_purchases_note":  "Unidades ordenadas × costo unitario de tus propios datos, hayan llegado o no.",
     "roi_email_cta":                    "Ver el resumen completo",
-    "roi_email_footer":                 "Cada cifra sale de tus propios registros en Faro: las órdenes que generaste y las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos lo que quedó registrado.",
+    "roi_email_footer":                 "Cada cifra sale de tus propios registros en Faro: las órdenes que generaste y las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos lo que quedó registrado. Y “registrado” no es lo mismo que “atribuido a Faro”: son cosas que pasaron en tu inventario mientras lo usabas.",
     # ── Inventory summary PDF (downloaded, then forwarded to other people) ────
     # The buyer downloads this and sends it on, so it never passes through the
     # frontend and its Spanish belongs here. Note `inventory_pdf_generated_on`

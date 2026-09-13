@@ -27,7 +27,6 @@ import { Play, Copy, Check, KeyRound, AlertTriangle } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input, { Textarea } from '@/components/ui/Input'
-import FeatureGate from '@/components/ui/FeatureGate'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -520,7 +519,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
   )
 }
 
-function ApiDocsPage() {
+export default function ApiDocsPage() {
   const { t } = useLanguage()
   const narrow = useIsNarrow()
   // React state only, never localStorage. The raw key exists nowhere else — the
@@ -532,13 +531,16 @@ function ApiDocsPage() {
   const [baseUrl, setBaseUrl] = useState('')
   useEffect(() => { setBaseUrl(`${window.location.origin}/api/v1`) }, [])
 
-  // The three facts an integrator checks before writing a line of code. They sit
-  // in the header rather than in prose further down because they are the terms
-  // of the contract, not commentary on it.
+  // The facts an integrator checks before writing a line of code. They sit in
+  // the header rather than in prose further down because they are the terms of
+  // the contract, not commentary on it.
+  //
+  // A third one said "Included from: Professional". With one plan the API is
+  // included, full stop, and a row answering a question nobody can ask any more
+  // is not a term of the contract — it is a leftover of a price list.
   const specs = [
     { label: t('apidocs.spec_auth'), value: 'Bearer sk_live_…', mono: true },
     { label: t('apidocs.spec_rate'), value: t('apidocs.spec_rate_value'), mono: false },
-    { label: t('apidocs.spec_plan'), value: t('apidocs.spec_plan_value'), mono: false },
   ]
 
   return (
@@ -738,13 +740,5 @@ function ApiDocsPage() {
         </div>
       </div>
     </div>
-  )
-}
-
-export default function Page() {
-  return (
-    <FeatureGate feature="api_access">
-      <ApiDocsPage />
-    </FeatureGate>
   )
 }

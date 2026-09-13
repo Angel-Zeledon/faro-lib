@@ -1,37 +1,28 @@
-"""Plan catalog — the single source of truth for entitlements.
+"""The limits a tenant runs under. One product, two ceilings.
 
-Each plan maps to numeric limits (None means unlimited) and a set of feature
-keys. Tiers are composed by union so a higher tier can never lose a lower
-tier's feature.
+Faro shipped three tiers once — starter / professional / enterprise — each with
+its own feature set, and a good part of the product was spent telling people
+what they could not use. That is not what this is. **Every tenant gets every
+feature**, on both tiers: the same screens, the same forecasting, the same
+assistant, the same integrations. What differs is only *how much* of it fits.
+
+- `free` is a real, permanent home for a small operation, not a countdown. It
+  is deliberately narrow: a distributor who grows past a hundred SKUs, a second
+  warehouse or a third teammate has outgrown it, and that is the moment we want
+  a conversation.
+- `paid` lifts every commercial ceiling. What stays is **infrastructure**:
+  numbers that protect the server, identical on both tiers.
+
+There is no checkout. A tenant moves to `paid` because somebody talked to us
+and we set `tenants.tier`. That is the whole billing system, on purpose.
+
+`None` means unlimited.
 """
 
 from dataclasses import dataclass
-from enum import Enum
 
-
-class Feature(str, Enum):
-    # Core — every plan
-    SEMAPHORE = "semaphore"
-    PO_GENERATION = "po_generation"
-    RECEPTION = "reception"
-    SUPPLIERS = "suppliers"
-    REPORTS = "reports"
-    EMAIL_ALERTS = "email_alerts"
-    # Professional
-    ABC_XYZ = "abc_xyz"
-    WHATSAPP_ALERTS = "whatsapp_alerts"
-    AI_ANALYST = "ai_analyst"
-    DOCUMENTS_RAG = "documents_rag"
-    EVENT_SIMULATOR = "event_simulator"
-    MILP_OPTIMIZER = "milp_optimizer"
-    SCHEDULED_REPORTS = "scheduled_reports"
-    MULTI_LOCATION = "multi_location"
-    TEAM_MESSAGING = "team_messaging"
-    # Enterprise
-    BOM = "bom"
-    API_ACCESS = "api_access"
-    WEBHOOKS = "webhooks"
-    INTEGRATIONS = "integrations"
+FREE = "free"
+PAID = "paid"
 
 
 @dataclass(frozen=True)
@@ -40,57 +31,53 @@ class PlanDef:
     max_users: int | None
     max_locations: int | None
     max_sessions: int | None
+    max_api_keys: int | None
+    max_api_calls_per_day: int | None
     max_concurrent_jobs: int | None
     max_dataset_size_mb: int | None
-    # API calls per minute per key. Shipped as one number for everybody, which
-    # meant an Enterprise paying ten times as much got the same allowance as the
-    # plan below it — and the tenant with the biggest catalogue is the one whose
-    # nightly sync needs the most calls. None is unlimited.
-    api_rate_per_minute: int | None
-    features: frozenset[Feature]
 
 
-_CORE = frozenset({
-    Feature.SEMAPHORE, Feature.PO_GENERATION, Feature.RECEPTION,
-    Feature.SUPPLIERS, Feature.REPORTS, Feature.EMAIL_ALERTS,
-})
+# Infrastructure ceilings — the same on both tiers, because they are not for
+# sale. A tenant training eight models at once is already using every worker
+# thread there is, and the ninth job waiting in the queue is what keeps the
+# ninth tenant's first job from waiting behind it.
+_MAX_CONCURRENT_JOBS = 8
 
-_PRO_EXTRA = frozenset({
-    Feature.ABC_XYZ, Feature.WHATSAPP_ALERTS, Feature.AI_ANALYST,
-    Feature.DOCUMENTS_RAG, Feature.EVENT_SIMULATOR, Feature.MILP_OPTIMIZER,
-    Feature.SCHEDULED_REPORTS, Feature.MULTI_LOCATION, Feature.TEAM_MESSAGING,
-    # The customer who most needs to stop uploading files by hand is the one
-    # with an ERP and a few thousand SKUs — and that is a Professional, not an
-    # Enterprise. Held at Enterprise, the API would be sold to the tier that
-    # feels the pain least.
-    Feature.API_ACCESS,
-})
-
-_ENT_EXTRA = frozenset({Feature.BOM, Feature.WEBHOOKS, Feature.INTEGRATIONS})
-
-PLAN_CATALOG: dict[str, PlanDef] = {
-    "starter": PlanDef(
-        max_skus=1000, max_users=2, max_locations=1,
-        max_sessions=20, max_concurrent_jobs=2, max_dataset_size_mb=200,
-        # Starter has no API access at all; the number is here so the field is
-        # never None-by-accident if that ever changes.
-        api_rate_per_minute=60,
-        features=_CORE,
+PLANS: dict[str, PlanDef] = {
+    FREE: PlanDef(
+        # A hundred SKUs runs a small shop's whole catalog, and stops being
+        # enough the moment the catalog is a real distributor's.
+        max_skus=100,
+        # Two: the owner and one more. A team is the third person.
+        max_users=2,
+        # One warehouse. Multi-warehouse transfers, the optimizer's whole
+        # reason to exist, need a second one.
+        max_locations=1,
+        max_sessions=3,
+        max_api_keys=1,
+        # A nightly ERP push and the polling around it fits in 500. A live
+        # integration that reads all day does not.
+        max_api_calls_per_day=500,
+        max_concurrent_jobs=_MAX_CONCURRENT_JOBS,
+        # 25 MB is roughly 4 years of daily sales over 100 SKUs — the history
+        # that fits the SKU ceiling above, and no more.
+        max_dataset_size_mb=25,
     ),
-    "professional": PlanDef(
-        max_skus=5000, max_users=10, max_locations=5,
-        max_sessions=100, max_concurrent_jobs=4, max_dataset_size_mb=500,
-        # The plan the API is sold on. 120/min covers a nightly push over a few
-        # thousand SKUs and the polling around it, with room to retry.
-        api_rate_per_minute=120,
-        features=_CORE | _PRO_EXTRA,
-    ),
-    "enterprise": PlanDef(
-        max_skus=None, max_users=None, max_locations=None,
-        max_sessions=None, max_concurrent_jobs=8, max_dataset_size_mb=2000,
-        # Unlimited SKUs means unpredictable call volume; a fixed ceiling here
-        # would throttle the customer paying most to avoid being throttled.
-        api_rate_per_minute=None,
-        features=_CORE | _PRO_EXTRA | _ENT_EXTRA,
+    PAID: PlanDef(
+        max_skus=None,
+        max_users=None,
+        max_locations=None,
+        max_sessions=None,
+        max_api_keys=None,
+        max_api_calls_per_day=None,
+        max_concurrent_jobs=_MAX_CONCURRENT_JOBS,
+        # The one number still bounded on a paying customer's own data, and it
+        # stays because an upload is read into memory before it is anything
+        # else. For scale: 3 years of daily sales over 5.000 SKUs is ~200 MB.
+        max_dataset_size_mb=2000,
     ),
 }
+
+# What an unrecognised (or missing) `tenants.tier` resolves to. Free, never
+# paid: a column that has drifted must not hand out an unlimited account.
+DEFAULT_TIER = FREE
