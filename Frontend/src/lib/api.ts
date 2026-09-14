@@ -1691,7 +1691,15 @@ export interface ServicesReport {
   environment: string
   version: string
   undocumented_settings: string[]
-  operator: { env: string; editing_enabled: boolean }
+  operator: {
+    env: string
+    editing_enabled: boolean
+    /** An operator list was named in the environment. */
+    explicit: boolean
+    /** You operate this installation only because yours is the only company on
+     *  it. Real access, and it ends when a second one signs up. */
+    bootstrap: boolean
+  }
 }
 
 export interface TenantServicesReport {

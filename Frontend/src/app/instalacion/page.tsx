@@ -500,6 +500,13 @@ export default function InstallationPage() {
             {!instance.overrides.encryption_available && (
               <Banner tone="warn" text={ui.encryptionUnavailable} />
             )}
+            {/* Operating by being the only company here is real access with an
+                expiry date. Saying so while there is still one tenant is the
+                difference between naming an operator calmly and discovering on
+                the day a customer signs up that nobody can reach the panel. */}
+            {instance.operator?.bootstrap && (
+              <Banner tone="warn" text={ui.bootstrapNotice} />
+            )}
             {instance.undocumented_settings.length > 0 && (
               <Banner
                 tone="warn"

@@ -23,11 +23,15 @@ and it is limited to services the registry marks `tenant_scoped`.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import Depends
 
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
 from backend.config import settings
 from backend.errors import AppError
+
+log = logging.getLogger(__name__)
 
 # Named so the panel and the docs can point at the same string.
 OPERATOR_ENV = "INSTANCE_ADMIN_EMAILS"
@@ -46,9 +50,56 @@ def operator_emails() -> list[str]:
     return [str(e).strip().lower() for e in raw if str(e).strip()]
 
 
+def sole_tenant_id() -> str | None:
+    """The one tenant on this deployment, when there is exactly one.
+
+    This is what makes a VIRGIN install usable, and it is the whole reason the
+    function exists. On a fresh deployment `INSTANCE_ADMIN_EMAILS` is empty, so
+    a strict reading of "only the listed operators may configure services"
+    leaves the panel locked at the exact moment it is the only way to configure
+    anything — the buyer is sent back to editing a file and restarting a
+    container, which is what the panel was built to end.
+
+    So while the deployment has exactly ONE tenant, that tenant's admins operate
+    the installation. The person who installed it is the person who signed up,
+    always: they have to, to see whether it works.
+
+    It stops at two. The moment a second company exists, "the only tenant" is no
+    longer a statement about ownership, and implicit access would mean whoever
+    signed up first can read everyone's credentials. From then on the deployment
+    must say who operates it, out loud, in the environment — and the panel warns
+    about that while there is still one tenant and time to do it.
+
+    Returns None when there are zero tenants or more than one, and also when the
+    question cannot be answered (an unreachable database is not a grant).
+    """
+    from backend.db.connection import query
+
+    try:
+        rows = query("SELECT id FROM tenants ORDER BY created_at LIMIT 2")
+    except Exception as exc:  # noqa: BLE001 - a failed lookup grants nothing
+        log.warning("Could not determine the sole tenant: %s", exc)
+        return None
+    if len(rows) != 1:
+        return None
+    return rows[0]["id"]
+
+
+def bootstrap_scope() -> str | None:
+    """The tenant whose admins operate this installation implicitly, if any.
+
+    Empty when an explicit list exists: a deployment that named its operators
+    has answered the question, and an implicit second answer could only widen
+    it.
+    """
+    if operator_emails():
+        return None
+    return sole_tenant_id()
+
+
 def instance_editing_enabled() -> bool:
     """Whether anyone at all may edit instance configuration from the app."""
-    return bool(operator_emails())
+    return bool(operator_emails()) or bootstrap_scope() is not None
 
 
 def _email_of(user: CurrentUser) -> str:
@@ -65,13 +116,22 @@ def is_instance_operator(user: CurrentUser) -> bool:
     A machine credential is never an operator: an API key is issued inside a
     tenant, it cannot be verified against a human address, and nothing in the
     published API needs to read the deployment's secrets.
+
+    Two ways to be one, and the explicit one wins:
+
+      * named in `INSTANCE_ADMIN_EMAILS`; or
+      * admin of the only tenant on a deployment that has named nobody — the
+        first-run case (see `sole_tenant_id`).
     """
     if user.is_machine or user.role != "admin":
         return False
+
     allowed = operator_emails()
-    if not allowed:
-        return False
-    return _email_of(user) in allowed
+    if allowed:
+        return _email_of(user) in allowed
+
+    scope = bootstrap_scope()
+    return scope is not None and scope == user.tenant_id
 
 
 def require_instance_operator(
@@ -84,7 +144,7 @@ def require_instance_operator(
     an environment variable; `not_instance_operator` means the caller is simply
     not on the list.
     """
-    if not operator_emails():
+    if not instance_editing_enabled():
         raise AppError(
             "instance_config_disabled",
             f"No instance operator is configured. Set {OPERATOR_ENV} to the "

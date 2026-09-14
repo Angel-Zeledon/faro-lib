@@ -33,8 +33,10 @@ from backend.service_config import status as status_mod
 from backend.service_config import store
 from backend.service_config.access import (
     OPERATOR_ENV,
+    bootstrap_scope,
     instance_editing_enabled,
     is_instance_operator,
+    operator_emails,
     require_instance_operator,
     require_tenant_channel_admin,
 )
@@ -128,9 +130,15 @@ def get_capabilities(user: CurrentUser = Depends(get_current_user)):
 def list_services(user: CurrentUser = Depends(require_instance_operator)):
     """Every service, its state, its fields and where each value came from."""
     report = status_mod.full_report()
+    # `bootstrap` is true when the caller operates this installation only
+    # because it is the only company on it. The panel has to say that out loud:
+    # the access is real but temporary, and it ends the day a second tenant
+    # signs up — which is a bad day to discover you never named an operator.
     report["operator"] = {
         "env": OPERATOR_ENV,
         "editing_enabled": instance_editing_enabled(),
+        "explicit": bool(operator_emails()),
+        "bootstrap": bootstrap_scope() is not None,
     }
     return ok(report)
 

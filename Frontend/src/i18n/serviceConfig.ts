@@ -106,6 +106,7 @@ export interface ServiceConfigCopy {
     lastCheck: string
     neverChecked: string
     /** Access and store conditions. */
+    bootstrapNotice: string
     operatorDisabledTitle: string
     operatorDisabledBody: string
     notOperatorTitle: string
@@ -279,6 +280,7 @@ const es: ServiceConfigCopy = {
     probeUnexpected: 'Error inesperado al probar.',
     lastCheck: 'Última prueba',
     neverChecked: 'Sin probar todavía',
+    bootstrapNotice: 'Administras esta instalación porque tu empresa es la única que hay en ella. Ese acceso se termina en cuanto entre una segunda: antes de invitar a alguien, pon tu correo en INSTANCE_ADMIN_EMAILS (en el archivo .env del servidor) y reinicia, o nadie podrá volver a abrir esta pestaña.',
     operatorDisabledTitle: 'Esta instalación no tiene operador',
     operatorDisabledBody: 'Nadie puede editar la configuración de servicios desde la app hasta que INSTANCE_ADMIN_EMAILS tenga al menos una dirección. Se pone en el archivo .env del backend y requiere reiniciar.',
     notOperatorTitle: 'Esta cuenta no opera la instalación',
@@ -452,6 +454,7 @@ const en: ServiceConfigCopy = {
     probeUnexpected: 'Unexpected error while testing.',
     lastCheck: 'Last test',
     neverChecked: 'Not tested yet',
+    bootstrapNotice: 'You administer this installation because yours is the only company on it. That access ends the moment a second one signs up: before inviting anybody, put your address in INSTANCE_ADMIN_EMAILS (in the server’s .env file) and restart, or nobody will be able to open this tab again.',
     operatorDisabledTitle: 'This installation has no operator',
     operatorDisabledBody: 'Nobody can edit service configuration from the app until INSTANCE_ADMIN_EMAILS holds at least one address. It goes in the backend’s .env file and requires a restart.',
     notOperatorTitle: 'This account does not operate the installation',
