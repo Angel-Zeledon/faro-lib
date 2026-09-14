@@ -89,9 +89,26 @@ Two layers, and the app always says which one is in effect:
 
 Who may open that panel is `INSTANCE_ADMIN_EMAILS`, not the `admin` role:
 `admin` exists inside a tenant and every company that signs up has one, so it
-cannot be what grants access to the deployment's credentials. With the variable
-empty, nobody edits instance configuration from the app — the panel says so and
-names the variable.
+cannot be what grants access to the deployment's credentials.
+
+**On a fresh install you do not need it yet.** While the deployment has exactly
+one company and has named nobody, that company's admins operate it — the person
+who installs it is the person who signs up. That ends the moment a second
+company exists, and the panel warns you while there is still time to act: put
+your address in `INSTANCE_ADMIN_EMAILS` before you invite anyone, or nobody will
+be able to open the screen again.
+
+The encryption key behaves the same way. `INTEGRATIONS_SECRET_KEY` protects
+every credential stored from the panel; leave it empty and one is generated at
+`storage/instance_secret.key` on first use, so day one is not spent editing the
+file this screen exists to replace. Back `storage/` up — losing that file means
+re-entering every credential — and promote the key into the variable before
+running a second process on a different volume, or each will make its own and
+be unable to read the other's.
+
+So the honest minimum to go from `git clone` to a working product is three
+values: `SECRET_KEY`, `DATABASE_URL`, `FRONTEND_URL`. Everything else is
+reachable from inside the running app.
 
 The complete reference — every variable, what it does, and exactly what stops
 working without it — is **[`docs/configuracion.md`](docs/configuracion.md)**. It

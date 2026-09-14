@@ -1889,6 +1889,57 @@ libres y tardó 111 minutos en vez de 40.
 
 ---
 
+## 10. La instalación virgen, que es la única que importa para vender (2026-09-14)
+
+El panel de servicios existía desde el 2026-09-13 y **no servía el primer día**,
+que es justo el día para el que se construyó. Dos candados, cada uno razonable
+por separado:
+
+1. **Nadie podía abrirlo.** `INSTANCE_ADMIN_EMAILS` vacía significaba «nadie
+   edita», y un despliegue recién instalado tiene esa variable vacía por
+   definición. El comprador quedaba mandado a editar el archivo y reiniciar el
+   contenedor — lo que la pantalla existe para terminar.
+2. **Quien lograra abrirlo no podía guardar nada.** Guardar un secreto necesita
+   llave Fernet, la llave venía solo de `INTEGRATIONS_SECRET_KEY`, y una
+   instalación nueva tampoco la tiene. O sea: la primera cosa que alguien
+   intenta —pegar la llave de DeepSeek— fallaba.
+
+Ambos resueltos sin aflojar la seguridad:
+
+- Mientras el despliegue tenga **exactamente un tenant** y no haya nombrado a
+  nadie, los admins de ese tenant lo operan. Quien instala es quien se registra.
+  **Se acaba en dos**: en cuanto existe una segunda empresa, «el único tenant»
+  deja de significar propiedad y pasaría a significar «quien se registró
+  primero», que sería una puerta a las credenciales de todos. El panel avisa
+  mientras todavía hay una sola empresa y tiempo de reaccionar.
+- `INTEGRATIONS_SECRET_KEY` vacía ya no significa «apagado» sino «hazme una»:
+  se genera en `storage/instance_secret.key` al primer uso. El entorno siempre
+  gana. Los dos costos se dicen en el momento en que ocurre —respaldar
+  `storage/`, y promover la llave a la variable antes de correr un segundo
+  proceso en otro volumen— en el log y en el panel.
+- Una base inalcanzable **no otorga nada**: `sole_tenant_id` devuelve None si la
+  consulta falla. Fallar «abierto» ahí habría entregado el panel a cualquier
+  admin en cuanto Postgres tosiera.
+- Un disco de solo lectura sigue apagando el cifrado, con motivo dicho y sin
+  degradar jamás a texto plano.
+
+### Cómo se verificó, que es la parte que vale
+
+`test_virgin_install.py` (14 tests, ninguno saltado) apaga **todas** las
+credenciales opcionales y ejercita lo que depende de ellas: ningún endpoint
+responde 5xx por una llave ausente, todo nombra lo que falta, el núcleo no se
+entera, y los dos ciclos programados de las 8:00 **terminan** en vez de
+reventar hacia el planificador y llevarse por delante las alertas de los demás
+tenants.
+
+Y después, fuera de los tests: **clon limpio del repo, base vacía, tres
+variables en el `.env`, nada más.** Arranca, el dueño se registra, abre el
+panel, **pega la llave de DeepSeek en la pantalla**, y `capabilities.assistant`
+pasa a `true` sin reiniciar nada. El secreto no vuelve a salir: la lectura da
+cuatro caracteres finales. Cero problemas en los siete pasos.
+
+---
+
 ## Lo que se borró el 2026-08-11, y por qué
 
 Siete documentos de planes, propuestas y auditorías ya ejecutados o superados.
