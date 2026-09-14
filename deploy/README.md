@@ -49,6 +49,27 @@ The bundled Postgres needs an external backup. On the host's crontab:
 0 3 * * * docker exec faro-db-1 pg_dump -U faro faro | gzip > /var/backups/faro-$(date +\%F).sql.gz
 ```
 
+**The database dump is not enough.** The `storage` volume holds the uploaded
+datasets, the model artifacts, the documents — and, if you left
+`INTEGRATIONS_SECRET_KEY` empty, `instance_secret.key`, which is the only thing
+that can decrypt the credentials stored in that database. A restore with the
+dump alone comes back with every stored credential unreadable: the log says the
+key changed, the panel reports those services as not configured, and the
+credentials have to be entered again — the rows survive and mean nothing.
+
+```sh
+# The other half of the backup
+0 4 * * * docker run --rm -v faro_storage:/s -v /var/backups:/b alpine tar czf /b/faro-storage-$(date +\%F).tar.gz -C /s .
+```
+
+Or take the key out of the equation: put a Fernet key in
+`INTEGRATIONS_SECRET_KEY` in `deploy/.env` and it never touches the volume.
+That is the better answer if your secrets already live in a manager.
+
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
 ## Notes that save an afternoon
 
 - `BACKEND_URL` is baked into the frontend image at **build** time (Next.js
