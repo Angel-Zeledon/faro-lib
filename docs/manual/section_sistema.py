@@ -328,6 +328,7 @@ SECTION = {
                 ),
                 "walkthrough": [
                     "Tiene dos pestañas y contestan a dos personas distintas. «Esta instalación» es de quien administra el servidor; «Mis canales» es de tu empresa.",
+                    "En una instalación recién montada no hace falta configurar nada antes de entrar: si tu empresa es la única, el panel se abre para ti y la llave que cifra lo que guardes se crea sola.",
                     "Cada servicio se muestra como una tarjeta con su estado: Listo, Sin configurar, Con problemas o Apagado.",
                     "Un servicio Sin configurar no es un error: la tarjeta dice en una frase qué se pierde mientras esté así, y nombra la variable exacta que falta.",
                     "«Con problemas» significa algo distinto de «sin configurar»: la credencial está puesta pero el proveedor la rechazó, no se le pudo alcanzar o no contestó a tiempo. Esa diferencia es la que te dice si el arreglo es pegar una llave nueva o revisar la red.",
@@ -368,7 +369,8 @@ SECTION = {
                 ],
                 "gotchas": [
                     "Si ves «Esta cuenta no opera la instalación», no es un error tuyo: la configuración del servidor pertenece a quien lo administra, y se decide con una variable del servidor, no con el rol de administrador de tu empresa. Tus propios canales sí los puedes configurar, en la otra pestaña.",
-                    "Sin INTEGRATIONS_SECRET_KEY en el servidor no se puede guardar ningún secreto desde esta pantalla. Se rechaza a propósito: guardarlo sin cifrar no es una opción que el producto ofrezca.",
+                    "Si tu empresa es la única en esta instalación, la administras aunque nadie te haya nombrado — quien instala es quien se registra. Ese acceso se termina en cuanto entre una segunda empresa, y el panel te lo avisa arriba. Antes de invitar a alguien, pon tu correo en INSTANCE_ADMIN_EMAILS (en el archivo .env del servidor) y reinicia, o después nadie podrá volver a abrir esta pestaña.",
+                    "Si el panel dice que la instalación generó su propia llave de cifrado, funciona pero tiene dos consecuencias: respalda la carpeta storage/ del servidor, porque si se pierde ese archivo hay que volver a ingresar todas las credenciales; y si algún día corres un segundo proceso en otro disco, copia esa llave a INTEGRATIONS_SECRET_KEY antes, o cada proceso hará la suya y no podrá leer lo que guardó el otro.",
                     "El correo se da por configurado con la llave de Resend O con usuario y contraseña de SMTP; no necesitas los dos. La tarjeta te dice las dos formas.",
                     "Los correos de la cuenta —verificar tu correo, recuperar contraseña, invitar a alguien— siempre salen por el transporte de la instalación, aunque tu empresa tenga el suyo. Un cliente no puede mandar el mensaje que da acceso a una cuenta.",
                     "Que un servicio diga «Listo» significa que tiene sus credenciales, no que el proveedor esté sano. Para eso está «Probar conexión».",
@@ -705,6 +707,7 @@ SECTION = {
                 ),
                 "walkthrough": [
                     "It has two tabs, and they answer to two different people. \u201cThis installation\u201d belongs to whoever administers the server; \u201cMy channels\u201d belongs to your company.",
+                    "On a freshly installed deployment nothing has to be configured before you can get in: if yours is the only company, the panel opens for you and the key that encrypts whatever you save is created on its own.",
                     "Each service is a card with its state: Ready, Not configured, Failing or Off.",
                     "A Not configured service is not an error: the card says in one sentence what is lost while it stays that way, and names the exact variable that is missing.",
                     "\u201cFailing\u201d means something different from \u201cnot configured\u201d: the credential is there but the provider rejected it, could not be reached, or did not answer in time. That difference is what tells you whether the fix is a new key or a network problem.",
@@ -745,7 +748,8 @@ SECTION = {
                 ],
                 "gotchas": [
                     "If you see \u201cThis account does not operate the installation\u201d, you did nothing wrong: server configuration belongs to whoever administers it, and is decided by a server variable rather than by your company\u2019s administrator role. Your own channels you can still configure, in the other tab.",
-                    "Without INTEGRATIONS_SECRET_KEY on the server, no secret can be saved from this screen. It is refused on purpose: storing it unencrypted is not an option the product offers.",
+                    "If yours is the only company on this installation, you administer it even though nobody named you \u2014 whoever installs it is whoever signs up. That access ends the moment a second company arrives, and the panel warns you at the top. Before inviting anybody, put your address in INSTANCE_ADMIN_EMAILS (in the server\u2019s .env file) and restart, or nobody will be able to open this tab again.",
+                    "If the panel says the installation generated its own encryption key, it works but it carries two consequences: back up the server\u2019s storage/ folder, because losing that file means re-entering every credential; and if you ever run a second process on another disk, copy that key into INTEGRATIONS_SECRET_KEY first, or each process will make its own and be unable to read what the other stored.",
                     "Email counts as configured with a Resend key OR with an SMTP user and password; you do not need both. The card states both ways.",
                     "Account email \u2014 verifying your address, resetting a password, inviting somebody \u2014 always leaves through the installation\u2019s transport, even when your company has its own. A customer must not send the message that grants access to an account.",
                     "A service saying \u201cReady\u201d means it has its credentials, not that the provider is healthy. That is what \u201cTest connection\u201d is for.",
