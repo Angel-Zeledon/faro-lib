@@ -53,19 +53,23 @@ pip install -e ForecastingCore/
 cp backend/.env.example backend/.env
 
 # 4. The API — creates every table on first boot
-backend/.venv/Scripts/python -m uvicorn backend.main:app --port 8011
+backend/.venv/Scripts/python -m uvicorn backend.main:app --port 8010
 
-# 5. The web app (proxies /api/* to the backend; see Frontend/.env.local)
+# 5. The web app (proxies /api/* to the backend on 8010 by default)
 cd Frontend && npm install && npm run dev
 ```
 
 Then open <http://localhost:5000> and create the first account.
 
+Steps 4 and 5 are what `./run.sh` (or `run.bat` on Windows) does for you, Postgres
+included. **8010 is the port everything agrees on**: the frontend proxies there
+unless `BACKEND_URL` says otherwise, and both run scripts start the API on it.
+
 Two traps worth knowing before they cost you an hour:
 
-- `Frontend/.env.local` is per-machine and **beats** a shell `BACKEND_URL`. When
-  every `/api/*` call returns `500` with an empty body, it is pointing at a port
-  nothing listens on.
+- `Frontend/.env.local`, if you create one, is per-machine and **beats** a shell
+  `BACKEND_URL`. When every `/api/*` call returns `500` with an empty body, it is
+  pointing at a port nothing listens on.
 - `uvicorn` does not reload on edits here — restart it after backend changes. A
   backend running old code answers `404 {"detail":"Not Found"}` on new routes,
   which looks like a missing endpoint and is a stale process.
@@ -135,6 +139,13 @@ deploy/              single-VPS Docker Compose production stack.
 docs/                configuration reference, public API, screen inventory,
                      user manual (es/en) and the engine paper.
 ```
+
+The end-user manual ships built, one PDF per language, 62 pages each:
+`Frontend/public/faro-manual-es.pdf` and `faro-manual-en.pdf` — downloadable
+from the landing page. Its text lives in `docs/manual/` (one module per chapter,
+every screen written in both languages) and rebuilds with
+`python -m backend.scripts.build_manual`. A new screen belongs there in both
+languages or the manual is lying about the product.
 
 The separation is enforced, not merely intended: a test fails if pandas or
 numpy are imported anywhere in `backend/` outside the three modules allowed to
