@@ -142,6 +142,23 @@ def client(app):
             yield c
 
 
+@pytest.fixture(autouse=True)
+def _forget_the_generated_encryption_key():
+    """Drop the process-cached Fernet key between tests.
+
+    `integrations/crypto.py` caches the key it reads or generates, because the
+    alert loop encrypts inside a loop. Across tests that cache is a liar: one
+    test sets `INTEGRATIONS_SECRET_KEY`, the next blanks it and gets the
+    GENERATED key instead — a different one — so a secret stored by the first
+    is no longer decryptable and the service silently reports itself
+    unconfigured. That is correct behaviour and a terrible test fixture.
+    """
+    from backend.integrations import crypto
+    crypto.reset_cache()
+    yield
+    crypto.reset_cache()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _db_pool_is_open():
     """Open the connection pool for the test session, whatever the test asks for.

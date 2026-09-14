@@ -1685,6 +1685,10 @@ export interface ServicesReport {
   overrides: {
     store_available: boolean
     encryption_available: boolean
+    /** Where the key that encrypts stored secrets came from. `generated` means
+     *  the install made its own under storage/ — real, but worth promoting to
+     *  the environment before a second process runs on another volume. */
+    encryption_source: 'env' | 'generated' | 'none'
     instance_fields: string[]
     tenant_fields: string[]
   }

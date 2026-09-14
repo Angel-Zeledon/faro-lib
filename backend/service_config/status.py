@@ -191,6 +191,11 @@ def full_report(tenant_id: str | None = None) -> dict:
         "overrides": {
             "store_available": store.store_available(),
             "encryption_available": store.encryption_available(),
+            # `env`, `generated` or `none`. A generated key is real encryption,
+            # but it lives with storage/ rather than in the deployment's
+            # secrets, and a second process on another volume would make its
+            # own — so the panel says which one is in force.
+            "encryption_source": _encryption_source(),
             "instance_fields": sorted(store.instance_overrides().keys()),
             "tenant_fields": sorted(store.tenant_overrides(tenant_id).keys()) if tenant_id else [],
         },
@@ -198,6 +203,15 @@ def full_report(tenant_id: str | None = None) -> dict:
         "version": settings.app_version,
         "undocumented_settings": sorted(undocumented_settings()),
     }
+
+
+def _encryption_source() -> str:
+    """Where the Fernet key came from. Never raises — this is a report."""
+    try:
+        from backend.integrations.crypto import key_source
+        return key_source()
+    except Exception:  # noqa: BLE001 - a report must not become the outage
+        return "none"
 
 
 def record_probe(service_key: str, tenant_id: str | None, result: probes.ProbeResult) -> None:

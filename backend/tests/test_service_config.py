@@ -220,11 +220,27 @@ def test_a_secret_is_stored_encrypted_and_never_in_the_clear(
     assert effective().deepseek_api_key == "sk-super-secret-value"
 
 
-def test_a_secret_write_is_refused_without_an_encryption_key(
-    clean_overrides, monkeypatch
+def test_a_secret_write_is_refused_when_it_cannot_be_encrypted(
+    clean_overrides, monkeypatch, tmp_path
 ):
-    """Refused with a stated reason, never downgraded to plaintext."""
+    """Refused with a stated reason, never downgraded to plaintext.
+
+    Reaching this state takes more than an empty variable now: an empty one
+    provisions a key under `storage/`, which is what lets a fresh install save
+    anything at all. What is left is the case where the key can be neither read
+    nor written — a read-only disk — and the refusal must still be a sentence
+    rather than a plaintext row.
+    """
+    from backend.integrations import crypto
+
     monkeypatch.setattr("backend.config.settings.integrations_secret_key", "")
+    monkeypatch.setattr("backend.config.settings.storage_path", tmp_path)
+    crypto.reset_cache()
+    monkeypatch.setattr(
+        crypto.Path, "write_text",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("read-only file system")),
+    )
+
     with pytest.raises(store.SecretStorageUnavailable):
         store.set_values("llm", {"deepseek_api_key": "sk-x"}, updated_by="test")
     assert query("SELECT id FROM service_config") == []
@@ -528,10 +544,21 @@ def test_an_operator_cannot_write_an_environment_only_service(
     assert query("SELECT id FROM service_config") == []
 
 
-def test_writing_a_secret_with_no_encryption_key_is_a_stated_refusal(
-    client, auth_headers, operator, clean_overrides, monkeypatch
+def test_writing_a_secret_that_cannot_be_encrypted_is_a_stated_refusal(
+    client, auth_headers, operator, clean_overrides, monkeypatch, tmp_path
 ):
+    """The API half of the same promise: a 409 naming the variable, not a 500
+    and not a plaintext row. See the store-level test above for why a
+    read-only disk is what it takes to get here now."""
+    from backend.integrations import crypto
+
     monkeypatch.setattr("backend.config.settings.integrations_secret_key", "")
+    monkeypatch.setattr("backend.config.settings.storage_path", tmp_path)
+    crypto.reset_cache()
+    monkeypatch.setattr(
+        crypto.Path, "write_text",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("read-only file system")),
+    )
     resp = client.put(
         f"{API}/services/llm",
         headers=auth_headers,

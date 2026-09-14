@@ -113,6 +113,7 @@ export interface ServiceConfigCopy {
     notOperatorBody: string
     storeUnavailable: string
     encryptionUnavailable: string
+    encryptionGenerated: string
     undocumented: string
     tenantLead: string
     tenantEmpty: string
@@ -287,6 +288,7 @@ const es: ServiceConfigCopy = {
     notOperatorBody: 'La configuración de servicios pertenece a quien administra el despliegue, no al rol admin de una empresa. Puedes configurar tus propios canales en la otra pestaña.',
     storeUnavailable: 'No se pudo leer la configuración guardada en la base. Lo que ves viene del entorno.',
     encryptionUnavailable: 'Sin INTEGRATIONS_SECRET_KEY no se puede guardar ningún secreto desde acá: se rechaza en vez de guardarse sin cifrar.',
+    encryptionGenerated: 'Esta instalación generó su propia llave de cifrado en storage/instance_secret.key, porque INTEGRATIONS_SECRET_KEY está vacía. Funciona, pero respalda esa carpeta: si se pierde el archivo hay que volver a ingresar todas las credenciales. Y antes de correr un segundo proceso en otro volumen, copia su contenido a INTEGRATIONS_SECRET_KEY o cada uno hará la suya y no podrá leer la del otro.',
     undocumented: 'Hay ajustes sin documentar en el registro',
     tenantLead: 'Los canales que llevan tu identidad a tu propia gente. Lo que dejes vacío usa lo que tenga la instalación.',
     tenantEmpty: 'Esta instalación no expone ningún canal configurable por empresa.',
@@ -461,6 +463,7 @@ const en: ServiceConfigCopy = {
     notOperatorBody: 'Service configuration belongs to whoever administers the deployment, not to a company’s admin role. You can configure your own channels in the other tab.',
     storeUnavailable: 'The configuration stored in the database could not be read. What you see comes from the environment.',
     encryptionUnavailable: 'Without INTEGRATIONS_SECRET_KEY no secret can be stored from here: it is refused rather than stored unencrypted.',
+    encryptionGenerated: 'This installation generated its own encryption key at storage/instance_secret.key, because INTEGRATIONS_SECRET_KEY is empty. It works, but back that folder up: losing the file means re-entering every credential. And before running a second process on another volume, copy its contents into INTEGRATIONS_SECRET_KEY, or each one will make its own and be unable to read the other’s.',
     undocumented: 'There are settings missing from the registry',
     tenantLead: 'The channels that carry your identity to your own people. Anything left empty uses what the installation has.',
     tenantEmpty: 'This installation exposes no per-company channel.',

@@ -500,6 +500,9 @@ export default function InstallationPage() {
             {!instance.overrides.encryption_available && (
               <Banner tone="warn" text={ui.encryptionUnavailable} />
             )}
+            {instance.overrides.encryption_source === 'generated' && (
+              <Banner tone="warn" text={ui.encryptionGenerated} />
+            )}
             {/* Operating by being the only company here is real access with an
                 expiry date. Saying so while there is still one tenant is the
                 difference between naming an operator calmly and discovering on
