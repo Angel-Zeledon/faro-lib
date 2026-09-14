@@ -6,10 +6,10 @@ SECTION = {
             "Este capítulo cubre dos cosas. La primera es el camino completo de "
             "un usuario nuevo: crear la cuenta, subir el primer archivo de "
             "ventas, completar el inventario y leer el primer semáforo. La "
-            "segunda son las cuatro pantallas donde administras la cuenta "
-            "misma: Usuarios, Mi cuenta, Automatización y API. Ninguna de esas "
-            "cuatro hace falta el primer día, pero son las que decides una vez "
-            "y casi no vuelves a tocar."
+            "segunda son las cinco pantallas donde administras la cuenta "
+            "misma: Usuarios, Mi cuenta, Automatización, API e Instalación. "
+            "Ninguna de esas cinco hace falta el primer día, pero son las que "
+            "decides una vez y casi no vuelves a tocar."
         ),
         "screens": [
             {
@@ -314,6 +314,66 @@ SECTION = {
                     "Solo estos endpoints tienen compromiso de estabilidad. Tu clave alcanza otros, pero nadie prometió mantenerlos como están.",
                 ],
             },
+            {
+                "name": "Instalación",
+                "route": "/instalacion",
+                "image": "instalacion",
+                "purpose": (
+                    "La lista de servicios que este Faro tiene conectados, cuáles están "
+                    "encendidos y qué deja de funcionar con los que no. Faro funciona sin "
+                    "ninguno de ellos —el pronóstico, el semáforo y las órdenes de compra "
+                    "no dependen de nada externo—, pero el asistente, los correos, el "
+                    "WhatsApp y la búsqueda en documentos sí. Cuando algo de eso «no "
+                    "responde», esta es la pantalla que dice por qué."
+                ),
+                "walkthrough": [
+                    "Tiene dos pestañas y contestan a dos personas distintas. «Esta instalación» es de quien administra el servidor; «Mis canales» es de tu empresa.",
+                    "Cada servicio se muestra como una tarjeta con su estado: Listo, Sin configurar, Con problemas o Apagado.",
+                    "Un servicio Sin configurar no es un error: la tarjeta dice en una frase qué se pierde mientras esté así, y nombra la variable exacta que falta.",
+                    "«Con problemas» significa algo distinto de «sin configurar»: la credencial está puesta pero el proveedor la rechazó, no se le pudo alcanzar o no contestó a tiempo. Esa diferencia es la que te dice si el arreglo es pegar una llave nueva o revisar la red.",
+                    "El botón «Probar conexión» pregunta al proveedor si la credencial sirve. Nunca manda un correo ni un WhatsApp a nadie para averiguarlo.",
+                    "Cada campo dice de dónde viene el valor que está mandando: del entorno (el archivo .env del servidor), de este panel, o de tu empresa. Lo que guardas aquí gana sobre el archivo y toma efecto sin reiniciar.",
+                    "Los campos marcados «Solo entorno» se muestran pero no se editan: son los que el servidor lee al arrancar, y cambiarlos desde una pantalla no tendría efecto hasta reiniciar.",
+                    "Una llave guardada no se puede volver a ver: el panel muestra como mucho sus últimos cuatro caracteres, lo justo para reconocer cuál pegaste. Si la perdiste, se genera una nueva donde el proveedor.",
+                    "«Volver al entorno» borra lo que este panel guardó para ese servicio y deja mandando otra vez lo que dice el archivo del servidor.",
+                    "En «Mis canales» configuras el remitente que ven TUS clientes y proveedores: tu cuenta de correo y tu número de WhatsApp. Lo que dejes vacío usa el de la instalación.",
+                ],
+                "fields": [
+                    ("Esta instalación", "Todos los servicios del despliegue. Solo la abre quien administra el servidor, no cualquier administrador de empresa."),
+                    ("Mis canales", "Tu remitente de correo y tu número de WhatsApp. El alcance es tu empresa y nada más."),
+                    ("Listo", "Tiene lo que necesita para funcionar."),
+                    ("Sin configurar", "Le falta una credencial. La tarjeta nombra cuál y dice qué se pierde."),
+                    ("Con problemas", "Está configurado pero la última prueba falló."),
+                    ("Apagado", "Un interruptor del despliegue que está deliberadamente en falso."),
+                    ("Manda", "Qué capa aporta el valor en uso: tu empresa, este panel, el entorno o el valor por defecto."),
+                    ("Probar conexión", "Pregunta al proveedor si la credencial sirve. No manda mensajes a nadie."),
+                ],
+                "tasks": [
+                    (
+                        "Encender el asistente de IA",
+                        "1. Abre Instalación y busca la tarjeta «Asistente (DeepSeek)». "
+                        "2. Si dice «Sin configurar», la línea de abajo nombra la variable que falta: DEEPSEEK_API_KEY. "
+                        "3. Pega la llave en ese campo y pulsa «Guardar». "
+                        "4. Pulsa «Probar conexión»: debe decir «Responde correctamente». "
+                        "5. Abre Asistente IA — el aviso de «no disponible» ya no está y puedes preguntar."
+                    ),
+                    (
+                        "Mandar los correos desde tu propio dominio",
+                        "1. Entra a la pestaña «Mis canales». "
+                        "2. En la tarjeta «Correo», pega tu llave de Resend, o si prefieres SMTP llena servidor, puerto, usuario y contraseña. "
+                        "3. Escribe en «EMAIL_FROM» el remitente que quieres que vean tus proveedores. "
+                        "4. Guarda y pulsa «Probar conexión». "
+                        "5. Desde ese momento tus alertas y tus órdenes de compra salen con tu identidad, no con la de la instalación."
+                    ),
+                ],
+                "gotchas": [
+                    "Si ves «Esta cuenta no opera la instalación», no es un error tuyo: la configuración del servidor pertenece a quien lo administra, y se decide con una variable del servidor, no con el rol de administrador de tu empresa. Tus propios canales sí los puedes configurar, en la otra pestaña.",
+                    "Sin INTEGRATIONS_SECRET_KEY en el servidor no se puede guardar ningún secreto desde esta pantalla. Se rechaza a propósito: guardarlo sin cifrar no es una opción que el producto ofrezca.",
+                    "El correo se da por configurado con la llave de Resend O con usuario y contraseña de SMTP; no necesitas los dos. La tarjeta te dice las dos formas.",
+                    "Los correos de la cuenta —verificar tu correo, recuperar contraseña, invitar a alguien— siempre salen por el transporte de la instalación, aunque tu empresa tenga el suyo. Un cliente no puede mandar el mensaje que da acceso a una cuenta.",
+                    "Que un servicio diga «Listo» significa que tiene sus credenciales, no que el proveedor esté sano. Para eso está «Probar conexión».",
+                ],
+            },
         ],
     },
     "en": {
@@ -322,10 +382,10 @@ SECTION = {
             "This chapter covers two things. The first is the whole path a new "
             "user walks: creating the account, uploading the first sales file, "
             "filling in the inventory and reading the first traffic light. The "
-            "second is the four screens where you administer the account "
-            "itself: Users, My account, Automation and API. None of those four "
-            "is needed on day one, but they are the ones you decide once and "
-            "then barely touch again."
+            "second is the five screens where you administer the account "
+            "itself: Users, My account, Automation, API and Installation. None "
+            "of those five is needed on day one, but they are the ones you "
+            "decide once and then barely touch again."
         ),
         "screens": [
             {
@@ -629,6 +689,66 @@ SECTION = {
                     "Branch on error_code, never on the error text: the text can change language or wording, the code does not.",
                     "The active_session_id changes every time a new session trains. Hard-coding it in your integration is the easiest way to end up reading a stale forecast.",
                     "Only these endpoints carry a stability commitment. Your key reaches others, but nobody promised to keep them as they are.",
+                ],
+            },
+            {
+                "name": "Installation",
+                "route": "/instalacion",
+                "image": "instalacion",
+                "purpose": (
+                    "The list of services this Faro has connected, which ones are on, and "
+                    "what stops working with the ones that are not. Faro runs without any "
+                    "of them — the forecast, the traffic light and the purchase orders "
+                    "depend on nothing external — but the assistant, email, WhatsApp and "
+                    "document search do. When one of those \u201cdoes not answer\u201d, this is the "
+                    "screen that says why."
+                ),
+                "walkthrough": [
+                    "It has two tabs, and they answer to two different people. \u201cThis installation\u201d belongs to whoever administers the server; \u201cMy channels\u201d belongs to your company.",
+                    "Each service is a card with its state: Ready, Not configured, Failing or Off.",
+                    "A Not configured service is not an error: the card says in one sentence what is lost while it stays that way, and names the exact variable that is missing.",
+                    "\u201cFailing\u201d means something different from \u201cnot configured\u201d: the credential is there but the provider rejected it, could not be reached, or did not answer in time. That difference is what tells you whether the fix is a new key or a network problem.",
+                    "The \u201cTest connection\u201d button asks the provider whether the credential works. It never emails or messages anybody to find out.",
+                    "Every field says where the value in effect came from: the environment (the server\u2019s .env file), this panel, or your company. What you save here wins over the file and takes effect without a restart.",
+                    "Fields marked \u201cEnvironment only\u201d are shown but not editable: the server reads them at boot, so changing them from a screen would not take effect until a restart.",
+                    "A stored key cannot be read back: the panel shows at most its last four characters, enough to recognise which one you pasted. If you lost it, issue a new one at the provider.",
+                    "\u201cBack to the environment\u201d deletes what this panel stored for that service and lets the server\u2019s file rule again.",
+                    "Under \u201cMy channels\u201d you set the sender YOUR customers and suppliers see: your own email account and your own WhatsApp number. Anything left empty uses the installation\u2019s.",
+                ],
+                "fields": [
+                    ("This installation", "Every service of the deployment. Only whoever administers the server opens it, not any company administrator."),
+                    ("My channels", "Your email sender and your WhatsApp number. The scope is your company and nothing else."),
+                    ("Ready", "It has what it needs to run."),
+                    ("Not configured", "A credential is missing. The card names which, and what is lost."),
+                    ("Failing", "Configured, but the last test failed."),
+                    ("Off", "A deployment switch deliberately set to false."),
+                    ("In effect", "Which layer supplies the value in use: your company, this panel, the environment, or the built-in default."),
+                    ("Test connection", "Asks the provider whether the credential works. It messages nobody."),
+                ],
+                "tasks": [
+                    (
+                        "Turn the AI assistant on",
+                        "1. Open Installation and find the \u201cAssistant (DeepSeek)\u201d card. "
+                        "2. If it says \u201cNot configured\u201d, the line below names the missing variable: DEEPSEEK_API_KEY. "
+                        "3. Paste the key into that field and press \u201cSave\u201d. "
+                        "4. Press \u201cTest connection\u201d: it should say it answers correctly. "
+                        "5. Open the AI Assistant \u2014 the \u201cunavailable\u201d notice is gone and you can ask."
+                    ),
+                    (
+                        "Send email from your own domain",
+                        "1. Go to the \u201cMy channels\u201d tab. "
+                        "2. On the \u201cEmail\u201d card, paste your Resend key, or fill in server, port, user and password if you prefer SMTP. "
+                        "3. Put the sender your suppliers should see in EMAIL_FROM. "
+                        "4. Save, then press \u201cTest connection\u201d. "
+                        "5. From then on your alerts and purchase orders leave with your identity, not the installation\u2019s."
+                    ),
+                ],
+                "gotchas": [
+                    "If you see \u201cThis account does not operate the installation\u201d, you did nothing wrong: server configuration belongs to whoever administers it, and is decided by a server variable rather than by your company\u2019s administrator role. Your own channels you can still configure, in the other tab.",
+                    "Without INTEGRATIONS_SECRET_KEY on the server, no secret can be saved from this screen. It is refused on purpose: storing it unencrypted is not an option the product offers.",
+                    "Email counts as configured with a Resend key OR with an SMTP user and password; you do not need both. The card states both ways.",
+                    "Account email \u2014 verifying your address, resetting a password, inviting somebody \u2014 always leaves through the installation\u2019s transport, even when your company has its own. A customer must not send the message that grants access to an account.",
+                    "A service saying \u201cReady\u201d means it has its credentials, not that the provider is healthy. That is what \u201cTest connection\u201d is for.",
                 ],
             },
         ],

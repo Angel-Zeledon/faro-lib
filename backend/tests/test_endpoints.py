@@ -459,10 +459,6 @@ class TestSessionsCRUD:
         ) is None, "the session was deleted but its config blob was orphaned"
 
     def test_pagination_pages_are_disjoint_and_complete(self, client, auth_headers, test_tenant):
-        # Paid, because this test is about pagination and not about ceilings:
-        # the free tier stops at 3 saved forecasts, so the fourth POST below
-        # was refused and the failure read as a broken pagination endpoint.
-        execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (test_tenant["id"],))
         created = []
         for i in range(5):
             r = client.post(

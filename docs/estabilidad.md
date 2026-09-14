@@ -1841,6 +1841,54 @@ techo gratis de 3. Dos rojos que acusaban al producto de bugs que no tenía.
 
 ---
 
+## 9. La suite no declara lo que necesita: hereda un `.env` (2026-09-13)
+
+La primera corrida completa después del trabajo de configuración dio **48
+fallos**. Ninguno era un defecto del producto. **34 de ellos tenían una sola
+causa: `backend/.env` con `TESTING_MODE=false`.**
+
+CLAUDE.md dice que el `.env` local corre con `TESTING_MODE=true`, y toda la
+suite está escrita contra eso — la regla de la casa es que *el test que depende
+de cupos apaga el modo él mismo*. Con los cupos vivos, el techo del plan gratis
+`max_locations = 1` se dispara en `inventory/service.py:164` en cuanto un test
+siembra una **segunda bodega**, y los ocho archivos afectados son justamente de
+multi-bodega. Medido, mismo árbol, cambiando solo la variable:
+
+| Archivo | con `false` | con `true` |
+|---|---|---|
+| `test_status_by_warehouse.py` | 10 fallos | 12 pasan |
+| `test_transfer_lanes.py` | 9 fallos | 25 pasan |
+| `test_optimizer_service.py` | 5 fallos | 14 pasan |
+| `test_warehouses.py` | 3 fallos | 16 pasan |
+| `test_inventory_multi_bodega.py` | 3 fallos | 3 pasan |
+| `test_reception_bodega.py` | 2 fallos | 8 pasan |
+| `test_warehouse_import_destination.py` | 1 fallo | 7 pasan |
+| `test_stock_upsert_preserves_config.py` | 1 fallo | 10 pasan |
+
+**96 pasan, 0 fallan.** No había nada escondido detrás del 403.
+
+Lo caro no fue el arreglo —una línea en un archivo gitignored— sino a quién
+acusó: durante media hora el reporte decía que el reparto de demanda entre
+bodegas, los carriles de traslado y la entrada del optimizador estaban rotos.
+Un `.env` que nadie ve en `git status` movió el dedo hacia el código que más
+caro cuesta revisar.
+
+**Pendiente (no arreglado, es capacidad nueva):** que la suite **declare** lo
+que necesita en vez de heredarlo. Un fixture de sesión que fije
+`settings.testing_mode` y tests de cupos que se salgan explícitamente —que es
+lo que el estándar ya pide— convertiría este día en una línea roja que dice
+«este test necesita el modo de pruebas» en vez de ocho archivos acusando al
+optimizador.
+
+Los 14 fallos restantes de esa corrida: 4 eran dobles de test con la firma vieja
+(el `tenant_id` que ganaron los envíos ese día), 1 era el guardián de español
+contra el generador de documentación nuevo, 1 una aserción vieja que pedía el
+reloj de prueba que el cambio de tiers eliminó el 2026-08-22, y el resto quedó
+en verificación aparte por sospecha de carga — la corrida se hizo con 1.4 GB
+libres y tardó 111 minutos en vez de 40.
+
+---
+
 ## Lo que se borró el 2026-08-11, y por qué
 
 Siete documentos de planes, propuestas y auditorías ya ejecutados o superados.

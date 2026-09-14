@@ -279,7 +279,8 @@ class TestRunMonthlyRoiEmails:
         captured = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: (captured.append((to, report, currency)), True)[1],
+            lambda to, report, roi_url, currency=None, **_kw:
+                (captured.append((to, report, currency)), True)[1],
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -312,7 +313,7 @@ class TestRunMonthlyRoiEmails:
         calls = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: (calls.append(to), True)[1],
+            lambda to, report, roi_url, currency=None, **_kw: (calls.append(to), True)[1],
         )
 
         now = datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
@@ -337,7 +338,7 @@ class TestRunMonthlyRoiEmails:
         calls = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: (calls.append(to), True)[1],
+            lambda to, report, roi_url, currency=None, **_kw: (calls.append(to), True)[1],
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -360,7 +361,7 @@ class TestRunMonthlyRoiEmails:
 
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: False,
+            lambda to, report, roi_url, currency=None, **_kw: False,
         )
 
         sent = roi_service.run_monthly_roi_emails(

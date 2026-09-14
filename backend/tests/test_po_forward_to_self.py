@@ -81,7 +81,10 @@ class TestSendToMe:
         assert data["sent"] is True and data["has_number"] is True
 
         send.assert_called_once()
-        to_number, body, _media = send.call_args[0]
+        # Four positional arguments since 2026-09-13: the fourth is the tenant
+        # scope, so a tenant that pasted its own Twilio sender messages its own
+        # people from it.
+        to_number, body, _media, _tenant = send.call_args[0]
         assert to_number == "+50670000001"
         assert "Distribuidora Sur" in body and "Aceite 1L" in body
         # The same text the buyer sees is the one that got sent.

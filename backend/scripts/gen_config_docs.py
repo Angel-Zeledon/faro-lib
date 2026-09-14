@@ -10,8 +10,12 @@ difference. `backend/tests/test_service_config_docs.py` runs exactly that, so a
 new setting cannot reach a buyer undocumented — which is how the example file
 came to describe 20 of 45 variables in the first place.
 
-Both outputs are English: `.env.example` is read by whoever deploys, and
-`docs/configuracion.md` is the operator's manual, not end-user copy.
+Both outputs are English. `.env.example` is read by whoever deploys and
+`docs/configuracion.md` is the same reference in prose — an operator's manual,
+not end-user copy, and the same audience as the source they are buying. Keeping
+them in one language also keeps this generator free of Spanish string literals,
+which `test_no_spanish_in_backend_logic.py` requires of every backend module.
+The Spanish a USER reads lives in `Frontend/src/i18n/serviceConfig.ts`.
 """
 
 from __future__ import annotations
@@ -125,14 +129,14 @@ def render_env_example() -> str:
 def _field_row(f: ConfigField) -> str:
     flags = []
     if f.required:
-        flags.append("requerida")
+        flags.append("required")
     if f.secret:
-        flags.append("secreta")
+        flags.append("secret")
     if not f.editable:
-        flags.append("solo entorno")
-    default = f"`{f.default}`" if f.default else "—"
+        flags.append("environment only")
+    default = f"`{f.default}`" if f.default else "-"
     return (
-        f"| `{f.env}` | {default} | {', '.join(flags) or '—'} | "
+        f"| `{f.env}` | {default} | {', '.join(flags) or '-'} | "
         f"{f.doc.replace('|', '/')} |"
     )
 
@@ -141,55 +145,61 @@ def render_config_doc() -> str:
     lines = [
         "<!-- " + BANNER[2:] + " -->",
         "",
-        "# Configuración — qué necesita Faro y qué deja de funcionar sin ello",
+        "# Configuration - what Faro needs, and what stops working without it",
         "",
-        "Este documento se genera desde `backend/service_config/registry.py`, que",
-        "es la única fuente de verdad. Si una variable no está aquí, no existe.",
+        "Generated from `backend/service_config/registry.py`, which is the only",
+        "source of truth. A variable that is not here does not exist.",
         "",
-        "## Las dos capas",
+        "## The two layers",
         "",
-        "1. **El entorno** (`backend/.env` o variables reales). Es el piso: la base",
-        "   de datos, la llave de firma y el modo de despliegue solo se leen de ahí.",
-        "2. **El panel `/instalacion`**, que guarda lo demás cifrado en la base y",
-        "   toma efecto sin reiniciar. **La base gana sobre el entorno**, y el panel",
-        "   dice cuál está mandando para cada campo.",
+        "1. **The environment** (`backend/.env`, or real environment variables).",
+        "   It is the floor: the database, the signing key and the deployment",
+        "   switches are read from there and nowhere else.",
+        "2. **The panel at `/instalacion`**, which stores everything else",
+        "   encrypted in the database and takes effect without a restart. **The",
+        "   stored value wins over the file**, and the panel says which one is in",
+        "   effect for every field.",
         "",
-        "Quién puede abrir ese panel no es el rol `admin` —que existe dentro de cada",
-        "tenant— sino las direcciones listadas en `INSTANCE_ADMIN_EMAILS`. Con esa",
-        "variable vacía nadie edita la configuración de la instancia desde la app, y",
-        "el panel lo dice nombrando la variable. Un tenant sí puede configurar sus",
-        "propios canales (su remitente de correo y su número de WhatsApp).",
+        "Who may open that panel is NOT the `admin` role. `admin` exists inside a",
+        "tenant and every company that signs up has one, so it cannot grant access",
+        "to the deployment credentials; the addresses in `INSTANCE_ADMIN_EMAILS`",
+        "can. With that variable empty nobody edits instance configuration from",
+        "the app, and the panel says so, naming the variable. A tenant admin still",
+        "configures its OWN channels - the sender its people and suppliers see.",
         "",
-        "## Regla que cumple todo lo opcional",
+        "## The rule every optional service keeps",
         "",
-        "Sin su credencial, un servicio **se apaga y lo dice**. No hay 500, no hay",
-        "pantalla en blanco y no hay respuesta inventada por otro proveedor: la",
-        "función informa que está fuera de servicio y el resto de la aplicación",
-        "sigue funcionando.",
+        "Without its credential a service **turns off and says so**. No 500, no",
+        "blank screen, and no answer quietly supplied by a different provider: the",
+        "feature reports itself unavailable and the rest of the product carries on.",
+        "",
+        "The Spanish a user reads is not here - it lives in the app catalogue",
+        "(`Frontend/src/i18n/serviceConfig.ts`). This file is for whoever deploys",
+        "and operates the installation.",
         "",
     ]
 
     for service in SERVICES:
         kind_label = {
-            "core": "núcleo",
-            "external": "servicio externo",
-            "deployment": "despliegue",
+            "core": "core",
+            "external": "external service",
+            "deployment": "deployment",
         }[service.kind]
         lines += [
-            f"## `{service.key}` — {service.summary}",
+            f"## `{service.key}` - {service.summary}",
             "",
-            f"*Tipo:* {kind_label}. "
-            f"*Editable desde el panel:* {'sí' if service.editable else 'no'}. "
-            f"*Por tenant:* {'sí' if service.tenant_scoped else 'no'}. "
-            f"*Prueba de conexión:* {'sí' if service.probe else 'no'}.",
+            f"*Kind:* {kind_label}. "
+            f"*Editable from the panel:* {'yes' if service.editable else 'no'}. "
+            f"*Per tenant:* {'yes' if service.tenant_scoped else 'no'}. "
+            f"*Connection test:* {'yes' if service.probe else 'no'}.",
             "",
-            f"**Qué se pierde sin esto:** {service.what_breaks}",
+            f"**What is lost without it:** {service.what_breaks}",
             "",
         ]
         req = required_fields(service)
         if req:
             lines += [
-                "**Mínimo para que encienda:** "
+                "**Minimum to turn it on:** "
                 + ", ".join(f"`{f.env}`" for f in req),
                 "",
             ]
@@ -197,14 +207,14 @@ def render_config_doc() -> str:
         if groups:
             # An OR, not an AND: naming one path as "the" requirement would
             # send a reader hunting for a Resend account they do not need.
-            ways = " **o bien** ".join(
+            ways = " **or** ".join(
                 " + ".join(f"`{f.env}`" for f in group) for group in groups
             )
-            lines += [f"**Basta con una de estas:** {ways}", ""]
+            lines += [f"**Any one of these is enough:** {ways}", ""]
         if service.docs_note:
             lines += [service.docs_note, ""]
         lines += [
-            "| Variable | Default | Notas | Qué hace |",
+            "| Variable | Default | Notes | What it does |",
             "|---|---|---|---|",
         ]
         for f in service.fields:
@@ -212,7 +222,7 @@ def render_config_doc() -> str:
         if service.borrows:
             lines += [
                 "",
-                "Además usa, sin duplicarlas: "
+                "It also uses, without duplicating them: "
                 + ", ".join(f"`{k}`" for k in service.borrows)
                 + ".",
             ]
@@ -221,7 +231,7 @@ def render_config_doc() -> str:
             if editable:
                 lines += [
                     "",
-                    "Desde el panel se pueden escribir: "
+                    "Writable from the panel: "
                     + ", ".join(f"`{f.env}`" for f in editable)
                     + ".",
                 ]
@@ -230,10 +240,10 @@ def render_config_doc() -> str:
                 if instance_only:
                     lines += [
                         "",
-                        "Un tenant NO puede tomar: "
+                        "A tenant may NOT take over: "
                         + ", ".join(f"`{f.env}`" for f in instance_only)
-                        + " — se leen antes de saber de qué tenant viene el "
-                        "mensaje, así que un valor por tenant no lo leería nadie.",
+                        + " - they are read before the tenant is known, so a "
+                        "per-tenant value would be read by nobody.",
                     ]
         lines.append("")
 
