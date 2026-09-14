@@ -161,7 +161,12 @@ def _db_pool_is_open():
     from backend.db.connection import init_pool, pool_is_initialized
 
     if not pool_is_initialized() and settings.database_url:
-        init_pool(settings.database_url, min_conn=1, max_conn=10)
+        # Same ceiling the app opens at startup (backend/main.py:62), on purpose:
+        # a stress test that fires 10 concurrent requests against a pool half
+        # the production size measures a deployment nobody runs. It exhausted
+        # at 10 and reported "connection pool exhausted" as if the product
+        # could not take the load.
+        init_pool(settings.database_url, min_conn=1, max_conn=20)
     yield
 
 

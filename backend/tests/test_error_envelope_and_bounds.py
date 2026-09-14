@@ -175,14 +175,23 @@ class TestUnhandledFailuresStillAnswerInTheApiShape:
         psycopg2 rejects NUL in a bind parameter, which reached the client as
         `text/plain` "Internal Server Error" — the same thing an unreachable
         backend produces, sending whoever debugs it to the wrong layer.
+
+        The answer got better than "at least a JSON 500": `reject_nul_in_path`
+        in `backend/main.py` refuses it up front, so the caller is told THEY
+        malformed the URL instead of being told the server broke on it. This
+        test was written against the old, weaker promise and accepted
+        (404, 422, 500); it now pins the real one. A 5xx here would mean the
+        middleware is gone and a malformed URL pages whoever is on call again.
         """
         resp = serving_client.get("/api/v1/sessions/%00x/results", headers=auth_headers)
-        assert resp.status_code in (404, 422, 500)
+        assert resp.status_code == 400, (
+            f"a NUL in the path is the caller's mistake and must be answered as "
+            f"one; got {resp.status_code}: {resp.text[:120]}"
+        )
         assert "application/json" in resp.headers.get("content-type", ""), (
             f"answered {resp.headers.get('content-type')}: {resp.text[:120]}"
         )
-        if resp.status_code == 500:
-            assert resp.json().get("error_code") == "internal_error"
+        assert resp.json().get("error_code") == "malformed_path"
 
     def test_the_envelope_never_leaks_internals(self, serving_client, auth_headers):
         resp = serving_client.get("/api/v1/sessions/%00x/results", headers=auth_headers)

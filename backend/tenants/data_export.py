@@ -139,6 +139,14 @@ def build_export_zip(tenant_id: str) -> bytes:
 # explicitly, children-before-parents so no live FK constraint is ever
 # tripped (see module docstring for the verification against migrations.py).
 _DELETE_ORDER: list[str] = [
+    # Both added 2026-09-13. They DO carry `REFERENCES tenants(id) ON DELETE
+    # CASCADE`, so their rows were already going with the tenant — the
+    # behavioural test proves it. They are listed anyway because this list is
+    # the reviewable answer to "what belongs to a tenant", and a table that is
+    # only cleaned by a cascade is one `ON DELETE` clause away from being
+    # forgotten for real. The guard that names them is doing its job.
+    "service_config",
+    "training_run_metrics",
     "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",
