@@ -38,8 +38,63 @@ def _tenant_currency(tenant_id: str) -> dict:
     return currency_of(tenant_id)
 
 
-# Z-scores for common service levels
+# Z-scores for common service levels, kept as the exact values the product has
+# always used at those four points so a tenant's numbers do not move under it.
 _Z = {0.90: 1.282, 0.95: 1.645, 0.97: 1.881, 0.99: 2.326}
+
+
+def _z_for(service_level: float) -> float:
+    """The normal quantile for a service level — for ANY service level.
+
+    This was a dict lookup with a default, and the default was 1.645. The API
+    accepts any level in [0.5, 0.999] (`inventory.py` Query bounds), the
+    defaults cascade lets a tenant store 0.98 per SKU, and every one of those
+    values that was not one of the four keys silently got the z of 95%. A
+    buyer who deliberately raised a critical SKU to 98% got a 95% cushion and
+    no way to notice: the number is correct-looking, just smaller than asked.
+
+    Now: the four known points are returned verbatim, and anything else is
+    computed with the Acklam rational approximation of the inverse normal CDF
+    (|error| < 1.15e-9 over the whole domain). It stays pure Python on purpose
+    — `backend/` may not import numpy or scipy outside the three modules the
+    layering test allows, and the engine is not reachable from here.
+    """
+    if service_level in _Z:
+        return _Z[service_level]
+    # Outside the meaningful range the answer is not a cushion, it is a bug
+    # upstream. Clamped rather than raised: this runs inside the 08:00 alert
+    # loop, where an exception would cost a tenant their whole digest.
+    p = min(max(float(service_level), 0.5), 0.999999)
+    return _inverse_normal_cdf(p)
+
+
+# Acklam's algorithm. The coefficients are the published ones; they are not
+# derived here and must not be "tidied".
+_A = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+      1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+_B = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+      6.680131188771972e+01, -1.328068155288572e+01)
+_C = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+      -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+_D = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+      3.754408661907416e+00)
+_P_LOW = 0.02425
+
+
+def _inverse_normal_cdf(p: float) -> float:
+    """Φ⁻¹(p) for 0 < p < 1."""
+    if p < _P_LOW:
+        q = math.sqrt(-2 * math.log(p))
+        return (((((_C[0] * q + _C[1]) * q + _C[2]) * q + _C[3]) * q + _C[4]) * q + _C[5]) / \
+               ((((_D[0] * q + _D[1]) * q + _D[2]) * q + _D[3]) * q + 1)
+    if p <= 1 - _P_LOW:
+        q = p - 0.5
+        r = q * q
+        return (((((_A[0] * r + _A[1]) * r + _A[2]) * r + _A[3]) * r + _A[4]) * r + _A[5]) * q / \
+               (((((_B[0] * r + _B[1]) * r + _B[2]) * r + _B[3]) * r + _B[4]) * r + 1)
+    q = math.sqrt(-2 * math.log(1 - p))
+    return -(((((_C[0] * q + _C[1]) * q + _C[2]) * q + _C[3]) * q + _C[4]) * q + _C[5]) / \
+             ((((_D[0] * q + _D[1]) * q + _D[2]) * q + _D[3]) * q + 1)
 _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, "SIN_DATOS": 4}
 
 
@@ -1014,7 +1069,7 @@ def _safety_stock(
     measured = _measured_safety_stock(risk, lead_time, service_level)
     if measured is not None:
         return measured * float(risk_scale)
-    z = _Z.get(service_level, 1.645)
+    z = _z_for(service_level)
     return z * avg_std * math.sqrt(lead_time)
 
 

@@ -157,12 +157,21 @@ docs/                configuration reference, public API, screen inventory,
                      user manual (es/en) and the engine paper.
 ```
 
-The end-user manual ships built, one PDF per language, 62 pages each:
-`Frontend/public/faro-manual-es.pdf` and `faro-manual-en.pdf` — downloadable
-from the landing page. Its text lives in `docs/manual/` (one module per chapter,
-every screen written in both languages) and rebuilds with
-`python -m backend.scripts.build_manual`. A new screen belongs there in both
-languages or the manual is lying about the product.
+Two manuals ship built, each in both languages, and they answer to two
+different readers:
+
+| Manual | For | Source | Rebuild |
+|---|---|---|---|
+| `faro-manual-{es,en}.pdf` (62 pp.) | the purchasing manager: screen by screen, what to click, what the numbers mean | `docs/manual/` | `python -m backend.scripts.build_manual` |
+| `faro-tecnico-{es,en}.pdf` (19 pp.) | **you**: architecture, algorithms, the exact formulas, and what each number does NOT mean | `docs/tech/` | `python -m backend.scripts.build_tech_manual` |
+
+The user manual is downloadable from the landing page in the visitor's
+language. The technical one is written against the code with `path:line`
+references, and it names the assumptions and the gaps rather than hiding them —
+start there before reading the source.
+
+A new screen belongs in the user manual in both languages, or the manual is
+lying about the product.
 
 The separation is enforced, not merely intended: a test fails if pandas or
 numpy are imported anywhere in `backend/` outside the three modules allowed to
