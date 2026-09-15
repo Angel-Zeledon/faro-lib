@@ -40,7 +40,14 @@ log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
 TECH_DIR = ROOT / "docs" / "tech"
-OUT_DIR = ROOT / "Frontend" / "public"
+# NOT `Frontend/public`, where the user manual is written. That directory is
+# served by Next.js at the site root, so anything in it is downloadable by
+# anyone who guesses the filename — which is right for the user manual (the
+# landing links it on purpose) and wrong for this one. This document is the
+# internals: the formulas, the assumptions, the constants that are hard-coded,
+# and the list of things the product deliberately does not do. It ships to
+# whoever receives the source, not to whoever visits the site.
+OUT_DIR = ROOT / "docs"
 
 # Order is the reading order for somebody who has never seen the repo: what the
 # thing is, then how data gets in, then how a number is produced, then how it

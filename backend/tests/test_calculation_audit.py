@@ -127,17 +127,34 @@ class TestCalcRecommended:
         # Returns raw value (no MOQ rounding) — not a crash
         assert result >= 0
 
-    def test_unknown_service_level_uses_095_fallback(self):
+    def test_an_unlisted_service_level_is_computed_not_rounded_to_95(self):
         """
-        BEHAVIOR DOCUMENTED: service_level=0.80 is not in _Z dict.
-        Falls back to z=1.645 (95th percentile), silently computing
-        MORE safety stock than 80% would require. Not a crash, but incorrect.
-        For now, verify it returns the same value as service_level=0.95.
+        FIXED. This test used to assert the defect: `_Z` was a four-entry dict
+        read with `.get(service_level, 1.645)`, so every level that was not
+        0.90 / 0.95 / 0.97 / 0.99 silently got the cushion of 95%. The old
+        docstring said so in as many words — "Not a crash, but incorrect. For
+        now, verify it returns the same value as service_level=0.95" — and then
+        asserted equality anyway.
+
+        That is how it survived: the suite was the thing holding it in place. A
+        fix would have turned this test red and looked like a regression.
+
+        `_z_for` now computes any level the API accepts. 0.80 asks for LESS
+        protection than 0.95 and must therefore order less; 0.98 asks for more
+        and must order more. See test_service_level_is_not_silently_rounded.py
+        for the quantile values themselves.
         """
-        r_unknown = _calc_recommended(0, 10.0, 2.0, 14, 1, 0.80)
+        r_80 = _calc_recommended(0, 10.0, 2.0, 14, 1, 0.80)
         r_95 = _calc_recommended(0, 10.0, 2.0, 14, 1, 0.95)
-        # With fallback z=1.645, both compute identically
-        assert r_unknown == r_95
+        r_98 = _calc_recommended(0, 10.0, 2.0, 14, 1, 0.98)
+        assert r_80 < r_95, (
+            f"service level 0.80 ordered {r_80} and 0.95 ordered {r_95}: a "
+            "lower service level must not buy the same cushion"
+        )
+        assert r_98 > r_95, (
+            f"service level 0.98 ordered {r_98} and 0.95 ordered {r_95}: a "
+            "higher service level must buy a bigger cushion"
+        )
 
     def test_zero_std_means_zero_safety_stock(self):
         """Zero demand variability → safety_stock = z * 0 * sqrt(LT) = 0. Correct."""
