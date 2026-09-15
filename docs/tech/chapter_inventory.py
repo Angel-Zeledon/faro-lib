@@ -20,7 +20,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Días de cobertura",
-                "where": "backend/inventory/service.py:1492",
+                "where": "backend/inventory/service.py:1547 · coverage_days",
                 "what": (
                     "Cuánto dura el stock que hay hoy al ritmo de venta pronosticado. "
                     "Es el número del que cuelga todo lo demás."
@@ -38,7 +38,7 @@ CHAPTER = {
             },
             {
                 "name": "El semáforo",
-                "where": "backend/inventory/service.py:895",
+                "where": "backend/inventory/service.py:950 · _calc_signal",
                 "what": "Toda la regla, literal, son cuatro líneas.",
                 "formulas": [
                     ("Señal",
@@ -54,7 +54,7 @@ CHAPTER = {
             },
             {
                 "name": "Cantidad recomendada",
-                "where": "backend/inventory/service.py:949",
+                "where": "backend/inventory/service.py:1004 · _calc_recommended",
                 "what": (
                     "Demanda del lead time más stock de seguridad, menos lo que ya "
                     "tienes y lo que viene en camino. Con un piso de MOQ y una "
@@ -81,7 +81,7 @@ CHAPTER = {
             },
             {
                 "name": "Lead time aprendido",
-                "where": "backend/inventory/service.py:1047",
+                "where": "backend/inventory/service.py:1102 · get_learned_lead_times",
                 "what": (
                     "Cada recepción completa de una orden deja una observación del "
                     "plazo real del proveedor. Con tres observaciones, el promedio "
@@ -99,7 +99,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-bodega y traslados",
-                "where": "backend/inventory/service.py:1682",
+                "where": "backend/inventory/service.py:1737 · get_inventory_status_by_warehouse",
                 "what": (
                     "La demanda se reparte entre bodegas de dos formas, y cuando una "
                     "bodega necesita lo que a otra le sobra, se propone un traslado en "
@@ -118,7 +118,7 @@ CHAPTER = {
             },
             {
                 "name": "El optimizador",
-                "where": "ForecastingCore/forecasting_core/business/optimizer.py:46",
+                "where": "ForecastingCore/forecasting_core/business/optimizer.py:2 · MILP inventory optimizer",
                 "what": (
                     "Un MILP resuelto con HiGHS (scipy.optimize.milp) que reparte "
                     "compras y traslados en el horizonte, minimizando costo total."
@@ -166,7 +166,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Coverage days",
-                "where": "backend/inventory/service.py:1492",
+                "where": "backend/inventory/service.py:1547 · coverage_days",
                 "what": (
                     "How long today's stock lasts at the forecast sales rate. Every "
                     "other number hangs off this one."
@@ -184,7 +184,7 @@ CHAPTER = {
             },
             {
                 "name": "The stock signal",
-                "where": "backend/inventory/service.py:895",
+                "where": "backend/inventory/service.py:950 · _calc_signal",
                 "what": "The whole rule, verbatim, is four lines.",
                 "formulas": [
                     ("Signal",
@@ -200,7 +200,7 @@ CHAPTER = {
             },
             {
                 "name": "Recommended quantity",
-                "where": "backend/inventory/service.py:949",
+                "where": "backend/inventory/service.py:1004 · _calc_recommended",
                 "what": (
                     "Lead-time demand plus safety stock, minus what you have and what "
                     "is already coming. With an MOQ floor and a gate on the signal."
@@ -226,7 +226,7 @@ CHAPTER = {
             },
             {
                 "name": "Learned lead time",
-                "where": "backend/inventory/service.py:1047",
+                "where": "backend/inventory/service.py:1102 · get_learned_lead_times",
                 "what": (
                     "Every completed reception leaves an observation of the supplier's "
                     "real lead time. At three observations, the learned average "
@@ -244,7 +244,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-warehouse and transfers",
-                "where": "backend/inventory/service.py:1682",
+                "where": "backend/inventory/service.py:1737 · get_inventory_status_by_warehouse",
                 "what": (
                     "Demand is split across warehouses in one of two ways, and when one "
                     "warehouse needs what another has spare, a transfer is proposed "
@@ -263,7 +263,7 @@ CHAPTER = {
             },
             {
                 "name": "The optimizer",
-                "where": "ForecastingCore/forecasting_core/business/optimizer.py:46",
+                "where": "ForecastingCore/forecasting_core/business/optimizer.py:2 · MILP inventory optimizer",
                 "what": (
                     "A MILP solved with HiGHS (scipy.optimize.milp) that spreads "
                     "purchases and transfers across the horizon, minimising total cost."

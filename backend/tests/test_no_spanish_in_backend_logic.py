@@ -69,15 +69,19 @@ _ALLOWED = {
     # and supplier names are what a LatAm distributor's catalogue looks like.
     "scripts/seed_demo.py",
     "api/v1/demo.py",
-    # Same category, one step further: these two BUILD Spanish documents rather
-    # than returning Spanish from a code path. The manual is an end-user PDF
-    # (its text lives in docs/manual/) and the screens seed is the conversation
-    # a demo tenant shows on screen. Their Spanish is the artifact, and there is
-    # no English-plus-i18n form for a document whose whole point is to be read
-    # in Spanish. `scripts/gen_config_docs.py` deliberately did NOT join them:
-    # the deployment reference it writes is for whoever operates the install, so
-    # it is English, like `.env.example` it is generated beside.
+    # Same category, one step further: these three BUILD Spanish documents
+    # rather than returning Spanish from a code path. Two are PDFs whose text
+    # lives outside the backend — the end-user manual (docs/manual/) and the
+    # technical manual (docs/tech/) — and the third is the conversation a demo
+    # tenant shows on screen. What is left in the builders themselves is the
+    # cover and the section headings of the Spanish edition. Their Spanish is
+    # the artifact, and there is no English-plus-i18n form for a document whose
+    # whole point is to be read in Spanish. `scripts/gen_config_docs.py`
+    # deliberately did NOT join them: the deployment reference it writes is for
+    # whoever operates the install, so it is English, like the `.env.example`
+    # it is generated beside.
     "scripts/build_manual.py",
+    "scripts/build_tech_manual.py",
     "scripts/seed_demo_screens.py",
     # Header aliases matched against the columns of real uploaded files
     # ("fecha", "ventas", "proveedor"). These read user input; they are not copy.

@@ -36,7 +36,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-tenancy",
-                "where": "backend/auth/guards.py:277",
+                "where": "backend/auth/guards.py:148 · get_current_user",
                 "what": (
                     "El tenant viaja en el JWT y se hace cumplir consulta por "
                     "consulta. Cada función de servicio recibe `tenant_id` como primer "
@@ -208,7 +208,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-tenancy",
-                "where": "backend/auth/guards.py:277",
+                "where": "backend/auth/guards.py:148 · get_current_user",
                 "what": (
                     "The tenant travels in the JWT and is enforced query by query. "
                     "Every service function takes `tenant_id` as its first argument "

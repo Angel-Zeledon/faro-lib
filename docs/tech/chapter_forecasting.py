@@ -19,7 +19,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Punto de entrada y orden del pipeline",
-                "where": "forecasting_core/engine.py:68 → pipelines/pipeline.py:201",
+                "where": "forecasting_core/engine.py:68 → forecasting_core/pipelines/pipeline.py:201 · run",
                 "what": (
                     "`ForecastEngine` expone una API fluida; `Pipeline.run()` hace el "
                     "trabajo en 16 etapas. El único puente desde el backend es "
@@ -64,7 +64,7 @@ CHAPTER = {
             },
             {
                 "name": "Modelos implementados",
-                "where": "forecasting_core/models/factory.py:91",
+                "where": "forecasting_core/models/factory.py:27 · ModelFactory",
                 "what": (
                     "Nueve modelos entrenables más tres baselines. El paralelismo está "
                     "en el bucle de SKUs, por eso cada modelo corre con n_jobs=1."
@@ -110,7 +110,7 @@ CHAPTER = {
             },
             {
                 "name": "Validación y elección del campeón",
-                "where": "forecasting_core/pipelines/pipeline.py:794",
+                "where": "forecasting_core/pipelines/pipeline.py:794 · _select_champions",
                 "what": (
                     "Validación hacia adelante con ventana expansiva y un HUECO igual "
                     "al horizonte, para que la ventana de entrenamiento nunca toque "
@@ -171,7 +171,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Entry point and pipeline order",
-                "where": "forecasting_core/engine.py:68 → pipelines/pipeline.py:201",
+                "where": "forecasting_core/engine.py:68 → forecasting_core/pipelines/pipeline.py:201 · run",
                 "what": (
                     "`ForecastEngine` exposes a fluent API; `Pipeline.run()` does the "
                     "work in 16 stages. The only bridge from the backend is "
@@ -216,7 +216,7 @@ CHAPTER = {
             },
             {
                 "name": "Implemented models",
-                "where": "forecasting_core/models/factory.py:91",
+                "where": "forecasting_core/models/factory.py:27 · ModelFactory",
                 "what": (
                     "Nine trainable models plus three baselines. Parallelism lives in "
                     "the SKU loop, which is why every model runs with n_jobs=1."
@@ -262,7 +262,7 @@ CHAPTER = {
             },
             {
                 "name": "Validation and champion selection",
-                "where": "forecasting_core/pipelines/pipeline.py:794",
+                "where": "forecasting_core/pipelines/pipeline.py:794 · _select_champions",
                 "what": (
                     "Walk-forward validation with an expanding window and a GAP equal "
                     "to the horizon, so the training window never touches data the "
