@@ -233,6 +233,14 @@ function useScrollReveal() {
  })
  if (armed.length === 0) return
 
+ // Still armed and not yet revealed. The sweep below walks this and nothing
+ // else, so a page whose blocks have all appeared costs nothing per scroll.
+ const pending: HTMLElement[] = [...armed]
+ const drop = (el: HTMLElement) => {
+ const at = pending.indexOf(el)
+ if (at !== -1) pending.splice(at, 1)
+ }
+
  const show = (el: HTMLElement) => el.classList.add('reveal-in')
  let observerWorks = false
  const observer = new IntersectionObserver((entries, obs) => {
@@ -240,6 +248,7 @@ function useScrollReveal() {
  entries.forEach(entry => {
  if (!entry.isIntersecting) return
  show(entry.target as HTMLElement)
+ drop(entry.target as HTMLElement)
  obs.unobserve(entry.target) // reveal once; never re-animate on the way back up
  })
  }, {
@@ -265,12 +274,68 @@ function useScrollReveal() {
  // was still near the top, and nothing was left to animate. An observer that has
  // delivered even one entry is working, so the timer stands down.
  const failsafe = window.setTimeout(() => {
- if (!observerWorks) armed.forEach(show)
+ if (!observerWorks) {
+ armed.forEach(show)
+ pending.length = 0
+ }
  }, 3000)
+
+ // Safety net, because the observer working is not the same as the observer
+ // being right. `rootMargin` above is measured ONCE, at mount, and this page
+ // is not done growing then: the tour screenshots load after it, and the
+ // document goes from ~17,400px to ~19,100px. Blocks near the end are still
+ // moving after the margin that was supposed to cover them was fixed, and
+ // they can be left armed — permanently invisible, with no second scroll
+ // event coming to correct it because the reader is already at the bottom.
+ // Measured on the built page: jumping to the bottom left five blocks hidden
+ // (the WhatsApp and AI-analyst cards, the scheduling and team-messaging
+ // cards, and the whole FAQ), and an ordinary scroll to the end left one.
+ //
+ // So geometry is checked directly against the live layout, on scroll and on
+ // resize, and anything whose top has passed the viewport bottom is shown
+ // whatever the observer believed. It is deliberately the same `show` — the
+ // transition still runs, so a block revealed this way animates like any
+ // other. The listener removes itself once nothing is left armed, which on a
+ // normal read happens long before the end of the page.
+ let sweepQueued = false
+ const sweep = () => {
+ sweepQueued = false
+ for (let i = pending.length - 1; i >= 0; i--) {
+ if (pending[i].getBoundingClientRect().top < window.innerHeight) {
+ show(pending[i])
+ observer.unobserve(pending[i])
+ pending.splice(i, 1)
+ }
+ }
+ if (pending.length === 0) {
+ window.removeEventListener('scroll', onScroll)
+ window.removeEventListener('resize', onScroll)
+ }
+ }
+ const onScroll = () => {
+ if (sweepQueued) return
+ sweepQueued = true
+ requestAnimationFrame(sweep)
+ }
+ window.addEventListener('scroll', onScroll, { passive: true })
+ window.addEventListener('resize', onScroll)
+
+ // The document growing is its own event, and neither scroll nor resize
+ // reports it. Land on the page, jump to the bottom before the screenshots
+ // have loaded, and the browser holds the scroll position while the page
+ // grows underneath — no scroll event, no resize event, and the blocks that
+ // just moved below the fold stay armed. Watching the element whose height
+ // IS the document height is what catches that.
+ const grew = typeof ResizeObserver === 'undefined' ? null
+ : new ResizeObserver(onScroll)
+ grew?.observe(document.documentElement)
 
  return () => {
  observer.disconnect()
+ grew?.disconnect()
  window.clearTimeout(failsafe)
+ window.removeEventListener('scroll', onScroll)
+ window.removeEventListener('resize', onScroll)
  }
  }, [])
 }
