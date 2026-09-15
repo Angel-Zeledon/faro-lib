@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router
 from backend.errors import AppError
+from backend.db.connection import PoolExhausted
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
 from backend.middleware.machine_audit import MachineAuditMiddleware
@@ -269,6 +270,32 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     return JSONResponse(
         status_code=422,
         content={"detail": _json_safe(exc.errors()), "error_code": "validation_error"},
+    )
+
+
+@app.exception_handler(PoolExhausted)
+async def pool_exhausted_handler(request: Request, exc: PoolExhausted):
+    """Busy is not broken, and the difference is what somebody does next.
+
+    Every connection checked out means more requests arrived at once than this
+    instance has connections. Nothing is wrong with the request and nothing is
+    wrong with the service — waiting fixes it. Reported as a 500 it reads as a
+    crash: the caller stops retrying, and whoever is on call goes looking for a
+    traceback that does not exist.
+
+    `Retry-After: 2` is deliberately short. The pool frees up in the time it
+    takes the requests ahead to finish, which is well under a second in the
+    normal case; two seconds is slack, not a backoff schedule.
+    """
+    log.warning("Database pool exhausted on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "2"},
+        content={
+            "detail": str(exc),
+            "error_code": "server_busy",
+            "error_params": {},
+        },
     )
 
 

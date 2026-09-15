@@ -1873,12 +1873,12 @@ bodegas, los carriles de traslado y la entrada del optimizador estaban rotos.
 Un `.env` que nadie ve en `git status` movió el dedo hacia el código que más
 caro cuesta revisar.
 
-**Pendiente (no arreglado, es capacidad nueva):** que la suite **declare** lo
-que necesita en vez de heredarlo. Un fixture de sesión que fije
-`settings.testing_mode` y tests de cupos que se salgan explícitamente —que es
-lo que el estándar ya pide— convertiría este día en una línea roja que dice
-«este test necesita el modo de pruebas» en vez de ocho archivos acusando al
-optimizador.
+**ARREGLADO el 2026-09-14.** La suite ya no hereda el modo: un fixture autouse
+en `conftest.py` lo fija en `True`, y los 68 tests que dependen de un cupo lo
+apagan ellos mismos, que es lo que el estándar ya pedía. Comprobado poniendo
+`TESTING_MODE=false` en el `.env` a propósito y corriendo los cinco archivos que
+hoy se cayeron: **70 pasan, 0 fallan**. La configuración que esta mañana puso 34
+tests en rojo acusando al optimizador ya no puede hacerlo.
 
 Los 14 fallos restantes de esa corrida: 4 eran dobles de test con la firma vieja
 (el `tenant_id` que ganaron los envíos ese día), 1 era el guardián de español

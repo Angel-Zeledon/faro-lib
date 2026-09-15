@@ -143,6 +143,33 @@ def client(app):
 
 
 @pytest.fixture(autouse=True)
+def _testing_mode_is_declared_not_inherited():
+    """Pin `TESTING_MODE` on, because the suite is written against it being on.
+
+    The house rule is that a test which depends on a quota or a rate limit turns
+    the mode off ITSELF (68 of them do). What was never pinned is the other
+    direction: every other test assumed it was on, and inherited that from
+    whatever `backend/.env` happened to say on the machine running them.
+
+    On 2026-09-14 that file said `false`, and **34 tests went red accusing the
+    warehouse split, the transfer lanes and the optimizer of being broken** —
+    all eight affected files seed a second warehouse, and the free tier stops at
+    one, so each died on `PLAN_LIMIT_REACHED` before reaching its subject. The
+    fix was one line in a gitignored file nobody can see in `git status`, and
+    finding it cost half an hour of blaming the most expensive code in the repo.
+
+    Declaring it here makes the suite say what it needs instead of inheriting
+    it. A test that wants the limits live still turns it off — that path is
+    unchanged, and `test_tiers.py` and the chaos suites exercise it.
+    """
+    from backend.config import settings
+    original = settings.testing_mode
+    settings.testing_mode = True
+    yield
+    settings.testing_mode = original
+
+
+@pytest.fixture(autouse=True)
 def _forget_the_generated_encryption_key():
     """Drop the process-cached Fernet key between tests.
 

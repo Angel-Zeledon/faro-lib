@@ -3344,6 +3344,7 @@ export const translations = {
     'errors.role_not_permitted':                   'Tu rol no puede hacer esto. Pídele a un administrador de tu empresa que lo haga, o que te cambie el rol.',
     // Installation panel (/instalacion). Each one names the fix, because the
     // person reading it is the one who has to apply it.
+    'errors.server_busy':                          'El servidor está atendiendo muchas peticiones a la vez. Tu solicitud no se ejecutó — vuelve a intentarlo en unos segundos.',
     'errors.secret_storage_unavailable':           'No se puede guardar un secreto sin INTEGRATIONS_SECRET_KEY: se rechaza en vez de guardarlo sin cifrar. Ponla en el archivo .env del servidor y reinicia.',
     'errors.config_store_unavailable':             'No se pudo guardar la configuración. No se cambió nada.',
     'errors.invalid_config_value':                 'Ese valor no tiene la forma que el campo espera, así que no se guardó.',
@@ -6673,6 +6674,7 @@ export const translations = {
     'errors.reset_code_invalid':                   'That code is invalid or has expired. Request a new one.',
     'errors.reset_token_invalid':                  'This password reset link is invalid or has expired. Request a new one.',
     'errors.role_not_permitted':                   'Your role cannot do this. Ask an administrator at your company to do it, or to change your role.',
+    'errors.server_busy':                          'The server is handling too many requests at once. Your request was not run — try again in a few seconds.',
     'errors.secret_storage_unavailable':           'A secret cannot be stored without INTEGRATIONS_SECRET_KEY: it is refused rather than stored unencrypted. Set it in the backend .env file and restart.',
     'errors.config_store_unavailable':             'The configuration could not be saved. Nothing was changed.',
     'errors.invalid_config_value':                 'That value is not the shape this field expects, so it was not saved.',

@@ -62,6 +62,18 @@ class _NotSent(Exception):
         self.cause = cause
 
 
+class PoolExhausted(RuntimeError):
+    """Every connection is checked out and none came free in time.
+
+    Its own type because it is the one database failure that is nobody's fault
+    and fixes itself: the server is not broken, it is busy. Answered as 503
+    with a Retry-After (see `backend/main.py`), which tells a caller to come
+    back — where a 500 tells them, wrongly, that their request was malformed or
+    the service is down, and tells whoever is on call to go looking for a crash
+    that never happened.
+    """
+
+
 def _acquire():
     """Check out a pooled connection, waiting briefly if the pool is exhausted."""
     if _pool is None:
@@ -71,8 +83,13 @@ def _acquire():
         try:
             return _pool.getconn()
         except psycopg2.pool.PoolError as exc:
-            if "exhausted" not in str(exc) or time.monotonic() >= deadline:
+            if "exhausted" not in str(exc):
                 raise
+            if time.monotonic() >= deadline:
+                raise PoolExhausted(
+                    f"All database connections were busy for "
+                    f"{_POOL_WAIT_SECONDS:.0f}s. The request was not attempted."
+                ) from exc
             time.sleep(_POOL_WAIT_POLL_SECONDS)
 
 
