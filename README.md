@@ -165,10 +165,18 @@ different readers:
 | `faro-manual-{es,en}.pdf` (62 pp.) | the purchasing manager: screen by screen, what to click, what the numbers mean | `docs/manual/` | `python -m backend.scripts.build_manual` |
 | `faro-tecnico-{es,en}.pdf` (19 pp.) | **you**: architecture, algorithms, the exact formulas, and what each number does NOT mean | `docs/tech/` | `python -m backend.scripts.build_tech_manual` |
 
-The user manual is downloadable from the landing page in the visitor's
-language. The technical one is written against the code with `path:line`
-references, and it names the assumptions and the gaps rather than hiding them —
-start there before reading the source.
+The user manual is built into `Frontend/public/` and is downloadable from the
+landing page in the visitor's language. The technical one is built into
+`docs/` and is deliberately **not** in `Frontend/public/` — anything in that
+directory is served at the site root and downloadable by anyone who guesses the
+filename, which is right for the user manual and wrong for a document that
+lists the hard-coded constants and what the product does not do.
+
+The technical manual is written against the code with `path:line` references,
+and it names the assumptions and the gaps rather than hiding them — start there
+before reading the source. Those references carry a `· symbol` anchor and
+`backend/tests/test_tech_manual_citations_are_real.py` checks every one of
+them, so a citation cannot quietly drift when code moves above it.
 
 A new screen belongs in the user manual in both languages, or the manual is
 lying about the product.
