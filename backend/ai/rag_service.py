@@ -116,14 +116,18 @@ class RAGService:
         self._index = None
         self._anthro = None
 
-        settings = effective()
+        # Named `cfg`, not `settings`: this is the RESOLVED view, which layers a
+        # value pasted into the panel over the environment. A local called
+        # `settings` here reads as the singleton and would invite somebody to
+        # "fix" it back into one that cannot be reconfigured without a restart.
+        cfg = effective()
 
         missing = []
-        if not settings.voyageai_api_key:
+        if not cfg.voyageai_api_key:
             missing.append("VOYAGEAI_API_KEY")
-        if not settings.pinecone_api_key:
+        if not cfg.pinecone_api_key:
             missing.append("PINECONE_API_KEY")
-        if not settings.pinecone_index:
+        if not cfg.pinecone_index:
             missing.append("PINECONE_INDEX")
         # Generation runs on DeepSeek, the one backend behind get_local_llm_client().
         if missing:
@@ -133,7 +137,7 @@ class RAGService:
 
         try:
             import voyageai
-            self._voyage = voyageai.Client(api_key=settings.voyageai_api_key)
+            self._voyage = voyageai.Client(api_key=cfg.voyageai_api_key)
         except ImportError:
             log.warning("RAG disabled — install voyageai: pip install voyageai")
             self._ready = False
@@ -141,8 +145,8 @@ class RAGService:
 
         try:
             from pinecone import Pinecone
-            pc          = Pinecone(api_key=settings.pinecone_api_key)
-            self._index = pc.Index(settings.pinecone_index)
+            pc          = Pinecone(api_key=cfg.pinecone_api_key)
+            self._index = pc.Index(cfg.pinecone_index)
         except ImportError:
             log.warning("RAG disabled — install pinecone: pip install pinecone")
             self._ready = False
@@ -167,7 +171,7 @@ class RAGService:
             return False
 
         log.info("RAG service initialised (voyage=%s, pinecone index=%s)",
-                 EMBED_MODEL, settings.pinecone_index)
+                 EMBED_MODEL, cfg.pinecone_index)
         self._ready = True
         return True
 

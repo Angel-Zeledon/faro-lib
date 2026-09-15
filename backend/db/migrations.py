@@ -899,6 +899,46 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS granularity TEXT"),
     ("create_sessions_family_idx",
      "CREATE INDEX IF NOT EXISTS sessions_family_idx ON sessions (tenant_id, family_id)"),
+    # ── The seven columns `datasets` was missing on a FRESH database ────────
+    #
+    # Found 2026-09-14 by walking every screen of a virgin install: `/ventas`
+    # and `/archivos` — the first two screens a new user opens, the ones that
+    # say "upload your sales" — answered 500 with
+    # `psycopg2.errors.UndefinedColumn: column "updated_at" does not exist`.
+    #
+    # The data-sources feature grew these columns over time and every existing
+    # database has them, because each one was added by hand or by a migration
+    # that no longer exists. `base_datasets` above was never updated to match,
+    # so the schema this code bootstraps from scratch has 12 columns while the
+    # code writes 19. Nobody saw it because nobody creates a new database:
+    # development runs on one that has been migrated forward for months.
+    #
+    # That is exactly the failure a buyer meets first and the owner can never
+    # reproduce. Added here rather than inside `base_datasets` on purpose —
+    # rewriting a CREATE that has already run changes nothing on an existing
+    # database, and these have to reach both.
+    ("add_datasets_description",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS description TEXT"),
+    ("add_datasets_updated_at",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ "
+     "NOT NULL DEFAULT NOW()"),
+    # 'file' | 'sql' — what the source IS. Defaulted so the rows that predate
+    # SQL sources read as the uploads they are.
+    ("add_datasets_source_type",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS source_type TEXT "
+     "NOT NULL DEFAULT 'file'"),
+    # 'connected' | 'pending' | 'error' — whether the source can be read right
+    # now. An uploaded file is connected the moment it lands.
+    ("add_datasets_connection_status",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS connection_status TEXT "
+     "NOT NULL DEFAULT 'connected'"),
+    ("add_datasets_sql_config",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS sql_config JSONB"),
+    ("add_datasets_saved_query",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS saved_query TEXT"),
+    ("add_datasets_preview_cache",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS preview_cache JSONB"),
+
     # In-app dataset editor: a save-as-new dataset links to the source dataset it
     # was edited from. Nullable — uploads and SQL sources keep NULL.
     ("add_datasets_parent_id",

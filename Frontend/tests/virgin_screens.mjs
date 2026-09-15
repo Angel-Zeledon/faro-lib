@@ -49,6 +49,13 @@ page.on('console', m => {
   // warning on <html data-theme>, and an RSC prefetch artifact of hard
   // navigation, which a real user clicking <Link> never produces.
   if (t.includes('data-theme') || t.includes('RSC payload')) return
+  // A 4xx is the product REFUSING on purpose — "you have not trained anything
+  // yet" is the true answer on an empty account, and the screen renders its
+  // empty state from it. The browser logs every non-2xx fetch regardless, so
+  // treating that log line as a defect would make this walker cry wolf on the
+  // correct behaviour until somebody deleted it. 5xx is caught separately and
+  // is never acceptable.
+  if (/Failed to load resource.*4\d\d/.test(t)) return
   seen.consoleErrors.push(t.slice(0, 160))
 })
 
@@ -82,7 +89,13 @@ for (const route of SCREENS) {
   const rawKeys = text.match(/\b(nav|ui|common|inventory|analyst|settings)\.[a-z_]+\.?[a-z_]*/gi)
   if (rawKeys) flags.push('raw i18n keys: ' + [...new Set(rawKeys)].slice(0, 3).join(', '))
   if (seen.fiveXX.length) flags.push('5xx: ' + seen.fiveXX.slice(0, 2).join(', '))
-  if (seen.consoleErrors.length) flags.push('console: ' + seen.consoleErrors[0])
+  // A browser logs every non-2xx fetch. A 4xx here is the product refusing on
+  // purpose — "you have not trained anything yet" is the true answer on an empty
+  // account, and the screen renders its empty state from it. Judged here rather
+  // than at capture time so the rule is visible next to the verdict it changes.
+  const realConsole = seen.consoleErrors.filter(
+    t => !/Failed to load resource.*4\d\d/.test(t))
+  if (realConsole.length) flags.push('console: ' + realConsole[0])
   // Nothing rendered at all is its own failure — an empty account still gets
   // chrome, a heading and an empty state.
   if (text.trim().length < 200) flags.push(`almost nothing rendered (${text.trim().length} chars)`)

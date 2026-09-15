@@ -196,14 +196,18 @@ class DocumentIndexer:
         self._fingerprint = fp
         self._voyage = None
         self._index = None
-        settings = effective()
+        # Named `cfg`, not `settings`: this is the RESOLVED view, which layers a
+        # value pasted into the panel over the environment. A local called
+        # `settings` here reads as the singleton and would invite somebody to
+        # "fix" it back into one that cannot be reconfigured without a restart.
+        cfg = effective()
 
         missing = []
-        if not settings.voyageai_api_key:
+        if not cfg.voyageai_api_key:
             missing.append("VOYAGEAI_API_KEY")
-        if not settings.pinecone_api_key:
+        if not cfg.pinecone_api_key:
             missing.append("PINECONE_API_KEY")
-        if not settings.pinecone_index:
+        if not cfg.pinecone_index:
             missing.append("PINECONE_INDEX")
         if missing:
             log.warning("DocumentIndexer disabled — missing: %s", ", ".join(missing))
@@ -212,7 +216,7 @@ class DocumentIndexer:
 
         try:
             import voyageai
-            self._voyage = voyageai.Client(api_key=settings.voyageai_api_key)
+            self._voyage = voyageai.Client(api_key=cfg.voyageai_api_key)
         except ImportError:
             log.warning("DocumentIndexer disabled — install voyageai")
             self._ready = False
@@ -220,7 +224,7 @@ class DocumentIndexer:
 
         try:
             from pinecone import Pinecone
-            self._index = Pinecone(api_key=settings.pinecone_api_key).Index(settings.pinecone_index)
+            self._index = Pinecone(api_key=cfg.pinecone_api_key).Index(cfg.pinecone_index)
         except Exception as exc:
             log.warning("DocumentIndexer disabled — Pinecone: %s", exc)
             self._ready = False
