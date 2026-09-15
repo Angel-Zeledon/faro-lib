@@ -252,21 +252,39 @@ class TestInventoryEdgeCases:
 
     # ── service_level ─────────────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("service_level", [0, 1.0, 0.5, 0.42])
-    def test_unknown_service_level_falls_back_to_z_of_0_95(self, service_level):
+    @pytest.mark.parametrize("service_level,expected", [(0, 90.0), (0.42, 90.0),
+                                                        (0.5, 90.0), (1.0, 126.0)])
+    def test_an_out_of_range_service_level_is_clamped_not_rounded_to_95(
+        self, service_level, expected
+    ):
         """
-        A service level absent from `_Z` falls back to z=1.645, i.e. it must
-        produce exactly the 0.95 answer — and that answer must differ from a
-        service level that IS in the table, otherwise "falls back" would be
-        indistinguishable from "ignores the parameter".
+        FIXED. This used to assert that every one of these produced exactly the
+        0.95 answer (103), because `_Z.get(service_level, 1.645)` gave them all
+        the z of 95%. The old name said "falls_back_to_z_of_0_95" and the
+        docstring defended it: the fallback had to differ from a listed level
+        "otherwise 'falls back' would be indistinguishable from 'ignores the
+        parameter'". But silently substituting 95% IS ignoring the parameter —
+        the test was checking that the substitution happened, not that it was
+        right.
 
-        Hand-derived (stock=50, avg=10, std=2, lead=14):
-            z=1.645 → 140 + 1.645*2*sqrt(14) - 50 = 102.31005… → ceil → 103
-            z=2.326 → 140 + 2.326*2*sqrt(14) - 50 = 107.40739… → ceil → 108
+        `_z_for` now clamps to the range the API accepts ([0.5, 0.999]; the
+        next test proves the API rejects everything outside it) and computes
+        the quantile:
+
+            0, 0.42, 0.5 → clamp to 0.5 → z=0 → no cushion at all
+                           140 + 0 - 50 = 90
+            1.0          → clamp to 0.999999 → z=4.7534
+                           140 + 4.7534*2*sqrt(14) - 50 = 125.57… → ceil → 126
+
+        z=0 at 0.5 is correct, not a degenerate case: a 50% service level means
+        covering the median, which needs no safety stock by definition. These
+        values reach `_calc_recommended` only from an internal caller or a
+        stored default, never from the API.
         """
         from backend.inventory.service import _calc_recommended
         args = dict(current_stock=50.0, avg_daily=10.0, avg_std=2.0, lead_time=14, moq=1)
-        assert _calc_recommended(**args, service_level=service_level) == 103.0
+        assert _calc_recommended(**args, service_level=service_level) == expected
+        # The listed levels are untouched, and the ordering still holds.
         assert _calc_recommended(**args, service_level=0.95) == 103.0
         assert _calc_recommended(**args, service_level=0.99) == 108.0
 

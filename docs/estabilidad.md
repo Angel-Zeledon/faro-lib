@@ -1940,6 +1940,39 @@ cuatro caracteres finales. Cero problemas en los siete pasos.
 
 ---
 
+## Hallazgo abierto (2026-09-14) — el mismo defecto del nivel de servicio, pero en el motor
+
+`backend/inventory/service.py` resolvía el z con `_Z.get(service_level, 1.645)`:
+cualquier nivel fuera de los cuatro de la tabla recibía en silencio el colchón
+del 95%. **Arreglado** — `_z_for` calcula ahora con la aproximación de Acklam y
+recorta al rango que la API acepta.
+
+Lo que vale la pena mirar, y **no se tocó** porque es la otra capa:
+`ForecastingCore` tiene su propio camino (`InventoryAdvisor`, con `scipy.ppf`) y
+sus dos tests de borde están escritos así:
+
+```python
+# CRITICAL FIX REQUIRED: service_level=1.0 causes ppf(1.0)=inf
+def test_service_level_boundary_1_causes_inf(self):
+    with pytest.raises(Exception):
+        ...
+```
+
+Es el mismo patrón que dejó vivo el defecto del backend durante meses: el test
+no comprueba que el comportamiento sea correcto, comprueba que el síntoma
+ocurra, y `pytest.raises(Exception)` acepta cualquier excepción — incluido un
+`TypeError` por una firma cambiada. Mientras el test siga verde, nadie se entera
+de si el motor recorta, revienta o devuelve infinito.
+
+**No es urgente**: la API rechaza con 422 todo lo que esté fuera de [0.5, 0.999]
+(`test_service_level_boundary_via_api`), así que esos valores solo llegan desde
+un llamador interno o un default guardado. Pero decidir qué debe hacer el motor
+con 1.0 — recortar como el backend, o rechazar con un error propio — es una
+decisión del dueño, no un arreglo obvio, y por eso queda anotada aquí en vez de
+aplicada.
+
+---
+
 ## Lo que se borró el 2026-08-11, y por qué
 
 Siete documentos de planes, propuestas y auditorías ya ejecutados o superados.
