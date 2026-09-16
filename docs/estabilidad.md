@@ -1,2004 +1,2004 @@
-# Estabilidad — qué falta para que la app no tenga bugs
+# Stability — what is left before the app has no bugs
 
-**Creado:** 2026-08-11
-**Regla que lo gobierna:** CLAUDE.md, "Priority: stability over scope". Nada de
-lo que está aquí es una feature. Si arreglar algo de esta lista **necesita** una
-capacidad nueva —un endpoint, un campo, una pantalla, un interruptor— se avisa y
-se pregunta antes de construirla.
+**Created:** 2026-08-11
+**Rule that governs it:** CLAUDE.md, "Priority: stability over scope". Nothing
+here is a feature. If fixing something on this list **needs** a new capability —
+an endpoint, a field, a screen, a toggle — it is flagged and asked about before
+being built.
 
-Este documento reemplaza a siete documentos de planes, auditorías y propuestas
-que quedaron obsoletos (ver "Lo que se borró" al final). Es el único backlog
-vigente. La tabla viva sigue siendo `inventario-pantallas.md`; esto es el orden
-en que se ataca.
-
----
-
-## Lo primero: qué NO puede significar "sin bugs"
-
-**El frontend no tiene un solo test.** `npx tsc --noEmit` verifica tipos, no
-comportamiento, y no existe suite end-to-end. El 2026-08-06 la suite estaba
-verde con 27 defectos vivos en la aplicación.
-
-Así que "sin ningún bug" no es un estado que se pueda certificar. Lo alcanzable,
-y lo que persigue esta lista, es:
-
-> **Cada camino que un usuario puede tomar, ejercido al menos una vez por una
-> persona en un navegador, y arreglado lo que salga.**
-
-Y el dato que ordena la prioridad no es una intuición: **cada vez que se caminó
-una pantalla en serio, aparecieron defectos.** `/pronosticos` dio 4, `/compras`
-1, `/archivos` 1, `/usuarios` 1, y `/api` dio 6 con solo mirarla de cerca. No
-queda ninguna razón para suponer que las acciones nunca ejercidas estén sanas.
+This document replaces seven plan, audit and proposal documents that had gone
+stale (see "What was deleted" at the end). It is the only live backlog. The
+living table is still `screen-inventory.md`; this is the order the work runs in.
 
 ---
 
-## 1. El bug que encabezaba esta lista — **[ARREGLADO bd38436]**
+## First: what "no bugs" cannot mean
 
-### `ConfirmDialog` perdía la promesa de la primera confirmación — **[ARREGLADO bd38436]**
+**The frontend has not a single test.** `npx tsc --noEmit` checks types, not
+behaviour, and there is no end-to-end suite. On 2026-08-06 the suite was green
+with 27 live defects in the application.
 
-> Verificado en el código el 2026-08-23: un segundo `confirm()` ahora hace
-> `settle(false)` sobre el pendiente en vez de sobrescribir el resolver, hay
-> manejador de `Escape` en fase de captura, y el foco queda atrapado dentro del
-> panel. Los tres defectos que lo hacían alcanzable están cerrados.
+So "no bugs at all" is not a state anybody can certify. What is reachable, and
+what this list pursues, is:
 
-`Frontend/src/components/ui/ConfirmDialog.tsx:43` guarda **un solo** `resolver`
-en un `useRef`. Si se abre una segunda confirmación antes de cerrar la primera,
-la segunda **sobrescribe** al resolver de la primera: esa promesa no se resuelve
-nunca. La acción original queda colgada para siempre — sin mensaje, sin spinner,
-sin error. Falla del lado seguro (no escribe de más), pero falla **invisible**,
-que es la peor forma de fallar.
+> **Every path a user can take, exercised at least once by a person in a
+> browser, and whatever comes out of it fixed.**
 
-Dos defectos del mismo componente lo hacen alcanzable en vez de teórico:
-
-- **No cierra con `Escape`.** No hay manejador de teclado.
-- **No atrapa el foco**, y la página de atrás no queda inerte. Con teclado se
-  sale del "modal" tabulando y se llega a los botones de abajo — que es
-  exactamente cómo se dispara la segunda confirmación.
-
-Lo usan **6 pantallas**, incluidas las de borrar y la de generar orden de compra.
-Encontrado revisando `/api`, pero no es de `/api`.
-
-**Esto es lo primero que se arregla.**
+And the fact that sets the priority is not an intuition: **every time a screen
+was walked seriously, defects appeared.** `/pronosticos` gave 4, `/compras` 1,
+`/archivos` 1, `/usuarios` 1, and `/api` gave 6 from a close look alone. There is
+no reason left to assume the never-exercised actions are healthy.
 
 ---
 
-## 1.bis Seis defectos que encontró la suite de caos (2026-08-22)
+## 1. The bug that used to head this list — **[FIXED bd38436]**
 
-> **Estado al cierre del 2026-08-22: los seis arreglados.**
-> Cada uno verificado por el test que lo encontró. (a) techos de plan, (b) rate
-> limiter, (c) NUL en la URL, (d) SKU en blanco, (e) `sniff_separator`, y (f) el
-> truncado silencioso de pandas — ahora el archivo con NUL se **rechaza** en
-> `dataframes/io.py` (formatos binarios exentos: un .xlsx es un ZIP y está lleno
-> de NULs), y el importador de stock, que sí tiene reporte por fila, rechaza la
-> fila individual con `inventory_import_row_has_nul`.
+### `ConfirmDialog` lost the first confirmation's promise — **[FIXED bd38436]**
+
+> Verified in the code on 2026-08-23: a second `confirm()` now calls
+> `settle(false)` on the pending one instead of overwriting the resolver, there
+> is an `Escape` handler in the capture phase, and focus is trapped inside the
+> panel. The three defects that made it reachable are closed.
+
+`Frontend/src/components/ui/ConfirmDialog.tsx:43` kept **one** `resolver` in a
+`useRef`. Opening a second confirmation before closing the first made the second
+**overwrite** the first's resolver: that promise never resolves. The original
+action hangs forever — no message, no spinner, no error. It fails on the safe
+side (it does not over-write), but it fails **invisibly**, which is the worst way
+to fail.
+
+Two defects in the same component made it reachable rather than theoretical:
+
+- **It did not close on `Escape`.** There was no keyboard handler.
+- **It did not trap focus**, and the page behind was not inert. With a keyboard
+  you tab out of the "modal" and reach the buttons below — which is exactly how
+  the second confirmation gets triggered.
+
+**6 screens** use it, including the delete ones and the purchase-order one. Found
+while reviewing `/api`, but it is not an `/api` problem.
+
+**This is the first thing to fix.**
+
+---
+
+## 1.bis Six defects the chaos suite found (2026-08-22)
+
+> **State at the close of 2026-08-22: all six fixed.**
+> Each verified by the test that found it. (a) plan ceilings, (b) the rate
+> limiter, (c) a NUL in the URL, (d) a blank SKU, (e) `sniff_separator`, and (f)
+> pandas truncating silently — a file with a NUL is now **refused** in
+> `dataframes/io.py` (binary formats exempt: an .xlsx is a ZIP and is full of
+> NULs), and the stock importer, which does have per-row reporting, refuses the
+> individual row with `inventory_import_row_has_nul`.
 >
-> **El candado `limit_guard` ya cubre todas las rutas**: stock, alta de usuarios,
-> invitación, sesiones, API keys, bodegas, importación masiva, transferencias,
-> recepción de OC y sync de integraciones. Las que ya tenían transacción propia
-> usan `take_tenant_lock(tenant_id, conn)` dentro de ella — una sola conexión, y
-> el candado se libera con el mismo commit que hace visibles las filas.
+> **The `limit_guard` lock now covers every route**: stock, user creation,
+> invitation, sessions, API keys, warehouses, bulk import, transfers, PO
+> reception and integration sync. The ones that already had their own transaction
+> use `take_tenant_lock(tenant_id, conn)` inside it — one connection, and the
+> lock is released by the same commit that makes the rows visible.
 
+Three hostile test files were added — massive volume, corrupt data and real
+concurrency — which did not exist until then:
+`backend/tests/test_chaos_ingestion.py`, `test_chaos_evil_path.py` and
+`test_chaos_concurrency.py`. They found this **on the first run**. The tests were
+left **deliberately red**: none uses `xfail`, because the house rule forbids
+hiding a real bug behind a marker.
 
+Ordered by what they cost if they reach production:
 
-Se agregaron tres archivos de tests hostiles —volumen masivo, datos corruptos y
-concurrencia real— que hasta ahora no existían:
-`backend/tests/test_chaos_ingestion.py`, `test_chaos_evil_path.py` y
-`test_chaos_concurrency.py`. Encontraron esto **en la primera corrida**. Los
-tests quedaron **en rojo a propósito**: ninguno usa `xfail`, porque la regla de
-la casa prohíbe esconder un bug real detrás de una marca.
+### a) Plan ceilings could be walked through with two simultaneous clicks — **[FIXED 2026-08-22]**
 
-Ordenados por lo que cuestan si pasan en producción:
+`enforce_limit` is a `SELECT COUNT(*)` followed by an `INSERT`, with nothing
+atomic in between. Measured:
 
-### a) Los techos de plan se saltaban con dos clics simultáneos — **[ARREGLADO 2026-08-22]**
-
-`enforce_limit` es un `SELECT COUNT(*)` seguido de un `INSERT`, sin nada atómico
-entre medio. Medido:
-
-| Límite | Concurrencia | Techo | Filas que quedaron |
+| Limit | Concurrency | Ceiling | Rows left behind |
 |---|---|---|---|
-| `max_skus` | 12 peticiones | 5 | **10** |
-| `max_users` | 8 peticiones | 2 | **9** |
+| `max_skus` | 12 requests | 5 | **10** |
+| `max_users` | 8 requests | 2 | **9** |
 
-Esto no es una molestia de rendimiento: en el plan gratis **es la frontera
-comercial completa del producto**. Un importador masivo en una pestaña y una
-carga manual en otra bastan. Arreglarlo necesita una decisión de diseño (índice
-único parcial, `INSERT … SELECT` con la condición adentro, o un advisory lock por
-tenant), por eso se pregunta antes de tocarlo.
+This is not a performance annoyance: on the free plan **it is the product's
+entire commercial boundary**. A bulk import in one tab and a manual save in
+another are enough. Fixing it needs a design decision (a partial unique index, an
+`INSERT … SELECT` with the condition inside, or a per-tenant advisory lock),
+which is why it is asked about before being touched.
 *Test:* `test_a_plan_ceiling_cannot_be_walked_through_by_clicking_twice`.
 
-### b) El rate limiter de API keys admitía 3× su techo bajo paralelismo — **[ARREGLADO 2026-08-22]**
+### b) The API-key rate limiter allowed 3× its ceiling under parallelism — **[FIXED 2026-08-22]**
 
-Mismo patrón (leer el contador, insertar después): 20 llamadas simultáneas contra
-un techo de 5 dejaron pasar **16**. Una credencial de máquina —la única que corre
-desatendida, en un cron, con reintentos— puede multiplicar su cuota abriendo
-sockets. Afecta también al techo por minuto, que es más viejo que los tiers.
+Same pattern (read the counter, insert afterwards): 20 simultaneous calls against
+a ceiling of 5 let **16** through. A machine credential — the only one that runs
+unattended, on a cron, with retries — can multiply its quota by opening sockets.
+It also affects the per-minute ceiling, which is older than the tiers.
 *Test:* `test_the_rate_limiter_counts_exactly_under_parallel_hammering`.
 
-### c) Un NUL en la URL se reportaba como falla del servidor — **[ARREGLADO 2026-08-22]**
+### c) A NUL in the URL was reported as a server failure — **[FIXED 2026-08-22]**
 
-`GET /api/v1/sessions/%00x/results` → el byte viaja intacto hasta psycopg2, que
-lo rechaza, y el handler de excepciones lo convierte en **500 `internal_error`**.
-El sobre existe (la corrección de su día funcionó), pero el veredicto es el
-equivocado: al usuario se le dice que el servidor se rompió por una URL que
-malformó él, y despierta a quien esté de guardia. Debe ser 400/404, validado
-donde se lee el id.
+`GET /api/v1/sessions/%00x/results` → the byte travels intact to psycopg2, which
+refuses it, and the exception handler turns it into a **500 `internal_error`**.
+The envelope exists (that day's fix works), but the verdict is the wrong one: the
+user is told the server broke over a URL they malformed, and whoever is on call
+gets woken up. It should be 400/404, validated where the id is read.
 *Test:* `test_a_nul_byte_in_a_path_is_the_callers_mistake_not_the_servers`.
 
-### d) Un SKU de solo espacios creaba una fila invisible — **[ARREGLADO 2026-08-22]**
+### d) A SKU of nothing but spaces created an invisible row — **[FIXED 2026-08-22]**
 
-`PUT /api/v1/inventory/stock/%20%20%20` responde 200 y deja una fila cuyo SKU es
-`"   "`. En pantalla no se ve nada: una fila de inventario que nadie puede
-encontrar ni borrar desde la UI.
+`PUT /api/v1/inventory/stock/%20%20%20` answers 200 and leaves a row whose SKU is
+`"   "`. Nothing shows on screen: an inventory row nobody can find or delete from
+the UI.
 *Test:* `test_an_empty_sku_cannot_create_a_nameless_row`.
 
-### e) `sniff_separator` reventaba con `IndexError` ante un archivo de solo BOM — **[ARREGLADO 2026-08-22]**
+### e) `sniff_separator` blew up with `IndexError` on a BOM-only file — **[FIXED 2026-08-22]**
 
-`backend/dataframes/io.py:32`. Excel escribe `﻿` en un export vacío;
-`sample.strip()` no lo considera espacio, `lstrip("﻿")` deja la cadena
-vacía y `splitlines()[0]` explota. Subir un export vacío = 500 "error
-inesperado". Es una línea de guarda.
+`backend/dataframes/io.py:32`. Excel writes a BOM into an empty export;
+`sample.strip()` does not treat it as whitespace, `lstrip` of the BOM leaves the
+string empty, and `splitlines()[0]` explodes. Uploading an empty export = a 500
+"unexpected error". It is a one-line guard.
 *Test:* `test_separator_sniffing_survives_files_designed_to_fool_it`.
 
-### f) pandas truncaba la celda en el NUL, sin avisar — **[ARREGLADO 2026-08-22]**
+### f) pandas truncated the cell at the NUL, silently — **[FIXED 2026-08-22]**
 
-`SKU-\0-1` entra a la base como `SKU-`. No hay error, no hay warning: el
-archivo dice una cosa y el inventario guarda otra. Un comprador termina pidiendo
-contra un SKU que su proveedor no conoce. Hay que detectarlo al leer y rechazar
-la fila, no dejarla pasar cambiada.
+`SKU-\0-1` enters the database as `SKU-`. No error, no warning: the file says one
+thing and inventory stores another. A buyer ends up ordering against a SKU their
+supplier does not recognise. It has to be detected on read and the row refused,
+not let through changed.
 *Test:* `test_a_nul_byte_is_carried_or_refused_but_never_silently_dropped`.
 
-### Y una medición, que no es un bug pero se parece
+### And one measurement, which is not a bug but looks like one
 
-El preview de un `.xlsx` de 200.000 filas tardó **139,8 s** y ~700 MB para
-devolver 20 filas; el mismo dato en CSV tarda menos de un segundo. La rama de
-Excel de `dataset_preview` lee la hoja entera antes de cortar. Corre en el hilo
-de la petición: una sola subida deja un worker clavado más de dos minutos.
-*Test:* `test_an_excel_bomb_does_not_take_the_process_with_it` (con el umbral
-puesto como guardia de regresión, no como bendición).
+Previewing a 200,000-row `.xlsx` took **139.8 s** and ~700 MB to return 20 rows;
+the same data as CSV takes under a second. The Excel branch of `dataset_preview`
+reads the whole sheet before slicing. It runs on the request thread: a single
+upload pins a worker for more than two minutes.
+*Test:* `test_an_excel_bomb_does_not_take_the_process_with_it` (with the
+threshold set as a regression guard, not as a blessing).
 
-### Lo que ya se arregló, porque lo introdujo el mismo cambio
+### What was already fixed, because the same change introduced it
 
-La misma carrera de (a) estaba en `POST /entitlements/upgrade-request`, escrito
-ese mismo día: 6 clics simultáneos dejaban 4 solicitudes abiertas. Se cerró con
-un índice único parcial sobre `(tenant_id) WHERE status = 'new'` y un
-`ON CONFLICT … DO UPDATE`, que es exactamente la forma que (a) necesita.
-
----
-
-## 1.ter Hallazgo del recorrido en navegador (2026-08-22) — ARREGLADO
-
-**El resumen ejecutivo del panel de compras reportaba euros en un tenant en
-colones.** El KPI de la misma pantalla dice `₡196K` y el párrafo generado justo
-debajo dice «El inventario total asciende a 195.755,6 €». La moneda del tenant
-es CRC (`/mi-cuenta` lo confirma: «Así se ve: ₡1 250 000»).
-
-Es el narrador de IA: recibe las cifras pero no la moneda del tenant, o no la
-respeta en el prompt. Dos símbolos distintos para el mismo número, a diez píxeles
-uno del otro — el usuario no sabe cuál creer, y el que está mal es el que viene
-en prosa, que es el que se lee primero.
-
-Visto en el recorrido con el tenant demo sembrado; no era un defecto de los
-datos sintéticos.
-
-**Causa:** los montos entraban al prompt como números pelados
-(`"total_inventory_value": 195755.6`), sin moneda. El modelo no fue descuidado —
-no tenía con qué: tuvo que elegir un símbolo y eligió uno. `key_points` y el
-fallback por reglas ya pasaban por `money()`; solo la rama del LLM no.
-
-**Arreglo:** los montos van pre-formateados al prompt, con instrucción explícita
-de copiarlos tal cual. Mismo cambio en `generate_inventory_insight`. Se agregó
-`_as_money` / `_has_money` porque el fallback y los key points leen los MISMOS
-dicts y ahora reciben texto donde antes había números — un `> 0` sobre eso
-reventaba (lo cazó el propio test).
-
-**Verificado:** en el navegador, 0 euros y 20 colones en la pantalla; el párrafo
-dice `₡195,756`, idéntico al KPI de arriba. Test de regresión:
-`test_the_prompt_itself_carries_the_currency_not_a_bare_number`, que captura el
-prompt real y falla si vuelve a llegar un número sin moneda (comprobado que
-falla sin el arreglo).
+The same race as (a) was in `POST /entitlements/upgrade-request`, written that
+same day: 6 simultaneous clicks left 4 open requests. It was closed with a
+partial unique index on `(tenant_id) WHERE status = 'new'` and an
+`ON CONFLICT … DO UPDATE`, which is exactly the shape (a) needs.
 
 ---
 
-## 1.quater Los tres últimos del reporte de agentes — **[ARREGLADOS 2026-08-23]**
+## 1.ter Finding from the browser walk (2026-08-22) — FIXED
 
-Los tres que los agentes reportaron sin arreglar, por caer fuera de sus archivos.
+**The purchase panel's executive summary reported euros in a colón tenant.** The
+KPI on the same screen says `₡196K` and the paragraph generated right below it
+says "Total inventory amounts to 195,755.6 €". The tenant's currency is CRC
+(`/mi-cuenta` confirms it).
 
-**`/cash-calendar/fit` descartaba `result.status`.** El optimizador degrada a un
-atajo voraz cuando el solver no alcanza, y lo dice — pero este endpoint tiraba
-esa señal, así que una respuesta de caja construida sobre el atajo llegaba con la
-misma confianza que una construida sobre el óptimo. El número no estaba mal; el
-plan que describe era otro, y nada en el cable lo decía. Ahora manda
-`plan_status`, y **solo** en el camino que resuelve: quien mandó su propio carrito
-está siendo respondido sobre su carrito, y no hay plan que calificar.
+It is the AI narrator: it receives the figures but not the tenant's currency, or
+does not respect it in the prompt. Two different symbols for the same number, ten
+pixels apart — the user does not know which to believe, and the wrong one is the
+one in prose, which is the one read first.
 
-**El aviso del plan aproximado no se pintaba cuando el plan salía vacío.** La
-sección entera se condicionaba a que hubiera líneas, así que un atajo voraz sin
-resultados dibujaba **nada** — y el comprador leía ese silencio como «no hay que
-comprar». La verdad era «el optimizador se rindió y no sabemos», que es otra
-frase y la cara de equivocar. La condición ahora incluye `status === 'fallback'`,
-y ese caso tiene copy propio: el aviso normal habla de «esta lista» sobre una
-lista que no existe, lo que se lee como tranquilidad en vez de advertencia.
+Seen on the walk with the demo tenant seeded; it was not a defect of the
+synthetic data.
 
-**`/proveedores` mostraba el inglés crudo en su banner.** Imprimía `e.message`,
-que para un `AppError` es el texto de respaldo que el backend manda a clientes
-sin catálogo. Esta pantalla tiene catálogo. El toast global ya renderizaba
-`errors.<code>` en el idioma del usuario, así que el mismo fallo se leía en
-español en la esquina y en inglés en el panel — y el panel es el que está pegado
-al formulario que tienes delante.
+**Cause:** the amounts entered the prompt as bare numbers
+(`"total_inventory_value": 195755.6`), with no currency. The model was not
+careless — it had nothing to go on: it had to choose a symbol and it chose one.
+`key_points` and the rule-based fallback already went through `money()`; only the
+LLM branch did not.
 
----
+**Fix:** amounts go pre-formatted into the prompt, with an explicit instruction
+to copy them verbatim. Same change in `generate_inventory_insight`. `_as_money` /
+`_has_money` were added because the fallback and the key points read the SAME
+dicts and now receive text where there used to be numbers — a `> 0` over that
+blew up (the test itself caught it).
 
-## 1.quinquies Lo que salió al capturar la app en inglés — **[ARREGLADOS 2026-08-23]**
-
-Retomar las dieciocho pantallas con la interfaz en inglés destapó cinco defectos
-que en español eran invisibles, porque en español el valor equivocado coincide
-con el correcto.
-
-**Las fechas de `/pedidos` salían en español.** `POHistory.tsx` fijaba el locale
-en `'es'`, así que un usuario leyendo una pantalla en inglés veía `22 ago 2026`.
-Ahora sigue el idioma de la interfaz.
-
-**Veintitrés cifras se formateaban con separadores en español.** `1.234` en una
-pantalla en inglés no es un número mal alineado: son las mismas cifras leídas
-como otra cantidad. Hilar `lang` por diez componentes era más ruido que el fallo,
-así que el locale vive en `lib/numberLocale.ts` y `LanguageProvider` lo mantiene
-al día — puesto **durante** el render, no en un efecto, porque los hijos formatean
-en su primer pintado.
-
-**Dos fechas más seguían el idioma del navegador**, no el de la app
-(`/pronosticos` y `/historial` pasaban `undefined` como locale). Coincidían por
-accidente mientras el navegador estuviera en español.
-
-**Las quince etiquetas del mapeo de columnas de `/ventas` estaban en español
-duro.** Es la única pantalla donde equivocar una columna cuesta un entrenamiento
-entero, y era la que se quedaba sin traducir. Veinte llaves nuevas, es/en.
-
-**El asistente imprimía los `###` del markdown.** Su renderizador entendía
-negritas y viñetas pero no encabezados, así que la respuesta del modelo llegaba
-con las almohadillas a la vista. Se veía en la propia captura que la landing
-mostraba a los visitantes.
-
-**De paso:** `docs/estabilidad.md` —este archivo— contenía un NUL literal dentro
-de un ejemplo, lo que hacía que ripgrep clasificara el único backlog vivo como
-binario y lo saltara en toda búsqueda. El ejemplo ahora escribe `\0`.
+**Verified:** in the browser, 0 euros and 20 colones on screen; the paragraph
+says `₡195,756`, identical to the KPI above. Regression test:
+`test_the_prompt_itself_carries_the_currency_not_a_bare_number`, which captures
+the real prompt and fails if a bare number arrives again (confirmed to fail
+without the fix).
 
 ---
 
-## 1.sexies Los tres cortos que quedaban del nivel 4 — **[ARREGLADOS 2026-08-23]**
+## 1.quater The last three from the agent report — **[FIXED 2026-08-23]**
 
-**Dos proveedores primarios del mismo SKU, y quién ganaba era el orden en que
-Postgres devolviera las filas.** `sku_suppliers.is_primary` es `DEFAULT TRUE` y
-nada en el esquema impide dos, así que enlazar un segundo proveedor sin nombrar
-la bandera lo hacía primario también. Desde ahí, "quién surte este SKU" no tenía
-respuesta: `get_primary_suppliers_map` construía un dict sobre un `SELECT` sin
-`ORDER BY` (ganaba la última fila) y `get_sku_suppliers` ordenaba por nombre, así
-que la misma petición podía nombrar un proveedor en la lista y construir la
-recomendación para otro. Dos mitades: la **escritura** ahora desmarca a los demás
-en la misma transacción, y la **lectura** quedó ordenada —gana el primario más
-antiguo— para que las filas que ya violan el invariante resuelvan igual en todas
-partes, sin migración de datos. Se borró `get_primary_supplier`, que tenía **cero
-llamadas** y era un `LIMIT 1` sin orden: el día que alguien lo cableara habría
-contestado distinto que el mapa, en la misma petición.
+The three the agents reported without fixing, because they fell outside their
+files.
 
-**Dos porcentajes de bodegaje en el mismo producto.** `/inventario` costeaba el
-stock inmovilizado a un **25% anual escrito a mano** mientras el panel de escalas
-de precio y el optimizador MILP costeaban la **misma** bodega al `holding_cost_pct`
-del tenant (20% por defecto). El comprador leía "tenerlo te cuesta X al mes" en
-una pantalla y recibía consejo de compra construido sobre otro costo del dinero
-en la otra. Ahora `/inventory/dead-stock` resuelve la tasa igual que
-`/price-breaks/evaluate` y **la devuelve**, porque el pie que la narra tiene que
-nombrar el número que se usó: la cifra salió de la frase y pasó a ser un
-parámetro de i18n.
+**`/cash-calendar/fit` discarded `result.status`.** The optimiser degrades to a
+greedy shortcut when the solver cannot cope, and says so — but this endpoint
+threw that signal away, so a cash answer built on the shortcut arrived with the
+same confidence as one built on the optimum. The number was not wrong; the plan
+it describes was a different one, and nothing on the wire said so. It now sends
+`plan_status`, and **only** on the path that solves: somebody who sent their own
+cart is being answered about their cart, and there is no plan to qualify.
 
-**Lo que NO se arregló, y por qué**: `sku_suppliers.lead_time_days / moq /
-unit_cost` siguen sin llegar a ninguna ruta de planificación. Con una corrección
-al hallazgo original: **ninguna pantalla los muestra tampoco** — el endpoint
-existe, el cliente existe en `api.ts` y `types.ts`, y ningún componente lo llama;
-todo entró en el commit inicial y la mitad de interfaz nunca se hizo. Meterlos a
-la cascada es **un nivel de precedencia nuevo** que cambia el semáforo de
-cualquier tenant que tenga esas filas: es decisión del dueño, no un arreglo.
+**The approximate-plan notice was not drawn when the plan came back empty.** The
+whole section was conditioned on there being lines, so a greedy shortcut with no
+results drew **nothing** — and the buyer read that silence as "there is nothing
+to buy". The truth was "the optimiser gave up and we do not know", which is a
+different sentence and the expensive one to get wrong. The condition now includes
+`status === 'fallback'`, and that case has its own copy: the normal notice talks
+about "this list" over a list that does not exist, which reads as reassurance
+instead of a warning.
+
+**`/proveedores` showed raw English in its banner.** It printed `e.message`,
+which for an `AppError` is the fallback text the backend sends to clients with no
+catalogue. This screen has a catalogue. The global toast already rendered
+`errors.<code>` in the user's language, so the same failure read in Spanish in
+the corner and in English in the panel — and the panel is the one attached to the
+form in front of you.
 
 ---
 
-## 1.septies `/inventario` tenía 26 controles antes de la primera fila — **[SIMPLIFICADA 2026-08-23]**
+## 1.quinquies What came out of capturing the app in English — **[FIXED 2026-08-23]**
 
-Medido sobre la app corriendo, sin contar la barra lateral: **26 controles y 7
-colores** antes de que el comprador llegara a un SKU. Cinco de los botones eran
-exports, dos eran enlaces a pantallas que ya están en el menú lateral, y tres
-líneas de alerta de colores repetían palabra por palabra las tarjetas KPI que
-tenían justo debajo. El dueño lo dijo mejor: no entendía su propia pantalla.
+Walking the eighteen screens again with the interface in English exposed five
+defects that were invisible in Spanish, because in Spanish the wrong value
+coincides with the right one.
 
-Qué se hizo, sin quitar **ninguna** función:
+**`/pedidos` dates came out in Spanish.** `POHistory.tsx` pinned the locale to
+`'es'`, so a user reading an English screen saw `22 ago 2026`. It now follows the
+interface language.
 
-- Los cinco exports viven en un menú **Descargar**; importar CSV, refrescar y
-  registrar salida en un **⋯**. La navegación duplicada se borró.
-- Los tres botones de configuración de bodegas salieron de la fila de pestañas
-  —donde se hacían pasar por bodegas— y quedaron tras un engranaje.
-- Las tres líneas de alerta se fundieron con su tarjeta: la frase pasó a ser el
-  subtítulo del número que describe.
-- Se extrajo `components/ui/MenuButton.tsx` en vez de escribir un tercer
-  desplegable a mano — `/pronosticos` tiene el suyo copiado y puede adoptarlo.
+**Twenty-three figures were formatted with Spanish separators.** `1.234` on an
+English screen is not a misaligned number: it is the same digits read as another
+quantity. Threading `lang` through ten components was more noise than the bug, so
+the locale lives in `lib/numberLocale.ts` and `LanguageProvider` keeps it current
+— set **during** render, not in an effect, because children format on their first
+paint.
 
-Resultado: **de 26 a 16 controles**, y de 14 acciones sueltas a 4.
+**Two more dates followed the browser's language**, not the app's
+(`/pronosticos` and `/historial` passed `undefined` as the locale). They matched
+by accident as long as the browser was in Spanish.
 
-**Un defecto introducido y cazado en el navegador, en la misma pasada:** al
-quitar las tres líneas, el guardia del mensaje "Todo el inventario está bien
-cubierto" era `!lines.length` — cierto **siempre** desde que las líneas se fueron.
-La pantalla escribió en verde que todo estaba cubierto sobre cuatro productos en
-PEDIR_YA. Ahora la condición es el conteo de señales, no el efecto colateral de
-un hermano. Es exactamente el tipo de afirmación sin respaldo que este documento
-persigue, y lo produje yo: sin caminar la pantalla habría llegado a producción
-con la suite en verde.
+**The fifteen column-mapping labels on `/ventas` were hardcoded Spanish.** It is
+the one screen where getting a column wrong costs a whole training run, and it
+was the one left untranslated. Twenty new keys, es/en.
 
----
+**The assistant printed markdown `###`.** Its renderer understood bold and
+bullets but not headings, so the model's answer arrived with the hashes showing.
+It was visible in the very screenshot the landing showed visitors.
 
-## 1.octies El bot de WhatsApp — hallazgos del diseño del asistente — **[ARREGLADOS 2026-09-15]**
-
-Salieron al diseñar `docs/asistente-acciones.md`. **No se tocó nada**: los tres
-dependen de una decisión del dueño que está abierta.
-
-**a) Dos acciones vivas que nadie puede deshacer.** `WRITE_TOOLS`
-(`backend/whatsapp/tools.py:237`) expone `approve_po` y `register_reception`.
-La segunda llama a `receive_po`: suma unidades al stock real y escribe
-`supplier_lead_time_obs`, que mueve el plazo aprendido y el scorecard del
-proveedor. **No existe des-recibir.** `approve_po` sella `sent_at`, que ancla el
-calendario de caja, y tampoco se limpia. Twilio está configurado en `backend/.env`,
-así que esto está vivo **en cuanto se despliegue** (en localhost Twilio no
-alcanza el webhook). Contradice la regla que el dueño puso como fundamental para
-el asistente: toda acción del LLM es reversible. Cerrarlo es una línea —sacarlas
-de `WRITE_TOOLS` hasta que existan los inversos— o esperar al trabajo de undo.
-**Decisión del dueño, planteada el 2026-08-23.**
-
-**b) El enrutador falla en silencio.** `_route` (`agent.py:87` y `:91`) devuelve
-`{"tool": None}` cuando la respuesta del modelo no parsea, **sin escribir un solo
-log**. El usuario no se queda sin respuesta —cae al camino "sin herramienta" y
-recibe el texto de ayuda— pero pidió registrar una recepción y recibió un menú, y
-en los logs no queda rastro. Nadie que opere el bot puede medir con qué frecuencia
-pasa. Es la firma exacta de la skill `silent-failures`.
-
-**c) La regex que extrae el JSON es greedy.** `_JSON_RE = re.compile(r"\{.*\}",
-re.DOTALL)` (`agent.py:73`) toma desde la primera llave hasta la última. Si el
-modelo emite prosa con llaves antes del objeto, o dos objetos, el trozo capturado
-no parsea y cae en (b).
-
-**Lo que el diseño confirmó y conviene no olvidar:** el mecanismo de elegir
-función ya existe y está probado — el modelo nunca nombra un endpoint, nombra una
-llave de un diccionario que escribimos nosotros, y esa es la lista blanca. Lo que
-falta para cumplir las tres reglas del dueño es preview calculado por el backend,
-caducidad de la propuesta y undo.
-
-### Cómo quedaron (2026-09-15)
-
-**(a) Suspendidas, no borradas.** `WRITE_TOOLS` quedó vacío;
-`approve_po` y `register_reception` están en `SUSPENDED_WRITE_TOOLS`. Las
-funciones que proponen, el portón de confirmación, los ejecutores y sus tests
-siguen ahí y siguen funcionando — volver a encenderlas es esa línea, cuando
-`receive_po` y `mark_po_sent` tengan inversos. Tres cosas más se cerraron con
-ellas:
-
-- una propuesta guardada ANTES de la suspensión ya no se ejecuta al responder
-  «sí» hoy (se descarta y se responde dónde se hace);
-- el modelo sigue **viendo** las dos acciones en el prompt, pero como acciones
-  que no se hacen aquí, así que quien pide registrar una recepción recibe «eso
-  se hace en la app» y no el menú de ayuda;
-- los tests que ejercían el portón a través de `approve_po` ahora lo ejercen con
-  una herramienta de escritura reversible de prueba: **se apagó la acción, no la
-  cobertura del mecanismo**.
-
-**Esta es la única decisión de producto que se tomó sin preguntar**, y es
-reversible en una línea: si el dueño prefiere el riesgo, `WRITE_TOOLS` vuelve a
-tener las dos entradas.
-
-**(b) El enrutador ya no falla en silencio.** Una respuesta del modelo sin JSON
-escribe un `WARNING` con los primeros 400 caracteres de lo que llegó. El usuario
-sigue recibiendo el texto de ayuda; la diferencia es que ahora se puede medir.
-
-**(c) La regex greedy se fue.** `_first_json_object` recorre las llaves de
-apertura y usa `JSONDecoder.raw_decode`, que se detiene al cerrar el primer
-objeto válido: prosa con llaves antes, prosa después, o dos objetos, ya no
-rompen el turno. Cinco tests de forma en `test_whatsapp_agent.py`.
+**In passing:** this file contained a literal NUL inside an example, which made
+ripgrep classify the only live backlog as binary and skip it in every search. The
+example now writes `\0`.
 
 ---
 
-## 1.nonies `PATCH /inventory/stock/{sku}` fabricaba stock fantasma en `principal` — **[ARREGLADO 2026-09-15]**
+## 1.sexies The three short ones left from level 4 — **[FIXED 2026-08-23]**
 
-Salió del recorrido de la API para el diseño del asistente. **Leído en código, no
-reproducido en navegador** — pero el camino no tiene ambigüedad.
+**Two primary suppliers for the same SKU, and who won was whatever order
+Postgres returned the rows in.** `sku_suppliers.is_primary` is `DEFAULT TRUE` and
+nothing in the schema prevents two, so linking a second supplier without naming
+the flag made it primary as well. From there, "who supplies this SKU" had no
+answer: `get_primary_suppliers_map` built a dict over a `SELECT` with no
+`ORDER BY` (the last row won) and `get_sku_suppliers` ordered by name, so the same
+request could name one supplier in the list and build the recommendation for
+another. Two halves: the **write** now unmarks the others in the same
+transaction, and the **read** is ordered — the oldest primary wins — so rows that
+already violate the invariant resolve the same way everywhere, with no data
+migration. `get_primary_supplier` was deleted: it had **zero callers** and was a
+`LIMIT 1` with no order, so the day somebody wired it up it would have answered
+differently from the map, in the same request.
 
-`patch_stock` (`backend/api/v1/inventory.py:187`) hace dos cosas que no hablan
-entre sí:
+**Two holding-cost percentages in the same product.** `/inventario` costed dead
+stock at a **hardcoded 25% a year** while the price-break panel and the MILP
+optimiser costed the **same** warehousing at the tenant's `holding_cost_pct` (20%
+by default). The buyer read "holding it costs you X a month" on one screen and
+received purchasing advice built on a different cost of money on the other. Now
+`/inventory/dead-stock` resolves the rate the same way `/price-breaks/evaluate`
+does and **returns it**, because the caption that narrates it has to name the
+number that was used: the figure came out of the sentence and became an i18n
+parameter.
 
-1. Comprueba que el SKU existe con `svc.get_stock(tenant_id, sku)` — **sin filtro
-   de bodega** (`service.py:268`, el parámetro `warehouse` es opcional y no se
-   pasa). Encuentra la fila esté donde esté.
-2. Escribe con `svc.upsert_stock(tenant_id, sku, data)`, y `data` sale de
-   `StockPatch`, **que no tiene campo `warehouse`** (`inventory.py:84-96`). Así
-   que entra en `upsert_stock` sin bodega y cae en el default:
+**What was NOT fixed, and why**: `sku_suppliers.lead_time_days / moq / unit_cost`
+still reach no planning path. With a correction to the original finding: **no
+screen shows them either** — the endpoint exists, the client exists in `api.ts`
+and `types.ts`, and no component calls it; all of it landed in the initial commit
+and the interface half was never built. Putting them into the cascade is **a new
+precedence level** that changes the semáforo of any tenant holding those rows: an
+owner's decision, not a fix.
+
+---
+
+## 1.septies `/inventario` had 26 controls before the first row — **[SIMPLIFIED 2026-08-23]**
+
+Measured against the running app, not counting the sidebar: **26 controls and 7
+colours** before the buyer reached a SKU. Five of the buttons were exports, two
+were links to screens already in the sidebar, and three coloured alert lines
+repeated word for word the KPI cards right below them. The owner put it better:
+he did not understand his own screen.
+
+What was done, without removing **any** function:
+
+- The five exports live in a **Download** menu; CSV import, refresh and shrinkage
+  in a **⋯**. The duplicated navigation was deleted.
+- The three warehouse-configuration buttons came out of the tab row — where they
+  were passing themselves off as warehouses — and sit behind a gear.
+- The three alert lines merged into their card: the sentence became the subtitle
+  of the number it describes.
+- `components/ui/MenuButton.tsx` was extracted rather than writing a third
+  dropdown by hand — `/pronosticos` has its own copy and can adopt it.
+
+Result: **from 26 to 16 controls**, and from 14 loose actions to 4.
+
+**A defect introduced and caught in the browser, on the same pass:** on removing
+the three lines, the guard for the message "All inventory is well covered" was
+`!lines.length` — true **always**, once the lines were gone. The screen wrote in
+green that everything was covered over four products in PEDIR_YA. The condition
+is now the signal count, not a sibling's side effect. It is exactly the kind of
+unsupported claim this document chases, and I produced it: without walking the
+screen it would have reached production with the suite green.
+
+---
+
+## 1.octies The WhatsApp bot — findings from the assistant design — **[FIXED 2026-09-15]**
+
+They came out of designing `docs/assistant-actions.md`. **Nothing was touched**:
+all three depended on an owner decision that was open.
+
+**a) Two live actions nobody can undo.** `WRITE_TOOLS`
+(`backend/whatsapp/tools.py:237`) exposes `approve_po` and `register_reception`.
+The second calls `receive_po`: it adds units to real stock and writes
+`supplier_lead_time_obs`, which moves the learned lead time and the supplier's
+scorecard. **There is no un-receive.** `approve_po` stamps `sent_at`, which
+anchors the cash calendar, and that is not cleared either. Twilio is configured
+in `backend/.env`, so this is live **as soon as it is deployed** (on localhost
+Twilio cannot reach the webhook). It contradicts the rule the owner called
+fundamental for the assistant: every LLM action is reversible. Closing it is one
+line — take them out of `WRITE_TOOLS` until the inverses exist — or wait for the
+undo work. **Owner's decision, raised 2026-08-23.**
+
+**b) The router fails silently.** `_route` (`agent.py:87` and `:91`) returns
+`{"tool": None}` when the model's answer does not parse, **without writing a
+single log line**. The user is not left without an answer — it falls to the "no
+tool" path and gets the help text — but they asked to record a reception and got
+a menu, and the logs hold no trace. Nobody operating the bot can measure how
+often it happens. It is the exact signature of the `silent-failures` skill.
+
+**c) The regex that extracts the JSON is greedy.** `_JSON_RE =
+re.compile(r"\{.*\}", re.DOTALL)` (`agent.py:73`) takes from the first brace to
+the last. If the model emits prose with braces before the object, or two objects,
+the captured chunk does not parse and falls into (b).
+
+**What the design confirmed and is worth not forgetting:** the mechanism for
+choosing a function already exists and is proven — the model never names an
+endpoint, it names a key in a dictionary we wrote, and that is the allowlist.
+What is missing to meet the owner's three rules is a backend-computed preview,
+proposal expiry and undo.
+
+### How they ended (2026-09-15)
+
+**(a) Suspended, not deleted.** `WRITE_TOOLS` is empty; `approve_po` and
+`register_reception` are in `SUSPENDED_WRITE_TOOLS`. The functions that propose,
+the confirmation gate, the executors and their tests are all still there and
+still work — turning them back on is that one line, once `receive_po` and
+`mark_po_sent` have inverses. Three more things closed with them:
+
+- a proposal saved BEFORE the suspension no longer executes on a "yes" today (it
+  is discarded and the answer says where to do it);
+- the model still **sees** both actions in the prompt, but as actions that are
+  not done here, so somebody asking to record a reception gets "that is done in
+  the app" and not the help menu;
+- the tests that exercised the gate through `approve_po` now exercise it with a
+  reversible test write tool: **the action was turned off, not the mechanism's
+  coverage**.
+
+**This is the only product decision taken without asking**, and it is reversible
+in one line: if the owner prefers the risk, `WRITE_TOOLS` gets both entries back.
+
+**(b) The router no longer fails silently.** A model answer with no JSON writes a
+`WARNING` with the first 400 characters of what arrived. The user still gets the
+help text; the difference is that it can now be measured.
+
+**(c) The greedy regex is gone.** `_first_json_object` walks the opening braces
+and uses `JSONDecoder.raw_decode`, which stops at the close of the first valid
+object: prose with braces before, prose after, or two objects no longer break the
+turn. Five shape tests in `test_whatsapp_agent.py`.
+
+---
+
+## 1.nonies `PATCH /inventory/stock/{sku}` fabricated phantom stock in `principal` — **[FIXED 2026-09-15]**
+
+It came out of the API walk for the assistant design. **Read in the code, not
+reproduced in a browser** — but the path leaves no ambiguity.
+
+`patch_stock` (`backend/api/v1/inventory.py:187`) does two things that do not
+talk to each other:
+
+1. It checks the SKU exists with `svc.get_stock(tenant_id, sku)` — **with no
+   warehouse filter** (`service.py:268`, the `warehouse` parameter is optional
+   and is not passed). It finds the row wherever it is.
+2. It writes with `svc.upsert_stock(tenant_id, sku, data)`, and `data` comes from
+   `StockPatch`, **which has no `warehouse` field** (`inventory.py:84-96`). So it
+   enters `upsert_stock` with no warehouse and falls to the default:
    `if "warehouse" not in data: data = {**data, "warehouse": "principal"}`
    (`service.py:96-97`).
 
-Un SKU que solo vive en `Norte`: el PATCH pasa el 404 mirando la fila de Norte, y
-**crea una fila nueva en `principal`** con el valor parcheado. La de Norte queda
-intacta. El SKU pasa a tener existencias en dos bodegas, y la vista consolidada
-las suma.
+A SKU that lives only in `Norte`: the PATCH passes the 404 check by looking at
+the Norte row, and **creates a new row in `principal`** with the patched value.
+The Norte one is left intact. The SKU now has stock in two warehouses, and the
+consolidated view adds them up.
 
-**Por qué esto es nivel 1 y no cosmético:** el stock fantasma infla la cobertura.
-Un producto que debía salir en PEDIR_YA puede leerse OK porque la mitad de sus
-unidades no existen. Es la misma familia que el hallazgo 1.2 —inventarse
-existencias y decidir compras sobre ellas— pero al revés: en vez de un cero
-inventado que compra de más, es un positivo inventado que **deja de comprar**.
+**Why this is level 1 and not cosmetic:** phantom stock inflates coverage. A
+product that should have come out as PEDIR_YA can read OK because half its units
+do not exist. It is the same family as finding 1.2 — inventing stock and deciding
+purchases on it — but inverted: instead of an invented zero that over-buys, it is
+an invented positive that **stops buying**.
 
-El propio código ya sabía de este agujero por otro motivo: el comentario de
-`service.py:135` dice que este endpoint "404-checks get_stock() without a
-warehouse filter, so it never knew the target (sku, warehouse) pair was new" —
-escrito al arreglar el salto del techo de bodegas, sin cerrar la puerta que lo
-causa.
+The code already knew about this hole for another reason: the comment at
+`service.py:135` says this endpoint "404-checks get_stock() without a warehouse
+filter, so it never knew the target (sku, warehouse) pair was new" — written
+while fixing the warehouse-ceiling bypass, without closing the door that causes
+it.
 
-**Cómo quedó (2026-09-15).** Ninguna de las dos opciones planteadas era
-necesaria: `StockPatch` **ya tenía** un campo `warehouse` opcional — lo que
-faltaba era que las dos mitades del endpoint hablaran de la misma fila. Ahora la
-bodega destino se resuelve ANTES y el chequeo de existencia se hace contra esa
-fila:
+**How it ended (2026-09-15).** Neither of the two options raised was necessary:
+`StockPatch` **already had** an optional `warehouse` field — what was missing was
+for the endpoint's two halves to talk about the same row. The destination
+warehouse is now resolved FIRST and the existence check is done against that row:
 
-- `warehouse` en el cuerpo → esa fila; 404 `stock_sku_not_found_in_warehouse`
-  si el SKU no está ahí (antes: creaba la fila);
-- el SKU vive en una sola bodega → esa, se llame como se llame;
-- vive en varias y una es `principal` → `principal`, que es exactamente lo que
-  este endpoint hizo siempre, y es una fila real;
-- vive en varias y ninguna es `principal` → 422 `stock_warehouse_required`
-  nombrándolas. Ese es justo el caso que fabricaba el fantasma, y no hay
-  adivinanza segura que hacer por el usuario.
+- `warehouse` in the body → that row; 404 `stock_sku_not_found_in_warehouse` if
+  the SKU is not there (before: it created the row);
+- the SKU lives in exactly one warehouse → that one, whatever it is called;
+- it lives in several and one is `principal` → `principal`, which is exactly what
+  this endpoint always did, and it is a real row;
+- it lives in several and none is `principal` → 422 `stock_warehouse_required`
+  naming them. That is precisely the case that fabricated the phantom, and there
+  is no safe guess to make on the user's behalf.
 
-Efecto lateral que vale la pena: el PATCH ya **no puede crear** una fila, así
-que los dos saltos de techo que este camino tenía (`max_skus` y `max_locations`)
-dejan de depender de que el candado los atrape — se cierran en la raíz. Los dos
-tests de `test_entitlements.py` que los cubrían ahora afirman el contrato más
-fuerte (404 y el conteo intacto, a cualquier tamaño de plan).
+A side effect worth having: the PATCH can no longer **create** a row, so the two
+ceiling bypasses this path had (`max_skus` and `max_locations`) stop depending on
+the lock catching them — they are closed at the root. The two tests in
+`test_entitlements.py` that covered them now assert the stronger contract (404
+and the count intact, at any plan size).
 
 *Tests:* `backend/tests/test_patch_stock_never_invents_a_warehouse.py` (10).
-Verificado que fallan contra el código anterior: 4 de los 10 en rojo.
+Verified to fail against the previous code: 4 of the 10 red.
 
 ---
+## 2. The "what is missing" column of `screen-inventory.md` is the backlog
 
-## 2. La columna "qué falta" de `inventario-pantallas.md` es el backlog
+All 26 screens have had **some** walk. **None is walked end to end.** That column
+is the honest part of the table and it is the work.
 
-Las 26 pantallas tienen **alguna** caminata. **Ninguna está caminada entera.**
-Esa columna es la parte honesta de la tabla y es el trabajo.
+The biggest unexercised areas, grouped by where the risk lives:
 
-Lo más grande sin ejercer, agrupado por dónde vive el riesgo:
-
-| Pantalla | Sin caminar |
+| Screen | Not walked |
 |---|---|
-| `/pronosticos` | Las 3 exportaciones (Excel por SKU, "Todos los SKUs", PDF), pantalla completa, análisis estadístico detallado |
-| `/inventario` | Registrar salida, inmovilizado, exportar PDF, vista Proveedor, eventos y temporadas, importar CSV de stock |
-| `/archivos` | Reemplazar archivo, conectar fuente SQL, buscador, correr un Análisis completo |
-| `/compras` | Envío a proveedores, bodega destino, edición de cantidades, deshacer aprobación, gate de "Crear transferencia" |
-| `/mi-cuenta` | Todo menos zona horaria: moneda, WhatsApp, cambio de contraseña, tema/idioma, granularidad, registros |
-| `/pedidos` | Llegada completa, nueva orden manual, enviar pedido, WhatsApp, recibir de más |
-| `/ventas` | Reusar archivo subido, repetir carga anterior, datos de ejemplo, cancelar a media corrida |
+| `/pronosticos` | The 3 exports (per-SKU Excel, "All SKUs", PDF), full screen, detailed statistical analysis |
+| `/inventario` | Shrinkage, dead stock, PDF export, Supplier view, events and seasons, stock CSV import |
+| `/archivos` | Replace file, connect a SQL source, search, run a full Analysis |
+| `/compras` | Sending to suppliers, destination warehouse, quantity editing, undoing an approval, the "Create transfer" gate |
+| `/mi-cuenta` | Everything but the time zone: currency, WhatsApp, password change, theme/language, granularity, logs |
+| `/pedidos` | Full arrival, new manual order, sending an order, WhatsApp, over-receiving |
+| `/ventas` | Reusing an uploaded file, repeating the previous load, sample data, cancelling mid-run |
 
 ---
 
-## 3. Tres pantallas que un muro de plan tapaba — el muro ya no existe
+## 3. Three screens a plan wall was hiding — the wall is gone
 
-**Ya no hay planes** (2026-08-16, decisión del dueño: un solo plan, sin Stripe,
-el precio se habla con nosotros). Con eso desaparecieron los ~40 muros de
-`require_feature`, y estas tres dejaron de estar bloqueadas:
+**There are no plans any more** (2026-08-16, owner's decision: one plan, no
+Stripe, the price is discussed with us). With that the ~40 `require_feature`
+walls disappeared, and these three stopped being blocked:
 
-- **`/escenarios`** — antes solo se vio el muro. **Caminada el 2026-08-16**:
-  cambio de demanda y atraso de proveedor, ambos ejercidos y contrastados contra
-  el plan actual (ver el bloque del 2026-08-16 al final).
-- **`/integraciones`** — el muro se fue, pero el flujo real sigue **sin caminar**:
-  conectar, probar credenciales, sincronizar, ver el error cuando fallan. Sigue
-  fuera del menú a propósito, y ahora la razón es esa y no una comercial.
-- **`/proveedores`** — verificada solo por API. La pantalla nunca se abrió; alta
-  y edición de proveedor sin tocar.
-
----
-
-## 4. Lo reciente, todavía sin ver en un navegador — **[PARCIALMENTE CERRADO 2026-08-23]**
-
-- ~~**El rediseño de `/api`**~~ — **caminado el 2026-08-23**: la banda de
-  cabecera, la barra de clave, el raíl de endpoints y las secciones a dos
-  columnas se ven correctos con el tenant demo sembrado.
-- ~~**Una escritura hasta el final**~~ — **ejecutada el 2026-08-23**: se creó una
-  API key real desde la pantalla («ERP nocturno»), se verificó en BD que quedó
-  **una** fila (el candado `limit_guard` que se puso ese día no la duplicó), y se
-  revocó desde la misma pantalla.
-- **El arreglo de `log-po`** (commit `7866c64`): sigue sin verse.
-- Siguen sin verse: la **subida de archivo** por `/api`, `train`, y la **vista
-  angosta**.
-
-**Defecto encontrado al caminarla, y arreglado:** tras revocar una clave, el
-panel seguía mostrando «Key generada — cópiala ahora» con su botón *Copiar*. El
-usuario copiaba una credencial recién muerta, y un 401 en la integración se lee
-como "está roto", no como "la revoqué". `handleRevoke` ahora limpia el banner.
-Verificado en pantalla: aparece al crear, desaparece al revocar.
-
-**Segundo defecto, este introducido el mismo día:** la página prometía «120
-llamadas por minuto por clave, **para todos**» — falso desde que el plan gratis
-sumó un techo de 500 llamadas/día. Corregido en es y en.
+- **`/escenarios`** — previously only the wall had been seen. **Walked
+  2026-08-16**: demand change and supplier delay, both exercised and checked
+  against the current plan (see the 2026-08-16 block at the end).
+- **`/integraciones`** — the wall is gone, but the real flow is still
+  **unwalked**: connect, test credentials, sync, see the error when they fail. It
+  stays out of the menu on purpose, and now the reason is that and not a
+  commercial one.
+- **`/proveedores`** — verified over the API only. The screen was never opened;
+  creating and editing a supplier untouched.
 
 ---
 
-## 5. Hallazgos de la revisión de `/api` que se decidió no arreglar
+## 4. Recent work, still unseen in a browser — **[PARTIALLY CLOSED 2026-08-23]**
 
-Reales, verificados, y conscientemente fuera del arreglo de ese día. Quedan aquí
-para que la decisión sea visible y revisable, no para que se olviden:
+- ~~**The `/api` redesign**~~ — **walked 2026-08-23**: the header band, the key
+  bar, the endpoint rail and the two-column sections all look right with the demo
+  tenant seeded.
+- ~~**A write all the way through**~~ — **executed 2026-08-23**: a real API key
+  was created from the screen ("nightly ERP"), verified in the database to have
+  left **one** row (the `limit_guard` added that day did not duplicate it), and
+  revoked from the same screen.
+- **The `log-po` fix** (commit `7866c64`): still unseen.
+- Still unseen: **file upload** through `/api`, `train`, and the **narrow view**.
 
-| # | Qué es | Por qué se dejó |
+**Defect found while walking it, and fixed:** after revoking a key, the panel
+still showed "Key generated — copy it now" with its *Copy* button. The user
+copied a credential that had just died, and a 401 in the integration reads as "it
+is broken", not as "I revoked it". `handleRevoke` now clears the banner. Verified
+on screen: it appears on creation, disappears on revocation.
+
+**A second defect, this one introduced the same day:** the page promised "120
+calls per minute per key, **for everyone**" — false from the moment the free plan
+added a ceiling of 500 calls a day. Corrected in es and en.
+
+---
+
+## 5. Findings from the `/api` review that were deliberately not fixed
+
+Real, verified, and consciously outside that day's fix. They are here so the
+decision is visible and reviewable, not so they are forgotten:
+
+| # | What it is | Why it was left |
 |---|---|---|
-| a | Un parámetro de ruta usado dos veces en la misma ruta solo se sustituiría la primera vez (`String.replace` con aguja de texto) | Latente: ninguna ruta actual lo hace |
-| b | `values` se indexa por nombre pelado, así que un parámetro de ruta y uno de query con el **mismo nombre** compartirían celda de estado | Latente: ningún endpoint actual colisiona |
-| c | Un `/` dentro de un parámetro se codifica a `%2F` y no sobrevive los dos saltos (rewrite + uvicorn) | Los ids son UUID; el diagnóstico sería confuso, no el resultado |
-| d | Una página futura en `Frontend/src/app/api/<algo>/` **taparía** el endpoint del backend con ese nombre | No hay ninguna hoy; merece un comentario de advertencia en el archivo |
-| e | El texto crudo de la excepción se muestra junto a copy traducida | Es una consola de desarrollo; el detalle técnico ahí es útil |
+| a | A route parameter used twice in the same route would only be substituted the first time (`String.replace` with a text needle) | Latent: no current route does it |
+| b | `values` is keyed by bare name, so a path parameter and a query parameter with the **same name** would share a state cell | Latent: no current endpoint collides |
+| c | A `/` inside a parameter is encoded to `%2F` and does not survive the two hops (rewrite + uvicorn) | The ids are UUIDs; the diagnosis would be confusing, not the result |
+| d | A future page in `Frontend/src/app/api/<something>/` would **shadow** the backend endpoint of that name | There is none today; it deserves a warning comment in the file |
+| e | The raw exception text is shown next to translated copy | It is a developer console; the technical detail is useful there |
 
 ---
 
-# Barrido adversarial del 2026-08-11 — seis agentes
+# Adversarial sweep of 2026-08-11 — six agents
 
-Seis revisiones de solo lectura, en paralelo, sobre lo que ya existe: aprendizaje
-de lead time, tratos raros de proveedor, el optimizador, fidelidad de `/impacto`,
-consistencia del mismo número entre pantallas, y copy que afirma más de lo que el
-dato aguanta.
+Six read-only reviews, in parallel, over what already exists: lead-time learning,
+odd supplier arrangements, the optimiser, `/impacto`'s fidelity, consistency of
+the same number across screens, and copy that claims more than the data supports.
 
-**Cómo leer esto.** Cada agente marcó CONFIRMADO (rastreado de punta a punta) o
-SOSPECHA. Los marcados **[verificado]** los leí yo directamente en el código
-además del agente. Un hallazgo fue **refutado** al verificarlo y está anotado
-abajo con lo que el agente pasó por alto — importa tanto como los reales.
+**How to read this.** Each agent marked CONFIRMED (traced end to end) or
+SUSPECTED. The ones marked **[verified]** I read directly in the code myself as
+well as the agent. One finding was **refuted** on verification and is recorded
+below with what the agent missed — it matters as much as the real ones.
 
-**Estado al 2026-08-12.** El nivel 1 y el nivel 2 están cerrados salvo una cosa,
-nombrada abajo. Cada hallazgo lleva su marca `[ARREGLADO]` y con qué lo cubre,
-porque el hallazgo escrito es lo que explica por qué el arreglo es ese y no otro.
+**State at 2026-08-12.** Level 1 and level 2 are closed except for one thing,
+named below. Each finding carries its `[FIXED]` marker and what covers it,
+because the written finding is what explains why the fix is that one and not
+another.
 
-- `3e0bde6` cerró **1.1**, **1.4**, **1.5**, **1.6**, **2.7**, **3.2**, **3.5** y
-  la mitad de panel de **1.2**. Su mensaje de commit sólo mencionaba siete cosas;
-  1.4 y 2.7 iban dentro sin nombrarse.
-- El trabajo del 2026-08-12 cerró **1.3**, **1.7**, **1.8**, **2.1**, **2.2**,
-  **2.3**, **2.4**, **2.5**, **2.6** y **2.8**, más un hallazgo nuevo que apareció
-  escribiendo el test de 1.3 (ver **1.9**).
+- `3e0bde6` closed **1.1**, **1.4**, **1.5**, **1.6**, **2.7**, **3.2**, **3.5**
+  and the panel half of **1.2**. Its commit message mentioned only seven things;
+  1.4 and 2.7 went in without being named.
+- The 2026-08-12 work closed **1.3**, **1.7**, **1.8**, **2.1**, **2.2**,
+  **2.3**, **2.4**, **2.5**, **2.6** and **2.8**, plus a new finding that
+  appeared while writing 1.3's test (see **1.9**).
 
-**Lo único que queda del nivel 1:** la mitad de importación de **1.2**, que
-necesita la columna `current_stock_set_by` — capacidad nueva, no arreglo.
+**The only level-1 item left:** the import half of **1.2**, which needs the
+`current_stock_set_by` column — new capability, not a fix.
 
-Del nivel 3 y 4 no se tocó nada. Varios son un guardia de una línea con precedente
-en el propio repo; **3.6** necesita capacidad nueva (un campo de MOQ en la entrada
-del optimizador) y por eso se pregunta antes.
+Nothing in levels 3 and 4 was touched. Several are a one-line guard with
+precedent in this very repository; **3.6** needs new capability (a MOQ field on
+the optimiser's input) and is therefore asked about first.
 
-## Nivel 1 — el usuario pierde plata actuando sobre esto
+## Level 1 — the user loses money by acting on this
 
-### 1.1 La alerta de las 8:00 UTC lee la sesión activa al grano equivocado [verificado] — **[ARREGLADO 3e0bde6]**
+### 1.1 The 08:00 UTC alert reads the active session at the wrong grain [verified] — **[FIXED 3e0bde6]**
 
-> Los dos programadores y el snapshot mensual de sobrestock pasan `period`
-> (`service.py:3453`, `:3472`, `:3495`, `:3600`), y la cobertura del correo y del
-> WhatsApp se rinde en la unidad del inquilino, singular incluido — así que "4
-> semanas" ya no se imprime como "4 días".
+> Both schedulers and the monthly overstock snapshot pass `period`
+> (`service.py:3453`, `:3472`, `:3495`, `:3600`), and the coverage in the email
+> and the WhatsApp message is rendered in the tenant's unit, singular included —
+> so "4 weeks" is no longer printed as "4 days".
 
+`service.py:3391` resolves the active session — the same one the screens show —
+and `:3405-3410` computes it by calling `_compute_inventory_status` **without
+`period`**, which by signature falls to `"daily"` (`:1257`). The same at
+`:3423-3428` (transfers in the WhatsApp notice) and `:3547` (the snapshot that
+feeds "capital freed" on `/impacto`).
 
-`service.py:3391` resuelve la sesión activa —la misma que muestran las
-pantallas— y `:3405-3410` la calcula llamando a `_compute_inventory_status` **sin
-`period`**, que por firma cae en `"daily"` (`:1257`). Igual en `:3423-3428`
-(traslados del aviso de WhatsApp) y `:3547` (el snapshot que alimenta "capital
-liberado" en `/impacto`).
+A tenant on `weekly`, a SKU with 40 in stock, a 14-day lead time, a forecast of
+10 units a week. On screen: 4 weeks of coverage against 2 of lead time → **OK**,
+nothing to order. The 08:00 email reads the same session as daily: 4 "days"
+against 14 → **PEDIR_YA**, order ~100 units. The buyer opens `/inventario` and
+sees green.
 
-Inquilino en `weekly`, SKU con 40 de stock, lead time 14 días, pronóstico de 10
-unidades/semana. Pantalla: 4 semanas de cobertura contra 2 de lead time → **OK**,
-nada que pedir. El correo de las 8:00 lee la misma sesión como diaria: 4 "días"
-contra 14 → **PEDIR_YA**, pedir ~100 unidades. El comprador abre `/inventario` y
-ve verde.
+Aggravating factor: the email and the WhatsApp message pin the unit to "days"
+whatever happens (`email.py:368`, `whatsapp.py:163`), so even fixing the loop
+would leave it mislabelled. The suite covers `/hoy` and the narrative for this;
+the alert loop was never covered.
 
-Agravante: el correo y el WhatsApp fijan la unidad "días" pase lo que pase
-(`email.py:368`, `whatsapp.py:163`), así que ni arreglando el bucle quedaría bien
-etiquetado. La suite cubre `/hoy` y la narrativa para esto; el bucle de alertas
-nunca se cubrió.
+### 1.2 Faro invents `current_stock = 0` and then flags goods in the warehouse red [verified] — **[HALF FIXED 3e0bde6]**
 
-### 1.2 Faro inventa `current_stock = 0` y luego marca en rojo mercadería en bodega [verificado] — **[ARREGLADO A MEDIAS 3e0bde6]**
-
-> **El panel de huecos ya no lo hace:** dejó de mandar `current_stock: 0` junto
-> con el costo y pide el conteo.
+> **The gaps panel no longer does it:** it stopped sending `current_stock: 0`
+> alongside the cost and asks for the count.
 >
-> **La importación sigue viva, y no se arregla sin decisión del dueño.** La
-> columna es `current_stock FLOAT NOT NULL DEFAULT 0` (`migrations.py:369`) y
-> `POST /inventory/bulk` solo exige `sku` (`inventory.py:499`): una lista de
-> precios sin columna de stock crea filas nuevas con un cero que nada distingue
-> de uno contado. Taparlo de verdad es la columna `current_stock_set_by` que este
-> mismo hallazgo nombra — **capacidad nueva, se pregunta antes**.
-
+> **The import is still live, and cannot be fixed without an owner decision.**
+> The column is `current_stock FLOAT NOT NULL DEFAULT 0` (`migrations.py:369`)
+> and `POST /inventory/bulk` requires only `sku` (`inventory.py:499`): a price
+> list with no stock column creates new rows with a zero that nothing
+> distinguishes from a counted one. Covering it properly is the
+> `current_stock_set_by` column this very finding names — **new capability, it
+> gets asked about first**.
 
 `SetupGapsPanel.tsx:85` — `upsertInventoryStock(sku, { current_stock: 0, ...body })`.
-Si el usuario solo llenó el costo, el cero persiste. No existe columna
-`current_stock_set_by`, así que nada distingue un cero inventado de uno contado:
-`coverage_days = 0` → **PEDIR_YA**.
+If the user filled in only the cost, the zero persists. There is no
+`current_stock_set_by` column, so nothing distinguishes an invented zero from a
+counted one: `coverage_days = 0` → **PEDIR_YA**.
 
-Treinta filas costeadas de producto del que hay pallets llenos → treinta órdenes
-de emergencia por inventario que ya está en la estantería. Lo mismo al importar
-una lista de precios sin columna de stock, y el asistente reporta puras buenas
-noticias. El camino de sincronización de dataset **sí** tiene el guardia
-(`service.py:465-474`); el panel de huecos y `/inventory/bulk` lo esquivan.
+Thirty costed rows of a product there are full pallets of → thirty emergency
+orders for inventory already on the shelf. The same on importing a price list
+with no stock column, and the assistant reports nothing but good news. The
+dataset-sync path **does** have the guard (`service.py:465-474`); the gaps panel
+and `/inventory/bulk` dodge it.
 
-### 1.3 El lead time nunca se reporta como faltante, y la pantalla promete que es obligatorio — **[ARREGLADO 2026-08-12]**
+### 1.3 The lead time is never reported as missing, and the screen promises it is required — **[FIXED 2026-08-12]**
 
-> Se reporta cuando la cascada caería en el 15 inventado (`resolve_field`
-> devolviendo `SOURCE_DEFAULT`), y **no** cuando una regla de proveedor o
-> categoría ya lo resuelve — pedirle al usuario un dato que ya nos dio entrena a
-> ignorar la columna. Sigue fuera de `BLOCKING_FIELDS`: falta de lead time hace
-> el plan equivocado, no imposible.
+> It is reported when the cascade would fall to the invented 15
+> (`resolve_field` returning `SOURCE_DEFAULT`), and **not** when a supplier or
+> category rule already resolves it — asking the user for something they already
+> gave us trains them to ignore the column. It stays out of `BLOCKING_FIELDS`: a
+> missing lead time makes the plan wrong, not impossible.
 >
-> La copy dice ahora lo que pasa de verdad: sin stock o sin costo el producto no
-> aparece en el semáforo; sin días de entrega **sí** aparece, calculado sobre 15
-> supuestos.
+> The copy now says what actually happens: with no stock or no cost the product
+> does not appear in the semáforo; with no lead time it **does** appear,
+> calculated on an assumed 15.
 >
-> **Limitación fijada con test:** `items` sólo lleva los `is_gap`, así que un SKU
-> al que **sólo** le falta el lead time sigue sin aparecer en esa pantalla.
-> Hacerlo visible es marcarlo bloqueante (falso: el SKU sí aparece en el
-> semáforo, y movería `covered_pct` y la barra) o una segunda lista en la
-> respuesta y una sección nueva — capacidad nueva, decisión del dueño.
+> **Limitation pinned with a test:** `items` carries only the `is_gap` ones, so a
+> SKU missing **only** the lead time still does not appear on that screen. Making
+> it visible means marking it blocking (false: the SKU does appear in the
+> semáforo, and it would move `covered_pct` and the bar) or a second list in the
+> response and a new section — new capability, owner's decision.
 
+The copy (`stockSetup.ts:18`): *"it needs three more things: how much you hold,
+what it costs you and how many days it takes to arrive. While they are missing,
+that product does not appear in the semáforo."*
 
-La copy (`stockSetup.ts:18`): *"necesita tres datos más: cuánto tienes, cuánto te
-cuesta y cuántos días tarda en llegar. Mientras falten, ese producto no aparece
-en el semáforo."*
+`setup_gaps_service.py:118-137` only checks `unit_cost`, `sale_price` and
+`supplier`; `BLOCKING_FIELDS = ("stock", "cost")`. The SKU **does** appear in the
+semáforo, planned over an invented 15 days. An importer with 45 days of transit
+reorders 30 days late on their best sellers, cycle after cycle. The
+`lead_time_set_by` column that would allow warning about it exists and is not
+read.
 
-`setup_gaps_service.py:118-137` solo comprueba `unit_cost`, `sale_price` y
-`supplier`; `BLOCKING_FIELDS = ("stock", "cost")`. El SKU **sí** aparece en el
-semáforo, planificado sobre 15 días inventados. Un importador con 45 días de
-tránsito reordena 30 días tarde en sus mejores vendedores, ciclo tras ciclo. La
-columna `lead_time_set_by` que permitiría avisarlo existe y no se lee.
+### 1.4 The first crumb of a partial delivery sets the supplier's lead time [verified] — **[FIXED 3e0bde6]**
 
-### 1.4 La primera migaja de un envío parcial fija el lead time del proveedor [verificado] — **[ARREGLADO 3e0bde6]**
+> The observation is written only when the PO reaches `received`, dated by the
+> event that completed it (`reception_service.py:361`). The lead time that
+> matters for planning is when the buyer can **count on** the order, that is,
+> when the last unit lands. A PO that never completes produces no observation —
+> which is the honest answer: we do not know yet how long it took.
 
-> La observación se escribe sólo cuando la OC llega a `received`, fechada por el
-> evento que la completó (`reception_service.py:361`). El plazo que importa para
-> planificar es cuándo el comprador puede **contar** con la orden, o sea cuando
-> aterriza la última unidad. Una OC que nunca se completa no produce observación
-> — que es la respuesta honesta: todavía no sabemos cuánto tardó.
+`reception_service.py:330` computes `lead_days` from **that** event, and the
+`already_observed` lock (`:337-343`) means the later deliveries of that PO are
+never measured.
 
+A PO of 5,000 units on 1 August; 20 samples arrive on the 3rd; the rest on 10
+September. Faro learns **2 days**. By the third PO like that, the learned value
+overrides the declared one for every SKU of that supplier, the reorder point
+collapses, and the scorecard shows "real 2d vs declared 30d" at 100% on time.
 
-`reception_service.py:330` calcula `lead_days` desde **ese** evento, y el candado
-`already_observed` (`:337-343`) hace que las entregas siguientes de esa OC no se
-midan nunca.
+No code revisits the observation when the PO completes.
 
-OC de 5.000 unidades el 1 de agosto; llegan 20 de muestra el 3; el resto el 10 de
-septiembre. Faro aprende **2 días**. A la tercera OC así, el valor aprendido pisa
-al declarado para todos los SKU de ese proveedor, el punto de reorden se
-desploma, y el scorecard muestra "real 2d vs declarado 30d" con 100% a tiempo.
+### 1.5 Recording "nothing arrived" leaves the PO dead forever [verified] — **[FIXED 3e0bde6]**
 
-Ningún código revisa la observación cuando la OC se completa.
+> `not_received` entered `RECEIVABLE_STATES` (`reception_service.py:47`): it is a
+> late order, not a cancelled one. It stays receivable, stays in overdue
+> receptions, stays in in-transit stock and in the open-PO count — so the
+> semáforo no longer re-orders the units a buyer has just reported as not
+> arrived.
 
-### 1.5 Registrar "no llegó nada" deja la OC muerta para siempre [verificado] — **[ARREGLADO 3e0bde6]**
+`reception_service.py:312` — if no line receives any quantity, the state becomes
+`not_received`, which is not in `RECEIVABLE_STATES` (`:39`), so the guard at
+`:111-118` returns 409 forever. The PO also leaves overdue receptions,
+`isAwaitingReception` and `get_incoming_qty`.
 
-> `not_received` entró en `RECEIVABLE_STATES` (`reception_service.py:47`): es una
-> orden atrasada, no una cancelada. Sigue recibible, sigue en recepciones
-> atrasadas, sigue en stock en tránsito y en el conteo de OC abiertas — así que
-> el semáforo ya no vuelve a pedir las unidades que un comprador acaba de
-> reportar como no llegadas.
+When the goods do arrive there is no way to record them: no stock, no lead-time
+observation. "It has not arrived yet" and "it is never going to arrive" are the
+same terminal state. It is reachable from the interface by entering zeros in the
+quantities.
 
+### 1.6 The horizon is built in days; the demand and lead time inside it, in periods [verified] — **[FIXED 3e0bde6]**
 
-`reception_service.py:312` — si ninguna línea recibe cantidad, el estado pasa a
-`not_received`, que no está en `RECEIVABLE_STATES` (`:39`), así que el guardia de
-`:111-118` devuelve 409 para siempre. La OC sale además de las recepciones
-atrasadas, de `isAwaitingReception` y de `get_incoming_qty`.
-
-Cuando la mercadería llegue no hay forma de registrarla: ni stock, ni observación
-de lead time. "Todavía no llegó" y "no va a llegar nunca" son el mismo estado
-terminal. Se alcanza desde la interfaz poniendo ceros en las cantidades.
-
-### 1.6 El horizonte se construye en días; la demanda y el lead time que van dentro, en períodos [verificado] — **[ARREGLADO 3e0bde6]**
-
-> El optimizador habla **una** unidad: días de calendario en la frontera (que es
-> lo que pide el endpoint), cubos del período activo adentro, con el lead time y
-> el costo de bodegaje convertidos igual. La respuesta ya no reporta un conteo de
-> cubos bajo una clave llamada `horizon_days`, y el camino de calce de caja
-> cotiza el horizonte que le pidieron en vez de 30 días fijos al grano
-> equivocado. Con eso el inquilino mensual sale del atajo voraz permanente.
-
+> The optimiser speaks **one** unit: calendar days at the boundary (which is what
+> the endpoint asks for), buckets of the active period inside, with the lead time
+> and the holding cost converted the same way. The response no longer reports a
+> bucket count under a key called `horizon_days`, and the cash-fit path quotes
+> the horizon it was asked for instead of a fixed 30 days at the wrong grain.
+> With that, the monthly tenant comes out of the permanent greedy shortcut.
 
 `inventory.py:2600` — `horizon_days = plan.horizon * _days_per_period(period)`.
-La curva que llena esos cubos es **por período** y el lead time se convierte al
-revés: `ceil(raw_lead / days_per_period)` (`optimizer_service.py:227`). El
-comentario de `:223-227` afirma que el endpoint expresa el horizonte en cubos del
-período; el endpoint **multiplica**. Código y comentario se contradicen.
+The curve that fills those buckets is **per period** and the lead time is
+converted the other way: `ceil(raw_lead / days_per_period)`
+(`optimizer_service.py:227`). The comment at `:223-227` states that the endpoint
+expresses the horizon in period buckets; the endpoint **multiplies**. Code and
+comment contradict each other.
 
-Plan mensual, horizonte 4, proveedor de 30 días: 120 cubos, de los que solo 0-3
-tienen demanda; el modelo cree que el proveedor entrega en **1 cubo**; el costo
-de almacenamiento queda subestimado ~30× (se cobra `/365` por cubo sobre cubos
-que son meses); y las variables se inflan 30×, así que **con 6 SKU** se cruza el
-techo de 5.000 y todo inquilino mensual cae permanentemente en el atajo voraz,
-que no sabe hacer traslados.
+A monthly plan, horizon 4, a 30-day supplier: 120 buckets, of which only 0-3 have
+demand; the model believes the supplier delivers in **1 bucket**; the storage
+cost is underestimated ~30× (it charges `/365` per bucket over buckets that are
+months); and the variables inflate 30×, so **with 6 SKUs** the 5,000 ceiling is
+crossed and every monthly tenant falls permanently into the greedy shortcut,
+which cannot do transfers.
 
-`api.ts:1378-1384` ya documenta el síntoma; el arreglo que se aplicó fue dejar de
-pasar 30, no corregir la unidad.
+`api.ts:1378-1384` already documents the symptom; the fix that was applied was to
+stop passing 30, not to correct the unit.
 
-### 1.7 El MOQ se aplica como múltiplo, no como mínimo — y sin guardia de sobrestock — **[ARREGLADO 2026-08-12]**
+### 1.7 MOQ is applied as a multiple, not as a minimum — and with no overstock guard — **[FIXED 2026-08-12]**
 
-> **Decisión del dueño (2026-08-12): `moq` es un MÍNIMO**, que es lo que dice el
-> nombre del campo. `max(ceil(raw), moq)`, con guardia `raw > 0` para que un SKU
-> bien surtido no reciba un pedido mínimo salido de la nada — el `ceil` viejo
-> daba 0 para un `raw` de 0 y eso tenía que seguir igual. El redondeo a unidades
-> enteras queda explícito en vez de ser efecto colateral de la aritmética del
-> MOQ. Necesitar 520 con mínimo 500 pide 520, no 1000.
+> **Owner's decision (2026-08-12): `moq` is a MINIMUM**, which is what the
+> field's name says. `max(ceil(raw), moq)`, with a `raw > 0` guard so a
+> well-stocked SKU does not receive a minimum order out of nowhere — the old
+> `ceil` gave 0 for a `raw` of 0 and that had to stay. Rounding to whole units is
+> now explicit instead of a side effect of the MOQ arithmetic. Needing 520 with a
+> minimum of 500 orders 520, not 1000.
 >
-> **Lo que NO se hizo, y por qué:** el guardia de sobrestock. Cuando el mínimo
-> del proveedor por sí solo ya crea meses de cobertura, recortar por debajo del
-> mínimo produce una cantidad que el proveedor no va a despachar. El precedente
-> del repo (`price_break_service`) no recorta: **rechaza la oportunidad y
-> devuelve el `reason_code`** para que la UI lo explique. Hacer lo mismo aquí es
-> un campo nuevo en la fila del semáforo — capacidad nueva, se pregunta.
+> **What was NOT done, and why:** the overstock guard. When the supplier's
+> minimum alone already creates months of coverage, trimming below the minimum
+> produces a quantity the supplier will not ship. The repository's precedent
+> (`price_break_service`) does not trim: it **refuses the opportunity and returns
+> the `reason_code`** so the UI can explain it. Doing the same here is a new
+> field on the semáforo row — new capability, it gets asked about.
 
+`service.py:948-949` — `raw = ceil(raw/moq) * moq`. You need 520 with an MOQ of
+500 → it recommends **1000**, 92% overshoot, with a convert-to-PO button.
 
-`service.py:948-949` — `raw = ceil(raw/moq) * moq`. Necesitas 520 con MOQ 500 →
-recomienda **1000**, 92% de sobrepaso, con botón de convertir en OC.
+With no coverage guard: a SKU selling 2/day with a container MOQ of 1000 → it
+recommends **500 days of stock**, and on refresh it comes out SOBRESTOCK.
+`price_break_service.py:263-265` implements exactly that check and refuses a
+140-day jump with `would_overstock`.
 
-Sin guardia de cobertura: SKU que vende 2/día con MOQ 1000 de contenedor →
-recomienda **500 días de stock**, y al refrescar sale SOBRESTOCK.
-`price_break_service.py:263-265` implementa exactamente esa comprobación y
-rechaza un salto de 140 días por `would_overstock`.
+There is no concept of pack size (`pack_size`) anywhere.
 
-No existe concepto de tamaño de empaque (`pack_size`) en ninguna parte.
+### 1.8 "The recommendation is always a multiple of this number" is false on every path that reaches a PO — **[FIXED 2026-08-12]**
 
-### 1.8 "La recomendación siempre es múltiplo de este número" es falso en todos los caminos que llegan a una OC — **[ARREGLADO 2026-08-12]**
+> With 1.7 the claim became doubly false, so the copy says what the product does:
+> we never recommend less than that minimum, above it we order what is needed
+> without rounding up, and **if you edit the quantity by hand we respect what you
+> write**. That last sentence is what closes the finding: the six paths that
+> persisted `final_qty` without re-applying the rounding no longer contradict any
+> promise, because there is no longer a promise of "always".
 
-> Con 1.7 la afirmación quedó doblemente falsa, así que la copy dice lo que el
-> producto hace: nunca recomendamos menos que ese mínimo, por encima pedimos lo
-> que hace falta sin redondear de más, y **si editas la cantidad a mano
-> respetamos lo que escribes**. Esa última frase es la que cierra el hallazgo:
-> los seis caminos que persistían `final_qty` sin re-aplicar el redondeo ya no
-> contradicen ninguna promesa, porque ya no hay una promesa de "siempre".
+`translations.ts:2985` and `:2996` claimed "always". The rounding is applied at a
+single point (`service.py:948`) and never re-applied. These persist `final_qty`
+without it: editing the quantity in the table, the optimiser ("Convert to PO"),
+the price break (it pins the quantity to the rung's `min_qty`), the manual cart,
+`POST /log-po` and `bom_service`. The transfer path uses **floor**, not ceil.
 
+MOQ 12 with a rung at 100 → the cart sits at 100; the supplier invoices 108.
 
-`translations.ts:2985` y `:2996` afirman "siempre". El redondeo se aplica en un
-solo punto (`service.py:948`) y nunca se re-aplica. Persisten `final_qty` sin él:
-la edición de cantidad en la tabla, el optimizador ("Convertir en OC"), el salto
-de precio (fija la cantidad al `min_qty` del escalón), el carrito manual,
-`POST /log-po` y `bom_service`. El camino de traslado usa **floor**, no ceil.
+### 1.9 Creating a stock row sealed the defaults as chosen by the user — **[FIXED 2026-08-12]**
 
-MOQ 12 con escalón a 100 → el carrito queda en 100; el proveedor factura 108.
+It did not come from the sweep: it appeared while writing 1.3's test, when a
+freshly created SKU insisted on having `lead_time_set_by = 'user'` without
+anybody having written a lead time.
 
-### 1.9 Crear una fila de stock sellaba los defaults como elegidos por el usuario — **[ARREGLADO 2026-08-12]**
+`StockUpsert` has three non-Optional fields (`min_stock`, `lead_time_days`,
+`moq`), so Pydantic materialises them to 0 / 15 / 1 and `model_dump` hands them
+over as if the user had typed them. The endpoint filtered that **only for
+existing rows** — "a new row has to start somewhere" — and with that
+`upsert_stock` stamped `<field>_set_by = 'user'` over an assumption.
 
-No salió del barrido: apareció escribiendo el test de 1.3, cuando el SKU recién
-creado insistía en tener `lead_time_set_by = 'user'` sin que nadie hubiera
-escrito un lead time.
+The value did not change (the column is `NOT NULL DEFAULT 15`); the stamp did,
+and the stamp is what gets read. `resolve_field` lets the SKU's row beat a rule
+**only** if its provenance says somebody set it: a tenant who configured "Acme
+delivers in 45 days" as a supplier rule saw it silently discarded on every SKU
+created through the normal screen, and bought on 15. And it made "the user chose
+15" and "nobody touched this" indistinguishable, which is exactly the bug the
+provenance columns exist to kill (`defaults.py`, `SOURCE_DEFAULT`).
 
-`StockUpsert` tiene tres campos no-Optional (`min_stock`, `lead_time_days`,
-`moq`), así que Pydantic los materializa a 0 / 15 / 1 y `model_dump` los entrega
-como si el usuario los hubiera tecleado. El endpoint filtraba eso **sólo para
-filas existentes** —"una fila nueva tiene que empezar en algún lado"— y con eso
-`upsert_stock` estampaba `<campo>_set_by = 'user'` sobre una suposición.
+The fix is to apply the same filter to new rows: what the caller sent is written,
+the schema default fills the rest, and `<field>_set_by` stays NULL — which is how
+you spell "we assumed this".
+## Level 2 — numbers that do not mean what their label says
 
-El valor no cambiaba (la columna es `NOT NULL DEFAULT 15`); el sello sí, y el
-sello es lo que se lee. `resolve_field` deja ganar a la fila del SKU sobre una
-regla **sólo** si su procedencia dice que alguien la puso: un inquilino que
-configuraba "Acme entrega en 45 días" como regla de proveedor la veía descartada
-en silencio en cada SKU creado por la pantalla normal, y compraba sobre 15. Y
-volvía indistinguibles "el usuario eligió 15" y "nadie tocó esto", que es
-exactamente el bug que las columnas de procedencia existen para matar
-(`defaults.py`, `SOURCE_DEFAULT`).
+### 2.1 `/impacto`'s adoption rate uses a denominator its copy contradicts [verified] — **[FIXED 2026-08-12, copy]**
 
-El arreglo es aplicar el mismo filtro a las filas nuevas: se escribe lo que el
-llamador mandó, el default del esquema llena el resto, y `<campo>_set_by` queda
-NULL — que es como se deletrea "esto lo supusimos nosotros".
-
-## Nivel 2 — números que no significan lo que dice su etiqueta
-
-### 2.1 La tasa de adopción de `/impacto` usa un denominador que su copy contradice [verificado] — **[ARREGLADO 2026-08-12, copy]**
-
-> **Decisión del dueño: se arregla la copy, no el número.** Contar las
-> recomendaciones ignoradas exigiría persistir lo que se **mostró**, que el
-> producto no guarda en ninguna parte — capacidad nueva, y grande.
+> **Owner's decision: fix the copy, not the number.** Counting ignored
+> recommendations would require persisting what was **shown**, which the product
+> stores nowhere — new capability, and a large one.
 >
-> La cifra ahora se presenta como lo que es: "de las recomendaciones que
-> decidiste", con la aclaración de que las que dejaste pasar sin tocar no están
-> en ninguno de los dos lados. El pie que la llamaba "la métrica más honesta de
-> valor" ahora dice cómo leerla: *cuando decides, qué tanto sigues a Faro* — no
-> *qué parte de todo lo que te sugirió seguiste*. Cambiado en pantalla y en el
-> correo mensual (`locale.py`), que repetía la misma afirmación.
+> The figure is now presented as what it is: "of the recommendations you
+> decided", with a note that the ones you let pass untouched are on neither side.
+> The caption that called it "the most honest measure of value" now says how to
+> read it: *when you decide, how often you follow Faro* — not *what share of
+> everything it suggested you followed*. Changed on screen and in the monthly
+> email (`locale.py`), which repeated the same claim.
 
+The copy: *"You followed N of M recommendations **Faro put in front of you**"*
+(`translations.ts:2222`). `M` is `total_suggested`, which only counts lines that
+reached `log_po_generation`; `/compras` filters `status !== 'pending'` before
+logging, with the comment "the buyer never acted on them".
 
-La copy: *"Seguiste N de M recomendaciones que **Faro te puso en frente**"*
-(`translations.ts:2222`). `M` es `total_suggested`, que solo cuenta líneas que
-llegaron a `log_po_generation`; `/compras` filtra `status !== 'pending'` antes de
-registrar, con el comentario "el comprador nunca actuó sobre ellas".
+Faro recommends 20, you approve 3, reject 1, ignore 16 → **"75%, you followed 3
+of 4"**. The real proportion is 15%. Five times inflated, always on the
+flattering side. The backend's docstring describes it well; the screen claims
+something stronger. And the caption calls this figure "the most honest measure of
+value".
 
-Faro recomienda 20, apruebas 3, rechazas 1, ignoras 16 → **"75%, seguiste 3 de
-4"**. La proporción real es 15%. Cinco veces inflada, siempre hacia el lado
-halagador. El docstring del backend lo describe bien; la pantalla afirma algo más
-fuerte. Y el pie llama a esta cifra "la métrica más honesta de valor".
+### 2.2 Two `/inventario` buttons manufacture 100% adoption out of a download [verified] — **[FIXED 2026-08-12]**
 
-### 2.2 Dos botones de `/inventario` fabrican 100% de adopción desde una descarga [verificado] — **[ARREGLADO 2026-08-12]**
-
-> **"Exportar editado"** filtraba las líneas en cero **antes** de construir las
-> decisiones, así que `rejected` era inalcanzable por construcción. Una línea
-> que el comprador pone en cero es un rechazo y ahora se registra como tal: es
-> lo único que puede mover la adopción de ese 100% verde.
+> **"Export edited"** filtered zeroed lines **before** building the decisions, so
+> `rejected` was unreachable by construction. A line the buyer zeroes out is a
+> rejection and is now recorded as one: it is the only thing that can move
+> adoption off that green 100%.
 >
-> **"Exportar OC"** llama al camino heredado sin cuerpo, y el servidor
-> re-derivaba todo marcándolo `approved`. La orden se sigue registrando entera
-> —el comprador se llevó el archivo y va a actuar sobre él— pero los cuatro
-> contadores de decisión quedan en 0 y la fila se marca `source='export'`,
-> exactamente como `create_manual_po` ya hacía con las órdenes escritas a mano.
-> Una descarga es evidencia de que se llevaron la lista, no de que estuvieran de
-> acuerdo con cada línea, y esa diferencia es el significado entero de la
-> métrica.
+> **"Export PO"** calls the legacy path with no body, and the server re-derived
+> everything marking it `approved`. The order is still logged in full — the buyer
+> took the file and will act on it — but the four decision counters stay at 0 and
+> the row is marked `source='export'`, exactly as `create_manual_po` already did
+> for hand-written orders. A download is evidence the list was taken away, not
+> that the buyer agreed with every line, and that difference is the whole meaning
+> of the metric.
 >
-> **Sigue vivo:** sin deduplicación. Pulsar "Exportar" tres veces escribe tres
-> OC. Ya no triplica la adopción, pero sí las órdenes y las unidades del mes.
+> **Still live:** no deduplication. Pressing "Export" three times writes three
+> POs. It no longer triples adoption, but it does triple the month's orders and
+> units.
 
+"Export PO" calls `logPOGeneration(sessionId, **undefined**, …)`, which falls to
+the backend's legacy path (`inventory.py:1233-1238`): it re-derives every
+PEDIR_YA/PEDIR_PRONTO and `_normalize_decisions` marks them `approved` by
+default. `exportEditedPO` can only emit `approved` or `modified` — `rejected` is
+structurally impossible.
 
-"Exportar OC" llama a `logPOGeneration(sessionId, **undefined**, …)`, que cae en
-el camino heredado del backend (`inventory.py:1233-1238`): re-deriva todos los
-PEDIR_YA/PEDIR_PRONTO y `_normalize_decisions` los marca `approved` por defecto.
-`exportEditedPO` solo puede emitir `approved` o `modified` — `rejected` es
-estructuralmente imposible.
+A tenant working from `/inventario` sees **100% adoption, in green, forever**,
+and every urgent SKU counted as a risk handled. With no deduplication: pressing
+"Export" three times writes three POs and triples the month's figures.
 
-Un inquilino que trabaje desde `/inventario` ve **100% de adopción, en verde,
-para siempre**, y cada SKU urgente contado como riesgo atendido. Sin
-deduplicación: pulsar "Exportar" tres veces escribe tres OC y triplica las
-cifras del mes.
+It is the same hole that was closed in the `/api` console on 2026-08-11. The
+product's own screen had been living with it for longer.
 
-Es el mismo agujero que se tapó en la consola de `/api` el 2026-08-11. La
-pantalla del producto lleva usándolo desde antes.
+### 2.3 "Capital freed from overstock" attributes to Faro a subtraction nobody attributed — **[FIXED 2026-08-12]**
 
-### 2.3 "Capital liberado de sobrestock" atribuye a Faro una resta que nadie atribuyó — **[ARREGLADO 2026-08-12]**
-
-> **La atribución, por copy.** La columna pasa a llamarse "Baja del sobrestock",
-> el titular a "bajó tu inventario detenido este mes", y la nota nombra las
-> otras causas: vender, registrar merma, borrar productos, reentrenar. El bloque
-> de procedencia agrega que "registrado" no es lo mismo que "atribuido a Faro".
-> Igual en el correo mensual.
+> **The attribution, by copy.** The column is now called "Overstock reduction",
+> the headline "your idle inventory went down this month", and the note names the
+> other causes: selling, recording shrinkage, deleting products, retraining. The
+> provenance block adds that "recorded" is not the same as "attributed to Faro".
+> Same in the monthly email.
 >
-> **Los dos `None`, por código.** `_capital_freed_during` devuelve ahora
-> `(valor, estado)` con `measured` / `not_measured` / `grew`. Antes respondía
-> `None` a dos preguntas distintas —"nunca tomamos una de las mediciones" y
-> "tomamos las dos y tu sobrestock **creció**"— y la UI imprimía *"necesitamos
-> dos mediciones"* para ambas: al inquilino cuyo stock muerto acababa de crecer
-> se le decía que faltaban datos, y la columna quedaba estructuralmente incapaz
-> de dar una mala noticia.
+> **The two `None`s, by code.** `_capital_freed_during` now returns
+> `(value, state)` with `measured` / `not_measured` / `grew`. It used to answer
+> `None` to two different questions — "we never took one of the measurements" and
+> "we took both and your overstock **grew**" — and the UI printed *"we need two
+> measurements"* for both: a tenant whose dead stock had just grown was told data
+> was missing, and the column was structurally incapable of delivering bad news.
 
+`roi_service.py:347-363` — `snapshot(M) - snapshot(M+1)` of the value in
+SOBRESTOCK, from a different session each month. Nothing ties the difference to
+any action: it moves on selling, on recording shrinkage, on **deleting SKUs**, on
+editing costs and above all on retraining.
 
-`roi_service.py:347-363` — `snapshot(M) - snapshot(M+1)` del valor en SOBRESTOCK,
-de una sesión distinta cada mes. Nada liga la diferencia a ninguna acción: se
-mueve al vender, al registrar merma, al **borrar SKU**, al editar costos y sobre
-todo al reentrenar.
+Deleting 200 discontinued SKUs holding ₡8M of dead stock headlines **"₡8,000,000
+freed from idle inventory"**. Right below it, `recap.provenance_body` assures the
+reader "we do not estimate savings… we only show what was recorded", which makes
+it read as audited.
 
-Borrar 200 SKU descontinuados con ₡8M de stock muerto titula **"₡8.000.000
-liberaste de inventario detenido"**. Justo debajo, `recap.provenance_body`
-asegura "No estimamos ahorros… solo mostramos lo que quedó registrado", lo que
-hace que se lea como auditado.
+And `:363` returns `None` both when a snapshot is missing and when overstock
+**grew**, and the UI paints both as *"We need two consecutive monthly
+measurements"*. The column can only show gains.
 
-Y `:363` devuelve `None` tanto cuando falta un snapshot como cuando el sobrestock
-**creció**, y la UI pinta ambos como *"Necesitamos dos mediciones mensuales
-seguidas"*. La columna solo puede mostrar ganancias.
+### 2.4 "Stockout risks handled" counts lines and claims a punctuality nobody measures — **[FIXED 2026-08-12, copy]**
 
-### 2.4 "Riesgos de quiebre atendidos" cuenta líneas y afirma puntualidad que nadie mide — **[ARREGLADO 2026-08-12, copy]**
+> The headline becomes "urgent lines you ordered", and the detail says the three
+> things the number is not: it counts **lines**, not distinct products (the same
+> 30 urgent ones every month for a year add up to 360); it does not measure
+> whether they arrived on time; and it includes orders that have not arrived.
+> Before, the detail literally said "that you did order **on time**", about
+> something nobody measures.
 
-> El titular pasa a "líneas urgentes que pediste", y el detalle dice las tres
-> cosas que el número no es: cuenta **líneas**, no productos distintos (los
-> mismos 30 urgentes cada mes durante un año suman 360); no mide si llegaron a
-> tiempo; e incluye órdenes que no han llegado. Antes el detalle decía
-> literalmente "que sí pediste **a tiempo**", sobre un dato que nadie mide.
+`roi_service.py:246` — `SUM(skus_order_now)` over every PO. 30 urgent SKUs
+ordered monthly for a year read as **360**. Nothing checks "on time". The recap
+card carries the right nuance; the headline, which is the larger surface, claims
+the opposite.
 
+### 2.5 Orders that never arrived count as managed — **[FIXED 2026-08-12, copy]**
 
-`roi_service.py:246` — `SUM(skus_order_now)` sobre todas las OC. 30 SKU urgentes
-pedidos mensualmente durante un año se leen como **360**. Nada comprueba "a
-tiempo". La tarjeta del recap lleva el matiz correcto; el titular, que es la
-superficie más grande, afirma lo contrario.
-
-### 2.5 Las órdenes que nunca llegaron cuentan como gestionadas — **[ARREGLADO 2026-08-12, copy]**
-
-> **Decisión del dueño: no se cambia el número.** La política declarada del
-> módulo es contar **la acción tomada, no el resultado**, y generar la orden es
-> la acción. Filtrar por `reception_status` convertiría estas cifras en una
-> medición de entregas, que es otra métrica.
+> **Owner's decision: the number does not change.** The module's declared policy
+> is to count **the action taken, not the outcome**, and generating the order is
+> the action. Filtering by `reception_status` would turn these figures into a
+> measure of deliveries, which is a different metric.
 >
-> Lo que se arregla es que la pantalla lo diga: "líneas urgentes que pediste"
-> aclara que incluye órdenes que no han llegado, y "compras gestionadas" dice
-> "hayan llegado o no". El scorecard sigue excluyéndolas, y ahora esa diferencia
-> es visible en vez de ser una contradicción silenciosa entre dos pantallas.
+> What is fixed is that the screen says so: "urgent lines you ordered" clarifies
+> that it includes orders that have not arrived, and "managed purchases" says
+> "whether they arrived or not". The scorecard still excludes them, and now that
+> difference is visible instead of being a silent contradiction between two
+> screens.
 
+No `/impacto` query filters `reception_status`. A ₡12M PO that was never
+delivered still counts as 40 risks handled and ₡12M managed. The scorecard, one
+screen away, **does** exclude the unreceived ones.
 
-Ninguna consulta de `/impacto` filtra `reception_status`. Una OC de ₡12M nunca
-entregada sigue como 40 riesgos atendidos y ₡12M gestionados. El scorecard, una
-pantalla más allá, **sí** excluye las no recibidas.
+### 2.6 "Managed purchases" silently drops the lines with no unit cost — **[FIXED 2026-08-12]**
 
-### 2.6 "Compras gestionadas" tira en silencio las líneas sin costo unitario — **[ARREGLADO 2026-08-12]**
+> `managed_purchase_value_complete` comes from counting ordered lines against
+> lines with a cost in `inventory_po_items` — on read, not in a new column, so
+> there is no migration and no way for it to drift from the value it qualifies.
+> When coverage is partial the screen shows `≥ ₡2.1M` and explains that costs are
+> missing, instead of printing a total that is not one.
 
-> `managed_purchase_value_complete` sale de contar líneas ordenadas contra
-> líneas con costo en `inventory_po_items` — al leer, no en una columna nueva,
-> así que no hay migración ni forma de que se desincronice del valor que
-> califica. Cuando la cobertura es parcial la pantalla muestra `≥ ₡2,1M` y
-> explica que faltan costos, en vez de imprimir un total que no lo es.
+`roi_service.py:95-101`. The "no line has a cost" case is handled honestly. The
+**partial** case is not: 40 lines with 6 costed report those 6 as the total. ₡30M
+can read as ₡2.1M, looking exact.
 
+### 2.7 The scorecard's "% on time" scores against a declared value nobody declared — **[FIXED 3e0bde6]**
 
-`roi_service.py:95-101`. El caso "ninguna línea tiene costo" se resuelve
-honestamente. El caso **parcial** no: 40 líneas con 6 costeadas reportan esas 6
-como el total. ₡30M pueden leerse como ₡2,1M, con pinta de exacto.
+> The `LEFT JOIN` accepts the declared value only when `lead_time_set_by` is set
+> (`reception_service.py:476`), so a supplier imported from a CSV comes out as
+> "not declared" instead of being graded against a promise they never made — and
+> `on_time_rate` and `deviation_days` go with it. `MIN_RATE_OBSERVATIONS` also
+> landed: the row's two percentages no longer speak below the sample floor, and
+> `lead_time_unusable` covers the "every delivery the same day" case, which
+> printed "0d" next to "100%".
 
-### 2.7 "% a tiempo" del scorecard puntúa contra un declarado que nadie declaró — **[ARREGLADO 3e0bde6]**
+`reception_service.py:382-384` reads `s.lead_time_days` raw, which is
+`INT NOT NULL DEFAULT 15`. The guard is in the **same file, 140 lines below**
+(`:520-528`), with the comment explaining why it was added.
 
-> El `LEFT JOIN` sólo acepta el declarado cuando `lead_time_set_by` está puesto
-> (`reception_service.py:476`), así que un proveedor importado por CSV sale como
-> "no declarado" en vez de ser calificado contra una promesa que nunca hizo — y
-> `on_time_rate` y `deviation_days` se van con él. Además entró
-> `MIN_RATE_OBSERVATIONS`: los dos porcentajes de la fila ya no hablan por
-> debajo del piso de muestra, y `lead_time_unusable` cubre el caso de "todas las
-> entregas el mismo día", que imprimía "0d" junto a "100%".
+A supplier imported from a CSV who delivers in 12 days: "DECLARED 15d, 100% on
+time". One who promised 20 comes out at 0%, in red. On top of that,
+`/proveedores` launders the default: the form pre-fills 15 and
+`supplier_service.py:29-30` stamps it as `SOURCE_USER` — walking past the field
+and saving turns it into a deliberate decision forever.
 
+With no minimum N either: a supplier with counter pickups (`lead_time = 0`)
+prints **"Not conclusive"** and **"100%"** on the same row.
 
-`reception_service.py:382-384` lee `s.lead_time_days` crudo, que es
-`INT NOT NULL DEFAULT 15`. El guardia está en el **mismo archivo, 140 líneas más
-abajo** (`:520-528`), con el comentario que explica por qué se puso.
+### 2.8 "Purchased value" shows a confident ₡0 where `/impacto` would say "not available" — **[FIXED 2026-08-12]**
 
-Un proveedor importado por CSV que entrega en 12 días: "DECLARADO 15d, 100% a
-tiempo". Uno que prometió 20 sale a 0% en rojo. Además `/proveedores` blanquea el
-default: el formulario prellena 15 y `supplier_service.py:29-30` lo sella como
-`SOURCE_USER` — pasar de largo por el campo y guardar lo convierte en una
-decisión deliberada para siempre.
+> The `COALESCE(..., 0)` was removed: with not a single costed line the cell is
+> `null` and the screen paints the same dash it already uses for everything
+> unmeasurable, with an explanation that it is not a zero. With partial coverage
+> it shows `≥`. The same rule `/impacto` applies to the same figure, which was
+> half the finding: same data, two policies, one screen apart.
 
-Sin N mínimo, además: un proveedor con retiros de mostrador (`lead_time = 0`)
-imprime **"No concluyente"** y **"100%"** en la misma fila.
+`reception_service.py:398` — `SUM(final_qty * unit_cost)`; a NULL cost annuls the
+product and SQL discards it. A supplier you bought ₡40M from with no recorded
+costs reads **₡0** in green. `roi_service.py:538-540` applies the opposite rule
+to the same quantity. Same data, two policies, one screen apart.
 
-### 2.8 "Valor comprado" muestra un ₡0 confiado donde `/impacto` diría "no disponible" — **[ARREGLADO 2026-08-12]**
+## Level 3 — the same number, two authorities
 
-> Se quitó el `COALESCE(..., 0)`: sin una sola línea costeada la celda es `null`
-> y la pantalla pinta el mismo guion que ya usa para todo lo no medible, con la
-> explicación de que no es un cero. Con cobertura parcial muestra `≥`. Misma
-> regla que `/impacto` aplica al mismo dato, que era la mitad del hallazgo:
-> mismos datos, dos políticas, una pantalla de distancia.
+### 3.1 `/inventario`'s "Export PO" downloads different quantities from the table's — **[FIXED 2026-08-12]**
 
-
-`reception_service.py:398` — `SUM(final_qty * unit_cost)`; un costo NULL anula el
-producto y SQL lo descarta. Un proveedor al que le compraste ₡40M sin costos
-registrados lee **₡0** en verde. `roi_service.py:538-540` aplica la regla
-opuesta para la misma cantidad. Mismos datos, dos políticas, una pantalla de
-distancia.
-
-## Nivel 3 — el mismo número, dos autoridades
-
-### 3.1 "Exportar OC" de `/inventario` descarga cantidades distintas de las de la tabla — **[ARREGLADO 2026-08-12]**
-
-> Eran **diez** llamadas a `get_inventory_status` sin período fuera de tests, no
-> una. Todas resuelven ahora el grano del inquilino con el mismo patrón que
-> `GET /status` ya usaba: CSV, `dashboard-summary`, stock muerto, carrito de
-> respaldo de escalones, disparo de prueba de alertas, el camino heredado de
-> `log-po`, el simulador de eventos, `production-requirements` y el PDF.
+> There were **ten** calls to `get_inventory_status` without a period outside
+> tests, not one. They all now resolve the tenant's grain with the same pattern
+> `GET /status` already used: the CSV, `dashboard-summary`, dead stock, the
+> price-break fallback cart, the alert test trigger, `log-po`'s legacy path, the
+> event simulator, `production-requirements` and the PDF.
 >
-> Al PDF y a `explode_requirements` hubo que **agregarles el parámetro**: no
-> existía, así que eran siempre diarios. El PDF importa doble porque es la única
-> copia de estos números que sale de la app, y la lee gente que no puede
-> contrastarla contra ninguna pantalla. `simulate_event_impact` y
-> `get_demand_spikes` también lo aceptan ahora, con default `"daily"` para que
-> ningún llamador existente cambie de comportamiento.
+> The PDF and `explode_requirements` had to have **the parameter added**: it did
+> not exist, so they were always daily. The PDF matters twice over because it is
+> the only copy of these numbers that leaves the app, and it is read by people
+> who cannot check it against any screen. `simulate_event_impact` and
+> `get_demand_spikes` accept it now too, defaulting to `"daily"` so no existing
+> caller changes behaviour.
 >
-> Fijado con tres tests de punta a punta contra los endpoints —no contra el
-> cálculo—, porque el defecto nunca estuvo en la cuenta sino en lo que el
-> endpoint le pasaba.
+> Pinned with three end-to-end tests against the endpoints — not against the
+> calculation — because the defect was never in the arithmetic but in what the
+> endpoint passed it.
 
+The table is period-aware (`inventory.py:701`); the export (`:2511`) calls
+`get_inventory_status` **without a period** and re-derives the list on the
+server. The same weekly tenant from 1.1: the screen offers nothing to order and
+the CSV carries 100 units, plus a PO in `/pedidos` the buyer never saw.
 
-La tabla es consciente del período (`inventory.py:701`); el export
-(`:2511`) llama a `get_inventory_status` **sin período** y re-deriva la lista en
-el servidor. Mismo inquilino semanal del 1.1: la pantalla no ofrece nada que
-pedir y el CSV trae 100 unidades, más una OC en `/pedidos` que el comprador nunca
-vio.
+The same period-less recomputation, smaller in scope: the PDF
+(`service.py:2536`, which **has no** `period` parameter), dead stock, the
+price-break fallback cart, the alert test trigger, `dashboard-summary`,
+`production-requirements` and `simulate_event_impact`.
 
-Misma recomputación sin período, menor alcance: el PDF (`service.py:2536`, que
-**no tiene** parámetro `period`), dead-stock, el carrito de respaldo de escalones
-de precio, el disparo de prueba de alertas, `dashboard-summary`,
-`production-requirements` y `simulate_event_impact`.
+### 3.2 The same `/inventario` row shows two different "LT demand" figures [verified] — **[FIXED 3e0bde6]**
 
-### 3.2 La misma fila de `/inventario` muestra dos "demanda LT" distintas [verificado] — **[ARREGLADO 3e0bde6]**
+> The column publishes `_demand_lt` (`service.py:1575`), the same value the
+> reorder point and the "how it is calculated" breakdown use. One calculation,
+> one number, and the CSV inherits the right one.
 
-> La columna publica `_demand_lt` (`service.py:1575`), el mismo valor que usa el
-> punto de reorden y el desglose de "cómo se calcula". Una sola cuenta, un solo
-> número, y el CSV hereda el correcto.
+`service.py:1432` — `avg_daily * lt_periods`, which feeds the reorder point.
+`service.py:1563` — `avg_daily * lead_time`, in calendar days. **Both in the same
+dictionary.** The "LT demand" column paints the second; expanding the row shows
+the first. Weekly, 10/week, 14 days: the column says **140**, the breakdown says
+**20**. A factor of 7 weekly, 30 monthly. The CSV uses the column's, so it
+contradicts the breakdown.
 
+### 3.3 The WhatsApp bot answers about another session, at another grain and from another model — **[OUT OF SCOPE]**
 
-`service.py:1432` — `avg_daily * lt_periods`, que alimenta el punto de reorden.
-`service.py:1563` — `avg_daily * lead_time`, en días de calendario. **Las dos en
-el mismo diccionario.** La columna "Demanda LT" pinta la segunda; expandir la
-fila muestra la primera. Semanal, 10/semana, 14 días: la columna dice **140**, el
-desglose dice **20**. Factor 7 en semanal, 30 en mensual. El CSV usa la de la
-columna, así que contradice al desglose.
-
-### 3.3 El bot de WhatsApp responde sobre otra sesión, a otro grano y desde otro modelo — **[FUERA DE ALCANCE]**
-
-> El dueño excluyó el bot de WhatsApp del trabajo de estabilidad (2026-08-12),
-> junto con lo de LLM y Stripe. El hallazgo queda escrito y sin tocar: sigue
-> siendo el **único** punto de todo el producto que se salta
+> The owner excluded the WhatsApp bot from the stability work (2026-08-12), along
+> with the LLM and Stripe items. The finding stays written and untouched: it is
+> still the **only** point in the whole product that skips
 > `resolve_active_session`.
 
+`whatsapp/tools.py:62,106` uses `get_latest_completed_session` — an
+`ORDER BY updated_at DESC LIMIT 1` — instead of `resolve_active_session`. It is
+the **only** point in the whole product that skips the resolver. `:65` passes no
+period. And `:114` does `next(iter(models.values()))`: **the first model in the
+dictionary**, which is exactly the `/pronosticos` bug already fixed at
+`forecasts.py:512` and never ported here.
 
-`whatsapp/tools.py:62,106` usa `get_latest_completed_session` —un
-`ORDER BY updated_at DESC LIMIT 1`— en vez de `resolve_active_session`. Es el
-**único** punto de todo el producto que se salta el resolvedor. `:65` no pasa
-período. Y `:114` hace `next(iter(models.values()))`: **el primer modelo del
-diccionario**, que es exactamente el bug de `/pronosticos` ya arreglado en
-`forecasts.py:512` y nunca portado aquí.
+### 3.4 `/pronosticos` crowns the champion by a different rule from the server's three — **[FIXED 2026-08-12]**
 
-### 3.4 `/pronosticos` corona al campeón con una regla distinta de las tres del servidor — **[ARREGLADO 2026-08-12]**
-
-> `championRank` era `r.cost_horizon ?? r.cost ?? r.wape` evaluado **por fila**,
-> así que comparaba el `cost_horizon` de un modelo contra el `cost` de otro —dos
-> cantidades en escalas distintas, y `test_horizon_comparability` dice que la
-> segunda es sistemáticamente menor. Ahora `makeChampionRank` elige **una**
-> métrica para todo el conjunto y compara dentro de ella, que es lo que hace
-> `service._champion_metric`. Cambiado en los cinco usos: tarjeta de SKU, tira
-> de estadísticas, tabla de métricas, PDF y la precisión junto al gráfico.
+> `championRank` was `r.cost_horizon ?? r.cost ?? r.wape` evaluated **per row**,
+> so it compared one model's `cost_horizon` against another's `cost` — two
+> quantities on different scales, and `test_horizon_comparability` says the
+> second is systematically smaller. `makeChampionRank` now picks **one** metric
+> for the whole set and compares within it, which is what
+> `service._champion_metric` does. Changed at all five uses: the SKU card, the
+> statistics strip, the metrics table, the PDF and the accuracy next to the
+> chart.
 >
-> Queda una diferencia de alcance, anotada en el código a propósito: el servidor
-> elige la métrica sobre las filas de **toda la sesión** y el navegador sobre las
-> que tiene en mano (las de un SKU en casi todas estas superficies). Sólo
-> divergen en una sesión donde unos SKU traen `cost_horizon` y otros no.
+> One scope difference remains, noted in the code on purpose: the server picks
+> the metric over the rows of **the whole session** and the browser over the ones
+> it holds (a single SKU's, on almost all these surfaces). They diverge only in a
+> session where some SKUs carry `cost_horizon` and others do not.
 
+The server and the engine pick **one** metric column for the whole set and
+discard the rows without it. The browser (`pronosticos/page.tsx:71-72`) does
+`r.cost_horizon ?? r.cost ?? r.wape` **per row**, so it compares one model's
+`cost_horizon` against another's `cost` — and `test_horizon_comparability`
+asserts the second is systematically smaller.
 
-Servidor y motor eligen **una** columna métrica para todo el conjunto y descartan
-las filas sin ella. El navegador (`pronosticos/page.tsx:71-72`) hace
-`r.cost_horizon ?? r.cost ?? r.wape` **por fila**, así que compara el
-`cost_horizon` de un modelo contra el `cost` de otro — y `test_horizon_comparability`
-afirma que el segundo es sistemáticamente menor.
+The excluded model wins the browser's comparison: the statistics strip announces
+"Best model: XGBoost" with its WAPE, while the drawn curve and the purchase order
+come from Prophet. Mechanism CONFIRMED; frequency SUSPECTED (it depends on
+`cost_horizon` being None on ML rows, which `trainer.py:438-485` produces through
+several real paths).
 
-El modelo excluido gana la comparación del navegador: la tira de estadísticas
-anuncia "Mejor modelo: XGBoost" con su WAPE, mientras la curva dibujada y la
-orden de compra salen de Prophet. Mecanismo CONFIRMADO; frecuencia SOSPECHADA
-(depende de que `cost_horizon` sea None en filas ML, lo que `trainer.py:438-485`
-produce por varios caminos reales).
+### 3.5 The aggregate status and the per-warehouse one resolve the supplier differently — **[FIXED 3e0bde6]**
 
-### 3.5 El estado agregado y el por bodega resuelven el proveedor distinto — **[ARREGLADO 3e0bde6]**
-
-> `service.py:1725` ahora cae al primario configurado igual que la vista
-> agregada, así que las cuatro resoluciones que colgaban de esa palabra —lead
-> time aprendido, `lead_time_days`, `moq`, `service_level`— dan lo mismo en las
-> dos pestañas.
-
+> `service.py:1725` now falls back to the configured primary just as the
+> aggregate view does, so the four resolutions hanging off that word — learned
+> lead time, `lead_time_days`, `moq`, `service_level` — give the same answer on
+> both tabs.
 
 `service.py:1355-1357` — `stock.supplier or primary.supplier_name`.
-`service.py:1696` — `stock.get("supplier")`, **sin el respaldo del primario**.
-Esa palabra propaga a cuatro resoluciones: lead time aprendido, y las reglas de
-`lead_time_days`, `moq` y `service_level`.
+`service.py:1696` — `stock.get("supplier")`, **without the primary fallback**.
+That word propagates into four resolutions: the learned lead time, and the rules
+for `lead_time_days`, `moq` and `service_level`.
 
-Un SKU con proveedor en blanco en la fila y "Acme" como primario: la pestaña
-"Todas" da **PEDIR_YA** con Acme en la fila; la pestaña de la bodega da
-**PEDIR_PRONTO** con proveedor vacío. Un SKU, una bodega, dos señales en dos
-pestañas de la misma página.
+A SKU with a blank supplier on the row and "Acme" as primary: the "Todas" tab
+gives **PEDIR_YA** with Acme on the row; the warehouse tab gives
+**PEDIR_PRONTO** with an empty supplier. One SKU, one warehouse, two signals on
+two tabs of the same page.
 
-### 3.6 El optimizador ignora todas las entradas de proveedor que usa el semáforo — **[ARREGLADO 2026-08-22]**
+### 3.6 The optimiser ignores every supplier input the semáforo uses — **[FIXED 2026-08-22]**
 
-> Hay **un** resolvedor: `optimizer_service.resolve_planning_inputs` llama a los
-> del semáforo —`stock_defaults_service.resolve_field` para la cascada
-> (fila que alguien fijó > regla de proveedor > categoría > global > default) y
-> `service.resolve_lead_time` para que las recepciones reales ganen— sobre la
-> **misma** fila representativa por SKU (`_aggregate_stock_rows_by_sku`, anclada
-> en la bodega por defecto) y el mismo respaldo de proveedor primario. El
-> endpoint lo resuelve una vez por request y se lo pasa al build y al serialize,
-> así que el plan se **resuelve** y se **reporta** con los mismos números.
+> There is **one** resolver: `optimizer_service.resolve_planning_inputs` calls
+> the semáforo's — `stock_defaults_service.resolve_field` for the cascade (a row
+> somebody set > supplier rule > category > global > default) and
+> `service.resolve_lead_time` so real receptions win — over the **same**
+> representative row per SKU (`_aggregate_stock_rows_by_sku`, anchored to the
+> default warehouse) and the same primary-supplier fallback. The endpoint
+> resolves it once per request and passes it to both build and serialize, so the
+> plan is **solved** and **reported** with the same numbers.
 >
-> El MOQ no cabe en el MILP (el modelo no tiene variable de mínimo), así que se
-> aplica como **piso** al serializar, exactamente como `_calc_recommended`: piso
-> de UNA orden al proveedor, no uno por bodega —aplicado por línea multiplicaría
-> el mínimo por la cantidad de bodegas entre las que el solver reparta— y nunca
-> sobre un 0, porque "no hay nada que pedir" tiene que seguir significando eso.
+> MOQ does not fit in the MILP (the model has no minimum variable), so it is
+> applied as a **floor** at serialisation, exactly as `_calc_recommended` does:
+> the floor of ONE order to the supplier, not one per warehouse — applied per
+> line it would multiply the minimum by the number of warehouses the solver
+> splits across — and never over a 0, because "there is nothing to order" has to
+> keep meaning that.
 >
-> `test_optimizer_agrees_with_the_semaforo.py` lo fija: sin el arreglo el MILP
-> resolvía sobre 15 días mientras `/hoy` mostraba 20 aprendidos, y ofrecía 50
-> unidades contra un mínimo de proveedor de 500.
+> `test_optimizer_agrees_with_the_semaforo.py` pins it: without the fix the MILP
+> solved over 15 days while `/hoy` showed 20 learned, and offered 50 units
+> against a supplier minimum of 500.
 
-`optimizer_service.py:220-230` lee `inventory_stock.lead_time_days` crudo —sin
-regla, sin procedencia, sin lead time aprendido— y el MOQ no se pasa: no existe
-campo de MOQ en `OptimizationInput`. `/hoy` planifica sobre 45 días *"aprendido
-de tus recepciones"* y MOQ 500; `/planning` resuelve sobre 15 y 137 unidades.
-Ambas pantallas ofrecen convertir en OC.
+`optimizer_service.py:220-230` reads `inventory_stock.lead_time_days` raw — no
+rule, no provenance, no learned lead time — and the MOQ is not passed: there is
+no MOQ field on `OptimizationInput`. `/hoy` plans over 45 days *"learned from
+your receptions"* and an MOQ of 500; `/planning` solves over 15 and 137 units.
+Both screens offer to convert to a PO.
 
-### 3.7 "Cuál es la bodega por defecto" tiene dos respuestas — **[ARREGLADO 2026-08-12]**
+### 3.7 "Which is the default warehouse" has two answers — **[FIXED 2026-08-12]**
 
-> Ahora hay **un** resolvedor, `warehouse_service.get_default_warehouse_name`:
-> bandera `is_default` anclada primero, `name_precedence_key` después.
-> `get_demand_shares` lo llama y `_aggregate_stock_rows_by_sku` lo recibe como
-> argumento —una consulta por request, no una por fila, que era la objeción
-> legítima del comentario viejo.
+> There is now **one** resolver, `warehouse_service.get_default_warehouse_name`:
+> the `is_default` flag anchored first, `name_precedence_key` second.
+> `get_demand_shares` calls it and `_aggregate_stock_rows_by_sku` receives it as
+> an argument — one query per request, not one per row, which was the old
+> comment's legitimate objection.
 >
-> El comentario que afirmaba que la pregunta "se responde igual en todas partes"
-> era falso y ahora es cierto. Lo que costaba: un inquilino cuya primera bodega
-> fue "Zona Sur" tenía el 100% de la demanda ahí mientras la fila agregada tomaba
-> costo, lead time, MOQ y proveedor —y con ellos el titular de valor en bodega—
-> de "principal". Una fila describiendo dos edificios distintos.
+> The comment claiming the question "is answered the same way everywhere" was
+> false and is now true. What it cost: a tenant whose first warehouse was "Zona
+> Sur" had 100% of the demand there while the aggregate row took cost, lead time,
+> MOQ and supplier — and with them the headline warehouse value — from
+> "principal". One row describing two different buildings.
 
+`warehouse_service.py:145-148` looks at the `is_default` flag and then the name;
+`service.py:1222` only at the name, because it only has stock rows to hand. The
+key's docstring claims both answer the same "everywhere". They do not.
 
-`warehouse_service.py:145-148` mira la bandera `is_default` y luego el nombre;
-`service.py:1222` solo el nombre, porque solo tiene filas de stock a mano. El
-docstring de la clave afirma que ambas responden igual "en todas partes". No.
+If the first warehouse is "Bodega Sur" and "principal" was created later, 100% of
+the demand goes to Bodega Sur while the aggregate row takes cost, lead time, MOQ
+and supplier from principal — and with them the headline "warehouse value".
 
-Si la primera bodega es "Bodega Sur" y "principal" se creó después, el 100% de la
-demanda va a Bodega Sur mientras la fila agregada toma costo, lead time, MOQ y
-proveedor de principal — y con ellos el "valor en bodega" del titular.
+### 3.8 The optimiser split demand by where the stock already was — **[FIXED 3e0bde6, tests 2026-08-12]**
 
-### 3.8 El optimizador repartía la demanda por dónde ya estaba el stock — **[ARREGLADO 3e0bde6, tests el 2026-08-12]**
+It did not come from the six-agent sweep; it appeared while fixing 1.6, in the
+same file. `optimizer_service` divided a SKU's demand as
+`stock0[(sku,w)] / stock_total`, which makes half the model's transfers
+**self-defeating**: a warehouse's need was defined as proportional to what it
+already had. A branch with 0 units of a SKU that does sell got 0 demand and could
+never be a transfer destination; the central depot that had everything took 100%
+of the demand and was told to buy more. With 0 stock everywhere the denominator
+was 0 and an **even** split was invented — which is not a neutral default: it
+pushes a SKU into warehouses that have never held it.
 
-No salió del barrido de los seis agentes; apareció arreglando 1.6, en el mismo
-archivo. `optimizer_service` dividía la demanda de un SKU como
-`stock0[(sku,w)] / stock_total`, lo que hace **auto-derrotante** la mitad de
-traslados del modelo: la necesidad de una bodega quedaba definida como
-proporcional a lo que ya tenía. Una sucursal con 0 unidades de un SKU que sí
-vende recibía 0 de demanda y no podía ser destino de un traslado nunca; el
-depósito central que lo tenía todo se llevaba el 100% de la demanda y le decían
-que comprara más. Con stock 0 en todas partes el denominador era 0 y se inventaba
-un reparto **parejo** — que no es un default neutro: mete un SKU en bodegas que
-nunca lo han tenido.
+It now reads the same thing the per-warehouse semáforo does, in the same order of
+preference: per-store forecasts if they exist, otherwise `warehouses.demand_share`
+from `/bodegas`, renormalised over the warehouses that do have stock rows — a
+share assigned to a warehouse the model cannot supply would swallow demand
+silently — and with nothing configured, everything to the default warehouse,
+which is a claim the tenant can see and change. Five tests in
+`test_optimizer_service.py` pin it, including that the total split is still the
+whole demand.
 
-Ahora lee lo mismo que el semáforo por bodega, en el mismo orden de preferencia:
-pronósticos por tienda si existen, si no `warehouses.demand_share` de `/bodegas`,
-renormalizado sobre las bodegas que sí tienen filas de stock —una parte asignada
-a una bodega que el modelo no puede surtir se tragaría demanda en silencio— y sin
-nada configurado, todo a la bodega por defecto, que es una afirmación que el
-inquilino puede ver y cambiar. Cinco tests en `test_optimizer_service.py` lo
-fijan, incluido que el total repartido sigue siendo la demanda entera.
+## Level 4 — claims with nothing behind them
 
-## Nivel 4 — afirmaciones sin respaldo
+### 4.1 "Clean series — no warnings" is structurally incapable of saying anything else [verified] — **[FIXED 2026-08-12]**
 
-### 4.1 "Serie limpia — sin advertencias" es estructuralmente incapaz de decir otra cosa [verificado] — **[ARREGLADO 2026-08-12]**
-
-> La regla de "cada cuánto reporta esta serie" estaba escrita **dos veces**: el
-> profiler la infería de los datos (y por eso el pie del gráfico sí decía "7
-> huecos"), y `DataQualityChecker` recibía `date_freq: None` del runner y
-> respondía 0 huecos para toda sesión jamás entrenada. Ahora hay una:
-> `quality.infer_freq_days` —mediana del salto entre fechas, no `pd.infer_freq`,
-> que devuelve None ante cualquier irregularidad, que es casi todo archivo real—
-> y el profiler la usa también. Un `freq` configurado sigue ganando: quien
-> conoce el calendario sabe más que una inferencia.
+> The rule for "how often does this series report" was written **twice**: the
+> profiler inferred it from the data (which is why the chart footer did say "7
+> gaps"), and `DataQualityChecker` received `date_freq: None` from the runner and
+> answered 0 gaps for every session ever trained. Now there is one:
+> `quality.infer_freq_days` — the median gap between dates, not `pd.infer_freq`,
+> which returns None on any irregularity, that is, on almost every real file —
+> and the profiler uses it too. A configured `freq` still wins: whoever knows the
+> calendar knows more than an inference.
 >
-> Con eso la advertencia puede dispararse, el puntaje puede perder sus 20 puntos
-> y "Baja" deja de ser inalcanzable.
+> With that the warning can fire, the score can lose its 20 points and "Low"
+> stops being unreachable.
 >
-> La palabra **"interpolado"** salió del pie del gráfico: el default de
-> `gap_fill` es `leave` —no se rellena nada—, así que afirmaba un tratamiento
-> que en la mayoría de las sesiones nunca ocurrió. Decir que fueron
-> **detectados** es cierto con cualquier estrategia; decir qué se hizo con ellos
-> exige la estrategia en el payload, que no viaja.
+> The word **"interpolated"** left the chart footer: `gap_fill` defaults to
+> `leave` — nothing is filled — so it asserted a treatment that in most sessions
+> never happened. Saying they were **detected** is true under any strategy;
+> saying what was done with them requires the strategy in the payload, and it
+> does not travel.
 
 
-`runner.py:135` fija `"date_freq": None` (solo se lee, nunca se asigna) y
-`quality.py:249` devuelve 0 si no hay frecuencia. Para **toda** sesión entrenada
-`missing_dates = 0`, la advertencia nunca se dispara y el puntaje nunca pierde
-sus 20 puntos: el piso queda en 0,65 contra un umbral de "Baja" de 0,45, así que
-**"Baja" es inalcanzable**. El pie del gráfico del mismo SKU puede decir "7
-huecos detectados" a una pestaña de distancia.
+`runner.py:135` pins `"date_freq": None` (it is only read, never assigned) and
+`quality.py:249` returns 0 when there is no frequency. For **every** trained
+session `missing_dates = 0`, the warning never fires and the score never loses
+its 20 points: the floor sits at 0.65 against a "Low" threshold of 0.45, so
+**"Low" is unreachable**. The chart footer for that same SKU may say "7 gaps
+detected" one tab away.
 
-También incondicional en ese pie: la palabra "interpolado". El valor por defecto
-es `gap_fill = "leave"` — no se rellena nada.
+Also unconditional in that footer: the word "interpolated". The default is
+`gap_fill = "leave"` — nothing is filled.
 
-### 4.2 `/escenarios`: "Atraso de proveedor" no hace nada, y reporta eso como resultado — **[ARREGLADO 2026-08-12]**
+### 4.2 `/escenarios`: "Supplier delay" does nothing, and reports that as the result — **[FIXED 2026-08-12]**
 
-> Faltaban **dos** cosas, no una:
+> **Two** things were missing, not one:
 >
-> 1. **Que el resultado se creyera.** El escenario escribía el número y nunca la
->    procedencia, y `resolve_field` sólo honra el valor de la fila cuando
->    `lead_time_set_by` dice que alguien lo puso. Ahora se estampa `SOURCE_USER`
->    sobre las copias en memoria —que nunca tocan la BD—, que es exactamente lo
->    que un "qué pasaría si" afirma: el usuario está declarando ese plazo.
-> 2. **Que se sumara sobre la base correcta.** `row["lead_time_days"]` es la
->    columna cruda, `NOT NULL DEFAULT 15`. Un SKU cuyo plazo real venía de una
->    regla de proveedor de 45 días quedaba en 15+21=36 — **más corto que su
->    realidad sin atraso**. La base ahora es el valor resuelto por la misma
->    cascada que usa el semáforo.
+> 1. **That the result be believed.** The scenario wrote the number and never the
+>    provenance, and `resolve_field` only honours the row's value when
+>    `lead_time_set_by` says somebody set it. Now `SOURCE_USER` is stamped on the
+>    in-memory copies — which never touch the DB — which is exactly what a "what
+>    if" asserts: the user is declaring that lead time.
+> 2. **That it be added to the right base.** `row["lead_time_days"]` is the raw
+>    column, `NOT NULL DEFAULT 15`. A SKU whose real lead time came from a
+>    45-day supplier rule ended up at 15+21=36 — **shorter than its reality with
+>    no delay at all**. The base is now the value resolved by the same cascade
+>    the semáforo uses.
 >
-> Nota: el arreglo de **1.9** agranda este hallazgo, porque deja más filas con
-> `set_by` en NULL. Los dos van juntos.
+> Note: the fix for **1.9** enlarges this finding, because it leaves more rows
+> with `set_by` NULL. The two go together.
 
 
-`scenarios/service.py:304-319` escribe el lead time en la fila pero nunca pone
-`lead_time_set_by`, y `stock_defaults_service.py:314-318` solo honra el valor de
-la fila si esa columna está puesta. Para todo SKU cuyo lead time no se configuró
-a mano —la mayoría— gana la regla de proveedor o el default de 15.
+`scenarios/service.py:304-319` writes the lead time on the row but never sets
+`lead_time_set_by`, and `stock_defaults_service.py:314-318` only honours the
+row's value if that column is set. For every SKU whose lead time was not set by
+hand — most of them — the supplier rule or the default of 15 wins.
 
-Simulas "mi proveedor se atrasa 21 días" antes de temporada alta, la pantalla
-responde *"Este escenario no cambia ninguna decisión de compra"*, no compras por
-adelantado, y quiebras.
+You simulate "my supplier is 21 days late" ahead of high season, the screen
+answers *"This scenario changes no purchasing decision"*, you do not buy ahead,
+and you stock out.
 
-### 4.3 `/pedidos` en móvil afirma "todos" sobre una ventana de 50 — **[ARREGLADO 2026-08-12]**
+### 4.3 `/pedidos` on mobile claims "all" over a window of 50 — **[FIXED 2026-08-12]**
 
-> La frase se acota a lo que la pantalla puede ver ("entre tus pedidos
-> recientes") y remite a la de computadora para lo más viejo.
+> The sentence is bounded to what the screen can see ("among your recent
+> orders") and points at the desktop one for anything older.
 >
-> Y `not_received` entró en `OPEN_RECEPTION_STATUSES`, que es el espejo de
-> `RECEIVABLE_STATES`. Esto era **una inconsistencia introducida por el arreglo
-> de 1.5**: el backend ya lo trataba como recibible y el frontend seguía
-> mandándolo a "Ya registrados", así que la pantalla afirmaba la *llegada* de
-> mercadería que ella misma acababa de registrar como no llegada.
+> And `not_received` joined `OPEN_RECEPTION_STATUSES`, which is the mirror of
+> `RECEIVABLE_STATES`. This was **an inconsistency introduced by the fix for
+> 1.5**: the backend already treated it as receivable and the frontend kept
+> sending it to "Already recorded", so the screen asserted the *arrival* of goods
+> it had itself just recorded as not arrived.
 
 
-`'mobile.pedidos_awaiting_none'` dice *"ya registraste la llegada de **todos** tus
-pedidos"*. La consulta es `ORDER BY generated_at DESC LIMIT 50`: la orden 51 en
-`pending` es invisible, y un distribuidor que genera una OC diaria pasa de 50 en
-menos de dos meses. Además `not_received` cae en "cerradas", así que la pantalla
-afirma la *llegada* de mercadería que demostrablemente no llegó.
+`'mobile.pedidos_awaiting_none'` says *"you have already recorded the arrival of
+**all** your orders"*. The query is `ORDER BY generated_at DESC LIMIT 50`: order
+51 in `pending` is invisible, and a distributor generating one PO a day passes 50
+in under two months. On top of that `not_received` falls into "closed", so the
+screen asserts the *arrival* of goods that demonstrably did not arrive.
 
-### 4.4 `/inventario`: "Todo el inventario está bien cubierto" ignora `SIN_DATOS` — **[ARREGLADO A MEDIAS 2026-08-12]**
+### 4.4 `/inventario`: "All inventory is well covered" ignores `SIN_DATOS` — **[HALF FIXED 2026-08-12]**
 
-> **La frase, arreglada.** `summary.sin_datos` viajaba en el payload y no se
-> leía. Ahora la frase se parte: "N bien cubiertos, y M sin señal todavía — les
-> falta el conteo de stock", en ámbar en vez de verde. Y el caso que no
-> mostraba **nada** —sin accionables, sin OK, con SKU sin juzgar— ahora dice lo
-> que pasa, porque un panel vacío se lee como "no news is good news".
+> **The sentence, fixed.** `summary.sin_datos` travelled in the payload and was
+> not read. The sentence now splits: "N well covered, and M with no signal yet —
+> they are missing their stock count", in amber instead of green. And the case
+> that showed **nothing** — no actionables, no OKs, with unjudged SKUs — now says
+> what is happening, because an empty panel reads as "no news is good news".
 >
-> **El `9999` sigue vivo, y necesita tu decisión.** `coverage_days = 9999` cuando
-> la demanda media es 0 produce SOBRESTOCK, y luego la cobertura se anula para
-> mostrar: insignia azul, cobertura "—", leyenda "considera pausar el pedido".
-> No lo toqué porque cambia el veredicto del semáforo para toda una clase de
-> SKU, y `_calc_signal` es la única autoridad de la señal — la pieza que este
-> mismo documento lista como sólida. Hay dos lecturas defendibles (un pronóstico
-> de cero demanda **es** stock muerto / "no sabemos" no es "tienes de sobra") y
-> es decisión de producto, no un arreglo.
+> **The `9999` is still alive, and needs your decision.** `coverage_days = 9999`
+> when mean demand is 0 produces SOBRESTOCK, and then the coverage is nulled for
+> display: blue badge, coverage "—", caption "consider pausing the order". I did
+> not touch it because it changes the semáforo's verdict for a whole class of
+> SKU, and `_calc_signal` is the single authority on the signal — the piece this
+> very document lists as solid. There are two defensible readings (a forecast of
+> zero demand **is** dead stock / "we do not know" is not "you have plenty") and
+> it is a product decision, not a fix.
 
 
-La frase se empuja cuando no hay líneas de acción y hay algún OK. `summary.sin_datos`
-viaja en el payload y no se lee. Cinco SKU en OK y 500 sin registro de stock
-producen una frase verde afirmando que *todo* el inventario está cubierto.
+The sentence is pushed when there are no action lines and there is at least one
+OK. `summary.sin_datos` travels in the payload and is not read. Five SKUs in OK
+and 500 with no stock record produce a green sentence asserting that *all*
+inventory is covered.
 
-Adyacente: `service.py:1414` pone `coverage_days = 9999` cuando la demanda media
-es 0, lo que da **SOBRESTOCK**, y luego la cobertura se anula para mostrar. La
-fila queda con insignia azul de sobrestock, cobertura "—" y la leyenda "considera
-pausar el pedido". "No sabemos" pintado como "tienes de sobra".
+Adjacent: `service.py:1414` sets `coverage_days = 9999` when mean demand is 0,
+which gives **SOBRESTOCK**, and then the coverage is nulled for display. The row
+ends up with a blue overstock badge, coverage "—" and the caption "consider
+pausing the order". "We do not know" painted as "you have plenty".
 
-### 4.5 La landing llevaba quince cifras sin fuente, y dos afirmaciones falsas — **[ARREGLADO 2026-08-23]**
+### 4.5 The landing carried fifteen figures with no source, and two false claims — **[FIXED 2026-08-23]**
 
-> Las quince cifras se fueron; el panel de industrias pasó de «Impacto típico en
-> {industria}» con porcentajes verdes a «Lo que Faro hace en {industria}» con
-> frases comprobables contra el código. El encabezado era parte de la mentira:
-> prometía un resultado medido, y eso hacía leer los números como mediciones.
+> The fifteen figures are gone; the industries panel went from «Typical impact in
+> {industry}» with green percentages to «What Faro does in {industry}» with
+> sentences checkable against the code. The heading was part of the lie: it
+> promised a measured result, and that made the numbers read as measurements.
 >
-> La afirmación de los «6 meses» aparecía en **dos** lugares, no en uno. El
-> umbral real son 20 períodos (`config.py:107`, `gate.py:59`), y el motor
-> **descarta** esas series (`quality.py:216`) en vez de clasificarlas: la
-> categoría «alta incertidumbre» no existe en el repo — comprobado con grep.
+> The «6 months» claim appeared in **two** places, not one. The real threshold is
+> 20 periods (`config.py:107`, `gate.py:59`), and the engine **discards** those
+> series (`quality.py:216`) instead of classifying them: the category «high
+> uncertainty» does not exist in the repo — checked with grep.
 >
-> La de cifrado se reemplazó por lo que el código sí hace: consultas por tenant,
-> roles, credenciales de integración cifradas con Fernet (`crypto.py`) y borrado
-> real (`data_export.py:213`). Los datasets son archivos planos, y ahora lo dice.
+> The encryption one was replaced by what the code actually does: per-tenant
+> queries, roles, integration credentials encrypted with Fernet (`crypto.py`) and
+> real deletion (`data_export.py:213`). The datasets are flat files, and it now
+> says so.
 >
-> De paso, la contradicción adyacente: «Escala desde 50 hasta 50,000 SKUs»
-> contra «5K+ SKUs por instancia» en el mismo archivo, un orden de magnitud de
-> diferencia. Queda el 5K+, que es el que tiene algo detrás.
+> Along the way, the adjacent contradiction: «Scales from 50 up to 50,000 SKUs»
+> against «5K+ SKUs per instance» in the same file, an order of magnitude apart.
+> The 5K+ stays, which is the one with something behind it.
 >
-> Verificado en el navegador: cero porcentajes en pantalla, ninguna de las tres
-> afirmaciones presente, `tsc` limpio.
+> Verified in the browser: zero percentages on screen, none of the three claims
+> present, `tsc` clean.
 
-Bajo *"Impacto típico en {industria}"* (`page.tsx:277-321`): "reducción de
-quiebres 20-35%", "compras de emergencia −30-50%", "merma −25-40%", y doce más.
-Es el mismo defecto que la tira del hero que **sí** se limpió a propósito, con el
-razonamiento escrito 400 líneas más abajo en el mismo archivo.
+Under *"Typical impact in {industry}"* (`page.tsx:277-321`): "stockouts down
+20-35%", "emergency purchases −30-50%", "shrinkage −25-40%", and twelve more. It
+is the same defect as the hero strip that **was** deliberately cleaned, with the
+reasoning written 400 lines further down in the same file.
 
-Dos más, ambas confirmadas:
-- *"Los productos con menos de 6 meses de datos se clasifican como 'alta
-  incertidumbre'"* — el motor los **descarta**; el umbral son 20 períodos, no 6
-  meses; y esa clasificación no existe en el repo.
-- *"La transmisión y almacenamiento están cifrados"* — lo único cifrado son las
-  credenciales de integraciones. Los datasets y artefactos son archivos planos
-  bajo `storage/`.
+Two more, both confirmed:
+- *"Products with less than 6 months of data are classified as 'high
+  uncertainty'"* — the engine **discards** them; the threshold is 20 periods, not
+  6 months; and that classification does not exist in the repo.
+- *"Transmission and storage are encrypted"* — the only encrypted thing is the
+  integration credentials. Datasets and artifacts are flat files under
+  `storage/`.
 
-### 4.6 El traslado afirma un plazo y una comparación de precio que no hizo — **[ARREGLADO 2026-08-12]**
+### 4.6 The transfer asserts a lead time and a price comparison it never made — **[FIXED 2026-08-12]**
 
-> **La comparación que no ocurrió** tiene ahora su propio código:
-> `transfer_faster_price_unknown`. Sin costo unitario en ninguna parte el test
-> de precio no corre, y devolver `transfer_faster_and_cheaper` hacía que la
-> pantalla dijera "cuesta menos que comprar" sobre una comparación que nunca
-> pasó. El traslado se sigue aceptando —llegar antes es un argumento real por sí
-> solo— pero bajo una frase que sólo afirma eso.
+> **The comparison that never happened** now has its own code:
+> `transfer_faster_price_unknown`. With no unit cost anywhere the price test does
+> not run, and returning `transfer_faster_and_cheaper` made the screen say "costs
+> less than buying" about a comparison that never took place. The transfer is
+> still accepted — arriving sooner is a real argument on its own — but under a
+> sentence that only asserts that.
 >
-> **El carril inventado** ahora se declara: `lane_is_default` viaja en `params` y
-> la UI agrega la nota de que se calculó con 1 día y costo cero. Ese default es
-> justo el que gana cualquier comparación traslado-vs-compra, así que
-> distinguirlo de una medición no es un detalle.
+> **The invented lane** is now declared: `lane_is_default` travels in `params`
+> and the UI adds the note that it was computed with 1 day and zero cost. That
+> default is precisely the one that wins any transfer-vs-buy comparison, so
+> distinguishing it from a measurement is not a detail.
 
 
-`transfer_lane_service.py:14-18` resuelve un par sin configurar a **1 día y costo
-cero**, y lo dice: *"deliberadamente optimista"*. El carril resuelto lleva
-`is_default: True` y `_evaluate_transfer_lane` nunca lo mete en `params`, así que
-la UI no puede distinguir un carril medido del inventado. Peor: cuando no hay
-costo unitario el test de precio se salta entero, `saving` queda en null — y el
-código igual devuelve `reason_code = "transfer_faster_and_cheaper"`, así que la
-frase sigue afirmando *"cuesta menos que comprar"*. Retiene la cifra y mantiene
-la afirmación.
+`transfer_lane_service.py:14-18` resolves an unconfigured pair at **1 day and
+zero cost**, and says so: *"deliberately optimistic"*. The resolved lane carries
+`is_default: True` and `_evaluate_transfer_lane` never puts it in `params`, so
+the UI cannot tell a measured lane from an invented one. Worse: when there is no
+unit cost the price test is skipped entirely, `saving` stays null — and the code
+still returns `reason_code = "transfer_faster_and_cheaper"`, so the sentence goes
+on asserting *"costs less than buying"*. It withholds the figure and keeps the
+claim.
 
-### 4.7 Más, cortas
+### 4.7 More, in brief
 
-- ~~**`50% anticipo` se lee como 50 días de crédito.**~~ **[ARREGLADO 2026-08-23]** — el tallo se amplió a `anticip|adelant` (= 0 días de crédito), los planes de cuotas (`2x30`, `30/60/90`) devuelven `None` y caen en `unknown_terms` como promete el módulo, y los porcentajes se recortan antes del extractor de números. La misma corrección se aplicó al backfill SQL, porque un test fija la paridad SQL/Python — y ese test pasaba contra el código viejo: SQL y Python estaban **consistentemente equivocados**, que es por qué la paridad sola nunca lo detectó. Original: `cash_service.py:34-37`
-  busca `anticipad`, no `anticipo`. Cae al extractor de números → 50. Reporta
-  `terms_known: True`, contradiciendo la promesa del módulo de que lo ilegible
-  queda en None. Misma familia: `2x30` → 2, `30/60/90` → 30.
-- ~~**Dos escalas de precio de proveedores distintos se fusionan.**~~ **[ARREGLADO 2026-08-23]** — los escalones se agrupan por `(sku, supplier_id)`; se cotiza la escalera del proveedor del SKU, y si el SKU no nombra proveedor gana la mejor escalera **acreditada a quien la ofreció**. Original:
-  `price_break_service.py:298-312` agrupa solo por SKU y nombra al dueño del
-  escalón más bajo. El panel puede decir "Andina: sube a 500 y ahorras ~1400"
-  sobre un precio que Andina nunca ofreció.
-- **No se puede reactivar un proveedor.** **[ARREGLADO COMPLETO 2026-08-23]** — ahora responde 409 con dos códigos distintos (`supplier_name_taken` y `supplier_name_taken_by_deactivated`), porque el siguiente movimiento del usuario es distinto en cada caso; también cubre la carrera de dos inserciones simultáneas. La ruta **sí se construyó** (`POST /inventory/suppliers/{id}/reactivate`, analyst+, idempotente, con par de permisos en test): sin ella la baja era una puerta de un solo sentido y el 409 nombraba una fila que el usuario no podía tocar — un callejón que creaba el propio mensaje de error. **No lleva re-chequeo de nombre**, a propósito: `UNIQUE (tenant_id, name)` no excluye inactivos, así que la colisión que ese chequeo evitaría no puede existir en la base. Una guarda que no puede dispararse se lee como protección y no protege nada. Hay un test que fija ese invariante para el día en que el índice se vuelva parcial. Original: La baja es lógica, no hay ruta de
-  reactivación en ninguna parte, y el índice único no excluye inactivos: volver a
-  darlo de alta con el mismo nombre da un **500 genérico**.
-- ~~**Dar de baja un proveedor saca del control de caja plata que aún debes.**~~ **[LA MITAD DE CAJA, ARREGLADA 2026-08-23]** — cuentas por pagar ahora carga **todos** los proveedores (un activo gana una colisión de nombre); `supplier_service` mantiene su filtro, porque una OC no debe auto-enviarse a un proveedor dado de baja. ~~**La mitad del lead time**~~ **[DECIDIDA Y ARREGLADA 2026-08-23]** — la regla es: dar de baja = **dejar de actuar** hacia el proveedor (no auto-enviar OCs, no ofrecerlo para trabajo nuevo), **no** olvidar lo que sabemos de él. Bajo esa regla el raro era `build_rule_index`, que filtraba activos y hacía caer los SKU al default de 15 días — peor dato que el que el usuario escribió, aplicado sin decir nada. Ya no filtra: las tres fuentes ahora coinciden en no reaccionar. `supplier_service` mantiene su filtro, que es la mitad correcta de la misma regla. Descripción original: tres fuentes reaccionan en tres direcciones distintas a una baja — la tarjeta desaparece (`stock_defaults_service.build_rule_index` filtra activos → los SKU vuelven a 15 días), la regla `stock_defaults` con el mismo nombre **sigue aplicando** (se indexa por texto libre, nunca se une a `suppliers`), y el lead time **aprendido** de recepciones también sigue aplicando. Cerrarlo es una decisión, no un edit local: o la baja corta las tres o no corta ninguna, y cambia las entradas del semáforo para todos los SKU de ese proveedor. Original:
-  `cash_service.py:132-138` solo carga activos, así que una OC enviada e impagada
-  pasa a `unknown_terms` y sale de `committed_total`. Y sus SKU vuelven a 15 días
-  mientras una regla de `stock_defaults` con el mismo nombre sigue aplicando: las
-  dos mitades de "el lead time de este proveedor" reaccionan en direcciones
-  opuestas.
-- **`unit_cost = 0` vuelve un SKU invisible para el optimizador, sin marcarlo.**
-  — **[ARREGLADO 2026-08-22]** Los coeficientes ya se calculaban con
-  `_usable_unit_cost` (un 0 es un blanco que resultó ser número, no un precio),
-  así que el SKU entra al plan con el costo asumido. Lo que seguía mintiendo era
-  la bandera: `assumed_unit_cost` comprobaba `is None`, de modo que esas líneas
-  se reportaban como precio real sobre un `total_cost` calculado con 1.0. Ahora
-  comprueba lo mismo que la matemática, y el SKU o entra marcado o no entra.
-- **Dos compradores pueden recibir dos planes distintos del optimizador.** —
-  **[ARREGLADO 2026-08-22]** El cupo de solves concurrentes era 2 y el motor
-  ejecuta **todos** los solves en un solo hilo dedicado (el arreglo del deadlock
-  de HiGHS, que no se toca): el segundo admitido no resolvía en paralelo, hacía
-  **cola**, y su espera —`time_limit + gracia`, contada desde el submit— se
-  gastaba mientras el primero seguía resolviendo. Al vencer, `optimize()` lo
-  trata como cualquier otro caso sin resolver y devuelve el plan voraz. El cupo
-  ahora es **1**: el segundo comprador recibe un 503 honesto que el navegador
-  reintenta, en vez de un plan silenciosamente distinto. No se pierde nada — ese
-  segundo cupo nunca compró concurrencia, solo una espera que terminaba en
-  degradación.
-- ~~**El aviso de "esto es el atajo" está dentro del bloque que solo se pinta si
-  hay órdenes o traslados.**~~ **[ARREGLADO 2026-08-23]** — es el mismo defecto
-  que la sección 1.quater: la condición ahora incluye `status === 'fallback'` y
-  ese caso tiene copy propio. Original: un atajo que no encuentra nada no
-  mostraba nada, así que "no hay nada que hacer", "degradamos a una regla más
-  simple" y "el problema era demasiado grande" se veían idénticos: un espacio en
-  blanco.
-- **`sku_suppliers.lead_time_days / moq / unit_cost` no llegan a ninguna ruta de
-  planificación** — solo se muestran. `GET /inventory/stock/{sku}/suppliers`
-  responde 60 días; el semáforo planifica sobre 15.
-- **Dos proveedores pueden ser primarios del mismo SKU** y cuál gana es
-  indefinido (dict sin `ORDER BY`, `LIMIT 1` sin orden). Nada compara nunca lead
-  time, costo o MOQ entre dos proveedores: "de cuál conviene comprar" no se
-  responde en ninguna parte.
-- **El costo de bodegaje del 20% nunca se muestra** aunque viaja en el payload, y
-  `/ventas` lo escribe siempre en `business_cfg`, así que parece configurado sin
-  que nadie lo preguntara. La vista de stock muerto usa **25%** fijo.
+- ~~**`50% anticipo` reads as 50 days of credit.**~~ **[FIXED 2026-08-23]** — the
+  stem was widened to `anticip|adelant` (= 0 days of credit), instalment plans
+  (`2x30`, `30/60/90`) return `None` and fall into `unknown_terms` as the module
+  promises, and percentages are stripped before the number extractor. The same
+  correction was applied to the SQL backfill, because a test pins SQL/Python
+  parity — and that test passed against the old code: SQL and Python were
+  **consistently wrong**, which is why parity alone never caught it. Original:
+  `cash_service.py:34-37`
+  looks for `anticipad`, not `anticipo`. Falls through to the number extractor →
+  50. Reports `terms_known: True`, contradicting the module's promise that
+  anything unreadable stays None. Same family: `2x30` → 2, `30/60/90` → 30.
+- ~~**Two price ladders from different suppliers are merged.**~~ **[FIXED
+  2026-08-23]** — the rungs are grouped by `(sku, supplier_id)`; the ladder of
+  the SKU's supplier is quoted, and if the SKU names no supplier the best ladder
+  wins **credited to whoever offered it**. Original:
+  `price_break_service.py:298-312` groups only by SKU and names the owner of the
+  lowest rung. The panel can say "Andina: go up to 500 and save ~1400" about a
+  price Andina never offered.
+- **A supplier cannot be reactivated.** **[FULLY FIXED 2026-08-23]** — it now
+  answers 409 with two distinct codes (`supplier_name_taken` and
+  `supplier_name_taken_by_deactivated`), because the user's next move differs in
+  each case; it also covers the race of two simultaneous inserts. The route
+  **was** built (`POST /inventory/suppliers/{id}/reactivate`, analyst+,
+  idempotent, with a permission pair in test): without it deactivation was a
+  one-way door and the 409 named a row the user could not touch — a dead end
+  created by the error message itself. It carries **no name re-check**, on
+  purpose: `UNIQUE (tenant_id, name)` does not exclude inactive rows, so the
+  collision such a check would prevent cannot exist in the database. A guard that
+  cannot fire reads as protection and protects nothing. There is a test pinning
+  that invariant for the day the index becomes partial. Original: deactivation is
+  logical, there is no reactivation route anywhere, and the unique index does not
+  exclude inactive rows: re-creating it with the same name gives a **generic
+  500**.
+- ~~**Deactivating a supplier takes money you still owe out of the cash
+  view.**~~ **[THE CASH HALF, FIXED 2026-08-23]** — accounts payable now loads
+  **every** supplier (an active one wins a name collision); `supplier_service`
+  keeps its filter, because a PO must not auto-send itself to a deactivated
+  supplier. ~~**The lead-time half**~~ **[DECIDED AND FIXED 2026-08-23]** — the
+  rule is: deactivating = **stop acting** towards the supplier (do not auto-send
+  POs, do not offer them for new work), **not** forget what we know about them.
+  Under that rule the odd one out was `build_rule_index`, which filtered actives
+  and dropped SKUs to the 15-day default — worse data than what the user wrote,
+  applied without saying anything. It no longer filters: the three sources now
+  agree on not reacting. `supplier_service` keeps its filter, which is the
+  correct half of the same rule. Original description: three sources react in
+  three different directions to a deactivation — the card disappears
+  (`stock_defaults_service.build_rule_index` filters actives → the SKUs go back to
+  15 days), the `stock_defaults` rule with the same name **keeps applying** (it is
+  indexed by free text, it never joins `suppliers`), and the lead time **learned**
+  from receptions also keeps applying. Closing it is a decision, not a local edit:
+  either deactivation cuts all three or it cuts none, and it changes the
+  semáforo's inputs for every SKU of that supplier. Original:
+  `cash_service.py:132-138` only loads actives, so a sent and unpaid PO falls to
+  `unknown_terms` and leaves `committed_total`. And its SKUs go back to 15 days
+  while a `stock_defaults` rule with the same name keeps applying: the two halves
+  of "this supplier's lead time" react in opposite directions.
+- **`unit_cost = 0` makes a SKU invisible to the optimiser, without marking it.**
+  — **[FIXED 2026-08-22]** The coefficients were already computed with
+  `_usable_unit_cost` (a 0 is a blank that happened to be a number, not a price),
+  so the SKU enters the plan at the assumed cost. What went on lying was the
+  flag: `assumed_unit_cost` checked `is None`, so those lines were reported as
+  real prices over a `total_cost` computed with 1.0. It now checks the same thing
+  the arithmetic does, and the SKU either enters marked or does not enter.
+- **Two buyers can receive two different plans from the optimiser.** —
+  **[FIXED 2026-08-22]** The concurrent-solve quota was 2 and the engine runs
+  **every** solve on a single dedicated thread (the HiGHS deadlock fix, which is
+  not being touched): the second one admitted did not solve in parallel, it
+  **queued**, and its wait — `time_limit + grace`, counted from submit — was
+  spent while the first was still solving. On expiry, `optimize()` treats it like
+  any other unsolved case and returns the greedy plan. The quota is now **1**:
+  the second buyer gets an honest 503 that the browser retries, instead of a
+  silently different plan. Nothing is lost — that second slot never bought
+  concurrency, only a wait that ended in degradation.
+- ~~**The "this is the shortcut" notice sits inside the block that is only
+  painted when there are orders or transfers.**~~ **[FIXED 2026-08-23]** — it is
+  the same defect as section 1.quater: the condition now includes
+  `status === 'fallback'` and that case has its own copy. Original: a shortcut
+  that finds nothing showed nothing, so "there is nothing to do", "we degraded to
+  a simpler rule" and "the problem was too large" looked identical: a blank
+  space.
+- **`sku_suppliers.lead_time_days / moq / unit_cost` reach no planning path** —
+  they are only displayed. `GET /inventory/stock/{sku}/suppliers` answers 60
+  days; the semáforo plans over 15.
+- **Two suppliers can be primary for the same SKU** and which one wins is
+  undefined (a dict with no `ORDER BY`, a `LIMIT 1` with no order). Nothing ever
+  compares lead time, cost or MOQ between two suppliers: "which one is better to
+  buy from" is answered nowhere.
+- **The 20% holding cost is never shown** although it travels in the payload, and
+  `/ventas` always writes it into `business_cfg`, so it looks configured without
+  anybody having been asked. The dead-stock view uses a fixed **25%**.
+## One refuted finding, and why it matters
 
-## Un hallazgo refutado, y por qué importa
+The supplier agent reported as serious that typing in a stock count overwrites
+the lead time and the MOQ with the model's defaults, sealing them as chosen by
+the user. **It is false for existing rows.**
 
-El agente de proveedores reportó como grave que teclear un conteo de stock
-sobrescribe el lead time y el MOQ con los valores por defecto del modelo,
-sellándolos como elegidos por el usuario. **Es falso para filas existentes.**
+It read `data = body.model_dump(exclude_none=True)` at `inventory.py:145` and
+stopped. At `:162` there is `data = {k: v for k, v in data.items() if k in
+body.model_fields_set}`, and above it a comment describing that exact bug as
+**already fixed**, with the measurement that found it ("a supplier minimum of 100
+became 1 and the recommendation dropped from 100 to 81").
 
-Leyó `data = body.model_dump(exclude_none=True)` en `inventory.py:145` y se
-detuvo. En `:162` hay `data = {k: v for k, v in data.items() if k in
-body.model_fields_set}`, y encima un comentario que describe ese bug exacto como
-**ya arreglado**, con la medición que lo encontró ("un mínimo de proveedor de 100
-se volvió 1 y la recomendación bajó de 100 a 81").
+What is alive is the **new row** case, where the defaults are applied and sealed
+as `user` — which is finding 1.2 through another door.
 
-Lo que sí queda vivo es el caso de **fila nueva**, donde los defaults se aplican
-y se sellan como `user` — que es el hallazgo 1.2 por otra puerta.
+It is written down because the failure mode repeats: read up to the first line
+that confirms the suspicion and stop. Everything marked **[verified]** in this
+document was read in full before being written.
 
-Queda anotado porque el modo de fallo se repite: leer hasta la primera línea que
-confirma la sospecha y parar. Todo lo marcado **[verificado]** en este documento
-se leyó entero antes de escribirlo.
+## What was tested and is solid
 
-## Lo que se probó y está sólido
+This is worth as much as the list of defects, because it says where **not** to
+look:
 
-Vale tanto como la lista de defectos, porque dice dónde **no** hay que buscar:
+- **The semáforo signal has a single authority.** `_calc_signal` is the only
+  place the four values are derived; the aggregate, per-warehouse, briefing,
+  email, PDF, CSV and the public API all read the string it produces. The
+  frontend never re-derives it. The divergences in this document are in the
+  **inputs**, never in a second threshold table.
+- **The order-quantity formula exists exactly once**, and the reorder point, the
+  recommendation and the breakdown all call the same `_safety_stock`.
+- **Champion selection agrees between engine, backend and chart**, with
+  `CHAMPION_METRIC_ORDER` pinned by a parity test. Only the browser disagrees
+  (3.4).
+- **The active session goes through `resolve_active_session`** on every HTTP
+  endpoint and in both schedulers. The WhatsApp bot is the only bypass.
+- **Transfer cycles are structurally impossible**, rounding never invents units,
+  and the 3,692.67-unit regression is closed with a test guarding it.
+- **SKUs with no stock in the file are excluded rather than guessed**, and they
+  travel in the response so they can be shown: the one place where "no data" and
+  "no suggestions" are properly distinguished.
+- **The defaults cascade is correct and well argued**: a rule that leaves a field
+  NULL says nothing, the scope travels to the UI, and it refuses to invent a
+  `unit_cost`.
+- **An MOQ ≤ 0 cannot reach the arithmetic**, thanks to four independent guards.
+- **The economics of price breaks is genuinely good** — holding cost against the
+  discount, a coverage cap, a materiality floor, and rejected opportunities come
+  back with their reason. Its only defect is not filtering by supplier.
+- **Supplier deviation alerts** use a robust IQR, one tail, sigma with a floor
+  and n≥6, with the discarded alternative documented.
+- **`compute_session_accuracy` is the "Best WAPE" defect properly repaired**: it
+  reports the WAPE of the model the numbers came from, excludes baselines, and
+  returns `None` instead of a triumphant 100% over a catalogue that did not sell.
+- **`/hoy`'s KPI row is the best-behaved surface in the product** — "—" instead
+  of a number when there is no count or no cost, the stale-data notice, and the
+  sentence saying the figures do not mean "there is no risk" but "we do not
+  know".
+- **`/pronosticos`' sales-pattern tab** closes every caption with "This is not a
+  prediction", has declared observation minimums and refuses on weekly data. The
+  most honest panel in the app.
+- **The landing's checkable mechanics do hold up**: "by the third reception" = 3
+  exactly, the plan-limits table matches the code, and the semáforo threshold
+  table matches `_calc_signal`.
 
-- **La señal del semáforo tiene una sola autoridad.** `_calc_signal` es el único
-  sitio donde se derivan los cuatro valores; agregado, por bodega, briefing,
-  correo, PDF, CSV y la API pública leen la cadena que produce. El frontend nunca
-  la re-deriva. Las divergencias de este documento están en las **entradas**,
-  nunca en una segunda tabla de umbrales.
-- **La fórmula de cantidad a pedir existe una sola vez**, y el punto de reorden,
-  la recomendación y el desglose llaman al mismo `_safety_stock`.
-- **La elección de campeón coincide entre motor, backend y gráfico**, con
-  `CHAMPION_METRIC_ORDER` fijado por un test de paridad. Solo el navegador
-  discrepa (3.4).
-- **La sesión activa pasa por `resolve_active_session`** en todos los endpoints
-  HTTP y en ambos programadores. El bot de WhatsApp es el único bypass.
-- **Los ciclos de traslado son estructuralmente imposibles**, el redondeo nunca
-  inventa unidades, y la regresión de las 3692,67 unidades está cerrada con test
-  que la guarda.
-- **Los SKU sin stock en archivo se excluyen en vez de adivinarse**, y viajan en
-  la respuesta para poder mostrarse: el único sitio donde "sin datos" y "sin
-  sugerencias" se distinguen bien.
-- **La cascada de valores por defecto es correcta y está bien argumentada**: una
-  regla que deja un campo NULL no dice nada, el alcance viaja a la UI, y se niega
-  a inventar un `unit_cost`.
-- **El MOQ ≤ 0 no puede llegar a la matemática** por cuatro guardias
-  independientes.
-- **La economía de los escalones de precio es genuinamente buena** — costo de
-  bodegaje contra el descuento, tope de cobertura, piso de materialidad, y las
-  oportunidades rechazadas vuelven con su razón. Su único defecto es no filtrar
-  por proveedor.
-- **Las alertas de desviación de proveedor** usan IQR robusto, una cola, sigma
-  con piso y n≥6, con la alternativa descartada documentada.
-- **`compute_session_accuracy` es el defecto de "Mejor WAPE" bien reparado**:
-  reporta el WAPE del modelo del que salieron los números, excluye baselines, y
-  devuelve `None` en vez de un 100% triunfal sobre un catálogo que no vendió.
-- **La fila de KPI de `/hoy` es la superficie mejor comportada del producto** —
-  "—" en vez de un número cuando no hay conteo o no hay costo, el aviso de datos
-  viejos, y la frase que dice que las cifras no significan "no hay riesgo" sino
-  "no sabemos".
-- **La pestaña de patrón de ventas de `/pronosticos`** cierra cada leyenda con
-  "No es una predicción", tiene mínimos de observaciones declarados y se niega
-  en datos semanales. El panel más honesto de la app.
-- **Las mecánicas comprobables de la landing sí se sostienen**: "a la tercera
-  recepción" = 3 exacto, la tabla de límites de plan coincide con el código, y la
-  tabla de umbrales del semáforo coincide con `_calc_signal`.
+## Order of work
 
-## Orden de trabajo
+1. ~~Fix `ConfirmDialog` — all three defects.~~ **Done** (`bd38436`): the pending
+   resolver is settled before the second confirmation overwrites it, it closes on
+   `Escape` and it traps focus.
+2. ~~The six from the sweep that needed no new capability.~~ **Done**
+   (`3e0bde6`): 1.1, 1.5, 1.6, 3.2, 3.5, the panel half of 1.2, and the 3.8 that
+   appeared inside it.
+3. ~~Levels 1 and 2 complete.~~ **Done** (2026-08-12): 1.3, 1.7, 1.8, 2.1, 2.2,
+   2.3, 2.4, 2.5, 2.6, 2.8, plus the 1.9 that appeared inside. Two owner
+   decisions were written into their findings: `moq` is a **minimum**, and
+   `/impacto` is corrected **by copy**, not by changing figures that have already
+   been emailed out.
+4. ~~Level 3, except what is excluded.~~ **Done** (2026-08-12): 3.1, 3.4 and 3.7.
+   3.2, 3.5 and 3.8 already came from `3e0bde6`; **3.3 is out of scope** by the
+   owner's decision (WhatsApp bot) and **3.6 needs new capability**.
+5. Level 4 — claims with nothing behind them. **In progress.**
+6. Run the full suite **once, with nothing else on top** (`python
+   scripts/run_tests.py`). The 2026-08-12 run took 3 hours instead of 36 minutes
+   because a loose pytest and a parallel `tsc` were left running: that is load,
+   not defects, and it ruins the timing-sensitive tests.
+7. Walk `/api`: the redesign, a write end to end, upload and `train`.
+8. Go down the table in section 2, screen by screen, fixing what appears and
+   recording the walk in `screen-inventory.md`.
+9. With a green light: raise the test tenant's plan and walk the three in
+   section 3.
 
-1. ~~Arreglar `ConfirmDialog` — los tres defectos.~~ **Hecho** (`bd38436`): el
-   resolver pendiente se resuelve antes de que la segunda confirmación lo pise,
-   cierra con `Escape` y atrapa el foco.
-2. ~~Los seis del barrido que no necesitaban capacidad nueva.~~ **Hecho**
-   (`3e0bde6`): 1.1, 1.5, 1.6, 3.2, 3.5, la mitad de panel de 1.2, y el 3.8 que
-   apareció adentro.
-3. ~~Los niveles 1 y 2 completos.~~ **Hecho** (2026-08-12): 1.3, 1.7, 1.8, 2.1,
-   2.2, 2.3, 2.4, 2.5, 2.6, 2.8, más el 1.9 que apareció adentro. Dos
-   decisiones del dueño quedaron escritas en sus hallazgos: `moq` es un
-   **mínimo**, y `/impacto` se corrige **por copy**, no cambiando cifras que ya
-   se enviaron por correo.
-4. ~~El nivel 3, salvo lo excluido.~~ **Hecho** (2026-08-12): 3.1, 3.4 y 3.7.
-   3.2, 3.5 y 3.8 ya venían de `3e0bde6`; **3.3 está fuera de alcance** por
-   decisión del dueño (bot de WhatsApp) y **3.6 necesita capacidad nueva**.
-5. El nivel 4 — afirmaciones sin respaldo. **En curso.**
-6. Correr la suite completa **una sola vez y sin nada más encima** (`python
-   scripts/run_tests.py`). La corrida del 2026-08-12 tardó 3 horas en vez de 36
-   minutos porque se le dejó pytest suelto y un `tsc` en paralelo: eso es carga,
-   no defectos, y arruina los tests sensibles a tiempo.
-7. Caminar `/api`: el rediseño, una escritura de punta a punta, subida y `train`.
-8. Bajar por la tabla de la sección 2, pantalla por pantalla, arreglando lo que
-   aparezca y anotando la caminata en `inventario-pantallas.md`.
-9. Con luz verde: subir el plan del tenant de prueba y caminar las tres de la
-   sección 3.
+**Still open, and none of it is an oversight:**
 
-**Sigue abierto, y nada de esto es un descuido:**
-
-| Qué | Por qué no se hizo |
+| What | Why it was not done |
 |---|---|
-| La mitad de importación de **1.2** | Necesita la columna `current_stock_set_by`. Capacidad nueva. |
-| El guardia de sobrestock de **1.7** | Recortar por debajo del mínimo del proveedor da una cantidad que no se puede pedir; marcarla como hace `price_break_service` es un campo nuevo en la fila. |
-| La lista de "sólo le falta el lead time" de **1.3** | Segunda lista en la respuesta y sección nueva en la pantalla. |
-| La deduplicación de "Exportar OC" de **2.2** | Tres clics siguen escribiendo tres OC. Necesita decidir qué es un duplicado. |
-| El `9999` de **4.4** | `coverage_days = 9999` con demanda media 0 da SOBRESTOCK. Cambia el veredicto del semáforo para toda una clase de SKU: decisión de producto. |
-| **3.3** (bot de WhatsApp) | Fuera de alcance por decisión del dueño. |
-| Cuatro cortas de **4.7** | `sku_suppliers.*` no llega a ninguna ruta de planificación; dos proveedores pueden ser primarios del mismo SKU sin desempate; el 20% de bodegaje no se muestra y stock muerto usa 25% fijo. |
+| The import half of **1.2** | Needs the `current_stock_set_by` column. New capability. |
+| The overstock guard of **1.7** | Trimming below the supplier's minimum gives a quantity that cannot be ordered; flagging it the way `price_break_service` does is a new field on the row. |
+| The "only the lead time is missing" list of **1.3** | A second list in the response and a new section on the screen. |
+| The deduplication of "Export PO" in **2.2** | Three clicks still write three POs. Needs a decision on what a duplicate is. |
+| The `9999` of **4.4** | `coverage_days = 9999` with mean demand 0 gives SOBRESTOCK. It changes the semáforo's verdict for a whole class of SKU: a product decision. |
+| **3.3** (WhatsApp bot) | Out of scope by the owner's decision. |
+| Four short ones from **4.7** | `sku_suppliers.*` reaches no planning path; two suppliers can be primary for the same SKU with no tie-break; the 20% holding cost is not shown and dead stock uses a fixed 25%. |
 
-*(El 3.6 y los niveles 3 y 4 salieron de esta tabla el 2026-08-23: sus
-encabezados los marcan arreglados, y listarlos aquí hacía parecer que quedaba
-más trabajo del que queda.)*
-
----
-
-## Dos cosas que son decisión del dueño, no arreglos
-
-- **Subir el plan del tenant de prueba**, para caminar escenarios,
-  integraciones, proveedores y los muros desde el otro lado.
-- **Tests end-to-end del frontend.** Es la única forma de que "sin bugs" se
-  sostenga en el tiempo en vez de repetirse a mano en cada cambio. Pero es
-  **capacidad nueva**, no un arreglo, así que no se empieza sin que se pida.
+*(3.6 and levels 3 and 4 left this table on 2026-08-23: their headings mark them
+fixed, and listing them here made it look as if more work was left than there
+is.)*
 
 ---
 
-# 2026-08-16 — un solo plan, y la simulación de eventos caminada
+## Two things that are the owner's decision, not fixes
 
-## Los planes se fueron (decisión del dueño)
-
-Faro vendía tres escalones —starter / professional / enterprise— con un set de
-funciones cada uno y una suscripción de Stripe detrás. **Ahora hay un producto
-solo: todo incluido, sin topes de productos, usuarios, bodegas ni sesiones, y el
-precio se habla con nosotros.** Lo que se hizo:
-
-- **Backend.** `entitlements/plans.py` pasa de un catálogo de tres a un `PLAN`
-  con los dos únicos techos que quedan, y son de infraestructura, no de venta:
-  8 trabajos concurrentes y 2 GB por archivo. `require_feature` y `has_feature`
-  **se borraron** en vez de quedarse contestando que sí a todo: una autorización
-  que no puede decir que no se lee como un guardia y no guarda nada. Con eso
-  cayeron ~40 muros de ruta, el recorte de ABC-XYZ en `/dead-stock` y los dos
-  guardias de WhatsApp del correo diario y del recordatorio de frescura.
-- **Stripe, borrado entero**: `backend/billing/`, su router, el webhook, sus
-  ajustes de configuración y su test. La migración nueva **suelta** la tabla
-  `stripe_events` y las cuatro columnas que solo existían para eso, incluida
-  `tenants.plan` — una columna muerta que nadie lee es la que alguien vuelve a
-  leer por error dos años después. `trial_ends_at` y `quota` se quedan: la
-  primera se sigue aplicando, la segunda es cómo se le ensancha el límite a **un**
-  cliente sin un deploy, y ahora es el único mecanismo que lo hace.
-- **`GET /entitlements`** ya no reporta `plan`, `features` ni `feature_plans`.
-  Devuelve el estado de la prueba, los límites y `read_only`, que es lo único
-  que todavía decide algo. Un mapa de funciones que contesta `true` a todo solo
-  invita al navegador a seguir preguntando.
-- **Frontend.** Fuera `/planes`, el panel de facturación de `/mi-cuenta`,
-  `FeatureGate` y el filtrado por función del sidebar y de la paleta de
-  comandos. El aviso de prueba vencida ya no manda a comparar planes: pide que
-  nos escriban.
-- **Copy.** La landing pierde la tabla de tres columnas, el "¿qué plan me toca?"
-  y las menciones de escalón en el FAQ; la sección de precio dice lo que es
-  cierto —un plan, todo adentro, el precio se arma sobre la operación— y ofrece
-  escribirnos. La guía de usuario (`docs/help/index.html`) pierde sus 15
-  insignias de "Profesional" y su tabla de límites. `docs/api-publica.md` deja de
-  decir "incluida desde Professional" y de prometer un techo por escalón.
-- **Tests.** Los que existían para probar el muro fueron reescritos como lo
-  contrario: que la ruta **responda** con `testing_mode` apagado, que era el
-  interruptor que encendía el muro. Los de límites siguen vivos con un `quota`
-  explícito, porque lo que probaban era el **bypass** —importar por CSV se
-  saltaba `max_locations`— y ese agujero sigue mereciendo un guardia aunque el
-  número por defecto ya no exista.
-
-## La simulación de eventos, caminada en navegador
-
-Con el muro fuera, `/escenarios` y el panel "Eventos y temporadas" de
-`/inventario` se ejercieron a mano el 2026-08-16 contra el tenant de la
-ferretería. Lo que funciona, y lo que no.
-
-**Funciona, verificado contra la aritmética:**
-
-- **Cambio de demanda** ×1,4: 38,8 → 54,4 de demanda diaria, 131 → 240 unidades.
-- **Atraso de proveedor** +7 días: plazo 9 → 16, señal **Pedir pronto → Pedir
-  YA**, 131 → 422 unidades. Esto es el hallazgo **4.2** de este documento visto
-  desde el navegador: antes respondía "este escenario no cambia ninguna decisión".
-- **Simulación de un evento** ×2,0 a 103 días: 38,8 × 4 días × 2 = 310,6, pedir
-  311, "pide antes del 18 de noviembre" (inicio − 9 días de plazo), ₡3 888.
-- **Multiplicador por SKU** ×3,0: 465,9 unidades, y la fila explica de dónde sale
-  el multiplicador ("por SKU" contra "del evento").
-
-**Tres defectos, los tres arreglados el mismo día:**
-
-### E1. El titular pedía una orden con fecha vencida
-
-Evento a 3 días con un proveedor de 9: el titular decía **"Pide antes del 10 de
-agosto"** — seis días en el pasado — mientras la fila del mismo producto decía
-"¡hoy mismo!" y la línea roja de abajo decía que ya era tarde. Tres afirmaciones
-sobre un producto, una de ellas imposible, y la imposible en la frase más grande
-de la pantalla.
-
-`summary.order_before` es el `order_by` **más temprano** entre los productos en
-riesgo, haya pasado o no. Ahora la frase toma el más temprano que **todavía no
-pasó**; los que ya no llegan los cubre la línea roja, que es lo honesto que se
-puede decir de ellos, y si ninguno llega a tiempo la frase desaparece.
-
-### E2. Cambiar el multiplicador de un producto no volvía a simular
-
-Poner SPIKE-01 en ×3,0 guardaba el override y dejaba la tabla mostrando ×2,0 y
-311 unidades. El usuario cambia el número del que sale toda la pantalla y la
-pantalla sigue contestando lo de antes, sin decir que está vieja.
-`MultiplierExplainer` llamaba a `onEdited`, que recargaba **la lista de eventos**
-de la pantalla de atrás y nunca la simulación. Ahora vuelve a simular, y a
-propósito **no** borra el resultado anterior mientras tanto: el editor donde el
-usuario está escribiendo solo se pinta cuando hay resultado, y vaciarlo se lo
-quitaría de debajo de las manos.
-
-### E3. El titular y el pie describían un cálculo que no ocurrió
-
-Con el override aplicado, arriba decía "+100% de demanda" y el pie "× 4 días ×
-2.0" mientras la única fila corría a ×3,0. Los dos números salían de
-`ev.multiplier` —el del evento— y no de lo que se aplicó. Ahora salen de
-`multipliers_applied`, que el backend ya mandaba: si todos los productos
-comparten multiplicador, la frase lo nombra; si no, deja de afirmar un único
-"+X%" y dice que cada producto lleva el suyo (cinco llaves nuevas de copy, es/en).
-
-**Lo que no se pudo ver en pantalla:** el caso de multiplicadores mezclados se
-verificó por API (200 SKUs, uno con override: `multipliers_applied` devuelve dos
-entradas) y por código, no en el navegador — la sesión de esa prueba es semanal y
-el tenant está en día, así que la pantalla no la toma sin cambiar el período.
-
-**Lo que sigue sin caminar del simulador:** la pestaña "Calendario LatAm"
-(sembrar el catálogo de temporadas), editar y borrar un evento, el multiplicador
-por familia y por categoría, y el simulador en un tenant semanal o mensual.
+- **Raising the test tenant's plan**, to walk scenarios, integrations, suppliers
+  and the walls from the other side.
+- **End-to-end frontend tests.** It is the only way "no bugs" holds over time
+  instead of being repeated by hand on every change. But it is **new
+  capability**, not a fix, so it does not start until it is asked for.
 
 ---
 
-## 6. Tecnología — tres huecos de infraestructura (2026-09-01)
+# 2026-08-16 — one plan only, and the event simulation walked
 
-Salieron de revisar qué tecnología falta para que la app sea mejor "en
-general", no de caminar una pantalla. Verificado en el código, no adivinado:
-no hay Sentry/structlog/OpenTelemetry en `backend/` (grep sin resultados), no
-hay Redis/Celery (`workers/worker.py` usa `ThreadPoolExecutor` + la tabla
-`jobs`), y la búsqueda de RAG **ya** corre sobre Pinecone + Voyage AI
-(`backend/ai/rag_service.py`) — eso no falta, ya está.
+## The plans are gone (owner's decision)
 
-### a) El login por formulario y la subida de CSV no tenían script — **[HECHO 2026-09-01]**
+Faro sold three tiers — starter / professional / enterprise — with a feature set
+each and a Stripe subscription behind them. **Now there is a single product:
+everything included, no ceilings on products, users, warehouses or sessions, and
+the price is discussed with us.** What was done:
 
-Corrección a lo que decía esta entrada: **no es cierto que Playwright
-estuviera sin usar.** `Frontend/tests/smoke.mjs` existe desde el 2026-07-29 y
-ya cubre regresiones de layout/render en 8 pantallas — pero inicia sesión
-inyectando el token por `fetch('/api/auth/login')`, así que nunca ejercita el
-**formulario** de `/login`, y no toca `/ventas` en absoluto. Ninguno de los
-dos está en `run_tests.py`; se corren a mano, como ya hacía `smoke.mjs`.
+- **Backend.** `entitlements/plans.py` goes from a catalogue of three to one
+  `PLAN` with the only two ceilings left, and they are infrastructural, not
+  commercial: 8 concurrent jobs and 2 GB per file. `require_feature` and
+  `has_feature` **were deleted** rather than left answering yes to everything: an
+  authorisation that cannot say no reads as a guard and guards nothing. With that
+  went ~40 route walls, the ABC-XYZ trim in `/dead-stock` and the two WhatsApp
+  guards on the daily email and the freshness reminder.
+- **Stripe, deleted entirely**: `backend/billing/`, its router, the webhook, its
+  configuration settings and its test. The new migration **drops** the
+  `stripe_events` table and the four columns that existed only for it, including
+  `tenants.plan` — a dead column nobody reads is the one somebody reads by
+  mistake two years later. `trial_ends_at` and `quota` stay: the first is still
+  enforced, the second is how **one** customer's limit gets widened without a
+  deploy, and it is now the only mechanism that does it.
+- **`GET /entitlements`** no longer reports `plan`, `features` or
+  `feature_plans`. It returns the trial state, the limits and `read_only`, which
+  is the only thing that still decides anything. A feature map that answers
+  `true` to everything only invites the browser to keep asking.
+- **Frontend.** Out went `/planes`, the billing panel in `/mi-cuenta`,
+  `FeatureGate` and the feature filtering of the sidebar and the command palette.
+  The expired-trial notice no longer sends you to compare plans: it asks you to
+  write to us.
+- **Copy.** The landing loses the three-column table, the "which plan is for me?"
+  and the tier mentions in the FAQ; the pricing section says what is true — one
+  plan, everything in, the price is built around the operation — and offers to be
+  written to. The user guide (`docs/help/index.html`) loses its 15 "Professional"
+  badges and its limits table. `docs/public-api.md` stops saying "included from
+  Professional" and stops promising a per-tier ceiling.
+- **Tests.** The ones that existed to prove the wall were rewritten as the
+  opposite: that the route **answers** with `testing_mode` off, which was the
+  switch that turned the wall on. The limit tests are still alive with an
+  explicit `quota`, because what they tested was the **bypass** — importing by
+  CSV skipped `max_locations` — and that hole still deserves a guard even though
+  the default number no longer exists.
+## The event simulation, walked in a browser
 
-Nuevo: `Frontend/tests/critical_flows.mjs`, mismo estilo (`playwright` crudo,
-sin `@playwright/test` — esa dependencia no está instalada y no hacía falta
-agregarla). Cubre lo que `smoke.mjs` no cubría:
+With the wall gone, `/escenarios` and the "Events and seasons" panel of
+`/inventario` were exercised by hand on 2026-08-16 against the hardware-store
+tenant. What works, and what does not.
 
-- El formulario de `/login`: contraseña incorrecta se queda en la pantalla y
-  muestra el error; la correcta entra y guarda un token real.
-- Alta nueva (`/signup`, dominio `@faro-e2e.io`, no toca el tenant demo) →
-  verificación de correo → login → subir `scripts/sample_sales.csv` en
-  `/ventas` → llega al paso de mapeo de columnas, sin errores de consola.
+**Works, verified against the arithmetic:**
 
-**Un defecto de infraestructura de prueba, no del producto, encontrado
-escribiéndolo:** `next dev` compila cada ruta la primera vez y adjunta los
-manejadores de React recién después de hidratar. Un clic en el botón antes de
-eso cae al **envío nativo del HTML**, un GET de página completa a
-`/login?email=...&password=...` — la contraseña queda en la URL y en el
-historial del navegador, y el estado de React se pierde. `submitFormSafely()`
-lo detecta por la firma (`?` pegado a la misma ruta) y reintenta una vez tras
-recargar. No se ve en producción (el build no tiene esta ventana de
-hidratación en frío), pero confirma que **NO se debe interactuar con un
-formulario antes de que termine de cargar** — vale para cualquier script que
-toque estas pantallas.
+- **Demand change** ×1.4: 38.8 → 54.4 daily demand, 131 → 240 units.
+- **Supplier delay** +7 days: lead time 9 → 16, signal **Pedir pronto → Pedir
+  YA**, 131 → 422 units. This is finding **4.2** of this document seen from the
+  browser: before, it answered "this scenario changes no decision".
+- **Event simulation** ×2.0 at 103 days: 38.8 × 4 days × 2 = 310.6, order 311,
+  "order before 18 November" (start − 9 days of lead time), ₡3,888.
+- **Per-SKU multiplier** ×3.0: 465.9 units, and the row explains where the
+  multiplier comes from ("per SKU" versus "from the event").
 
-**Sigue sin walkear:** generar una orden de compra desde el semáforo. Pedía
-una sesión ya entrenada (datos reales, minutos de cómputo) para tener algo
-sobre lo que generar la OC, y quedó fuera del alcance de esta pasada — se
-puede retomar con una sesión sembrada por `seed_demo.py` en vez de entrenar
-una desde cero.
+**Three defects, all three fixed the same day:**
 
-Verificado corriendo `node tests/critical_flows.mjs` contra la app real
-(backend :8011, frontend :5000, `faro_db` en :5544): 8/8 repetido.
+### E1. The headline asked for an order with a date already past
 
-**Pulido 2026-09-01, tras encontrar el choque con `demo@faro.app`:** el
-bloque de login ya no reusa la cuenta demo — usa la misma cuenta fresca de
-`@faro-e2e.io` que el resto de la corrida, así que dos corridas seguidas no
-se pisan con el límite de 5 intentos/5min de `POST /auth/login`
-(`auth.py:285`). Verificado dos veces seguidas sin pausa: 7/7 en ambas.
+An event 3 days out with a 9-day supplier: the headline said **"Order before 10
+August"** — six days in the past — while the row for the same product said "today!"
+and the red line below said it was already too late. Three claims about one
+product, one of them impossible, and the impossible one in the largest sentence
+on the screen.
 
-**Limpieza agregada:** `backend/scripts/cleanup_e2e_tenants.py` borra todo
-tenant cuyo usuario sea `@faro-e2e.io` (`ON DELETE CASCADE` se lleva el
-resto). El script de e2e la corre sola al final de cada corrida, best-effort.
-Se encontraron y borraron **261 tenants** acumulados desde el 2026-07-27 —
-no eran de esta sesión, eran meses de pruebas anteriores sin limpiar.
+`summary.order_before` is the **earliest** `order_by` among the products at risk,
+whether it has passed or not. The sentence now takes the earliest that has **not**
+passed; the ones that no longer arrive in time are covered by the red line, which
+is the honest thing that can be said about them, and if none arrives in time the
+sentence disappears.
 
-### b) No había registro de métricas de entrenamiento — **[HECHO 2026-09-01, tabla propia]**
+### E2. Changing a product's multiplier did not re-simulate
 
-Decisión del dueño: tabla propia en Postgres, no MLflow — cero infraestructura
-nueva. `engine.get_metrics()` (`ForecastingCore/forecasting_core/engine.py:848`)
-**ya** calcula `by_model`: MAE/RMSE/WAPE/bias/MAPE/SMAPE promedio por modelo,
-en cada corrida — solo vivía en `session_results.training_result`, un JSONB
-que la corrida siguiente **sobrescribe**. No había dónde comparar "el
-LightGBM de esta sesión contra el de hace dos semanas".
+Setting SPIKE-01 to ×3.0 saved the override and left the table showing ×2.0 and
+311 units. The user changes the number the whole screen is derived from and the
+screen keeps answering what it answered before, without saying it is stale.
+`MultiplierExplainer` called `onEdited`, which reloaded **the event list** of the
+screen behind and never the simulation. It now re-simulates, and deliberately
+does **not** clear the previous result meanwhile: the editor the user is typing
+in is only painted when there is a result, and emptying it would pull it out from
+under their hands.
 
-Se agregó:
-- Migración `create_training_run_metrics` (`backend/db/migrations.py`): tabla
-  `training_run_metrics` (`tenant_id, session_id, model` + las seis métricas +
-  `trained_at`), `UNIQUE (session_id, model)` — reentrenar la misma sesión
-  sobrescribe su fila, igual que ya hace `session_results`, en vez de
-  acumular duplicados.
-- `backend/training/metrics_history.py` — `record_training_metrics()` hace el
-  upsert; `list_metrics_for_tenant()` queda listo para cuando se decida
-  mostrarlo en pantalla (eso **no** se hizo — es capacidad de UI nueva, fuera
-  de esta pasada).
-- `runner.py`, justo después de `engine.get_metrics()`: la escritura está en
-  `try/except` **no fatal** — un fallo ahí jamás puede tumbar un
-  entrenamiento, mismo patrón que el resto de escrituras no críticas de ese
-  archivo (`Inventory stock sync failed (non-fatal)`, etc.).
+### E3. The headline and the footer described a calculation that never happened
 
-**Verificado con DB real, no solo con el mock:** dos tests nuevos en
-`test_integration_forecasting.py` corren el pipeline de entrenamiento
-(mockeado) contra `faro_db` de verdad y hacen `SELECT` directo sobre
-`training_run_metrics` — `test_e2e_training_records_model_metrics_history` (la
-fila existe, con los números correctos) y
-`test_retraining_the_same_session_overwrites_its_metrics_row` (reentrenar dos
-veces deja **una** fila, no dos). Los 10 tests de ese archivo pasan.
+With the override applied, the top said "+100% demand" and the footer "× 4 days ×
+2.0" while the only row ran at ×3.0. Both numbers came from `ev.multiplier` — the
+event's — and not from what was applied. They now come from
+`multipliers_applied`, which the backend was already sending: if every product
+shares a multiplier, the sentence names it; if not, it stops asserting a single
+"+X%" and says each product carries its own (five new copy keys, es/en).
 
-**Lo que falta y es decisión aparte:** ninguna pantalla lee esta tabla
-todavía. Mostrarla (en `/historial` o `/pronosticos`, como sea) es exactamente
-el tipo de capacidad nueva que este documento pide anunciar antes de construir
-— la tabla existe para que esa decisión ya tenga datos con qué trabajar.
+**What could not be seen on screen:** the mixed-multiplier case was verified over
+the API (200 SKUs, one with an override: `multipliers_applied` returns two
+entries) and in the code, not in the browser — that test's session is weekly and
+the tenant is on daily, so the screen does not pick it up without changing the
+period.
 
-### c) `storage/` no tiene backup declarado — **SIN ARREGLAR, decisión del dueño**
-
-Los datasets subidos y los artefactos de modelos entrenados viven en disco
-local bajo `storage/` (gitignored, confirmado en `CLAUDE.md`). No hay ninguna
-rutina de respaldo en el repo: si el disco se corrompe o el contenedor se
-recrea sin el volumen, se pierde tanto lo que subió el usuario como lo que el
-entrenamiento produjo — no solo archivos, sesiones enteras quedan huérfanas.
-Necesita una decisión del dueño sobre **el destino** (a dónde se copia) y
-**la frecuencia**, porque las dos opciones razonables son de tamaño distinto:
-un script de respaldo programado (barato, no cambia código de negocio) o
-migrar el storage a algo S3-compatible (más grande, toca cómo se leen y
-escriben los archivos en todo `backend/`).
+**Still unwalked in the simulator:** the "LatAm calendar" tab (seeding the season
+catalogue), editing and deleting an event, the per-family and per-category
+multiplier, and the simulator on a weekly or monthly tenant.
 
 ---
 
-## 7. Recorrido de /compras, /pedidos, /inventario (2026-09-01)
+## 6. Technology — three infrastructure gaps (2026-09-01)
 
-Primera pasada del pedido del dueño de validar el resto de pantallas, más
-allá de login/subida. El conector `claude-in-chrome` no estaba disponible
-(extensión no conectada), así que el recorrido usó Playwright headless con el
-tenant demo sembrado — mismo mecanismo que `critical_flows.mjs`, sin dejar
-script permanente por esta pasada.
+These came from reviewing what technology is missing for the app to be better
+"in general", not from walking a screen. Verified in the code, not guessed: there
+is no Sentry/structlog/OpenTelemetry in `backend/` (grep returns nothing), there
+is no Redis/Celery (`workers/worker.py` uses a `ThreadPoolExecutor` + the `jobs`
+table), and RAG search **already** runs on Pinecone + Voyage AI
+(`backend/ai/rag_service.py`) — that is not missing, it is already there.
 
-**Lo que se verificó:** la carga inicial y el contenido visible de las tres
-pantallas, con capturas de pantalla completas. **Lo que no:** los flujos
-internos que ya lista la tabla de arriba (envío a proveedores, registrar
-salida, nueva orden manual, etc.) — siguen sin caminar.
+### a) The form login and the CSV upload had no script — **[DONE 2026-09-01]**
 
-### /pedidos — sin hallazgos
+A correction to what this entry used to say: **it is not true that Playwright was
+unused.** `Frontend/tests/smoke.mjs` has existed since 2026-07-29 and already
+covers layout/render regressions on 8 screens — but it signs in by injecting the
+token through `fetch('/api/auth/login')`, so it never exercises the `/login`
+**form**, and it does not touch `/ventas` at all. Neither of the two is in
+`run_tests.py`; they are run by hand, as `smoke.mjs` already was.
 
-Carga limpia con datos reales: 4 órdenes en los tres estados que produce el
-demo (en camino, parcial, recibida), botones de acción visibles (Registrar
-llegada, Enviar pedido, Abrir en WhatsApp, Copiar mensaje). Nada que reportar
-en esta pasada.
+New: `Frontend/tests/critical_flows.mjs`, same style (raw `playwright`, no
+`@playwright/test` — that dependency is not installed and there was no need to
+add it). It covers what `smoke.mjs` did not:
 
-### /inventario — sin hallazgos, un falso positivo descartado en el camino
+- The `/login` form: a wrong password stays on the screen and shows the error;
+  the right one gets in and stores a real token.
+- New signup (`/signup`, `@faro-e2e.io` domain, does not touch the demo tenant) →
+  email verification → login → upload `scripts/sample_sales.csv` in `/ventas` →
+  reach the column-mapping step, with no console errors.
 
-El semáforo de 40 SKUs, los KPIs y los filtros por bodega cargan
-correctamente. **Nota metodológica, no de producto:** una primera captura con
-espera corta (6s) mostró la lista de SKUs completamente vacía bajo el
-buscador — parecía un defecto de render. Con más espera (14s) todo apareció;
-el contenido ya estaba en el DOM (confirmado con `getBoundingClientRect`:
-`opacity:1`, tamaños reales, nada colapsado) — la captura simplemente se tomó
-a mitad de un fetch todavía en vuelo. Se deja anotado porque cualquier script
-futuro que camine esta pantalla puede caer en la misma trampa.
+**A test-infrastructure defect, not a product one, found while writing it:**
+`next dev` compiles each route the first time and attaches React's handlers only
+after hydrating. A click on the button before that falls through to the **native
+HTML submit**, a full-page GET to `/login?email=...&password=...` — the password
+ends up in the URL and in the browser history, and React's state is lost.
+`submitFormSafely()` detects it by the signature (a `?` glued to the same route)
+and retries once after reloading. It does not show up in production (the build
+has no cold-hydration window like this), but it confirms that **you must NOT
+interact with a form before it finishes loading** — which holds for any script
+touching these screens.
 
-### /compras — un hallazgo real: el resumen ejecutivo compite con su propio timeout
+**Still unwalked:** generating a purchase order from the semáforo. It needed an
+already-trained session (real data, minutes of compute) to have something to
+generate the PO over, and it fell outside this pass's scope — it can be picked up
+with a session seeded by `seed_demo.py` instead of training one from scratch.
 
-`NarrativeCard` ("Resumen ejecutivo del día") llama a `POST
-/ai/narrative/morning` (DeepSeek) en cada carga de la pantalla principal del
-producto. Medido directo contra el backend: **8,8 segundos** de respuesta
-real. El cliente (`compras/page.tsx:945-948`) le pone un timeout local de
-**8000ms** antes de rendirse al texto de reglas — es decir, en el caso
-*normal*, no en el degradado, el timeout local vence **antes** de que la
-respuesta real llegue. El usuario ve el texto genérico de reglas por una
-fracción de segundo y, al instante, se lo reemplaza el texto real de la IA
-cuando la petición sí contesta — un parpadeo visible en la pantalla que un
-comprador mira todas las mañanas.
+Verified by running `node tests/critical_flows.mjs` against the real app
+(backend :8011, frontend :5000, `faro_db` on :5544): 8/8, repeated.
 
-Verificado en pantalla: con 14s de espera el recuadro seguía en "Analizando
-datos…"; con 22s ya mostraba el análisis completo ("Situación actual",
-"Riesgos prioritarios", "Oportunidades").
+**Polished 2026-09-01, after finding the clash with `demo@faro.app`:** the login
+block no longer reuses the demo account — it uses the same fresh `@faro-e2e.io`
+account as the rest of the run, so two consecutive runs do not collide with the
+5-attempts/5-min limit of `POST /auth/login` (`auth.py:285`). Verified twice in a
+row with no pause: 7/7 both times.
 
-**Un segundo hallazgo relacionado, más chico:** el botón "Refresh" del mismo
-recuadro (`onRefresh`, `compras/page.tsx:1522`) no tiene el timeout de 8s que
-sí tiene la carga inicial — si DeepSeek está lento o caído, pulsar "Refresh"
-deja el spinner girando sin salida hasta que la petición conteste o falle por
-su cuenta.
+**Cleanup added:** `backend/scripts/cleanup_e2e_tenants.py` deletes every tenant
+whose user is `@faro-e2e.io` (`ON DELETE CASCADE` takes the rest). The e2e script
+runs it itself at the end of each run, best-effort. It found and deleted **261
+tenants** accumulated since 2026-07-27 — they were not from this session, they
+were months of earlier tests left uncleaned.
 
-**Qué se pregunta antes de tocar el código:** subir el timeout local a
-~10-12s (menos parpadeo, un poco más de espera visible) vs. cachear la
-respuesta por sesión/día (el resumen no cambia salvo que cambien los datos)
-vs. dejarlo como está. **Decisión del dueño (2026-09-01): subir el timeout.**
-Hecho — `compras/page.tsx:945-950`, de 8000ms a 11000ms. Verificado con
-Playwright: en la corrida de confirmación, el recuadro pasó directo de "sin
-cargar" a "Analizando datos…" (t=13,4s) al texto real de la IA (t=21,5s), sin
-mostrar nunca el texto de reglas de por medio (`sawFallbackFirst: false`). El
-hallazgo del botón "Refresh" sin ese resguardo **sigue sin tocar** — no era
-lo que se pidió arreglar en esta pasada.
+### b) There was no record of training metrics — **[DONE 2026-09-01, own table]**
 
-### /mi-cuenta — un hallazgo real: la columna izquierda deja un vacío del tamaño de la derecha
+Owner's decision: our own table in Postgres, not MLflow — zero new
+infrastructure. `engine.get_metrics()`
+(`ForecastingCore/forecasting_core/engine.py:848`) **already** computes
+`by_model`: average MAE/RMSE/WAPE/bias/MAPE/SMAPE per model, on every run — it
+just lived in `session_results.training_result`, a JSONB the next run
+**overwrites**. There was nowhere to compare "this session's LightGBM against the
+one from two weeks ago".
 
-`mi-cuenta/page.tsx:1333` pone `<ProfileSection />` y el resto de las ocho
-tarjetas (Uso y límites, Moneda, Zona horaria, Idioma/Tema, Granularidad,
-WhatsApp, Mensajes del equipo, Seguridad) en un `grid` de `1fr 1fr`, dos
-columnas, un solo renglón. `ProfileSection` es corta — nombre, correo, rol,
-estado — mientras la columna derecha apila ocho tarjetas y es varias veces
-más alta. CSS Grid estira ambas columnas al alto del renglón por defecto
-(`align-items: stretch`, sin override), así que la columna izquierda queda
-con una caja tan alta como la derecha y **nada que pintar en la mayor parte
-de ella**: un usuario que baja la página ve una tarjeta corta a la izquierda
-y, debajo, un vacío blanco del tamaño de toda la pantalla mientras la derecha
-sigue mostrando tarjetas.
+What was added:
+- Migration `create_training_run_metrics` (`backend/db/migrations.py`): table
+  `training_run_metrics` (`tenant_id, session_id, model` + the six metrics +
+  `trained_at`), `UNIQUE (session_id, model)` — retraining the same session
+  overwrites its row, exactly as `session_results` already does, instead of
+  piling up duplicates.
+- `backend/training/metrics_history.py` — `record_training_metrics()` does the
+  upsert; `list_metrics_for_tenant()` is ready for whenever showing it on screen
+  is decided (that was **not** done — it is new UI capability, outside this
+  pass).
+- `runner.py`, right after `engine.get_metrics()`: the write is in a **non-fatal**
+  `try/except` — a failure there can never bring down a training run, the same
+  pattern as the rest of that file's non-critical writes (`Inventory stock sync
+  failed (non-fatal)`, etc.).
 
-Verificado con capturas y con `getBoundingClientRect` sobre el nodo de
-"Perfil de Usuario": el contenido existe y tiene tamaño real, simplemente
-termina mucho antes que su columna. No es un defecto de datos ni de carga
-— es el `grid` sin `align-items: start` (o sin repartir las tarjetas para
-equilibrar el alto de las dos columnas).
+**Verified against a real DB, not only the mock:** two new tests in
+`test_integration_forecasting.py` run the (mocked) training pipeline against the
+real `faro_db` and `SELECT` directly on `training_run_metrics` —
+`test_e2e_training_records_model_metrics_history` (the row exists, with the right
+numbers) and `test_retraining_the_same_session_overwrites_its_metrics_row`
+(retraining twice leaves **one** row, not two). All 10 tests in that file pass.
 
-**Decisión del dueño (2026-09-01): arreglarlo.** Hecho —
-`mi-cuenta/page.tsx:1333`, se agregó `alignItems: 'start'` al grid.
-Verificado con Playwright: antes del cambio la columna izquierda medía
-2103px de alto (igual que la derecha, con todo ese espacio vacío bajo la
-tarjeta de perfil); después mide 258px — su alto real, sin estirarse. Captura
-de pantalla confirma la columna izquierda terminando naturalmente después de
-"Perfil de Usuario" mientras la derecha sigue con sus ocho tarjetas.
+**What is missing and is a separate decision:** no screen reads this table yet.
+Showing it (in `/historial` or `/pronosticos`, whichever) is exactly the kind of
+new capability this document asks to be announced before building — the table
+exists so that decision already has data to work with.
 
-### /pronosticos, /proveedores, /archivos — sin hallazgos
+### c) `storage/` has no declared backup — **UNFIXED, owner's decision**
 
-Las tres cargan completas, con datos reales y sin ningún API call fuera de
-2xx. `/pronosticos` muestra el gráfico de forecast, el selector de modelo, la
-tabla de métricas y el banner de "Encontramos problemas en tus datos" —
-funcional. `/proveedores` (que CLAUDE.md marcaba como "nunca se abrió, solo
-verificada por API") renderiza la tabla completa de proveedores con lead
-time, variabilidad, aprendizaje y acciones — ahora sí caminada, sin
-sorpresas. `/archivos` muestra la fuente de datos conectada ("Ventas Demo
-Faro", 21.640 filas) detrás de un tour guiado de bienvenida que se dispara
-en cada contexto de navegador nuevo (localStorage vacío) — esperado en un
-script que no persiste sesión entre corridas, no un defecto para un usuario
-real que ya lo cerró una vez.
+Uploaded datasets and trained-model artifacts live on local disk under `storage/`
+(gitignored, confirmed in `CLAUDE.md`). There is no backup routine in the repo:
+if the disk corrupts or the container is recreated without the volume, both what
+the user uploaded and what training produced are lost — not just files, whole
+sessions are orphaned. It needs an owner's decision on **the destination** (where
+it is copied to) and **the frequency**, because the two reasonable options are of
+different sizes: a scheduled backup script (cheap, touches no business code) or
+migrating storage to something S3-compatible (larger, touches how files are read
+and written throughout `backend/`).
 
-**Los dos avisos de consola que aparecen en TODAS las pantallas caminadas
-esta pasada** (no solo estas tres) — anotados aquí una vez porque son
-sistémicos, no de una pantalla:
-- `Warning: Extra attributes from the server: %s%s data-theme` — desajuste de
-  hidratación de React sobre el atributo `data-theme` de `<html>`. Aparece en
-  cada carga, incluido `/login`. No se investigó a fondo esta pasada; si
-  vuelve a aparecer al caminar más pantallas, vale la pena rastrear su causa.
-- `Failed to fetch RSC payload... Falling back to browser navigation` — esto
-  es un artefacto del método de prueba (`page.goto()` hace una navegación
-  dura entre rutas; un usuario real navega con `<Link>` del lado del
-  cliente). No se reporta como hallazgo de producto.
+---
+## 7. Walk of /compras, /pedidos, /inventario (2026-09-01)
+
+First pass at the owner's request to validate the rest of the screens, beyond
+login/upload. The `claude-in-chrome` connector was unavailable (extension not
+connected), so the walk used headless Playwright with the seeded demo tenant —
+the same mechanism as `critical_flows.mjs`, leaving no permanent script behind
+for this pass.
+
+**What was verified:** the initial load and the visible content of the three
+screens, with full-page screenshots. **What was not:** the internal flows the
+table above already lists (sending to suppliers, recording an outbound, a new
+manual order, etc.) — they remain unwalked.
+
+### /pedidos — no findings
+
+Loads cleanly with real data: 4 orders in the three states the demo produces (in
+transit, partial, received), action buttons visible (Record arrival, Send order,
+Open in WhatsApp, Copy message). Nothing to report in this pass.
+
+### /inventario — no findings, one false positive discarded along the way
+
+The 40-SKU semáforo, the KPIs and the per-warehouse filters load correctly.
+**Methodological note, not a product one:** a first screenshot with a short wait
+(6s) showed the SKU list completely empty under the search box — it looked like a
+render defect. With a longer wait (14s) everything appeared; the content was
+already in the DOM (confirmed with `getBoundingClientRect`: `opacity:1`, real
+sizes, nothing collapsed) — the screenshot was simply taken in the middle of a
+fetch still in flight. It is written down because any future script walking this
+screen can fall into the same trap.
+
+### /compras — one real finding: the executive summary races its own timeout
+
+`NarrativeCard` ("Today's executive summary") calls `POST /ai/narrative/morning`
+(DeepSeek) on every load of the product's main screen. Measured directly against
+the backend: **8.8 seconds** of real response time. The client
+(`compras/page.tsx:945-948`) gives it a local timeout of **8000ms** before giving
+up to the rule-based text — that is, in the *normal* case, not the degraded one,
+the local timeout expires **before** the real response arrives. The user sees the
+generic rule-based text for a fraction of a second and, immediately, it is
+replaced by the real AI text when the request does answer — a visible flicker on
+a screen a buyer looks at every morning.
+
+Verified on screen: with a 14s wait the box was still on "Analysing data…"; with
+22s it already showed the full analysis ("Current situation", "Priority risks",
+"Opportunities").
+
+**A second, smaller related finding:** the "Refresh" button of that same box
+(`onRefresh`, `compras/page.tsx:1522`) does not have the 8s timeout the initial
+load does — if DeepSeek is slow or down, pressing "Refresh" leaves the spinner
+turning with no way out until the request answers or fails on its own.
+
+**What gets asked before touching the code:** raise the local timeout to ~10-12s
+(less flicker, a little more visible wait) vs. cache the response per session/day
+(the summary does not change unless the data does) vs. leave it as it is.
+**Owner's decision (2026-09-01): raise the timeout.** Done —
+`compras/page.tsx:945-950`, from 8000ms to 11000ms. Verified with Playwright: in
+the confirmation run the box went straight from "not loaded" to "Analysing data…"
+(t=13.4s) to the real AI text (t=21.5s), never showing the rule-based text in
+between (`sawFallbackFirst: false`). The "Refresh" button finding, with no such
+guard, is **still untouched** — it was not what was asked to be fixed in this
+pass.
+
+### /mi-cuenta — one real finding: the left column leaves a gap the size of the right one
+
+`mi-cuenta/page.tsx:1333` puts `<ProfileSection />` and the other eight cards
+(Usage and limits, Currency, Time zone, Language/Theme, Granularity, WhatsApp,
+Team messages, Security) in a `1fr 1fr` `grid`, two columns, a single row.
+`ProfileSection` is short — name, email, role, status — while the right column
+stacks eight cards and is several times taller. CSS Grid stretches both columns
+to the row's height by default (`align-items: stretch`, with no override), so the
+left column ends up with a box as tall as the right one and **nothing to paint in
+most of it**: a user scrolling down sees a short card on the left and, below it,
+a white gap the size of the whole screen while the right keeps showing cards.
+
+Verified with screenshots and with `getBoundingClientRect` on the "User profile"
+node: the content exists and has a real size, it simply ends long before its
+column does. It is not a data or loading defect — it is the `grid` without
+`align-items: start` (or without redistributing the cards to balance the two
+columns' height).
+
+**Owner's decision (2026-09-01): fix it.** Done — `mi-cuenta/page.tsx:1333`,
+`alignItems: 'start'` added to the grid. Verified with Playwright: before the
+change the left column measured 2103px tall (the same as the right, with all that
+empty space under the profile card); afterwards it measures 258px — its real
+height, unstretched. A screenshot confirms the left column ending naturally after
+"User profile" while the right carries on with its eight cards.
+
+### /pronosticos, /proveedores, /archivos — no findings
+
+All three load fully, with real data and no API call outside 2xx. `/pronosticos`
+shows the forecast chart, the model selector, the metrics table and the "We found
+problems in your data" banner — functional. `/proveedores` (which CLAUDE.md
+marked as "never opened, only verified over the API") renders the full supplier
+table with lead time, variability, learning and actions — now walked, with no
+surprises. `/archivos` shows the connected data source ("Ventas Demo Faro", 21,640
+rows) behind a guided welcome tour that fires in every new browser context (empty
+localStorage) — expected in a script that does not persist a session between
+runs, not a defect for a real user who closed it once.
+
+**The two console warnings that appear on ALL the screens walked this pass** (not
+only these three) — noted here once because they are systemic, not per-screen:
+- `Warning: Extra attributes from the server: %s%s data-theme` — a React
+  hydration mismatch on the `data-theme` attribute of `<html>`. It appears on
+  every load, including `/login`. It was not investigated in depth this pass; if
+  it shows up again while walking more screens, its cause is worth tracing.
+- `Failed to fetch RSC payload... Falling back to browser navigation` — this is
+  an artifact of the test method (`page.goto()` does a hard navigation between
+  routes; a real user navigates with a client-side `<Link>`). Not reported as a
+  product finding.
 
 ---
 
-## 8. Configuración de servicios: qué necesita el despliegue y qué se apaga sin ello (2026-09-13)
+## 8. Service configuration: what the deployment needs and what turns off without it (2026-09-13)
 
-**Pedido del dueño (2026-09-10):** vender el código fuente. Que quede claro qué
-variables de entorno necesita, que si falta una llave el servicio *simplemente
-no se activa* —el chat, las alertas— y que todo eso se pueda configurar y
-manejar cualquier error. La sesión de ese día construyó el núcleo y se cortó por
-el límite semanal antes de conectar los consumidores; esto lo termina.
+**Owner's request (2026-09-10):** sell the source code. Make it clear which
+environment variables it needs, make a missing key mean the service *simply does
+not activate* — the chat, the alerts — and make all of that configurable with
+every error handled. That day's session built the core and was cut off by the
+weekly limit before wiring the consumers; this finishes it.
 
-### Los tres huecos que tenía, y cómo quedaron
+### The three gaps it had, and how they ended up
 
-| Hueco | Cómo estaba | Cómo quedó |
+| Gap | How it was | How it ended up |
 |---|---|---|
-| `.env.example` mentía por omisión | documentaba 20 de 45 variables | **generado** desde `backend/service_config/registry.py`, igual que `docs/configuracion.md`; un `Settings` sin descriptor pone la suite en rojo |
-| Nadie podía ver el estado | `/health` decía `ok` con el chat, las alertas, el RAG y las integraciones muertos | `/health` reporta el estado de cada servicio y sobrevive a una base caída (`degraded`, no un 500 sin cuerpo); el panel `/instalacion` lo muestra con lo que se pierde en cada caso |
-| La degradación era dispareja | notificaciones lo hacían bien, RAG e integraciones a medias, y «configurado pero fallando» no se distinguía de «sin configurar» | los diez consumidores leen por `service_config.resolver`; el estado `degraded` existe y sale de una prueba de conexión real |
+| `.env.example` lied by omission | documented 20 of 45 variables | **generated** from `backend/service_config/registry.py`, like `docs/configuracion.md`; a `Settings` field with no descriptor turns the suite red |
+| Nobody could see the state | `/health` said `ok` with the chat, the alerts, RAG and the integrations dead | `/health` reports each service's state and survives a downed database (`degraded`, not a 500 with no body); the `/instalacion` panel shows it along with what is lost in each case |
+| Degradation was uneven | notifications did it well, RAG and integrations halfway, and «configured but failing» was indistinguishable from «not configured» | all ten consumers read through `service_config.resolver`; the `degraded` state exists and comes from a real connection test |
 
-### Lo que se construyó
+### What was built
 
-- **Un registro único** (`registry.py`): 47 campos, cada uno con qué hace, si es
-  obligatorio, si es secreto, si se puede editar desde la app — y **qué se
-  pierde sin él**, escrito para quien tiene que decidir, no para quien programó.
-- **Dos capas con precedencia visible**: entorno (piso) y panel (gana, cifrado
-  en la base con la misma llave Fernet de las integraciones). El panel dice cuál
-  manda en cada campo. Un secreto entra y no vuelve a salir: la lectura devuelve
-  cuatro caracteres finales, y nada los revierte.
-- **Prueba de conexión** por servicio, con códigos estables que llevan a acciones
-  distintas: `auth_failed` (llave mala) ≠ `unreachable` (red) ≠ `timeout`
-  (el proveedor aceptó y se calló). Ninguna prueba lanza excepción; reporta.
-- **`/capabilities`** para cualquier usuario autenticado: booleanos, sin nombres
-  de variables. Es lo que deja que una pantalla diga «el asistente no está
-  disponible» *antes* de que alguien escriba, en vez de después de esperar.
+- **A single registry** (`registry.py`): 47 fields, each with what it does,
+  whether it is required, whether it is secret, whether it can be edited from the
+  app — and **what is lost without it**, written for whoever has to decide, not
+  for whoever wrote the code.
+- **Two layers with visible precedence**: the environment (the floor) and the
+  panel (which wins, stored encrypted in the database with the integrations'
+  Fernet key). The panel says which one wins per field. A secret goes in and does
+  not come back out: reading returns the last four characters, and nothing
+  reverses them.
+- **A connection test** per service, with stable codes leading to different
+  actions: `auth_failed` (bad key) ≠ `unreachable` (network) ≠ `timeout` (the
+  provider accepted and went quiet). No test raises; it reports.
+- **`/capabilities`** for any signed-in user: booleans, no variable names. It is
+  what lets a screen say «the assistant is unavailable» *before* somebody types,
+  instead of after waiting.
 
-### La decisión que no era mía y hay que saber
+### The decision that was not mine, and needs to be known
 
-`admin` es un rol **dentro de un tenant**: toda empresa que se registra tiene
-uno. Usarlo para editar las credenciales del despliegue habría dejado que
-cualquiera que abre una cuenta reescribiera la llave de DeepSeek de todos. Se
-agregó **`INSTANCE_ADMIN_EMAILS`** (solo entorno, nunca editable desde la
-pantalla donde se pegan las credenciales). Vacío = nadie edita la configuración
-de la instancia desde la app, y el panel lo dice nombrando la variable. Un
-tenant sí configura **sus propios canales** (su remitente de correo, su número
-de WhatsApp): el alcance sale del token, no del cuerpo del request.
+`admin` is a role **inside a tenant**: every company that signs up has one. Using
+it to edit the deployment's credentials would have let anybody who opens an
+account rewrite everyone's DeepSeek key. **`INSTANCE_ADMIN_EMAILS`** was added
+(environment only, never editable from the screen where credentials are pasted).
+Empty = nobody edits the instance's configuration from the app, and the panel
+says so, naming the variable. A tenant does configure **its own channels** (its
+email sender, its WhatsApp number): the scope comes from the token, not from the
+request body.
 
-### Lo que encontró caminarlo en el navegador
+### What walking it in the browser found
 
-Tres defectos reales, los tres arreglados en el mismo paso:
+Three real defects, all three fixed in the same step:
 
-1. **El aviso de «no hay modelo» vivía dentro del compositor**, que solo se
-   dibuja con una conversación abierta. Un usuario llegaba a un estado vacío que
-   invitaba a empezar, creaba la conversación, escribía la pregunta y *ahí*
-   se enteraba. Subido por encima de la bifurcación: se ve antes del primer clic.
-2. **Los códigos de error del panel no estaban en el catálogo**, así que el
-   toast mostraba la prosa inglesa del backend. Nueve entradas nuevas en
-   `translations.ts`, cada una nombrando el arreglo.
-3. **A 400px las dos columnas exprimían el input al ancho de una palabra**: el
-   campo estaba en pantalla y era imposible escribir en él. Ahora se apilan.
+1. **The «no model» notice lived inside the composer**, which is only drawn with
+   a conversation open. A user reached an empty state inviting them to start,
+   created the conversation, typed the question and *then* found out. Moved above
+   the branch: it is visible before the first click.
+2. **The panel's error codes were not in the catalogue**, so the toast showed the
+   backend's English prose. Nine new entries in `translations.ts`, each naming
+   the fix.
+3. **At 400px the two columns squeezed the input to the width of one word**: the
+   field was on screen and impossible to type into. They now stack.
 
-Y un cuarto que no es del panel: `test_endpoints.py` seguía exigiendo un reloj
-de prueba (`trial_ends_at`) que el cambio de tiers del 2026-08-22 eliminó, y
-`test_pagination_pages_are_disjoint_and_complete` creaba 5 sesiones contra un
-techo gratis de 3. Dos rojos que acusaban al producto de bugs que no tenía.
+And a fourth that is not the panel's: `test_endpoints.py` still demanded a trial
+clock (`trial_ends_at`) that the 2026-08-22 tier change removed, and
+`test_pagination_pages_are_disjoint_and_complete` created 5 sessions against a
+free ceiling of 3. Two reds accusing the product of bugs it did not have.
 
-### Cómo se verificó
+### How it was verified
 
-- 47 tests nuevos (`test_service_config.py`, `test_service_config_i18n.py`):
-  precedencia, tipos, secretos, refusals, el par de permisos en cada escritura,
-  y que el catálogo de copy cubra exactamente las claves del registro.
-- Caminado en navegador con la llave puesta **y sin ella**: guardar toma efecto,
-  la etiqueta de origen cambia, vaciar vuelve al entorno, la prueba de conexión
-  llega a DeepSeek, el tenant no ve las credenciales de la instalación, y con la
-  llave quitada nada dio 500 — la app dice qué falta y sigue funcionando.
+- 47 new tests (`test_service_config.py`, `test_service_config_i18n.py`):
+  precedence, types, secrets, refusals, the permission pair on every write, and
+  that the copy catalogue covers exactly the registry's keys.
+- Walked in the browser with the key set **and without it**: saving takes effect,
+  the origin label changes, emptying it returns to the environment, the
+  connection test reaches DeepSeek, the tenant does not see the installation's
+  credentials, and with the key removed nothing 500ed — the app says what is
+  missing and keeps working.
 
 ---
 
-## 9. La suite no declara lo que necesita: hereda un `.env` (2026-09-13)
+## 9. The suite does not declare what it needs: it inherits a `.env` (2026-09-13)
 
-La primera corrida completa después del trabajo de configuración dio **48
-fallos**. Ninguno era un defecto del producto. **34 de ellos tenían una sola
-causa: `backend/.env` con `TESTING_MODE=false`.**
+The first full run after the configuration work gave **48 failures**. None was a
+product defect. **34 of them had a single cause: `backend/.env` with
+`TESTING_MODE=false`.**
 
-CLAUDE.md dice que el `.env` local corre con `TESTING_MODE=true`, y toda la
-suite está escrita contra eso — la regla de la casa es que *el test que depende
-de cupos apaga el modo él mismo*. Con los cupos vivos, el techo del plan gratis
-`max_locations = 1` se dispara en `inventory/service.py:164` en cuanto un test
-siembra una **segunda bodega**, y los ocho archivos afectados son justamente de
-multi-bodega. Medido, mismo árbol, cambiando solo la variable:
+CLAUDE.md says the local `.env` runs with `TESTING_MODE=true`, and the whole
+suite is written against that — the house rule is that *a test that depends on
+quotas turns the mode off itself*. With the quotas alive, the free plan's ceiling
+of `max_locations = 1` fires at `inventory/service.py:164` as soon as a test
+seeds a **second warehouse**, and the eight affected files are precisely the
+multi-warehouse ones. Measured, same tree, changing only the variable:
 
-| Archivo | con `false` | con `true` |
+| File | with `false` | with `true` |
 |---|---|---|
-| `test_status_by_warehouse.py` | 10 fallos | 12 pasan |
-| `test_transfer_lanes.py` | 9 fallos | 25 pasan |
-| `test_optimizer_service.py` | 5 fallos | 14 pasan |
-| `test_warehouses.py` | 3 fallos | 16 pasan |
-| `test_inventory_multi_bodega.py` | 3 fallos | 3 pasan |
-| `test_reception_bodega.py` | 2 fallos | 8 pasan |
-| `test_warehouse_import_destination.py` | 1 fallo | 7 pasan |
-| `test_stock_upsert_preserves_config.py` | 1 fallo | 10 pasan |
+| `test_status_by_warehouse.py` | 10 failures | 12 pass |
+| `test_transfer_lanes.py` | 9 failures | 25 pass |
+| `test_optimizer_service.py` | 5 failures | 14 pass |
+| `test_warehouses.py` | 3 failures | 16 pass |
+| `test_inventory_multi_bodega.py` | 3 failures | 3 pass |
+| `test_reception_bodega.py` | 2 failures | 8 pass |
+| `test_warehouse_import_destination.py` | 1 failure | 7 pass |
+| `test_stock_upsert_preserves_config.py` | 1 failure | 10 pass |
 
-**96 pasan, 0 fallan.** No había nada escondido detrás del 403.
+**96 pass, 0 fail.** There was nothing hidden behind the 403.
 
-Lo caro no fue el arreglo —una línea en un archivo gitignored— sino a quién
-acusó: durante media hora el reporte decía que el reparto de demanda entre
-bodegas, los carriles de traslado y la entrada del optimizador estaban rotos.
-Un `.env` que nadie ve en `git status` movió el dedo hacia el código que más
-caro cuesta revisar.
+What was expensive was not the fix — one line in a gitignored file — but who it
+accused: for half an hour the report said that demand sharing between warehouses,
+the transfer lanes and the optimiser's input were broken. A `.env` nobody sees in
+`git status` pointed the finger at the code that costs the most to review.
 
-**ARREGLADO el 2026-09-14.** La suite ya no hereda el modo: un fixture autouse
-en `conftest.py` lo fija en `True`, y los 68 tests que dependen de un cupo lo
-apagan ellos mismos, que es lo que el estándar ya pedía. Comprobado poniendo
-`TESTING_MODE=false` en el `.env` a propósito y corriendo los cinco archivos que
-hoy se cayeron: **70 pasan, 0 fallan**. La configuración que esta mañana puso 34
-tests en rojo acusando al optimizador ya no puede hacerlo.
+**FIXED on 2026-09-14.** The suite no longer inherits the mode: an autouse
+fixture in `conftest.py` pins it to `True`, and the 68 tests that depend on a
+quota turn it off themselves, which is what the standard already asked for.
+Checked by deliberately putting `TESTING_MODE=false` in the `.env` and running
+the five files that fell over today: **70 pass, 0 fail**. The configuration that
+this morning turned 34 tests red accusing the optimiser can no longer do it.
 
-Los 14 fallos restantes de esa corrida: 4 eran dobles de test con la firma vieja
-(el `tenant_id` que ganaron los envíos ese día), 1 era el guardián de español
-contra el generador de documentación nuevo, 1 una aserción vieja que pedía el
-reloj de prueba que el cambio de tiers eliminó el 2026-08-22, y el resto quedó
-en verificación aparte por sospecha de carga — la corrida se hizo con 1.4 GB
-libres y tardó 111 minutos en vez de 40.
-
----
-
-## 10. La instalación virgen, que es la única que importa para vender (2026-09-14)
-
-El panel de servicios existía desde el 2026-09-13 y **no servía el primer día**,
-que es justo el día para el que se construyó. Dos candados, cada uno razonable
-por separado:
-
-1. **Nadie podía abrirlo.** `INSTANCE_ADMIN_EMAILS` vacía significaba «nadie
-   edita», y un despliegue recién instalado tiene esa variable vacía por
-   definición. El comprador quedaba mandado a editar el archivo y reiniciar el
-   contenedor — lo que la pantalla existe para terminar.
-2. **Quien lograra abrirlo no podía guardar nada.** Guardar un secreto necesita
-   llave Fernet, la llave venía solo de `INTEGRATIONS_SECRET_KEY`, y una
-   instalación nueva tampoco la tiene. O sea: la primera cosa que alguien
-   intenta —pegar la llave de DeepSeek— fallaba.
-
-Ambos resueltos sin aflojar la seguridad:
-
-- Mientras el despliegue tenga **exactamente un tenant** y no haya nombrado a
-  nadie, los admins de ese tenant lo operan. Quien instala es quien se registra.
-  **Se acaba en dos**: en cuanto existe una segunda empresa, «el único tenant»
-  deja de significar propiedad y pasaría a significar «quien se registró
-  primero», que sería una puerta a las credenciales de todos. El panel avisa
-  mientras todavía hay una sola empresa y tiempo de reaccionar.
-- `INTEGRATIONS_SECRET_KEY` vacía ya no significa «apagado» sino «hazme una»:
-  se genera en `storage/instance_secret.key` al primer uso. El entorno siempre
-  gana. Los dos costos se dicen en el momento en que ocurre —respaldar
-  `storage/`, y promover la llave a la variable antes de correr un segundo
-  proceso en otro volumen— en el log y en el panel.
-- Una base inalcanzable **no otorga nada**: `sole_tenant_id` devuelve None si la
-  consulta falla. Fallar «abierto» ahí habría entregado el panel a cualquier
-  admin en cuanto Postgres tosiera.
-- Un disco de solo lectura sigue apagando el cifrado, con motivo dicho y sin
-  degradar jamás a texto plano.
-
-### Cómo se verificó, que es la parte que vale
-
-`test_virgin_install.py` (14 tests, ninguno saltado) apaga **todas** las
-credenciales opcionales y ejercita lo que depende de ellas: ningún endpoint
-responde 5xx por una llave ausente, todo nombra lo que falta, el núcleo no se
-entera, y los dos ciclos programados de las 8:00 **terminan** en vez de
-reventar hacia el planificador y llevarse por delante las alertas de los demás
-tenants.
-
-Y después, fuera de los tests: **clon limpio del repo, base vacía, tres
-variables en el `.env`, nada más.** Arranca, el dueño se registra, abre el
-panel, **pega la llave de DeepSeek en la pantalla**, y `capabilities.assistant`
-pasa a `true` sin reiniciar nada. El secreto no vuelve a salir: la lectura da
-cuatro caracteres finales. Cero problemas en los siete pasos.
+The remaining 14 failures of that run: 4 were test doubles with the old signature
+(the `tenant_id` the senders gained that day), 1 was the Spanish guard against
+the new documentation generator, 1 was a stale assertion asking for the trial
+clock that the 2026-08-22 tier change removed, and the rest went to separate
+verification on suspicion of load — the run was done with 1.4 GB free and took
+111 minutes instead of 40.
 
 ---
 
-## Hallazgo del nivel de servicio (2026-09-14) — **[CERRADO 2026-09-15]**
+## 10. The virgin install, which is the only one that matters for selling (2026-09-14)
 
-`backend/inventory/service.py` resolvía el z con `_Z.get(service_level, 1.645)`:
-cualquier nivel fuera de los cuatro de la tabla recibía en silencio el colchón
-del 95%. **Arreglado** — `_z_for` calcula ahora con la aproximación de Acklam y
-recorta al rango que la API acepta.
+The services panel had existed since 2026-09-13 and **did not work on day one**,
+which is exactly the day it was built for. Two locks, each reasonable on its own:
 
-Lo que vale la pena mirar, y **no se tocó** porque es la otra capa:
-`ForecastingCore` tiene su propio camino (`InventoryAdvisor`, con `scipy.ppf`) y
-sus dos tests de borde están escritos así:
+1. **Nobody could open it.** An empty `INSTANCE_ADMIN_EMAILS` meant "nobody
+   edits", and a freshly installed deployment has that variable empty by
+   definition. The buyer was sent off to edit the file and restart the container
+   — which is what the screen exists to end.
+2. **Whoever did open it could save nothing.** Saving a secret needs a Fernet
+   key, the key came only from `INTEGRATIONS_SECRET_KEY`, and a new installation
+   does not have that either. In other words: the first thing anybody tries —
+   pasting the DeepSeek key — failed.
+
+Both resolved without loosening security:
+
+- As long as the deployment has **exactly one tenant** and has named nobody, that
+  tenant's admins operate it. Whoever installs is whoever signs up. **It ends at
+  two**: as soon as a second company exists, "the only tenant" stops meaning
+  ownership and would start meaning "whoever signed up first", which would be a
+  door to everybody's credentials. The panel warns while there is still a single
+  company and time to react.
+- An empty `INTEGRATIONS_SECRET_KEY` no longer means "off" but "make me one": it
+  is generated at `storage/instance_secret.key` on first use. The environment
+  always wins. Both costs are stated at the moment they happen — back up
+  `storage/`, and promote the key to the variable before running a second process
+  on another volume — in the log and in the panel.
+- An unreachable database **grants nothing**: `sole_tenant_id` returns None if the
+  query fails. Failing "open" there would have handed the panel to any admin the
+  moment Postgres coughed.
+- A read-only disk still turns encryption off, with the reason stated and never
+  degrading to plain text.
+
+### How it was verified, which is the part that counts
+
+`test_virgin_install.py` (14 tests, none skipped) turns **every** optional
+credential off and exercises what depends on them: no endpoint answers 5xx over a
+missing key, everything names what is missing, the core does not notice, and the
+two scheduled 8:00 loops **finish** instead of blowing up towards the scheduler
+and taking the other tenants' alerts with them.
+
+And then, outside the tests: **a clean clone of the repo, an empty database,
+three variables in the `.env`, nothing else.** It boots, the owner signs up,
+opens the panel, **pastes the DeepSeek key into the screen**, and
+`capabilities.assistant` turns `true` without restarting anything. The secret
+does not come back out: reading gives four final characters. Zero problems across
+the seven steps.
+
+---
+
+## Service-level finding (2026-09-14) — **[CLOSED 2026-09-15]**
+
+`backend/inventory/service.py` resolved z with `_Z.get(service_level, 1.645)`:
+any level outside the table's four silently received the 95% cushion. **Fixed** —
+`_z_for` now computes with Acklam's approximation and clamps to the range the API
+accepts.
+
+What is worth looking at, and **was not touched** because it is the other layer:
+`ForecastingCore` has its own path (`InventoryAdvisor`, with `scipy.ppf`) and its
+two boundary tests are written like this:
 
 ```python
 # CRITICAL FIX REQUIRED: service_level=1.0 causes ppf(1.0)=inf
@@ -2007,36 +2007,35 @@ def test_service_level_boundary_1_causes_inf(self):
         ...
 ```
 
-Es el mismo patrón que dejó vivo el defecto del backend durante meses: el test
-no comprueba que el comportamiento sea correcto, comprueba que el síntoma
-ocurra, y `pytest.raises(Exception)` acepta cualquier excepción — incluido un
-`TypeError` por una firma cambiada. Mientras el test siga verde, nadie se entera
-de si el motor recorta, revienta o devuelve infinito.
+It is the same pattern that kept the backend's defect alive for months: the test
+does not check that the behaviour is correct, it checks that the symptom occurs,
+and `pytest.raises(Exception)` accepts any exception — including a `TypeError`
+from a changed signature. While the test stays green, nobody finds out whether
+the engine clamps, blows up or returns infinity.
 
-**No es urgente**: la API rechaza con 422 todo lo que esté fuera de [0.5, 0.999]
-(`test_service_level_boundary_via_api`), así que esos valores solo llegan desde
-un llamador interno o un default guardado.
+**It is not urgent**: the API rejects with 422 anything outside [0.5, 0.999]
+(`test_service_level_boundary_via_api`), so those values only arrive from an
+internal caller or a stored default.
 
-**Cerrado el 2026-09-15, y la decisión del dueño resultó no hacer falta.** Al
-mirarlo de cerca, el motor **ya rechaza**: `InventoryAdvisor.__init__` valida el
-intervalo abierto (0, 1) y lanza un `ValueError` que nombra el argumento y da
-los valores típicos. Nunca hubo un `inf`. Lo podrido eran los dos tests, que
-comprobaban que ocurriera el síntoma y por lo tanto pasaban **antes y después**
-del arreglo que exigían a gritos en un comentario.
+**Closed on 2026-09-15, and the owner's decision turned out not to be needed.**
+Looked at closely, the engine **already rejects**: `InventoryAdvisor.__init__`
+validates the open interval (0, 1) and raises a `ValueError` naming the argument
+and giving typical values. There never was an `inf`. What was rotten were the two
+tests, which checked that the symptom occurred and therefore passed **before and
+after** the fix they were shouting for in a comment.
 
-Reemplazados por lo que el advisor de verdad promete:
+Replaced by what the advisor actually promises:
 
-- cuatro niveles inválidos (1.0, 0.0, -0.1, 1.5) rechazados con `ValueError` que
-  menciona `service_level` — no `Exception`, que acepta hasta un `TypeError` por
-  una firma cambiada;
-- cinco niveles válidos (0.5 … 0.999) con z finito, y punto de reorden y stock
-  de seguridad finitos;
-- **la propiedad que el comprador usa**: subir el nivel de servicio nunca compra
-  menos colchón. Esa es la que habría delatado el defecto del backend —un z
-  colapsado sobre un solo valor— y ninguna afirmación de un solo punto la ve.
+- four invalid levels (1.0, 0.0, -0.1, 1.5) rejected with a `ValueError` that
+  mentions `service_level` — not `Exception`, which accepts even a `TypeError`
+  from a changed signature;
+- five valid levels (0.5 … 0.999) with a finite z, and a finite reorder point and
+  safety stock;
+- **the property the buyer uses**: raising the service level never buys less
+  cushion. That is the one that would have exposed the backend's defect — a z
+  collapsed onto a single value — and no single-point assertion sees it.
 
 ---
-
 ## 11. Parallel-agent sweep (2026-09-15) and its fixes (2026-09-16)
 
 **Written in English on the owner's instruction (2026-09-16, "todo en inglés").**
