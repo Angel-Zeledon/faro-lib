@@ -140,7 +140,7 @@ What the suite does and does not prove: the backend and the engine are covered
 (state asserted against the database, and every mutating endpoint has a
 permission pair); the **frontend has no behavioural tests** — `tsc` checks
 types. Screens are verified by hand in a browser, and the record of those walks
-is in `docs/inventario-pantallas.md`.
+is in `docs/screen-inventory.md`.
 
 ---
 

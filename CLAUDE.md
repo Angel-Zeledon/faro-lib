@@ -20,7 +20,7 @@ Concretely:
   them; let the owner choose. A one-off "implement those" is permission for
   those, and does not lift this rule for the next idea. **That list is
   `docs/estabilidad.md`** — the single live backlog and the order the work runs
-  in. `docs/inventario-pantallas.md` is the table it draws from.
+  in. `docs/screen-inventory.md` is the table it draws from.
 - Verify in a browser as a user, not only with tests. See the `running-faro`
   skill for the environment traps and `silent-failures` for the review lens.
 - When robustness and scope conflict, robustness wins.
@@ -88,7 +88,7 @@ cd Frontend && npx tsc --noEmit                   # typecheck — NOT tests
 ```
 
 **The frontend has no tests.** `tsc` checks types, not behaviour, and there is
-no end-to-end suite: every screen walk in `docs/inventario-pantallas.md` was done
+no end-to-end suite: every screen walk in `docs/screen-inventory.md` was done
 by hand in a browser. A green run means the backend behaves — not that the
 product works. On 2026-08-06 it was green while 27 real defects were live.
 
