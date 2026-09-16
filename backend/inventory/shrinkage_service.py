@@ -123,8 +123,9 @@ def record_shrinkage(
     # keeps /stock/{sku}/history consistent with receptions and manual edits.
     try:
         execute(
-            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
-            (tenant_id, sku, updated["current_stock"]),
+            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock, warehouse) "
+            "VALUES (%s, %s, %s, %s)",
+            (tenant_id, sku, updated["current_stock"], warehouse),
         )
     except Exception as e:
         log.warning("shrinkage snapshot failed sku=%s: %s", sku, e)

@@ -280,16 +280,33 @@ def evaluate_step_up(
     return min(candidates, key=lambda c: c["step_quantity"]) if candidates else None
 
 
-def _ladders_for_status(ladders: list[dict], status: dict) -> list[dict]:
+def _ladders_for_status(
+    ladders: list[dict], status: dict, cart_supplier_id: str | None = None,
+) -> list[dict]:
     """
     The ladders that may legitimately be quoted for this SKU: the one belonging
     to the SKU's own supplier when there is one, otherwise all of them.
 
-    `supplier_id` is only set on a status row when the stock's supplier name and
-    the primary supplier agree (service.get_inventory_status), so the name is
-    matched too — case-insensitively, which is how every other supplier-by-name
-    lookup in the product resolves.
+    `cart_supplier_id` is the supplier the BUYER has on the line right now, and
+    it wins over everything else. The panel used to read the supplier off the
+    status row only, so switching supplier on a line kept quoting the previous
+    one's ladder — "Andina: order 500 and save ~1,400" about a price only Norte
+    ever quoted, which is the exact defect this function's docstring says it
+    fixed, reintroduced through the supplier-switch path (estabilidad 11.14).
+
+    `supplier_id` on the status row is only set when the stock's supplier name
+    and the primary supplier agree (service.get_inventory_status), so the name
+    is matched too — case-insensitively, which is how every other
+    supplier-by-name lookup in the product resolves.
     """
+    if cart_supplier_id:
+        owned = [l for l in ladders if l["supplier_id"] == cart_supplier_id]
+        # An empty list is the honest answer when the chosen supplier quotes no
+        # ladder for this SKU: there is no offer to show, and falling through to
+        # "all of them" is how another supplier's price gets printed under this
+        # one's name.
+        return owned
+
     supplier_id = status.get("supplier_id")
     if supplier_id:
         owned = [l for l in ladders if l["supplier_id"] == supplier_id]
@@ -350,6 +367,8 @@ def evaluate_cart(
     for line in cart_items:
         sku = line.get("sku")
         quantity = float(line.get("quantity") or 0)
+        # The supplier the buyer has on the line, when the client sends one.
+        cart_supplier_id = line.get("supplier_id")
         status = status_by_sku.get(sku or "")
         ladders = list(ladders_by_sku.get(sku or "", {}).values())
         if not sku or not ladders or not status:
@@ -357,7 +376,7 @@ def evaluate_cart(
 
         opportunities = [
             opportunity
-            for ladder in _ladders_for_status(ladders, status)
+            for ladder in _ladders_for_status(ladders, status, cart_supplier_id)
             if (opportunity := evaluate_step_up(
                 sku=sku,
                 supplier_name=ladder["supplier_name"],

@@ -100,10 +100,12 @@ def list_session_summaries(tenant_id: str, skip: int = 0, limit: int = 50) -> li
     return [_fmt(r) for r in rows]
 
 
-def count_sessions(tenant_id: str) -> int:
+def count_sessions(tenant_id: str, conn=None) -> int:
+    """`conn` lets a caller count inside a `limit_guard` transaction, which is
+    what makes a ceiling hold against two writers at once."""
     row = query_one(
         "SELECT COUNT(*) AS cnt FROM sessions WHERE tenant_id = %s",
-        (tenant_id,),
+        (tenant_id,), conn=conn,
     )
     return row["cnt"] if row else 0
 

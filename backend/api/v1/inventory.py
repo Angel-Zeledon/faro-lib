@@ -371,14 +371,24 @@ def _row_error(line_no: int, sku: str, code: str, params: dict, fallback: str) -
     return {"row": line_no, "sku": sku, "code": code, "params": params, "error": fallback}
 
 
-def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], list[dict], int]:
+def _parse_stock_rows(
+    raw_rows: list[dict], mapping: dict, thousands_dot: Optional[bool] = None,
+) -> tuple[list[dict], list[dict], int, list[str]]:
     """
-    (valid canonical rows, per-row errors, rows skipped for having no SKU).
+    (valid canonical rows, per-row errors, rows skipped for having no SKU,
+    cells whose dot nobody has disambiguated yet).
 
     Numbers are read with the LatAm-tolerant parser: '1.234,56' and '₡ 1 234'
     are values, 'N/D' is a reported error. The comma/dot verdict is taken once
     for the whole file so an ambiguous '1,250' inherits what its unambiguous
     neighbours already proved.
+
+    The fourth return value is the half the file cannot settle on its own: a
+    file of "1.250" and "980" with no comma anywhere means either 1250 or 1.25,
+    and the parser used to pick 1.25 in silence — every quantity divided by a
+    thousand, no row errors, and the whole catalogue in PEDIR_YA
+    (estabilidad 11.2). `thousands_dot` is the user's answer once they have
+    been asked.
     """
     numeric_sources = [mapping[f] for f in stock_import.NUMERIC_FIELDS if f in mapping]
     samples = [
@@ -386,6 +396,8 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
         if r.get(col) not in (None, "")
     ]
     decimal_comma = stock_import.has_decimal_comma(samples)
+    ambiguous_cells = ([] if thousands_dot is not None
+                       else stock_import.dot_is_ambiguous(samples))
 
     rows: list[dict] = []
     errors: list[dict] = []
@@ -423,7 +435,8 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
         for fld in stock_import.NUMERIC_FIELDS:
             if fld not in row:
                 continue
-            value = stock_import.parse_number(row[fld], decimal_comma=decimal_comma)
+            value = stock_import.parse_number(row[fld], decimal_comma=decimal_comma,
+                                              thousands_dot=thousands_dot)
             if value is None:
                 row_error = _row_error(
                     line_no, sku, "inventory_import_row_not_a_number",
@@ -456,7 +469,7 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
             continue
         rows.append({"sku": sku, **validated.model_dump(exclude_none=True)})
 
-    return rows, errors, skipped_no_sku
+    return rows, errors, skipped_no_sku, ambiguous_cells
 
 
 @router.post("/bulk/preview")
@@ -474,7 +487,7 @@ async def bulk_import_preview(
     content = await file.read()
     fmt, columns, raw_rows, sep = _read_upload(file.filename, content)
     used, detected = _resolve_mapping(columns, mapping)
-    rows, errors, skipped_no_sku = _parse_stock_rows(raw_rows, used)
+    rows, errors, skipped_no_sku, ambiguous_cells = _parse_stock_rows(raw_rows, used)
 
     # Group the per-row errors so the UI shows "37 non-numeric cells", not 37
     # separate lines the user has to read one by one.
@@ -509,6 +522,20 @@ async def bulk_import_preview(
         "sample_rows": rows[:_PREVIEW_SAMPLE_ROWS],
         "issues": list(grouped.values()),
         "fields": list(stock_import.CANONICAL_FIELDS),
+        # The one thing the file cannot answer about itself. When `ambiguous`
+        # is true the wizard must ASK before importing: read as decimals (the
+        # old silent guess) every quantity is divided by a thousand, the import
+        # reports success, and the catalogue drops to PEDIR_YA.
+        "number_format": {
+            "ambiguous": bool(ambiguous_cells),
+            "samples": ambiguous_cells,
+            # What each reading would produce for the first sample, so the
+            # question can be asked in numbers instead of in vocabulary.
+            "as_decimal": (stock_import.parse_number(ambiguous_cells[0])
+                           if ambiguous_cells else None),
+            "as_thousands": (stock_import.parse_number(ambiguous_cells[0], thousands_dot=True)
+                             if ambiguous_cells else None),
+        },
     })
 
 
@@ -517,6 +544,8 @@ async def bulk_import(
     file: UploadFile = File(...),
     mapping: Optional[str] = Form(default=None),
     warehouse: Optional[str] = Form(default=None),
+    thousands_dot: Optional[bool] = Form(default=None),
+    only_fill_missing: bool = Form(default=False),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
@@ -546,10 +575,32 @@ async def bulk_import(
     def _parse():
         fmt_, columns_, raw_rows_, _sep_ = _read_upload(file.filename, content)
         used_, detected_ = _resolve_mapping(columns_, mapping)
-        rows_, errors_, skipped_ = _parse_stock_rows(raw_rows_, used_)
-        return fmt_, columns_, used_, detected_, rows_, errors_, skipped_
+        rows_, errors_, skipped_, ambiguous_ = _parse_stock_rows(
+            raw_rows_, used_, thousands_dot=thousands_dot)
+        return fmt_, columns_, used_, detected_, rows_, errors_, skipped_, ambiguous_
 
-    fmt, columns, used, detected, rows, errors, skipped_no_sku = await asyncio.to_thread(_parse)
+    (fmt, columns, used, detected, rows, errors,
+     skipped_no_sku, ambiguous_cells) = await asyncio.to_thread(_parse)
+
+    # The file says "1.250" and nothing in it says whether that is 1250 or
+    # 1.25. Refusing is the point: the old behaviour picked 1.25, reported
+    # "1,200 products imported" and put the whole catalogue in PEDIR_YA
+    # (estabilidad 11.2). The preview asks the question; an import that arrives
+    # without the answer is one that skipped it.
+    if ambiguous_cells:
+        raise AppError(
+            "inventory_import_number_format_unclear",
+            "The file uses a dot in numbers like "
+            f"{ambiguous_cells[0]} and nothing in it says whether that is a "
+            "thousands separator or a decimal point. Answer that first.",
+            status_code=422,
+            params={
+                "samples": ", ".join(ambiguous_cells),
+                "as_decimal": stock_import.parse_number(ambiguous_cells[0]),
+                "as_thousands": stock_import.parse_number(ambiguous_cells[0],
+                                                          thousands_dot=True),
+            },
+        )
 
     # Destination for rows that name no warehouse. Applied before the limit
     # pre-checks below, which count new (sku, warehouse) keys and new location
@@ -592,6 +643,11 @@ async def bulk_import(
     # count the user is shown has to be taken before that.
     total_read = len(rows)
     stats = {"duplicates": 0}
+    # Rows the writer could not persist. Filled inside the worker thread below
+    # and merged into the same `errors` channel the parse stage already uses:
+    # to the person holding the file, "row 41 never saved" and "row 41 was
+    # unreadable" are the same question.
+    write_failures: list[dict] = []
 
     def _check_and_write() -> int:
         # Resolve every distinct warehouse spelling in the CSV to its canonical
@@ -651,13 +707,26 @@ async def bulk_import(
         enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id),
                       adding=len(new_wh_names), conn=conn)
 
-        # bulk_upsert does one synchronous DB round-trip per row.
-        return svc.bulk_upsert(user.tenant_id, rows)
+        # `only_fill_missing` is the buyer's answer to "does this re-import
+        # overwrite what I corrected by hand?" — off by default, which is the
+        # behaviour every existing caller had, and on when the wizard's toggle
+        # says so. Without it a monthly ERP re-export silently reverted every
+        # manual lead time, and re-stamped the provenance to 'file' so the UI
+        # could not even badge the value as the tenant's own (estabilidad 11.9).
+        # bulk_upsert does one synchronous DB round-trip per row. `failures`
+        # collects the rows that were read from the file and did not reach the
+        # database, so the response can name them instead of leaving "83 of 120"
+        # as the only signal (estabilidad 11.34).
+        return svc.bulk_upsert(user.tenant_id, rows, failures=write_failures,
+                               only_fill_missing=only_fill_missing)
 
     count = await asyncio.to_thread(_check_and_write)
     result = {
         "imported": count,
         "total_rows": total_read,
+        # Echoed so the screen can say which reading it used rather than
+        # leaving the buyer to infer it from the numbers.
+        "only_fill_missing": only_fill_missing,
         "format": fmt,
         # What we read the file as, so the UI can say "we took Existencia as
         # your stock" instead of leaving the user guessing.
@@ -673,10 +742,14 @@ async def bulk_import(
     if stats["duplicates"]:
         result["duplicate_rows"] = stats["duplicates"]
     # Surface rejected rows so the user learns their data was garbage instead
-    # of it being silently dropped/coerced.
-    if errors:
-        result["errors"] = errors
-        result["error_count"] = len(errors)
+    # of it being silently dropped/coerced — and, since 11.34, the rows that
+    # parsed cleanly and still did not land.
+    reported_errors = errors + write_failures
+    if reported_errors:
+        result["errors"] = reported_errors[:_MAX_REPORTED_ROW_ERRORS]
+        result["error_count"] = len(reported_errors)
+    if write_failures:
+        result["write_failed_rows"] = len(write_failures)
 
     # What the file had and what the database got, in the history — because
     # "83 products imported" after a 120-row preview was the only signal, and
@@ -686,7 +759,7 @@ async def bulk_import(
         "rows_read":      total_read + len(errors),
         "rows_written":   count,
         "duplicate_rows": stats["duplicates"],
-        "rejected_rows":  len(errors),
+        "rejected_rows":  len(errors) + len(write_failures),
     }
     # Offloaded like every other DB call on this endpoint: it is one INSERT,
     # but this handler is async and the module's rule is that blocking work
@@ -701,7 +774,7 @@ async def bulk_import(
             # map. A short write with neither is the case nobody has explained
             # yet (see estabilidad 11.34), and saying so is better than
             # inventing a cause.
-            reason=("rows_rejected_by_validation" if errors
+            reason=("rows_rejected_by_validation" if errors or write_failures
                     else "duplicate_rows_collapsed" if stats["duplicates"]
                     else "unknown"),
         )
@@ -955,17 +1028,26 @@ def list_shrinkage_reasons(user: CurrentUser = Depends(get_current_user)):
 def get_stock_history(
     sku: str,
     days: int = Query(default=30, ge=1, le=365),
+    warehouse: Optional[str] = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Returns point-in-time stock snapshots for trend visualization."""
+    """Point-in-time stock levels for trend visualisation.
+
+    Without `warehouse` the series is the TENANT-WIDE level — per-location rows
+    summed per day, not listed one after another. With it, that one location's
+    own history, which begins when snapshots started carrying a warehouse
+    (2026-09-16): rows older than that are tenant-wide totals and are not
+    attributed to a location after the fact.
+    """
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
         raise AppError(
             "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
             status_code=404, params={"sku": sku},
         )
-    history = svc.get_stock_history(user.tenant_id, sku, days=days)
-    return ok({"sku": sku, "days": days, "history": history})
+    canonical = wh_svc.resolve_canonical_name(user.tenant_id, warehouse) if warehouse else None
+    history = svc.get_stock_history(user.tenant_id, sku, days=days, warehouse=canonical)
+    return ok({"sku": sku, "days": days, "warehouse": canonical, "history": history})
 
 
 # ── Dashboard summary (lightweight — only summary block) ──────────────────────
@@ -1373,7 +1455,20 @@ def log_po(
         po_items = [i.model_dump() for i in body.items]
     else:
         period = planning_service.get_planning(user.tenant_id).get("period", "daily")
-        items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
+        # Re-derived at the SAME level the file was built for. Without this the
+        # export endpoint served Norte's rows while the order logged right
+        # behind it was the tenant-wide list: the buyer downloaded a file with
+        # nothing to order and /pedidos showed them an order for two SKUs they
+        # never saw (estabilidad 11.7, found walking the screen — the export
+        # itself was already scoped).
+        destination = body.destination_warehouse if body else None
+        if destination:
+            canonical = wh_svc.resolve_canonical_name(user.tenant_id, destination)
+            rows = svc.get_inventory_status_by_warehouse(
+                user.tenant_id, session_id, period=period)
+            items = [i for i in rows if i.get("warehouse") == canonical]
+        else:
+            items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
         po_items = [
             i for i in items
             if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("recommended_qty") or 0) > 0
@@ -1856,6 +1951,11 @@ class PriceBreakUpsert(BaseModel):
 class PriceBreakCartLine(BaseModel):
     sku:      str
     quantity: float = Field(ge=0)
+    # The supplier the buyer has on this line right now. Optional, because the
+    # briefing surface evaluates without a cart — but when the screen has one it
+    # must travel, or a line whose supplier was switched keeps being quoted the
+    # previous supplier's ladder (estabilidad 11.14).
+    supplier_id: Optional[str] = None
 
 
 class PriceBreakEvaluateRequest(BaseModel):
@@ -1920,7 +2020,8 @@ def evaluate_price_breaks(
     status_items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
 
     if body and body.items:
-        cart = [{"sku": i.sku, "quantity": i.quantity} for i in body.items]
+        cart = [{"sku": i.sku, "quantity": i.quantity, "supplier_id": i.supplier_id}
+                for i in body.items]
     else:
         cart = [
             {"sku": i["sku"], "quantity": i.get("recommended_qty") or 0}
@@ -2111,7 +2212,17 @@ class SupplierCreate(BaseModel):
     email:          Optional[str] = None
     phone:          Optional[str] = None
     whatsapp:       Optional[str] = None
-    lead_time_days: int   = Field(default=15, ge=1, le=365)
+    # Optional, and None by default, because this field is PROVENANCE.
+    #
+    # It used to be `int = Field(default=15)`, so the model handed the service a
+    # 15 for every caller that sent none — and `_stamp_lead_time_provenance`
+    # records SOURCE_USER for any call that supplies a lead time. Faro's own
+    # assumption was therefore filed as the supplier's declaration, and the
+    # scorecard printed DECLARADO 15d for a supplier who declared nothing
+    # (estabilidad 11.32). `exclude_none=True` in the handler now drops it
+    # entirely, so the column's own DEFAULT 15 applies without anybody claiming
+    # to have chosen it.
+    lead_time_days: Optional[int] = Field(default=None, ge=1, le=365)
     lead_time_std:  int   = Field(default=3, ge=0, le=60)
     payment_terms:  Optional[str] = None
     # Structured credit days (feature 3.6). Optional: when omitted it is derived
@@ -2797,6 +2908,10 @@ def export_po(
     session_id: str = Query(...),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signals: str = Query(default="PEDIR_YA,PEDIR_PRONTO", description="Comma-separated signals to include"),
+    warehouse: Optional[str] = Query(
+        default=None,
+        description="Export this warehouse's rows instead of the tenant-wide ones",
+    ),
     user: CurrentUser = Depends(get_current_user),
 ):
     """Export purchase order as CSV, filtered to actionable SKUs.
@@ -2807,10 +2922,24 @@ def export_po(
     tenant's per-week demand as per-day, so the screen offered nothing to order
     and the CSV came back with a hundred units — plus a purchase order in
     /pedidos the buyer never saw on screen.
+
+    `warehouse` exists for the same class of defect on the other axis
+    (estabilidad 11.7): the download menu sits above the warehouse selector and
+    stayed enabled with a warehouse tab open, so a buyer reading "Norte needs
+    40" downloaded a file saying 150 — the tenant-wide number — and `logPOGeneration`
+    wrote that into /pedidos as an order they never saw. With it, the CSV is the
+    rows of that warehouse, from the same per-warehouse computation the tab
+    renders.
     """
     include_signals = {s.strip().upper() for s in signals.split(",")}
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
-    items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
+    if warehouse:
+        canonical = wh_svc.resolve_canonical_name(user.tenant_id, warehouse)
+        rows = svc.get_inventory_status_by_warehouse(
+            user.tenant_id, session_id, service_level, period)
+        items = [i for i in rows if i.get("warehouse") == canonical]
+    else:
+        items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
     po_items = [i for i in items if i["signal"] in include_signals and (i.get("recommended_qty") or 0) > 0]
 
     output = io.StringIO()

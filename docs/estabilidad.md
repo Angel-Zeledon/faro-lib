@@ -2055,9 +2055,13 @@ Surfaces chosen were the ones `inventario-pantallas.md` reports as never walked:
 integrations, suppliers, exports, stock movements, scheduled work, and the whole
 frontend.
 
-**Status:** 23 fixed on 2026-09-16. The 13 still open are
-listed at the end with what decision each one needs — they are open because the
-fix is a product choice, not because they are hard.
+**Status: all 36 closed.** 23 were fixed on 2026-09-16 as part of the sweep.
+The other 13 were open because the fix was a product choice rather than a code
+change; the owner made those four calls the same day and they were built. §13
+records each decision and what it cost. The one that is not closed in full is
+**11.5**, where the wrong CONSEQUENCE is fixed and the ERP fetch itself still
+needs a real account to read against — deliberately, because guessing a payload
+there writes wrong stock, which is the defect being fixed.
 
 ---
 
@@ -2080,7 +2084,7 @@ digest is a call to action addressed to whoever can act on it.
 *Tests:* `test_agent_sweep_fixes.py::TestAlertRecipientsIncludeAnalysts` (5),
 including a source guard so nothing asks for a non-existent role again.
 
-**11.2 A thousands-dot file imported every quantity divided by 1000 — [OPEN]** 📏
+**11.2 A thousands-dot file imported every quantity divided by 1000 — [FIXED 2026-09-16]** 📏
 `utils/stock_import.py:296` (and `has_decimal_comma`, `:219`). The file-level
 verdict only detects a decimal **comma**; there is no mirror rule for
 dot-as-thousands. Measured against the real module: `["1.250","980","12.500"]` →
@@ -2089,7 +2093,7 @@ the whole catalogue drops to PEDIR_YA. Adding one `3,50` anywhere in the file
 fixes it — which is why every hand-made test file passes. `/bulk/preview`
 returns `sample_rows` with the parsed values and `StockImportWizard.tsx` does
 not render them, so there is nowhere to catch the 1.25 either.
-**Why it is still open:** the safe fix is to stop guessing and ASK — the same
+**Why it was open, and how it closed (see §13):** the safe fix is to stop guessing and ASK — the same
 thing the upload gate already does for other ambiguities — and that is a new
 question in the import wizard, i.e. a new screen state. Owner's call. The
 cheaper half (render `sample_rows` in the wizard so the user sees `1.25` before
@@ -2125,19 +2129,19 @@ scorecard's `purchased_value`. The saving reached nothing Faro stores or prints.
 Now the rung's `step_unit_price` travels with the quantity, and `unit_margin` is
 recomputed from it so the cart does not report the old margin on the new price.
 
-**11.5 ERP stock all lands in `principal` while sales carry the branch — [OPEN]**
+**11.5 ERP stock all lands in `principal` while sales carry the branch — [CONSEQUENCE FIXED 2026-09-16]**
 `integrations/alegra.py:68`, `siigo.py:85` hardcode `warehouse="principal"`,
 while `fetch_sales` reads the real warehouse off each invoice — which sets
 `has_store=True` and trains per `(sku, store)`. For a multi-branch distributor
 Norte and Sur then resolve `current_stock = 0` → **PEDIR_YA at full reorder
 quantity for the entire catalogue at every branch**, with the goods sitting
 there; and `principal`, which holds the units, reads `SIN_DATOS`.
-**Why it is still open:** the fix needs each provider's per-warehouse inventory
+**Why it was open, and how it closed (see §13):** the fix needs each provider's per-warehouse inventory
 endpoint, and neither module's docstring claims to have verified that shape
 against the live API. Guessing a payload here writes wrong stock, which is the
 defect we are fixing. Needs a real account to read against.
 
-**11.6 A scheduled retrain runs on the COMPLETED session and can blank the product — [OPEN]**
+**11.6 A scheduled retrain runs on the COMPLETED session and can blank the product — [FIXED 2026-09-16]**
 `workers/worker.py:217` calls `create_job` bare. The user-facing path
 (`api/v1/training.py:38`) validates state, configs and the active-job cap and
 transitions to QUEUED; the scheduler does none of it. When the run raises,
@@ -2148,13 +2152,13 @@ The only trace is `scheduled_jobs.last_error`, on a screen nobody opens because
 nothing announced a problem. Same line, second effect: no per-session dedupe, so
 an hourly preset over a >1h training queues B while A runs and both write
 results for one `session_id`.
-**Why it is still open:** "retrain" can mean *refresh this session in place*
+**Why it was open, and how it closed (see §13):** "retrain" can mean *refresh this session in place*
 (today's behaviour, and the failure mode above) or *create a new session and
 switch to it once it succeeds* (safe, but it consumes a saved-forecast slot per
 run — see 11.3). That is the owner's product decision, and it is the same
 decision as 11.3.
 
-**11.7 Every `/inventario` export ignores the open warehouse tab — [OPEN]**
+**11.7 Every `/inventario` export ignores the open warehouse tab — [FIXED 2026-09-16]**
 `GET /inventory/status/export-po` (`api/v1/inventory.py`) **has no warehouse
 parameter at all**; it re-derives the list at network level. The download menu
 sits in the page header, above the warehouse selector, and stays enabled with a
@@ -2163,12 +2167,12 @@ warehouse tab open. The buyer reads "Norte needs 40" and downloads a CSV saying
 saw. This is §3.1 recurring on the warehouse axis instead of the period axis.
 "Export edited" is worse: it iterates the network list, so the per-warehouse
 edits are not even in scope.
-**Why it is still open:** the honest fix is a `warehouse` parameter on the
+**Why it was open, and how it closed (see §13):** the honest fix is a `warehouse` parameter on the
 endpoint — a new API capability — or disabling the menu while a warehouse tab is
 open, which is a UX decision about a button people use. Owner's call; the
 recommendation is the parameter.
 
-**11.8 Shrinkage always decrements `principal` — [PARTLY FIXED 2026-09-16]**
+**11.8 Shrinkage always decrements `principal` — [FIXED 2026-09-16]**
 `inventory/shrinkage_service.py:70` resolves `principal`, while the modal shows
 stock **summed** across warehouses and never asks which one
 (`inventario/page.tsx:1001` never sends `warehouse`, though the API model
@@ -2183,18 +2187,18 @@ existing `Norte` 404s too.
 `resolve_canonical_name`, so `norte` against an existing `Norte` 404'd. It now
 normalises like every other path (*test:*
 `TestShrinkageResolvesTheWarehouseSpelling`).
-**Why the rest is still open:** the modal has to ASK which warehouse — a new
+**Why the rest was open, and how it closed (see §13):** the modal has to ASK which warehouse — a new
 control on a screen that was deliberately simplified down to 26 controls
 (§1.septies). Owner's call.
 
-**11.9 A monthly ERP re-import reverts every hand-corrected lead time — [OPEN]**
+**11.9 A monthly ERP re-import reverts every hand-corrected lead time — [FIXED 2026-09-16]**
 `inventory/service.py:680` has `only_fill_missing: bool = False`, and
 `_fields_to_fill` exists precisely so that "a lead time the buyer corrected by
 hand in March is not silently reverted by April's ERP export". The only caller
 passing `True` is a test; `POST /inventory/bulk` takes the default. Worse,
 `upsert_stock` then re-stamps provenance to `'file'`, so the UI can no longer
 badge the value as the tenant's own either.
-**Why it is still open:** whether a re-import overwrites or fills gaps is a
+**Why it was open, and how it closed (see §13):** whether a re-import overwrites or fills gaps is a
 choice the user has to make per import, which means a toggle in the wizard.
 Owner's call.
 
@@ -2221,13 +2225,13 @@ shipped backend-only and the defect it describes was still live on the page.
 Both flags are now declared and honoured: below the sample floor the number
 still shows, marked provisional and in the dim colour, instead of bold green.
 
-**11.12 Fill rate punishes orders still in transit — [OPEN]**
+**11.12 Fill rate punishes orders still in transit — [FIXED 2026-09-16]**
 `reception_service.py:533` includes `partial` and `not_received` POs, summing
 received against the full `final_qty`, with no exclusion for deliveries whose
 window has not closed. A supplier with two half-delivered orders, both on
 schedule, prints **50%** — presented as a performance verdict. The one who has
 shorted nothing reads worst on the page.
-**Why it is still open:** "still in transit" needs a definition — expected date
+**Why it was open, and how it closed (see §13):** "still in transit" needs a definition — expected date
 + grace, or simply excluding POs inside their declared lead time. That is a
 business rule, not a code fix.
 
@@ -2243,22 +2247,22 @@ from too little history. Now grouped by casefolded key, with the first-seen
 spelling kept for display so the alert keys the same way the scorecard row does.
 *Test:* `TestLeadTimeDeviationGroupsCaseInsensitively`.
 
-**11.14 The price-break panel quotes a supplier the buyer already changed — [OPEN]**
+**11.14 The price-break panel quotes a supplier the buyer already changed — [FIXED 2026-09-16]**
 `compras/page.tsx:1079` sends only `{sku, quantity}`; the supplier comes from
 `status_items`, not from the cart, and the effect's dependency is `sku:qty`, so
 switching supplier does not even re-evaluate. It is exactly what
 `evaluate_cart`'s own docstring says it fixed, reintroduced through the
 supplier-switch path.
-**Why it is still open:** the evaluate endpoint needs a `supplier_id` per line —
+**Why it was open, and how it closed (see §13):** the evaluate endpoint needs a `supplier_id` per line —
 a new field on a public request model. Small, but it is an API change.
 
-**11.15 Stock snapshots have no warehouse column — [OPEN]**
+**11.15 Stock snapshots have no warehouse column — [FIXED 2026-09-16]**
 `db/migrations.py:381`. `/inventario`'s sparkline and the briefing's
 `demand_trend_pct` are computed over interleaved series: principal 500 and Norte
 20 give `500, 20, 500, 20…`, and `_calc_demand_trend` reads that difference as
 real consumption — "+585% demand" that never happened. A single inter-warehouse
 transfer produces the same artefact on its own.
-**Why it is still open:** a migration plus a backfill decision for existing rows
+**Why it was open, and how it closed (see §13):** a migration plus a backfill decision for existing rows
 (there is no way to attribute historical snapshots to a warehouse after the
 fact). Owner's call on what happens to the history.
 
@@ -2381,7 +2385,7 @@ mount-scoped flag now stops the loop and, above all, the navigation.
 only way to stop a run you regret is to close the tab — which is what the screen
 tells you not to do. That is a new capability; owner's call.
 
-**11.28 The daily and monthly loops keep no last-run marker — [OPEN]**
+**11.28 The daily and monthly loops keep no last-run marker — [FIXED 2026-09-16]**
 `workers/worker.py:245`, `:307`, `:337`. Each iteration computes `next_run` from
 `datetime.now()`; nothing is persisted, unlike `scheduled_jobs.last_run`. A
 worker killed at 07:55 and restarted at 08:02 makes `_next_daily_run` return
@@ -2389,7 +2393,7 @@ worker killed at 07:55 and restarted at 08:02 makes `_next_daily_run` return
 reminder, and no activity row is written, so it looks like a calm day. The
 monthly variant skips the overstock snapshot and permanently breaks that month's
 "capital freed" figure.
-**Why it is still open:** it needs somewhere to persist "last fired", i.e. a
+**Why it was open, and how it closed (see §13):** it needs somewhere to persist "last fired", i.e. a
 table or a column. That is a new field; owner's call.
 
 **11.29 `or 0` in the providers defeated "never invent a zero" — [FIXED 2026-09-16]**
@@ -2423,33 +2427,33 @@ provenance field, so the row claimed human authorship for a number Alegra sent.
 Now passes `SOURCE_FILE`. (A dedicated `SOURCE_INTEGRATION` would be more
 precise and is a new value in `VALUE_SOURCES` — not added unprompted.)
 
-**11.32 The supplier form pre-fills the system default — [OPEN]**
+**11.32 The supplier form pre-fills the system default — [FIXED 2026-09-16]**
 `proveedores/page.tsx:125`, `:438` always send `lead_time_days`, so
 `_stamp_lead_time_provenance` records `SOURCE_USER` for every supplier created
 in the UI. Three backend call sites gate on `lead_time_set_by` precisely to keep
 Faro's own assumption from being reported as the supplier's promise; the create
 form defeats that guard, and the scorecard prints **DECLARADO 15d** for a
 supplier who declared nothing.
-**Why it is still open:** the field is visibly pre-filled in a labelled required
+**Why it was open, and how it closed (see §13):** the field is visibly pre-filled in a labelled required
 input, so this sits on the line between defect and design. Leaving it blank with
 a placeholder is the fix, and it changes a form the owner has seen.
 
-**11.33 A PO line that fails to insert is swallowed — [OPEN]**
+**11.33 A PO line that fails to insert is swallowed — [FIXED 2026-09-16]**
 `roi_service.py:155-180` logs a warning while the header keeps its full
 `sku_count` and `total_value`. The line disappears from the supplier's
 `fill_rate`, from `purchased_value` and from the PDF the supplier receives,
 without telling anyone.
-**Why it is still open:** the alternative is to fail the whole PO generation,
+**Why it was open, and how it closed (see §13):** the alternative is to fail the whole PO generation,
 which loses the buyer's work. Doing it properly means a transaction around the
 header and its lines — a real change to that write path, worth doing
 deliberately rather than as part of a sweep.
 
-**11.34 An import row that fails to write is dropped with a log — [OPEN]**
+**11.34 An import row that fails to write is dropped with a log — [FIXED 2026-09-16]**
 `inventory/service.py:730`. `imported` does shrink, so the number is not a lie,
 but "83 products imported" after a clean 120-row preview is the only signal and
 nothing names the 37 rows or why. PLAUSIBLE: the path is confirmed, the trigger
 was not demonstrated.
-**Why it is still open:** the response already has an `errors` channel; wiring
+**Why it was open, and how it closed (see §13):** the response already has an `errors` channel; wiring
 write-stage failures into it is straightforward, but the row-level reasons need
 copy, and the wizard needs to show them. Bundle with 11.2.
 
@@ -2620,6 +2624,121 @@ and the filtered-empty state, no console errors.
 - The open items of section 11 stay open. This does not close 11.2, 11.5, 11.6,
   11.7, 11.9, 11.28, 11.32 or 11.33 — it makes two of them (11.34's silence, a
   ceiling hit with nobody watching) audible, which is not the same as fixed.
+
+---
+
+## 13. The 13 that needed a decision, and the decisions (2026-09-16)
+
+Section 11 left 13 findings open. None of them was hard: each one needed an
+answer that belongs to whoever owns the product, not to whoever writes the
+code — what "retrain" means, what counts as "still in transit", what happens to
+history a migration cannot attribute, whether to guess at an ERP payload.
+
+Four calls were made, and everything else followed from them. All the work is
+guarded by `backend/tests/test_open_findings_of_the_sweep.py` (37 tests), one
+class per finding, each named after the defect rather than the fix so a failure
+says which promise broke.
+
+### The four decisions
+
+**A scheduled retrain creates a NEW session and switches on success.** The
+owner asked for the most complete option, and this is it. The schedule's
+session — the one a person created and pointed it at — becomes a template that
+is never trained again; each run builds a fresh session from it, and
+`resolve_active_session` (newest family wins) switches to it only once it
+COMPLETES. A 3 a.m. engine error now fails a session nobody is reading, and the
+buyer opens the app to yesterday's numbers, which are numbers.
+
+The reason this was a decision and not a fix is the slot economics: a saved
+forecast is a plan ceiling (3 on free) and a daily schedule that kept every run
+would fill it in three days. So **the schedule reuses its own slots**: before
+each run it deletes the sessions it created itself except the one currently
+serving, which bounds a schedule at two — what the buyer is reading, and what is
+training to replace it. It can only ever reach rows carrying its own
+`scheduled_job_id`; a session a person made never has one.
+
+**A supplier is judged on deliveries that are actually due.** An order is left
+out of `fill_rate` while `today ≤ generated_at + lead time + 2 days`, where the
+lead time is `_effective_lead_time` — the same learned-then-declared-then-default
+rule the overdue screen and the semáforo already use, so two screens cannot
+disagree about whether a supplier is late. A fully received order is judged
+immediately: it has nothing left to arrive. `purchased_value` is NOT held back
+by the window, because the money left the company when the order was placed.
+
+**Stock snapshots get their warehouse, and the old rows keep NULL.** There is
+no way to attribute a historical snapshot to a location after the fact, so
+nothing is backfilled: a NULL row is read as the tenant-wide total, which is
+exactly what it was. Per-warehouse history starts on 2026-09-16; the aggregate
+keeps its full history, because summing today's per-warehouse rows per day
+continues the same series the old rows were.
+
+**No ERP payload is guessed.** 11.5's fetch stays as it is until there is a real
+account to read against — writing wrong stock is the defect being fixed. What is
+fixed is the consequence, which cost the same money: a tenant whose stock is
+recorded in ONE location while its sales carry several now reads **SIN_DATOS**
+at the other branches instead of an invented zero, so nobody is told to buy a
+full reorder for goods sitting in another warehouse. The row says why, on
+screen, in the reader's language.
+
+### What each one turned into
+
+| # | What was decided | Where it lives |
+|---|---|---|
+| 11.2 | **Ask, never guess.** A file with `1.250` and no comma anywhere is ambiguous; the preview says so and the import is **refused** until the wizard's question is answered — in the file's own numbers ("1250" or "1.25"), because nobody should need to know what a thousands separator is. `sample_rows` is rendered too, so the parse is visible before committing. | `utils/stock_import.py` (`dot_is_ambiguous`), `POST /inventory/bulk` (`thousands_dot`), `StockImportWizard.tsx` |
+| 11.5 | Consequence only, see above. | `inventory/service.py` (`stock_is_single_location`), `WarehouseStatusTable.tsx` |
+| 11.6 | New session per run, switch on success, prune its own previous runs, validate the template, and skip while one is still training. | `sessions/retrain_service.py`, `workers/worker.py` |
+| 11.7 | The endpoint takes a `warehouse`; the download follows the tab that is open, and the order logged in /pedidos carries the same destination. "Export edited" defers to it while a tab is open, because the edits it would export belong to a view nobody is looking at. | `GET /inventory/status/export-po`, `inventario/page.tsx` |
+| 11.8 | The modal ASKS which warehouse — one control, and only for tenants with more than one place to lose stock from. It opens on the tab the buyer has open. | `inventario/page.tsx` (`ShrinkageModal`) |
+| 11.9 | A checkbox in the wizard: *do not overwrite what I corrected by hand*. Off by default, so every existing caller behaves exactly as before; on, it passes the `only_fill_missing` that already existed and had no caller but a test. | `POST /inventory/bulk`, `StockImportWizard.tsx` |
+| 11.12 | The window rule above. An empty fill rate now says **"2 on the way"** instead of looking like a supplier nobody buys from. | `inventory/reception_service.py` (`_fill_counts_for`), `proveedores/scorecard/page.tsx` |
+| 11.14 | The cart line carries its `supplier_id` and the evaluation key includes it, so switching supplier re-evaluates. A supplier who quotes no ladder for that SKU is quoted **nothing** rather than somebody else's price. | `price_break_service.py`, `compras/page.tsx` |
+| 11.15 | Column added, old rows NULL. The tenant-wide series is now per-warehouse rows collapsed to one value per location per day and summed — not their rows interleaved, which `_calc_demand_trend` read as "+585% demand" that never happened. | `db/migrations.py`, `inventory/service.py` (`get_stock_history`) |
+| 11.28 | One row per loop holding the BOUNDARY it last completed, so a restart at 08:02 runs the 08:00 pass instead of sleeping until tomorrow. Catch-up is bounded — six hours for the daily loops, three days for the monthly one, because its snapshot is the closing measurement of a month and nothing else can produce it. Past the window the boundary is recorded as **skipped**, so the gap is visible. `/health` carries the markers. | `workers/loop_state.py`, `workers/worker.py`, `main.py` |
+| 11.32 | The lead-time field opens **empty**, with the assumption as a placeholder, and is omitted from the payload when blank — so `_stamp_lead_time_provenance` stops recording SOURCE_USER for a supplier who declared nothing, and the scorecard stops printing DECLARADO 15d. | `proveedores/page.tsx`, `lib/api.ts` (`SupplierInput`) |
+| 11.33 | The header and its lines commit as ONE transaction. The old `except: log.warning` per line is gone: the order rolls back whole, the API returns the error, and the buyer's cart is still in the browser to retry. Manual orders too. | `inventory/roi_service.py` (`_write_po_atomically`) |
+| 11.34 | Rows that parsed cleanly and did not reach the database travel back in the same `errors` channel as the parse failures, with the same `{row, sku, code, params, error}` shape, and the wizard names them. The event feed counts them too (§12). | `inventory/service.py` (`bulk_upsert(failures=…)`), `POST /inventory/bulk`, `StockImportWizard.tsx` |
+
+### Two more, found walking the screens
+
+Neither was in the sweep's 36. Both were found by using the product after the
+13 were "done", which is the whole argument for walking it: the tests were
+green and green was not enough.
+
+**The API model was declaring lead times nobody typed.** 11.32 was fixed in the
+form — and creating a supplier in the browser came back **422**.
+`SupplierCreate.lead_time_days` was `int = Field(default=15)`, so an omitted
+field arrived at the service as a 15 and `_stamp_lead_time_provenance` filed it
+as the supplier's own declaration. The form fix could not work while the model
+held that default, and every API client was affected too. It is
+`Optional[int] = None` now, `exclude_none=True` drops it, and the column's own
+DEFAULT still supplies the number the planner needs. The tests missed it because
+they called the service directly, where the field was always passed explicitly.
+*Tests:* `TestASupplierOnlyDeclaresALeadTimeWhenSomebodyTypesOne` (3), plus the
+inverted assertion in `test_lead_time_provenance.py`, which had PINNED this gap
+and said in so many words that making the field Optional should flip it.
+
+**11.7 survived one function to the left.** With the Norte tab open the export
+correctly downloaded Norte's rows — and the `log-po` call right behind it
+re-derived the list TENANT-WIDE, so /pedidos showed an order for two SKUs the
+file never contained. Same defect, same screen, one endpoint over: the fallback
+path in `log_po` now re-derives per warehouse when the request carries a
+destination.
+*Test:* `test_the_order_logged_behind_the_file_is_the_same_list`.
+
+**One thing the walk changed that was not a defect:** with "do not overwrite
+what I corrected by hand" ticked, a re-import that finds nothing to fill
+reports **"Productos importados: 0"**, which is true and unhelpful. It now says
+there was nothing to fill and why.
+
+### What this did NOT close
+
+- **11.5's fetch.** Alegra and Siigo still write every unit to `principal`.
+  Reopening it needs an account, not a decision.
+- **11.27's other half.** There is still no way to cancel a training run you
+  regret; the screen still tells you not to close the tab. That is a new
+  capability and nobody has asked for it.
+- **Retention.** `activity_logs` and now `system_loop_runs` grow without a
+  prune. Small tables, no measurement behind that statement.
 
 ---
 

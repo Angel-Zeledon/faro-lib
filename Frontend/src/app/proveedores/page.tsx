@@ -121,8 +121,23 @@ interface SupplierForm {
   notes:          string
 }
 
+/**
+ * A new supplier starts with NO lead time.
+ *
+ * It used to open pre-filled with the system default, and the form sends what
+ * it holds — so `_stamp_lead_time_provenance` recorded SOURCE_USER for every
+ * supplier created here, and the scorecard printed **DECLARADO 15d** for a
+ * supplier who declared nothing. Three backend call sites gate on
+ * `lead_time_set_by` precisely to keep Faro's own assumption from being
+ * reported as the supplier's promise; a pre-filled field defeated all three
+ * (estabilidad 11.32).
+ *
+ * Empty is not missing information: the planner falls back to the same default
+ * it always did. What changes is that the product no longer claims somebody
+ * chose it.
+ */
 function blankForm(name = ''): SupplierForm {
-  return { name, email: '', phone: '', whatsapp: '', lead_time_days: String(DEFAULT_LEAD_TIME_DAYS), lead_time_std: '3', payment_terms: '', notes: '' }
+  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '', lead_time_std: '3', payment_terms: '', notes: '' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
@@ -207,7 +222,7 @@ function SupplierFormPanel({
         <Field
           label={
             <Tooltip text={t('suppliers.form_lead_time_tip')}>
-              <span>{t('suppliers.form_lead_time_label')} *</span>
+              <span>{t('suppliers.form_lead_time_label')}</span>
               <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
             </Tooltip>
           }
@@ -215,7 +230,12 @@ function SupplierFormPanel({
           hint={t('suppliers.lead_time_applies_to_catalog')}
           hintStyle={{ fontSize: 10, lineHeight: 1.5 }}
         >
-          <Input name="supplier_lead_time_days" type="number" min={1} max={365} value={form.lead_time_days} onChange={set('lead_time_days')} aria-label={t('suppliers.form_lead_time_label')} />
+          {/* Placeholder, not a value: it shows what Faro will assume while
+              leaving the field empty, so nothing is recorded as declared. */}
+          <Input name="supplier_lead_time_days" type="number" min={1} max={365}
+                 value={form.lead_time_days} onChange={set('lead_time_days')}
+                 placeholder={t('suppliers.form_lead_time_placeholder', { days: DEFAULT_LEAD_TIME_DAYS })}
+                 aria-label={t('suppliers.form_lead_time_label')} />
         </Field>
         <Field
           label={
@@ -435,7 +455,10 @@ function SuppliersPageInner() {
       email:          form.email.trim() || null,
       phone:          form.phone.trim() || null,
       whatsapp:       form.whatsapp.trim() || null,
-      lead_time_days: parseInt(form.lead_time_days) || DEFAULT_LEAD_TIME_DAYS,
+      // Omitted when the field is empty: sending a number is what makes the
+      // backend stamp it as the supplier's own declaration (11.32).
+      lead_time_days: form.lead_time_days.trim() === ''
+        ? null : (parseInt(form.lead_time_days) || DEFAULT_LEAD_TIME_DAYS),
       lead_time_std:  parseInt(form.lead_time_std) || 3,
       payment_terms:  form.payment_terms || null,
       notes:          form.notes.trim() || null,
@@ -444,7 +467,7 @@ function SuppliersPageInner() {
       if (editing) {
         await updateSupplier(editing.id, payload)
       } else {
-        await createSupplier(payload as Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active'>)
+        await createSupplier(payload)
       }
       setShowForm(false); setEditing(null)
       await load()

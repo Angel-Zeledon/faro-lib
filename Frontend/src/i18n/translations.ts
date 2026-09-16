@@ -1751,6 +1751,7 @@ export const translations = {
   'errors.inventory_import_bad_mapping': 'No entendimos la asignación de columnas. Vuelve a elegirlas.',
   'errors.inventory_import_unknown_column': 'La columna "{column}" no está en el archivo.',
   'errors.inventory_import_row_not_a_number': 'La columna "{column}" trae "{value}", que no es un número.',
+  'errors.inventory_import_number_format_unclear': 'Tu archivo escribe números como {samples}, y nada en él dice si eso es {as_thousands} o {as_decimal}. Súbelo desde Configurar inventario para elegir, o arréglalo en tu sistema.',
   'errors.inventory_import_row_out_of_range': 'La columna "{column}" trae un valor fuera de rango.',
 
     // Dos relojes: el stock envejece en días (cada venta lo mueve), las ventas
@@ -3588,6 +3589,11 @@ export const translations = {
     'activity.retry': 'Reintentar',
     'alerts.section_events': 'Lo que pasó',
     'alerts.see_all': 'Ver todo el historial',
+    'inventory.shrinkage_field_warehouse': 'Bodega',
+    'suppliers.form_lead_time_placeholder': 'Si lo dejas vacío, asumimos {days} días',
+    'scorecard.fill_rate_in_transit': '{n} en camino',
+    'scorecard.fill_rate_in_transit_hint': 'Todavía no se puede medir: sus entregas siguen dentro del plazo que prometió.',
+    'inventory.wh_no_stock_record': 'Nunca registraste stock de este producto en esta bodega. No decimos que haya cero: no lo sabemos.',
     'hoy.optimizer_fallback_empty': 'El optimizador de costo no alcanzó a terminar y la regla simple de respaldo no encontró nada que pedir en este horizonte. Eso NO quiere decir que no haya que comprar: quiere decir que no pudimos calcularlo. Vuelve a intentarlo, o acorta tu horizonte de planificación.',
   },
   en: {
@@ -5251,6 +5257,7 @@ export const translations = {
   'errors.inventory_import_unreadable_file': 'We could not open the file as a spreadsheet. Export it again as .xlsx or .csv.',
   'errors.inventory_import_bad_mapping': 'We did not understand the column assignment. Pick the columns again.',
   'errors.inventory_import_unknown_column': 'Column "{column}" is not in the file.',
+  'errors.inventory_import_number_format_unclear': 'Your file writes numbers like {samples}, and nothing in it says whether that is {as_thousands} or {as_decimal}. Upload it from Set up my inventory to choose, or fix it in your system.',
   'errors.inventory_import_row_not_a_number': 'Column "{column}" carries "{value}", which is not a number.',
   'errors.inventory_import_row_out_of_range': 'Column "{column}" carries an out-of-range value.',
 
@@ -7027,6 +7034,11 @@ export const translations = {
     'activity.retry': 'Try again',
     'alerts.section_events': 'What happened',
     'alerts.see_all': 'See the full history',
+    'inventory.shrinkage_field_warehouse': 'Warehouse',
+    'suppliers.form_lead_time_placeholder': 'Leave empty and we assume {days} days',
+    'scorecard.fill_rate_in_transit': '{n} on the way',
+    'scorecard.fill_rate_in_transit_hint': 'Not measurable yet: their deliveries are still inside the window they promised.',
+    'inventory.wh_no_stock_record': 'Stock for this product was never recorded in this warehouse. That is not the same as zero: we do not know.',
     'hoy.optimizer_fallback_empty': 'The cost optimiser could not finish in time, and the simple fallback rule found nothing to order in this horizon. That does NOT mean there is nothing to buy — it means we could not work it out. Try again, or shorten your planning horizon.',
   },
 } as const

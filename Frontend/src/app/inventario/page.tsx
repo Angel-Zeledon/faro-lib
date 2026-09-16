@@ -971,8 +971,22 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
 // ── Shrinkage modal (record a non-sale stock-out: breakage/expiry/self-consumption/gift) ──
 const SHRINKAGE_REASONS: ShrinkageReason[] = ['breakage', 'expiry', 'self_consumption', 'gift']
 
-function ShrinkageModal({ items, onClose, onSaved }: {
+/**
+ * `warehouses` / `defaultWarehouse` exist because the units come off a PLACE.
+ *
+ * The modal used to ask only for the SKU and the quantity while showing stock
+ * SUMMED across warehouses, and `record_shrinkage` resolved `principal`. A
+ * crate broken in Norte came off principal: the tenant total still reconciled,
+ * so nothing looked wrong, while the per-warehouse semáforo believed Norte held
+ * 400 units that did not exist (estabilidad 11.8). The loud variant was worse —
+ * a tenant whose stock arrived with a warehouse column has no `principal` row
+ * at all, so every shrinkage 404'd blaming the SKU for a warehouse the user
+ * never chose.
+ */
+function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved }: {
  items: InventoryStatusItem[]
+ warehouses: string[]
+ defaultWarehouse: string | null
  onClose: () => void
  onSaved: () => void
 }) {
@@ -982,6 +996,7 @@ function ShrinkageModal({ items, onClose, onSaved }: {
  const [quantity, setQuantity] = useState('')
  const [reason, setReason] = useState<ShrinkageReason>('breakage')
  const [notes, setNotes] = useState('')
+ const [warehouse, setWarehouse] = useState<string>(defaultWarehouse ?? warehouses[0] ?? '')
  const [saving, setSaving] = useState(false)
  const [error, setError] = useState<string | null>(null)
 
@@ -999,7 +1014,12 @@ function ShrinkageModal({ items, onClose, onSaved }: {
   if (!qtyNum || qtyNum <= 0) { setError(t('inventory.shrinkage_err_quantity')); return }
   setSaving(true)
   try {
-   await createShrinkage({ sku: selected.sku, quantity: qtyNum, reason, notes: notes || undefined })
+   await createShrinkage({
+    sku: selected.sku, quantity: qtyNum, reason,
+    // Sent whenever the tenant has more than one place to lose stock from.
+    warehouse: warehouses.length > 1 ? (warehouse || undefined) : undefined,
+    notes: notes || undefined,
+   })
    addToast(t('inventory.shrinkage_toast_title'), `${qtyNum} ${t('inventory.calc_unit_units')} ${t('inventory.shrinkage_toast_body')} ${selected.sku}`, 'success')
    onSaved()
    onClose()
@@ -1045,6 +1065,29 @@ function ShrinkageModal({ items, onClose, onSaved }: {
        </div>
       )}
      </div>
+
+     {/* One control, and only when the tenant has more than one place to lose
+         stock from. The screen was deliberately simplified to 26 controls
+         (estabilidad 1.septies), so this appears for the tenants who need it
+         and for nobody else — and without it the write lands on `principal`
+         whatever the buyer meant (11.8). */}
+     {warehouses.length > 1 && (
+      <div style={{ marginBottom: 12 }}>
+       <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>
+        {t('inventory.shrinkage_field_warehouse')}
+       </div>
+       <select
+        id="shrinkage-warehouse"
+        name="shrinkage_warehouse"
+        aria-label={t('inventory.shrinkage_field_warehouse')}
+        style={inputM}
+        value={warehouse}
+        onChange={e => setWarehouse(e.target.value)}
+       >
+        {warehouses.map(w => <option key={w} value={w}>{w}</option>)}
+       </select>
+      </div>
+     )}
 
      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       <div>
@@ -1974,10 +2017,18 @@ export default function InventoryPage() {
  finally { setImporting(false) }
  }
 
+ // The file follows the tab that is open.
+ //
+ // `GET /inventory/status/export-po` had no warehouse parameter at all and
+ // re-derived the list at network level, while the download menu sits in the
+ // page header ABOVE the warehouse selector and stayed enabled with a tab
+ // open. The buyer read "Norte needs 40", downloaded a file saying 150, and
+ // `logPOGeneration` wrote that into /pedidos as an order they never saw
+ // (estabilidad 11.7 — §3.1 again, on the warehouse axis).
  async function handleExport() {
  if (!sessionId) return; setExporting(true)
  try {
-  const { logged } = await exportInventoryPO(sessionId)
+  const { logged } = await exportInventoryPO(sessionId, 0.95, selectedWarehouse ?? undefined)
   if (!logged) warnPONotLogged()
  }
  catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_exporting')) }
@@ -1997,6 +2048,11 @@ export default function InventoryPage() {
  // edited amounts are reflected in adoption tracking.
  function exportEditedPO() {
  if (!sessionId || !data) return
+ // While a warehouse tab is open, `data.items` is still the NETWORK list and
+ // the edits the buyer made live in the per-warehouse table, so this export
+ // would emit quantities from a view nobody is looking at. The server-side
+ // export knows how to scope itself now, so that is what runs instead.
+ if (selectedWarehouse) { void handleExport(); return }
  // Every actionable line Faro put in front of the buyer, whatever they did
  // with it. Splitting here rather than filtering once is what makes
  // 'rejected' reachable at all: a line the buyer zeroed out used to be
@@ -2943,6 +2999,10 @@ export default function InventoryPage() {
  {showShrinkageModal && (
  <ShrinkageModal
   items={data?.items ?? []}
+  warehouses={warehouses.map(w => w.name)}
+  // The warehouse tab that is open is the one the buyer is looking at, so it
+  // is the one the modal opens on. On "Todas" it falls back to the default.
+  defaultWarehouse={selectedWarehouse}
   onClose={() => setShowShrinkageModal(false)}
   onSaved={() => { if (sessionId) load(sessionId) }}
  />

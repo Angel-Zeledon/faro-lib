@@ -406,12 +406,24 @@ def health():
     except Exception as exc:  # noqa: BLE001 — never let diagnostics be the outage
         log.error("Health check: service report failed: %s", exc)
 
+    # When each recurring loop last fired. A scheduler that is up but has not
+    # done its rounds since Tuesday reads as a healthy process, which is the
+    # shape 11.28 had: nothing was wrong, there was simply no digest.
+    loops: list[dict] = []
+    if database_ok:
+        try:
+            from backend.workers import loop_state
+            loops = loop_state.status()
+        except Exception as exc:  # noqa: BLE001 — never let diagnostics be the outage
+            log.error("Health check: loop status failed: %s", exc)
+
     return {
         "status": "ok" if database_ok else "degraded",
         "version": settings.app_version,
         "queued_jobs": queued,
         "database": database_ok,
         "services": services,
+        "loops": loops,
     }
 
 

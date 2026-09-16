@@ -325,9 +325,9 @@ def receive_po(
             # without a matching snapshot.
             new_row = inv_svc.get_stock(tenant_id, i["sku"], warehouse=warehouse, conn=conn)
             execute(
-                """INSERT INTO inventory_snapshots (tenant_id, sku, current_stock)
-                   VALUES (%s, %s, %s)""",
-                (tenant_id, i["sku"], new_row["current_stock"]),
+                """INSERT INTO inventory_snapshots (tenant_id, sku, current_stock, warehouse)
+                   VALUES (%s, %s, %s, %s)""",
+                (tenant_id, i["sku"], new_row["current_stock"], warehouse),
                 conn=conn,
             )
 
@@ -442,6 +442,90 @@ def _fill_rate(total_received: float, order_total: float) -> Optional[float]:
     return round(min(1.0, float(total_received) / order_total), 3)
 
 
+# Days past a supplier's own lead time before a half-delivered order counts
+# against them. A delivery window is a promise about a date, not about a
+# minute: a truck that arrives the morning after the promised day is late by
+# any reasonable reading, and one that arrives the same afternoon is not.
+FILL_RATE_GRACE_DAYS = 2
+
+
+def _still_in_transit(row: dict, lead_time_days: float, now: datetime) -> bool:
+    """Is this order still inside the window its supplier promised?
+
+    Fill rate used to include every `partial` and `not_received` order, summing
+    what had arrived against the FULL ordered quantity with no notion of a
+    delivery still being on its way (estabilidad 11.12). A supplier with two
+    half-delivered orders, both on schedule, printed **50%** — presented as a
+    performance verdict, with the one who had shorted nothing reading worst on
+    the page.
+
+    An order that is fully received is judged immediately; it has nothing left
+    to arrive. Everything else waits for `generated_at + lead time + grace`,
+    where the lead time is `_effective_lead_time` — the same learned-then-
+    declared-then-default rule the overdue screen and the semáforo already use,
+    so the two screens cannot disagree about whether a supplier is late.
+    """
+    if row.get("reception_status") == "received":
+        return False
+    generated_at = row.get("generated_at")
+    if not isinstance(generated_at, datetime):
+        return False
+    due = generated_at + timedelta(days=float(lead_time_days) + FILL_RATE_GRACE_DAYS)
+    return now < due
+
+
+def _fill_counts_for(tenant_id: str, rows: list[dict]) -> dict[str, dict]:
+    """Aggregate per-order fill rows into the per-supplier figures the scorecard
+    reads, dropping the orders that are still inside their delivery window.
+
+    `n_orders` is the sample size behind the percentage — how many orders it
+    averages over — and it now counts only the orders that were actually judged.
+    `orders_in_transit` says how many were set aside, so a supplier with one
+    order and nothing to report can say WHY it is empty instead of looking like
+    a supplier with no history.
+
+    On `purchased_value`: deliberately NOT COALESCEd to 0. A NULL unit_cost
+    annuls the product and SQL drops it from the SUM, so a supplier you bought
+    40 million from with no costs on file summed to NULL and printed a confident
+    zero in bold green. It is also NOT filtered by the window: money left the
+    company when the order was placed, whatever is still on the road.
+    """
+    now = datetime.now(timezone.utc)
+    lead_times: dict[str, float] = {}
+    out: dict[str, dict] = {}
+
+    for row in rows:
+        key = row["supplier_key"]
+        acc = out.setdefault(key, {
+            "supplier_key":      key,
+            "supplier":          row["supplier"],
+            "n_orders":          0,
+            "orders_in_transit": 0,
+            "total_received":    0.0,
+            "order_total":       0.0,
+            "purchased_value":   None,
+            "n_lines":           0,
+            "n_lines_costed":    0,
+        })
+
+        if row["purchased_value"] is not None:
+            acc["purchased_value"] = (acc["purchased_value"] or 0.0) + float(row["purchased_value"])
+        acc["n_lines"] += int(row["n_lines"] or 0)
+        acc["n_lines_costed"] += int(row["n_lines_costed"] or 0)
+
+        if key not in lead_times:
+            lead_times[key] = _effective_lead_time(tenant_id, row["supplier"])[0]
+        if _still_in_transit(row, lead_times[key], now):
+            acc["orders_in_transit"] += 1
+            continue
+
+        acc["n_orders"] += 1
+        acc["total_received"] += float(row["total_received"] or 0)
+        acc["order_total"] += float(row["order_total"] or 0)
+
+    return out
+
+
 def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     """
     Per-supplier performance: real lead time range (min-max observed, not a
@@ -516,10 +600,15 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     # test_currency_reaches_backend_strings scans string literals for a currency
     # symbol, and it cannot tell a comment from copy once both are inside the
     # same string.
+    # Per (supplier, ORDER), not per supplier: the window below is a property of
+    # each order, so the totals can only be added up once every order has been
+    # judged. See _fill_counts_for.
     fill_rows = query(
         """SELECT LOWER(poi.supplier)                AS supplier_key,
                   MIN(poi.supplier)                  AS supplier,
-                  COUNT(DISTINCT poi.po_log_id)::int AS n_orders,
+                  poi.po_log_id                      AS po_log_id,
+                  pol.generated_at                   AS generated_at,
+                  pol.reception_status               AS reception_status,
                   COALESCE(SUM(poi.received_qty), 0) AS total_received,
                   COALESCE(SUM(poi.final_qty), 0)    AS order_total,
                   SUM(poi.final_qty * poi.unit_cost) AS purchased_value,
@@ -531,10 +620,11 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
              AND poi.status IN ('approved', 'modified')
              AND poi.supplier IS NOT NULL AND poi.supplier <> ''
              AND pol.reception_status <> 'pending'
-           GROUP BY LOWER(poi.supplier)""",
+           GROUP BY LOWER(poi.supplier), poi.po_log_id, pol.generated_at,
+                    pol.reception_status""",
         (tenant_id,),
     )
-    fill_by_supplier = {r["supplier_key"]: r for r in fill_rows}
+    fill_by_supplier = _fill_counts_for(tenant_id, fill_rows)
 
     out = []
     for r in lead_rows:
@@ -588,6 +678,11 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             and d["fill_rate"] is not None
             and int(fill["n_orders"] or 0) >= MIN_RATE_OBSERVATIONS
         )
+        # Orders set aside because they are still inside their delivery window.
+        # Reported so an empty fill rate can say WHY it is empty: "two orders on
+        # the way" and "we have never bought from them" look identical
+        # otherwise, and only one of them is a reason to worry.
+        d["orders_in_transit"] = int(fill["orders_in_transit"]) if fill else 0
         # None — not 0 — when no line of this supplier's orders carries a unit
         # cost. "We bought nothing from them" and "we never recorded what it
         # cost" are different statements and the column must not merge them.
@@ -640,6 +735,7 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "lead_time_unusable": False,
             "trend_measurable": False,
             "on_time_measurable": False,
+            "orders_in_transit": int(fill["orders_in_transit"]),
             "fill_rate_measurable": bool(
                 fill_rate is not None
                 and int(fill["n_orders"] or 0) >= MIN_RATE_OBSERVATIONS

@@ -1373,6 +1373,51 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("backfill_existing_tenants_to_paid",
      "UPDATE tenants SET tier = 'paid' "
      "WHERE tier IS NULL AND created_at < TIMESTAMPTZ '2026-08-22 00:00:00+00'"),
+    # A stock snapshot belongs to a warehouse, and until now it did not say
+    # which. /inventario's sparkline and the briefing's demand_trend_pct read
+    # the rows of one SKU in time order, so a tenant with principal at 500 and
+    # Norte at 20 produced the series 500, 20, 500, 20 — and _calc_demand_trend
+    # read that difference as real consumption ("+585% demand" that never
+    # happened). One inter-warehouse transfer did it on its own.
+    #
+    # Deliberately NULLABLE with no backfill (owner's call, 2026-09-16): rows
+    # written before this column are tenant-wide TOTALS, which is exactly what
+    # they are read as. Stamping them 'principal' would assert something nobody
+    # can know after the fact and would make principal's chart wrong instead of
+    # the tenant's. Per-warehouse history therefore starts here; the aggregate
+    # keeps its full history, because summing today's per-warehouse rows per day
+    # continues the same series the old rows were.
+    # When each recurring loop last fired. Until this existed every cron loop
+    # computed its next run from `datetime.now()` and kept nothing, so a worker
+    # killed at 07:55 and restarted at 08:02 asked for the next 08:00 boundary
+    # AFTER now and got tomorrow: that day nobody got a digest, a lead-time
+    # alert or a freshness reminder, and it looked like a calm day
+    # (estabilidad 11.28). Deployment state, not tenant state — there is one
+    # scheduler, and this answers whether it did its rounds.
+    # Which schedule created a session, when one did. A scheduled retrain now
+    # trains a NEW session rather than the one the whole app is reading
+    # (estabilidad 11.6), and this column is what lets the schedule reuse its
+    # own slots instead of consuming a saved-forecast ceiling every night: the
+    # prune can only ever reach rows that carry it, and a session a person
+    # created never does.
+    ("add_sessions_scheduled_job_id",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scheduled_job_id TEXT"),
+    ("create_sessions_scheduled_job_idx",
+     "CREATE INDEX IF NOT EXISTS sessions_scheduled_job_idx "
+     "ON sessions (tenant_id, scheduled_job_id) WHERE scheduled_job_id IS NOT NULL"),
+    ("create_system_loop_runs",
+     """CREATE TABLE IF NOT EXISTS system_loop_runs (
+         loop          TEXT PRIMARY KEY,
+         last_boundary TIMESTAMPTZ,
+         last_run_at   TIMESTAMPTZ,
+         last_status   TEXT,
+         last_error    TEXT
+     )"""),
+    ("add_inventory_snapshots_warehouse",
+     "ALTER TABLE inventory_snapshots ADD COLUMN IF NOT EXISTS warehouse TEXT"),
+    ("create_inventory_snapshots_warehouse_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_snapshots_wh_idx "
+     "ON inventory_snapshots (tenant_id, sku, warehouse, recorded_at DESC)"),
     ("backfill_remaining_tenants_to_free",
      "UPDATE tenants SET tier = 'free' WHERE tier IS NULL"),
     ("tenants_tier_default_free",

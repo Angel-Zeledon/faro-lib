@@ -126,23 +126,38 @@ def _header_values(sql: str, params: tuple) -> dict:
     return dict(zip(names, params))
 
 
+def _no_db_transaction(monkeypatch, roi_service):
+    """The header and its lines now commit as one unit (estabilidad 11.33), so
+    `log_po_generation` opens a transaction and threads its connection through
+    every write. These tests are offline: there is no connection to open, and
+    the sentinel is only there to be passed around."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _fake_transaction():
+        yield "offline-conn"
+
+    monkeypatch.setattr(roi_service, "transaction", _fake_transaction)
+
+
 def test_log_po_generation_persists_decisions_and_aggregates(monkeypatch):
     from backend.inventory import roi_service
 
     captured_header: dict = {}
     line_inserts: list = []
 
-    def fake_query_one(sql, params):
+    def fake_query_one(sql, params, **kwargs):
         # The header INSERT ... RETURNING *
         captured_header["sql"] = sql
         captured_header["params"] = params
         return {"id": "po1"}
 
-    def fake_execute(sql, params):
+    def fake_execute(sql, params, **kwargs):
         line_inserts.append(params)
 
     monkeypatch.setattr(roi_service, "query_one", fake_query_one)
     monkeypatch.setattr(roi_service, "execute", fake_execute)
+    _no_db_transaction(monkeypatch, roi_service)
 
     items = [
         {"sku": "A", "signal": "PEDIR_YA",     "recommended_qty": 10, "final_qty": 10, "unit_cost": 2, "status": "approved"},
@@ -177,8 +192,9 @@ def test_log_po_generation_legacy_items_default_to_approved(monkeypatch):
     header: dict = {}
     monkeypatch.setattr(
         roi_service, "query_one",
-        lambda sql, params: header.update(sql=sql, params=params) or {"id": "po2"})
-    monkeypatch.setattr(roi_service, "execute", lambda sql, params: None)
+        lambda sql, params, **kw: header.update(sql=sql, params=params) or {"id": "po2"})
+    monkeypatch.setattr(roi_service, "execute", lambda sql, params, **kw: None)
+    _no_db_transaction(monkeypatch, roi_service)
 
     items = [
         {"sku": "A", "signal": "PEDIR_YA", "recommended_qty": 5, "unit_cost": 2},
@@ -212,9 +228,11 @@ def test_an_export_with_no_decisions_records_the_order_but_not_an_adoption_readi
     header: dict = {}
     monkeypatch.setattr(
         roi_service, "query_one",
-        lambda sql, params: header.update(sql=sql, params=params) or {"id": "po3"})
+        lambda sql, params, **kw: header.update(sql=sql, params=params) or {"id": "po3"})
     lines: list = []
-    monkeypatch.setattr(roi_service, "execute", lambda sql, params: lines.append(params))
+    monkeypatch.setattr(roi_service, "execute",
+                        lambda sql, params, **kw: lines.append(params))
+    _no_db_transaction(monkeypatch, roi_service)
 
     items = [
         {"sku": "A", "signal": "PEDIR_YA",     "recommended_qty": 5, "unit_cost": 2},

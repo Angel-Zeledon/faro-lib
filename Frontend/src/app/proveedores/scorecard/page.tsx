@@ -135,7 +135,19 @@ function ScorecardTable({ rows, alerts }: {
                   ) : fmtPct(row.on_time_rate)}
                 </Td>
                 <Td size="lg" divider={false} style={row.fill_rate_measurable === false ? { color: C.dim } : undefined}>
-                  {row.fill_rate_measurable === false ? (
+                  {/* An empty fill rate with orders still in their delivery
+                      window says so. The metric used to include every
+                      half-delivered order whatever its deadline, so a supplier
+                      with two on-schedule deliveries printed 50% as a
+                      performance verdict (estabilidad 11.12); now those orders
+                      wait, and "waiting" and "never bought from them" must not
+                      look the same. */}
+                  {row.fill_rate === null && (row.orders_in_transit ?? 0) > 0 ? (
+                    <span style={{ color: C.dim }}
+                          title={t('scorecard.fill_rate_in_transit_hint')}>
+                      {t('scorecard.fill_rate_in_transit', { n: row.orders_in_transit })}
+                    </span>
+                  ) : row.fill_rate_measurable === false ? (
                     <span title={t('scorecard.rate_needs_more_hint')}>
                       {fmtPct(row.fill_rate)} {t('scorecard.rate_provisional')}
                     </span>

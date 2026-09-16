@@ -1093,16 +1093,27 @@ export default function HoyPage() {
  // Evaluated server-side against the quantities the buyer currently has, so
  // editing a line re-judges its scale. The "conviene o no" verdict, including
  // the holding-cost and overstock guardrails, belongs to the backend.
- const approvedKey = approved.map(i => `${i.sku}:${i.qty}`).join('|')
+ // The SUPPLIER is part of the key, and travels with every line.
+ //
+ // This used to send `{sku, quantity}` only, so the ladder came from the status
+ // row rather than from the cart — and because the key was `sku:qty`, switching
+ // supplier did not even re-evaluate. The panel went on quoting the previous
+ // supplier's scale: "Andina: order 500 and save ~1,400" about a price only
+ // Norte ever quoted, which is the exact defect `evaluate_cart`'s docstring
+ // says it fixed, reintroduced through the supplier-switch path
+ // (estabilidad 11.14).
+ const approvedKey = approved.map(i => `${i.sku}:${i.qty}:${i.supplier_id ?? ''}`).join('|')
  useEffect(() => {
   if (!sessionId || approved.length === 0) { setPriceBreaks(null); return }
   let cancelled = false
-  evaluatePriceBreaks(sessionId, approved.map(i => ({ sku: i.sku, quantity: i.qty })))
+  evaluatePriceBreaks(sessionId, approved.map(i => ({
+   sku: i.sku, quantity: i.qty, supplier_id: i.supplier_id ?? undefined,
+  })))
    .then(r => { if (!cancelled) setPriceBreaks(r) })
    .catch(() => { if (!cancelled) setPriceBreaks(null) })
   return () => { cancelled = true }
   // approvedKey collapses the cart to a primitive so this re-runs on a real
-  // quantity change, not on every re-render that rebuilds the array.
+  // quantity or supplier change, not on every re-render that rebuilds the array.
   // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [sessionId, approvedKey])
 

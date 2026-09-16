@@ -16,7 +16,7 @@ from croniter import croniter
 from backend.config import settings
 from backend.db.connection import execute, query, query_one
 from backend.training import queue as job_queue
-from backend.training.job_service import create_job
+from backend.workers import loop_state
 from backend.workers.runner import run_training_job
 
 log = logging.getLogger(__name__)
@@ -214,7 +214,14 @@ def _run_due_scheduled_jobs(now: datetime) -> int:
         session_id = job["session_id"]
         cron_expr  = job["cron_expr"]
         try:
-            create_job(tenant_id, session_id, created_by="scheduler")
+            # NOT `create_job(tenant_id, session_id)`. That trained the session
+            # the whole app was reading, validated nothing, and had no dedupe —
+            # an engine error at 3 a.m. marked the serving session FAILED and
+            # /hoy, the semáforo and the digest went quiet (estabilidad 11.6).
+            # Each run now trains a NEW session built from this one, and only
+            # replaces what the buyer reads once it succeeds.
+            from backend.sessions import retrain_service
+            retrain_service.launch_scheduled_retrain(tenant_id, sched_id, session_id)
             nxt = _next_cron_run(cron_expr, now, tenant_id)
             execute(
                 "UPDATE scheduled_jobs SET next_run = %s, last_run = %s, "
@@ -242,6 +249,19 @@ def _scheduler_loop() -> None:
 _DAILY_LOOP_RETRY_SECONDS = 3600
 
 
+def _previous_daily_run(now: datetime, hour: int) -> datetime:
+    """The most recent `hour`:00:00 UTC boundary at or before `now`.
+
+    The mirror of `_next_daily_run`, and the half that was missing: without a
+    way to name the boundary that has already passed, a loop could not tell
+    "we ran the 08:00 pass" from "we were not alive at 08:00".
+    """
+    candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if candidate > now:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
 def _next_daily_run(now: datetime, hour: int) -> datetime:
     """Next `hour`:00:00 UTC boundary strictly after `now`.
 
@@ -266,10 +286,25 @@ def _inventory_alert_loop() -> None:
     while True:
         try:
             now = datetime.now(timezone.utc)
-            next_run = _next_daily_run(now, 8)
-            sleep_secs = (next_run - now).total_seconds()
-            log.info("Inventory alert: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
-            time.sleep(max(sleep_secs, 1))
+            # Did we miss today's pass? A restart at 08:02 used to ask for the
+            # next boundary after now and sleep until tomorrow (11.28).
+            caught_up = loop_state.missed_boundary(
+                loop_state.INVENTORY_ALERTS, _previous_daily_run(now, 8), now,
+                loop_state.DAILY_CATCHUP,
+            )
+            if caught_up is not None:
+                log.warning("Inventory alert: catching up the %s pass",
+                            caught_up.isoformat())
+                boundary = caught_up
+            else:
+                next_run = _next_daily_run(now, 8)
+                sleep_secs = (next_run - now).total_seconds()
+                log.info("Inventory alert: next run at %s UTC (%.0f s)",
+                         next_run.isoformat(), sleep_secs)
+                time.sleep(max(sleep_secs, 1))
+                woke_at = datetime.now(timezone.utc)
+                boundary = (next_run if woke_at >= next_run
+                            else _previous_daily_run(woke_at, 8))
         except Exception as e:
             # Never swallow silently: this branch used to hide the month-end
             # crash above, so a whole day without alerts left no trace at all.
@@ -302,6 +337,11 @@ def _inventory_alert_loop() -> None:
             run_daily_freshness_reminders()
         except Exception as e:
             log.error("Data-freshness reminder error: %s", e, exc_info=True)
+        # The boundary is recorded once the three passes have been attempted.
+        # Attempted, not succeeded: each one already reports its own failure,
+        # and re-running the whole pass on the next restart would mail a second
+        # digest to everybody the first one reached.
+        loop_state.mark_run(loop_state.INVENTORY_ALERTS, boundary)
 
 
 def _integration_sync_loop() -> None:
@@ -312,10 +352,23 @@ def _integration_sync_loop() -> None:
     while True:
         try:
             now = datetime.now(timezone.utc)
-            next_run = _next_daily_run(now, 6)
-            sleep_secs = (next_run - now).total_seconds()
-            log.info("Integration sync: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
-            time.sleep(max(sleep_secs, 1))
+            caught_up = loop_state.missed_boundary(
+                loop_state.INTEGRATION_SYNC, _previous_daily_run(now, 6), now,
+                loop_state.DAILY_CATCHUP,
+            )
+            if caught_up is not None:
+                log.warning("Integration sync: catching up the %s pass",
+                            caught_up.isoformat())
+                boundary = caught_up
+            else:
+                next_run = _next_daily_run(now, 6)
+                sleep_secs = (next_run - now).total_seconds()
+                log.info("Integration sync: next run at %s UTC (%.0f s)",
+                         next_run.isoformat(), sleep_secs)
+                time.sleep(max(sleep_secs, 1))
+                woke_at = datetime.now(timezone.utc)
+                boundary = (next_run if woke_at >= next_run
+                            else _previous_daily_run(woke_at, 6))
         except Exception as e:
             log.error(
                 "Integration sync scheduler error — retrying in %d s: %s",
@@ -332,6 +385,18 @@ def _integration_sync_loop() -> None:
                 log.info("Integration sync skipped: INTEGRATIONS_SECRET_KEY not configured")
         except Exception as e:
             log.error("Integration sync error: %s", e, exc_info=True)
+        loop_state.mark_run(loop_state.INTEGRATION_SYNC, boundary)
+
+
+def _previous_month_start(now: datetime) -> datetime:
+    """The most recent day-1 00:05 UTC boundary at or before `now`."""
+    candidate = now.replace(day=1, hour=0, minute=5, second=0, microsecond=0)
+    if candidate > now:
+        if candidate.month == 1:
+            candidate = candidate.replace(year=candidate.year - 1, month=12)
+        else:
+            candidate = candidate.replace(month=candidate.month - 1)
+    return candidate
 
 
 def _next_month_start(now: datetime) -> datetime:
@@ -356,10 +421,28 @@ def _monthly_overstock_snapshot_loop() -> None:
     while True:
         try:
             now = datetime.now(timezone.utc)
-            next_run = _next_month_start(now)
-            sleep_secs = (next_run - now).total_seconds()
-            log.info("Overstock snapshot: next run at %s UTC (%.0f s)", next_run.isoformat(), sleep_secs)
-            time.sleep(max(sleep_secs, 1))
+            # The loud half of 11.28: the snapshot taken on the 1st is the
+            # CLOSING measurement of the month that just ended, and nothing can
+            # produce it afterwards. A missed 1st breaks that month's
+            # "capital freed" figure permanently, so this one catches up for
+            # three days rather than six hours.
+            caught_up = loop_state.missed_boundary(
+                loop_state.MONTHLY_OVERSTOCK, _previous_month_start(now), now,
+                loop_state.MONTHLY_CATCHUP,
+            )
+            if caught_up is not None:
+                log.warning("Overstock snapshot: catching up the %s pass",
+                            caught_up.isoformat())
+                boundary = caught_up
+            else:
+                next_run = _next_month_start(now)
+                sleep_secs = (next_run - now).total_seconds()
+                log.info("Overstock snapshot: next run at %s UTC (%.0f s)",
+                         next_run.isoformat(), sleep_secs)
+                time.sleep(max(sleep_secs, 1))
+                woke_at = datetime.now(timezone.utc)
+                boundary = (next_run if woke_at >= next_run
+                            else _previous_month_start(woke_at))
         except Exception as e:
             log.error(
                 "Overstock snapshot scheduler error — retrying in %d s: %s",
@@ -378,6 +461,7 @@ def _monthly_overstock_snapshot_loop() -> None:
             log.info("Monthly ROI recap: mailed %d tenants", sent)
         except Exception as e:
             log.error("Monthly ROI recap error: %s", e, exc_info=True)
+        loop_state.mark_run(loop_state.MONTHLY_OVERSTOCK, boundary)
 
 
 def enabled_components() -> list[str]:

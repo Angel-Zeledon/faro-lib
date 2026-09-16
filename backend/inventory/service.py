@@ -254,9 +254,12 @@ def upsert_stock(
 
     row = get_stock(tenant_id, sku, warehouse=safe["warehouse"], conn=conn)
 
-    # Auto-snapshot when current_stock is updated
+    # Auto-snapshot when current_stock is updated, stamped with the warehouse
+    # the level belongs to — `safe["warehouse"]` is the canonical name this
+    # write landed on, not the spelling the caller sent.
     if "current_stock" in safe and row:
-        _record_snapshot(tenant_id, sku, float(safe["current_stock"]), conn=conn)
+        _record_snapshot(tenant_id, sku, float(safe["current_stock"]), conn=conn,
+                         warehouse=safe["warehouse"])
 
     return row
 
@@ -682,8 +685,17 @@ def bulk_upsert(
     rows: list[dict],
     source: str = SOURCE_FILE,
     only_fill_missing: bool = False,
+    failures: Optional[list[dict]] = None,
 ) -> int:
     """Upsert multiple SKUs from a CSV/bulk import. Returns count saved.
+
+    `failures`, when a list is passed, collects one entry per row that was read
+    from the file and did NOT reach the database: `{sku, warehouse, error}`.
+    The count already shrank for those rows, so the number was never a lie —
+    but "83 products imported" after a clean 120-row preview was the only
+    signal the user got, and it named neither the 37 rows nor a reason
+    (estabilidad 11.34). The caller decides what to do with them; passing
+    nothing keeps the old behaviour for every other caller.
 
     `source` defaults to 'file' because that is what this function is for — a
     stock CSV the user uploaded. Callers that are replaying values the user
@@ -730,38 +742,116 @@ def bulk_upsert(
             raise
         except Exception as e:
             log.warning("bulk_upsert: skipped sku=%s err=%s", sku, e)
+            if failures is not None:
+                # The reason is a CODE, not the driver's sentence: the exception
+                # text is English prose from psycopg2 and would land on a
+                # Spanish screen verbatim. The row and its warehouse are what
+                # the user needs to find it in their file.
+                # Same shape as every other row error in this channel
+                # (`_row_error` in api/v1/inventory.py): a stable `code` the UI
+                # renders through i18n, its params, and an English fallback.
+                # The driver's own sentence is never the message — it is
+                # English prose that would land on a Spanish screen verbatim.
+                failures.append({
+                    "row":    None,
+                    "sku":    sku,
+                    "code":   "inventory_import_row_write_failed",
+                    "params": {"warehouse": (row.get("warehouse") or "").strip() or None},
+                    "error":  "inventory_import_row_write_failed",
+                })
     return count
 
 
 # ── Stock snapshots ───────────────────────────────────────────────────────────
 
 def _record_snapshot(
-    tenant_id: str, sku: str, current_stock: float, conn: Optional[Any] = None
+    tenant_id: str, sku: str, current_stock: float, conn: Optional[Any] = None,
+    warehouse: Optional[str] = None,
 ) -> None:
     """Record a point-in-time stock level. Called automatically on upsert.
+
+    `warehouse` is the location this level belongs to. It was missing until
+    2026-09-16, and without it one SKU's rows were a single interleaved series
+    across every warehouse (estabilidad 11.15). Rows written before that carry
+    NULL and are read as tenant-wide totals, which is what they are.
 
     `conn`: see upsert_stock's docstring.
     """
     try:
         execute(
-            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
-            (tenant_id, sku, current_stock),
+            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock, warehouse) "
+            "VALUES (%s, %s, %s, %s)",
+            (tenant_id, sku, current_stock, warehouse),
             conn=conn,
         )
     except Exception as e:
         log.warning("snapshot record failed sku=%s: %s", sku, e)
 
 
-def get_stock_history(tenant_id: str, sku: str, days: int = 30) -> list[dict]:
-    """Returns daily stock snapshots for the last N days, most recent last."""
+def get_stock_history(
+    tenant_id: str, sku: str, days: int = 30, warehouse: Optional[str] = None,
+) -> list[dict]:
+    """Stock snapshots for the last N days, oldest first.
+
+    Two readings, and the difference is the whole point of 11.15:
+
+    * `warehouse` given — only that location's rows, in the order they were
+      written. A location's own history starts when the column landed
+      (2026-09-16); older rows have no warehouse and are not attributed to one.
+    * `warehouse` omitted — the TENANT-WIDE level, which is a sum across
+      locations and not a list of their rows interleaved. Per-warehouse rows are
+      collapsed to one value per location per day (the last of that day) and
+      summed; legacy rows, which were already tenant-wide totals, join that
+      series unchanged. Before this, principal at 500 and Norte at 20 produced
+      `500, 20, 500, 20` and `_calc_demand_trend` read the difference as real
+      consumption.
+    """
     from datetime import timezone
     since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    if warehouse:
+        rows = query(
+            """SELECT current_stock, recorded_at
+               FROM inventory_snapshots
+               WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+                 AND warehouse = %s
+               ORDER BY recorded_at ASC""",
+            (tenant_id, sku, since, warehouse),
+        )
+        return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()}
+                for r in rows]
+
     rows = query(
-        """SELECT current_stock, recorded_at
-           FROM inventory_snapshots
-           WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+        """WITH last_per_day AS (
+               -- One value per (warehouse, day): the level that location ended
+               -- the day at. Several writes in a day are not several levels.
+               SELECT DISTINCT ON (warehouse, date_trunc('day', recorded_at))
+                      warehouse,
+                      date_trunc('day', recorded_at) AS day,
+                      current_stock,
+                      recorded_at
+               FROM inventory_snapshots
+               WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+                 AND warehouse IS NOT NULL
+               ORDER BY warehouse, date_trunc('day', recorded_at), recorded_at DESC
+           ),
+           per_day_total AS (
+               SELECT day, SUM(current_stock) AS current_stock,
+                      MAX(recorded_at) AS recorded_at
+               FROM last_per_day GROUP BY day
+           ),
+           legacy AS (
+               -- Written before the column existed: already tenant-wide.
+               SELECT current_stock, recorded_at
+               FROM inventory_snapshots
+               WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+                 AND warehouse IS NULL
+           )
+           SELECT current_stock, recorded_at FROM per_day_total
+           UNION ALL
+           SELECT current_stock, recorded_at FROM legacy
            ORDER BY recorded_at ASC""",
-        (tenant_id, sku, since),
+        (tenant_id, sku, since, tenant_id, sku, since),
     )
     return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()} for r in rows]
 
@@ -1859,6 +1949,23 @@ def get_inventory_status_by_warehouse(
                      for r in stock_rows}
     all_skus = sorted(sku_forecasts.keys())
 
+    # Does this tenant actually keep stock per warehouse, or does every unit it
+    # has recorded sit in ONE location while its demand is split across several?
+    #
+    # The second shape is what an ERP sync produces today: `fetch_stock` in both
+    # providers hardcodes `warehouse="principal"` while `fetch_sales` reads the
+    # real branch off each invoice (estabilidad 11.5). Every branch then has
+    # demand and no stock row, and `current_stock or 0.0` turned "we were never
+    # told" into "there are none" — PEDIR_YA at full reorder quantity for the
+    # entire catalogue at every branch, with the goods sitting in principal.
+    #
+    # A missing row is not a zero, and this is where the product already knows
+    # how to say so: SIN_DATOS. Scoped deliberately to the one-location case,
+    # because a tenant who DOES maintain stock per warehouse means it when a
+    # pair has no row.
+    stocked_warehouses = {wh for (_s, wh) in stock_by_pair}
+    stock_is_single_location = len(stocked_warehouses) == 1 and len(warehouses) > 1
+
     items: list[dict] = []
     for sku in all_skus:
         for wh in warehouses:
@@ -1888,6 +1995,9 @@ def get_inventory_status_by_warehouse(
             if lead_time_source == SOURCE_LEARNED:
                 lead_time_rule_scope = None
             current_stock = float(stock["current_stock"]) if stock else 0.0
+            # "Nobody ever recorded stock for this SKU in this warehouse", as
+            # opposed to "there are none". See stock_is_single_location above.
+            stock_unknown_here = stock is None and stock_is_single_location
             _moq_val, _, _ = _sd_svc.resolve_field(
                 "moq", stock, rule_index, supplier=supplier, category=category)
             moq = float(_moq_val if _moq_val is not None else DEFAULT_MOQ)
@@ -1896,7 +2006,7 @@ def get_inventory_status_by_warehouse(
             # order more into a warehouse that already has a truck coming.
             wh_incoming = incoming_qty.get((sku, wh), 0.0)
 
-            if model_forecasts and share > 0.0:
+            if model_forecasts and share > 0.0 and not stock_unknown_here:
                 _sl_val, sl_source, _ = _sd_svc.resolve_field(
                     "service_level", stock, rule_index, supplier=supplier, category=category)
                 sku_service_level = (
@@ -1946,6 +2056,11 @@ def get_inventory_status_by_warehouse(
                                   else None),
                 "reorder_point": reorder_point,
                 "signal": signal,
+                # Why this row has no signal, when the reason is something the
+                # buyer can fix. A code, not a sentence: the frontend renders it
+                # (inventory.no_stock_record_here) in the reader's language.
+                "sin_datos_reason": ("stock_not_recorded_in_this_warehouse"
+                                     if stock_unknown_here else None),
                 "recommended_qty": recommended,
                 # Already on its way: sent POs + transfers in transit. Exposed so the
                 # UI can say "N units arriving" instead of leaving the buyer to

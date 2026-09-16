@@ -60,7 +60,10 @@ def _adjust_stock(conn, tenant_id: str, sku: str, warehouse: str, delta: float) 
                RETURNING current_stock""",
             (delta, tenant_id, sku, warehouse), conn=conn)
     new_stock = float(row["current_stock"])
-    inv_svc._record_snapshot(tenant_id, sku, new_stock, conn=conn)
+    # Stamped with the warehouse this leg moved: a transfer writes two
+    # snapshots, one per side, and without the column they arrived as one
+    # sawtooth series for the SKU (estabilidad 11.15).
+    inv_svc._record_snapshot(tenant_id, sku, new_stock, conn=conn, warehouse=warehouse)
     return new_stock
 
 

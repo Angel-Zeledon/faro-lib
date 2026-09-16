@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from backend.db.connection import execute, query, query_one
+from backend.db.connection import execute, query, query_one, transaction
 from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE as _DEFAULT_WAREHOUSE
 
 log = logging.getLogger(__name__)
@@ -56,6 +56,76 @@ def _normalize_decisions(items: list[dict]) -> list[dict]:
             status = "rejected"
         norm.append({**i, "status": status})
     return norm
+
+
+def _insert_lines(
+    tenant_id: str, header: dict, items: list[dict],
+    destination_warehouse: str | None, conn,
+) -> None:
+    """Every line of a PO, on the caller's transaction.
+
+    Lines without their own warehouse inherit the PO's destination (feature
+    5.4); the default warehouse keeps the pre-5.4 behaviour when neither is
+    given. `signal` and the decision counters are written for every line,
+    including rejected ones, so adoption stays auditable per SKU.
+    """
+    po_log_id = header["id"]
+    for i in items:
+        execute(
+            """INSERT INTO inventory_po_items
+                   (po_log_id, tenant_id, sku, display_name, supplier,
+                    supplier_id, signal, recommended_qty, final_qty,
+                    unit_cost, status, warehouse)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (po_log_id, tenant_id, str(i.get("sku") or ""),
+             i.get("display_name"), i.get("supplier"),
+             i.get("supplier_id"), i.get("signal"),
+             float(i.get("recommended_qty") or 0),
+             _ordered_qty(i) if i.get("status", "approved") in _ORDERED else 0.0,
+             (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
+             i.get("status", "approved"),
+             i.get("warehouse") or destination_warehouse or _DEFAULT_WAREHOUSE),
+            conn=conn,
+        )
+
+
+def _write_po_atomically(
+    insert_header, tenant_id: str, items: list[dict],
+    destination_warehouse: str | None,
+) -> dict:
+    """Write a purchase order's header and its lines as ONE unit.
+
+    Before this, the header was an auto-committing INSERT followed by N
+    auto-committing line INSERTs, each wrapped in `except: log.warning(...)`.
+    A line that failed to write vanished from the supplier's fill rate, from
+    `purchased_value` and from the PDF the supplier receives, while the header
+    kept its full `sku_count` and `total_value`: the order said twelve lines and
+    the database held eleven, with nothing on screen and nothing in the response
+    (estabilidad 11.33).
+
+    Failing the whole generation instead would lose the buyer's cart, which is
+    why the swallow was there. Inside a transaction neither happens — the header
+    rolls back with its lines and the API returns the error, while the cart is
+    still in the browser to retry.
+
+    `po_number` is MAX+1 inside the INSERT, so two orders in the same instant
+    can collide on the unique index. That is not a failure of this order: the
+    losing side retries on a clean transaction (the poisoned one is already
+    rolled back and nothing it wrote survived).
+    """
+    for attempt in (1, 2):
+        try:
+            with transaction() as conn:
+                header = insert_header(conn)
+                if header is None:                      # pragma: no cover
+                    raise RuntimeError("purchase order header was not returned")
+                _insert_lines(tenant_id, header, items, destination_warehouse, conn)
+                return dict(header)
+        except Exception as exc:
+            if attempt == 2 or getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
+                raise
+            log.info("po_number race on tenant=%s — retrying once", tenant_id)
+    raise RuntimeError("unreachable")                    # pragma: no cover
 
 
 def log_po_generation(
@@ -119,7 +189,7 @@ def log_po_generation(
             value_parts.append(_ordered_qty(i) * float(cost))
     total_value: float | None = sum(value_parts) if value_parts else None
 
-    def _insert() -> dict | None:
+    def _insert(conn=None) -> dict | None:
         # po_number is computed inside the INSERT so number and row commit
         # atomically. Volume is human-driven, so MAX+1 contention is rare;
         # the unique index catches the race and we retry once.
@@ -143,56 +213,15 @@ def log_po_generation(
              skus_order_now, skus_order_soon,
              suggested_count, approved_count, modified_count, rejected_count,
              destination_warehouse, tenant_id),
+            conn=conn,
         )
 
-    try:
-        inserted = _insert()
-    except Exception as exc:
-        if getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
-            raise
-        inserted = _insert()
-
-    # Persist every line (including rejected) so adoption is auditable per SKU.
-    if inserted and norm:
-        po_log_id = inserted["id"]
-        for i in norm:
-            try:
-                execute(
-                    """INSERT INTO inventory_po_items
-                           (po_log_id, tenant_id, sku, display_name, supplier,
-                            supplier_id, signal, recommended_qty, final_qty,
-                            unit_cost, status, warehouse)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    (po_log_id, tenant_id, str(i.get("sku") or ""),
-                     i.get("display_name"), i.get("supplier"),
-                     i.get("supplier_id"), i.get("signal"),
-                     float(i.get("recommended_qty") or 0),
-                     _ordered_qty(i) if i["status"] in _ORDERED else 0.0,
-                     (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
-                     i["status"],
-                     # Lines without their own warehouse inherit the PO's
-                     # destination (feature 5.4); the default warehouse keeps
-                     # the pre-5.4 behavior when neither is given.
-                     i.get("warehouse") or destination_warehouse or _DEFAULT_WAREHOUSE),
-                )
-            except Exception as e:
-                log.warning("log_po_generation: skipped line sku=%s err=%s", i.get("sku"), e)
-
-    if inserted:
-        return dict(inserted)
-    return {
-        "tenant_id": tenant_id,
-        "session_id": session_id,
-        "sku_count": sku_count,
-        "total_units": total_units,
-        "total_value": total_value,
-        "skus_order_now": skus_order_now,
-        "skus_order_soon": skus_order_soon,
-        "suggested_count": suggested_count,
-        "approved_count": approved_count,
-        "modified_count": modified_count,
-        "rejected_count": rejected_count,
-    }
+    # Header and lines commit together or not at all — see _write_po_atomically.
+    # The old fallback return (a dict built from the locals, for when the INSERT
+    # came back empty) is gone with it: a header that was not written is not an
+    # order, and handing one back is what let the caller log a PO that does not
+    # exist.
+    return _write_po_atomically(_insert, tenant_id, norm, destination_warehouse)
 
 
 def create_manual_po(
@@ -214,7 +243,7 @@ def create_manual_po(
     ]
     total_value: float | None = sum(value_parts) if value_parts else None
 
-    def _insert() -> dict | None:
+    def _insert(conn=None) -> dict | None:
         return query_one(
             """INSERT INTO inventory_po_log
                    (tenant_id, session_id, source, sku_count, total_units,
@@ -225,29 +254,24 @@ def create_manual_po(
                RETURNING *""",
             (tenant_id, len(lines), total_units, total_value,
              destination_warehouse, tenant_id),
+            conn=conn,
         )
 
-    try:
-        inserted = _insert()
-    except Exception as exc:
-        if getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
-            raise
-        inserted = _insert()
-
-    po_log_id = inserted["id"]
-    for l in lines:
-        execute(
-            """INSERT INTO inventory_po_items
-                   (po_log_id, tenant_id, sku, display_name, supplier,
-                    supplier_id, recommended_qty, final_qty, unit_cost,
-                    status, warehouse)
-               VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, 'approved', %s)""",
-            (po_log_id, tenant_id, str(l["sku"]), l.get("display_name"),
-             supplier["name"], supplier["id"], float(l["qty"]),
-             (float(l["unit_cost"]) if l.get("unit_cost") is not None else None),
-             destination_warehouse or _DEFAULT_WAREHOUSE),
-        )
-    return dict(inserted)
+    # A manual order is typed line by line, so a line lost on the way to the
+    # database is a line the buyer wrote and nobody will ever see again. Same
+    # transaction as the forecast path.
+    items = [{
+        "sku":             str(l["sku"]),
+        "display_name":    l.get("display_name"),
+        "supplier":        supplier["name"],
+        "supplier_id":     supplier["id"],
+        "signal":          None,
+        "recommended_qty": 0,
+        "final_qty":       float(l["qty"]),
+        "unit_cost":       l.get("unit_cost"),
+        "status":          "approved",
+    } for l in lines]
+    return _write_po_atomically(_insert, tenant_id, items, destination_warehouse)
 
 
 def get_roi_summary(tenant_id: str) -> dict:

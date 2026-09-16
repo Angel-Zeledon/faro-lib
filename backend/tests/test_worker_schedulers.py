@@ -171,10 +171,12 @@ class TestScheduledJobFailureIsRecorded:
     def test_failed_trigger_stores_error_and_moves_next_run_forward(
         self, monkeypatch, scheduled_job,
     ):
-        def _explode(tenant_id, session_id, created_by):
+        from backend.sessions import retrain_service
+
+        def _explode(tenant_id, schedule_id, template_session_id, **kwargs):
             raise RuntimeError("plan quota exceeded")
 
-        monkeypatch.setattr(worker, "create_job", _explode)
+        monkeypatch.setattr(retrain_service, "launch_scheduled_retrain", _explode)
         now = datetime.now(timezone.utc)
 
         triggered = worker._run_due_scheduled_jobs(now)
@@ -193,7 +195,23 @@ class TestScheduledJobFailureIsRecorded:
         )
         assert queued["cnt"] == 0
 
-    def test_successful_trigger_queues_a_job_and_clears_the_error(self, scheduled_job):
+    def test_successful_trigger_queues_a_job_and_clears_the_error(
+        self, monkeypatch, scheduled_job,
+    ):
+        """The job is queued for a NEW session, not for the one the schedule
+        points at: that session is the template the app is reading, and 11.6 is
+        what happens when a 3 a.m. failure marks it FAILED."""
+        from backend.sessions import retrain_service
+
+        launched = {}
+
+        def _fake_launch(tenant_id, schedule_id, template_session_id, **kwargs):
+            launched.update(tenant_id=tenant_id, schedule_id=schedule_id,
+                            template=template_session_id)
+            return {"base_job_id": "job_fake"}
+
+        monkeypatch.setattr(retrain_service, "launch_scheduled_retrain", _fake_launch)
+
         # Pre-load a stale error, as a previously failing schedule would have.
         execute(
             "UPDATE scheduled_jobs SET last_error = %s, last_error_at = NOW() WHERE id = %s",
@@ -210,25 +228,30 @@ class TestScheduledJobFailureIsRecorded:
         assert row["last_run"] is not None
         assert row["next_run"] > now
 
-        job = query_one(
-            "SELECT status, created_by FROM jobs WHERE session_id = %s",
+        assert launched["schedule_id"] == scheduled_job["id"]
+        assert launched["template"] == scheduled_job["session_id"]
+        # The template itself is never queued.
+        assert query_one(
+            "SELECT COUNT(*) AS cnt FROM jobs WHERE session_id = %s",
             (scheduled_job["session_id"],),
-        )
-        assert job is not None, "scheduler did not enqueue a training job"
-        assert job["status"] == "QUEUED"
-        assert job["created_by"] == "scheduler"
+        )["cnt"] == 0
 
     def test_disabled_schedule_is_never_triggered(self, monkeypatch, scheduled_job):
+        from backend.sessions import retrain_service
+
         execute("UPDATE scheduled_jobs SET enabled = FALSE WHERE id = %s", (scheduled_job["id"],))
 
-        def _explode(tenant_id, session_id, created_by):
+        def _explode(tenant_id, schedule_id, template_session_id, **kwargs):
             raise AssertionError("disabled schedule must not be triggered")
 
-        monkeypatch.setattr(worker, "create_job", _explode)
+        monkeypatch.setattr(retrain_service, "launch_scheduled_retrain", _explode)
         assert worker._run_due_scheduled_jobs(datetime.now(timezone.utc)) == 0
 
     def test_unparseable_cron_still_moves_next_run_forward(self, monkeypatch, scheduled_job):
         """A broken cron used to leave next_run in the past forever."""
+        from backend.sessions import retrain_service
+        monkeypatch.setattr(retrain_service, "launch_scheduled_retrain",
+                            lambda *a, **k: {"base_job_id": "job_fake"})
         execute(
             "UPDATE scheduled_jobs SET cron_expr = %s WHERE id = %s",
             ("not a cron", scheduled_job["id"]),

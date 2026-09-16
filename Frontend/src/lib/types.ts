@@ -985,6 +985,12 @@ export interface WarehouseStatusItem {
   coverage_days: number | null
   reorder_point: number | null
   signal: InventorySignal
+  /** Why this row has no signal, when the reason is something the buyer can
+   *  fix. `stock_not_recorded_in_this_warehouse` means nobody ever recorded
+   *  stock for this SKU HERE — which is not the same as zero, and reading it as
+   *  zero is what put every branch of an ERP-synced tenant in PEDIR_YA at full
+   *  reorder quantity (estabilidad 11.5). */
+  sin_datos_reason?: string | null
   recommended_qty: number | null
   recommended_action: 'order' | 'transfer' | null
   transfer_suggestion: TransferSuggestion | null
@@ -1482,6 +1488,10 @@ export interface SupplierScorecardRow {
   on_time_measurable?:   boolean
   /** Same rule for the fill rate, over orders rather than receptions. */
   fill_rate_measurable?: boolean
+  /** Orders left out of `fill_rate` because they are still inside the delivery
+   *  window the supplier promised. An empty fill rate with orders in transit is
+   *  a supplier nobody can judge yet, not a supplier nobody buys from. */
+  orders_in_transit?:    number
 }
 
 // Feature 2.5 — a supplier the PO-send path would silently skip.

@@ -973,9 +973,16 @@ export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.9
     `inventory_${new Date().toISOString().slice(0, 10)}.pdf`,
   )
 
-export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) => {
+export const exportInventoryPO = async (
+  sessionId: string, serviceLevel = 0.95, warehouse?: string,
+) => {
+  // `warehouse` follows the tab the buyer has open. Without it the endpoint
+  // re-derives the list at network level, so the file disagreed with the
+  // screen — and the order logged below was the one the file said
+  // (estabilidad 11.7).
+  const wh = warehouse ? `&warehouse=${encodeURIComponent(warehouse)}` : ''
   await downloadBlob(
-    `/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}`,
+    `/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}${wh}`,
     'purchase_order.csv',
   )
   // The CSV is in the buyer's hands either way, but the `po_history` row is
@@ -986,7 +993,10 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
   // interceptor's generic toast landing right after a successful download.
   // Silenced here so the caller can say the specific thing instead.
   let logged = true
-  try { await logPOGeneration(sessionId, undefined, undefined, { silent: true }) }
+  // Logged against the same warehouse the file was built for: the order lands
+  // in /pedidos with a destination, and reception credits the place that
+  // actually needs the goods.
+  try { await logPOGeneration(sessionId, undefined, warehouse, { silent: true }) }
   catch { logged = false }
   return { logged }
 }
@@ -1063,7 +1073,11 @@ export const deletePriceBreak = (priceBreakId: string) =>
 // actually edited are what gets judged.
 export const evaluatePriceBreaks = (
   sessionId: string,
-  items: { sku: string; quantity: number }[],
+  // `supplier_id` is the supplier the buyer has on the line right now. Without
+  // it the backend reads the supplier off the status row, so a line whose
+  // supplier was switched kept being quoted the previous one's ladder
+  // (estabilidad 11.14).
+  items: { sku: string; quantity: number; supplier_id?: string }[],
 ) =>
   request<import('./types').PriceBreakEvaluation>(
     'POST', `/inventory/price-breaks/evaluate?session_id=${sessionId}`, { items },
@@ -1292,10 +1306,18 @@ export function getDocumentContentUrl(docId: string): string {
 export const listSuppliers    = (opts?: RequestOpts) =>
   request<Supplier[]>('GET', '/inventory/suppliers', undefined, opts)
 
-export const createSupplier   = (body: Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active'>) =>
+/** What the form may send. `lead_time_days` is nullable on the way IN and a
+ *  number on the way out: leaving it empty is how a supplier is created
+ *  WITHOUT declaring a lead time, which is what stops the scorecard printing
+ *  "DECLARADO 15d" for a supplier who declared nothing (estabilidad 11.32). */
+export type SupplierInput =
+  Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active' | 'lead_time_days'>
+  & { lead_time_days: number | null }
+
+export const createSupplier   = (body: SupplierInput) =>
   request<Supplier>('POST', '/inventory/suppliers', body)
 
-export const updateSupplier   = (id: string, body: Partial<Supplier>) =>
+export const updateSupplier   = (id: string, body: Partial<SupplierInput>) =>
   request<Supplier>('PATCH', `/inventory/suppliers/${id}`, body)
 
 export const deleteSupplier   = (id: string) =>
@@ -1568,10 +1590,20 @@ export const importStockFile = (
   file: File,
   mapping?: import('./stockSetupTypes').StockImportMapping,
   opts?: RequestOpts,
+  // Two answers the file cannot give and the wizard asks for:
+  //   · `thousandsDot` — is "1.250" 1250, or 1.25? Guessing it wrong divided a
+  //     whole catalogue by a thousand and reported success (11.2).
+  //   · `onlyFillMissing` — does this re-import overwrite what the buyer
+  //     corrected by hand, or only fill the gaps (11.9)?
+  choices?: { thousandsDot?: boolean; onlyFillMissing?: boolean },
 ) => {
   const fd = new FormData()
   fd.append('file', file)
   if (mapping) fd.append('mapping', JSON.stringify(mapping))
+  if (choices?.thousandsDot !== undefined) {
+    fd.append('thousands_dot', String(choices.thousandsDot))
+  }
+  if (choices?.onlyFillMissing) fd.append('only_fill_missing', 'true')
   return request<import('./stockSetupTypes').StockImportResult>(
     'POST', '/inventory/bulk', fd, opts,
   )

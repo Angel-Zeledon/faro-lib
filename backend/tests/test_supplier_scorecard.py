@@ -134,9 +134,27 @@ class TestGetSupplierScorecard:
         assert row["on_time_rate"] is None
         assert row["deviation_days"] is None
         assert row["last_reception"] is None
-        assert row["fill_rate"] == 0.0
+        # Nothing has arrived, and nothing is LATE either: the order was placed
+        # moments ago against a 7-day lead time. Since 2026-09-16 (estabilidad
+        # 11.12) fill rate judges only deliveries whose window has closed, so
+        # this reads "not measurable yet" rather than a 0% verdict on a supplier
+        # who is still well inside the time they promised.
+        assert row["fill_rate"] is None
+        assert row["orders_in_transit"] == 1
+        # The money is not held back by the window: it left when the order was
+        # placed, whatever is still on the road.
         assert row["purchased_value"] == 200.0  # 40 * 5.0, based on what was ordered
         assert row["purchased_value_complete"] is True
+
+        # And once that window has closed, the same order is judged — at 0%,
+        # because nothing ever came.
+        execute(
+            "UPDATE inventory_po_log SET generated_at = NOW() - INTERVAL '60 days' "
+            "WHERE id = %s", (po,),
+        )
+        late = next(r for r in get_supplier_scorecard(tid) if r["supplier"] == prov)
+        assert late["fill_rate"] == 0.0
+        assert late["orders_in_transit"] == 0
 
 
 class TestPurchasedValueDoesNotInventAZero:

@@ -40,10 +40,16 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
   const [result, setResult]     = useState<StockImportResult | null>(null)
   const [errorKey, setErrorKey] = useState<string | null>(null)
   const [errorParams, setErrorParams] = useState<Record<string, string | number>>({})
+  // The two questions the file cannot answer about itself. `thousandsDot`
+  // starts undefined ON PURPOSE: unanswered is a state, and the import is
+  // refused while the file is ambiguous and it stays that way (11.2).
+  const [thousandsDot, setThousandsDot] = useState<boolean | undefined>(undefined)
+  const [onlyFillMissing, setOnlyFill] = useState(false)
 
   function reset() {
     setLocal(null); setPreview(null); setMapping({}); setResult(null)
     setErrorKey(null); setErrorParams({})
+    setThousandsDot(undefined); setOnlyFill(false)
   }
 
   async function pick(f: File | null) {
@@ -87,7 +93,8 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
     if (!file) return
     setBusy(true); setErrorKey(null)
     try {
-      const res = await importStockFile(file, mapping, { silent: true })
+      const res = await importStockFile(file, mapping, { silent: true },
+                                        { thousandsDot, onlyFillMissing })
       setResult(res)
       onImported?.()
     } catch (e) {
@@ -99,6 +106,8 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
   }
 
   const missingSku = preview ? preview.missing_required.includes('sku') : false
+  // Present only while the file is genuinely ambiguous AND nobody has answered.
+  const numberQuestion = preview?.number_format?.ambiguous ? preview.number_format : null
 
   return (
     <section style={{
@@ -252,9 +261,110 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
             </div>
           ))}
 
+          {/* THE QUESTION. The file writes numbers like 1.250 and nothing in it
+              says whether that is 1250 or 1.25. Faro used to pick 1.25 in
+              silence: no row errors, "1,200 products imported", and the whole
+              catalogue in PEDIR_YA with every quantity divided by a thousand
+              (estabilidad 11.2). Asked in the file's own numbers, because
+              nobody should need to know what a thousands separator is. */}
+          {numberQuestion && (
+            <div style={{
+              marginTop: 12, padding: '10px 12px', borderRadius: 8,
+              border: `1px solid ${thousandsDot === undefined ? AMBER : 'var(--border)'}`,
+              background: 'var(--surface-2)',
+            }}>
+              <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 600 }}>
+                {c('setupStock.import.number_question', {
+                  sample: numberQuestion.samples[0] ?? '',
+                })}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {([true, false] as const).map(isThousands => (
+                  <button
+                    key={String(isThousands)}
+                    onClick={() => setThousandsDot(isThousands)}
+                    style={{
+                      all: 'unset', cursor: 'pointer', padding: '6px 10px',
+                      borderRadius: 6, fontSize: 12.5,
+                      border: `1px solid ${thousandsDot === isThousands ? 'var(--accent)' : 'var(--border)'}`,
+                      color: thousandsDot === isThousands ? 'var(--accent)' : 'var(--text)',
+                      fontWeight: thousandsDot === isThousands ? 700 : 400,
+                    }}
+                  >
+                    {String(isThousands
+                      ? numberQuestion.as_thousands ?? ''
+                      : numberQuestion.as_decimal ?? '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* What we would write, in the file's own rows. `sample_rows` came
+              back from the preview all along and nothing rendered it, so there
+              was nowhere to catch a 1.25 before committing. */}
+          {preview.sample_rows.length > 0 && (
+            <div style={{ marginTop: 12, overflowX: 'auto' }}>
+              <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 4 }}>
+                {c('setupStock.import.preview_title')}
+              </div>
+              <table style={{ borderCollapse: 'collapse', fontSize: 11.5 }}>
+                <thead>
+                  <tr>
+                    {Object.keys(preview.sample_rows[0]).map(k => (
+                      <th key={k} style={{
+                        textAlign: 'left', padding: '4px 10px 4px 0',
+                        color: 'var(--dim)', fontWeight: 600, whiteSpace: 'nowrap',
+                      }}>
+                        {c(`setupStock.import.field.${k}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.sample_rows.slice(0, 5).map((row, idx) => (
+                    <tr key={idx}>
+                      {Object.keys(preview.sample_rows[0]).map(k => (
+                        <td key={k} style={{
+                          padding: '3px 10px 3px 0', color: 'var(--text)',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {String(row[k] ?? '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Does this re-import overwrite what the buyer fixed by hand?
+              `only_fill_missing` and `_fields_to_fill` existed precisely so "a
+              lead time corrected by hand in March is not silently reverted by
+              April's ERP export" — and the only caller passing True was a test
+              (estabilidad 11.9). */}
+          <label style={{
+            marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 8,
+            fontSize: 12.5, color: 'var(--text)', cursor: 'pointer',
+          }}>
+            <input
+              type="checkbox" checked={onlyFillMissing}
+              onChange={e => setOnlyFill(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              {c('setupStock.import.only_fill_missing')}
+              <span style={{ display: 'block', color: 'var(--dim)', fontSize: 11.5 }}>
+                {c('setupStock.import.only_fill_missing_hint')}
+              </span>
+            </span>
+          </label>
+
           <Button
             variant="primary" style={{ marginTop: 14 }} loading={busy}
-            disabled={missingSku || preview.importable_rows === 0}
+            disabled={missingSku || preview.importable_rows === 0
+                      || (numberQuestion != null && thousandsDot === undefined)}
             onClick={() => void commit()}
           >
             {busy
@@ -272,7 +382,33 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
               ? c('setupStock.import.done_with_errors', {
                   count: result.imported, failed: result.error_count,
                 })
-              : c('setupStock.import.done', { count: result.imported })}
+              // "0 imported" after a clean file is a confusing way to say "there
+              // was nothing left to fill". With the fill-only box ticked that is
+              // the NORMAL outcome of a re-import that changes nothing, and the
+              // screen has to say which of the two it was.
+              : result.only_fill_missing && result.imported === 0
+                ? c('setupStock.import.done_nothing_to_fill')
+                : c('setupStock.import.done', { count: result.imported })}
+            {/* Rows that parsed cleanly and still did not reach the database.
+                `imported` did shrink, so the number was never a lie — but "83
+                products imported" after a clean 120-row preview was the only
+                signal, and it named neither the rows nor a reason (11.34). */}
+            {(result.write_failed_rows ?? 0) > 0 && (
+              <span style={{ display: 'block', color: AMBER, marginTop: 4 }}>
+                {c('setupStock.import.write_failed', { count: result.write_failed_rows ?? 0 })}
+                {(result.errors ?? [])
+                  .filter(e => e.code === 'inventory_import_row_write_failed')
+                  .slice(0, 5)
+                  .map(e => (
+                    <span key={e.sku} style={{
+                      display: 'block', color: 'var(--dim)', fontSize: 11.5,
+                    }}>
+                      {e.sku}
+                      {e.params?.warehouse ? ` · ${String(e.params.warehouse)}` : ''}
+                    </span>
+                  ))}
+              </span>
+            )}
           </span>
         </div>
       )}

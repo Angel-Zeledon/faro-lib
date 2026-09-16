@@ -496,22 +496,38 @@ class TestCascadeReportsWhichLevelWon:
         assert item["lead_time_source"] == SOURCE_DEFAULT
         assert item["lead_time_rule_scope"] is None
 
-    def test_the_api_default_is_the_remaining_gap(
+    def test_the_api_no_longer_claims_a_lead_time_nobody_typed(
         self, client, auth_headers, test_tenant,
     ):
-        """Documents (and pins) the one place provenance is still coarser than it
-        should be, so closing it is a visible change rather than a silent one."""
+        """The gap this test used to PIN is closed (estabilidad 11.32).
+
+        `SupplierCreate.lead_time_days` was `int = Field(default=15)`, so the
+        endpoint handed the service a 15 for every caller that sent none and
+        `_stamp_lead_time_provenance` filed it as the supplier's own
+        declaration. It is `Optional[int] = None` now, and `exclude_none=True`
+        drops it — the column's DEFAULT still supplies the number the planner
+        needs, without anybody being credited with choosing it.
+
+        The assertion is inverted rather than deleted: this is the exact flip
+        the old version said should happen."""
         tid = test_tenant["id"]
         name = f"Via-API-{uuid.uuid4().hex[:6]}"
         _ok(client.post("/api/v1/inventory/suppliers",
                         json={"name": name}, headers=auth_headers), 201)
         card = query_one(
+            "SELECT lead_time_days, lead_time_set_by FROM suppliers "
+            "WHERE tenant_id = %s AND name = %s", (tid, name))
+        assert int(card["lead_time_days"]) == DEFAULT_LEAD_TIME_DAYS
+        assert card["lead_time_set_by"] is None, "nobody typed this number"
+
+        # ...and a caller who DOES send one is still recorded as having said it.
+        typed = f"Via-API-typed-{uuid.uuid4().hex[:6]}"
+        _ok(client.post("/api/v1/inventory/suppliers",
+                        json={"name": typed, "lead_time_days": 9},
+                        headers=auth_headers), 201)
+        assert query_one(
             "SELECT lead_time_set_by FROM suppliers WHERE tenant_id = %s AND name = %s",
-            (tid, name))
-        assert card["lead_time_set_by"] == SOURCE_USER, (
-            "SupplierCreate.lead_time_days defaults to 15, so the endpoint cannot "
-            "distinguish an omitted field from a typed one; making it Optional "
-            "should flip this to None")
+            (tid, typed))["lead_time_set_by"] == SOURCE_USER
 
     def test_an_explicit_rule_overrides_the_supplier_card(self, test_tenant):
         """The dedicated rule is the more specific statement of intent."""
