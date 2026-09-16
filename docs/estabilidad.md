@@ -2742,6 +2742,121 @@ there was nothing to fill and why.
 
 ---
 
+## 14. What a company needs before it buys this to run itself (2026-09-16)
+
+The question that produced this section: *what else does a company need before
+it buys Faro for its own operation?* Not "what features are missing" — what a
+buyer's owner and IT department ask before they sign, and what they discover
+three months in.
+
+A lot of it already existed and is worth not rebuilding: the `deploy/` stack
+with its three growth paths, the virgin install (§10) with a test that guards
+it, `/instalacion` and the configuration registry, services that degrade out
+loud, both manuals in both languages, tenant export and erasure written against
+Ley 8968, and — since §12 — an audit trail the tenant can read. The gaps below
+are what was left.
+
+### Done in this pass
+
+**a) A restore nobody had ever performed — [DONE 2026-09-16]**
+`deploy/README.md` had the commands and named the Fernet trap. Nobody had run
+the other direction. Doing it produced [`deploy/RESTORE.md`](../deploy/RESTORE.md),
+written from the actual run (159 tenants, 89 users, 42 completed sessions,
+2,156 stock rows restored clean), and found three things the commands alone did
+not:
+
+* **The backup target is ambiguous on a bare checkout.** `README.md` said
+  "a backup of `storage/`"; the default `STORAGE_PATH` is `backend/storage`;
+  both directories exist. On this machine they held different things — the
+  Fernet key was in the one the instruction did not name. Fixed in both READMEs:
+  ask the app where `STORAGE_PATH` is, do not guess.
+* **`docker run -v faro_storage:/s` creates an empty volume when the name is
+  wrong** — and compose prefixes volumes with the project (directory) name. The
+  backup succeeds, the archive is ~100 bytes, nothing says so. The runbook now
+  checks the volume name and refuses to trust an archive that small.
+* **The failure mode, reproduced.** A database-only restore comes back with
+  159 tenants, 89 users, 2,156 stock rows — identical — and every stored
+  credential unreadable. To the product's credit it is loud: it names the
+  variable and says the value must be entered again.
+
+**b) Runtime data was tracked by git — [FIXED 2026-09-16]**
+`backend/storage/` is both the default `STORAGE_PATH` **and** a Python package
+(`__init__.py`, `file_store.py`, `paths.py`). 234 data files (1.1 MB) under it
+were tracked despite `.gitignore` listing the directory — gitignore does not
+untrack what is already tracked — including the uploaded CSV of a tenant that
+no longer exists in the database. That defeats `delete_tenant()`: erasure
+removes the rows and version control keeps the file.
+
+Untracked now (`git rm --cached`, working copies untouched; nothing in the code
+reads those paths — checked). **Two decisions left to the owner:**
+* the blobs remain in git HISTORY; purging them is a rewrite, which breaks every
+  existing clone. Worth doing before the repository is handed to a buyer,
+  pointless afterwards.
+* the default `STORAGE_PATH` still points inside the source tree. The deployed
+  stack sets `/app/storage` so production is unaffected, but a bare checkout
+  writes customer data into a package directory, where a `git clean -xfd` or a
+  fresh clone removes it. Changing the default is a one-line change with a
+  migration problem attached (existing installs).
+
+**c) What leaves the buyer's network — [DONE 2026-09-16]**
+[`docs/datos-que-salen.md`](datos-que-salen.md): the five outbound
+destinations (DeepSeek, Resend/SMTP, Twilio, Alegra, Siigo), what each one is
+sent, and how to turn it off — plus the commands to verify the list without
+trusting the page. No telemetry, no analytics, no licence check; the frontend
+loads nothing external. The one that decides an IT review is the assistant:
+with `DEEPSEEK_API_KEY` set, questions and the business context to answer them
+go to a third party, and without it every AI feature degrades to rule-based
+text rather than failing.
+
+**d) Upgrade and rollback — [DONE 2026-09-16]**
+[`deploy/UPGRADE.md`](../deploy/UPGRADE.md) plus a `CHANGELOG.md`. The property
+that makes rollback cheap — every migration is additive, so the old code runs
+against the new schema — is now stated, with the one case that would break it
+(a release that changes the meaning of stored data; none has).
+
+**e) A release gate a person can run — [DONE 2026-09-16]**
+[`scripts/SMOKE.md`](../scripts/SMOKE.md): nine paths, twenty minutes, one
+fresh tenant. Written from the walk that found two defects on 2026-09-16 while
+2,938 backend tests were green.
+
+### Open, and whose call each one is
+
+**f) The ERP integrations have never touched a real account — [OPEN, needs an account]**
+This is §11.5 from the other side: for a LatAm distributor, "does it read my
+Alegra/Siigo?" is often *the* buying question, and the honest answer today is
+that the code is written, nobody has run it against a live account, and the
+stock fetch is known to be wrong for a multi-branch tenant. Either a sandbox
+account closes it, or the sales conversation says plainly that the integration
+is a project and not a checkbox. **Blocked on credentials, not on work.**
+
+**g) The operator cannot see failures — [OPEN, owner's call]**
+`/health` now carries service state and loop freshness, and the tenant has
+`/actividad`. But when a training fails at 3 a.m. on a customer's own server,
+nothing reaches a person. The cheap version is a daily operator digest over the
+mail channel that already exists; the thorough version is error aggregation,
+which is a dependency and a decision. A new channel, so: ask first.
+
+**h) Capacity has no measured number — [OPEN]**
+A buyer with 20,000 SKUs and three years of history will ask whether it holds,
+and there is no figure to give them. The stress suite exercises concurrency,
+not scale. One honest benchmark (N SKUs × M months: training time, peak memory,
+semáforo latency) belongs in the technical manual. Signal worth taking
+seriously: on 2026-09-16 the full backend suite could not run in one process on
+a 16 GB machine — it was killed twice for memory and had to be sliced.
+
+**i) Nothing is ever pruned — [OPEN, owner's call]**
+`activity_logs` grows with every sync, import and order; `system_loop_runs` and
+`inventory_snapshots` grow too. Small today, unbounded on a customer's disk.
+Deleting a tenant's history is a data-policy decision, not a code change, which
+is why it is here and not done.
+
+**j) The frontend still has no automated test — [OPEN, owner's call]**
+`scripts/SMOKE.md` is a person with a browser. Automating paths 1–6 means
+Playwright in the repo, and with no CI it would still be a script somebody runs
+before tagging. Worth it the day two people are shipping.
+
+---
+
 ## Lo que se borró el 2026-08-11, y por qué
 
 Siete documentos de planes, propuestas y auditorías ya ejecutados o superados.

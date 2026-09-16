@@ -211,9 +211,22 @@ a dedicated worker, and optionally a bundled Postgres), with the three growth
 paths pre-wired: splitting the worker, moving to managed Postgres, and adding
 claim-only workers. See **[`deploy/README.md`](deploy/README.md)**.
 
-Two things that are your responsibility and are not automatic: a backup of
-`storage/` (it is not in the database dump) and `SCHEDULER_ENABLED=true` in
-exactly one instance — two schedulers send every daily alert twice.
+Two things that are your responsibility and are not automatic: a backup of the
+`STORAGE_PATH` directory (it is not in the database dump, and it holds the key
+that decrypts every credential in that database) and `SCHEDULER_ENABLED=true`
+in exactly one instance — two schedulers send every daily alert twice.
+
+**[`deploy/RESTORE.md`](deploy/RESTORE.md)** is the restore runbook, written by
+performing one. Do the drill before you need it: a database-only restore boots,
+lists every customer, and cannot send a single email.
+
+Three more for whoever runs this in production:
+**[`deploy/UPGRADE.md`](deploy/UPGRADE.md)** (upgrading, and why rolling back is
+just the previous image), **[`docs/datos-que-salen.md`](docs/datos-que-salen.md)**
+(every outbound connection, what it sends, how to turn it off — the answer to
+your IT department's first question), and
+**[`scripts/SMOKE.md`](scripts/SMOKE.md)** (the twenty-minute walk before you
+tag: the suite says the backend behaves, not that the product works).
 
 ---
 

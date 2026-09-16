@@ -62,6 +62,20 @@ credentials have to be entered again — the rows survive and mean nothing.
 0 4 * * * docker run --rm -v faro_storage:/s -v /var/backups:/b alpine tar czf /b/faro-storage-$(date +\%F).tar.gz -C /s .
 ```
 
+**Check the volume name first.** Compose prefixes volumes with the project
+name — the directory name unless you set one — so the volume may be
+`deploy_storage`, not `faro_storage`. Against a name that does not exist,
+`docker run -v` **creates an empty volume and tars that**: the command
+succeeds, the archive is about a hundred bytes, and nothing says so.
+
+```sh
+docker volume ls | grep storage
+# and after each run, refuse to trust an archive that small:
+[ "$(stat -c%s /var/backups/faro-storage-$(date +%F).tar.gz)" -gt 10000 ]   || echo "STORAGE BACKUP IS EMPTY — CHECK THE VOLUME NAME"
+```
+
+Restoring is its own runbook, written by doing it: **[`RESTORE.md`](RESTORE.md)**.
+
 Or take the key out of the equation: put a Fernet key in
 `INTEGRATIONS_SECRET_KEY` in `deploy/.env` and it never touches the volume.
 That is the better answer if your secrets already live in a manager.
