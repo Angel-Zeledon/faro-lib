@@ -81,7 +81,15 @@ class SiigoProvider(AccountingProvider):
             sku = self._product_sku(item)
             if not sku:
                 continue
-            quantity = item.get("available_quantity") or 0
+            # NOT `or 0`. `parse_provider_number` exists so that "the ERP sent
+            # something we could not read" and "the ERP has none" stay
+            # different facts, and `_merge_products_and_stock` acts on that:
+            # a None leaves `current_stock` unset, so the tenant keeps the
+            # count they had. Collapsing the distinction here — one layer
+            # ABOVE the parser — wrote a real 0 over the whole catalogue
+            # whenever the provider omitted the field, flipped every SKU to
+            # PEDIR_YA, and reported the sync as a success.
+            quantity = item.get("available_quantity")
             stock.append(ProviderStock(sku=sku, quantity=quantity, warehouse="principal"))
         return stock
 
@@ -109,7 +117,12 @@ class SiigoProvider(AccountingProvider):
                 sales.append(ProviderSaleLine(
                     date=invoice_date,
                     sku=str(code),
-                    quantity=line.get("quantity") or 0,
+                    # Raw, for the same reason as fetch_stock above: an
+                    # unreadable quantity must reach `parse_provider_number`
+                    # as-is so `_build_sales_csv` can list the line as
+                    # unreadable instead of teaching the model a day with
+                    # zero sales that never happened.
+                    quantity=line.get("quantity"),
                     unit_price=line.get("price"),
                     store=parse_warehouse_name(line.get("warehouse")) or invoice_store,
                 ))

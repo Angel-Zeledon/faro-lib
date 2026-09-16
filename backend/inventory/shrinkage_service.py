@@ -67,7 +67,14 @@ def record_shrinkage(
 
     from backend.inventory import service as inv_svc
 
-    warehouse = warehouse or "principal"
+    # Normalize-at-write, the same rule every other stock write path follows.
+    # Without it `norte` did not match an existing `Norte` row and the call
+    # 404'd — blaming the SKU for a spelling the product itself canonicalises
+    # everywhere else. (`resolve_canonical_name` also supplies the default
+    # warehouse when none is given, so the `or "principal"` it replaces is not
+    # lost.)
+    from backend.inventory import warehouse_service as wh_svc
+    warehouse = wh_svc.resolve_canonical_name(tenant_id, warehouse)
     existing = inv_svc.get_stock(tenant_id, sku, warehouse=warehouse)
     if not existing:
         raise AppError(

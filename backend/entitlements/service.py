@@ -7,11 +7,14 @@ that cannot say no is worse than no permission at all — it reads like a gate
 while gating nothing. The only thing a tier decides is *how much*.
 """
 
+import logging
 from contextlib import contextmanager
 from dataclasses import fields
 from datetime import datetime, timezone
 
 from backend.entitlements.plans import DEFAULT_TIER, PLANS, PlanDef
+
+log = logging.getLogger(__name__)
 
 _LIMIT_FIELDS = tuple(f.name for f in fields(PlanDef))
 
@@ -152,6 +155,24 @@ def enforce_limit(tenant_id: str, limit_key: str, current: int, adding: int = 1,
     ) or {"quota": {}}
     max_allowed = tenant_limits(tenant)[limit_key]
     if max_allowed is not None and current + adding > max_allowed:
+        # Recorded before it is raised. A ceiling hit in the browser is
+        # explained by the dialog the 403 produces, but the SAME refusal in the
+        # nightly sync or a bulk import has nobody in front of it — and then a
+        # tenant simply stops accumulating data with no event anywhere saying
+        # why. Written on its own connection so it survives the caller's
+        # rollback: the refusal happened, even though the write did not.
+        try:
+            from backend.activity.events import record_event
+            record_event(
+                tenant_id, "system", "limit.reached", resource=limit_key,
+                details={"limit": limit_key, "ceiling": max_allowed},
+                reason="plan_limit_reached",
+                reason_params={"limit": limit_key, "current": current,
+                               "max": max_allowed},
+                status="error",
+            )
+        except Exception:  # noqa: BLE001 - never let the audit break the guard
+            log.exception("could not record the ceiling for tenant=%s", tenant_id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "PLAN_LIMIT_REACHED", "limit": limit_key,

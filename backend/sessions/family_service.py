@@ -123,6 +123,7 @@ def launch_training_family(
     user_id: str,
     user_horizon_days: int | None = None,
     user_granularity: str = "auto",
+    record_refusal: bool = True,
 ) -> dict:
     """Fan a ready-to-train base session out into its granularity family and
     enqueue every member. The base session must already be validated and in a
@@ -133,8 +134,10 @@ def launch_training_family(
     grain's horizon (see plan_family). Both are persisted into the base
     session's forecast_cfg for auditability.
     """
+    from backend.activity.events import record_event
     from backend.db.connection import execute
     from backend.db import session_store
+    from backend.errors import AppError
     from backend.sessions import data_gate
     from backend.sessions import service as session_svc
 
@@ -143,7 +146,35 @@ def launch_training_family(
     # integrations sync and the seed script — so a caller cannot start a run on
     # data the gate rejected by talking to a different endpoint. Enforcing it in
     # the REST handler alone is what made it a suggestion.
-    data_gate.enforce(tenant_id, base_session_id)
+    #
+    # Refusing is recorded for the same reason it is enforced here: a person at
+    # the wizard reads the 422 and knows, but the launches nobody is watching
+    # (a scheduled run) refused into silence, and the tenant's only symptom was
+    # numbers that stopped moving.
+    #
+    # `record_refusal=False` is for the caller that already reports this
+    # refusal in its own vocabulary — the ERP sync writes
+    # `integration.sync_blocked`, which names the provider and is what the
+    # /integraciones card reads. One refusal is one row in the feed; the flag
+    # is explicit so nobody has to infer it from the user id.
+    try:
+        data_gate.enforce(tenant_id, base_session_id)
+    except AppError as exc:
+        if not record_refusal:
+            raise
+        record_event(
+            tenant_id, user_id, "training.blocked",
+            resource=base_session_id, reason="data_gate_blocked",
+            reason_params={"detail": (exc.params or {}).get("issues", "")},
+            details={
+                "session_id": base_session_id,
+                "session_name": (session_svc.get_session(tenant_id, base_session_id)
+                                  or {}).get("name"),
+                "issues": (exc.params or {}).get("issues"),
+            },
+            status="error",
+        )
+        raise
 
     dates = _read_dataset_dates(tenant_id, base_session_id)
     specs = plan_family(dates, user_granularity, user_horizon_days)  # always >= 1

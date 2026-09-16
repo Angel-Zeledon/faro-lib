@@ -31,7 +31,12 @@ export function PriceBreakPanel({
   opportunities:  PriceBreakOpportunity[]
   totalNetSaving: number
   currency:       (n: number) => string
-  onApplyStepUp:  (sku: string, quantity: number) => void
+  /** `unitPrice` is the rung's price, and it is not optional: accepting a
+   *  break used to raise the quantity and leave the OLD unit cost on the
+   *  line, so the panel promised a saving that never reached the cart total,
+   *  the PO, the PDF the supplier receives, the cash calendar or the
+   *  scorecard. */
+  onApplyStepUp:  (sku: string, quantity: number, unitPrice: number) => void
 }) {
   const { t } = useLanguage()
 
@@ -83,7 +88,7 @@ export function PriceBreakPanel({
             </span>
           </div>
           <button
-            onClick={() => onApplyStepUp(o.sku, o.step_quantity)}
+            onClick={() => onApplyStepUp(o.sku, o.step_quantity, o.step_unit_price)}
             style={{
               all: 'unset', cursor: 'pointer', flexShrink: 0,
               fontSize: 12, fontWeight: 700, color: GREEN,

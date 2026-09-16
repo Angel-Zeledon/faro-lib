@@ -228,7 +228,7 @@ def _recipients(tenant_id: str) -> list[dict]:
     return [
         dict(r) for r in query(
             """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'manager')""",
+               WHERE tenant_id = %s AND role IN ('admin', 'analyst')""",
             (tenant_id,),
         )
     ]

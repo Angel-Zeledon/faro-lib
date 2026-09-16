@@ -1474,6 +1474,14 @@ export interface SupplierScorecardRow {
   lead_time_unusable?:  boolean
   /** A trend needs two points. False on 0 or 1 reception. */
   trend_measurable?:    boolean
+  /** False when the on-time percentage is computed off too few receptions to
+   *  mean anything. The backend has produced these two since the day it added
+   *  the sample floor, with a comment naming the defect ("one reception printed
+   *  100% in bold green") — and the screen never declared them, so it printed
+   *  the raw number anyway and the fix lived only in the API. */
+  on_time_measurable?:   boolean
+  /** Same rule for the fill rate, over orders rather than receptions. */
+  fill_rate_measurable?: boolean
 }
 
 // Feature 2.5 — a supplier the PO-send path would silently skip.

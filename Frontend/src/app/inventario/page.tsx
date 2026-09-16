@@ -24,7 +24,7 @@ import { WarehouseStatusTable } from '@/components/inventory/WarehouseStatusTabl
 import DataFreshness from '@/components/ui/DataFreshness'
 import Spinner from '@/components/ui/Spinner'
 import MenuButton from '@/components/ui/MenuButton'
-import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonCards, SkeletonTable } from '@/components/ui/States'
+import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonCards, SkeletonTable, useErrorDetail } from '@/components/ui/States'
 import HelpTip from '@/components/ui/HelpTip'
 import SharedSignalBadge, { signalColor } from '@/components/ui/SignalBadge'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -32,6 +32,7 @@ import { getUser } from '@/lib/auth'
 import { useToast } from '@/contexts/ToastContext'
 import Tooltip from '@/components/ui/Tooltip'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
+import { csvCell, csvNumber, buildCsv, downloadCsv } from '@/lib/csvWriter'
 import { coverageUnitShort } from '@/lib/period'
 import {
   DEFAULT_LEAD_TIME_DAYS, DEFAULT_MOQ, DEFAULT_SERVICE_LEVEL,
@@ -1654,6 +1655,8 @@ export default function InventoryPage() {
  })()
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
+ // Translates an ApiError's `error_code` + `params` into the user's language.
+ const errorDetail = useErrorDetail()
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[]; coverage_unit?: CoverageUnit } | null>(null)
  const [loading, setLoading] = useState(false)
  // Raw error, so ErrorState can classify by kind instead of showing a
@@ -2009,16 +2012,21 @@ export default function InventoryPage() {
  // Same artifact as the export on /hoy — same filename, same columns — so it
  // must use the same header keys. This one hardcoded Spanish, so an English
  // user got Spanish headers here and English ones there, from one product.
- const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
- for (const i of orderItems) {
+ // Same writer as /compras and as the backend endpoint — see lib/csvWriter for
+ // what raw interpolation was costing this file.
+ const header = ['SKU', t('hoy.csv_col_product'), t('hoy.csv_col_quantity'),
+                 t('hoy.csv_col_supplier'), t('hoy.csv_col_estimated_value')]
+ const rows = orderItems.map(i => {
   const qty = effectiveQty(i)
-  const val = qty * (i.unit_cost ?? 0)
-  rows.push(`${i.sku},"${i.display_name ?? ''}",${qty},"${i.supplier ?? ''}",${val}`)
- }
- const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
- const url = URL.createObjectURL(blob)
- const a = document.createElement('a'); a.href = url; a.download = 'purchase_order.csv'; a.click()
- URL.revokeObjectURL(url)
+  return [
+   csvCell(i.sku),
+   csvCell(i.display_name ?? ''),
+   csvNumber(qty),
+   csvCell(i.supplier ?? ''),
+   csvNumber(i.unit_cost == null ? null : qty * i.unit_cost),
+  ]
+ })
+ downloadCsv('purchase_order.csv', buildCsv(header, rows))
  // Log decisions: ordered (edited => 'modified', otherwise 'approved') AND
  // the actionable lines the buyer zeroed out, which are refusals and have to
  // be recorded as such — they are the only thing that can move adoption off
@@ -2288,7 +2296,7 @@ export default function InventoryPage() {
  /* ── Session list failed to load ──────────────────────────── */
  <div style={{ padding: '40px 32px', textAlign: 'center' }}>
  <AlertTriangle size={32} color={C.red} style={{ margin: '0 auto 12px', opacity: 0.7 }} />
- <div style={{ fontSize: 14, color: C.text, marginBottom: 16, maxWidth: 420, margin: '0 auto 16px' }}>{sessionsError}</div>
+ <div style={{ fontSize: 14, color: C.text, marginBottom: 16, maxWidth: 420, margin: '0 auto 16px' }}>{errorDetail(sessionsError)}</div>
  <button onClick={refreshSessions} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 8, background: C.indigo, color: '#fff', fontSize: 13, fontWeight: 600 }}>
  <RefreshCw size={12} /> {t('inventory.btn_retry')}
  </button>

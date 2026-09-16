@@ -20,6 +20,7 @@ import type {
  PriceBreakEvaluation, CashCalendar, CashFitResult, InventoryStatusItem,
 } from '@/lib/types'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
+import { csvCell, csvNumber, buildCsv, downloadCsv } from '@/lib/csvWriter'
 import {
  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
@@ -36,7 +37,7 @@ import SignalBadge from '@/components/ui/SignalBadge'
 import { getUser } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 import {
-  EmptyState, ErrorState, LoadingState, SkeletonCards, SkeletonTable,
+  EmptyState, ErrorState, LoadingState, SkeletonCards, SkeletonTable, useErrorDetail,
 } from '@/components/ui/States'
 import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
@@ -227,10 +228,18 @@ function LeadTimeLearning({ item }: { item: ActionItem }) {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors }: {
+function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors }: {
  item:        ActionItem
  onApprove:   () => void
  onReject:    () => void
+ /** Take the line back OUT of the cart — NOT the same thing as rejecting it.
+  *  The "Deshacer" button below was wired to `onReject`, so a buyer undoing
+  *  their own mis-tap told Faro the recommendation had been bad: that verdict
+  *  reaches POST /inventory/log-po, is persisted on inventory_po_items, and
+  *  is what /impacto counts as adoption feedback. The mobile card has had the
+  *  correct handler all along (`unapproveItem`), so the two views recorded
+  *  different things for the same gesture. */
+ onUndo:      () => void
  onChangeQty: (qty: number) => void
  suppliers:   Supplier[]
  onChangeSupplier: (supplierId: string) => void
@@ -562,7 +571,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
        )}
       </div>
      ) : (
-      <button onClick={onReject} style={{
+      <button onClick={onUndo} style={{
        all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--dim)',
        marginLeft: 'auto', textDecoration: 'underline',
       }}>
@@ -775,6 +784,8 @@ function HoyEmptyState({ variant }: { variant: 'no_session' | 'no_inventory' }) 
 export default function HoyPage() {
  const { t, lang } = useLanguage()
  const { sessionId, setSessionId, currentSession, completedSessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions } = useAutoSession()
+ // Translates an ApiError's `error_code` + `params` into the user's language.
+ const errorDetail = useErrorDetail()
  const [briefing, setBriefing]             = useState<MorningBriefing | null>(null)
  const [loading, setLoading]               = useState(false)
  // Raw error so ErrorState can classify it by kind.
@@ -832,6 +843,12 @@ export default function HoyPage() {
  const [generatedPO, setGeneratedPO]   = useState<POLogEntry | null>(null)
  const [generatedLines, setGeneratedLines] = useState<ActionItem[]>([])
  const [sendState, setSendState]       = useState<'idle' | 'sending' | 'done'>('idle')
+ // A FAILED send, kept apart from `sendResult`. Stuffing the error into
+ // `skipped` gave it the same amber shape as a legitimate "this supplier
+ // has no email on file" line — and, for a dropped connection, the literal
+ // text "HTTP 0" — while replacing the Send button with a results list, so
+ // there was no way to retry. Nothing had been sent to anybody.
+ const [sendError, setSendError]       = useState<unknown>(null)
  const [sendResult, setSendResult]     = useState<SendPOResult | null>(null)
 
  const user    = getUser()
@@ -1089,8 +1106,27 @@ export default function HoyPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [sessionId, approvedKey])
 
- function applyStepUp(sku: string, quantity: number) {
-  changeQty(sku, quantity)
+ function applyStepUp(sku: string, quantity: number, unitPrice: number) {
+  // The quantity AND the price. This used to call `changeQty` alone, so the
+  // line kept its old `unit_cost`: the panel said "order 500 instead of 100
+  // and save ~1,400", the cart total went UP by the extra units at the old
+  // price, and that old price was what the decisions payload wrote into
+  // inventory_po_items.unit_cost — the single authority for the supplier PDF,
+  // the cash-calendar payable, /impacto's managed value and the scorecard's
+  // purchased_value. `effective_unit_price` existed and had no caller outside
+  // its own evaluation, so the discount reached nothing Faro stores or prints.
+  setCart(prev => prev.map(i => i.sku === sku
+   ? {
+     ...i,
+     qty: quantity,
+     unit_cost: unitPrice,
+     // The margin per unit moves with the cost it is derived from
+     // (unit_margin = sale_price - unit_cost, computed by the backend), or
+     // the cart would report the OLD margin on the NEW price.
+     unit_margin: i.sale_price != null ? i.sale_price - unitPrice : i.unit_margin,
+     status: 'modified' as ActionStatus,
+    }
+   : i))
  }
 
  // ── Cash calendar (3.6) ──────────────────────────────────────────────────
@@ -1119,18 +1155,20 @@ export default function HoyPage() {
  }, [cashBudget, approvedKey])
 
  async function downloadOC() {
-  const rows = [`SKU,${t('hoy.csv_col_product')},${t('hoy.csv_col_quantity')},${t('hoy.csv_col_supplier')},${t('hoy.csv_col_estimated_value')}`]
-  for (const item of approved) {
-   const val = item.qty * (item.unit_cost ?? 0)
-   rows.push(`${item.sku},"${item.name}",${item.qty},"${item.supplier || ''}",${val}`)
-  }
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = 'purchase_order.csv'
-  a.click()
-  URL.revokeObjectURL(url)
+  // Written through lib/csvWriter: quotes escaped, formula prefixes
+  // neutralised and a UTF-8 BOM — the same three things the backend writer of
+  // this exact filename already did. An unpriced line exports an EMPTY value
+  // cell instead of a confident 0 (see csvNumber).
+  const header = ['SKU', t('hoy.csv_col_product'), t('hoy.csv_col_quantity'),
+                  t('hoy.csv_col_supplier'), t('hoy.csv_col_estimated_value')]
+  const rows = approved.map(item => [
+   csvCell(item.sku),
+   csvCell(item.name),
+   csvNumber(item.qty),
+   csvCell(item.supplier || ''),
+   csvNumber(item.unit_cost == null ? null : item.qty * item.unit_cost),
+  ])
+  downloadCsv('purchase_order.csv', buildCsv(header, rows))
 
   if (!sessionId) return
 
@@ -1187,14 +1225,12 @@ export default function HoyPage() {
  async function sendGeneratedPONow() {
   if (!generatedPO) return
   setSendState('sending')
+  setSendError(null)
   try {
    const res = await sendPOToSuppliers(generatedPO.id)
    setSendResult(res)
   } catch (e: unknown) {
-   setSendResult({
-    sent: [],
-    skipped: [{ supplier: null, reason: e instanceof Error ? e.message : t('roi.send_po_error') }],
-   })
+   setSendError(e)
   } finally {
    setSendState('done')
   }
@@ -1205,6 +1241,7 @@ export default function HoyPage() {
   setGeneratedLines([])
   setSendState('idle')
   setSendResult(null)
+  setSendError(null)
  }
 
  // Converts a single optimizer-suggested order line straight into a logged PO,
@@ -1253,7 +1290,9 @@ export default function HoyPage() {
     color: C.muted, textAlign: 'center',
    }}>
     <AlertTriangle size={36} color={C.red} style={{ opacity: 0.7 }} />
-    <p style={{ fontSize: 15, color: C.text, margin: 0, maxWidth: 420 }}>{sessionsError}</p>
+    {/* Through useErrorDetail: this used to print the hook's pre-rendered
+        string, which for a dropped connection was the literal "HTTP 0". */}
+    <p style={{ fontSize: 15, color: C.text, margin: 0, maxWidth: 420 }}>{errorDetail(sessionsError)}</p>
     <button
      onClick={refreshSessions}
      style={{
@@ -1572,6 +1611,7 @@ export default function HoyPage() {
             tourAnchors={idx === 0 ? { supplier: 'hoy.supplier', qty: 'hoy.qty', decide: 'hoy.decide' } : undefined}
             onApprove={() => approveItem(item.sku)}
             onReject={() => rejectItem(item.sku)}
+            onUndo={() => unapproveItem(item.sku)}
             onChangeQty={qty => changeQty(item.sku, qty)}
             suppliers={suppliers}
             onChangeSupplier={id => changeSupplier(item.sku, id)}
@@ -1598,6 +1638,7 @@ export default function HoyPage() {
             item={item}
             onApprove={() => approveItem(item.sku)}
             onReject={() => rejectItem(item.sku)}
+            onUndo={() => unapproveItem(item.sku)}
             onChangeQty={qty => changeQty(item.sku, qty)}
             suppliers={suppliers}
             onChangeSupplier={id => changeSupplier(item.sku, id)}
@@ -1801,7 +1842,13 @@ export default function HoyPage() {
             )}
            </div>
           ) : (
-           <div style={{ display: 'flex', gap: 10 }}>
+           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {sendError != null && (
+             <div style={{ fontSize: 12, color: C.red }}>
+              {t('hoy.generate_send_failed')} {errorDetail(sendError)}
+             </div>
+            )}
+            <div style={{ display: 'flex', gap: 10 }}>
             <button
              onClick={sendGeneratedPONow}
              disabled={sendState === 'sending'}
@@ -1821,6 +1868,7 @@ export default function HoyPage() {
             }}>
              {t('hoy.generate_send_go_orders')}
             </Link>
+            </div>
            </div>
           )}
 

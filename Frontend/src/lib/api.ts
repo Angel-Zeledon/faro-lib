@@ -959,34 +959,25 @@ export const deleteTransferLane = (fromWarehouse: string, toWarehouse: string) =
     + `&to_warehouse=${encodeURIComponent(toWarehouse)}`)
 
 // ── PDF export ────────────────────────────────────────────────────────────────
-export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) => {
-  const token = getToken()
-  const res = await fetch(
-    `${BASE}/inventory/report/pdf?session_id=${sessionId}&service_level=${serviceLevel}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+//
+// These three used to do a bare `fetch` and `throw new Error('HTTP ' + status)`,
+// skipping `downloadBlob` 700 lines above — which handles a 401 by refreshing
+// the token and retrying, the way every other action in the app does. Access
+// tokens live 15 minutes and the refresh is purely reactive, so reading the
+// semáforo for twenty minutes (normal on that screen) and then pressing
+// "Exportar OC" rendered the literal string "HTTP 401" in the error banner:
+// no file, no purchase order logged, and no hint that reloading would fix it.
+export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) =>
+  downloadBlob(
+    `/inventory/report/pdf?session_id=${sessionId}&service_level=${serviceLevel}`,
+    `inventory_${new Date().toISOString().slice(0, 10)}.pdf`,
   )
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url
-  a.download = `inventory_${new Date().toISOString().slice(0, 10)}.pdf`
-  a.click()
-  URL.revokeObjectURL(url)
-}
 
 export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) => {
-  const token = getToken()
-  const res = await fetch(
-    `${BASE}/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  await downloadBlob(
+    `/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}`,
+    'purchase_order.csv',
   )
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url; a.download = 'purchase_order.csv'; a.click()
-  URL.revokeObjectURL(url)
   // The CSV is in the buyer's hands either way, but the `po_history` row is
   // what makes the order EXIST for the product: /pedidos lists it, reception
   // is tracked against it and supplier lead-time learning reads it. This used
@@ -1000,18 +991,8 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
   return { logged }
 }
 
-export const downloadInventoryTemplate = async () => {
-  const token = getToken()
-  const res = await fetch(`${BASE}/inventory/template.csv`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url; a.download = 'inventory_template.csv'; a.click()
-  URL.revokeObjectURL(url)
-}
+export const downloadInventoryTemplate = async () =>
+  downloadBlob('/inventory/template.csv', 'inventory_template.csv')
 
 // ── Inventory ROI ─────────────────────────────────────────────────────────────
 export const getInventoryROI = () =>
@@ -1608,12 +1589,37 @@ export const getAlertHistory = (limit = 20, opts?: RequestOpts) =>
     'GET', `/alerts?limit=${limit}`, undefined, opts,
   )
 
-/** Marks every alert up to now as read for the calling user. Mutating, so it
- *  takes the analyst+ guard — a viewer is never an alert recipient. */
+/** Marks every alert up to now as read for the calling user. Any signed-in
+ *  role: the row it writes is that user's own unread marker, and since the
+ *  bell started carrying tenant-wide system events a viewer can collect a
+ *  badge too. */
 export const markAlertsRead = (opts?: RequestOpts) =>
   request<import('../components/alerts/types').MarkAlertsReadResult>(
     'POST', '/alerts/read', undefined, opts,
   )
+
+// The other half of the same store: the bell is deliberately a SUBSET (only
+// what needs a decision), and this is everything, `info` included. Filterable,
+// paged, and readable by every role — the point of the screen is that nobody
+// has to ask what happened while they were not looking.
+export const getActivity = (
+  params: { limit?: number; offset?: number; kind?: string; severity?: string } = {},
+  opts?: RequestOpts,
+) => {
+  const q = new URLSearchParams()
+  q.set('limit', String(params.limit ?? 50))
+  q.set('offset', String(params.offset ?? 0))
+  if (params.kind) q.set('kind', params.kind)
+  if (params.severity) q.set('severity', params.severity)
+  return request<import('../components/alerts/types').ActivityFeed>(
+    'GET', `/alerts/activity?${q.toString()}`, undefined, opts,
+  )
+}
+
+/** The filter vocabulary, served from the same registry the writers use so the
+ *  screen cannot offer a topic nothing can ever be recorded under. */
+export const getActivityKinds = (opts?: RequestOpts) =>
+  request<{ kinds: string[] }>('GET', '/alerts/kinds', undefined, opts)
 
 // ── Installation: which services this deployment has, and what is off ────────
 // The panel at /instalacion. Three shapes, three audiences:

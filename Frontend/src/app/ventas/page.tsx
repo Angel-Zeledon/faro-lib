@@ -656,6 +656,16 @@ function QuickStartPageContent() {
  // gratis" CTA, carried through signup + login) auto-starts the demo instead
  // of waiting on a click — the whole point of that path is zero extra taps
  // between "create account" and "see the semáforo working".
+ // Set when this screen unmounts. `pollFamily` below is a self-recursive
+ // async closure with no AbortController, so without this it kept running
+ // after the user navigated away — and on completion it called
+ // `router.push('/compras')`, yanking them off whatever screen they had
+ // moved on to, minutes later, discarding anything unsaved there. Every
+ // other effect on this page already has a `cancelled` flag; this one, the
+ // longest-lived of them (MAX_POLLS ≈ 30 min), did not.
+ const unmountedRef = useRef(false)
+ useEffect(() => () => { unmountedRef.current = true }, [])
+
  const autoDemoRanRef = useRef(false)
  useEffect(() => {
  if (autoDemoRanRef.current) return
@@ -1045,6 +1055,8 @@ function QuickStartPageContent() {
  let attempts = 0
 
  const poll = async (): Promise<void> => {
+ // The user left. Stop polling and, above all, do not navigate.
+ if (unmountedRef.current) return
  try {
  const jobs = await Promise.all(memberJobIds.map(id => getJob(id)))
  const baseJob = jobs.find(j => j.id === baseJobId) ?? jobs[0]
@@ -1084,7 +1096,9 @@ function QuickStartPageContent() {
  // mounts with the new value. Deliberately scoped to the user's OWN
  // just-finished run: the app is never re-pointed at a session that finished
  // in the background while the user was mid-task somewhere else.
+ if (unmountedRef.current) return
  await planningCtx?.reload()
+ if (unmountedRef.current) return
  router.push('/compras')
  return
  }
@@ -1100,6 +1114,7 @@ function QuickStartPageContent() {
  }
  // Still running, poll again
  await new Promise(res => setTimeout(res, 3000))
+ if (unmountedRef.current) return
  return poll()
  } catch (e: unknown) {
  const msg = errorDetail(e) || t('qs.err_status')

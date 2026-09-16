@@ -54,6 +54,12 @@ def is_affirmative(text: str) -> bool:
     return norm.split(" ", 1)[0] in _AFFIRMATIVE if norm else False
 
 
+# The pseudo-tool the routing prompt asks for when the user requests one of the
+# suspended actions. It runs no code and touches nothing — it only selects the
+# "do that in the app" answer.
+_IN_APP_TOOL = "not_available_here"
+
+
 def _system_prompt() -> str:
     # English prompt, Spanish answer: WhatsApp is a Spanish-only channel for this
     # product, and the free-text `reply` goes straight to the user's phone.
@@ -67,10 +73,44 @@ def _system_prompt() -> str:
     ]
     for spec in wt.TOOL_SPECS:
         lines.append(f'- {spec["name"]} ({spec["kind"]}): {spec["description"]} args={spec["args"]}')
+    if wt.SUSPENDED_TOOL_SPECS:
+        # Named, but NOT offered: the model must be able to recognise the
+        # request in order to say where it is done. Without this it routes to
+        # tool=null and the user who asked to register a reception gets the
+        # help menu, which reads as "the bot did not understand".
+        lines.append(
+            "These actions CANNOT be performed here (they are not reversible "
+            "from WhatsApp). If the user asks for one of them, reply with "
+            f'tool="{_IN_APP_TOOL}" and args={{}}:'
+        )
+        for spec in wt.SUSPENDED_TOOL_SPECS:
+            lines.append(f'- {spec["name"]}: {spec["description"]}')
     return "\n".join(lines)
 
 
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+def _first_json_object(raw: str) -> dict | None:
+    """The first COMPLETE JSON object in the model's answer, or None.
+
+    Was `re.compile(r"\\{.*\\}", re.DOTALL)` — greedy, so it spanned from the
+    first brace to the last one in the whole reply. A model that wrote a
+    sentence containing a brace before the object, or emitted two objects,
+    produced a slice that does not parse; the turn then fell through to the
+    no-tool path and the user got a menu instead of what they asked for.
+
+    `raw_decode` from each opening brace stops at the end of the first valid
+    object, so trailing prose or a second object is simply ignored.
+    """
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(raw):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(raw, i)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
 
 
 def _route(ctx: ToolContext, text: str, history: list[dict]) -> dict:
@@ -84,12 +124,16 @@ def _route(ctx: ToolContext, text: str, history: list[dict]) -> dict:
         messages=messages,
     )
     raw = resp.content[0].text if resp and resp.content else ""
-    m = _JSON_RE.search(raw or "")
-    if not m:
-        return {"tool": None, "args": {}, "reply": None}
-    try:
-        obj = json.loads(m.group(0))
-    except (ValueError, TypeError):
+    obj = _first_json_object(raw or "")
+    if obj is None:
+        # This used to return silently. The user still got an answer — the help
+        # text — so nothing looked broken from outside, and nobody operating
+        # the bot could measure how often the router simply failed. A fallback
+        # that leaves no trace is the exact shape of a silent failure.
+        log.warning(
+            "[whatsapp] router answer carried no JSON object; falling back to "
+            "the no-tool reply. raw=%r", (raw or "")[:400],
+        )
         return {"tool": None, "args": {}, "reply": None}
     return {
         "tool": obj.get("tool"),
@@ -118,7 +162,19 @@ def run_turn(ctx: ToolContext, incoming_text: str, state: dict):
 def _handle(ctx, incoming_text, history, pending):
     # 1. Confirmation gate — system-controlled, no LLM call.
     if pending:
-        if is_affirmative(incoming_text):
+        # A proposal stored BEFORE these two were suspended must not execute
+        # today just because the user answers "sí" now. It is dropped, and the
+        # "sí" is answered with where the action actually lives. A message that
+        # was NOT a confirmation falls through to fresh intent as always —
+        # someone who asks for the semáforo gets the semáforo, not a lecture
+        # about an order they mentioned three turns ago.
+        if (pending or {}).get("type") in wt.SUSPENDED_WRITE_TOOLS:
+            log.info("[whatsapp] dropped a pending %s: the action is suspended",
+                     pending.get("type"))
+            if is_affirmative(incoming_text):
+                return render_es("wa_write_in_app"), None
+            pending = None
+        elif is_affirmative(incoming_text):
             try:
                 return wt.execute_pending_action(ctx, pending), None
             except ToolError as e:
@@ -156,6 +212,9 @@ def _handle(ctx, incoming_text, history, pending):
         except Exception:  # noqa: BLE001
             log.exception("[whatsapp] query tool failed: %s", tool)
             return render_es("wa_apology"), None
+
+    if tool == _IN_APP_TOOL or tool in wt.SUSPENDED_WRITE_TOOLS:
+        return render_es("wa_write_in_app"), None
 
     if tool in wt.WRITE_TOOLS:
         if not ctx.is_analyst_or_above:

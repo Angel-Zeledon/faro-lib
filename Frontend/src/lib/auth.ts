@@ -25,6 +25,26 @@ export function setAuth(accessToken: string, refreshToken: string, user: AuthUse
   localStorage.setItem(USER_KEY,   JSON.stringify(user))
 }
 
+/**
+ * Update the cached identity after the server accepted a change to it.
+ *
+ * `getUser()` re-parses localStorage on every call, so it hands back a FRESH
+ * object each time. /mi-cuenta saved a new display name, then did
+ * `if (me) me.full_name = name` — mutating a throwaway parse — and showed a
+ * green "Guardado" next to the OLD name. `fp_user` is written in exactly one
+ * other place (`setAuth`, called only from the login screen), so the stale
+ * name survived reloads, the sidebar footer and the /compras greeting until
+ * the user logged out and back in. The save had worked; nothing on screen
+ * ever admitted it.
+ */
+export function patchUser(patch: Partial<AuthUser>): AuthUser | null {
+  const current = getUser()
+  if (!current) return null
+  const next = { ...current, ...patch }
+  try { localStorage.setItem(USER_KEY, JSON.stringify(next)) } catch { /* quota/private mode */ }
+  return next
+}
+
 // Bumped by clearAuth. A refresh that was already in flight when the session
 // ended captured its refresh token beforehand, so it used to finish and write
 // the renewed access token back — resurrecting the session AFTER logout. That

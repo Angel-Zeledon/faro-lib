@@ -23,7 +23,11 @@ class ProviderProduct:
 @dataclass
 class ProviderStock:
     sku: str
-    quantity: float
+    # Whatever the provider sent, UNPARSED — `parse_provider_number` is the one
+    # place allowed to decide what it means, and None ("we could not read it")
+    # has to survive the trip: the consumer leaves the field unset rather than
+    # overwriting the tenant's real count with a zero.
+    quantity: Optional[float]
     warehouse: str  # 'principal' when the provider has no warehouse concept
 
 
@@ -31,7 +35,7 @@ class ProviderStock:
 class ProviderSaleLine:
     date: date
     sku: str
-    quantity: float
+    quantity: Optional[float]   # unparsed, see ProviderStock.quantity
     unit_price: Optional[float]
     store: Optional[str] = None  # branch/warehouse the sale shipped from; None when the payload has none
 

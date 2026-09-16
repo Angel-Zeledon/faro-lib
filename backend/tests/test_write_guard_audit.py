@@ -64,6 +64,11 @@ SELF = {
     "DELETE /api/v1/analyst/chats/{chat_id}": "deleting your own conversation",
     "POST /api/v1/messages": "sending a message is communication, not company state",
     "POST /api/v1/messages/read": "marking your own unread count",
+    # Same category, and for a concrete reason: the bell now carries tenant-wide
+    # SYSTEM events (a failed training is addressed to nobody in particular), so
+    # a viewer collects a badge. Requiring analyst-or-above to clear it would
+    # leave the one role that cannot clear it staring at it forever.
+    "POST /api/v1/alerts/read": "marking your own unread count",
 }
 
 INFRA = {

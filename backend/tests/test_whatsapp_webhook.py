@@ -115,39 +115,70 @@ def test_query_turn_over_http_no_mutation(client, twilio_token, registered_user)
     assert resp.status_code == 200
 
 
-def test_confirmation_gate_over_http(client, twilio_token, registered_user):
+_FAKE_WRITE = "fake_reversible_write"
+
+
+def _reversible_write_tool(monkeypatch):
+    """Stand-in for a confirmable write, because the two real ones
+    (`approve_po`, `register_reception`) are suspended from WRITE_TOOLS until
+    they have inverses. These tests are about the gate and the dedupe over
+    HTTP, which must stay under test either way — `executed` is what they
+    actually assert on."""
+    from backend.whatsapp import tools as wt
+    executed: list = []
+    monkeypatch.setitem(wt.WRITE_TOOLS, _FAKE_WRITE,
+                        lambda ctx, args: {"type": _FAKE_WRITE,
+                                           "summary": "¿Confirmas? (responde SÍ)"})
+    monkeypatch.setattr(wt, "execute_pending_action",
+                        lambda ctx, action: executed.append(action) or "HECHO ✅")
+    return executed
+
+
+def test_confirmation_gate_over_http(client, twilio_token, registered_user, monkeypatch):
+    executed = _reversible_write_tool(monkeypatch)
     num = _verified_number(registered_user, "+573004440000", role="admin")
-    po_id = _seed_po(registered_user["tenant"]["id"])
-    fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
+    fake = _FakeLLM([json.dumps({"tool": _FAKE_WRITE, "args": {}})])
     with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        r1 = _post(client, {"From": f"whatsapp:{num}", "Body": f"aprueba {po_id}", "MessageSid": "SM-p"})
+        r1 = _post(client, {"From": f"whatsapp:{num}", "Body": "hazlo", "MessageSid": "SM-p"})
     assert r1.status_code == 200
-    # Proposal turn mutated nothing.
-    assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is None
+    assert executed == []  # proposal turn executed nothing
     # Confirm turn — no LLM needed.
     r2 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-c"})
     assert r2.status_code == 200
-    assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is not None
+    assert len(executed) == 1
 
 
-def test_idempotency_same_sid_single_execution(client, twilio_token, registered_user):
-    num = _verified_number(registered_user, "+573005550000", role="admin")
+def test_an_approval_over_http_is_never_executed(client, twilio_token, registered_user):
+    """The suspension, at the layer that is actually exposed to the internet."""
+    num = _verified_number(registered_user, "+573004441111", role="admin")
     po_id = _seed_po(registered_user["tenant"]["id"])
-    # Set up a pending approve action directly in the store.
+    fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
+    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
+        r1 = _post(client, {"From": f"whatsapp:{num}", "Body": f"aprueba {po_id}",
+                            "MessageSid": "SM-sp"})
+    assert r1.status_code == 200
+    # And a "sí" right after, which is what a user would send anyway.
+    r2 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-sc"})
+    assert r2.status_code == 200
+    assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is None
+
+
+def test_idempotency_same_sid_single_execution(client, twilio_token, registered_user, monkeypatch):
+    executed = _reversible_write_tool(monkeypatch)
+    num = _verified_number(registered_user, "+573005550000", role="admin")
+    # Set up a pending action directly in the store.
     from backend.whatsapp import conversation_store as cs
     cs.save(registered_user["tenant"]["id"], registered_user["user"]["id"], num,
-            history=[], pending_action={"type": "approve_po", "po_log_id": po_id},
+            history=[], pending_action={"type": _FAKE_WRITE},
             last_message_sid="SM-prev")
     # First confirm executes.
     r1 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-confirm"})
     assert r1.status_code == 200
-    sent_first = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"]
-    assert sent_first is not None
+    assert len(executed) == 1
     # Twilio retry with the SAME MessageSid must be a no-op (dedupe short-circuits).
     r2 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-confirm"})
     assert r2.status_code == 200
-    sent_second = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"]
-    assert sent_first == sent_second  # not re-approved / no second write
+    assert len(executed) == 1  # not executed twice
 
 
 def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, monkeypatch):

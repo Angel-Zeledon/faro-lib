@@ -332,7 +332,7 @@ con la suite en verde.
 
 ---
 
-## 1.octies El bot de WhatsApp — hallazgos del diseño del asistente (2026-08-23, SIN ARREGLAR)
+## 1.octies El bot de WhatsApp — hallazgos del diseño del asistente — **[ARREGLADOS 2026-09-15]**
 
 Salieron al diseñar `docs/asistente-acciones.md`. **No se tocó nada**: los tres
 dependen de una decisión del dueño que está abierta.
@@ -367,9 +367,40 @@ llave de un diccionario que escribimos nosotros, y esa es la lista blanca. Lo qu
 falta para cumplir las tres reglas del dueño es preview calculado por el backend,
 caducidad de la propuesta y undo.
 
+### Cómo quedaron (2026-09-15)
+
+**(a) Suspendidas, no borradas.** `WRITE_TOOLS` quedó vacío;
+`approve_po` y `register_reception` están en `SUSPENDED_WRITE_TOOLS`. Las
+funciones que proponen, el portón de confirmación, los ejecutores y sus tests
+siguen ahí y siguen funcionando — volver a encenderlas es esa línea, cuando
+`receive_po` y `mark_po_sent` tengan inversos. Tres cosas más se cerraron con
+ellas:
+
+- una propuesta guardada ANTES de la suspensión ya no se ejecuta al responder
+  «sí» hoy (se descarta y se responde dónde se hace);
+- el modelo sigue **viendo** las dos acciones en el prompt, pero como acciones
+  que no se hacen aquí, así que quien pide registrar una recepción recibe «eso
+  se hace en la app» y no el menú de ayuda;
+- los tests que ejercían el portón a través de `approve_po` ahora lo ejercen con
+  una herramienta de escritura reversible de prueba: **se apagó la acción, no la
+  cobertura del mecanismo**.
+
+**Esta es la única decisión de producto que se tomó sin preguntar**, y es
+reversible en una línea: si el dueño prefiere el riesgo, `WRITE_TOOLS` vuelve a
+tener las dos entradas.
+
+**(b) El enrutador ya no falla en silencio.** Una respuesta del modelo sin JSON
+escribe un `WARNING` con los primeros 400 caracteres de lo que llegó. El usuario
+sigue recibiendo el texto de ayuda; la diferencia es que ahora se puede medir.
+
+**(c) La regex greedy se fue.** `_first_json_object` recorre las llaves de
+apertura y usa `JSONDecoder.raw_decode`, que se detiene al cerrar el primer
+objeto válido: prosa con llaves antes, prosa después, o dos objetos, ya no
+rompen el turno. Cinco tests de forma en `test_whatsapp_agent.py`.
+
 ---
 
-## 1.nonies `PATCH /inventory/stock/{sku}` fabrica stock fantasma en `principal` (2026-08-23, SIN ARREGLAR)
+## 1.nonies `PATCH /inventory/stock/{sku}` fabricaba stock fantasma en `principal` — **[ARREGLADO 2026-09-15]**
 
 Salió del recorrido de la API para el diseño del asistente. **Leído en código, no
 reproducido en navegador** — pero el camino no tiene ambigüedad.
@@ -403,11 +434,29 @@ warehouse filter, so it never knew the target (sku, warehouse) pair was new" —
 escrito al arreglar el salto del techo de bodegas, sin cerrar la puerta que lo
 causa.
 
-**Arreglarlo es una decisión pequeña pero es una decisión:** o el PATCH escribe
-en la bodega de la fila que encontró (comportamiento que nadie declaró y que
-cambia lo que hoy hace el endpoint), o `StockPatch` gana un campo `warehouse`
-obligatorio (rompe a cualquier cliente actual de la API pública). No se toca sin
-que el dueño elija.
+**Cómo quedó (2026-09-15).** Ninguna de las dos opciones planteadas era
+necesaria: `StockPatch` **ya tenía** un campo `warehouse` opcional — lo que
+faltaba era que las dos mitades del endpoint hablaran de la misma fila. Ahora la
+bodega destino se resuelve ANTES y el chequeo de existencia se hace contra esa
+fila:
+
+- `warehouse` en el cuerpo → esa fila; 404 `stock_sku_not_found_in_warehouse`
+  si el SKU no está ahí (antes: creaba la fila);
+- el SKU vive en una sola bodega → esa, se llame como se llame;
+- vive en varias y una es `principal` → `principal`, que es exactamente lo que
+  este endpoint hizo siempre, y es una fila real;
+- vive en varias y ninguna es `principal` → 422 `stock_warehouse_required`
+  nombrándolas. Ese es justo el caso que fabricaba el fantasma, y no hay
+  adivinanza segura que hacer por el usuario.
+
+Efecto lateral que vale la pena: el PATCH ya **no puede crear** una fila, así
+que los dos saltos de techo que este camino tenía (`max_skus` y `max_locations`)
+dejan de depender de que el candado los atrape — se cierran en la raíz. Los dos
+tests de `test_entitlements.py` que los cubrían ahora afirman el contrato más
+fuerte (404 y el conteo intacto, a cualquier tamaño de plan).
+
+*Tests:* `backend/tests/test_patch_stock_never_invents_a_warehouse.py` (10).
+Verificado que fallan contra el código anterior: 4 de los 10 en rojo.
 
 ---
 
@@ -1940,7 +1989,7 @@ cuatro caracteres finales. Cero problemas en los siete pasos.
 
 ---
 
-## Hallazgo abierto (2026-09-14) — el mismo defecto del nivel de servicio, pero en el motor
+## Hallazgo del nivel de servicio (2026-09-14) — **[CERRADO 2026-09-15]**
 
 `backend/inventory/service.py` resolvía el z con `_Z.get(service_level, 1.645)`:
 cualquier nivel fuera de los cuatro de la tabla recibía en silencio el colchón
@@ -1966,10 +2015,611 @@ de si el motor recorta, revienta o devuelve infinito.
 
 **No es urgente**: la API rechaza con 422 todo lo que esté fuera de [0.5, 0.999]
 (`test_service_level_boundary_via_api`), así que esos valores solo llegan desde
-un llamador interno o un default guardado. Pero decidir qué debe hacer el motor
-con 1.0 — recortar como el backend, o rechazar con un error propio — es una
-decisión del dueño, no un arreglo obvio, y por eso queda anotada aquí en vez de
-aplicada.
+un llamador interno o un default guardado.
+
+**Cerrado el 2026-09-15, y la decisión del dueño resultó no hacer falta.** Al
+mirarlo de cerca, el motor **ya rechaza**: `InventoryAdvisor.__init__` valida el
+intervalo abierto (0, 1) y lanza un `ValueError` que nombra el argumento y da
+los valores típicos. Nunca hubo un `inf`. Lo podrido eran los dos tests, que
+comprobaban que ocurriera el síntoma y por lo tanto pasaban **antes y después**
+del arreglo que exigían a gritos en un comentario.
+
+Reemplazados por lo que el advisor de verdad promete:
+
+- cuatro niveles inválidos (1.0, 0.0, -0.1, 1.5) rechazados con `ValueError` que
+  menciona `service_level` — no `Exception`, que acepta hasta un `TypeError` por
+  una firma cambiada;
+- cinco niveles válidos (0.5 … 0.999) con z finito, y punto de reorden y stock
+  de seguridad finitos;
+- **la propiedad que el comprador usa**: subir el nivel de servicio nunca compra
+  menos colchón. Esa es la que habría delatado el defecto del backend —un z
+  colapsado sobre un solo valor— y ninguna afirmación de un solo punto la ve.
+
+---
+
+## 11. Parallel-agent sweep (2026-09-15) and its fixes (2026-09-16)
+
+**Written in English on the owner's instruction (2026-09-16, "todo en inglés").**
+The rest of this document is historical Spanish; converting it is a separate
+pass and is not started here.
+
+**Method, so each line carries its real weight.** Six agents in parallel, one
+per surface, using the `silent-failures` skill as the lens and forbidden from
+touching code: they report, they do not fix. Each was asked for `file:line`, a
+concrete failure scenario, and an explicit statement of whether it had CONFIRMED
+the whole path or was inferring. 36 findings. Of those, **9 were verified by
+hand against the code** (marked ✅); the rest carry the label the finder gave
+them. Two were established with a runnable probe rather than by reading (📏).
+
+Surfaces chosen were the ones `inventario-pantallas.md` reports as never walked:
+integrations, suppliers, exports, stock movements, scheduled work, and the whole
+frontend.
+
+**Status:** 23 fixed on 2026-09-16. The 13 still open are
+listed at the end with what decision each one needs — they are open because the
+fix is a product choice, not because they are hard.
+
+---
+
+### Level 1 — the product lies or goes quiet, and it costs money
+
+**11.1 Every analyst was excluded from every alert — [FIXED 2026-09-16]** ✅
+`inventory/service.py:3533`, `:3544`, `:3560`, `notifications/freshness_service.py:231`
+— all four recipient queries read `role IN ('admin', 'manager')`. **`manager` is
+not a role this product has**: `VALID_ROLES` is {admin, analyst, viewer}
+(`users/roles.py`), `users.role` **defaults to `analyst`**
+(`db/migrations.py:172`), and `analyst` is also what the invite dialog proposes.
+So the real recipient set was admins only. Meanwhile `/mi-cuenta` invites any
+role to link WhatsApp "to receive inventory alerts", walks them through the OTP
+and shows a green **Verificado**. That person then received nothing — no
+stockout digest, no lead-time warning, no freshness reminder, no monthly recap,
+on either channel — and was not written to `activity_logs` either, so their
+alert bell was empty too. An excluded person and a quiet week looked identical.
+Now `('admin', 'analyst')`; `viewer` stays out on purpose, because a stockout
+digest is a call to action addressed to whoever can act on it.
+*Tests:* `test_agent_sweep_fixes.py::TestAlertRecipientsIncludeAnalysts` (5),
+including a source guard so nothing asks for a non-existent role again.
+
+**11.2 A thousands-dot file imported every quantity divided by 1000 — [OPEN]** 📏
+`utils/stock_import.py:296` (and `has_decimal_comma`, `:219`). The file-level
+verdict only detects a decimal **comma**; there is no mirror rule for
+dot-as-thousands. Measured against the real module: `["1.250","980","12.500"]` →
+`1.25`, `12.5`. No row errors, the wizard says "1,200 products imported", and
+the whole catalogue drops to PEDIR_YA. Adding one `3,50` anywhere in the file
+fixes it — which is why every hand-made test file passes. `/bulk/preview`
+returns `sample_rows` with the parsed values and `StockImportWizard.tsx` does
+not render them, so there is nowhere to catch the 1.25 either.
+**Why it is still open:** the safe fix is to stop guessing and ASK — the same
+thing the upload gate already does for other ambiguities — and that is a new
+question in the import wizard, i.e. a new screen state. Owner's call. The
+cheaper half (render `sample_rows` in the wizard so the user sees `1.25` before
+committing) is also a UI addition and is bundled into the same decision.
+
+**11.3 The nightly sync walked past `max_sessions` and never stopped — [FIXED 2026-09-16]** ✅
+`integrations/sync_service.py`. The sync enforced `max_skus` and `max_locations`
+and then called `create_session` bare. The other two callers do check
+(`api/v1/sessions.py:33` under a `limit_guard`; `demo.py`'s comment says in so
+many words that skipping it would let a tenant bypass the cap). The third is the
+only one that runs **unattended**: a free tenant read 4 of 3 on day four and 60
+of 3 on day sixty, and left one full sales CSV in `storage/` per connection per
+night, with no prune. Now checked twice — once at the top of `sync_connection`
+before any provider call, so a tenant already at the cap does not pay for the
+fetch, the stock upserts and the dataset write; and once atomically under
+`limit_guard` around `create_session`, which is the check that actually holds
+against a person starting a forecast in the browser at the same moment.
+**Note for the owner:** this makes the nightly sync fail loudly on a full free
+tenant (the error lands on the connection row and the /integraciones card), and
+that is what a ceiling does everywhere else in this product. If you would rather
+a sync REUSE its own session instead of consuming a slot every night, that is a
+different design and needs a column on the connection — say so and it changes.
+
+**11.4 Accepting a price break raised the quantity and never the price — [FIXED 2026-09-16]** ✅
+`Frontend/src/app/compras/page.tsx` — `applyStepUp` called `changeQty` alone, and
+`price_break_service.effective_unit_price` had **no caller outside its own
+evaluation** (verified by grep). So the panel promised "order 500 instead of 100
+and save ~1,400", the cart total went *up* by the extra units at the old price,
+and the old price was what the decisions payload wrote into
+`inventory_po_items.unit_cost` — the single authority for the PDF the supplier
+receives, the cash-calendar payable, /impacto's managed purchase value and the
+scorecard's `purchased_value`. The saving reached nothing Faro stores or prints.
+Now the rung's `step_unit_price` travels with the quantity, and `unit_margin` is
+recomputed from it so the cart does not report the old margin on the new price.
+
+**11.5 ERP stock all lands in `principal` while sales carry the branch — [OPEN]**
+`integrations/alegra.py:68`, `siigo.py:85` hardcode `warehouse="principal"`,
+while `fetch_sales` reads the real warehouse off each invoice — which sets
+`has_store=True` and trains per `(sku, store)`. For a multi-branch distributor
+Norte and Sur then resolve `current_stock = 0` → **PEDIR_YA at full reorder
+quantity for the entire catalogue at every branch**, with the goods sitting
+there; and `principal`, which holds the units, reads `SIN_DATOS`.
+**Why it is still open:** the fix needs each provider's per-warehouse inventory
+endpoint, and neither module's docstring claims to have verified that shape
+against the live API. Guessing a payload here writes wrong stock, which is the
+defect we are fixing. Needs a real account to read against.
+
+**11.6 A scheduled retrain runs on the COMPLETED session and can blank the product — [OPEN]**
+`workers/worker.py:217` calls `create_job` bare. The user-facing path
+(`api/v1/training.py:38`) validates state, configs and the active-job cap and
+transitions to QUEUED; the scheduler does none of it. When the run raises,
+`runner.py:1638` marks FAILED the session that was serving the whole app;
+`resolve_active_session` filters on COMPLETED, so /hoy, the semáforo and the
+digest go quiet, and the digest's `if not sid: continue` writes no row at all.
+The only trace is `scheduled_jobs.last_error`, on a screen nobody opens because
+nothing announced a problem. Same line, second effect: no per-session dedupe, so
+an hourly preset over a >1h training queues B while A runs and both write
+results for one `session_id`.
+**Why it is still open:** "retrain" can mean *refresh this session in place*
+(today's behaviour, and the failure mode above) or *create a new session and
+switch to it once it succeeds* (safe, but it consumes a saved-forecast slot per
+run — see 11.3). That is the owner's product decision, and it is the same
+decision as 11.3.
+
+**11.7 Every `/inventario` export ignores the open warehouse tab — [OPEN]**
+`GET /inventory/status/export-po` (`api/v1/inventory.py`) **has no warehouse
+parameter at all**; it re-derives the list at network level. The download menu
+sits in the page header, above the warehouse selector, and stays enabled with a
+warehouse tab open. The buyer reads "Norte needs 40" and downloads a CSV saying
+150 — and `logPOGeneration` writes that into `/pedidos` as an order they never
+saw. This is §3.1 recurring on the warehouse axis instead of the period axis.
+"Export edited" is worse: it iterates the network list, so the per-warehouse
+edits are not even in scope.
+**Why it is still open:** the honest fix is a `warehouse` parameter on the
+endpoint — a new API capability — or disabling the menu while a warehouse tab is
+open, which is a UX decision about a button people use. Owner's call; the
+recommendation is the parameter.
+
+**11.8 Shrinkage always decrements `principal` — [PARTLY FIXED 2026-09-16]**
+`inventory/shrinkage_service.py:70` resolves `principal`, while the modal shows
+stock **summed** across warehouses and never asks which one
+(`inventario/page.tsx:1001` never sends `warehouse`, though the API model
+accepts it). A crate breaks in Norte, the units come off principal: the tenant
+total still reconciles, so nothing looks wrong, while the per-warehouse semáforo
+believes Norte holds 400 units that do not exist. Loud variant: a tenant whose
+stock arrived with a warehouse column has no `principal` row at all, so every
+shrinkage 404s blaming the SKU for a warehouse the user never chose.
+`record_shrinkage` also skips `resolve_canonical_name`, so `norte` against an
+existing `Norte` 404s too.
+**Fixed half:** `record_shrinkage` was the only stock write path that skipped
+`resolve_canonical_name`, so `norte` against an existing `Norte` 404'd. It now
+normalises like every other path (*test:*
+`TestShrinkageResolvesTheWarehouseSpelling`).
+**Why the rest is still open:** the modal has to ASK which warehouse — a new
+control on a screen that was deliberately simplified down to 26 controls
+(§1.septies). Owner's call.
+
+**11.9 A monthly ERP re-import reverts every hand-corrected lead time — [OPEN]**
+`inventory/service.py:680` has `only_fill_missing: bool = False`, and
+`_fields_to_fill` exists precisely so that "a lead time the buyer corrected by
+hand in March is not silently reverted by April's ERP export". The only caller
+passing `True` is a test; `POST /inventory/bulk` takes the default. Worse,
+`upsert_stock` then re-stamps provenance to `'file'`, so the UI can no longer
+badge the value as the tenant's own either.
+**Why it is still open:** whether a re-import overwrites or fills gaps is a
+choice the user has to make per import, which means a toggle in the wizard.
+Owner's call.
+
+---
+
+### Level 2 — numbers that do not mean what their label says
+
+**11.10 "Deshacer" on `/compras` logged a REJECTION — [FIXED 2026-09-16]** ✅
+`compras/page.tsx` wired the undo button on an approved line to `onReject` →
+`rejectItem`. The code already knew better: `unapproveItem` exists for this case
+and its comment says so — "the buyer is undoing their own tap, not telling us
+the recommendation was bad, and rejections are logged as adoption feedback". It
+was wired into the mobile card and never reached the desktop one, so the two
+views recorded different things for the same gesture, and the rejection reached
+`log-po`, persisted on `inventory_po_items` and contaminated /impacto's adoption
+rate. `ActionCard` now takes an explicit `onUndo`.
+
+**11.11 The scorecard's "we are not sure" flags never reached the screen — [FIXED 2026-09-16]**
+`reception_service.py:576` produces `on_time_measurable` / `fill_rate_measurable`
+with a comment naming the defect ("one reception printed 100% in bold green"),
+and `proveedores/scorecard/page.tsx` printed the raw number. Neither field
+appeared anywhere in `Frontend/src`, nor in `SupplierScorecardRow`. The fix had
+shipped backend-only and the defect it describes was still live on the page.
+Both flags are now declared and honoured: below the sample floor the number
+still shows, marked provisional and in the dim colour, instead of bold green.
+
+**11.12 Fill rate punishes orders still in transit — [OPEN]**
+`reception_service.py:533` includes `partial` and `not_received` POs, summing
+received against the full `final_qty`, with no exclusion for deliveries whose
+window has not closed. A supplier with two half-delivered orders, both on
+schedule, prints **50%** — presented as a performance verdict. The one who has
+shorted nothing reads worst on the page.
+**Why it is still open:** "still in transit" needs a definition — expected date
++ grace, or simply excluding POs inside their declared lead time. That is a
+business rule, not a code fix.
+
+**11.13 Lead-time alerts grouped by exact-case supplier name — [FIXED 2026-09-16]**
+`supplier_health_service.py:262` normalised with `LOWER()` for **ordering only**
+and then grouped on the raw spelling, while the scorecard,
+`get_learned_lead_times` and `_effective_lead_time` all group case-insensitively.
+`receive_po` stores whichever spelling that PO carried, so eight receptions from
+Acme split 5/3 across "Acme" and "ACME" produced two series, neither reaching
+`MIN_BASELINE + MIN_RECENT`. The supplier's lead time had doubled and neither
+the banner nor the 08:00 email fired — and a split history was indistinguishable
+from too little history. Now grouped by casefolded key, with the first-seen
+spelling kept for display so the alert keys the same way the scorecard row does.
+*Test:* `TestLeadTimeDeviationGroupsCaseInsensitively`.
+
+**11.14 The price-break panel quotes a supplier the buyer already changed — [OPEN]**
+`compras/page.tsx:1079` sends only `{sku, quantity}`; the supplier comes from
+`status_items`, not from the cart, and the effect's dependency is `sku:qty`, so
+switching supplier does not even re-evaluate. It is exactly what
+`evaluate_cart`'s own docstring says it fixed, reintroduced through the
+supplier-switch path.
+**Why it is still open:** the evaluate endpoint needs a `supplier_id` per line —
+a new field on a public request model. Small, but it is an API change.
+
+**11.15 Stock snapshots have no warehouse column — [OPEN]**
+`db/migrations.py:381`. `/inventario`'s sparkline and the briefing's
+`demand_trend_pct` are computed over interleaved series: principal 500 and Norte
+20 give `500, 20, 500, 20…`, and `_calc_demand_trend` reads that difference as
+real consumption — "+585% demand" that never happened. A single inter-warehouse
+transfer produces the same artefact on its own.
+**Why it is still open:** a migration plus a backfill decision for existing rows
+(there is no way to attribute historical snapshots to a warehouse after the
+fact). Owner's call on what happens to the history.
+
+**11.16 The WhatsApp digest reported days to weekly tenants — [FIXED 2026-09-16]**
+`notifications/whatsapp.py`. The defect already fixed **for email only**:
+`build_inventory_alert_text` had no `period` parameter at all, so no caller
+could have passed one. The 08:00 email said "4 semanas" and the WhatsApp sent in
+the same loop iteration, off the same list, said "4d" — on the channel with the
+highest open rate in the region. The compact labels now live in the locale
+catalogue (`unit_*_short`) next to the long ones, with the period→stem map
+shared by both channels, because two copies of that map is how they came to
+disagree.
+*Tests:* `TestWhatsAppDigestSpeaksThePlanningGrain` (4), including one that
+asserts the two channels agree on the same list.
+
+**11.17 "Send now" previewed something else — [FIXED 2026-09-16]**
+`api/v1/inventory.py` resolved the period for the status and then called the
+email **without passing it**, falling back to the daily default — while its own
+docstring says a test fire that skips one of the loop's steps "would prove less
+than it appears to". It also linked to `/inventory`, which redirects to a
+different screen than the loop's `/hoy`. Both fixed.
+
+**11.18 An unknown unit cost was exported as a confident 0 — [FIXED 2026-09-16]**
+`compras/page.tsx` and `inventario/page.tsx` computed `qty * (unit_cost ?? 0)`
+under a header that says "estimated value" — exactly what `po_pdf.py:69`
+documents having fixed for the PDF ("a line whose cost nobody recorded is priced
+as UNKNOWN, not as zero… the supplier has no way to tell that apart from a price
+the buyer meant"). The backend CSV had the mirror bug, `cost or ""`, which
+merged a real cost of 0 with "unknown". Both now distinguish None from 0.
+
+**11.19 Duplicate import rows won silently and the count over-reported — [FIXED 2026-09-16]**
+`api/v1/inventory.py` de-duplicated `new_keys` for the ceiling check but not the
+write loop, and `imported` counted calls, so an ERP exporting one row per branch
+under an unmapped header put every branch on `principal`, where the last row won:
+300 + 200 + 40 was stored as 40 while the toast said "3 of 3". Rows are now
+collapsed per `(sku, warehouse)` **field-wise** (two rows for one SKU often carry
+different columns, so a wholesale last-row-wins would lose data the file did
+contain), the response carries `duplicate_rows`, and `total_rows` counts what was
+read while `imported` counts what was written. `sede`, `punto de venta` and
+`pdv` were also added as warehouse aliases — `sucursal` and `tienda` were there
+and the Colombian ERP's own word was not.
+*Tests:* `TestBulkImportReportsWhatItActuallyWrote` (4, incl. a permission pair).
+
+**11.20 The profile name saved, said "Guardado", and showed the old one — [FIXED 2026-09-16]** ✅
+`mi-cuenta/page.tsx` called `getUser()`, which re-parses `localStorage` on every
+call, so `if (me) me.full_name = ...` mutated a throwaway object. `fp_user` is
+written only by `setAuth`, which only runs at login, so the old name survived
+reloads, the sidebar footer and the /compras greeting until the next login. The
+save had worked and nothing on screen admitted it. Added `patchUser` to the auth
+layer; the section now holds the user in state and the handler has a `catch`
+that renders the failure through `useErrorDetail` (it was `try/finally`).
+
+---
+
+### Level 3 — friction, raw errors, and dormant traps
+
+**11.21 "Export all SKUs" froze the tab for good — [FIXED 2026-09-16]** 📏
+`Frontend/src/lib/excel.ts`: `safeSheetName` truncates to 31 characters, so
+appending `_2` to a name already 31+ characters produced the identical string
+and `while (used.has(name))` never terminated — synchronously, on the main
+thread, right after the progress counter reached N/N. Two SKUs sharing their
+first 31 characters was enough. The suffix is now placed INSIDE the 31-character
+budget; measured with a probe: terminates, unique, within the limit.
+
+**11.22 The language switch people actually use was undone by `/mi-cuenta` — [FIXED 2026-09-16]**
+The sidebar ES/EN toggle (on every screen) and the Ctrl-K palette called
+`setLang` only, so the choice lived in `localStorage`; `/mi-cuenta` then called
+`getPreferences()` on mount and wrote the server's untouched value back. The app
+flipped to Spanish mid-session while the ES/EN buttons on that very screen showed
+ES as selected, and the tour copy promises "both are saved to your account".
+Both contexts now persist through `lib/persistPreference`, which covers every
+caller at once instead of each remembering.
+
+**11.23 Raw backend prose as on-screen error text — [FIXED 2026-09-16]**
+`hooks/useAutoSession.ts` did `e.message`, and since every `ApiError` **is** an
+`Error` the Spanish fallback beside it was dead code (and a hardcoded Spanish
+literal in logic, which the repo forbids). `ApiError.message` is
+`detail || "HTTP <status>"` and a network failure is constructed as status 0, so
+the buyer's main screen rendered a large centred **"HTTP 0"** offline, and the
+backend's English sentence on a 500. Fixed there and at the other three sites:
+the supplier send on `/compras`, the password change on `/mi-cuenta`, and
+`/integraciones`. The hook now returns the raw error and each screen renders it
+through `useErrorDetail`, which already translates `error_code` + `params`.
+Two behaviours went with it: a failed send is no longer drawn as an amber
+*skipped* line (same shape as "this supplier has no email on file") and the Send
+button stays, so there is a retry; and `/integraciones` reloads on the failure
+path too, so the card stops showing a green **Conectado** while the row says
+`status='error'`.
+
+**11.24 The frontend CSV writers escaped nothing — [FIXED 2026-09-16]**
+Both wrote the same `purchase_order.csv` the backend carefully protects, by raw
+interpolation: an embedded `"` shifted every later column in a document a
+supplier acts on, and a supplier name starting with `=` or `@` executed on open.
+Now both go through `lib/csvWriter`, which mirrors `backend/utils/csv_safe.py`.
+
+**11.25 Purchase-order CSVs had no UTF-8 BOM — [FIXED 2026-09-16]**
+`api/v1/inventory.py` (both writers) and the two frontend ones. Headers come
+from the locale catalogue (`Señal`, `Días cobertura`), and
+`Frontend/src/lib/csvCheck.ts` already prefixed the BOM on its template — the
+product knew and applied it in one writer out of five. Excel on a Spanish-locale
+Windows read `SeÃ±al` and `Distribuidora PeÃ±a`.
+*Test:* `TestExportedCsvIsHonestAndOpensInExcel`.
+
+**11.26 Three downloads skipped the silent token refresh — [FIXED 2026-09-16]**
+`lib/api.ts` — `downloadInventoryPDF`, `exportInventoryPO` and
+`downloadInventoryTemplate` did a bare `fetch` and threw `'HTTP ' + status`,
+while the shared helpers 700 lines above handle a 401 with `tryRefresh()` and a
+retry. Access tokens live 15 minutes and the refresh is reactive, so reading the
+semáforo for twenty minutes and pressing "Exportar OC" printed **"HTTP 401"** in
+the banner: no file, no PO logged, no hint that reloading would fix it. All
+three now go through `downloadBlob`.
+
+**11.27 Leaving `/ventas` did not stop training, and yanked you to `/compras` — [FIXED 2026-09-16]**
+`ventas/page.tsx:1034` — the poll is a self-recursive async closure with no
+cancellation flag and no unmount cleanup, unlike every other effect on that page,
+and on completion it called `router.push('/compras')`. Four minutes after
+navigating away the app moved itself, discarding whatever was in the form. A
+mount-scoped flag now stops the loop and, above all, the navigation.
+**Still open, separately:** there is no cancel endpoint in the client, so the
+only way to stop a run you regret is to close the tab — which is what the screen
+tells you not to do. That is a new capability; owner's call.
+
+**11.28 The daily and monthly loops keep no last-run marker — [OPEN]**
+`workers/worker.py:245`, `:307`, `:337`. Each iteration computes `next_run` from
+`datetime.now()`; nothing is persisted, unlike `scheduled_jobs.last_run`. A
+worker killed at 07:55 and restarted at 08:02 makes `_next_daily_run` return
+*tomorrow*: that day nobody gets a digest, a lead-time alert or a freshness
+reminder, and no activity row is written, so it looks like a calm day. The
+monthly variant skips the overstock snapshot and permanently breaks that month's
+"capital freed" figure.
+**Why it is still open:** it needs somewhere to persist "last fired", i.e. a
+table or a column. That is a new field; owner's call.
+
+**11.29 `or 0` in the providers defeated "never invent a zero" — [FIXED 2026-09-16]**
+`integrations/alegra.py:67` and `siigo.py:84` did `.get(...) or 0` **before**
+`parse_provider_number`, whose contract (`base.py:66`) is that "the ERP sent
+something we could not read" and "the ERP sold none" stay different facts.
+`_merge_products_and_stock` acts on that — a None leaves `current_stock` unset so
+the tenant keeps the count they had — and the `or 0` destroyed the distinction
+one layer above it. The same applied to sale quantities, where
+`_build_sales_csv` reports unreadable lines instead of teaching the model a day
+with zero sales. All four now pass the raw value; the DTO types say
+`Optional[float]` so the intent is visible.
+*Tests:* `TestProvidersDoNotInventZeros` (4, incl. one asserting a real zero
+still writes a zero).
+
+**11.30 A failed send was filed under the wrong reason — [FIXED 2026-09-16]**
+`supplier_health_service.py:378` and `roi_service.py:725` called
+`failure_reason()` with no argument while the send two lines above passed
+`tenant_id`. The bare call asks the INSTANCE config, so a tenant running its own
+Resend key was told "no transport configured" — pointing the admin at an
+operator setting instead of at the credential they own and can fix; the mirror
+case reported `transport_error` and never named the real cause. Fixed in all
+three places (the WhatsApp one in `service.py` had it too).
+*Tests:* `TestFailureReasonIsScopedToTheTenant` (2).
+
+**11.31 ERP values were stamped as "the buyer typed it" — [FIXED 2026-09-16]**
+`integrations/sync_service.py` omitted `source=`, so it took the `SOURCE_USER`
+default — whose vocabulary means "the buyer typed it on the SKU card", and whose
+docstring says the dataset sync passes `'file'` explicitly. `unit_cost` is a
+provenance field, so the row claimed human authorship for a number Alegra sent.
+Now passes `SOURCE_FILE`. (A dedicated `SOURCE_INTEGRATION` would be more
+precise and is a new value in `VALUE_SOURCES` — not added unprompted.)
+
+**11.32 The supplier form pre-fills the system default — [OPEN]**
+`proveedores/page.tsx:125`, `:438` always send `lead_time_days`, so
+`_stamp_lead_time_provenance` records `SOURCE_USER` for every supplier created
+in the UI. Three backend call sites gate on `lead_time_set_by` precisely to keep
+Faro's own assumption from being reported as the supplier's promise; the create
+form defeats that guard, and the scorecard prints **DECLARADO 15d** for a
+supplier who declared nothing.
+**Why it is still open:** the field is visibly pre-filled in a labelled required
+input, so this sits on the line between defect and design. Leaving it blank with
+a placeholder is the fix, and it changes a form the owner has seen.
+
+**11.33 A PO line that fails to insert is swallowed — [OPEN]**
+`roi_service.py:155-180` logs a warning while the header keeps its full
+`sku_count` and `total_value`. The line disappears from the supplier's
+`fill_rate`, from `purchased_value` and from the PDF the supplier receives,
+without telling anyone.
+**Why it is still open:** the alternative is to fail the whole PO generation,
+which loses the buyer's work. Doing it properly means a transaction around the
+header and its lines — a real change to that write path, worth doing
+deliberately rather than as part of a sweep.
+
+**11.34 An import row that fails to write is dropped with a log — [OPEN]**
+`inventory/service.py:730`. `imported` does shrink, so the number is not a lie,
+but "83 products imported" after a clean 120-row preview is the only signal and
+nothing names the 37 rows or why. PLAUSIBLE: the path is confirmed, the trigger
+was not demonstrated.
+**Why it is still open:** the response already has an `errors` channel; wiring
+write-stage failures into it is straightforward, but the row-level reasons need
+copy, and the wizard needs to show them. Bundle with 11.2.
+
+**11.35 Reconnecting left the stale gate verdict behind — [FIXED 2026-09-16]**
+`integrations/store.py:33` cleared `last_error` but not `last_error_code` /
+`last_error_details`, unlike `mark_synced`'s success path. A healthy row kept
+carrying `training_blocked_unresolved` and a `session_id` pointing at a dead
+session — invisible today only because the panel gates on `last_error`, which
+made it a trap for the next reader. All three now clear together.
+*Test:* `TestReconnectClearsEveryErrorColumn`.
+
+**11.36 `get_sku_suppliers` ordered differently from `_PRIMARY_ORDER` — [FIXED 2026-09-16]**
+`supplier_service.py:334` used `is_primary DESC, s.name` while the canonical rule
+is `is_primary DESC, created_at ASC, supplier_id ASC`, and its own docstring
+claimed they were the same rule — the module footer even tells readers to use
+`get_sku_suppliers(...)[0]` as the primary. On a legacy row with two primaries
+the answers differed (alphabetical vs oldest), so anyone following that
+instruction would have resolved a different supplier than the semáforo built the
+recommendation for. Now `_PRIMARY_ORDER` verbatim, with the name as a display
+tie-break.
+
+---
+
+### Checked and found sound
+
+Worth recording so it is not re-audited: `lib/api.ts` (`request` /
+`downloadBlob` branch on every non-2xx; 401→refresh→retry→`_sessionLost` is
+correct), `lib/auth.ts` (the auth-epoch guard and the cross-tab `storage`
+listener close real session-resurrection holes), `ConfirmDialog` (the unresolved
+promise really is fixed), es/en catalogue parity (3,095/3,095, zero duplicates),
+`po_pdf.py` (unknown cost, currency precision and partial totals all handled),
+the download-vs-run-status branching in `api/v1/reports.py` (the "generate one
+first" trap is genuinely closed), the path-traversal guard in `artifacts.py`,
+the `/pronosticos` per-SKU exports (they serve the object the chart rendered
+rather than recomputing), transfer double-counting (`get_incoming_qty` credits
+only the destination), `cancel_transfer`, the concurrency floors that prevent
+negative stock, `claim()` with `FOR UPDATE SKIP LOCKED`, per-tenant isolation in
+all four daily passes, and `_effective_lead_time`, whose n≥3 floor stops one
+atypical reception from moving a learned lead time.
+
+---
+
+## 12. The user should always know what happened, and why (2026-09-16)
+
+**Owner's instruction, 2026-09-16.** Not a finding from the sweep — a rule the
+sweep kept running into. Half of section 11 is one shape repeating: the product
+did something, or failed to, and told nobody. An analyst excluded from every
+alert (11.1), a nightly sync walking past a ceiling (11.3), an order that
+reached no supplier (11.4), an import that dropped 37 rows (11.34), a retrain
+that blanked the active session at 3 a.m. (11.6). Each was fixed where it
+happened. This is the other half: **whatever happens, the user can find out
+that it happened and why.**
+
+### What existed before
+
+`activity_logs` held almost nothing a tenant would want to read: one row for a
+deleted session, one per API-key call, and four scheduled sends — the ones the
+bell already showed. Everything else lived in a log file the tenant cannot
+open.
+
+### The vocabulary, and why it is a registry and not a string
+
+`backend/activity/events.py` declares every event the product can record: 20
+actions in six kinds, each with a severity and a **whitelist** of the detail
+keys it may carry. Three rules it exists to enforce:
+
+1. **`record_event` refuses an undeclared action.** A typo'd action name writes
+   a row nothing can read back — the exact silent failure this feature is
+   against.
+2. **Anything that is not `info` must carry a reason**, and the reason is a
+   declared CODE, never prose. The frontend renders `events.reason.<code>` with
+   `reason_params` interpolated, the same contract as `AppError`. A warning the
+   user cannot act on costs attention and returns nothing, so the call site —
+   which knows why — is made to say.
+3. **Severity routes, it does not gate.** Everything is recorded. `critical`
+   and `warning` reach the bell; `info` is history. A bell that announces every
+   successful import is a bell people stop reading, and an event that only
+   reaches a log file may as well not exist — recording everything and routing
+   by severity avoids both.
+
+`record_event` never raises. These calls sit inside a reception, a sync, a
+training; losing an audit row is bad, failing the user's actual work over it is
+worse.
+
+### Two reads over one store
+
+* `GET /alerts` — the bell. Scheduled sends **plus** critical and warning
+  events, merged into one timeline. Deliveries stay fan-out-grouped (six rows
+  for one digest is noise); system events are not grouped (three failures in a
+  minute are three failures).
+* `GET /alerts/activity` — everything, `info` included, filtered by kind and
+  severity, paged. Deliveries are NOT grouped here: on an audit screen the
+  per-recipient outcome is the point.
+* `GET /alerts/kinds` — the filter vocabulary, from the same registry the
+  writers use, so the screen cannot offer a topic nothing can be recorded
+  under.
+
+`POST /alerts/read` **dropped its analyst guard**. It used to require
+analyst-or-above on the reasoning that no alert is ever addressed to a viewer.
+That stopped being true the moment the bell started carrying tenant-wide system
+events, and a viewer would have collected a badge with no way on earth to clear
+it. The row it writes is the caller's own unread marker, not company state —
+the same category as `POST /messages/read`.
+
+### Where it is recorded from
+
+| Kind | Events | Written by |
+|---|---|---|
+| `training` | completed / failed / blocked | `workers/runner.py` |
+| `integration` | sync completed / failed / blocked | `integrations/sync_service.py` |
+| `purchase` | order generated / sent / **not sent** / reception | `api/v1/inventory.py` |
+| `data` | stock imported / **import partial** / shrinkage / transfer | `api/v1/inventory.py` |
+| `limit` | ceiling reached | `entitlements/service.py` |
+| `account` | user invited / role changed / deactivated / API key created / revoked | `api/v1/users.py`, `api/v1/api_keys.py` |
+
+Two of those close gaps the sweep left open rather than only reporting them:
+**a ceiling that stops an unattended write** (the nightly sync, a bulk import)
+now leaves a row instead of nothing at all, and **an import that writes fewer
+rows than the file had** says so with the count and the reason, which is the
+signal 11.34 asked for. `purchase.order_not_sent` is critical on purpose: the
+buyer believes the order is on its way, and it is not.
+
+`account.*` carries `changed_by_an_account_admin` as its reason — the only
+useful reaction to "I did not do that" is to look at who has access.
+
+### The screens
+
+`/actividad` ("Qué ha pasado" / "What happened"), under Análisis because it
+answers a buyer's question, not an administrator's. Every role reads it — the
+point of the screen is that nobody has to ask. Rows are rendered by the same
+`AlertRow` the bell uses, so how an event reads changes in one place, and the
+bell gained a permanent link to it: the bell is a subset by design, and a
+subset with no way through to the rest is a filing cabinet with no handle.
+
+Copy is `events.action.*`, `events.reason.*`, `events.kind.*`,
+`events.severity.*` and `events.detail.*` in both languages. The last family is
+the one that stops a regression this product has already had: every number an
+event carries is rendered `Label: value` through its own key, so a new detail
+field cannot reach a buyer's screen as `rows_written` — it does not compile
+past the vocabulary test first.
+
+### How it is guarded
+
+`backend/tests/test_system_events.py` (32 tests). The important half is not the
+feed, it is the vocabulary: **a declared event whose copy does not exist would
+print its own key at a buyer**, and this product has done that. So the tests
+read `translations.ts` and fail unless every action, reason, kind, severity and
+detail key has copy in BOTH language blocks. The rest assert the routing rule
+(only critical and warning in the bell), the refusals (undeclared action,
+undeclared reason, a warning with no reason), that a write failure never
+propagates, tenant isolation, that a viewer can clear their own badge, and —
+one per call site — that walking the real endpoint leaves the right row in
+`activity_logs`, read back with a direct query.
+
+Walked in a browser on 2026-09-16: both languages, the bell (`info` correctly
+absent, reasons rendered, badge clears on open), `/actividad` with both filters
+and the filtered-empty state, no console errors.
+
+### What is deliberately NOT here
+
+- **No retention policy.** `activity_logs` grows; nothing prunes it. It is a
+  small table and the feed reads at most 200 rows, but a tenant syncing nightly
+  for two years will have a long tail nobody has measured.
+- **No per-user muting and no email digest of events.** The bell and the screen
+  are the whole surface. Adding a channel is a product decision.
+- **`data.transfer_created` counts lines, it does not name SKUs.** One document
+  is one row; a per-SKU event would put ten rows in the feed for one decision.
+- The open items of section 11 stay open. This does not close 11.2, 11.5, 11.6,
+  11.7, 11.9, 11.28, 11.32 or 11.33 — it makes two of them (11.34's silence, a
+  ceiling hit with nobody watching) audible, which is not the same as fixed.
 
 ---
 

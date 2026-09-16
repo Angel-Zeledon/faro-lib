@@ -1277,6 +1277,49 @@ def _collect_run_warnings(engine, prep_notes: "list | None" = None) -> dict:
 
 # ── Progress helpers ───────────────────────────────────────────────────────
 
+def _record_training_outcome(
+    tenant_id: str, session_id: str, job_id: str, *, failed: bool,
+    error: str = "",
+) -> None:
+    """One activity row per finished training, success or failure.
+
+    Attributed to whoever started the run (`jobs.created_by`), falling back to
+    the system user for a scheduled one — so the feed can say "your 03:00
+    retrain failed" rather than attributing it to nobody.
+
+    Never raises: this runs in the job worker's own except-block, and losing
+    the failure record is bad, but failing the failure handler is worse.
+    """
+    try:
+        from backend.activity.events import record_event
+        from backend.training.job_service import get_job
+        from backend.sessions.service import get_session
+
+        job = get_job(tenant_id, job_id) or {}
+        session = get_session(tenant_id, session_id) or {}
+        details = {
+            "session_id":   session_id,
+            "session_name": session.get("name") or session_id,
+        }
+        if failed:
+            details["started_by"] = job.get("created_by") or "system"
+            record_event(
+                tenant_id, job.get("created_by") or "system", "training.failed",
+                resource=session_id, details=details,
+                # The engine's message is English and can be long; it goes in
+                # params so the frontend renders its own sentence around it.
+                reason="engine_error", reason_params={"detail": (error or "")[:300]},
+                status="error",
+            )
+        else:
+            record_event(
+                tenant_id, job.get("created_by") or "system", "training.completed",
+                resource=session_id, details=details,
+            )
+    except Exception:  # noqa: BLE001 - see docstring
+        log.exception("could not record the training outcome for session=%s", session_id)
+
+
 def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str, message: str):
     progress = {"percent": percent, "step": step, "message": message}
     update_progress(tenant_id, job_id, progress)
@@ -1630,12 +1673,20 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         fire_webhooks(tenant_id, "job.completed", {"job_id": job_id, "session_id": session_id})
         broadcaster.broadcast_sync(job_id, {"type": "completed", "job_id": job_id})
         log.info(f"Job {job_id} completed successfully")
+        _record_training_outcome(tenant_id, session_id, job_id, failed=False)
 
     except Exception as exc:
         error_msg = str(exc)
         log.error(f"Job {job_id} failed: {error_msg}", exc_info=True)
         mark_failed(tenant_id, job_id, error_msg)
         force_status(tenant_id, session_id, "FAILED")
+        # The user has to be told. `force_status(FAILED)` above takes this
+        # session out of `resolve_active_session`, so every screen that reads
+        # the active session goes quiet — and for a SCHEDULED run there is
+        # nobody watching a progress bar to see it happen. Until this line the
+        # only trace was a log file the tenant cannot read.
+        _record_training_outcome(tenant_id, session_id, job_id, failed=True,
+                                 error=error_msg)
         fire_webhooks(tenant_id, "job.failed", {"job_id": job_id, "session_id": session_id, "error": error_msg})
         broadcaster.broadcast_sync(job_id, {
             "type": "failed",

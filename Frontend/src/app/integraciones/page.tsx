@@ -20,7 +20,7 @@ import {
 } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
-import { LoadingState, ErrorState, InlineError, EmptyState } from '@/components/ui/States'
+import { LoadingState, ErrorState, InlineError, EmptyState, useErrorDetail } from '@/components/ui/States'
 import Card from '@/components/ui/Card'
 import Input, { Field } from '@/components/ui/Input'
 
@@ -302,6 +302,9 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<unknown>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // Resolves an ApiError's `error_code` + `params` against the catalogue, so
+  // these handlers store the user's language instead of the backend's English.
+  const errorDetail = useErrorDetail()
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null)
   const [connectError, setConnectError] = useState<Record<string, string | null>>({})
   const [syncingId, setSyncingId] = useState<string | null>(null)
@@ -321,6 +324,13 @@ export default function IntegrationsPage() {
 
   useEffect(() => { load() }, [load])
 
+  // `e.message` on an ApiError is the BACKEND's English fallback sentence, and
+  // a network failure is built as status 0, so its message is the literal
+  // "HTTP 0". Both were rendered verbatim on a Spanish screen — including the
+  // data-gate refusal, whose Spanish copy has existed under
+  // `errors.training_blocked_unresolved` all along. Resolving the code first
+  // is what makes `integrations.err_syncing` / `err_connecting` reachable at
+  // all; they were dead keys.
   async function handleConnect(provider: string, creds: Record<string, string>) {
     setConnectingProvider(provider)
     setConnectError(prev => ({ ...prev, [provider]: null }))
@@ -329,7 +339,7 @@ export default function IntegrationsPage() {
       await load()
     } catch (e: unknown) {
       setConnectError(prev => ({
-        ...prev, [provider]: e instanceof Error ? e.message : t('integrations.err_connecting'),
+        ...prev, [provider]: errorDetail(e) || t('integrations.err_connecting'),
       }))
     } finally {
       setConnectingProvider(null)
@@ -342,7 +352,13 @@ export default function IntegrationsPage() {
       await syncIntegration(id)
       await load()
     } catch (e: unknown) {
-      setActionError(e instanceof Error ? e.message : t('integrations.err_syncing'))
+      setActionError(errorDetail(e) || t('integrations.err_syncing'))
+      // Reload on the FAILURE path too. `load()` ran only on success, so after
+      // a refused sync the card kept its green "Conectado" badge and its old
+      // last_sync_at while the DB row had already flipped to status='error' —
+      // and the remediation link the backend attaches to a gate refusal only
+      // appeared if the user happened to refresh the page by hand.
+      await load()
     } finally {
       setSyncingId(null)
     }
@@ -360,7 +376,7 @@ export default function IntegrationsPage() {
       await deleteIntegration(id)
       await load()
     } catch (e: unknown) {
-      setActionError(e instanceof Error ? e.message : t('integrations.err_disconnecting'))
+      setActionError(errorDetail(e) || t('integrations.err_disconnecting'))
     }
   }
 

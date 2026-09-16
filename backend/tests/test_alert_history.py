@@ -315,18 +315,40 @@ class TestUnreadIsDerivedNotInvented:
 
 
 class TestMarkReadPermissionPair:
-    def test_viewer_is_denied_and_no_marker_is_written(
+    def test_a_viewer_can_clear_their_own_badge(
         self, client, viewer_headers, viewer_user, test_tenant,
     ):
+        """This used to assert a 403, on the reasoning that no alert is ever
+        addressed to a viewer. That stopped being true when the bell started
+        carrying tenant-wide SYSTEM events (2026-09-16): a failed training is
+        addressed to nobody in particular, so a viewer collects a badge — and
+        the one role that could not clear it would have stared at it forever.
+
+        The row it writes is the caller's OWN unread marker, not company
+        state, which is why it is not a mutating endpoint in the sense the
+        analyst guard protects (see test_write_guard_audit.py).
+        """
         tid, uid = test_tenant["id"], viewer_user["user"]["id"]
         resp = client.post("/api/v1/alerts/read", headers=viewer_headers)
-        assert resp.status_code == 403
+        assert resp.status_code == 200, resp.text
 
         assert query_one(
             """SELECT id FROM activity_logs
                WHERE tenant_id = %s AND user_id = %s AND action = %s""",
             (tid, uid, alert_history.MARK_READ_ACTION),
-        ) is None, "a denied request still wrote state"
+        ) is not None, "the badge was cleared and nothing recorded it"
+
+    def test_a_viewers_marker_does_not_clear_anybody_elses_badge(
+        self, client, viewer_headers, auth_headers, test_tenant, registered_user,
+    ):
+        """The marker is per user. A viewer opening the bell must not mark the
+        admin's alerts as read."""
+        tid = test_tenant["id"]
+        _seed(tid, registered_user["user"]["id"], "inventory_alert_email", "success",
+              {"critical": 1, "warning": 0})
+
+        assert client.post("/api/v1/alerts/read", headers=viewer_headers).status_code == 200
+        assert _get(client, auth_headers)["unread_count"] == 1
 
     def test_analyst_succeeds_and_the_marker_exists(
         self, client, analyst_headers, analyst_user, test_tenant,

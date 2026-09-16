@@ -224,15 +224,23 @@ def test_patch_stock_blocks_new_warehouse_beyond_max_locations(
     monkeypatch, make_tenant_user_headers, client,
 ):
     """
-    Regression for the 4th max_locations bypass path: PATCH /stock/{sku} calls
-    svc.get_stock(tenant_id, sku) WITHOUT a warehouse filter, so its 404 check
-    passes as long as the SKU exists in ANY warehouse. If the PATCH body then
-    sets a DIFFERENT warehouse, svc.upsert_stock inserts a brand-new
-    (tenant_id, sku, warehouse) row and auto-creates the warehouse via
-    _ensure_warehouse — bypassing max_locations entirely, with no per-caller
-    guard on this endpoint (unlike PUT /stock, POST /bulk and receive_po).
-    The fix enforces max_locations inside upsert_stock itself so every caller
-    is covered.
+    The 4th max_locations bypass path, now closed at the root rather than at
+    the ceiling.
+
+    PATCH /stock/{sku} used to 404-check svc.get_stock(tenant_id, sku) with NO
+    warehouse filter, so the check passed as long as the SKU existed in ANY
+    warehouse; a body naming a DIFFERENT warehouse then inserted a brand-new
+    (tenant_id, sku, warehouse) row and auto-created the warehouse. The ceiling
+    inside upsert_stock caught it — but a ceiling was never the right answer to
+    this: PATCH is a partial update, and creating a second stock row for a SKU
+    is not something it should be able to do at ANY plan size (see
+    test_patch_stock_never_invents_a_warehouse.py — the phantom units inflate
+    coverage and talk the buyer out of a purchase).
+
+    So the refusal is now a 404 on the (sku, warehouse) pair that does not
+    exist, and it arrives before any limit is consulted. The max_locations
+    chokepoint in upsert_stock is unchanged and still covered by the PUT,
+    bulk-import and receive_po tests around this one.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import query_one
@@ -265,9 +273,8 @@ def test_patch_stock_blocks_new_warehouse_beyond_max_locations(
         json={"warehouse": "Norte"},
         headers=headers,
     )
-    assert r1.status_code == 403
-    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
-    assert r1.json()["detail"]["limit"] == "max_locations"
+    assert r1.status_code == 404
+    assert r1.json()["error_code"] == "stock_sku_not_found_in_warehouse"
 
     wh_after = query_one(
         "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
@@ -369,12 +376,14 @@ def test_dataset_sync_respects_max_skus(monkeypatch, make_tenant_user_headers):
 
 def test_patch_stock_respects_max_skus(monkeypatch, make_tenant_user_headers, client):
     """
-    Regression for the max_skus class of the max_locations PATCH bug: PATCH
-    /stock/{sku} 404-checks svc.get_stock(tenant_id, sku) WITHOUT a warehouse
-    filter, so as long as the SKU exists in ANY warehouse the 404 guard passes.
-    If the PATCH body then targets a DIFFERENT warehouse, svc.upsert_stock
-    inserts a brand-new (tenant_id, sku, warehouse) row — a class of write the
-    old per-caller max_skus checks (PUT /stock, POST /bulk) never covered.
+    Same path as the max_locations test above, for the max_skus ceiling: PATCH
+    /stock/{sku} could insert a brand-new (tenant_id, sku, warehouse) row by
+    naming a warehouse the SKU was not in.
+
+    It no longer can — the endpoint refuses the pair with a 404 before any
+    ceiling is read — so what this asserts today is the stronger guarantee:
+    the row count does not move, at any plan size. max_skus itself is still
+    enforced in upsert_stock and covered by the PUT / bulk / receive_po tests.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import execute, query_one, _json
@@ -403,9 +412,8 @@ def test_patch_stock_respects_max_skus(monkeypatch, make_tenant_user_headers, cl
         json={"warehouse": "Sur", "current_stock": 7},
         headers=headers,
     )
-    assert r1.status_code == 403
-    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
-    assert r1.json()["detail"]["limit"] == "max_skus"
+    assert r1.status_code == 404
+    assert r1.json()["error_code"] == "stock_sku_not_found_in_warehouse"
 
     stock_after = query_one(
         "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)

@@ -44,7 +44,11 @@ def test_generic_mode_still_executes_a_confirmation(monkeypatch):
         AssertionError("no LLM on a confirmation turn")))
     monkeypatch.setattr(wt, "execute_pending_action", lambda ctx, action: "DONE ✓")
 
-    pending = {"type": "approve_po", "po_log_id": "po1", "summary": "..."}
+    # Deliberately NOT approve_po: that action is suspended from WRITE_TOOLS
+    # (no inverse exists) and a pending one is dropped rather than executed.
+    # What this test is about is that generic mode does not swallow a
+    # confirmation turn, which holds for any confirmable action.
+    pending = {"type": "some_reversible_action", "ref": "x1", "summary": "..."}
     reply, history, new_pending = A.run_turn(
         _ctx(), "sí", {"history": [], "pending_action": pending})
 

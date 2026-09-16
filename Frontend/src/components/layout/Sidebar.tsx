@@ -8,6 +8,7 @@ import {
   ChevronLeft, ChevronRight, X,
   ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
+  ScrollText,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -55,6 +56,11 @@ const NAV: NavItem[] = [
   { href: '/pronosticos',         labelKey: 'nav.skus',        Icon: TrendingUp,      group: 'analysis' },
   { href: '/impacto',             labelKey: 'nav.roi',         Icon: Target,          group: 'analysis' },
   { href: '/historial',           labelKey: 'nav.sessions',    Icon: History,         group: 'analysis' },
+  // What the product did, and why — the other half of the bell, which only
+  // carries what needs a decision. Under Análisis rather than Sistema because
+  // it answers a buyer's question ("did the order go out?"), not an
+  // administrator's.
+  { href: '/actividad',           labelKey: 'nav.activity',    Icon: ScrollText,      group: 'analysis' },
   { href: '/asistente',           labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis' },
   { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis' },
 

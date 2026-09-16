@@ -104,6 +104,12 @@ _ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("warehouse", (
         "warehouse", "bodega", "almacen", "deposito", "sucursal", "tienda",
         "ubicacion", "local", "centro",
+        # "sede" is what a Colombian ERP calls a branch, and it was missing
+        # while "sucursal" and "tienda" were here: a file exporting one row per
+        # branch under a `Sede` header left the column unmapped, so every
+        # branch's rows collapsed onto `principal` and the last one won —
+        # 300 + 200 + 40 landed in the DB as 40.
+        "sede", "punto de venta", "pdv",
     )),
     ("notes", ("notes", "notas", "observaciones", "comentarios", "nota")),
 )

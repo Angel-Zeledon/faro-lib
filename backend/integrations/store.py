@@ -34,7 +34,15 @@ def create_connection(tenant_id: str, provider: str, credentials: dict) -> dict:
         ON CONFLICT (tenant_id, provider) DO UPDATE
             SET credentials = EXCLUDED.credentials,
                 status = 'connected',
-                last_error = NULL
+                -- All THREE error columns, the way mark_synced's success path
+                -- clears them. Clearing only `last_error` left a healthy row
+                -- still carrying `training_blocked_unresolved` and a
+                -- `session_id` pointing at a dead session. Invisible today
+                -- only because the panel gates on `last_error` — which makes
+                -- it a trap for the next consumer that reads the code.
+                last_error = NULL,
+                last_error_code = NULL,
+                last_error_details = NULL
         RETURNING {_SAFE_COLUMNS}
         """,
         (generate_id("intg"), tenant_id, provider, encrypted),

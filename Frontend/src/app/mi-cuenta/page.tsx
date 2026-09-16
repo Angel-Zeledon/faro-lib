@@ -15,7 +15,8 @@ import BaseCard from '@/components/ui/Card'
 import Input, { FieldLabel } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel, modelCategoryLabel, activityActionLabel, modelDescription } from '@/lib/enumLabels'
-import { getUser } from '@/lib/auth'
+import { getUser, patchUser } from '@/lib/auth'
+import { useErrorDetail } from '@/components/ui/States'
 import {
   getMe, updateMe,
   getPreferences, updatePreferences,
@@ -124,21 +125,36 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 // ── Section 1: User Profile ───────────────────────────────────────────────────
 
 function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'en' }) {
-  const me = getUser()
+  // Held in state, not re-read from localStorage on every render: the saved
+  // name has to be what the screen shows straight after saving it.
+  const [me, setMe] = useState(() => getUser())
   const [editing,  setEditing]  = useState(false)
   const [name,     setName]     = useState(me?.full_name || '')
   const [saving,   setSaving]   = useState(false)
   const [feedback, setFeedback] = useState<'saved' | null>(null)
+  const [error,    setError]    = useState<unknown>(null)
+  // Renders `errors.<code>` in the user's language instead of the backend's
+  // English sentence — the helper this screen already had and did not use.
+  const errorDetail = useErrorDetail()
 
   async function handleSave() {
     if (!name.trim()) return
     setSaving(true)
+    setError(null)
     try {
       await updateMe({ full_name: name.trim() })
-      if (me) me.full_name = name.trim()
+      // `if (me) me.full_name = ...` used to mutate the object `getUser()` had
+      // just parsed out of localStorage and thrown away, so the cache — which
+      // the sidebar footer and the /compras greeting also read — kept the old
+      // name until the next login, under a green "Guardado".
+      setMe(patchUser({ full_name: name.trim() }))
       setFeedback('saved')
       setEditing(false)
       setTimeout(() => setFeedback(null), 2500)
+    } catch (e: unknown) {
+      // Was `try/finally` with no catch: a failed save rejected unhandled and
+      // left the form open with nothing said.
+      setError(e)
     } finally {
       setSaving(false)
     }
@@ -210,6 +226,11 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                 {feedback === 'saved' && (
                   <span style={{ fontSize: 11, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <CheckCircle2 size={11} /> {t('saved')}
+                  </span>
+                )}
+                {error != null && (
+                  <span style={{ fontSize: 11, color: 'var(--danger)' }}>
+                    {errorDetail(error)}
                   </span>
                 )}
                 <button
@@ -742,6 +763,11 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
   const [code,       setCode]       = useState('')
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  // `e.message` on an ApiError is the BACKEND's English sentence (or the
+  // literal "HTTP 0" offline), shown under a Spanish form. This resolves
+  // `error_code` + `params` against the catalogue first — the WhatsApp section
+  // right below already maps its failures to catalogue copy; this one did not.
+  const errorDetail = useErrorDetail()
 
   function reset() {
     setStep('idle'); setNewPw(''); setCode(''); setError(null); setShowPw(false)
@@ -755,7 +781,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       await requestPasswordChange(newPw)
       setStep('code')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t('pw_error_send') || 'Error')
+      setError(errorDetail(e) || t('pw_error_send'))
     } finally {
       setLoading(false)
     }
@@ -769,7 +795,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       setStep('done')
       setTimeout(reset, 3500)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t('pw_error_confirm') || 'Error')
+      setError(errorDetail(e) || t('pw_error_confirm'))
     } finally {
       setLoading(false)
     }

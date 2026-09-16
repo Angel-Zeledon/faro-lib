@@ -116,10 +116,31 @@ function ScorecardTable({ rows, alerts }: {
                     <span style={{ color: C.dim }}>{t('scorecard.stable')}</span>
                   )}
                 </Td>
-                <Td size="lg" divider={false} style={{ color: onTimeColor, fontWeight: 700 }}>
-                  {fmtPct(row.on_time_rate)}
+                <Td size="lg" divider={false} style={
+                  row.on_time_measurable === false
+                    ? { color: C.dim }
+                    : { color: onTimeColor, fontWeight: 700 }
+                }>
+                  {/* The backend says whether this percentage means anything —
+                      `on_time_measurable` is false below its sample floor — and
+                      this cell printed the raw number regardless, so a supplier
+                      with ONE delivery that happened to land on time read
+                      "100%" in bold green, right beside a "Trend: not
+                      measurable" cell that did honour its own flag. The number
+                      still shows; it just stops claiming to be a habit. */}
+                  {row.on_time_measurable === false ? (
+                    <span title={t('scorecard.rate_needs_more_hint')}>
+                      {fmtPct(row.on_time_rate)} {t('scorecard.rate_provisional')}
+                    </span>
+                  ) : fmtPct(row.on_time_rate)}
                 </Td>
-                <Td size="lg" divider={false}>{fmtPct(row.fill_rate)}</Td>
+                <Td size="lg" divider={false} style={row.fill_rate_measurable === false ? { color: C.dim } : undefined}>
+                  {row.fill_rate_measurable === false ? (
+                    <span title={t('scorecard.rate_needs_more_hint')}>
+                      {fmtPct(row.fill_rate)} {t('scorecard.rate_provisional')}
+                    </span>
+                  ) : fmtPct(row.fill_rate)}
+                </Td>
                 <Td size="lg" divider={false} mono style={{ color: C.green, fontWeight: 600 }}>
                   {row.purchased_value === null ? (
                     // Not a zero. No line of their orders carried a unit cost,

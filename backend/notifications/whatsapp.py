@@ -10,7 +10,7 @@ Recipient numbers come from users.whatsapp_number (E.164, e.g. +573001234567).
 
 import logging
 
-from backend.notifications.locale import render_es
+from backend.notifications.locale import coverage_short, render_es
 from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
@@ -163,6 +163,7 @@ def build_inventory_alert_text(
     warning_items: list[dict],
     inventory_url: str,
     transfer_count: int = 0,
+    period: str = "daily",
 ) -> str:
     """
     Compact daily-alert message: WhatsApp favours short, scannable text.
@@ -171,6 +172,15 @@ def build_inventory_alert_text(
     trimmed to _ALERT_MAX_CRITICAL_LINES, so "y N más" states how many SKUs are
     really hidden. Passing a pre-sliced list made it say "y 5 más" while 37
     products were about to run out.
+
+    `period`: the tenant's planning grain. `coverage_days` does NOT carry days
+    for a period-trained session — a weekly session's coverage_days of 3 means
+    3 WEEKS (inventory/service.py says so outright). The email digest was fixed
+    for this and this one was not, and the function had no `period` parameter
+    at all, so no caller COULD have passed it: the 08:00 email said "4 semanas"
+    while the WhatsApp sent in the same loop iteration, off the same list, said
+    "4d". A buyer reading the channel with the highest open rate in LatAm was
+    told to order emergency stock they did not need.
     """
     lines: list[str] = []
     n_crit = len(critical_items)
@@ -181,8 +191,7 @@ def build_inventory_alert_text(
         ))
         for i in critical_items[:_ALERT_MAX_CRITICAL_LINES]:
             days = i.get("coverage_days")
-            # "d" is the language-neutral day symbol, not copy.
-            days_str = f"{days:.0f}d" if days is not None else "—"
+            days_str = coverage_short(days, period) if days is not None else "—"
             qty = i.get("recommended_qty")
             qty_str = render_es("alert_whatsapp_order_qty", qty=f"{qty:,.0f}") if qty else ""
             lines.append(f"  • {i.get('display_name') or i.get('sku')} ({days_str}{qty_str})")

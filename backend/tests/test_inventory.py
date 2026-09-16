@@ -832,7 +832,11 @@ class TestPOExport:
             f"/api/v1/inventory/status/export-po?session_id={uuid4().hex}",
             headers=auth_headers,
         )
-        content = resp.content.decode("utf-8")
+        # `utf-8-sig`, not `utf-8`: the file starts with a UTF-8 BOM so Excel on
+        # a Spanish-locale Windows reads `Señal` as `Señal` instead of `SeÃ±al`
+        # (estabilidad 11.25). Every real consumer strips it; a test that does
+        # not was reading the first column as `﻿SKU`.
+        content = resp.content.decode("utf-8-sig")
         reader = csv.reader(io.StringIO(content))
         header = next(reader, None)
         assert header is not None

@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
+from backend.activity.events import record_event
 from backend.auth.api_key_auth import KEY_PREFIX, hash_key
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
@@ -83,6 +84,14 @@ def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_a
     # The name and role are safe to log; the key itself never is, not even
     # truncated, and not even at DEBUG.
     log.info("[api-keys] created name=%s role=%s tenant=%s", body.name, body.role, user.tenant_id)
+    # A credential that runs unattended now exists. Every other admin should be
+    # able to see that it was minted without reading a log file — this is the
+    # one event in the product that a stranger would create if they got in.
+    record_event(
+        user.tenant_id, user.user_id, "account.api_key_created",
+        resource=body.name, reason="changed_by_an_account_admin",
+        details={"key_name": body.name, "role": body.role},
+    )
     # The raw key is returned exactly once. Nothing stores it — not this
     # process, not the database — so a customer who loses it mints a new one.
     return ok({"key": raw, "name": body.name, "role": body.role})
@@ -101,10 +110,15 @@ def list_api_keys(user: CurrentUser = Depends(get_current_user)):
 @router.delete("/{key_id}")
 def revoke_api_key(key_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     row = query_one(
-        "SELECT id FROM api_keys WHERE id = %s AND tenant_id = %s",
+        "SELECT id, name FROM api_keys WHERE id = %s AND tenant_id = %s",
         (key_id, user.tenant_id),
     )
     if not row:
         raise HTTPException(status_code=404, detail="API key not found")
     execute("DELETE FROM api_keys WHERE id = %s", (key_id,))
+    record_event(
+        user.tenant_id, user.user_id, "account.api_key_revoked",
+        resource=key_id, reason="changed_by_an_account_admin",
+        details={"key_name": row.get("name")},
+    )
     return ok({"revoked": key_id})

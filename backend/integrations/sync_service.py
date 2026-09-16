@@ -11,12 +11,14 @@ import io
 import logging
 
 from backend.db.connection import execute, query, transaction
-from backend.entitlements.service import enforce_limit, take_tenant_lock
+from backend.entitlements.service import enforce_limit, limit_guard, take_tenant_lock
 from backend.errors import AppError
 from backend.integrations import registry, store
 from backend.integrations.base import IntegrationSyncError, parse_provider_number
 from backend.inventory import service as inv_svc
 from backend.inventory import warehouse_service as wh_svc
+from backend.activity.events import record_event
+from backend.inventory.defaults import SOURCE_FILE
 from backend.db import session_store
 from backend.sessions import service as session_svc
 from backend.sessions.defaults import default_quickstart_configs
@@ -41,6 +43,36 @@ _SYSTEM_USER_ID = "system"
 _GATE_ERROR_CODES = frozenset({
     "training_blocked_data_fatal", "training_blocked_unresolved",
 })
+
+
+def _record_sync_failure(tenant_id: str, connection_id: str, provider: str,
+                         error: Exception) -> None:
+    """A sync that did not finish, in the feed.
+
+    The connection row already carries `last_error`, but nothing looks at
+    /integraciones on a normal day — so a nightly sync could be failing for a
+    week while the buyer works off a forecast that has silently stopped moving.
+
+    The reason is mapped to a declared code, not to the exception's text: the
+    user reads a sentence in their language, and the code is what the UI can
+    branch on to offer the right next step.
+    """
+    from backend.integrations.base import IntegrationAuthError, IntegrationSyncError
+    if isinstance(error, IntegrationAuthError):
+        reason = "provider_rejected_credentials"
+    elif isinstance(error, AppError) and error.code == "PLAN_LIMIT_REACHED":
+        reason = "plan_limit_reached"
+    elif isinstance(error, IntegrationSyncError) and "readable quantity" in str(error):
+        reason = "no_readable_quantities"
+    elif isinstance(error, IntegrationSyncError):
+        reason = "provider_unreachable"
+    else:
+        reason = "unknown"
+    record_event(
+        tenant_id, _SYSTEM_USER_ID, "integration.sync_failed",
+        resource=connection_id, details={"provider": provider},
+        reason=reason, reason_params={"detail": str(error)[:300]}, status="error",
+    )
 
 
 def _record_blocked_sync(connection_id: str, tenant_id: str, session_id: str,
@@ -108,6 +140,22 @@ def sync_connection(connection_id: str) -> dict:
     tenant_id = conn_row["tenant_id"]
 
     try:
+        # `max_sessions`, BEFORE a single provider call. Every sync creates a
+        # session, and this caller was the only one of the three that never
+        # checked: POST /sessions does it under a limit_guard, and demo.py's
+        # comment says in so many words that skipping it would let a tenant
+        # bypass the cap. So the one caller that runs UNATTENDED, every night,
+        # walked past the ceiling that the whole two-tier model rests on — a
+        # free tenant showed 4 of 3 on day four and 60 of 3 on day sixty, with
+        # one full sales CSV left in storage/ per connection per night.
+        #
+        # Checked here rather than only at create_session so a tenant who is
+        # already at the cap does not pay for the fetch, the stock upserts and
+        # the dataset write before being refused — those would leak on every
+        # run. The atomic check still happens below, under the tenant lock.
+        enforce_limit(tenant_id, "max_sessions",
+                      session_svc.count_sessions(tenant_id))
+
         creds = store.get_credentials(connection_id)
         provider = registry.get_provider(conn_row["provider"], creds)
 
@@ -222,7 +270,15 @@ def sync_connection(connection_id: str) -> dict:
                                   adding=len(new_warehouses), conn=db)
 
             for sku, fields in merged.items():
-                inv_svc.upsert_stock(tenant_id, sku, fields, conn=db)
+                # SOURCE_FILE, not the `user` default. `upsert_stock`'s own
+                # docstring says "the dataset sync and the CSV import pass
+                # 'file' explicitly", and the vocabulary in inventory/defaults
+                # defines 'user' as "the buyer typed it on the SKU card". An
+                # omitted `source=` therefore stamped `unit_cost_set_by='user'`
+                # on numbers Alegra sent — the provenance migration exists so a
+                # value and its origin cannot disagree.
+                inv_svc.upsert_stock(tenant_id, sku, fields, conn=db,
+                                     source=SOURCE_FILE)
 
             execute(
                 """INSERT INTO datasets
@@ -236,9 +292,17 @@ def sync_connection(connection_id: str) -> dict:
             )
 
         # ── Session + configs + auto-train (sequential — see boundary note) ─
-        s = session_svc.create_session(
-            tenant_id, _SYSTEM_USER_ID, f"{conn_row['provider'].capitalize()} sync"
-        )
+        # Counted and created under one per-tenant lock, the same arrangement
+        # POST /sessions uses: the early check above stops the expensive work,
+        # this one is what actually holds when a person starts a forecast in
+        # the browser at the same moment the nightly sync runs.
+        with limit_guard(tenant_id) as _lock:
+            enforce_limit(tenant_id, "max_sessions",
+                          session_svc.count_sessions(tenant_id), conn=_lock)
+            s = session_svc.create_session(
+                tenant_id, _SYSTEM_USER_ID,
+                f"{conn_row['provider'].capitalize()} sync",
+            )
         session_id = s.get("session_id") or s["id"]
         session_svc.attach_dataset(tenant_id, session_id, dataset_id)
         configs = default_quickstart_configs()
@@ -250,7 +314,12 @@ def sync_connection(connection_id: str) -> dict:
 
         from backend.sessions import family_service as fam
         try:
-            family = fam.launch_training_family(tenant_id, session_id, _SYSTEM_USER_ID)
+            # `record_refusal=False`: a blocked gate is reported below as
+            # `integration.sync_blocked`, which carries the provider. Letting
+            # the launch path also record `training.blocked` would put two bell
+            # rows in front of the user for one cause.
+            family = fam.launch_training_family(tenant_id, session_id, _SYSTEM_USER_ID,
+                                                record_refusal=False)
         except AppError as gate_error:
             # The pre-training gate holds ERP data to the same standard as an
             # upload, which is the point. But the upload screen has a human in
@@ -261,10 +330,39 @@ def sync_connection(connection_id: str) -> dict:
             # waiting. So the verdict — and the options that were on offer —
             # travel to the connection row for the integrations screen to show.
             _record_blocked_sync(connection_id, tenant_id, session_id, gate_error)
+            # ...and into the feed, so it is visible without opening
+            # /integraciones. A blocked sync means the forecast silently stays
+            # at its last successful run, which looks exactly like nothing
+            # having changed.
+            record_event(
+                tenant_id, _SYSTEM_USER_ID, "integration.sync_blocked",
+                resource=connection_id,
+                details={
+                    "provider": conn_row["provider"],
+                    "session_id": session_id,
+                    "issues": [i.strip() for i in
+                               str((gate_error.params or {}).get("issues", "")).split(",")
+                               if i.strip()],
+                },
+                reason="data_gate_blocked", status="error",
+            )
             raise
         job_id = family["base_job_id"]
 
         store.mark_synced(connection_id)
+        record_event(
+            tenant_id, _SYSTEM_USER_ID, "integration.sync_completed",
+            resource=connection_id,
+            details={
+                "provider": conn_row["provider"],
+                "skus": len(merged),
+                "sale_rows": len(sales),
+                # Lines the provider sent that no parser could read. Reported
+                # rather than absorbed: it is the difference between "sales are
+                # down" and "we could not read half the file".
+                "skipped_sale_lines": len(unreadable) or None,
+            },
+        )
         log.info(
             "[sync] tenant=%s connection=%s provider=%s session=%s job=%s stock=%d sales_rows=%d",
             tenant_id, connection_id, conn_row["provider"], session_id, job_id,
@@ -287,9 +385,11 @@ def sync_connection(connection_id: str) -> dict:
             # leave the screen holding the same English sentence it had before.
             raise
         store.mark_synced(connection_id, error=str(e))
+        _record_sync_failure(tenant_id, connection_id, conn_row["provider"], e)
         raise
     except Exception as e:
         store.mark_synced(connection_id, error=str(e))
+        _record_sync_failure(tenant_id, connection_id, conn_row["provider"], e)
         raise
 
 

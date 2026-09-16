@@ -39,6 +39,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from backend.activity.events import BELL_SEVERITIES, EVENTS, INFO
 from backend.activity.service import log_action
 from backend.db.connection import query, query_one
 
@@ -130,6 +131,56 @@ def _details(kind: str, context: dict) -> dict[str, Any]:
     }
 
 
+# ── System events ─────────────────────────────────────────────────────────────
+#
+# The four entries in ALERT_ACTIONS above are all DELIVERIES: something Faro
+# mailed on a schedule. Everything else the product does used to reach nobody —
+# a training that failed at 3 a.m., a sync the gate refused, a ceiling that
+# stopped a write, a purchase order that reached no supplier. Those are declared
+# in backend/activity/events.py and read back here, through the SAME function,
+# because "what does the bell show" must have one answer.
+#
+# Two shapes, one feed:
+#   · a delivery entry is a fan-out — N recipients, M channels, and the honest
+#     three-way outcome that makes a partial failure readable;
+#   · a system entry is one thing that happened once, carrying `severity` and
+#     the reason code that says WHY.
+# Every entry now reports `source` so the UI can tell them apart without
+# guessing from the other fields.
+
+
+def _bell_event_actions() -> tuple[str, ...]:
+    """System events that interrupt: critical and warning. `info` is history,
+    not an interruption — it is recorded and shown on the activity screen. A
+    bell that lists every successful import is a bell people stop reading."""
+    return tuple(a for a, spec in EVENTS.items() if spec.severity in BELL_SEVERITIES)
+
+
+def _system_entry(row: dict) -> dict:
+    """One system event as a feed entry."""
+    context = row.get("context") or {}
+    spec = EVENTS[row["action"]]
+    created = _as_utc(row["created_at"])
+    return {
+        "id":              row["id"],
+        "source":          "system",
+        "action":          row["action"],
+        "kind":            spec.kind,
+        "severity":        context.get("severity") or spec.severity,
+        "created_at":      created,
+        # A system event is not a send. These stay so one shape serves both
+        # sources, and `source` is what the UI branches on.
+        "channels":        {"system"},
+        "delivered_count": 0,
+        "failed_count":    0,
+        "failure_reason":  None,
+        "reason":          context.get("reason"),
+        "reason_params":   context.get("reason_params") or {},
+        "details":         {k: context[k] for k in spec.detail_keys if context.get(k) is not None},
+        "status":          "recorded" if row.get("status") == "success" else "failed",
+    }
+
+
 def _last_read_at(tenant_id: str, user_id: str) -> Optional[datetime]:
     row = query_one(
         """SELECT MAX(created_at) AS last_at FROM activity_logs
@@ -168,6 +219,15 @@ def _group(rows: list[dict]) -> list[dict]:
         if not same_fanout:
             current = {
                 "id":              row["id"],
+                "source":          "delivery",
+                "action":          action,
+                # A scheduled send that failed for everyone is the product
+                # going quiet on the user, which is what this whole feature
+                # exists to stop being invisible. Resolved in _finalize, once
+                # the fan-out's outcomes are known.
+                "severity":        None,
+                "reason":          None,
+                "reason_params":   {},
                 "kind":            kind,
                 "created_at":      created,
                 "channels":        set(),
@@ -196,7 +256,13 @@ def _finalize(entry: dict, last_read_at: Optional[datetime]) -> dict:
     a boolean: a digest that reached one admin and not another is neither
     'delivered' nor 'failed'."""
     delivered, failed = entry["delivered_count"], entry["failed_count"]
-    if failed == 0:
+    if entry.get("source") == "system":
+        # A system event was not sent to anybody, so the delivery three-way
+        # does not apply — and the zero/zero counts would otherwise read as
+        # "delivered", which is the kind of confident wrong answer this feed
+        # exists to stop producing. `_system_entry` already decided.
+        status = entry["status"]
+    elif failed == 0:
         status = "delivered"
     elif delivered == 0:
         status = "failed"
@@ -207,7 +273,18 @@ def _finalize(entry: dict, last_read_at: Optional[datetime]) -> dict:
     channels = sorted(entry["channels"])
     return {
         "id":              entry["id"],
+        "source":          entry.get("source", "delivery"),
+        "action":          entry.get("action"),
         "kind":            entry["kind"],
+        # An alert nobody received is not an alert. A fan-out that reached
+        # nobody is critical; one that reached some is a warning; one that
+        # reached everyone is the product working, i.e. history.
+        "severity":        entry.get("severity") or (
+            "critical" if status == "failed" else
+            "warning" if status == "partial" else INFO
+        ),
+        "reason":          entry.get("reason") or entry["failure_reason"],
+        "reason_params":   entry.get("reason_params") or {},
         "created_at":      created.isoformat() if created else None,
         "channel":         channels[0] if len(channels) == 1 else "mixed",
         "status":          status,
@@ -228,17 +305,28 @@ def list_alerts(tenant_id: str, user_id: str, limit: int = 20) -> dict:
     delivery that failed for a colleague — the exact silence this feature
     exists to break.
     """
+    bell_events = _bell_event_actions()
     rows = query(
         """SELECT id, action, context, status, created_at
            FROM activity_logs
            WHERE tenant_id = %s AND action IN %s
            ORDER BY created_at DESC
            LIMIT %s""",
-        (tenant_id, tuple(ALERT_ACTIONS), min(limit * _ROWS_PER_ENTRY, _MAX_ROWS)),
+        (tenant_id, tuple(ALERT_ACTIONS) + bell_events,
+         min(limit * _ROWS_PER_ENTRY, _MAX_ROWS)),
     )
 
     last_read_at = _last_read_at(tenant_id, user_id)
-    entries = [_finalize(e, last_read_at) for e in _group([dict(r) for r in rows])][:limit]
+    # Deliveries fan out and must be grouped; system events happened once and
+    # must not be. Split, shape each, then merge back in time order — the feed
+    # the user reads is one timeline regardless of where an entry came from.
+    all_rows = [dict(r) for r in rows]
+    delivery_rows = [r for r in all_rows if r["action"] in ALERT_ACTIONS]
+    system_rows   = [r for r in all_rows if r["action"] in EVENTS]
+    merged = _group(delivery_rows) + [_system_entry(r) for r in system_rows]
+    merged.sort(key=lambda e: e["created_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True)
+    entries = [_finalize(e, last_read_at) for e in merged][:limit]
     return {
         "items":        entries,
         "unread_count": sum(1 for e in entries if e["unread"]),
@@ -258,3 +346,82 @@ def mark_read(tenant_id: str, user_id: str) -> dict:
         "last_read_at": read_at.isoformat() if read_at else None,
         "unread_count": 0,
     }
+
+def list_activity(
+    tenant_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    kind: Optional[str] = None,
+    severity: Optional[str] = None,
+) -> dict:
+    """EVERYTHING the system did for this tenant, newest first.
+
+    The bell is deliberately a subset — critical and warning only, because an
+    interruption for a successful import trains people to ignore the bell. This
+    is the other half of the same promise: the full history, including the
+    `info` rows, so "what happened while I was not looking" always has an
+    answer that is not a log file.
+
+    Tenant-wide for the same reason `list_alerts` is: an event that a colleague
+    triggered is still something this user's numbers depend on.
+
+    Deliveries are NOT fan-out-grouped here. On the bell, six rows for one
+    digest is noise; on an audit screen, per-recipient outcomes are the point.
+    """
+    clauses = ["tenant_id = %s", "action IN %s"]
+    params: list[Any] = [tenant_id, tuple(ALERT_ACTIONS) + tuple(EVENTS)]
+    if kind:
+        actions = tuple(
+            [a for a, sp in EVENTS.items() if sp.kind == kind]
+            + [a for a, k in ALERT_ACTIONS.items() if k == kind]
+        )
+        if not actions:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        clauses.append("action IN %s")
+        params.append(actions)
+    if severity:
+        # Stored on the row by record_event. Delivery rows predate it and carry
+        # none, so they are matched on the outcome the row itself recorded —
+        # otherwise filtering by "critical" would silently hide exactly the
+        # failed sends the user is looking for.
+        if severity == "critical":
+            clauses.append("(context->>'severity' = %s OR "
+                           "(action IN %s AND status <> 'success'))")
+            params.extend([severity, tuple(ALERT_ACTIONS)])
+        else:
+            clauses.append("context->>'severity' = %s")
+            params.append(severity)
+
+    where = " AND ".join(clauses)
+    rows = query(
+        f"""SELECT id, action, context, status, created_at
+            FROM activity_logs WHERE {where}
+            ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+        tuple(params) + (limit, offset),
+    )
+    total_row = query_one(f"SELECT COUNT(*) AS n FROM activity_logs WHERE {where}",
+                          tuple(params))
+
+    items = []
+    for raw in rows:
+        row = dict(raw)
+        if row["action"] in EVENTS:
+            items.append(_finalize(_system_entry(row), None))
+        else:
+            # One delivery row, ungrouped — same shape, counts of one.
+            grouped = _group([row])
+            if grouped:
+                items.append(_finalize(grouped[0], None))
+    return {
+        "items":  items,
+        "total":  int(total_row["n"]) if total_row else 0,
+        "limit":  limit,
+        "offset": offset,
+    }
+
+
+def activity_kinds() -> list[str]:
+    """Every filterable kind, so the screen's filter cannot drift from the
+    vocabulary. Sorted for a stable UI."""
+    return sorted({sp.kind for sp in EVENTS.values()} | set(ALERT_ACTIONS.values()))
+

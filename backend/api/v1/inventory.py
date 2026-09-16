@@ -23,6 +23,7 @@ from psycopg2.pool import PoolError
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
+from backend.activity.events import record_event
 from backend.api.v1.currency import currency_of
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
@@ -190,16 +191,61 @@ def patch_stock(
     body: StockPatch,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    existing = svc.get_stock(user.tenant_id, sku)
-    if not existing:
+    """Partial update of ONE existing stock row. It never creates one.
+
+    The row this patch lands on used to be decided by two halves that did not
+    talk to each other: the 404 check looked the SKU up with no warehouse
+    filter (so it found the row wherever it lived), and the write went through
+    `upsert_stock`, which defaults a missing warehouse to 'principal'. A SKU
+    that only existed in 'Norte' passed the check on the Norte row and got a
+    BRAND NEW row inserted in 'principal' — phantom units that inflate
+    coverage and talk a buyer out of a purchase they needed to make.
+
+    Now the target warehouse is resolved first and the existence check is made
+    against THAT row:
+
+      · `warehouse` sent      → that row, 404 if the SKU is not in it;
+      · SKU in exactly one    → that one, whatever it is called;
+      · SKU in several, one
+        of them 'principal'   → 'principal' (what this endpoint has always
+                                done, and it is a real row, not a new one);
+      · SKU in several, no
+        'principal'           → 422 naming them. This is precisely the case
+                                that used to fabricate the phantom row, and
+                                there is no safe guess to make for the caller.
+    """
+    warehouses = svc.list_stock_warehouses(user.tenant_id, sku)
+    if not warehouses:
         raise AppError(
             "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
             status_code=404, params={"sku": sku},
         )
+
+    if body.warehouse is not None:
+        target = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
+        if target not in warehouses:
+            raise AppError(
+                "stock_sku_not_found_in_warehouse",
+                f"SKU '{sku}' has no stock in warehouse '{target}'",
+                status_code=404, params={"sku": sku, "warehouse": target},
+            )
+    elif len(warehouses) == 1:
+        target = warehouses[0]
+    elif wh_svc.DEFAULT_WAREHOUSE in warehouses:
+        target = wh_svc.DEFAULT_WAREHOUSE
+    else:
+        raise AppError(
+            "stock_warehouse_required",
+            f"SKU '{sku}' exists in more than one warehouse; name the one to update",
+            status_code=422,
+            params={"sku": sku, "warehouses": ", ".join(warehouses)},
+        )
+
     data = body.model_dump(exclude_none=True)
+    data.pop("warehouse", None)
     if not data:
-        return ok(existing)
-    row = svc.upsert_stock(user.tenant_id, sku, data)
+        return ok(svc.get_stock(user.tenant_id, sku, warehouse=target))
+    row = svc.upsert_stock(user.tenant_id, sku, {**data, "warehouse": target})
     return ok(row)
 
 
@@ -542,6 +588,11 @@ async def bulk_import(
     # import, because the loop was waiting on these.
     from backend.entitlements.service import enforce_limit, limit_guard
 
+    # Rows READ from the file. `rows` is collapsed in place below, so the
+    # count the user is shown has to be taken before that.
+    total_read = len(rows)
+    stats = {"duplicates": 0}
+
     def _check_and_write() -> int:
         # Resolve every distinct warehouse spelling in the CSV to its canonical
         # form BEFORE the limit pre-checks and the writes: 'norte' rows must
@@ -553,6 +604,29 @@ async def bulk_import(
         }
         for r in rows:
             r["warehouse"] = resolved_wh[r.get("warehouse")]
+
+        # Collapse duplicate (sku, warehouse) rows, and COUNT them.
+        #
+        # `new_keys` below was already de-duplicated for the ceiling check, but
+        # the write loop was not: bulk_upsert does one upsert per row against
+        # the (tenant, sku, warehouse) conflict target, so N rows for the same
+        # pair meant the last one silently won — and `imported` counted the
+        # CALLS, so the user was told "350 de 350" while 120 rows existed.
+        #
+        # Collapsed field-wise rather than last-row-wins wholesale: two rows
+        # for one SKU often carry different columns (one the cost, one the
+        # count), and dropping the earlier row's fields would lose data the
+        # file did contain. Later values still win per field, which is the only
+        # defensible reading of "the file says it twice".
+        deduped: dict[tuple, dict] = {}
+        for r in rows:
+            key = (r["sku"], r["warehouse"])
+            if key in deduped:
+                stats["duplicates"] += 1
+                deduped[key].update(r)
+            else:
+                deduped[key] = r
+        rows[:] = list(deduped.values())
 
         # One lock for the whole import. Without it, two CSVs uploaded at the
         # same moment each counted the catalogue before either had written, and
@@ -583,7 +657,7 @@ async def bulk_import(
     count = await asyncio.to_thread(_check_and_write)
     result = {
         "imported": count,
-        "total_rows": len(rows),
+        "total_rows": total_read,
         "format": fmt,
         # What we read the file as, so the UI can say "we took Existencia as
         # your stock" instead of leaving the user guessing.
@@ -592,11 +666,50 @@ async def bulk_import(
         "unmapped_columns": [c for c in columns if c not in used.values()],
         "skipped_no_sku": skipped_no_sku,
     }
+    # Rows the file repeated. Reported rather than absorbed: "350 read, 120
+    # written" is a fact the user can act on (their export is per-branch and
+    # the branch column is not mapped), and the old silence made it look like
+    # every row had landed.
+    if stats["duplicates"]:
+        result["duplicate_rows"] = stats["duplicates"]
     # Surface rejected rows so the user learns their data was garbage instead
     # of it being silently dropped/coerced.
     if errors:
         result["errors"] = errors
         result["error_count"] = len(errors)
+
+    # What the file had and what the database got, in the history — because
+    # "83 products imported" after a 120-row preview was the only signal, and
+    # whoever reads it a day later has no file in front of them.
+    written_short = count < (total_read - stats["duplicates"])
+    details = {
+        "rows_read":      total_read + len(errors),
+        "rows_written":   count,
+        "duplicate_rows": stats["duplicates"],
+        "rejected_rows":  len(errors),
+    }
+    # Offloaded like every other DB call on this endpoint: it is one INSERT,
+    # but this handler is async and the module's rule is that blocking work
+    # does not run on the event loop.
+    if errors or stats["duplicates"] or written_short:
+        await asyncio.to_thread(
+            record_event,
+            user.tenant_id, user.user_id, "data.stock_import_partial",
+            resource=file.filename, details=details,
+            # One reason, the one the user can act on first: a rejected row is
+            # a file to fix, a collapsed duplicate is a column they did not
+            # map. A short write with neither is the case nobody has explained
+            # yet (see estabilidad 11.34), and saying so is better than
+            # inventing a cause.
+            reason=("rows_rejected_by_validation" if errors
+                    else "duplicate_rows_collapsed" if stats["duplicates"]
+                    else "unknown"),
+        )
+    else:
+        await asyncio.to_thread(
+            record_event, user.tenant_id, user.user_id, "data.stock_imported",
+            resource=file.filename, details=details,
+        )
     return ok(result)
 
 
@@ -611,6 +724,15 @@ _TEMPLATE_EXAMPLE = [
 ]
 
 
+# Excel on a Spanish-locale Windows opens a .csv with the system ANSI codepage
+# unless the file starts with a UTF-8 BOM, so `Señal` arrives as `SeÃ±al` and a
+# supplier called `Distribuidora Peña` is mangled in the document the buyer
+# forwards to that supplier. The frontend's own template writer
+# (Frontend/src/lib/csvCheck.ts) already prefixes it — the product knew, and
+# applied it in one writer out of several.
+_CSV_BOM = "﻿"
+
+
 @router.get("/template.csv")
 def download_template(user: CurrentUser = Depends(get_current_user)):
     """Canonical inventory import template: header row + one example row."""
@@ -619,7 +741,7 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
     w.writerow(_TEMPLATE_COLUMNS)
     w.writerow(_TEMPLATE_EXAMPLE)
     return Response(
-        content=buf.getvalue(),
+        content=_CSV_BOM + buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="inventory_template.csv"'},
     )
@@ -792,6 +914,19 @@ def create_shrinkage(
         user.tenant_id, body.sku, body.quantity, body.reason,
         user_id=user.user_id, warehouse=body.warehouse, notes=body.notes,
         occurred_at=occurred_at,
+    )
+    # Units left the building without a sale. The warehouse recorded is the one
+    # the service RESOLVED, not the one the form sent: those differ (§11.8) and
+    # the history has to say where the stock actually came off.
+    record_event(
+        user.tenant_id, user.user_id, "data.shrinkage_recorded",
+        resource=body.sku,
+        details={
+            "sku":              body.sku,
+            "quantity":         body.quantity,
+            "warehouse":        row.get("warehouse"),
+            "shrinkage_reason": body.reason,
+        },
     )
     return ok(row)
 
@@ -1253,6 +1388,22 @@ def log_po(
         # product marking its own homework. See log_po_generation.
         decisions_recorded=decisions_recorded,
     )
+    # The order exists from here on: the buyer will act on the file they just
+    # downloaded, and /pedidos will show it. Recorded so the history answers
+    # "who ordered what, and when" without anybody having to remember.
+    from backend.inventory.roi_service import format_po_number
+    record_event(
+        user.tenant_id, user.user_id, "purchase.order_generated",
+        resource=str(record.get("id") or ""),
+        details={
+            "reference": format_po_number(record.get("po_number"),
+                                          str(record.get("id") or "")),
+            "lines":     record.get("sku_count"),
+            "value":     record.get("total_value"),
+            "suppliers": len({(i.get("supplier") or "").strip()
+                              for i in po_items if (i.get("supplier") or "").strip()}),
+        },
+    )
     return ok(record)
 
 
@@ -1398,6 +1549,23 @@ def receive_po(
     result = rec_svc.receive_po(
         user.tenant_id, po_log_id, user.user_id,
         lines=lines, received_at=received_at,
+    )
+    # Stock moved and a lead time was learned. Both change what the semáforo
+    # says tomorrow, and until now the only record was the PO's own row on a
+    # screen the buyer has to go looking for.
+    from backend.inventory.roi_service import format_po_number
+    po_row = rec_svc.get_po(user.tenant_id, po_log_id) or {}
+    received_items = [i for i in result.get("items", [])
+                      if float(i.get("received_qty") or 0) > 0]
+    record_event(
+        user.tenant_id, user.user_id, "purchase.reception_recorded",
+        resource=po_log_id,
+        details={
+            "reference": format_po_number(po_row.get("po_number"), po_log_id),
+            "sku_count": len(received_items),
+            "units":     sum(float(i.get("received_qty") or 0) for i in received_items),
+            "warehouse": po_row.get("destination_warehouse"),
+        },
     )
     return ok(result)
 
@@ -1593,6 +1761,36 @@ def send_po_to_suppliers(
             "not_delivered": [s["supplier"] for s in skipped],
         },
     )
+
+    # Same fact, in the history the whole tenant reads. `record_notification_
+    # delivery` above is the delivery ledger the bell groups by fan-out; this is
+    # the one-line answer to "did the order leave?", carrying WHY when it did
+    # not. A buyer who closed the tab has no other way to find out.
+    reference = format_po_number(po.get("po_number"), po_log_id)
+    unreached = len(skipped) + len(unresolved)
+    if sent:
+        record_event(
+            user.tenant_id, user.user_id, "purchase.order_sent",
+            resource=po_log_id,
+            details={"reference": reference, "sent": len(sent), "skipped": unreached},
+        )
+    elif ordered:
+        # Nobody has the order. (An order with no orderable lines is not a
+        # failure to deliver, so it records nothing.) The reason the buyer can
+        # act on is the one that stopped the FIRST supplier — a missing contact is fixed on the
+        # supplier's card, a dead transport by whoever owns the credential.
+        no_contact = any(s.get("reason") == "no_contact_details" for s in skipped)
+        if no_contact or unresolved:
+            reason = "supplier_has_no_contact"
+        else:
+            reason = ("no_transport_configured"
+                      if email_mod.failure_reason(user.tenant_id) == "not_configured"
+                      else "transport_error")
+        record_event(
+            user.tenant_id, user.user_id, "purchase.order_not_sent",
+            resource=po_log_id, reason=reason,
+            details={"reference": reference, "skipped": unreached},
+        )
 
     return ok({"sent": sent, "skipped": skipped, "unresolved": unresolved})
 
@@ -2185,6 +2383,16 @@ def create_transfer(
             [i.model_dump() for i in body.items], body.notes)
     except ValueError as e:
         raise _svc_error(e)
+    record_event(
+        user.tenant_id, user.user_id, "data.transfer_created",
+        resource=str(t.get("id") or ""),
+        details={
+            "sku_count":      len(body.items),
+            "units":          sum(i.qty for i in body.items),
+            "from_warehouse": t.get("from_warehouse") or body.from_warehouse,
+            "to_warehouse":   t.get("to_warehouse") or body.to_warehouse,
+        },
+    )
     return ok(t)
 
 
@@ -2296,7 +2504,10 @@ def send_alert_now(
     from backend.config import settings as _settings
     from backend.notifications.email import send_inventory_alert_email
 
-    inventory_url = f"{_settings.frontend_url}/inventory"
+    # `/hoy`, the same screen the 8:00 loop links to. This said `/inventory`,
+    # which redirects to a DIFFERENT screen (`/inventario`) — so the preview and
+    # the thing it previews did not even land the buyer in the same place.
+    inventory_url = f"{_settings.frontend_url}/hoy"
     # Full lists: the email renderer trims the table itself and keeps the
     # counts real, so a test fire shows the same numbers the daily loop would.
     emails = svc.get_tenant_admin_emails(user.tenant_id)
@@ -2305,6 +2516,11 @@ def send_alert_now(
         if send_inventory_alert_email(
             to=email, critical_items=critical, warning_items=warning,
             inventory_url=inventory_url, tenant_id=user.tenant_id,
+            # The grain was resolved above and then not passed, so the renderer
+            # fell back to its "daily" default: a weekly tenant's test email
+            # said "4 días" where the real 8:00 email says "4 semanas". The
+            # preview contradicted the thing it previews.
+            period=period,
         )
     )
 
@@ -2313,7 +2529,8 @@ def send_alert_now(
     wa_sent = 0
     numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
     if numbers:
-        text = build_inventory_alert_text(critical, warning, inventory_url)
+        text = build_inventory_alert_text(critical, warning, inventory_url,
+                                          period=period)
         wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id))
 
     # The point of a test fire is to prove the channel works, so its outcome is
@@ -2619,7 +2836,13 @@ def export_po(
     for i in po_items:
         qty   = i.get("recommended_qty") or 0
         cost  = i.get("unit_cost")
-        value = round(qty * cost, 2) if cost else ""
+        # `if cost` (and `cost or ""` below) treated a real unit cost of 0 as
+        # "we do not know", printing both as an empty cell. They are different
+        # facts: a free line and an unpriced line lead to different decisions,
+        # and the PDF writer already makes this distinction
+        # (inventory/po_pdf.py — "a line whose cost nobody recorded is priced
+        # as UNKNOWN, not as zero"). Only None is unknown here too.
+        value = round(qty * cost, 2) if cost is not None else ""
         # Label where the lead time came from so the buyer can trust (or
         # question) it — same distinction the /hoy and /inventory screens show.
         lead_origin = render_es("inventory_csv_lead_source_learned"
@@ -2640,13 +2863,13 @@ def export_po(
             lead_origin,
             qty,
             i.get("moq") or 1,
-            cost or "",
+            cost if cost is not None else "",
             value,
         ])
 
     output.seek(0)
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([_CSV_BOM + output.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=purchase_order.csv"},
     )

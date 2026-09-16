@@ -257,12 +257,29 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
     if not rows:
         return []
 
+    # Grouped case-insensitively, like every other consumer of this table
+    # (get_supplier_scorecard, service.get_learned_lead_times,
+    # get_supplier_observation_counts and _effective_lead_time all group by
+    # LOWER(supplier)). This grouped by the RAW spelling while the query
+    # normalised only for ORDERING, and receive_po stores whichever spelling
+    # that PO carried — so 8 receptions from Acme split 5/3 across "Acme" and
+    # "ACME" produced two series, neither reaching MIN_BASELINE + MIN_RECENT.
+    # The supplier's lead time had doubled and neither the banner nor the 8:00
+    # email fired: a supplier whose history was SPLIT looked exactly like a
+    # supplier with too little history.
+    #
+    # The display name is the first spelling seen in the (already ordered)
+    # rows, so the alert is keyed the same way the scorecard keys its row.
     by_supplier: dict[str, list[dict]] = {}
+    display_name: dict[str, str] = {}
     for r in rows:
-        by_supplier.setdefault(r["supplier"], []).append(r)
+        key = (r["supplier"] or "").casefold()
+        by_supplier.setdefault(key, []).append(r)
+        display_name.setdefault(key, r["supplier"])
 
     out: list[dict] = []
-    for supplier, obs in by_supplier.items():
+    for key, obs in by_supplier.items():
+        supplier = display_name[key]
         alert = _evaluate_supplier(supplier, [float(o["lead_time_days"]) for o in obs])
         if alert:
             out.append(alert)
@@ -375,7 +392,13 @@ def run_daily_supplier_lead_time_alerts() -> None:
                         "channel": "email",
                         "recipient": r["email"],
                         "suppliers": len(deviations),
-                        **({} if delivered else {"reason": email_mod.failure_reason()}),
+                        # Scoped to the tenant, like the send two lines up.
+                        # `failure_reason()` with no tenant asks the INSTANCE
+                        # config, so a tenant running its own Resend key was
+                        # told "no transport configured" when the real cause was
+                        # the credential they own and can fix — and the mirror
+                        # case reported "transport_error" and never named it.
+                        **({} if delivered else {"reason": email_mod.failure_reason(tid)}),
                     },
                 )
         except Exception as e:

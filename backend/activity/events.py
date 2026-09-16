@@ -1,0 +1,285 @@
+"""
+The single vocabulary of things Faro tells the user it did, and why.
+
+Before this module the activity log recorded almost nothing: one row for a
+deleted session, one per API-key call, and one per scheduled send. Everything
+else the product does — a training that failed at 3 a.m., a sync the data gate
+refused, a ceiling that stopped a write, a purchase order that reached nobody,
+an import that dropped 37 rows — happened in silence, and the only trace was a
+line in a log file the tenant cannot read. The owner's instruction (2026-09-16)
+is that the user should always know what happened AND why.
+
+Three rules this module exists to enforce:
+
+1. **One action name, declared once.** A typo'd action name would write a row
+   nothing can ever read back, which is the silent failure this whole feature
+   is meant to end. `record_event` refuses an action that is not declared here.
+
+2. **Every event carries its WHY as a code, not as prose.** `reason` is an
+   English identifier the frontend renders through `events.reason.<code>` with
+   `reason_params` interpolated — the same contract as `AppError`. No Spanish
+   in backend logic, and a translator can reorder the sentence.
+
+3. **Severity decides where it surfaces, not whether it is recorded.**
+   Everything is recorded. `critical` and `warning` reach the bell, because
+   they need a decision; `info` is the history the activity screen shows. A
+   bell that lists every successful import is a bell people stop reading, and
+   an event that is only in a log file may as well not exist. Both failure
+   modes are avoided by recording everything and routing by severity.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+log = logging.getLogger(__name__)
+
+# Severities, in the order the UI ranks them.
+CRITICAL = "critical"   # something the user relies on is broken or wrong now
+WARNING  = "warning"    # it still works, but it will stop or mislead soon
+INFO     = "info"       # it worked; here is what happened
+
+SEVERITIES = (CRITICAL, WARNING, INFO)
+
+# Severities that reach the bell. The rest are history, not an interruption.
+BELL_SEVERITIES = (CRITICAL, WARNING)
+
+
+@dataclass(frozen=True)
+class EventSpec:
+    """One thing that can happen, and how it is presented.
+
+    `kind` groups actions the user thinks of as one thing (a sync that
+    succeeded and a sync that failed are both "integration_sync"), so the UI
+    can filter by kind without knowing every action name.
+
+    `detail_keys` is a WHITELIST, for the same reason `alert_history` has one:
+    the context blob is written by many call sites and must not start leaking
+    whatever a future one puts in it. It is also the exact set of params the
+    frontend's i18n string may interpolate, so a copy change and a payload
+    change cannot drift apart unnoticed.
+    """
+    kind:        str
+    severity:    str
+    detail_keys: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if self.severity not in SEVERITIES:
+            raise ValueError(f"unknown severity {self.severity!r}")
+
+
+# ── The vocabulary ────────────────────────────────────────────────────────────
+#
+# Grouped by the question the user is asking when they look. Adding an entry
+# here is half the work: `test_events_vocabulary.py` fails until the frontend
+# catalogue has copy for the action and for every reason code it can carry.
+
+EVENTS: dict[str, EventSpec] = {
+    # ── Forecasting ──────────────────────────────────────────────────────────
+    "training.completed": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("session_id", "session_name", "skus", "best_model", "period"),
+    ),
+    # Critical, not warning: every screen in the product reads the active
+    # session. A training that failed overnight means the buyer opens the app
+    # to yesterday's numbers, or to nothing at all, with no other signal.
+    "training.failed": EventSpec(
+        kind="training", severity=CRITICAL,
+        detail_keys=("session_id", "session_name", "started_by"),
+    ),
+    "training.blocked": EventSpec(
+        kind="training", severity=WARNING,
+        detail_keys=("session_id", "session_name", "issues"),
+    ),
+
+    # ── Integrations ─────────────────────────────────────────────────────────
+    "integration.sync_completed": EventSpec(
+        kind="integration", severity=INFO,
+        detail_keys=("provider", "skus", "sale_rows", "skipped_sale_lines"),
+    ),
+    "integration.sync_failed": EventSpec(
+        kind="integration", severity=CRITICAL,
+        detail_keys=("provider",),
+    ),
+    "integration.sync_blocked": EventSpec(
+        kind="integration", severity=WARNING,
+        detail_keys=("provider", "issues", "session_id"),
+    ),
+
+    # ── Purchasing ───────────────────────────────────────────────────────────
+    "purchase.order_generated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "lines", "value", "suppliers"),
+    ),
+    "purchase.order_sent": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "sent", "skipped"),
+    ),
+    # The buyer believes the order is on its way. It is not.
+    "purchase.order_not_sent": EventSpec(
+        kind="purchase", severity=CRITICAL,
+        detail_keys=("reference", "skipped"),
+    ),
+    "purchase.reception_recorded": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "sku_count", "units", "warehouse"),
+    ),
+
+    # ── Data the tenant put in ───────────────────────────────────────────────
+    "data.stock_imported": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
+    ),
+    # Rows the file had and the database did not get. Not an error the import
+    # can refuse — the rest of the file is good — but the user has to be told,
+    # because "83 imported" after a 120-row preview is the only signal today.
+    "data.stock_import_partial": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
+    ),
+    "data.shrinkage_recorded": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("sku", "quantity", "warehouse", "shrinkage_reason"),
+    ),
+    # A transfer is one document with many lines, so it is counted, not named:
+    # a per-SKU event would put ten rows in the feed for one decision.
+    "data.transfer_created": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("sku_count", "units", "from_warehouse", "to_warehouse"),
+    ),
+
+    # ── Ceilings ─────────────────────────────────────────────────────────────
+    # A refused write the user may be watching (the screen says so) or may not
+    # (the nightly sync). Recorded either way, so the second case stops being
+    # invisible.
+    "limit.reached": EventSpec(
+        kind="limit", severity=WARNING,
+        detail_keys=("limit", "ceiling", "attempted_by"),
+    ),
+
+    # ── Account and access ───────────────────────────────────────────────────
+    "account.user_invited": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email", "role"),
+    ),
+    "account.user_role_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "role", "previous_role"),
+    ),
+    "account.user_deactivated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.api_key_created": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("key_name", "role"),
+    ),
+    "account.api_key_revoked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("key_name",),
+    ),
+}
+
+
+# ── Reason codes ──────────────────────────────────────────────────────────────
+#
+# The WHY. Declared, not free text, so the frontend can render it in the user's
+# language and so a reason cannot quietly become a sentence written in backend
+# logic. Every code here needs `events.reason.<code>` in the frontend
+# catalogue; the vocabulary test enforces it.
+
+REASONS: tuple[str, ...] = (
+    # training / sync refusals
+    "engine_error",
+    "dataset_missing",
+    "data_gate_blocked",
+    "provider_unreachable",
+    "provider_rejected_credentials",
+    "no_readable_quantities",
+    # delivery
+    "supplier_has_no_contact",
+    "no_transport_configured",
+    "transport_error",
+    # ceilings
+    "plan_limit_reached",
+    # account and access — the WHY of a role change or a new machine credential
+    # is that a person with admin rights did it. Said out loud, because the
+    # only useful reaction to "I did not do that" is to look at who has access.
+    "changed_by_an_account_admin",
+    # imports
+    "rows_rejected_by_validation",
+    "duplicate_rows_collapsed",
+    # generic tail — an event whose cause the call site genuinely does not know
+    "unknown",
+)
+
+
+def spec_for(action: str) -> EventSpec:
+    try:
+        return EVENTS[action]
+    except KeyError:
+        raise ValueError(
+            f"unknown event action {action!r} — declare it in "
+            f"backend/activity/events.py before recording it"
+        ) from None
+
+
+def record_event(
+    tenant_id: str,
+    user_id: str,
+    action: str,
+    *,
+    resource: Optional[str] = None,
+    details: Optional[dict[str, Any]] = None,
+    reason: Optional[str] = None,
+    reason_params: Optional[dict[str, Any]] = None,
+    status: str = "success",
+) -> None:
+    """Record one thing that happened, with its reason.
+
+    `reason` is required for anything that is not `INFO`: a warning the user
+    cannot act on is worse than silence, because it costs attention and returns
+    nothing. The call site knows why; the user should not have to guess.
+
+    Never raises on a write failure. These calls sit inside the paths they
+    describe — a reception, a sync, a training — and an audit row is not worth
+    failing a reception over. A write that fails is logged at ERROR, which is
+    the one place a silent failure here is acceptable, because the alternative
+    is losing the user's actual work.
+    """
+    spec = spec_for(action)
+    if spec.severity != INFO and not reason:
+        raise ValueError(
+            f"{action!r} is {spec.severity} and must carry a reason: a warning "
+            f"the user cannot act on costs attention and returns nothing"
+        )
+    if reason is not None and reason not in REASONS:
+        raise ValueError(
+            f"unknown reason {reason!r} — declare it in REASONS "
+            f"(backend/activity/events.py)"
+        )
+
+    supplied = details or {}
+    unknown_keys = set(supplied) - set(spec.detail_keys)
+    if unknown_keys:
+        # Loud in tests, harmless in production: the row is still written with
+        # the keys the spec allows. A detail the feed cannot show is a copy bug,
+        # not a reason to lose the event.
+        log.warning(
+            "record_event: %s carried undeclared detail keys %s — they will not "
+            "reach the feed", action, sorted(unknown_keys),
+        )
+
+    context: dict[str, Any] = {
+        k: supplied[k] for k in spec.detail_keys if supplied.get(k) is not None
+    }
+    context["severity"] = spec.severity
+    context["kind"] = spec.kind
+    if reason:
+        context["reason"] = reason
+    if reason_params:
+        context["reason_params"] = reason_params
+
+    try:
+        from backend.activity.service import log_action
+        log_action(tenant_id, user_id, action, resource=resource,
+                   context=context, status=status)
+    except Exception:  # noqa: BLE001 — see the docstring
+        log.exception("record_event: could not record %s for tenant=%s", action, tenant_id)

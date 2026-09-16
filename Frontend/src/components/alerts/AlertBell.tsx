@@ -23,14 +23,16 @@
  * true.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
-  AlertTriangle, Bell, CalendarClock, CheckCircle2, Clock, PackageX,
-  TrendingUp, Truck, X,
+  AlertTriangle, Bell, CalendarClock, CheckCircle2, Clock, Database, Gauge,
+  KeyRound, LineChart, PackageX, RefreshCw, ShoppingCart, TrendingUp, Truck, X,
 } from 'lucide-react'
 
 import { getAlertHistory, markAlertsRead } from '@/lib/api'
+import { formatMoney } from '@/lib/currency'
 import { useLanguage } from '@/contexts/LanguageContext'
-import type { AlertEntry, AlertKind, LocalNotice } from './types'
+import type { AlertEntry, AlertKind, AlertSeverity, AlertStatus, LocalNotice } from './types'
 
 const POLL_MS = 60_000
 const HISTORY_LIMIT = 20
@@ -40,15 +42,43 @@ const KIND_ICON: Record<AlertKind, typeof PackageX> = {
   supplier_lead_time: Truck,
   data_freshness:     CalendarClock,
   monthly_roi:        TrendingUp,
+  training:           LineChart,
+  integration:        RefreshCw,
+  purchase:           ShoppingCart,
+  data:               Database,
+  limit:              Gauge,
+  account:            KeyRound,
 }
+
+/** A system event was sent to nobody, so the delivery colours do not apply:
+ *  what it costs the user is its severity. */
+const SEVERITY_COLOR: Record<AlertSeverity, string> = {
+  critical: '#ef4444',
+  warning:  '#f59e0b',
+  info:     'var(--accent)',
+}
+
+/** Identifiers the feed stores so an entry can be traced, and that mean
+ *  nothing to a person reading it. Kept out of the chips rather than out of
+ *  the payload — /actividad may want to link a session one day. */
+const OPAQUE_DETAILS = new Set(['session_id', 'started_by', 'attempted_by'])
+
+/** Details that are MONEY. Rendered through the tenant's currency like every
+ *  other amount in the product: a bare `150` beside `Líneas: 1` reads as a
+ *  count, and this one is what the order is worth. */
+const MONEY_DETAILS = new Set(['value'])
 
 /** Colour follows the DELIVERY outcome, not the topic: a digest nobody
  *  received is a different event from one that arrived. */
-const STATUS_COLOR = {
+const STATUS_COLOR: Record<AlertStatus, string> = {
   delivered: 'var(--muted)',
   partial:   '#f59e0b',
   failed:    '#ef4444',
-} as const
+  // A system event was sent to nobody, so it has no delivery colour — its
+  // severity decides. Present so the map stays total: an entry the table
+  // cannot answer for used to render `undefined` as a colour.
+  recorded:  'var(--muted)',
+}
 
 /** Relative age. Absolute timestamps ("07:00") are useless on a list whose
  *  entries are days apart, which is the normal spacing of a daily loop. */
@@ -88,6 +118,53 @@ function useAlertBody() {
   }, [t])
 }
 
+/**
+ * The numbers an event carries, as `Label: value` chips.
+ *
+ * Built from the keys the backend whitelisted for that action, each rendered
+ * through `events.detail.<key>` — so a new field cannot reach the screen as a
+ * bare identifier (this product printed `inventory.source_file` at buyers
+ * once), and a number is never baked into a sentence a translator cannot
+ * reorder.
+ */
+export function useEventDetails() {
+  const { t } = useLanguage()
+  return useCallback((a: AlertEntry): string => {
+    const d = a.details ?? {}
+    return Object.keys(d)
+      .filter(k => !OPAQUE_DETAILS.has(k) && d[k] !== null && d[k] !== '')
+      .map(k => {
+        const v = d[k]
+        const shown = MONEY_DETAILS.has(k) && typeof v === 'number' ? formatMoney(v) : v
+        return `${t(`events.detail.${k}`)}: ${shown}`
+      })
+      .join('  ·  ')
+  }, [t])
+}
+
+/** WHY it happened. A warning with no reason is worse than silence, so the
+ *  backend refuses to record one — here it is simply rendered. */
+export function useEventReason() {
+  const { t } = useLanguage()
+  return useCallback((a: AlertEntry): string => {
+    if (!a.reason) return ''
+    if (a.source === 'system') return t(`events.reason.${a.reason}`, a.reason_params ?? {})
+    // A delivery row's reason is the transport's, and it already has copy of
+    // its own from before the event vocabulary existed.
+    return t(`alerts.delivery.reason_${a.reason}`)
+  }, [t])
+}
+
+/** Title. System events name what happened; deliveries name their topic. */
+export function useEventTitle() {
+  const { t } = useLanguage()
+  return useCallback((a: AlertEntry): string => (
+    a.source === 'system' && a.action
+      ? t(`events.action.${a.action}`, a.details ?? {})
+      : t(`alerts.kind.${a.kind}`)
+  ), [t])
+}
+
 /** The delivery line. Rendered only when something did NOT arrive — a
  *  successful send needs no explanation, a failed one must not be silent. */
 function DeliveryNote({ alert }: { alert: AlertEntry }) {
@@ -115,40 +192,70 @@ function DeliveryNote({ alert }: { alert: AlertEntry }) {
   )
 }
 
-function AlertRow({ alert }: { alert: AlertEntry }) {
+/**
+ * One entry, whichever source it came from.
+ *
+ * A delivery keeps the body it always had (a sentence built from the digest's
+ * own numbers) and its three-way delivery note. A system event has no
+ * recipients, so it renders what it carries instead: the declared title, the
+ * numbers as chips, and the reason it happened — which is the half the product
+ * used to keep to itself.
+ */
+export function AlertRow({ alert, dense = false }: { alert: AlertEntry; dense?: boolean }) {
   const relative = useRelativeTime()
   const body = useAlertBody()
-  const { t } = useLanguage()
+  const details = useEventDetails()
+  const reasonOf = useEventReason()
+  const title = useEventTitle()
+
+  const system = alert.source === 'system'
   const Icon = KIND_ICON[alert.kind] ?? Bell
-  const failed = alert.status !== 'delivered'
+  const bad = system ? alert.severity !== 'info' : alert.status !== 'delivered'
+  const color = system
+    ? SEVERITY_COLOR[alert.severity] ?? 'var(--accent)'
+    : (alert.status === 'delivered' ? 'var(--accent)' : STATUS_COLOR[alert.status])
+  const reason = system ? reasonOf(alert) : ''
+  const line = system ? details(alert) : body(alert)
 
   return (
     <div style={{
-      padding: '10px 16px', borderBottom: '1px solid var(--border)',
+      padding: dense ? '12px 16px' : '10px 16px',
+      borderBottom: '1px solid var(--border)',
       display: 'flex', gap: 10, alignItems: 'flex-start',
-      background: failed ? 'rgba(239,68,68,0.04)'
-        : alert.unread ? 'color-mix(in srgb, var(--accent) 5%, transparent)' : 'transparent',
+      background: bad ? (alert.severity === 'warning' && system
+        ? 'rgba(245,158,11,0.04)' : 'rgba(239,68,68,0.04)')
+        : alert.unread && !dense ? 'color-mix(in srgb, var(--accent) 5%, transparent)' : 'transparent',
     }}>
-      <Icon
-        size={14}
-        color={failed ? STATUS_COLOR[alert.status] : 'var(--accent)'}
-        style={{ marginTop: 2, flexShrink: 0 }}
-      />
+      <Icon size={14} color={color} style={{ marginTop: 2, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'space-between',
         }}>
-          <span style={{ fontSize: 12, fontWeight: alert.unread ? 700 : 600 }}>
-            {t(`alerts.kind.${alert.kind}`)}
+          <span style={{ fontSize: 12, fontWeight: alert.unread && !dense ? 700 : 600 }}>
+            {title(alert)}
           </span>
           <span style={{ fontSize: 10, color: 'var(--dim)', whiteSpace: 'nowrap', flexShrink: 0 }}>
             {relative(alert.created_at)}
           </span>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-          {body(alert)}
-        </div>
-        <DeliveryNote alert={alert} />
+        {line && (
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, lineHeight: 1.45 }}>
+            {line}
+          </div>
+        )}
+        {reason && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4,
+            fontSize: 11, color: alert.severity === 'info' ? 'var(--dim)' : color,
+            lineHeight: 1.4,
+          }}>
+            {alert.severity !== 'info' && (
+              <AlertTriangle size={11} style={{ marginTop: 2, flexShrink: 0 }} />
+            )}
+            <span>{reason}</span>
+          </div>
+        )}
+        {!system && <DeliveryNote alert={alert} />}
       </div>
     </div>
   )
@@ -339,7 +446,9 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
                 <>
                   {alerts.length > 0 && (
                     <>
-                      <SectionLabel>{t('alerts.section_sent')}</SectionLabel>
+                      {/* Not "what we sent" any more: the same list now carries
+                          what the product DID, so the label says so. */}
+                      <SectionLabel>{t('alerts.section_events')}</SectionLabel>
                       {alerts.map(a => <AlertRow key={a.id} alert={a} />)}
                     </>
                   )}
@@ -353,19 +462,30 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
               )}
             </div>
 
-            {localNotices.length > 0 && (
-              <div style={{
-                padding: '8px 16px', borderTop: '1px solid var(--border)',
-                display: 'flex', justifyContent: 'flex-end',
-              }}>
+            {/* The bell shows only what needs a decision. Without this link the
+                rest of the history — every successful import, sync and order —
+                would be recorded and unreachable, which is the same as not
+                being recorded at all. */}
+            <div style={{
+              padding: '8px 16px', borderTop: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <Link
+                href="/actividad"
+                onClick={() => setOpen(false)}
+                style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}
+              >
+                {t('alerts.see_all')}
+              </Link>
+              {localNotices.length > 0 && (
                 <button
                   onClick={onClearLocal}
                   style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)' }}
                 >
                   {t('topbar.clear_all')}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </>
       )}

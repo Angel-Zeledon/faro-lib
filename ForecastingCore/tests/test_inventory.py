@@ -108,17 +108,52 @@ class TestInventoryAdvisorRecommend:
         rec = adv.recommend("S", np.zeros(14), current_stock=100.0)
         assert np.isfinite(rec.days_of_coverage)
 
-    # ⚠️ CRITICAL FIX REQUIRED: service_level=1.0 causes ppf(1.0)=inf
-    def test_service_level_boundary_1_causes_inf(self):
-        with pytest.raises(Exception):
-            adv = InventoryAdvisor(service_level=1.0)
-            adv.recommend("S", np.full(7, 10.0))
+    # These two used to read:
+    #
+    #     # ⚠️ CRITICAL FIX REQUIRED: service_level=1.0 causes ppf(1.0)=inf
+    #     def test_service_level_boundary_1_causes_inf(self):
+    #         with pytest.raises(Exception):
+    #             ...
+    #
+    # which is a test of the SYMPTOM, not of the behaviour: it passes while the
+    # bug is alive, keeps passing after the bug is fixed (the guard raises too),
+    # and would keep passing if a renamed argument made the constructor raise
+    # TypeError before reaching any inventory logic at all. `Exception` catches
+    # every one of those. The fix it demanded had in fact already been made —
+    # the constructor validates — and nobody could tell from the suite.
+    #
+    # What the advisor actually promises, asserted: the open interval is
+    # enforced, the error says which argument and why, and nothing infinite
+    # ever reaches the recommendation.
 
-    # ⚠️ CRITICAL FIX REQUIRED: service_level=0.0 causes ppf(0.0)=-inf
-    def test_service_level_boundary_0_causes_neg_inf(self):
-        with pytest.raises(Exception):
-            adv = InventoryAdvisor(service_level=0.0)
-            adv.recommend("S", np.full(7, 10.0))
+    @pytest.mark.parametrize("bad", [1.0, 0.0, -0.1, 1.5])
+    def test_a_service_level_outside_the_open_interval_is_refused(self, bad):
+        with pytest.raises(ValueError, match="service_level"):
+            InventoryAdvisor(service_level=bad)
+
+    @pytest.mark.parametrize("good", [0.5, 0.9, 0.95, 0.99, 0.999])
+    def test_every_accepted_service_level_yields_a_finite_z(self, good):
+        adv = InventoryAdvisor(service_level=good)
+        assert np.isfinite(adv._z)
+        rec = adv.recommend("S", np.full(7, 10.0))
+        assert np.isfinite(rec.details["z_score"])
+        assert np.isfinite(rec.reorder_point)
+        assert np.isfinite(rec.safety_stock)
+
+    def test_a_higher_service_level_never_buys_less_cushion(self):
+        """The property a buyer actually relies on. A z lookup that silently
+        collapsed distinct levels onto one value — the defect the backend had
+        in `_z_for` — is invisible to a single-point assertion and obvious
+        here."""
+        levels = [0.80, 0.90, 0.95, 0.99]
+        cushions = [
+            InventoryAdvisor(service_level=s).recommend(
+                "S", np.full(14, 10.0), demand_std=3.0
+            ).safety_stock
+            for s in levels
+        ]
+        assert cushions == sorted(cushions), cushions
+        assert cushions[0] < cushions[-1], "distinct service levels collapsed onto one cushion"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

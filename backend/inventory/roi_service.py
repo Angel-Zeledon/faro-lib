@@ -722,7 +722,10 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
                             "channel": "email",
                             "recipient": email,
                             "month": month_key,
-                            **({} if ok_sent else {"reason": email_mod.failure_reason()}),
+                            # Tenant-scoped: see the note in service.py — the
+                            # bare call reads the instance config and can name
+                            # the wrong cause.
+                            **({} if ok_sent else {"reason": email_mod.failure_reason(tid)}),
                         },
                     )
 

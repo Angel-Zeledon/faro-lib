@@ -234,10 +234,30 @@ QUERY_TOOLS = {
     "forecast_summary": forecast_summary,
 }
 
-WRITE_TOOLS = {
-    "approve_po": propose_approve_po,
-    "register_reception": propose_reception,
-}
+# Suspended, NOT deleted. The owner's founding rule for the assistant is that
+# every action the LLM can take is reversible, and these two are not:
+#
+#   · `register_reception` calls receive_po — it adds units to real stock AND
+#     writes `supplier_lead_time_obs`, which moves the supplier's learned lead
+#     time and its scorecard. There is no un-receive anywhere in the codebase.
+#   · `approve_po` stamps `sent_at`, which anchors the cash calendar. There is
+#     no un-send either.
+#
+# A WhatsApp message is the one surface with no confirmation screen, no undo
+# button and no audit the user can see; a misrouted "sí" wrote inventory that
+# nobody can walk back. Twilio is configured, so this was live the moment the
+# app was deployed.
+#
+# Putting them back is exactly this dict — the proposal functions, the
+# confirmation gate, the executors and their tests are all still here and
+# still work. Do it when receive_po and mark_po_sent have inverses, not before.
+WRITE_TOOLS: dict = {}
+
+# Names the router may still emit (the model has seen them in old history, and
+# users ask for them by name). Recognised on purpose so the answer is "do it in
+# the app" instead of the generic help menu — and so a pending action stored
+# before the suspension cannot be executed by answering "sí" today.
+SUSPENDED_WRITE_TOOLS = {"approve_po", "register_reception"}
 
 # These descriptions are prompt text — the agent pastes them into the routing
 # prompt for the model to choose from — so they are English like every other
@@ -253,6 +273,12 @@ TOOL_SPECS = [
     {"name": "forecast_summary", "kind": "query",
      "description": "Summary of the demand forecast for one SKU.",
      "args": {"sku": "the SKU code"}},
+]
+
+# Kept out of TOOL_SPECS above so the model is not offered a tool it cannot
+# run — but named in the prompt (see agent._system_prompt) so it answers "that
+# is done in the app" instead of pretending the request was never made.
+SUSPENDED_TOOL_SPECS = [
     {"name": "approve_po", "kind": "write",
      "description": "Approve and send an existing purchase order.",
      "args": {"po_log_id": "id or number of the order"}},

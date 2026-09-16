@@ -313,6 +313,17 @@ def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
     used to sort differently (this one alphabetically), which meant the list
     could name one supplier at the top while planning used another.
     """
+    # The ORDER BY below is `_PRIMARY_ORDER` verbatim, then the name as a
+    # display tie-break. The docstring already promises this is the same rule
+    # `get_primary_suppliers_map` uses, and it was not: on a legacy row with two
+    # primaries this answered alphabetically while planning answered
+    # oldest-first, so `[0]` — which the module footer tells readers to use as
+    # the primary — could name a different supplier than the semáforo built the
+    # recommendation for.
+    #
+    # Kept here rather than as a `--` comment inside the query: a Spanish word
+    # inside a string constant is what `test_no_spanish_in_backend_logic` exists
+    # to catch, and it cannot tell an explanation from copy a user will read.
     return query(
         f"""SELECT
                ss.id,
@@ -331,7 +342,7 @@ def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
            FROM sku_suppliers ss
            JOIN suppliers s ON s.id = ss.supplier_id
            WHERE ss.tenant_id = %s AND ss.sku = %s AND s.active = TRUE
-           ORDER BY ss.is_primary DESC, s.name""",
+           ORDER BY {_PRIMARY_ORDER}, s.name""",
         (tenant_id, sku),
     )
 

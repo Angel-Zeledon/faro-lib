@@ -320,6 +320,31 @@ def list_stock_keys(tenant_id: str, conn: Optional[Any] = None) -> set:
     return {(r["sku"], r["warehouse"]) for r in rows}
 
 
+def list_stock_warehouses(
+    tenant_id: str, sku: str, conn: Optional[Any] = None
+) -> list[str]:
+    """Every warehouse this SKU actually has a stock row in, ordered.
+
+    Exists because "does this SKU exist?" and "which row am I about to write?"
+    are two different questions, and PATCH /stock/{sku} used to answer the
+    second with the first: it 404-checked `get_stock()` with no warehouse
+    filter — which finds the row wherever it lives — and then wrote through
+    `upsert_stock`, which falls back to `principal` when no warehouse is
+    supplied. A SKU that only lived in 'Norte' therefore passed the existence
+    check on the Norte row and CREATED a second row in 'principal'. The Norte
+    row stayed put, the consolidated view summed both, and the coverage the
+    semáforo reads was inflated by units that do not exist — a SKU that should
+    have read PEDIR_YA reads OK and never gets bought.
+    """
+    rows = query(
+        "SELECT warehouse FROM inventory_stock WHERE tenant_id = %s AND sku = %s "
+        "ORDER BY warehouse",
+        (tenant_id, sku),
+        conn=conn,
+    )
+    return [r["warehouse"] for r in rows]
+
+
 def get_stock(
     tenant_id: str, sku: str, warehouse: Optional[str] = None, conn: Optional[Any] = None
 ) -> Optional[dict]:
@@ -3489,10 +3514,23 @@ def get_latest_completed_session(tenant_id: str) -> Optional[dict]:
     )
 
 
+# WHO gets an alert. This read 'admin', 'manager' in all three functions below
+# and in freshness_service — and `manager` is not a role this product has ever
+# had: VALID_ROLES is {admin, analyst, viewer} (users/roles.py) and the users
+# column defaults to 'analyst' (db/migrations.py), which is also what the invite
+# dialog proposes. So every alert went to admins only, while /mi-cuenta invited
+# ANY role to link their WhatsApp "to receive inventory alerts", walked them
+# through the OTP and showed them a green "Verificado". They then received
+# nothing, on either channel, and were not even written to activity_logs — so
+# the alert bell was empty too, and a person excluded from every digest looked
+# exactly like a quiet week.
+#
+# `viewer` stays out on purpose: it is the read-only role, and a stockout digest
+# is a call to action addressed to whoever can act on it.
 def get_tenant_admin_emails(tenant_id: str) -> list[str]:
     rows = query(
         """SELECT email FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'manager')
+           WHERE tenant_id = %s AND role IN ('admin', 'analyst')
            AND email IS NOT NULL""",
         (tenant_id,),
     )
@@ -3500,10 +3538,10 @@ def get_tenant_admin_emails(tenant_id: str) -> list[str]:
 
 
 def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
-    """E.164 numbers of admins/managers who opted into WhatsApp alerts."""
+    """E.164 numbers of admins/analysts who opted into WhatsApp alerts."""
     rows = query(
         """SELECT whatsapp_number FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'manager')
+           WHERE tenant_id = %s AND role IN ('admin', 'analyst')
            AND whatsapp_number IS NOT NULL AND whatsapp_number <> ''""",
         (tenant_id,),
     )
@@ -3512,14 +3550,14 @@ def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
 
 def get_tenant_alert_recipients(tenant_id: str) -> list[dict]:
     """
-    Admins/managers with the identity needed to attribute a delivery outcome.
+    Admins/analysts with the identity needed to attribute a delivery outcome.
     The email/WhatsApp lists above return bare contact strings, which cannot be
     written to activity_logs (user_id is NOT NULL) — this returns the user row.
     """
     return [
         dict(r) for r in query(
             """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'manager')""",
+               WHERE tenant_id = %s AND role IN ('admin', 'analyst')""",
             (tenant_id,),
         )
     ]
@@ -3679,6 +3717,7 @@ def run_daily_inventory_alerts() -> None:
             text = build_inventory_alert_text(
                 critical, warning, inventory_url,
                 transfer_count=transfer_count,
+                period=period,
             )
             for r in recipients:
                 number = (r.get("whatsapp_number") or "").strip()
@@ -3694,7 +3733,7 @@ def run_daily_inventory_alerts() -> None:
                         "recipient": number,
                         "critical": len(critical),
                         "warning": len(warning),
-                        **({} if delivered else {"reason": wa_mod.failure_reason()}),
+                        **({} if delivered else {"reason": wa_mod.failure_reason(tid)}),
                     },
                 )
 

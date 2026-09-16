@@ -222,7 +222,8 @@ _ES: dict[str, str] = {
     # frontend, so this is the catalogue that owns its wording.
     "wa_unknown_number":     "Hola 👋 No reconozco este número. Vincula tu WhatsApp desde tu perfil en Faro para poder ayudarte por aquí.",
     "wa_rate_limited":       "Vas muy rápido 🙏 Espera un momento y vuelve a escribirme.",
-    "wa_help":               "Puedo ayudarte con tu inventario: pregúntame por el semáforo (qué pedir), tus órdenes pendientes o el pronóstico de un SKU. También puedo aprobar una orden o registrar una recepción.",
+    "wa_help":               "Puedo ayudarte con tu inventario: pregúntame por el semáforo (qué pedir), tus órdenes pendientes o el pronóstico de un SKU. Aprobar una orden o registrar una recepción se hace en la app.",
+    "wa_write_in_app":       "Eso se hace en la app 🙂 Aprobar una orden o registrar una recepción no se puede deshacer, así que por aquí no lo ejecuto. Entra a Faro y lo haces en dos clics.",
     "wa_generic_mode":       "Recibí tu mensaje. Por ahora estoy en modo básico: puedo confirmar una acción pendiente si respondes “sí”. Muy pronto podré responder tus consultas de inventario por aquí.",
     "wa_apology":            "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?",
     "wa_read_only":          "Tu perfil es de solo lectura, así que no puedo ejecutar acciones. Puedo darte información de inventario si quieres.",
@@ -271,6 +272,15 @@ _ES: dict[str, str] = {
     "unit_week_many":   "{n} semanas",
     "unit_month_one":   "1 mes",
     "unit_month_many":  "{n} meses",
+    # Compact forms, for the WhatsApp digest — the one channel where the
+    # message has to stay scannable on a phone. It printed a bare "4d" for
+    # every tenant, including the weekly and monthly ones whose coverage_days
+    # actually carries PERIODS (see inventory/service.py): the 8:00 email said
+    # "4 semanas" and the WhatsApp sent in the same loop iteration, off the
+    # same list, said "4d".
+    "unit_day_short":   "{n}d",
+    "unit_week_short":  "{n} sem",
+    "unit_month_short": "{n} mes",
     # Month names for the recap's "junio de 2026" label. Keyed in English so the
     # module indexes them with an English identifier, never a Spanish literal.
     "month_label":        "{month} de {year}",
@@ -294,6 +304,19 @@ _MONTH_KEYS = (
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
 )
+
+
+# period -> the unit key stem above. Unknown/legacy degrades to "day", matching
+# how the service layer's _days_per_period degrades. Lives here, next to the
+# strings, because email.py and whatsapp.py both need it and two copies of this
+# map is how the two channels came to disagree in the first place.
+COVERAGE_UNIT_STEM = {"daily": "day", "weekly": "week", "monthly": "month"}
+
+
+def coverage_short(value: float, period: str) -> str:
+    """Compact coverage for WhatsApp: 4 + "weekly" -> "4 sem"."""
+    stem = COVERAGE_UNIT_STEM.get(period or "daily", "day")
+    return render_es(f"unit_{stem}_short", n=f"{value:.0f}")
 
 
 def render_es(key: str, **params: object) -> str:
