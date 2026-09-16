@@ -616,7 +616,7 @@ function SchedulesTab() {
 const ENABLED: Record<Tab, boolean> = {
   // Turned on 2026-08-11. It was off because keys could not authenticate against
   // the API — true when the flag was written, false now: the public surface was
-  // walked end to end with a real key (docs/api-publica.md). With the tab off
+  // walked end to end with a real key (docs/public-api.md). With the tab off
   // there was no way to obtain a key from the product at all, so the API existed
   // for nobody.
   'api-keys':  true,

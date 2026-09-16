@@ -1161,7 +1161,7 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
  async function handleToggle(entry: CalendarCatalogEntry) {
   setBusy(entry.key); setErr('')
   const next = !entry.active
-  // Optimista: el toggle debe sentirse inmediato.
+  // Optimistic: the toggle has to feel immediate.
   setEntries(prev => prev?.map(e => e.key === entry.key ? { ...e, active: next } : e) ?? null)
   try {
    await toggleCalendarEntry(entry.key, next)

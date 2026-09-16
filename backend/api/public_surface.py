@@ -19,7 +19,7 @@ absent is internal — still callable, never promised.
 
 `backend/tests/test_public_api_surface.py` asserts every entry still resolves to
 a real route, so this file cannot quietly describe an API that no longer exists.
-The prose version customers read is `docs/api-publica.md`.
+The prose version customers read is `docs/public-api.md`.
 """
 
 # (method, path) exactly as FastAPI registers it, without the /api/v1 prefix.

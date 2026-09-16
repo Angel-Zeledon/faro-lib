@@ -28,7 +28,7 @@ is running.
   trace a tenant could read.
 * **Restore, upgrade and egress runbooks.** [`deploy/RESTORE.md`](deploy/RESTORE.md)
   was written by performing the restore; [`deploy/UPGRADE.md`](deploy/UPGRADE.md)
-  states the rollback property and how to check it; [`docs/datos-que-salen.md`](docs/datos-que-salen.md)
+  states the rollback property and how to check it; [`docs/data-that-leaves.md`](docs/data-that-leaves.md)
   lists every outbound connection, what it sends and how to turn it off.
 * **`/health` reports loop freshness.** Each recurring loop records the
   boundary it last completed, so a scheduler that is up but has not done its

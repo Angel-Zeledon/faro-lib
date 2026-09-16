@@ -2799,7 +2799,7 @@ reads those paths — checked). **Two decisions left to the owner:**
   migration problem attached (existing installs).
 
 **c) What leaves the buyer's network — [DONE 2026-09-16]**
-[`docs/datos-que-salen.md`](datos-que-salen.md): the five outbound
+[`docs/data-that-leaves.md`](data-that-leaves.md): the five outbound
 destinations (DeepSeek, Resend/SMTP, Twilio, Alegra, Siigo), what each one is
 sent, and how to turn it off — plus the commands to verify the list without
 trusting the page. No telemetry, no analytics, no licence check; the frontend

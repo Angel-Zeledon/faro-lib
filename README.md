@@ -222,7 +222,7 @@ lists every customer, and cannot send a single email.
 
 Three more for whoever runs this in production:
 **[`deploy/UPGRADE.md`](deploy/UPGRADE.md)** (upgrading, and why rolling back is
-just the previous image), **[`docs/datos-que-salen.md`](docs/datos-que-salen.md)**
+just the previous image), **[`docs/data-that-leaves.md`](docs/data-that-leaves.md)**
 (every outbound connection, what it sends, how to turn it off — the answer to
 your IT department's first question), and
 **[`scripts/SMOKE.md`](scripts/SMOKE.md)** (the twenty-minute walk before you

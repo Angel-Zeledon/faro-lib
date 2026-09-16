@@ -1066,11 +1066,12 @@ export default function HoyPage() {
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
 
- // Feature 2.10 — margen visible en el carrito. El margen por unit lo calcula
- // el backend (unit_margin = sale_price − unit_cost, null cuando
+ // Feature 2.10 — margin visible in the cart. The per-unit margin is
+ // computed by the backend (unit_margin = sale_price − unit_cost, null when
  // either one is missing); here we only multiply by the qty the
  // user approved and sum. Lines with no price or no cost stay OUT of
- // ambos totals y se reportan aparte, para no inflar ni desinflar la cifra.
+ // both totals and are reported separately, so the figure is neither
+ // inflated nor deflated.
  const priced   = approved.filter(i => i.unit_margin != null && i.sale_price != null)
  const unpriced = approved.filter(i => i.unit_margin == null || i.sale_price == null)
  const salesProtected  = priced.reduce((s, i) => s + i.qty * (i.sale_price ?? 0), 0)

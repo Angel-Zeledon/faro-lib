@@ -138,7 +138,7 @@ app = FastAPI(
     # including the internal-shaped ones nobody promises to keep stable. Served
     # unauthenticated in production that is a free map of the whole surface, and
     # it is not the API the product means to expose: that one is the short,
-    # supported list in `docs/api-publica.md`.
+    # supported list in `docs/public-api.md`.
     #
     # Kept fully open outside production, where they are the fastest way to try a
     # route by hand and there is nothing to protect.

@@ -102,8 +102,8 @@ def list_suppliers(tenant_id: str) -> list[dict]:
         # Same reason for the `> 0` guard, and it is not hypothetical: three
         # counter pickups (ordered and collected the same day — routine in this
         # market) average to 0 days. `_effective_lead_time` refuses a
-        # non-positive average, so the card was announcing "tardan 0 días en
-        # promedio, y ese es el número con el que planifico" about a number the
+        # non-positive average, so the card was announcing "they take 0 days
+        # on average, and that is the number I plan with" about a number the
         # planner had thrown away. Whatever this reports must be what plans.
         average = row.get("lead_time_learned_days")
         usable = average is not None and float(average) > 0

@@ -2587,8 +2587,8 @@ def simulate_event_impact(
             "display_name":      it.get("display_name"),
             "supplier":         it.get("supplier"),
             "category":         it.get("category"),
-            # Which multiplier applied to THIS product and why: without this
-            # la fila no se puede explicar cuando hay overrides.
+            # Which multiplier applied to THIS product and why: without it
+            # the row cannot be explained once overrides are in play.
             "multiplier":     round(sku_mult, 2),
             "multiplier_source": mult_source,
             "daily_demand":    round(daily, 2),
