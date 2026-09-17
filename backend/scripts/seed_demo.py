@@ -173,9 +173,23 @@ def _create_tenant_and_user() -> str:
     from backend.db.connection import execute
     from backend.utils.ids import generate_id
 
+    # `paid`, explicitly, and not because the demo deserves a nicer tier.
+    #
+    # `tenants.tier` defaults to `free`, whose ceiling is 100 rows of
+    # `inventory_stock` (`entitlements/plans.py`). This script seeds more than
+    # that — 21 products across 5 warehouses is 100 rows on its own — so on a
+    # FRESH INSTALL the seed died two thirds of the way through with
+    # `PLAN_LIMIT_REACHED`, leaving a half-built tenant behind. It only ever
+    # worked on machines where somebody had set the column by hand long ago,
+    # which is the worst kind of green: the failure was invisible to everyone
+    # who already had it working. Found by rehearsing a clean clone on
+    # 2026-09-17.
+    #
+    # A showcase tenant is exactly the case CLAUDE.md describes for `paid` —
+    # somebody talked to the owner and the column was set.
     execute(
-        """INSERT INTO tenants (id, name, slug, status, quota, settings, created_at)
-           VALUES (%s, %s, %s, 'active', '{}', '{}', NOW())""",
+        """INSERT INTO tenants (id, name, slug, status, quota, settings, tier, created_at)
+           VALUES (%s, %s, %s, 'active', '{}', '{}', 'paid', NOW())""",
         (DEMO_TENANT_ID, "Faro Demo", "faro-demo"),
     )
     user_id = generate_id("usr")
