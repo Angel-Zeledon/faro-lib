@@ -1911,8 +1911,8 @@ multi-warehouse ones. Measured, same tree, changing only the variable:
 | `test_transfer_lanes.py` | 9 failures | 25 pass |
 | `test_optimizer_service.py` | 5 failures | 14 pass |
 | `test_warehouses.py` | 3 failures | 16 pass |
-| `test_inventory_multi_bodega.py` | 3 failures | 3 pass |
-| `test_reception_bodega.py` | 2 failures | 8 pass |
+| `test_inventory_multi_warehouse.py` | 3 failures | 3 pass |
+| `test_reception_warehouse.py` | 2 failures | 8 pass |
 | `test_warehouse_import_destination.py` | 1 failure | 7 pass |
 | `test_stock_upsert_preserves_config.py` | 1 failure | 10 pass |
 

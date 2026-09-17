@@ -2598,7 +2598,7 @@ export default function InventoryPage() {
  </div>
 
  ) : viewMode === 'simple' ? (
- /* ── Vista simple ─────────────────────────────────────────── */
+ /* ── Simple view ──────────────────────────────────────────── */
  /* One of the two views the page can land on, so it is what replaces the
     skeleton table: 140 ms of fade instead of a same-frame swap. */
  <div className="page-enter">
@@ -2632,7 +2632,7 @@ export default function InventoryPage() {
  </div>
 
  ) : viewMode === 'dead' ? (
- /* ── Inventario inmovilizado ──────────────────────────────── */
+ /* ── Dead stock ───────────────────────────────────────────── */
  <div style={{ padding: 16 }}>
   {loadingDead ? (
    <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
@@ -2742,7 +2742,7 @@ export default function InventoryPage() {
  </div>
 
  ) : (
- /* ── Tabla completa ───────────────────────────────────────── */
+ /* ── Full table ───────────────────────────────────────────── */
  /* The other landing view, and the one the skeleton table is shaped after:
     it fades in so the placeholder appears to turn into the rows. */
  <div className="page-enter" style={{ overflowX: 'auto' }}>

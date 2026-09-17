@@ -426,7 +426,7 @@ class TestStatusExposesWhyFields:
         line = next(r for r in data["risks"] if r["sku"] == sku)
         for field in ("explanation", "reorder_point", "lead_time_source",
                       "daily_demand", "current_stock", "coverage_days", "unit_margin"):
-            assert field in line, f"falta {field} en la línea del carrito"
+            assert field in line, f"missing {field} in the cart line"
         assert line["explanation"]
         assert line["unit_margin"] == 2.40
 

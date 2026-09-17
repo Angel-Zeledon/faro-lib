@@ -632,7 +632,7 @@ export default function LandingPage() {
  </div>
  </div>
 
- {/* ── EL PROBLEMA ──────────────────────────────────────────────────── */}
+ {/* ── THE PROBLEM ──────────────────────────────────────────────────── */}
  <Section id="problema" alt>
  <Tag>{L.problem.tag}</Tag>
  <H2>{L.problem.title}</H2>
@@ -650,7 +650,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── CÓMO FUNCIONA ────────────────────────────────────────────────── */}
+ {/* ── HOW IT WORKS ─────────────────────────────────────────────────── */}
  <Section id="solucion">
  <Tag>{L.how.tag}</Tag>
  <H2>{L.how.title}</H2>
@@ -748,7 +748,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── CÓMO DECIDE ──────────────────────────────────────────────────── */}
+ {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
  <Section id="como-decide" alt>
  <Tag>{L.decide.tag}</Tag>
  <H2>{L.decide.title}</H2>
@@ -800,7 +800,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── NOSOTROS ─────────────────────────────────────────────────────── */}
+ {/* ── ABOUT US ─────────────────────────────────────────────────────── */}
  <Section id="nosotros">
  {/* TODO: el dueño puede personalizar la historia/equipo real aquí */}
  <div style={{ maxWidth: 760 }}>
@@ -815,7 +815,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── INDUSTRIAS ───────────────────────────────────────────────────── */}
+ {/* ── INDUSTRIES ───────────────────────────────────────────────────── */}
  <Section id="casos" alt>
  <Tag>{L.cases.tag}</Tag>
  <H2>{L.cases.title}</H2>
@@ -850,7 +850,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── LO QUE INCLUYE ───────────────────────────────────────────────── */}
+ {/* ── WHAT'S INCLUDED (BENEFITS) ───────────────────────────────────── */}
  <Section>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 72, alignItems: 'start' }}>
  <div>
@@ -896,7 +896,7 @@ export default function LandingPage() {
  </Scroller>
  </Section>
 
- {/* ── QUÉ NECESITAS ────────────────────────────────────────────────── */}
+ {/* ── WHAT YOU NEED ────────────────────────────────────────────────── */}
  <Section id="empezar">
  <Tag>{L.start.tag}</Tag>
  <H2>{L.start.title}</H2>
@@ -925,7 +925,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── PRECIO ───────────────────────────────────────────────────────── */}
+ {/* ── PRICE ────────────────────────────────────────────────────────── */}
  <Section id="precio">
  <Tag>{L.pricing.tag}</Tag>
  <H2>{L.pricing.title}</H2>
@@ -991,7 +991,7 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── QUÉ INCLUYE ──────────────────────────────────────────────────── */}
+ {/* ── WHAT'S INCLUDED (ROLES) ──────────────────────────────────────── */}
  <Section id="incluye">
  <Tag>{L.includes.tag}</Tag>
  <H2>{L.includes.title}</H2>

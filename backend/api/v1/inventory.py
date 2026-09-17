@@ -2201,7 +2201,7 @@ def _validated_email(value: Optional[str]) -> Optional[str]:
         raise PydanticCustomError(
             "supplier_email_shape",
             "'{email}' cannot receive mail — a purchase order sent there would "
-            "never arrive. Use an address like nombre@empresa.com.",
+            "never arrive. Use an address like name@company.com.",
             {"email": text[:64]},
         )
     return text

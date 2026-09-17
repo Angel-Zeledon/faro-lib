@@ -1375,7 +1375,7 @@ export interface SendPOResult {
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
 
-/** El "por qué" del multiplier, para no mostrar un ×2.2 sin justificar. */
+/** The "why" behind the multiplier, so a ×2.2 is never shown unjustified. */
 export interface MultiplierExplanation {
   base_multiplier:      number
   source:                  'catalog' | 'user'

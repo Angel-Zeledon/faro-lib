@@ -356,7 +356,7 @@ class Pipeline:
 
             for col in df.columns:
                 if df[col].dtype == "object":
-                    # intentar convertir a numérico
+                    # try converting to numeric
                     converted = pd.to_numeric(df[col], errors="coerce")
 
                     # almost everything converted cleanly -> treat as numeric
@@ -377,7 +377,7 @@ class Pipeline:
             ml_skus.update(router.skus_for_model(routing, mn))
         df_ml_f = df_ml[df_ml[_primary_group(c)].astype(str).isin(ml_skus)] if _primary_group(c) and ml_skus else df_ml
 
-        # 🔧 FIX CRÍTICO: sanitizar features antes de ML
+        # CRITICAL FIX: sanitize features before ML
         df_ml_f = sanitize_ml_dataframe(df_ml_f)
         trainer = Trainer(
             t.train_ratio, t.walk_forward, t.wfv_splits,

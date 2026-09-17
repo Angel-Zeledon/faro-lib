@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Faro - arrancar la app en local (Git Bash / macOS / Linux)
-#  Levanta: Postgres (docker faro_db) + backend :8010 + frontend :5000
-#  Uso:  ./run.sh    (Ctrl+C detiene backend y frontend)
+#  Faro - start the app locally (Git Bash / macOS / Linux)
+#  Brings up: Postgres (docker faro_db) + backend :8010 + frontend :5000
+#  Usage:  ./run.sh    (Ctrl+C stops backend and frontend)
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Ruta al python del venv (Windows usa Scripts/, Linux/mac usan bin/).
+# Path to the venv's python (Windows uses Scripts/, Linux/mac use bin/).
 if [ -x "backend/.venv/Scripts/python.exe" ]; then
   PY="backend/.venv/Scripts/python.exe"
 else
   PY="backend/.venv/bin/python"
 fi
 
-echo "[Faro] Iniciando Postgres (docker faro_db)..."
-docker start faro_db >/dev/null 2>&1 || echo "  AVISO: no pude iniciar 'faro_db'. Verifica que Docker este corriendo."
+echo "[Faro] Starting Postgres (docker faro_db)..."
+docker start faro_db >/dev/null 2>&1 || echo "  WARNING: could not start 'faro_db'. Check that Docker is running."
 
 echo "[Faro] Backend  -> http://localhost:8010"
 "$PY" -m uvicorn backend.main:app --port 8010 &
@@ -26,8 +26,8 @@ echo "[Faro] Frontend -> http://localhost:5000"
 FRONT=$!
 
 echo ""
-echo "[Faro] Listo. Abre http://localhost:5000  (login: demo@faro.app / demo1234)"
-echo "       Ctrl+C para detener ambos."
+echo "[Faro] Ready. Open http://localhost:5000  (login: demo@faro.app / demo1234)"
+echo "       Ctrl+C to stop both."
 
-trap 'echo; echo "[Faro] Deteniendo..."; kill "$BACK" "$FRONT" 2>/dev/null || true' INT TERM
+trap 'echo; echo "[Faro] Stopping..."; kill "$BACK" "$FRONT" 2>/dev/null || true' INT TERM
 wait

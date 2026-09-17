@@ -181,7 +181,7 @@ class TestCostaRica:
     def test_cr_and_co_keys_never_collide(self):
         cr = {e.key for e in cat.catalog_for("CR")}
         co = {e.key for e in cat.catalog_for("CO")}
-        assert cr & co == set(), "las claves deben quedar aisladas por país"
+        assert cr & co == set(), "keys must stay isolated per country"
 
     def test_seeding_defaults_to_costa_rica(self, client, analyst_headers, test_tenant):
         resp = client.post(
@@ -195,7 +195,7 @@ class TestCostaRica:
             "WHERE tenant_id = %s AND catalog_key IS NOT NULL",
             (test_tenant["id"],),
         )
-        assert rows, "la siembra por defecto no escribió nada"
+        assert rows, "the default seeding wrote nothing"
         assert all(r["country"] == "CR" for r in rows)
         assert all(r["catalog_key"].startswith("cr_") for r in rows)
 
@@ -229,7 +229,7 @@ class TestCatalogShape:
     def test_occurrence_keys_are_unique_and_dates_ordered(self):
         occ = cat.build_occurrences("CO", [2026, 2027])
         keys = [o.catalog_key for o in occ]
-        assert len(keys) == len(set(keys)), "catalog_key debe ser único por ocurrencia"
+        assert len(keys) == len(set(keys)), "catalog_key must be unique per occurrence"
         for o in occ:
             assert o.end_date >= o.start_date, o.catalog_key
             assert o.multiplier > 1.0, o.catalog_key
@@ -356,7 +356,7 @@ class TestSeedEndpoint:
             "WHERE tenant_id = %s AND catalog_key = %s",
             (test_tenant["id"], "co_navidad:2026"),
         )
-        assert row["active"] is False, "el evento apagado revivió al resembrar"
+        assert row["active"] is False, "the disabled event came back to life on reseed"
 
     def test_unknown_country_rejected(self, client, analyst_headers):
         resp = client.post(
@@ -389,7 +389,7 @@ class TestCatalogToggle:
             "WHERE tenant_id = %s AND catalog_key = %s",
             (test_tenant["id"], "co_semana_santa:2026"),
         )
-        assert row["active"] is True, "el viewer no debió poder apagar el evento"
+        assert row["active"] is True, "the viewer should not have been able to disable the event"
 
     def test_analyst_toggles_whole_group_off_and_on(
         self, client, analyst_headers, test_tenant
@@ -474,7 +474,7 @@ class TestCatalogToggle:
 
         upcoming = inv_svc.get_upcoming_events(test_tenant["id"], days_ahead=30)
         assert not any(e["id"] == event_id for e in upcoming), \
-            "un evento apagado no debe aparecer en próximos eventos"
+            "a disabled event must not appear in upcoming events"
 
 
 class TestCatalogListing:

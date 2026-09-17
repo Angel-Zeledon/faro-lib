@@ -111,7 +111,7 @@ values: `SECRET_KEY`, `DATABASE_URL`, `FRONTEND_URL`. Everything else is
 reachable from inside the running app.
 
 The complete reference — every variable, what it does, and exactly what stops
-working without it — is **[`docs/configuracion.md`](docs/configuracion.md)**. It
+working without it — is **[`docs/configuration.md`](docs/configuration.md)**. It
 and `backend/.env.example` are both generated from
 `backend/service_config/registry.py`:
 

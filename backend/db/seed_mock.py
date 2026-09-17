@@ -139,7 +139,7 @@ def seed_mock_tenant(
             jitter = rng.randint(-10, 10)
             current_stock = max(0, round(sku_base_stock * wh_factors[wh]) + jitter)
             data = {
-                "display_name": f"Producto Demo {i:03d}",
+                "display_name": f"Demo Product {i:03d}",
                 "current_stock": current_stock,
                 "min_stock": rng.randint(5, 60),
                 "lead_time_days": lead_time,

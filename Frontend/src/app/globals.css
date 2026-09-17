@@ -30,9 +30,9 @@
     --ease-in:  cubic-bezier(0.4, 0, 1, 1);
   }
 
-  /* Light is the default: for this audience (distribuidor SMB, luz de oficina
-     o bodega) light reads as trustworthy work software. Dark stays as an
-     explicit choice via the toggle. */
+  /* Light is the default: for this audience (SMB distributor, office light
+     or warehouse floor) light reads as trustworthy work software. Dark stays
+     as an explicit choice via the toggle. */
   :root,
   [data-theme="light"] {
     --bg:            #F5F7F6;

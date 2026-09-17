@@ -1416,7 +1416,7 @@ function QuickStartPageContent() {
  </div>
  )}
 
- {/* Demo de un clic: ver el semáforo sin preparar ningún archivo */}
+ {/* One-click demo: see the semaphore without preparing any file */}
  <div data-tour="qs.demo" style={{
  marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)',
  textAlign: 'center',
