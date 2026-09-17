@@ -186,7 +186,7 @@ class TestMockedTrainingE2E:
     def test_e2e_training_records_model_metrics_history(
         self, client, auth_headers, configured_session, registered_user
     ):
-        """docs/estabilidad.md 6.b: a training run's per-model accuracy must
+        """docs/stability.md 6.b: a training run's per-model accuracy must
         land in training_run_metrics, not only in the session's own JSONB —
         that table is the only place accuracy can be compared across runs."""
         from backend.db.connection import query_one

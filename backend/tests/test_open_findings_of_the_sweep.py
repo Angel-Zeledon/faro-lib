@@ -3,7 +3,7 @@
 They were not open because they were hard. Each one needed a decision that is
 the owner's and not a developer's — what "retrain" means, what counts as "still
 in transit", what happens to history a migration cannot attribute. Those calls
-were made on 2026-09-16 and are recorded in docs/estabilidad.md §11; this file
+were made on 2026-09-16 and are recorded in docs/stability.md §11; this file
 is what holds them.
 
 One class per finding, named after the defect rather than the fix, so a failure

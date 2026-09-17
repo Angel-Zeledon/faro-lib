@@ -6,5 +6,5 @@
         ...                           # degrade, and say so
 
 Read `registry.py` first — it is the source of truth every other module here
-derives from, including `.env.example` and `docs/configuracion.md`.
+derives from, including `.env.example` and `docs/configuration.md`.
 """

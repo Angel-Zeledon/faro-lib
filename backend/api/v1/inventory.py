@@ -387,7 +387,7 @@ def _parse_stock_rows(
     file of "1.250" and "980" with no comma anywhere means either 1250 or 1.25,
     and the parser used to pick 1.25 in silence — every quantity divided by a
     thousand, no row errors, and the whole catalogue in PEDIR_YA
-    (estabilidad 11.2). `thousands_dot` is the user's answer once they have
+    (stability 11.2). `thousands_dot` is the user's answer once they have
     been asked.
     """
     numeric_sources = [mapping[f] for f in stock_import.NUMERIC_FIELDS if f in mapping]
@@ -585,7 +585,7 @@ async def bulk_import(
     # The file says "1.250" and nothing in it says whether that is 1250 or
     # 1.25. Refusing is the point: the old behaviour picked 1.25, reported
     # "1,200 products imported" and put the whole catalogue in PEDIR_YA
-    # (estabilidad 11.2). The preview asks the question; an import that arrives
+    # (stability 11.2). The preview asks the question; an import that arrives
     # without the answer is one that skipped it.
     if ambiguous_cells:
         raise AppError(
@@ -712,11 +712,11 @@ async def bulk_import(
         # behaviour every existing caller had, and on when the wizard's toggle
         # says so. Without it a monthly ERP re-export silently reverted every
         # manual lead time, and re-stamped the provenance to 'file' so the UI
-        # could not even badge the value as the tenant's own (estabilidad 11.9).
+        # could not even badge the value as the tenant's own (stability 11.9).
         # bulk_upsert does one synchronous DB round-trip per row. `failures`
         # collects the rows that were read from the file and did not reach the
         # database, so the response can name them instead of leaving "83 of 120"
-        # as the only signal (estabilidad 11.34).
+        # as the only signal (stability 11.34).
         return svc.bulk_upsert(user.tenant_id, rows, failures=write_failures,
                                only_fill_missing=only_fill_missing)
 
@@ -772,7 +772,7 @@ async def bulk_import(
             # One reason, the one the user can act on first: a rejected row is
             # a file to fix, a collapsed duplicate is a column they did not
             # map. A short write with neither is the case nobody has explained
-            # yet (see estabilidad 11.34), and saying so is better than
+            # yet (see stability 11.34), and saying so is better than
             # inventing a cause.
             reason=("rows_rejected_by_validation" if errors or write_failures
                     else "duplicate_rows_collapsed" if stats["duplicates"]
@@ -1459,7 +1459,7 @@ def log_po(
         # export endpoint served Norte's rows while the order logged right
         # behind it was the tenant-wide list: the buyer downloaded a file with
         # nothing to order and /pedidos showed them an order for two SKUs they
-        # never saw (estabilidad 11.7, found walking the screen — the export
+        # never saw (stability 11.7, found walking the screen — the export
         # itself was already scoped).
         destination = body.destination_warehouse if body else None
         if destination:
@@ -1954,7 +1954,7 @@ class PriceBreakCartLine(BaseModel):
     # The supplier the buyer has on this line right now. Optional, because the
     # briefing surface evaluates without a cart — but when the screen has one it
     # must travel, or a line whose supplier was switched keeps being quoted the
-    # previous supplier's ladder (estabilidad 11.14).
+    # previous supplier's ladder (stability 11.14).
     supplier_id: Optional[str] = None
 
 
@@ -2219,7 +2219,7 @@ class SupplierCreate(BaseModel):
     # records SOURCE_USER for any call that supplies a lead time. Faro's own
     # assumption was therefore filed as the supplier's declaration, and the
     # scorecard printed DECLARADO 15d for a supplier who declared nothing
-    # (estabilidad 11.32). `exclude_none=True` in the handler now drops it
+    # (stability 11.32). `exclude_none=True` in the handler now drops it
     # entirely, so the column's own DEFAULT 15 applies without anybody claiming
     # to have chosen it.
     lead_time_days: Optional[int] = Field(default=None, ge=1, le=365)
@@ -2924,7 +2924,7 @@ def export_po(
     /pedidos the buyer never saw on screen.
 
     `warehouse` exists for the same class of defect on the other axis
-    (estabilidad 11.7): the download menu sits above the warehouse selector and
+    (stability 11.7): the download menu sits above the warehouse selector and
     stayed enabled with a warehouse tab open, so a buyer reading "Norte needs
     40" downloaded a file saying 150 — the tenant-wide number — and `logPOGeneration`
     wrote that into /pedidos as an order they never saw. With it, the CSV is the

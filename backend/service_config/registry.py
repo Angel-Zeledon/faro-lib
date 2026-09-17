@@ -10,7 +10,7 @@ working without it?" was spread across four places that disagreed:
   - nowhere                  — what a missing key actually costs the user
 
 Everything downstream is generated from the descriptors below: the admin
-panel's fields, the status endpoint, `.env.example`, `docs/configuracion.md`,
+panel's fields, the status endpoint, `.env.example`, `docs/configuration.md`,
 and the test that fails when a new Setting is added without documenting it.
 Add a Setting and forget this file and `test_registry_covers_every_setting`
 turns red — which is the point.

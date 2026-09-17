@@ -101,7 +101,7 @@ def _write_po_atomically(
     `purchased_value` and from the PDF the supplier receives, while the header
     kept its full `sku_count` and `total_value`: the order said twelve lines and
     the database held eleven, with nothing on screen and nothing in the response
-    (estabilidad 11.33).
+    (stability 11.33).
 
     Failing the whole generation instead would lose the buyer's cart, which is
     why the swallow was there. Inside a transaction neither happens — the header

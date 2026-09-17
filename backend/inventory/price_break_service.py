@@ -292,7 +292,7 @@ def _ladders_for_status(
     status row only, so switching supplier on a line kept quoting the previous
     one's ladder — "Andina: order 500 and save ~1,400" about a price only Norte
     ever quoted, which is the exact defect this function's docstring says it
-    fixed, reintroduced through the supplier-switch path (estabilidad 11.14).
+    fixed, reintroduced through the supplier-switch path (stability 11.14).
 
     `supplier_id` on the status row is only set when the stock's supplier name
     and the primary supplier agree (service.get_inventory_status), so the name

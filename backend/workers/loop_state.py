@@ -5,7 +5,7 @@ Every cron loop in `worker.py` used to compute its next run from
 08:02 therefore asked for "the next 08:00 boundary strictly after now" and got
 **tomorrow**: that day nobody received a stockout digest, a lead-time alert or a
 freshness reminder, no activity row was written, and the whole thing looked like
-a calm day (estabilidad 11.28). The monthly pass had the louder version — a
+a calm day (stability 11.28). The monthly pass had the louder version — a
 missed 1st skips the overstock snapshot, and that month's "capital freed" figure
 is broken permanently, because the measurement it needed no longer exists.
 

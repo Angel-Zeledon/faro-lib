@@ -1827,7 +1827,7 @@ weekly limit before wiring the consumers; this finishes it.
 
 | Gap | How it was | How it ended up |
 |---|---|---|
-| `.env.example` lied by omission | documented 20 of 45 variables | **generated** from `backend/service_config/registry.py`, like `docs/configuracion.md`; a `Settings` field with no descriptor turns the suite red |
+| `.env.example` lied by omission | documented 20 of 45 variables | **generated** from `backend/service_config/registry.py`, like `docs/configuration.md`; a `Settings` field with no descriptor turns the suite red |
 | Nobody could see the state | `/health` said `ok` with the chat, the alerts, RAG and the integrations dead | `/health` reports each service's state and survives a downed database (`degraded`, not a 500 with no body); the `/instalacion` panel shows it along with what is lost in each case |
 | Degradation was uneven | notifications did it well, RAG and integrations halfway, and «configured but failing» was indistinguishable from «not configured» | all ten consumers read through `service_config.resolver`; the `degraded` state exists and comes from a real connection test |
 
@@ -2050,7 +2050,7 @@ the whole path or was inferring. 36 findings. Of those, **9 were verified by
 hand against the code** (marked ✅); the rest carry the label the finder gave
 them. Two were established with a runnable probe rather than by reading (📏).
 
-Surfaces chosen were the ones `inventario-pantallas.md` reports as never walked:
+Surfaces chosen were the ones `screen-inventory.md` reports as never walked:
 integrations, suppliers, exports, stock movements, scheduled work, and the whole
 frontend.
 
@@ -2856,27 +2856,27 @@ before tagging. Worth it the day two people are shipping.
 
 ---
 
-## Lo que se borró el 2026-08-11, y por qué
+## What was deleted on 2026-08-11, and why
 
-Siete documentos de planes, propuestas y auditorías ya ejecutados o superados.
-Todos siguen en el historial de git; ninguno describía trabajo abierto:
+Seven documents of plans, proposals and audits already executed or superseded.
+All of them are still in git history; none described open work:
 
-| Documento | Por qué se fue |
+| Document | Why it went |
 |---|---|
-| `plan_general_faro_2026-07-18.md` | Plan general superado; no lo citaba nadie |
-| `features_propuestas_faro_2026-07-05.md` | Propuestas de features — justo lo que ya no se quiere |
-| `auditoria_integral_faro_2026-07-04.md` | Auditoría de julio, ejecutada; sus hallazgos viven hoy como tests |
-| `animaciones-plan.md` | Ejecutado. Su último pendiente (`pulse`/`slideUp` locales) está cerrado: ambos viven solo en `globals.css` |
-| `pending-polish-2026-07-24.md` | Lista de pulido; su propio encabezado decía que nada era crítico |
-| `friccion-onboarding-2026-07-27.md` | Ejecutado |
-| `qa/2026-07-23-fullflow-walkthrough-findings.md` | Superado por `inventario-pantallas.md`, que cubre las 26 pantallas |
+| `plan_general_faro_2026-07-18.md` | A general plan, superseded; nobody cited it |
+| `features_propuestas_faro_2026-07-05.md` | Feature proposals — exactly what is no longer wanted |
+| `auditoria_integral_faro_2026-07-04.md` | July's audit, executed; its findings live today as tests |
+| `animaciones-plan.md` | Executed. Its last open item (local `pulse`/`slideUp`) is closed: both live only in `globals.css` |
+| `pending-polish-2026-07-24.md` | A polish list; its own heading said none of it was critical |
+| `friccion-onboarding-2026-07-27.md` | Executed |
+| `qa/2026-07-23-fullflow-walkthrough-findings.md` | Superseded by `screen-inventory.md`, which covers all 26 screens |
 
-Los comentarios del código que citaban estos archivos se reescribieron para no
-apuntar a rutas muertas.
+The code comments that cited these files were rewritten so they do not point at
+dead paths.
 
-**Lo que se conservó, y no es basura:** `api-publica.md` (documentación para el
-cliente), `inventario-pantallas.md` (la tabla viva), `direccion-complemento-2026-08-10.md`
-(la dirección de producto vigente), `demo-script.md`, `help/index.html` (la guía
-bilingüe de usuario) y `paper/` + el PDF del motor. Las tres skills de
-`.claude/skills/` —`faro-i18n`, `running-faro`, `silent-failures`— están
-vigentes y CLAUDE.md las referencia.
+**What was kept, and is not junk:** `public-api.md` (customer-facing
+documentation), `screen-inventory.md` (the live table),
+`direction-addendum-2026-08-10.md` (the standing product direction),
+`demo-script.md`, `help/index.html` (the bilingual user guide) and `paper/` plus
+the engine's PDF. The three skills in `.claude/skills/` — `faro-i18n`,
+`running-faro`, `silent-failures` — are current and CLAUDE.md references them.

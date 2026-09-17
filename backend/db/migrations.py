@@ -1392,11 +1392,11 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # killed at 07:55 and restarted at 08:02 asked for the next 08:00 boundary
     # AFTER now and got tomorrow: that day nobody got a digest, a lead-time
     # alert or a freshness reminder, and it looked like a calm day
-    # (estabilidad 11.28). Deployment state, not tenant state — there is one
+    # (stability 11.28). Deployment state, not tenant state — there is one
     # scheduler, and this answers whether it did its rounds.
     # Which schedule created a session, when one did. A scheduled retrain now
     # trains a NEW session rather than the one the whole app is reading
-    # (estabilidad 11.6), and this column is what lets the schedule reuse its
+    # (stability 11.6), and this column is what lets the schedule reuse its
     # own slots instead of consuming a saved-forecast ceiling every night: the
     # prune can only ever reach rows that carry it, and a session a person
     # created never does.

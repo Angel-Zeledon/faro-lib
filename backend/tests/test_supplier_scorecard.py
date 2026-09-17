@@ -135,7 +135,7 @@ class TestGetSupplierScorecard:
         assert row["deviation_days"] is None
         assert row["last_reception"] is None
         # Nothing has arrived, and nothing is LATE either: the order was placed
-        # moments ago against a 7-day lead time. Since 2026-09-16 (estabilidad
+        # moments ago against a 7-day lead time. Since 2026-09-16 (stability
         # 11.12) fill rate judges only deliveries whose window has closed, so
         # this reads "not measurable yet" rather than a 0% verdict on a supplier
         # who is still well inside the time they promised.

@@ -978,7 +978,7 @@ const SHRINKAGE_REASONS: ShrinkageReason[] = ['breakage', 'expiry', 'self_consum
  * SUMMED across warehouses, and `record_shrinkage` resolved `principal`. A
  * crate broken in Norte came off principal: the tenant total still reconciled,
  * so nothing looked wrong, while the per-warehouse semáforo believed Norte held
- * 400 units that did not exist (estabilidad 11.8). The loud variant was worse —
+ * 400 units that did not exist (stability 11.8). The loud variant was worse —
  * a tenant whose stock arrived with a warehouse column has no `principal` row
  * at all, so every shrinkage 404'd blaming the SKU for a warehouse the user
  * never chose.
@@ -1068,7 +1068,7 @@ function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved 
 
      {/* One control, and only when the tenant has more than one place to lose
          stock from. The screen was deliberately simplified to 26 controls
-         (estabilidad 1.septies), so this appears for the tenants who need it
+         (stability 1.septies), so this appears for the tenants who need it
          and for nobody else — and without it the write lands on `principal`
          whatever the buyer meant (11.8). */}
      {warehouses.length > 1 && (
@@ -2024,7 +2024,7 @@ export default function InventoryPage() {
  // page header ABOVE the warehouse selector and stayed enabled with a tab
  // open. The buyer read "Norte needs 40", downloaded a file saying 150, and
  // `logPOGeneration` wrote that into /pedidos as an order they never saw
- // (estabilidad 11.7 — §3.1 again, on the warehouse axis).
+ // (stability 11.7 — §3.1 again, on the warehouse axis).
  async function handleExport() {
  if (!sessionId) return; setExporting(true)
  try {

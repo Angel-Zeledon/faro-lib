@@ -4,7 +4,7 @@ What a buyer of this source is really buying here is a promise with three
 parts, and each one has a test below that fails if the promise breaks:
 
 1. **Nothing is undocumented.** Every `Settings` field is declared in the
-   registry, so `.env.example` and `docs/configuracion.md` describe the real
+   registry, so `.env.example` and `docs/configuration.md` describe the real
    product rather than the part somebody remembered to write down.
 2. **A missing key turns a feature off, never into an error.** Probes report
    failures instead of raising; consumers ask the resolver and degrade.
@@ -109,7 +109,7 @@ def test_every_probe_name_resolves():
 
 
 def test_generated_docs_are_current():
-    """`.env.example` and docs/configuracion.md are generated. If this fails,
+    """`.env.example` and docs/configuration.md are generated. If this fails,
     run: python -m backend.scripts.gen_config_docs"""
     from backend.scripts.gen_config_docs import (
         CONFIG_DOC, ENV_EXAMPLE, render_config_doc, render_env_example,

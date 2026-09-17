@@ -256,7 +256,7 @@ def dot_is_ambiguous(samples: list[str]) -> list[str]:
     rule for dot-as-thousands, so `["1.250", "980", "12.500"]` imported as 1.25
     and 12.5 — no row errors, the wizard said "1,200 products imported", and
     the whole catalogue dropped to PEDIR_YA with the stock divided by a
-    thousand (estabilidad 11.2). Measured against the real module, not
+    thousand (stability 11.2). Measured against the real module, not
     inferred.
 
     Two things settle the question and leave nothing to ask:

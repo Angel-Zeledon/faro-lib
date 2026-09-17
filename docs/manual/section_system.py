@@ -1,5 +1,5 @@
 SECTION = {
-    "id": "sistema",
+    "id": "system",
     "es": {
         "title": "Primeros pasos y tu cuenta",
         "intro": (

@@ -5,7 +5,7 @@ Every figure and label here was taken from the code that renders it.
 """
 
 SECTION = {
-    "id": "analisis",
+    "id": "analysis",
     "es": {
         "title": "Análisis",
         "intro": (

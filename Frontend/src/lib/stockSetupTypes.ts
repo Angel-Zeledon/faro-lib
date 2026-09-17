@@ -84,7 +84,7 @@ export interface StockImportPreview {
   /** The one thing a file cannot answer about itself: whether the dot in
    *  "1.250" is a thousands separator or a decimal point. When `ambiguous`,
    *  the wizard must ASK — reading it as decimals divides every quantity by a
-   *  thousand and reports success (estabilidad 11.2). */
+   *  thousand and reports success (stability 11.2). */
   number_format?: {
     ambiguous:    boolean
     samples:      string[]
@@ -105,9 +105,9 @@ export interface StockImportResult {
   error_count?:      number
   /** Rows that parsed cleanly and still did not reach the database. They are
    *  inside `errors` too; this is the count, so the screen can separate "your
-   *  file had bad cells" from "we could not save these" (estabilidad 11.34). */
+   *  file had bad cells" from "we could not save these" (stability 11.34). */
   write_failed_rows?: number
   /** Echo of the choice the wizard made: did this import fill gaps only, or
-   *  overwrite what the buyer had corrected by hand (estabilidad 11.9)? */
+   *  overwrite what the buyer had corrected by hand (stability 11.9)? */
   only_fill_missing?: boolean
 }

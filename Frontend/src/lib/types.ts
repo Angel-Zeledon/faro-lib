@@ -989,7 +989,7 @@ export interface WarehouseStatusItem {
    *  fix. `stock_not_recorded_in_this_warehouse` means nobody ever recorded
    *  stock for this SKU HERE — which is not the same as zero, and reading it as
    *  zero is what put every branch of an ERP-synced tenant in PEDIR_YA at full
-   *  reorder quantity (estabilidad 11.5). */
+   *  reorder quantity (stability 11.5). */
   sin_datos_reason?: string | null
   recommended_qty: number | null
   recommended_action: 'order' | 'transfer' | null

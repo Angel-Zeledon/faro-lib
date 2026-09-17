@@ -7,7 +7,7 @@ values and stay in Spanish in both languages.
 """
 
 SECTION = {
-    "id": "operacion",
+    "id": "operation",
     "es": {
         "title": "Operación diaria",
         "intro": (

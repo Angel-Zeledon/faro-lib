@@ -1576,7 +1576,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             raise TrainingDataError("no_models_trained")
 
         # Diagnostics only: keeps this run's per-model accuracy comparable
-        # against the tenant's other sessions (docs/estabilidad.md, "no
+        # against the tenant's other sessions (docs/stability.md, "no
         # registro de métricas de entrenamiento"). Must never fail training.
         try:
             from backend.training.metrics_history import record_training_metrics

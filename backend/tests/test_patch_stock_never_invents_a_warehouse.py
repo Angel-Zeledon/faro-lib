@@ -1,6 +1,6 @@
 """PATCH /inventory/stock/{sku} must update a row that exists, never create one.
 
-The defect this guards (docs/estabilidad.md §1.nonies): the endpoint checked
+The defect this guards (docs/stability.md §1.nonies): the endpoint checked
 existence with `get_stock()` and NO warehouse filter — which finds the row
 wherever it lives — and then wrote through `upsert_stock`, whose fallback for a
 missing warehouse is 'principal'. A SKU that only lived in 'Norte' therefore

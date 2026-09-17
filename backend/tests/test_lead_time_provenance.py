@@ -499,7 +499,7 @@ class TestCascadeReportsWhichLevelWon:
     def test_the_api_no_longer_claims_a_lead_time_nobody_typed(
         self, client, auth_headers, test_tenant,
     ):
-        """The gap this test used to PIN is closed (estabilidad 11.32).
+        """The gap this test used to PIN is closed (stability 11.32).
 
         `SupplierCreate.lead_time_days` was `int = Field(default=15)`, so the
         endpoint handed the service a 15 for every caller that sent none and

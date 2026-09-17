@@ -970,7 +970,7 @@ export default function HoyPage() {
   // was firing before the real response most of the time: the screen showed
   // the rule-based sentence for a beat, then swapped it for the real one the
   // instant the request landed. 11000ms gives headroom over that measured
-  // latency (docs/estabilidad.md, section 7).
+  // latency (docs/stability.md, section 7).
   getMorningNarrative(sessionId, 'distributor', lang)
    // `fallback: true` means the AI was unreachable and the backend answered with
    // its rule-based sentence. That one is written in English for API clients,
@@ -1102,7 +1102,7 @@ export default function HoyPage() {
  // supplier's scale: "Andina: order 500 and save ~1,400" about a price only
  // Norte ever quoted, which is the exact defect `evaluate_cart`'s docstring
  // says it fixed, reintroduced through the supplier-switch path
- // (estabilidad 11.14).
+ // (stability 11.14).
  const approvedKey = approved.map(i => `${i.sku}:${i.qty}:${i.supplier_id ?? ''}`).join('|')
  useEffect(() => {
   if (!sessionId || approved.length === 0) { setPriceBreaks(null); return }

@@ -1,7 +1,7 @@
 """A scheduled retrain, done so it cannot take the product down with it.
 
 `workers/worker.py` used to call `create_job(tenant_id, session_id)` bare for
-every due schedule. That one line had three consequences (estabilidad 11.6):
+every due schedule. That one line had three consequences (stability 11.6):
 
 1. **It retrained the session the whole app was reading.** `runner.py` marks a
    failed run's session FAILED, and `resolve_active_session` only ever returns a

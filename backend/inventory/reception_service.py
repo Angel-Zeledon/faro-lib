@@ -454,7 +454,7 @@ def _still_in_transit(row: dict, lead_time_days: float, now: datetime) -> bool:
 
     Fill rate used to include every `partial` and `not_received` order, summing
     what had arrived against the FULL ordered quantity with no notion of a
-    delivery still being on its way (estabilidad 11.12). A supplier with two
+    delivery still being on its way (stability 11.12). A supplier with two
     half-delivered orders, both on schedule, printed **50%** — presented as a
     performance verdict, with the one who had shorted nothing reading worst on
     the page.

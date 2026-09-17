@@ -265,7 +265,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
               says whether that is 1250 or 1.25. Faro used to pick 1.25 in
               silence: no row errors, "1,200 products imported", and the whole
               catalogue in PEDIR_YA with every quantity divided by a thousand
-              (estabilidad 11.2). Asked in the file's own numbers, because
+              (stability 11.2). Asked in the file's own numbers, because
               nobody should need to know what a thousands separator is. */}
           {numberQuestion && (
             <div style={{
@@ -343,7 +343,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
               `only_fill_missing` and `_fields_to_fill` existed precisely so "a
               lead time corrected by hand in March is not silently reverted by
               April's ERP export" — and the only caller passing True was a test
-              (estabilidad 11.9). */}
+              (stability 11.9). */}
           <label style={{
             marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 8,
             fontSize: 12.5, color: 'var(--text)', cursor: 'pointer',

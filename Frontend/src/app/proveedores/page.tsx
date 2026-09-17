@@ -130,7 +130,7 @@ interface SupplierForm {
  * supplier who declared nothing. Three backend call sites gate on
  * `lead_time_set_by` precisely to keep Faro's own assumption from being
  * reported as the supplier's promise; a pre-filled field defeated all three
- * (estabilidad 11.32).
+ * (stability 11.32).
  *
  * Empty is not missing information: the planner falls back to the same default
  * it always did. What changes is that the product no longer claims somebody

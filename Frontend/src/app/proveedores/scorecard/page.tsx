@@ -139,7 +139,7 @@ function ScorecardTable({ rows, alerts }: {
                       window says so. The metric used to include every
                       half-delivered order whatever its deadline, so a supplier
                       with two on-schedule deliveries printed 50% as a
-                      performance verdict (estabilidad 11.12); now those orders
+                      performance verdict (stability 11.12); now those orders
                       wait, and "waiting" and "never bought from them" must not
                       look the same. */}
                   {row.fill_rate === null && (row.orders_in_transit ?? 0) > 0 ? (

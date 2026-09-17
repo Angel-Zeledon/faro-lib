@@ -152,7 +152,7 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                       can fix: nobody ever recorded stock for this SKU here. It
                       used to be read as zero, which is how an ERP-synced tenant
                       was told to buy a full reorder for every branch while the
-                      goods sat in principal (estabilidad 11.5). */}
+                      goods sat in principal (stability 11.5). */}
                   {row.sin_datos_reason === 'stock_not_recorded_in_this_warehouse' && (
                     <div style={{ fontSize: 11, color: C.dim, marginTop: 3, maxWidth: 260,
                                   lineHeight: 1.4 }}>

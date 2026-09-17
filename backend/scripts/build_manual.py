@@ -70,8 +70,8 @@ CONTENT_W = PAGE_W - 2 * MARGIN
 # The chapter order of the manual, which is NOT the order the files happen to
 # sit in: a reader starts by getting the product running, then works the daily
 # loop, then feeds it data, then analyses, and only then touches the settings.
-# `section_sistema` carries both ends of that arc, so it is split in two.
-CHAPTER_ORDER = ["sistema:first", "operacion", "datos", "analisis", "sistema:rest"]
+# `section_system` carries both ends of that arc, so it is split in two.
+CHAPTER_ORDER = ["system:first", "operation", "data", "analysis", "system:rest"]
 
 STRINGS = {
     "es": {

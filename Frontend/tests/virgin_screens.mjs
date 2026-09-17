@@ -45,7 +45,7 @@ page.on('response', r => {
 page.on('console', m => {
   if (m.type() !== 'error') return
   const t = m.text()
-  // Known and already recorded in docs/inventario-pantallas.md: a hydration
+  // Known and already recorded in docs/screen-inventory.md: a hydration
   // warning on <html data-theme>, and an RSC prefetch artifact of hard
   // navigation, which a real user clicking <Link> never produces.
   if (t.includes('data-theme') || t.includes('RSC payload')) return

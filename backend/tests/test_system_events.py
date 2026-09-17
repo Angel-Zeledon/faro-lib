@@ -379,7 +379,7 @@ class TestTheRealCallSitesRecord:
         self, client, auth_headers, test_tenant,
     ):
         """Not the warehouse the form sent — the one the service resolved.
-        Those differ (estabilidad 11.8) and the history has to say where the
+        Those differ (stability 11.8) and the history has to say where the
         units actually left from."""
         from backend.inventory import service as inv_svc
         tid = test_tenant["id"]

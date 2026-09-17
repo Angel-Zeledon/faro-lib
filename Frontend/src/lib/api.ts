@@ -979,7 +979,7 @@ export const exportInventoryPO = async (
   // `warehouse` follows the tab the buyer has open. Without it the endpoint
   // re-derives the list at network level, so the file disagreed with the
   // screen — and the order logged below was the one the file said
-  // (estabilidad 11.7).
+  // (stability 11.7).
   const wh = warehouse ? `&warehouse=${encodeURIComponent(warehouse)}` : ''
   await downloadBlob(
     `/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}${wh}`,
@@ -1076,7 +1076,7 @@ export const evaluatePriceBreaks = (
   // `supplier_id` is the supplier the buyer has on the line right now. Without
   // it the backend reads the supplier off the status row, so a line whose
   // supplier was switched kept being quoted the previous one's ladder
-  // (estabilidad 11.14).
+  // (stability 11.14).
   items: { sku: string; quantity: number; supplier_id?: string }[],
 ) =>
   request<import('./types').PriceBreakEvaluation>(
@@ -1309,7 +1309,7 @@ export const listSuppliers    = (opts?: RequestOpts) =>
 /** What the form may send. `lead_time_days` is nullable on the way IN and a
  *  number on the way out: leaving it empty is how a supplier is created
  *  WITHOUT declaring a lead time, which is what stops the scorecard printing
- *  "DECLARADO 15d" for a supplier who declared nothing (estabilidad 11.32). */
+ *  "DECLARADO 15d" for a supplier who declared nothing (stability 11.32). */
 export type SupplierInput =
   Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active' | 'lead_time_days'>
   & { lead_time_days: number | null }

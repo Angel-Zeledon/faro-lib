@@ -19,7 +19,7 @@
 # and Frontend/src/i18n/stockSetup.ts, in each language's own catalogue.
 
 SECTION = {
-    "id": "datos",
+    "id": "data",
     "es": {
         "title": "Tus datos",
         "intro": (

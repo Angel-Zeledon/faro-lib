@@ -398,7 +398,7 @@ def test_an_excel_bomb_does_not_take_the_process_with_it(tmp_path):
     # are acceptable. Measured 2026-08-22: 140 s and ~700 MB to return twenty
     # rows, against under a second for the same data as CSV — the Excel branch
     # reads the entire sheet before slicing. That gap is a finding in
-    # docs/estabilidad.md, not something this test blesses; what it catches here
+    # docs/stability.md, not something this test blesses; what it catches here
     # is the day it gets even worse.
     assert peak_mb < 1200, (
         f"an Excel preview of 200k rows peaked at {peak_mb:.0f} MB — the Excel "

@@ -694,7 +694,7 @@ def bulk_upsert(
     The count already shrank for those rows, so the number was never a lie —
     but "83 products imported" after a clean 120-row preview was the only
     signal the user got, and it named neither the 37 rows nor a reason
-    (estabilidad 11.34). The caller decides what to do with them; passing
+    (stability 11.34). The caller decides what to do with them; passing
     nothing keeps the old behaviour for every other caller.
 
     `source` defaults to 'file' because that is what this function is for — a
@@ -772,7 +772,7 @@ def _record_snapshot(
 
     `warehouse` is the location this level belongs to. It was missing until
     2026-09-16, and without it one SKU's rows were a single interleaved series
-    across every warehouse (estabilidad 11.15). Rows written before that carry
+    across every warehouse (stability 11.15). Rows written before that carry
     NULL and are read as tenant-wide totals, which is what they are.
 
     `conn`: see upsert_stock's docstring.
@@ -1954,7 +1954,7 @@ def get_inventory_status_by_warehouse(
     #
     # The second shape is what an ERP sync produces today: `fetch_stock` in both
     # providers hardcodes `warehouse="principal"` while `fetch_sales` reads the
-    # real branch off each invoice (estabilidad 11.5). Every branch then has
+    # real branch off each invoice (stability 11.5). Every branch then has
     # demand and no stock row, and `current_stock or 0.0` turned "we were never
     # told" into "there are none" — PEDIR_YA at full reorder quantity for the
     # entire catalogue at every branch, with the goods sitting in principal.

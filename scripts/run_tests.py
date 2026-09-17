@@ -186,7 +186,7 @@ def main() -> int:
 
     print("\nAll green — for what is covered.")
     print("Not covered by anything above: the browser. No end-to-end test exists;")
-    print("every screen walk in docs/inventario-pantallas.md was done by hand.")
+    print("every screen walk in docs/screen-inventory.md was done by hand.")
     return 0
 
 

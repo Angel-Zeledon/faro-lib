@@ -127,7 +127,7 @@ def _header_values(sql: str, params: tuple) -> dict:
 
 
 def _no_db_transaction(monkeypatch, roi_service):
-    """The header and its lines now commit as one unit (estabilidad 11.33), so
+    """The header and its lines now commit as one unit (stability 11.33), so
     `log_po_generation` opens a transaction and threads its connection through
     every write. These tests are offline: there is no connection to open, and
     the sentinel is only there to be passed around."""

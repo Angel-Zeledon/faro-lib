@@ -174,7 +174,7 @@ def build(lang: str, chapters: dict[str, dict], font: str, bold: str, uni: bool)
             flow.extend(_topic(topic, st, uni, labels))
         flow.append(PageBreak())
 
-    out = OUT_DIR / f"faro-tecnico-{lang}.pdf"
+    out = OUT_DIR / f"faro-technical-{lang}.pdf"
     doc = Manual(str(out), lang, font, bold, title=cover["title"], author="Faro")
     doc.multiBuild(flow)
     return out

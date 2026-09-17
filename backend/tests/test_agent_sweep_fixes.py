@@ -1,4 +1,4 @@
-"""The backend half of the 2026-09-15 parallel-agent sweep (docs/estabilidad.md §11).
+"""The backend half of the 2026-09-15 parallel-agent sweep (docs/stability.md §11).
 
 Every test here was written against a defect that was live, and every one of
 them is red on the code that shipped the day before. They are grouped by the

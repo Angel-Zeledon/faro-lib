@@ -217,7 +217,7 @@ def _run_due_scheduled_jobs(now: datetime) -> int:
             # NOT `create_job(tenant_id, session_id)`. That trained the session
             # the whole app was reading, validated nothing, and had no dedupe —
             # an engine error at 3 a.m. marked the serving session FAILED and
-            # /hoy, the semáforo and the digest went quiet (estabilidad 11.6).
+            # /hoy, the semáforo and the digest went quiet (stability 11.6).
             # Each run now trains a NEW session built from this one, and only
             # replaces what the buyer reads once it succeeds.
             from backend.sessions import retrain_service

@@ -13,8 +13,8 @@ export const stockSetupEs = {
   // ── Page ────────────────────────────────────────────────────────────────
   'setupStock.page.title': 'Configurar mi inventario',
   'setupStock.page.subtitle': 'Empieza por los productos que mueven tu plata. No necesitas configurarlos todos.',
-  // Why the screen exists at all. Without stock, costo y días de entrega no hay
-  // semáforo: Faro sabe cuánto vas a vender, pero no con qué lo comparás.
+  // Why the screen exists at all. With no stock, cost and lead time there is no
+  // semáforo: Faro knows how much you will sell, but not what to compare it to.
   // Says exactly which of the three blocks the semáforo and which only makes it
   // wrong. It used to promise all three blocked it — but a product with no lead
   // time DOES appear, planned on an assumed 15 days, which is how an importer

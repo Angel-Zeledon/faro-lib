@@ -4,7 +4,7 @@
  * `smoke.mjs` covers layout/rendering regressions but logs in by injecting a
  * token directly (`fetch('/api/auth/login')`) — it never drives the login
  * FORM, and it never touches the upload wizard at all. Those are exactly the
- * two paths `docs/estabilidad.md` names as the most expensive to re-walk by
+ * two paths `docs/stability.md` names as the most expensive to re-walk by
  * hand after every change: signing in, and getting a sales file through
  * ingestion into the column-mapping step.
  *

@@ -163,7 +163,7 @@ different readers:
 | Manual | For | Source | Rebuild |
 |---|---|---|---|
 | `faro-manual-{es,en}.pdf` (62 pp.) | the purchasing manager: screen by screen, what to click, what the numbers mean | `docs/manual/` | `python -m backend.scripts.build_manual` |
-| `faro-tecnico-{es,en}.pdf` (19 pp.) | **you**: architecture, algorithms, the exact formulas, and what each number does NOT mean | `docs/tech/` | `python -m backend.scripts.build_tech_manual` |
+| `faro-technical-{es,en}.pdf` (19 pp.) | **you**: architecture, algorithms, the exact formulas, and what each number does NOT mean | `docs/tech/` | `python -m backend.scripts.build_tech_manual` |
 
 The user manual is built into `Frontend/public/` and is downloadable from the
 landing page in the visitor's language. The technical one is built into

@@ -19,7 +19,7 @@ Concretely:
 - **Improvements found while testing go on a list, not into the code.** Report
   them; let the owner choose. A one-off "implement those" is permission for
   those, and does not lift this rule for the next idea. **That list is
-  `docs/estabilidad.md`** — the single live backlog and the order the work runs
+  `docs/stability.md`** — the single live backlog and the order the work runs
   in. `docs/screen-inventory.md` is the table it draws from.
 - Verify in a browser as a user, not only with tests. See the `running-faro`
   skill for the environment traps and `silent-failures` for the review lens.
@@ -134,7 +134,7 @@ The dedicated sweep has run: identifiers, DB columns and API fields are English 
 **One registry owns every knob**: `backend/service_config/registry.py` declares
 all 47 `Settings` fields with what each does, whether it is required, secret or
 panel-editable, and **what stops working without it**. `backend/.env.example`
-and `docs/configuracion.md` are GENERATED from it
+and `docs/configuration.md` are GENERATED from it
 (`python -m backend.scripts.gen_config_docs`, `--check` in the suite) — edit the
 registry, never those files. A new `Settings` field with no descriptor turns
 `test_registry_covers_every_setting` red, which is the point.
