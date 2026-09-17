@@ -1579,13 +1579,33 @@ export default function HoyPage() {
            onRefresh={() => {
             if (!sessionId) return
             setLoadingNarrative(true)
+            // The initial load has an 11s ceiling; this had none. `.finally`
+            // cannot fire on a promise that never settles, so a DeepSeek that
+            // hangs left the spinner turning with no way out — and this is a
+            // button someone presses precisely when the answer looks stale.
+            //
+            // Same ceiling, different landing: the initial load has nothing on
+            // screen and falls back to the rule-based sentence, while a
+            // refresh already shows a good narrative. Replacing that with a
+            // weaker one is a downgrade nobody asked for, so this stops the
+            // spinner and keeps what is there.
+            let timedOut = false
+            const timeout = setTimeout(() => {
+             timedOut = true
+             setLoadingNarrative(false)
+            }, 11000)
             getMorningNarrative(sessionId, 'distributor', lang)
              // Same rule as the initial load: the backend's rule-based sentence
              // is written for an API client, not for this screen, so "Refresh"
              // must not swap the local one back out for it.
-             .then(data => setNarrative(
-              data.fallback && briefing ? buildFallbackNarrative(briefing) : data))
-             .catch(() => {}).finally(() => setLoadingNarrative(false))
+             .then(data => {
+              // A late answer after the ceiling must not repaint the card
+              // under the reader — they have moved on by then.
+              if (timedOut) return
+              setNarrative(data.fallback && briefing ? buildFallbackNarrative(briefing) : data)
+             })
+             .catch(() => {})
+             .finally(() => { clearTimeout(timeout); if (!timedOut) setLoadingNarrative(false) })
            }}
           />
          </div>
