@@ -2699,8 +2699,12 @@ def morning_briefing(
 
 @router.get("/product-types")
 def list_product_types(user: CurrentUser = Depends(get_current_user)):
-    """Returns the list of valid product types and their labels."""
-    return ok(bom_svc.PRODUCT_TYPES)
+    """The valid product types, as the English keys the frontend translates.
+
+    It used to return `{key: Spanish label}`, which put backend-authored copy
+    on an English-mode screen. The caller renders `enum.product_type_<key>`.
+    """
+    return ok(list(bom_svc.PRODUCT_TYPES))
 
 
 @router.patch("/stock/{sku}/product-type")

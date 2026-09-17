@@ -4,6 +4,15 @@ import ConditionalShell from '@/components/layout/ConditionalShell'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
 
+/**
+ * Rendered on the server, where the user's language is unknowable — it lives
+ * in this browser's localStorage. So these are the *default* language's
+ * strings (Spanish, matching `LanguageProvider`'s initial state), which is
+ * also what a crawler in the primary market should see. `LanguageContext`
+ * corrects the title and description after hydration for an English user;
+ * the two must be kept in step with `app.title` / `app.description` in
+ * `i18n/translations.ts`.
+ */
 export const metadata: Metadata = {
   title: 'Faro — Inventario Inteligente',
   description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',

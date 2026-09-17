@@ -795,8 +795,11 @@ export const getUserPermissions = (id: string) =>
   request<{ user_id: string; permissions: string[]; all_permissions: string[] }>('GET', `/users/${id}/permissions`)
 
 // ── Production / BOM ──────────────────────────────────────────────────────────
+/** The English keys only — render them with `enumLabels.productTypeLabel`.
+ *  This returned `{key: Spanish label}` until the backend stopped authoring
+ *  copy for a screen that renders in two languages. */
 export const getProductTypes = () =>
-  request<Record<string, string>>('GET', '/inventory/product-types')
+  request<import('./types').ProductType[]>('GET', '/inventory/product-types')
 
 export const setProductType = (sku: string, productType: string) =>
   request<import('./types').InventoryStock>(

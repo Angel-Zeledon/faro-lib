@@ -28,6 +28,22 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     setLangState(saved)
   }, [])
 
+  // The tab title and meta description are a `metadata` export in
+  // `app/layout.tsx`, which Next renders on the server — where the chosen
+  // language is unknowable, because it lives in this browser's localStorage.
+  // So that export stays Spanish (the app's default, and the right thing for
+  // a crawler in the primary market) and an English user's tab is corrected
+  // here, after hydration. Without this the browser tab said
+  // "Faro — Inventario Inteligente" on an otherwise fully English app.
+  useEffect(() => {
+    const dict = translations[lang] as Record<string, string>
+    const title = dict['app.title']
+    const description = dict['app.description']
+    if (title) document.title = title
+    const meta = document.querySelector('meta[name="description"]')
+    if (meta && description) meta.setAttribute('content', description)
+  }, [lang])
+
   const setLang = useCallback((l: Lang) => {
     setLangState(l)
     localStorage.setItem('lang', l)

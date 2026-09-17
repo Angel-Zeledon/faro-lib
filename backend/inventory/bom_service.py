@@ -12,15 +12,23 @@ from backend.db.connection import query, execute
 
 log = logging.getLogger(__name__)
 
-# Product type labels
-PRODUCT_TYPES = {
-    'finished_good':  'Producto terminado',
-    'semi_finished':  'Semiterminado',
-    'component':      'Componente',
-    'raw_material':   'Materia prima',
-    'packaging':      'Empaque',
-    'service':        'Servicio',
-}
+# The closed vocabulary of product types.
+#
+# This used to be a dict mapping each key to a Spanish label, and
+# `GET /inventory/product-types` returned that dict verbatim — so the backend
+# shipped Spanish copy to a frontend that renders in two languages, and an
+# English-mode user got Spanish. The labels live in the frontend's i18n
+# catalogue now (`enum.product_type_*`, resolved by `productTypeLabel`),
+# keyed by these English values. The backend owns the vocabulary; the
+# frontend owns how it reads.
+PRODUCT_TYPES = (
+    'finished_good',
+    'semi_finished',
+    'component',
+    'raw_material',
+    'packaging',
+    'service',
+)
 
 
 # ── BOM CRUD ──────────────────────────────────────────────────────────────────

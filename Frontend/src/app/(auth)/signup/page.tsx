@@ -188,7 +188,7 @@ function SignupPageContent() {
                 {t('auth.signup_title')}
               </h1>
               <p style={{ fontSize: 14.5, color: '#71717a', margin: 0, lineHeight: 1.55 }}>
-                Faro — Inventario Inteligente
+                {t('auth.signup_tagline')}
               </p>
             </div>
 

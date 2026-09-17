@@ -117,3 +117,13 @@ export const timezoneLabel = (
   const label = t(key)
   return label === key ? (backendLabel || zone) : label
 }
+
+/**
+ * finished_good / semi_finished / component / raw_material / packaging / service
+ *
+ * `GET /inventory/product-types` used to ship the Spanish label with the key,
+ * which is backend-authored copy on a screen that renders in two languages.
+ * The vocabulary is the backend's; the wording is this catalogue's.
+ */
+export const productTypeLabel = (t: Translate, v: string | null | undefined) =>
+  lookup(t, 'product_type', v)
