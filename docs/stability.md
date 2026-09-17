@@ -1690,17 +1690,46 @@ Showing it (in `/historial` or `/pronosticos`, whichever) is exactly the kind of
 new capability this document asks to be announced before building — the table
 exists so that decision already has data to work with.
 
-### c) `storage/` has no declared backup — **UNFIXED, owner's decision**
+### c) `storage/` has no declared backup — **DECIDED 2026-09-17, NOT BUILT**
 
 Uploaded datasets and trained-model artifacts live on local disk under `storage/`
 (gitignored, confirmed in `CLAUDE.md`). There is no backup routine in the repo:
 if the disk corrupts or the container is recreated without the volume, both what
 the user uploaded and what training produced are lost — not just files, whole
-sessions are orphaned. It needs an owner's decision on **the destination** (where
-it is copied to) and **the frequency**, because the two reasonable options are of
-different sizes: a scheduled backup script (cheap, touches no business code) or
-migrating storage to something S3-compatible (larger, touches how files are read
-and written throughout `backend/`).
+sessions are orphaned.
+
+**The owner's decision (2026-09-17): object storage, and all three major clouds
+— Azure Blob Storage, AWS S3, and Google Cloud Storage.** That settles the
+question this entry used to leave open. It is the larger of the two options that
+were on the table, and it was chosen over a scheduled copy script on purpose: a
+backup script answers "can I recover?" and object storage answers "was it ever
+only in one place?". A buyer running this on their own infrastructure keeps
+their files in their own cloud account, which is also the answer to where the
+data lives when they ask.
+
+**Not started, and deliberately so** — it was scoped and deferred the same day.
+What a future session needs to know before opening the first file:
+
+- **It is a write of a storage BOUNDARY, not three integrations.** The shape to
+  copy is `backend/dataframes/` — one module every caller goes through, plain
+  return types, no vendor object crossing out of it. Three drivers behind one
+  interface; nothing above it learns which cloud is configured.
+- **Local disk stays the default and stays supported.** A virgin install must
+  still boot with three environment variables and no cloud account
+  (`test_virgin_install.py` is the guard). This is a new backend for the same
+  boundary, never a replacement.
+- **It belongs in `service_config/registry.py`** like every other knob, so it
+  reaches `.env.example`, `docs/configuration.md` and the `/instalacion` panel
+  for free, and so a missing credential reports itself off and names what is
+  lost instead of 500ing — the rule every optional service already follows.
+- **Credentials are secrets**: Fernet at rest, last four characters on read,
+  the same treatment the integration credentials already get.
+- **The migration of existing files is its own question.** An instance with a
+  populated `storage/` needs a one-way copy step before the switch means
+  anything, and a half-migrated instance must not silently read empty.
+- **Size it honestly before starting.** `STORAGE_PATH` is read across
+  `backend/`, and every read and write on that path is in scope. The survey of
+  those call sites is the first task, not an afterthought.
 
 ---
 ## 7. Walk of /compras, /pedidos, /inventario (2026-09-01)
