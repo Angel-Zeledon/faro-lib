@@ -21,6 +21,7 @@ from backend.training.job_service import mark_completed, mark_failed, update_pro
 from backend.training.progress_broadcaster import broadcaster
 from backend.sessions.service import force_status
 from backend.api.v1.webhooks import fire_webhooks
+from backend.inventory.calendar_catalog import DEFAULT_COUNTRY as DEFAULT_HOLIDAY_COUNTRY
 
 log = logging.getLogger(__name__)
 
@@ -151,7 +152,10 @@ def build_engine_config(tenant_id: str, session_id: str) -> dict:
             "ewm_spans": features_cfg.get("ewm_spans", []),
             "fourier_periods": features_cfg.get("fourier_periods", []),
             "fourier_K": features_cfg.get("fourier_K", 2),
-            "holiday_country": features_cfg.get("holiday_country", "CO"),
+            # A stored country (an explicit choice) always wins; only a config
+            # that never named one falls to the default — Costa Rica since
+            # 2026-09-30 (owner's decision), Colombia before.
+            "holiday_country": features_cfg.get("holiday_country") or DEFAULT_HOLIDAY_COUNTRY,
         },
         "models": models_dict,
         "training": {

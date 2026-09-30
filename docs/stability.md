@@ -4420,6 +4420,13 @@ below.
 * The holiday calendar defaults to Colombia for a product whose anchor market is
   Costa Rica, and signup never asks the country. The tenant timezone is already
   stored and could derive it — but either way it changes a default.
+  **[DONE 2026-09-30] default is Costa Rica, owner's decision.** Fixed `CR` for
+  everyone, not derived from the timezone: `FeaturesConfigRequest`, the runner's
+  fallback, `FeaturesConfig`, `HolidayCalendar`'s `DEFAULT_COUNTRY`, the
+  `/ventas` country picker and the demo seed. Defaults only — a session whose
+  `features_cfg` stored `"CO"` keeps it. A session that never stored a country
+  (created before the picker existed, or by `/demo/quickstart`) trains on `CR`
+  from its next run. The commercial-events catalog already defaulted to `CR`.
 
 ### The limit of this review
 

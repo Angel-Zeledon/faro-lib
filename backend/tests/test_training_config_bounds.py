@@ -206,7 +206,7 @@ class TestOnlyModelsTheEngineCanTrainAreAccepted:
 
 class TestTheHolidayCalendarCountryMustExist:
 
-    @pytest.mark.parametrize("country", ["CO", "MX", "PE", "CL", "AR", "US"])
+    @pytest.mark.parametrize("country", ["CR", "CO", "MX", "PE", "CL", "AR", "US"])
     def test_the_countries_the_product_sells_into_are_accepted(
         self, client, auth_headers, session_id, country,
     ):
@@ -225,10 +225,20 @@ class TestTheHolidayCalendarCountryMustExist:
         assert resp.status_code == 200
         assert _cfg(session_id, "features_cfg")["holiday_country"] == "MX"
 
-    def test_omitting_the_country_still_defaults_to_colombia(
+    def test_omitting_the_country_defaults_to_costa_rica(
         self, client, auth_headers, session_id,
     ):
+        """Owner's decision 2026-09-30: the anchor market is the default."""
         resp = _features(client, auth_headers, session_id, WIZARD_FEATURES)
+        assert resp.status_code == 200
+        assert _cfg(session_id, "features_cfg")["holiday_country"] == "CR"
+
+    def test_an_explicit_colombia_is_stored_as_colombia(
+        self, client, auth_headers, session_id,
+    ):
+        """The default changed; an explicit choice of the old default did not."""
+        resp = _features(client, auth_headers, session_id,
+                         {**WIZARD_FEATURES, "holiday_country": "CO"})
         assert resp.status_code == 200
         assert _cfg(session_id, "features_cfg")["holiday_country"] == "CO"
 
@@ -250,13 +260,13 @@ class TestTheHolidayCalendarCountryMustExist:
                          {**WIZARD_FEATURES, "holiday_country": country})
         assert resp.status_code == 422, f"{label} was accepted"
 
-    def test_an_empty_country_does_not_silently_become_colombia(
+    def test_an_empty_country_does_not_silently_become_the_default(
         self, client, auth_headers, session_id,
     ):
-        """`HolidayCalendar` reads "" as `country or DEFAULT_COUNTRY` → "CO".
+        """`HolidayCalendar` reads "" as `country or DEFAULT_COUNTRY` → "CR".
 
         A Mexican distributor who cleared the field would silently get a
-        Colombian calendar. Omitting the field is how you ask for the default;
+        Costa Rican calendar. Omitting the field is how you ask for the default;
         erasing it is a question, and the API asks it back.
         """
         first = _features(client, auth_headers, session_id,

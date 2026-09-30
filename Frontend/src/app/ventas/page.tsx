@@ -596,10 +596,10 @@ function QuickStartPageContent() {
  const [sessionName, setSessionName] = useState('')
  const [horizonDays, setHorizonDays] = useState<number>(28)
  const [granularity, setGranularity] = useState<Granularity>('auto')
- // Defaults to Colombia because that is what every session silently used before
- // this control existed — changing the default as well as adding the control
- // would move existing tenants' holiday calendar without them asking.
- const [holidayCountry, setHolidayCountry] = useState('CO')
+ // Defaults to Costa Rica, the anchor market (owner's decision, 2026-09-30).
+ // It was Colombia before, only because the first calendar was Colombian.
+ // A default for a NEW run; a session that already stored a country keeps it.
+ const [holidayCountry, setHolidayCountry] = useState('CR')
 
  // Inspection result
  const [inspection, setInspection] = useState<InspectionResult | null>(null)
@@ -964,7 +964,7 @@ function QuickStartPageContent() {
  setStep(3)
 
  // POST features config. `holiday_country` decides whose public holidays the
- // model learns from; without it every tenant trained on Colombia's.
+ // model learns from; without it every tenant trained on one fixed calendar.
  await setFeatures(sessionId, {
  lags: [1, 7, 14, 28],
  rolling: [7, 14, 28],

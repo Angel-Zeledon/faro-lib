@@ -15,7 +15,7 @@ pre-verified — with business-consistent data across the whole product:
   * PO history in every state — pending, sent, partially received, fully
     received — created through the real ROI + reception services.
   * A couple of shrinkage (merma) records and a seeded LatAm calendar
-    (Colombia quincenas + a manual Semana Santa event).
+    (the Costa Rica catalog + a manual Semana Santa event).
 
 Everything routes through the real services so invariants hold; the script
 asserts the key ones (no negative stock, no over-receipt, coherent signals)
@@ -523,7 +523,7 @@ def _seed_shrinkage(tenant_id: str, user_id: str) -> None:
 def _seed_calendar(tenant_id: str) -> None:
     from backend.inventory import service as inv
     years = [date.today().year, date.today().year + 1]
-    inv.seed_calendar_events(tenant_id, country="CO", years=years)
+    inv.seed_calendar_events(tenant_id, country="CR", years=years)
     # A manual event on top of the catalog so the simulator has an obvious hook.
     y = date.today().year + (0 if date.today().month <= 3 else 1)
     inv.create_event(tenant_id, {
