@@ -4445,7 +4445,37 @@ below.
   equipo técnico" block near the bottom (`landing.ts` `tech`). No new figures.
 * Splitting `/pronosticos` into a buyer half and a technical half behind one
   toggle. The right change, and the only one here that costs real engineering:
-  the file is 3,444 lines.
+  the file is 3,444 lines. **[DONE 2026-09-30] buyer/technical toggle** —
+  approved by the owner. One segmented control at the top of the page, "Vista
+  comprador" / "Vista técnica", default buyer, remembered per viewer in
+  `localStorage` (every access in try/catch) and shareable as `?view=tech`. It
+  replaces the tab-bar "Ver el detalle técnico" switch, which already hid the
+  model chips, five stat tiles and the Metrics/Quality tabs.
+  - **Buyer view:** session picker, SKU search and cards (signal + reliability),
+    the chart with its band, granularity, line/bar, full screen and the per-SKU
+    export; the three plain tiles; a new "Lo que se espera vender" strip — the
+    next 4 forecast points with their P10–P90 range, straight from the API, and
+    a "Ver qué pedir" link to the Inventory tab; the engine's quality warnings
+    under the SKU header; the gap/outlier notices; the Forecast, Pattern and
+    Inventory tabs; run warnings and the policy backtest panel.
+  - **Technical view:** everything above minus the outlook strip, plus what the
+    buyer view drops: the header's accuracy, row count and quality %; the
+    per-model sparklines on the cards; model chips and overlays; the five
+    technical tiles; the chart footer's frequency/granularity/points/model; the
+    Metrics and Quality tabs (and the detailed statistics); "Comparar" and
+    "Exportar todos los SKUs". Nothing was deleted.
+  - Leaving the technical view closes compare mode; an all-SKUs export already
+    running stays on screen until it finishes, so its failure count is never
+    hidden.
+  - The page went from 3,505 to ~750 lines: its panels moved unchanged to
+    `Frontend/src/components/forecast/`. No API call or backend change.
+  - Tour is now `skus-v3` (replays once): a step for the toggle, one for the
+    outlook strip, and the technical-only steps (models, compare) moved to the
+    end and say where they live. `TopBar.PATHS_WITH_OWN_SESSION_PICKER` was
+    already `['/pronosticos']` (defect 2 above) — checked, nothing to do.
+  - **Open:** not walked in a browser. And `docs/manual/section_analysis.py`
+    (the PDF manual) still describes the old "Ver el detalle técnico" switch;
+    it needs its text updated and the PDF rebuilt.
 * The holiday calendar defaults to Colombia for a product whose anchor market is
   Costa Rica, and signup never asks the country. The tenant timezone is already
   stored and could derive it — but either way it changes a default.
