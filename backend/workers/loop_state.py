@@ -39,8 +39,9 @@ log = logging.getLogger(__name__)
 # cannot quietly create a second, permanently-empty row.
 INVENTORY_ALERTS = "inventory_alerts"
 MONTHLY_OVERSTOCK = "monthly_overstock"
+OPERATOR_DIGEST = "operator_digest"
 
-LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK)
+LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK, OPERATOR_DIGEST)
 
 # How late a missed boundary may still be run.
 #
@@ -54,6 +55,9 @@ MONTHLY_CATCHUP = timedelta(days=3)
 
 STATUS_COMPLETED = "completed"
 STATUS_SKIPPED = "skipped"
+# The pass ran and could not do its job (e.g. the operator digest reached only
+# some of its recipients). Recorded so /health and the next digest show it.
+STATUS_FAILED = "failed"
 
 
 def last_boundary(loop: str) -> Optional[datetime]:
