@@ -15,6 +15,12 @@
  * do — the fifteen invented result percentages that used to sit in `CASES` were
  * removed on 2026-08-23 for exactly that reason, and they do not come back in
  * either language.
+ *
+ * Audience (owner's call, 2026-09-30): the page speaks to the BUYER — the
+ * person who decides purchases at a distributor — in outcomes: what to order
+ * today, how much, from whom, what money is stuck, what arrives when. Model
+ * competition, backtesting, ABC-XYZ and the API/MCP are named only in `tech`,
+ * the compact section near the bottom. Keep new copy on that side of the line.
  */
 import type { Lang } from './translations'
 
@@ -56,8 +62,12 @@ export interface LandingCopy {
     limits: [string, string, string][]
     closing: string; ctaSignup: string; ctaWhatsapp: string; ctaEmail: string
   }
-  benefits: string[]
-  includes: { tag: string; title: string; lead: string; rolesTitle: string; roles: Role[]; itemsTitle: string; items: Include[]; isNew: string; tail: string; tailLink: string }
+  benefits: { tag: string; title: string; lead: string; items: string[] }
+  includes:{ tag: string; title: string; lead: string; rolesTitle: string; roles: Role[]; itemsTitle: string; items: Include[]; isNew: string; tail: string; tailLink: string }
+  // The one place the technical capabilities are named. Deliberately below the
+  // fold and compact: the page speaks to the buyer (owner's call, 2026-09-30);
+  // this block exists for whoever the buyer forwards the link to.
+  tech: { tag: string; title: string; lead: string; items: Titled[] }
   tour: { title: string; lead: string; chapters: TourChapter[] }
   manual: { title: string; body: string; cta: string; note: string }
   faq: { tag: string; title: string; lead: string; cta: string; items: Faq[] }
@@ -116,17 +126,17 @@ const es: LandingCopy = {
     company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['mailto:hola@usefaro.io', 'Contacto']],
   },
   hero: {
-    eyebrow: 'Para distribuidores, retail y manufactura',
-    title1: 'Deja de gestionar el inventario',
-    title2: 'a base de intuición.',
-    lead: 'StockAI analiza tus ventas históricas y genera pronósticos de demanda por producto — para que sepas cuánto comprar, cuándo comprar y qué productos están en riesgo de quiebre.',
+    eyebrow: 'Para quien decide las compras',
+    title1: 'Qué pedir hoy, cuánto',
+    title2: 'y a qué proveedor.',
+    lead: 'StockAI lee tus ventas y tu inventario y cada mañana te dice qué productos se van a quebrar, cuántas unidades pedir de cada uno y a quién, cuánto dinero tienes parado en lo que no rota y qué pedidos vienen en camino.',
     cta: 'Empezar gratis con datos de ejemplo',
     frame: 'StockAI · Panel de compras',
   },
   strip: {
-    models: 'Modelos compitiendo por producto',
+    models: 'Estados por producto: pedir ya, pedir pronto, ok o sobrestock',
     deliveries: 'Entregas para aprender el plazo real de un proveedor',
-    skus: 'SKUs por instancia',
+    skus: 'Productos por catálogo con los que se pone a prueba',
     csv: 'Lo único que necesitas para empezar',
   },
   problem: {
@@ -138,18 +148,18 @@ const es: LandingCopy = {
       { title: 'Capital atrapado en sobreinventario', desc: 'Para mayoristas y manufactureros, el exceso de inventario ocupa bodega, consume línea de crédito y en categorías perecederas o de moda, termina en pérdida directa por liquidación.' },
       { title: 'Compras reactivas en lugar de planificadas', desc: 'Comprar cuando el inventario ya está crítico obliga a aceptar condiciones desfavorables: precios spot, fletes de emergencia y tiempos de entrega fuera del ciclo normal.' },
       { title: 'Conocimiento concentrado en una sola persona', desc: 'El comprador más experimentado lleva en la cabeza la estacionalidad, los ciclos del proveedor y las anomalías históricas de cada producto. Ese conocimiento no está en ningún sistema.' },
-      { title: 'Forecasts manuales que no escalan', desc: 'Un analista puede mantener 30 SKUs en Excel con rigor razonable. Con 300 productos los modelos se simplifican. Con 3.000 SKUs, la mayoría se administra por intuición.' },
+      { title: 'Una hoja de cálculo no alcanza para todo el catálogo', desc: 'Con pocos productos, revisar fila por fila funciona. Cuando el catálogo llega a cientos o miles de códigos, la mayoría se termina pidiendo por costumbre: lo mismo del mes pasado, más un poco.' },
     ],
   },
   how: {
     tag: 'Cómo funciona',
-    title: 'De tus datos históricos a decisiones de compra.',
-    lead: 'StockAI transforma el historial de ventas en pronósticos precisos por producto. Sin configuración estadística, sin necesitar un analista dedicado.',
+    title: 'De tu historial de ventas a la orden de compra.',
+    lead: 'Subes lo que ya tienes y StockAI te devuelve la lista de compras. No configuras nada estadístico y no necesitas un analista.',
     steps: [
-      { n: '01', title: 'Carga tu historial de ventas', desc: 'Sube un archivo CSV o Excel con tus ventas. El sistema identifica automáticamente las columnas de fecha, producto y cantidad vendida.' },
-      { n: '02', title: 'Análisis automático por producto', desc: 'StockAI detecta la tendencia, estacionalidad y variabilidad de cada SKU de forma independiente. Sin configuración manual por producto.' },
-      { n: '03', title: 'Pronóstico con intervalos de confianza', desc: 'Genera proyecciones de demanda para cada producto con rangos alto y bajo. Identifica qué SKUs tienen demanda predecible y cuáles son volátiles.' },
-      { n: '04', title: 'Recomendaciones de compra', desc: 'El sistema calcula cuánto pedir, cuándo pedir y qué productos están en riesgo de quiebre según el plazo de entrega de cada proveedor.' },
+      { n: '01', title: 'Sube tus ventas y tu inventario', desc: 'Un archivo CSV o Excel, tal como sale de tu sistema. StockAI reconoce solo cuál columna es la fecha, cuál el producto y cuál la cantidad vendida.' },
+      { n: '02', title: 'StockAI aprende cómo se vende cada producto', desc: 'Temporadas, quincenas, tendencia y altibajos, producto por producto. Tú no configuras nada por código.' },
+      { n: '03', title: 'Te dice qué pedir hoy y cuánto', desc: 'Cada producto queda en un estado — PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK — con la cantidad sugerida calculada contra el plazo de su proveedor.' },
+      { n: '04', title: 'Pides, recibes y el sistema aprende', desc: 'La orden sale armada por proveedor. Cuando registras la llegada, StockAI anota cuánto tardó de verdad y lo usa para la siguiente.' },
     ],
   },
   decide: {
@@ -157,7 +167,7 @@ const es: LandingCopy = {
     title: 'Cómo decide StockAI que un producto está en rojo.',
     lead: 'Ninguna recomendación sale de una caja negra. Todo el semáforo se apoya en una sola cuenta, y la puedes hacer a mano para comprobar que da lo mismo.',
     formulaTitle: 'La cuenta',
-    formulaBody: 'Cobertura = existencias ÷ demanda diaria pronosticada. Eso te da cuántos días aguantas si no llega nada más. Esa cifra se compara contra el plazo de tu proveedor: los días que tarda en entregarte desde que le pasas la orden. La lógica es la que ya usas de cabeza, solo que aplicada a los miles de códigos que no alcanzas a revisar: si aguantas menos de lo que tarda en llegar, vas tarde.',
+    formulaBody: 'Cobertura = existencias ÷ demanda diaria pronosticada. Eso te da cuántos días aguantas si no llega nada más. Esa cifra se compara contra el plazo de tu proveedor: los días que tarda en entregarte desde que le pasas la orden.',
     formulaBody2: 'La lógica es la que ya usas de cabeza, solo que aplicada a los miles de códigos que no alcanzas a revisar: si aguantas menos de lo que tarda en llegar, vas tarde.',
     leadTimeBody: 'El plazo de entrega es la mitad de la cuenta, así que conviene que sea el real. Cada vez que registras una recepción, StockAI guarda cuántos días pasaron de verdad — y a partir de la tercera empieza a planificar con ese promedio en lugar del que te prometieron.',
     signals: [
@@ -169,9 +179,9 @@ const es: LandingCopy = {
   },
   about: {
     tag: 'Nosotros',
-    title: 'Construido para quien decide las compras, no para científicos de datos.',
-    body1: 'StockAI nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría opera con Excel e intuición porque las herramientas de forecasting fueron hechas para grandes empresas con equipos de datos — no para una operación que maneja miles de SKUs con un equipo pequeño.',
-    body2: 'StockAI toma el historial de ventas que ya tienes (un CSV o Excel), lo convierte en pronósticos por producto y en decisiones concretas de compra, sin que necesites un analista dedicado. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.',
+    title: 'Construido para quien decide las compras.',
+    body1: 'StockAI nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría compra con Excel e intuición porque las herramientas de pronóstico se hicieron para grandes empresas con equipos de datos — no para una operación que maneja miles de productos con un equipo pequeño.',
+    body2: 'StockAI toma el historial de ventas que ya tienes (un CSV o Excel) y lo convierte en decisiones concretas: qué pedir, cuánto, a quién y cuándo. Sin que necesites un analista. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.',
   },
   cases: {
     tag: 'Industrias',
@@ -182,10 +192,10 @@ const es: LandingCopy = {
       {
         label: 'Retail',
         title: 'Gestión de inventario por tienda y categoría',
-        desc: 'Un retailer con múltiples puntos de venta enfrenta patrones de demanda distintos por ubicación, categorías con estacionalidades diferentes y un ciclo de reposición que no puede fallar. StockAI genera pronósticos individuales por tienda y por SKU, detecta cambios en la tendencia de venta y permite planificar con anticipación las temporadas de alta demanda.',
+        desc: 'Un retailer con varios puntos de venta enfrenta una demanda distinta en cada ubicación, categorías con temporadas diferentes y un ciclo de reposición que no puede fallar. StockAI calcula qué pedir para cada tienda y cada producto, avisa cuando la venta de algo cambia de rumbo y te deja preparar las temporadas altas con tiempo.',
         does: [
           'Semáforo por producto y por tienda: PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK, medido contra el plazo de cada proveedor.',
-          'Nueve modelos compiten por cada producto y se queda el que menos se equivoca sobre tu propio historial.',
+          'Avisa cuando la venta de un producto cambia de rumbo, para que no sigas pidiendo lo mismo del mes pasado.',
           'Recálculo programado — cada lunes, todos los días o el primero de mes — sin que nadie tenga que lanzarlo.',
         ],
       },
@@ -214,7 +224,7 @@ const es: LandingCopy = {
         title: 'Planificación de producción y materias primas',
         desc: 'Una línea de producción parada por falta de material tiene un costo que va mucho más allá del material: horas hombre perdidas, penalizaciones por entrega tardía y clientes que pierden confianza. StockAI convierte el pronóstico de demanda del producto terminado en un plan de requerimientos de materias primas, considerando tiempos de producción y plazos de proveedores.',
         does: [
-          'Lista de materiales por producto terminado: el pronóstico se explota en requerimiento de componentes, materias primas y empaque.',
+          'Lista de materiales por producto terminado: la venta esperada se convierte en cuánto comprar de componentes, materias primas y empaque.',
           'Los faltantes de material se ven contra el plan, no el día que la línea se detiene.',
           'El plazo de cada proveedor de insumos se corrige solo con cada recepción que registras.',
         ],
@@ -225,8 +235,8 @@ const es: LandingCopy = {
         desc: 'En e-commerce, llegar sin inventario a un Black Friday o campaña de descuentos es dejar dinero sobre la mesa. Llegar con demasiado significa capital atrapado y liquidación a pérdida. StockAI analiza el comportamiento histórico durante eventos promocionales y genera estimaciones para los próximos picos con tiempo suficiente para hacer pedidos.',
         does: [
           'Simulador de escenarios: duplicar la demanda de una categoría, marcar una promoción o atrasar a un proveedor, y comparar contra la base sin tocar nada real.',
-          'La estacionalidad se detecta por producto, sin configurar un modelo por SKU.',
-          'La clasificación ABC-XYZ señala en qué productos conviene el colchón de seguridad antes del pico, en vez de repartirlo parejo.',
+          'Las temporadas de cada producto se detectan solas, sin configurar nada por código.',
+          'Te señala en qué productos — los que más venden y más varían — conviene el colchón de seguridad antes del pico, en vez de repartirlo parejo.',
         ],
       },
     ],
@@ -234,17 +244,17 @@ const es: LandingCopy = {
   compare: {
     tag: 'Comparación',
     title: 'Excel vs StockAI.',
-    lead: 'Excel es una herramienta de análisis, no un sistema de pronóstico. Funciona para unos pocos productos. El problema aparece cuando el negocio crece y la hoja deja de alcanzar.',
-    head: ['', 'Excel', 'StockAI'],
+    lead: 'Excel sirve para anotar, no para decirte qué pedir. Funciona con unos pocos productos. El problema aparece cuando el negocio crece y la hoja deja de alcanzar.',
+    head: ['Lo que necesitas saber', 'Excel', 'StockAI'],
     rows: [
-      { feature: 'Tiempo para generar pronóstico', excel: 'Días', stockai: 'Minutos' },
-      { feature: 'Cantidad de SKUs manejables', excel: 'Decenas', stockai: 'Miles' },
-      { feature: 'Actualización del modelo', excel: 'Manual', stockai: 'Automática' },
-      { feature: 'Detección de estacionalidad', excel: 'Manual', stockai: 'Automática' },
-      { feature: 'Alertas de riesgo de quiebre', excel: 'No disponible', stockai: 'Incluido' },
-      { feature: 'Precisión optimizada por SKU', excel: 'Depende del analista', stockai: 'Sí' },
-      { feature: 'Trazabilidad y auditoría', excel: 'Difícil', stockai: 'Incluido' },
-      { feature: 'Escala sin costo de mantenimiento', excel: 'No', stockai: 'Sí' },
+      { feature: 'Qué pedir hoy', excel: 'Fila por fila', stockai: 'Lista por urgencia' },
+      { feature: 'Cuánto pedir de cada producto', excel: 'A criterio', stockai: 'Cantidad sugerida' },
+      { feature: 'Productos que alcanzas a revisar', excel: 'Decenas', stockai: 'Todo el catálogo' },
+      { feature: 'Cuánto tarda de verdad cada proveedor', excel: 'De memoria', stockai: 'Medido' },
+      { feature: 'Aviso de lo que se va a quebrar', excel: 'No disponible', stockai: 'Diario' },
+      { feature: 'Dinero parado en sobrestock', excel: 'Difícil de ver', stockai: 'Marcado' },
+      { feature: 'Orden de compra por proveedor', excel: 'A mano', stockai: 'Armada' },
+      { feature: 'Temporadas de cada producto', excel: 'A mano', stockai: 'Automáticas' },
     ],
   },
   start: {
@@ -291,21 +301,26 @@ const es: LandingCopy = {
     ctaWhatsapp: 'Escríbenos por WhatsApp',
     ctaEmail: 'Escríbenos por correo',
   },
-  benefits: [
-    'Pronóstico por SKU y por familia de productos',
-    'Proyecciones semanales, mensuales y por temporada',
-    'Alertas de productos en riesgo de quiebre',
-    'Métricas de precisión y backtesting por modelo',
-    'Cantidad recomendada por orden de compra',
-    'Clasificación automática ABC-XYZ',
-    'Detección de cambios y anomalías de demanda',
-    'Exportación a Excel y PDF',
-    'Todo el catálogo, no una muestra — se ejercita con más de 5.000 productos',
-    'Actualización automática con nuevas ventas',
-  ],
+  benefits: {
+    tag: 'Cada mañana',
+    title: 'Lo que sabes al abrir StockAI.',
+    lead: 'Sin armar reportes ni cruzar hojas de cálculo. Está en pantalla cuando llegas, y el resumen de lo urgente ya te llegó al correo y al WhatsApp.',
+    items: [
+      'Qué pedir hoy, ordenado por urgencia',
+      'Cuántas unidades pedir de cada producto',
+      'La orden de compra armada por proveedor',
+      'Qué pedidos vienen en camino y cuáles ya debían haber llegado',
+      'Cuánto tarda de verdad cada proveedor, medido en tus recepciones',
+      'Cuánto dinero está parado en productos que no rotan',
+      'Qué productos entran en riesgo, por correo y WhatsApp',
+      'Qué pasa si una promoción duplica la venta, antes de comprometer el dinero',
+      'Todo el catálogo, no una muestra — se pone a prueba con más de 5.000 productos',
+      'Los reportes en Excel y PDF, listos para compartir',
+    ],
+  },
   includes: {
     tag: 'Qué incluye',
-    title: 'Lo que StockAI hace, en detalle.',
+    title: 'Lo que resuelve, en detalle.',
     lead: 'Dos problemas aparecen apenas la operación crece: no poder mirar todos los productos, y tener el inventario repartido en varios lugares. Esto es lo que StockAI pone del lado de ambos — y no hay que activar nada, viene incluido.',
     rolesTitle: 'A quién le resuelve algo, y qué',
     roles: [
@@ -327,19 +342,19 @@ const es: LandingCopy = {
       {
         role: 'Administración y finanzas',
         pain: 'Sabes cuánto vale el inventario, pero no cuánto de eso es capital atrapado en productos que no rotan.',
-        gain: 'La clasificación ABC-XYZ separa lo que mueve tu venta de lo que solo ocupa espacio, y los reportes que exportas a Excel y PDF salen con esa marca en cada producto.',
+        gain: 'StockAI separa lo que mueve tu venta de lo que solo ocupa espacio, y los reportes que exportas a Excel y PDF salen con esa marca en cada producto.',
       },
     ],
     itemsTitle: 'Qué incluye, concretamente',
     items: [
-      { title: 'Clasificación ABC-XYZ', desc: 'A son los productos que concentran el 80 % de tu venta; C es la cola larga. X es demanda estable, Z es errática. Un producto AZ vende mucho y de forma impredecible: ahí conviene el colchón de seguridad, en vez de repartirlo parejo en todo el catálogo.', isNew: false },
-      { title: 'Multibodega y transferencias', desc: 'Las ubicaciones que necesites, con rutas entre ellas: días de tránsito y costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI propone mover en vez de comprar — y solo lo propone si a la bodega que presta le quedan al menos 30 días de cobertura.', isNew: false },
-      { title: 'Optimizador de compra por costo', desc: 'Arma el pedido buscando el menor costo total, no la menor cantidad de unidades: suma el costo de mantener inventario, la penalización por quedarse sin producto, el costo de compra, el costo por unidad transferida y el costo fijo del envío, que se paga una sola vez aunque el camión lleve veinte productos.', isNew: false },
-      { title: 'Simulador de escenarios', desc: 'Hasta 50 reglas por escenario: multiplicar la demanda, marcar una promoción, atrasar a un proveedor o cambiar el stock de seguridad, filtrando por producto, categoría, proveedor o rango de fechas. Compara el escenario contra la base sin tocar nada de lo real, y lo puedes guardar para volver a correrlo.', isNew: false },
-      { title: 'Alertas por WhatsApp', desc: 'El mismo resumen diario de productos en riesgo que llega por correo, ahora al teléfono de quien decide. Cada persona vincula y verifica su propio número desde su configuración.', isNew: false },
-      { title: 'Analista con IA', desc: 'Preguntas en español sobre tus propios datos — «¿por qué subió la demanda de esta categoría?», «¿qué proveedores me están atrasando?» — y cada respuesta viene marcada con de dónde salió, para que sepas cuándo se apoya en tus datos y cuándo no.', isNew: false },
-      { title: 'Recálculo programado', desc: 'En vez de acordarte de reentrenar, lo dejas corriendo solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes. La pantalla te muestra cuándo corrió, cuándo vuelve a correr y si falló.', isNew: false },
-      { title: 'Mensajes de equipo', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de StockAI, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
+      { title: 'Dónde poner el colchón de seguridad', desc: 'StockAI separa los productos que concentran el 80 % de tu venta de la cola larga, y los de venta estable de los erráticos. Donde se juntan mucha venta y demanda impredecible es donde conviene el stock de seguridad, en vez de repartirlo parejo en todo el catálogo.', isNew: false },
+      { title: 'Mover entre bodegas antes de comprar', desc: 'Las ubicaciones que necesites, con rutas entre ellas: días de tránsito y costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI propone mover en vez de comprar — y solo lo propone si a la bodega que presta le quedan al menos 30 días de cobertura.', isNew: false },
+      { title: 'El pedido más barato, no el más chico', desc: 'Arma el pedido buscando el menor costo total, no la menor cantidad de unidades: suma el costo de mantener inventario, la penalización por quedarse sin producto, el costo de compra, el costo por unidad transferida y el costo fijo del envío, que se paga una sola vez aunque el camión lleve veinte productos.', isNew: false },
+      { title: 'Prueba la decisión antes de pagarla', desc: 'Hasta 50 reglas por escenario: multiplicar la demanda, marcar una promoción, atrasar a un proveedor o cambiar el stock de seguridad, filtrando por producto, categoría, proveedor o rango de fechas. Compara el escenario contra la base sin tocar nada de lo real, y lo puedes guardar para volver a correrlo.', isNew: false },
+      { title: 'Lo urgente llega a tu teléfono', desc: 'El mismo resumen diario de productos en riesgo que llega por correo, ahora al teléfono de quien decide. Cada persona vincula y verifica su propio número desde su configuración.', isNew: false },
+      { title: 'Pregúntale a tu inventario', desc: 'Preguntas en español sobre tus propios datos — «¿por qué subió la demanda de esta categoría?», «¿qué proveedores me están atrasando?» — y cada respuesta viene marcada con de dónde salió, para que sepas cuándo se apoya en tus datos y cuándo no.', isNew: false },
+      { title: 'La lista se actualiza sola', desc: 'En vez de acordarte de recalcular, lo dejas corriendo solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes. La pantalla te muestra cuándo corrió, cuándo vuelve a correr y si falló.', isNew: false },
+      { title: 'Tu equipo habla al lado del inventario', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de StockAI, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
     ],
     isNew: 'Nuevo',
     tail: 'Todo lo anterior va además de la base: el semáforo, las órdenes de compra, las recepciones que aprenden el plazo del proveedor, los reportes y las alertas por correo — todo eso también en el plan gratis. ',
@@ -350,6 +365,17 @@ const es: LandingCopy = {
     body: 'El manual de usuario cubre las diecinueve pantallas con el mismo detalle: para qué sirve cada una, qué significa cada dato, cómo hacer las cosas concretas y lo que suele confundir. Es el mismo producto de estas capturas, no una versión resumida.',
     cta: 'Descargar el manual (PDF)',
     note: 'PDF · español · 59 páginas',
+  },
+  tech: {
+    tag: 'Para tu equipo técnico',
+    title: 'Lo que hay debajo, en corto.',
+    lead: 'Nada de esto hace falta para comprar mejor. Está aquí para quien quiera revisarlo.',
+    items: [
+      { title: 'Modelos que compiten por producto', desc: 'Nueve modelos se prueban sobre el historial de cada producto y se queda el que menos se equivoca.' },
+      { title: 'Precisión y backtesting por modelo', desc: 'El error de cada modelo, medido sobre tu propio historial y visible en la pantalla de pronóstico.' },
+      { title: 'Clasificación ABC-XYZ', desc: 'ABC por peso en la venta, XYZ por estabilidad de la demanda. Es lo que ubica el colchón de seguridad.' },
+      { title: 'API pública y servidor MCP', desc: 'API REST con llaves por empresa, y un servidor MCP de solo lectura para asistentes de IA. Mismas llaves y mismos límites.' },
+    ],
   },
   tour: {
     title: 'Pantalla por pantalla.',
@@ -379,7 +405,7 @@ const es: LandingCopy = {
         chapter: 'Análisis',
         when: 'Cuando quieres entender el porqué, o probar una decisión antes de tomarla.',
         screens: [
-          { img: SHOTS.forecast, name: 'Pronóstico por producto', does: 'Nueve modelos compiten por cada producto y se queda el que menos se equivoca sobre tu propio historial. Aquí ves cuál ganó y qué tan bien lo hizo.', finds: ['Histórico, pronóstico y el rango de venta probable', 'El error de cada modelo, para saber cuánto confiar', 'Diario, semanal, mensual o trimestral, según cómo compres'], alt: 'Gráfico de pronóstico por SKU de StockAI: ventas históricas, pronóstico y el rango de venta probable, con la comparación entre modelos.' },
+          { img: SHOTS.forecast, name: 'Pronóstico por producto', does: 'Cuánto esperas vender de cada producto y en qué rango, para saber cuánto confiar en la cantidad sugerida antes de pedir.', finds: ['Histórico, pronóstico y el rango de venta probable', 'Qué tanto se equivoca el pronóstico, para saber cuánto confiar', 'Diario, semanal, mensual o trimestral, según cómo compres'], alt: 'Gráfico de pronóstico por SKU de StockAI: ventas históricas, pronóstico y el rango de venta probable, con la comparación entre modelos.' },
           { img: SHOTS.pattern, name: 'Cómo se vende cada producto', does: 'Separa lo que de verdad está creciendo de lo que es solo el patrón de la semana repitiéndose. Es la diferencia entre una tendencia y un lunes.', finds: ['La venta con el sube y baja de siempre ya descontado', 'Cuánto del movimiento explica el día de la semana', 'El promedio por día, para ver dónde está el pico'], alt: 'Pantalla de StockAI que separa la tendencia real de un producto del patrón que se repite cada semana.' },
           { img: SHOTS.escenarios, name: 'Simulador de escenarios', does: '¿Qué pasa si vendes 40% más, si tu proveedor se atrasa una semana, o si haces promoción en diciembre? Lo ves antes de comprometerte, producto por producto.', finds: ['El plan actual y el del escenario, lado a lado', 'Qué productos cambian de estado y cuánto cambia la orden', 'Escenarios guardados, para volver a correrlos'], alt: 'Simulador de escenarios de StockAI comparando el plan actual contra un escenario de mayor demanda, producto por producto.' },
           { img: SHOTS.impacto, name: 'Impacto', does: 'Qué hiciste con StockAI este mes, con las cifras que salen de tus propios registros. No estima ahorros ni cuenta quiebres evitados, porque eso no se puede medir con certeza.', finds: ['Cuántas órdenes generaste y cuántas recomendaciones seguiste', 'De dónde sale cada número, dicho sin adornos', 'El mismo resumen te llega por correo el primer día del mes'], alt: 'Pantalla de impacto de StockAI con el resumen mensual de lo que se hizo con la herramienta y de dónde sale cada cifra.' },
@@ -405,13 +431,13 @@ const es: LandingCopy = {
     lead: 'Si tienes alguna pregunta que no está aquí, escríbenos directamente. Respondemos en menos de 24 horas.',
     cta: 'Escríbenos →',
     items: [
-      { q: '¿Necesito conocimientos estadísticos o de programación para usar StockAI?', a: 'No. StockAI está diseñado para que cualquier persona del equipo de compras o planificación pueda usarlo. No hay configuración de modelos ni código. Solo cargas tus datos y el sistema genera los pronósticos automáticamente.' },
+      { q: '¿Necesito conocimientos estadísticos o de programación para usar StockAI?', a: 'No. StockAI está hecho para quien compra: abres la pantalla y ves qué pedir hoy, cuánto y a qué proveedor. No hay modelos que configurar ni código. Subes tus datos y el resto lo hace el sistema.' },
       { q: '¿En qué formato debo tener mis datos de ventas?', a: 'StockAI acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.' },
       { q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?', a: 'StockAI necesita al menos 20 períodos de historial por producto para entrenarlo. Los que no llegan a ese mínimo quedan fuera del pronóstico: no se les inventa una proyección. Antes de correr nada, la revisión del archivo te dice cuántos productos están por debajo del umbral, y si ninguno lo alcanza el archivo se detiene con la explicación en pantalla en vez de producir un resultado vacío. Esos productos siguen apareciendo en tu inventario marcados SIN DATOS — sin señal ni cantidad sugerida — para que la decisión sea tuya y no de un número inventado.' },
       { q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?', a: 'Los datos que subes a StockAI son exclusivamente tuyos: no se comparten con terceros ni se usan para entrenar modelos de otras empresas — cada pronóstico se entrena únicamente con el historial de tu propia cuenta. Cada consulta va filtrada por empresa y el acceso se controla por rol: administrador, analista o solo lectura. Las credenciales de tus integraciones — el usuario y la contraseña de tu base de datos — se guardan cifradas. Tus archivos de ventas y los modelos entrenados se guardan en el servidor de StockAI, en una carpeta separada por empresa; el cifrado del disco depende del servidor donde corre, no lo hace la aplicación. Y la eliminación es completa de verdad: borra cada tabla y cada archivo asociado a tu cuenta, no solo el registro principal.' },
-      { q: '¿Cuánto tiempo toma implementar StockAI en mi empresa?', a: 'En la mayoría de casos, menos de un día. Si tienes un archivo de ventas histórico, puedes subir los datos y ver tus primeros pronósticos en menos de una hora. Para integraciones con ERP o sistemas propios, el tiempo varía según la complejidad.' },
+      { q: '¿Cuánto tiempo toma empezar a usar StockAI en mi empresa?', a: 'En la mayoría de casos, menos de un día. Si tienes un archivo de ventas histórico, puedes subirlo y ver tu primera lista de qué pedir en menos de una hora. Para integraciones con ERP o sistemas propios, el tiempo varía según la complejidad.' },
       { q: '¿Se puede integrar con nuestro ERP o sistema de inventario actual?', a: 'La carga normal es por archivo: exportas de tu sistema y subes el CSV o Excel. También puedes conectar StockAI directamente a tu base de datos Postgres o MySQL y traer las ventas con una consulta, sin archivos de por medio. Una integración a medida con tu ERP la armamos con nuestro equipo técnico sobre tu operación, caso por caso — escríbenos y lo vemos.' },
-      { q: '¿Con qué frecuencia se actualizan los pronósticos?', a: 'Cada vez que cargas ventas nuevas. Puedes lanzarlo tú al subir el archivo del mes, o dejar el recálculo programado para que corra solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes.' },
+      { q: '¿Cada cuánto se actualiza lo que me dice que pida?', a: 'Cada vez que cargas ventas nuevas. Puedes lanzarlo tú al subir el archivo del mes, o dejar el recálculo programado para que corra solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes.' },
       { q: '¿StockAI sirve si tengo más de una bodega?', a: 'Sí. El plan gratis trae una bodega; ampliando el plan no hay tope de ubicaciones. Defines rutas entre bodegas con los días de tránsito y el costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI sugiere mover en lugar de comprar, y solo lo sugiere si a la bodega que presta le quedan al menos 30 días de cobertura.' },
       { q: '¿De dónde saca StockAI el plazo de entrega de cada proveedor?', a: 'Al principio, del que escribes tú en la ficha del proveedor. Cada vez que registras una recepción, StockAI guarda cuántos días pasaron de verdad entre la orden y la entrega. A partir de la tercera recepción de ese proveedor empieza a usar el promedio real en lugar del plazo declarado, y te muestra cuál de los dos está usando.' },
       { q: '¿Qué tan grande puede ser el archivo de ventas que subo?', a: 'En el plan gratis, hasta 25 MB por archivo. Pasando al plan completo, hasta 2 GB. Para dimensionarlo: 3 años de historial con 5.000 productos y venta diaria son unos 5 millones de filas, del orden de 200 MB en CSV — dentro del plan completo.' },
@@ -427,7 +453,7 @@ const es: LandingCopy = {
     leadTimeNote: 'Y el plazo no es el que te prometieron, es el que cumplen',
   },
   footer: {
-    tagline: 'Pronóstico de demanda e inteligencia de inventario para distribuidores, retail y manufactura.',
+    tagline: 'Qué pedir, cuánto y a quién — para distribuidores, retail y manufactura.',
     product: 'Producto',
     company: 'Empresa',
     contact: 'Contacto',
@@ -456,17 +482,17 @@ const en: LandingCopy = {
     company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['mailto:hola@usefaro.io', 'Contact']],
   },
   hero: {
-    eyebrow: 'For distributors, retail and manufacturing',
-    title1: 'Stop running inventory',
-    title2: 'on gut feel.',
-    lead: 'StockAI reads your sales history and forecasts demand product by product — so you know how much to order, when to order it, and which products are about to run out.',
+    eyebrow: 'For the person who decides the buying',
+    title1: 'What to order today, how much,',
+    title2: 'and from which supplier.',
+    lead: 'StockAI reads your sales and your stock, and every morning tells you which products are about to run out, how many units of each to order and from whom, how much money is sitting in what does not turn, and which orders are on their way.',
     cta: 'Start free with sample data',
     frame: 'StockAI · Purchasing dashboard',
   },
   strip: {
-    models: 'Models competing per product',
+    models: 'States per product: order now, order soon, ok or overstock',
     deliveries: 'Deliveries to learn a supplier’s real lead time',
-    skus: 'SKUs per instance',
+    skus: 'Products per catalogue it is tested against',
     csv: 'All you need to start',
   },
   problem: {
@@ -478,18 +504,18 @@ const en: LandingCopy = {
       { title: 'Capital trapped in overstock', desc: 'For wholesalers and manufacturers, excess inventory fills the warehouse, eats the credit line, and in perishable or seasonal categories ends as a straight loss at clearance.' },
       { title: 'Reactive buying instead of planned buying', desc: 'Ordering once stock is already critical means accepting bad terms: spot prices, emergency freight and lead times outside the normal cycle.' },
       { title: 'Knowledge held by one person', desc: 'Your most experienced buyer carries the seasonality, the supplier cycles and every product’s history in their head. None of that is in a system.' },
-      { title: 'Manual forecasts that do not scale', desc: 'One analyst can keep 30 SKUs in a spreadsheet with real rigour. At 300 products the models get simpler. At 3,000, most of the catalogue is run on instinct.' },
+      { title: 'A spreadsheet cannot cover the whole catalogue', desc: 'With a few products, checking row by row works. Once the catalogue reaches hundreds or thousands of codes, most of it ends up ordered out of habit: the same as last month, plus a bit.' },
     ],
   },
   how: {
     tag: 'How it works',
-    title: 'From your sales history to purchasing decisions.',
-    lead: 'StockAI turns your sales history into per-product forecasts. No statistical setup, no dedicated analyst required.',
+    title: 'From your sales history to the purchase order.',
+    lead: 'You upload what you already have and StockAI hands back the buying list. Nothing statistical to set up, no analyst needed.',
     steps: [
-      { n: '01', title: 'Upload your sales history', desc: 'Drop in a CSV or Excel file. The system finds the date, product and quantity columns on its own.' },
-      { n: '02', title: 'Automatic analysis per product', desc: 'StockAI detects the trend, seasonality and variability of every SKU independently. No per-product configuration.' },
-      { n: '03', title: 'Forecast with confidence ranges', desc: 'Demand projections for each product with a high and a low. It shows which SKUs are predictable and which are volatile.' },
-      { n: '04', title: 'Purchasing recommendations', desc: 'The system works out how much to order, when to order it, and which products are at risk given each supplier’s lead time.' },
+      { n: '01', title: 'Upload your sales and your stock', desc: 'A CSV or Excel file, exactly as it comes out of your system. StockAI works out on its own which column is the date, the product and the quantity sold.' },
+      { n: '02', title: 'StockAI learns how each product sells', desc: 'Seasons, paydays, trend and swings, product by product. Nothing for you to configure per code.' },
+      { n: '03', title: 'It tells you what to order today, and how much', desc: 'Every product lands in one state — ORDER NOW, ORDER SOON, OK or OVERSTOCK — with the suggested quantity worked out against its supplier’s lead time.' },
+      { n: '04', title: 'You order, you receive, it learns', desc: 'The order comes out grouped by supplier. When you record the arrival, StockAI notes how long it really took and uses that for the next one.' },
     ],
   },
   decide: {
@@ -497,7 +523,7 @@ const en: LandingCopy = {
     title: 'How StockAI decides a product is in the red.',
     lead: 'No recommendation comes out of a black box. The whole signal rests on one piece of arithmetic, and you can do it by hand to check it gives the same answer.',
     formulaTitle: 'The arithmetic',
-    formulaBody: 'Coverage = stock on hand ÷ forecast daily demand. That tells you how many days you last if nothing else arrives. The figure is compared against your supplier lead time: the days they take to deliver once you place the order. It is the logic you already run in your head, applied to the thousands of codes you never get to review: if you last less than they take, you are already late.',
+    formulaBody: 'Coverage = stock on hand ÷ forecast daily demand. That tells you how many days you last if nothing else arrives. The figure is compared against your supplier lead time: the days they take to deliver once you place the order.',
     formulaBody2: 'It is the logic you already run in your head, only applied to the thousands of codes you never get to review: if you last less than they take to arrive, you are already late.',
     leadTimeBody: 'The lead time is half the arithmetic, so it had better be the real one. Every time you record a reception, StockAI stores how many days actually passed — and from the third one it plans with that average instead of the one you were promised.',
     signals: [
@@ -509,9 +535,9 @@ const en: LandingCopy = {
   },
   about: {
     tag: 'About us',
-    title: 'Built for the person who decides the buying, not for data scientists.',
-    body1: 'StockAI exists so distributors, shops and wholesalers across Latin America stop buying inventory blind. Most of them run on a spreadsheet and instinct because forecasting tools were built for large companies with data teams — not for an operation handling thousands of SKUs with a small one.',
-    body2: 'StockAI takes the sales history you already have (a CSV or Excel), turns it into per-product forecasts and concrete purchasing decisions, without you needing a dedicated analyst. Made in Costa Rica, built for how small and mid-sized companies in the region actually work.',
+    title: 'Built for the person who decides the buying.',
+    body1: 'StockAI exists so distributors, shops and wholesalers across Latin America stop buying inventory blind. Most of them buy on a spreadsheet and instinct because forecasting tools were built for large companies with data teams — not for an operation handling thousands of products with a small one.',
+    body2: 'StockAI takes the sales history you already have (a CSV or Excel) and turns it into concrete decisions: what to order, how much, from whom and when. No analyst required. Made in Costa Rica, built for how small and mid-sized companies in the region actually work.',
   },
   cases: {
     tag: 'Industries',
@@ -522,10 +548,10 @@ const en: LandingCopy = {
       {
         label: 'Retail',
         title: 'Inventory by store and by category',
-        desc: 'A retailer with several points of sale faces different demand patterns per location, categories with different seasons, and a replenishment cycle that cannot fail. StockAI forecasts per store and per SKU, spots changes in the sales trend, and lets you plan high-demand seasons ahead of time.',
+        desc: 'A retailer with several points of sale faces different demand at each location, categories with different seasons, and a replenishment cycle that cannot fail. StockAI works out what to order for every store and every product, flags when something’s sales change direction, and lets you get ready for peak seasons in time.',
         does: [
           'A signal per product and per store: ORDER NOW, ORDER SOON, OK or OVERSTOCK, measured against each supplier’s lead time.',
-          'Nine models compete for every product; the one that is least wrong on your own history wins.',
+          'It flags when a product’s sales change direction, so you stop reordering last month’s quantity.',
           'Scheduled recalculation — every Monday, every day, or the first of the month — with nobody having to launch it.',
         ],
       },
@@ -554,7 +580,7 @@ const en: LandingCopy = {
         title: 'Production and raw-material planning',
         desc: 'A line stopped for want of material costs far more than the material: lost labour hours, late-delivery penalties and customers who stop trusting you. StockAI turns the finished-goods demand forecast into a raw-material requirement plan, accounting for production times and supplier lead times.',
         does: [
-          'A bill of materials per finished product: the forecast is exploded into components, raw materials and packaging.',
+          'A bill of materials per finished product: expected sales become how much to buy of components, raw materials and packaging.',
           'Material shortfalls show up against the plan, not on the day the line stops.',
           'Each input supplier’s lead time corrects itself with every delivery you record.',
         ],
@@ -565,8 +591,8 @@ const en: LandingCopy = {
         desc: 'In e-commerce, reaching Black Friday without stock is money left on the table. Reaching it with too much is trapped capital and a clearance at a loss. StockAI reads how your products behaved during past promotional events and estimates the next peaks with enough time to actually place the orders.',
         does: [
           'Scenario simulator: double a category’s demand, mark a promotion or delay a supplier, and compare against the base without touching anything real.',
-          'Seasonality is detected per product, with no model to configure per SKU.',
-          'ABC-XYZ points out which products deserve the safety buffer before the peak, instead of spreading it evenly.',
+          'Each product’s seasons are detected on their own, with nothing to configure per code.',
+          'It points out which products — the ones that sell most and swing most — deserve the safety buffer before the peak, instead of spreading it evenly.',
         ],
       },
     ],
@@ -574,17 +600,17 @@ const en: LandingCopy = {
   compare: {
     tag: 'Comparison',
     title: 'Excel vs StockAI.',
-    lead: 'Excel is an analysis tool, not a forecasting system. It works for a handful of products. The problem shows up when the business grows and the spreadsheet stops keeping up.',
-    head: ['', 'Excel', 'StockAI'],
+    lead: 'Excel is for writing things down, not for telling you what to order. It works for a handful of products. The problem shows up when the business grows and the spreadsheet stops keeping up.',
+    head: ['What you need to know', 'Excel', 'StockAI'],
     rows: [
-      { feature: 'Time to produce a forecast', excel: 'Days', stockai: 'Minutes' },
-      { feature: 'SKUs you can actually manage', excel: 'Dozens', stockai: 'Thousands' },
-      { feature: 'Model updates', excel: 'Manual', stockai: 'Automatic' },
-      { feature: 'Seasonality detection', excel: 'Manual', stockai: 'Automatic' },
-      { feature: 'Stockout risk alerts', excel: 'Not available', stockai: 'Included' },
-      { feature: 'Accuracy tuned per SKU', excel: 'Depends on the analyst', stockai: 'Yes' },
-      { feature: 'Traceability and audit', excel: 'Hard', stockai: 'Included' },
-      { feature: 'Scales with no maintenance cost', excel: 'No', stockai: 'Yes' },
+      { feature: 'What to order today', excel: 'Row by row', stockai: 'List by urgency' },
+      { feature: 'How much of each product', excel: 'Judgement call', stockai: 'Suggested quantity' },
+      { feature: 'Products you get to review', excel: 'Dozens', stockai: 'The whole catalogue' },
+      { feature: 'How long each supplier really takes', excel: 'From memory', stockai: 'Measured' },
+      { feature: 'Warning of what is about to run out', excel: 'Not available', stockai: 'Daily' },
+      { feature: 'Money stuck in overstock', excel: 'Hard to see', stockai: 'Flagged' },
+      { feature: 'Purchase order per supplier', excel: 'By hand', stockai: 'Built for you' },
+      { feature: 'Each product’s seasons', excel: 'By hand', stockai: 'Automatic' },
     ],
   },
   start: {
@@ -631,21 +657,26 @@ const en: LandingCopy = {
     ctaWhatsapp: 'Message us on WhatsApp',
     ctaEmail: 'Email us',
   },
-  benefits: [
-    'Forecast per SKU and per product family',
-    'Weekly, monthly and seasonal projections',
-    'Alerts for products at risk of running out',
-    'Accuracy metrics and backtesting per model',
-    'Recommended quantity per purchase order',
-    'Automatic ABC-XYZ classification',
-    'Detection of demand shifts and anomalies',
-    'Export to Excel and PDF',
-    'The whole catalogue, not a sample — exercised with over 5,000 products',
-    'Updated automatically with new sales',
-  ],
+  benefits: {
+    tag: 'Every morning',
+    title: 'What you know when you open StockAI.',
+    lead: 'No reports to build, no spreadsheets to cross-check. It is on screen when you arrive, and the summary of what is urgent has already reached your inbox and WhatsApp.',
+    items: [
+      'What to order today, sorted by urgency',
+      'How many units of each product to order',
+      'The purchase order, grouped by supplier',
+      'Which orders are on their way, and which should have arrived already',
+      'How long each supplier really takes, measured on your receptions',
+      'How much money is sitting in products that do not turn',
+      'Which products are moving into risk, by email and WhatsApp',
+      'What happens if a promotion doubles sales, before committing the money',
+      'The whole catalogue, not a sample — tested with over 5,000 products',
+      'Reports in Excel and PDF, ready to share',
+    ],
+  },
   includes: {
     tag: "What's included",
-    title: 'What StockAI does, in detail.',
+    title: 'What it solves, in detail.',
     lead: 'Two problems appear as soon as an operation grows: not being able to look at every product, and having inventory spread across several places. This is what StockAI puts on both sides — and nothing has to be switched on, it comes included.',
     rolesTitle: 'Who it solves something for, and what',
     roles: [
@@ -667,19 +698,19 @@ const en: LandingCopy = {
       {
         role: 'Finance and admin',
         pain: 'You know what the inventory is worth, but not how much of it is capital trapped in products that do not turn.',
-        gain: 'ABC-XYZ separates what drives your sales from what only takes up space, and the reports you export to Excel and PDF carry that mark on every product.',
+        gain: 'StockAI separates what drives your sales from what only takes up space, and the reports you export to Excel and PDF carry that mark on every product.',
       },
     ],
     itemsTitle: 'What is included, concretely',
     items: [
-      { title: 'ABC-XYZ classification', desc: 'A are the products that make up 80% of your sales; C is the long tail. X is steady demand, Z is erratic. An AZ product sells a lot and unpredictably: that is where the safety buffer belongs, instead of spreading it evenly across the catalogue.', isNew: false },
-      { title: 'Multi-warehouse and transfers', desc: 'As many locations as you need, with routes between them: transit days and cost. When a product is short in one warehouse and long in another, StockAI proposes moving instead of buying — and only proposes it if the lending warehouse keeps at least 30 days of coverage.', isNew: false },
-      { title: 'Cost-based purchase optimiser', desc: 'It builds the order for the lowest total cost, not the fewest units: holding cost, the penalty for running out, purchase cost, the per-unit transfer cost and the fixed shipping cost, which is paid once even if the truck carries twenty products.', isNew: false },
-      { title: 'Scenario simulator', desc: 'Up to 50 rules per scenario: multiply demand, mark a promotion, delay a supplier or change safety stock, filtering by product, category, supplier or date range. It compares the scenario against the baseline without touching anything real, and you can save it to run again.', isNew: false },
-      { title: 'WhatsApp alerts', desc: 'The same daily summary of at-risk products that goes out by email, now to the phone of whoever decides. Each person links and verifies their own number from their settings.', isNew: false },
-      { title: 'AI analyst', desc: 'You ask about your own data in plain language — "why did demand for this category go up?", "which suppliers are running late?" — and every answer is marked with where it came from, so you know when it is standing on your data and when it is not.', isNew: false },
-      { title: 'Scheduled recalculation', desc: 'Instead of remembering to retrain, you leave it running: every Monday at 6, every day, weekdays only, hourly, or the first of each month. The screen shows when it ran, when it runs next, and whether it failed.', isNew: false },
-      { title: 'Team messages', desc: 'One-to-one conversations between the people in your company, inside StockAI, next to the inventory they are talking about. If the other person is not connected, a heads-up reaches their WhatsApp so the message is not missed.', isNew: true },
+      { title: 'Where the safety buffer goes', desc: 'StockAI separates the products that make up 80% of your sales from the long tail, and steady sellers from erratic ones. Where high sales meet unpredictable demand is where safety stock belongs, instead of spreading it evenly across the catalogue.', isNew: false },
+      { title: 'Move between warehouses before buying', desc: 'As many locations as you need, with routes between them: transit days and cost. When a product is short in one warehouse and long in another, StockAI proposes moving instead of buying — and only proposes it if the lending warehouse keeps at least 30 days of coverage.', isNew: false },
+      { title: 'The cheapest order, not the smallest', desc: 'It builds the order for the lowest total cost, not the fewest units: holding cost, the penalty for running out, purchase cost, the per-unit transfer cost and the fixed shipping cost, which is paid once even if the truck carries twenty products.', isNew: false },
+      { title: 'Test the decision before you pay for it', desc: 'Up to 50 rules per scenario: multiply demand, mark a promotion, delay a supplier or change safety stock, filtering by product, category, supplier or date range. It compares the scenario against the baseline without touching anything real, and you can save it to run again.', isNew: false },
+      { title: 'What is urgent reaches your phone', desc: 'The same daily summary of at-risk products that goes out by email, now to the phone of whoever decides. Each person links and verifies their own number from their settings.', isNew: false },
+      { title: 'Ask your inventory', desc: 'You ask about your own data in plain language — "why did demand for this category go up?", "which suppliers are running late?" — and every answer is marked with where it came from, so you know when it is standing on your data and when it is not.', isNew: false },
+      { title: 'The list updates itself', desc: 'Instead of remembering to recalculate, you leave it running: every Monday at 6, every day, weekdays only, hourly, or the first of each month. The screen shows when it ran, when it runs next, and whether it failed.', isNew: false },
+      { title: 'Your team talks next to the inventory', desc: 'One-to-one conversations between the people in your company, inside StockAI, next to the inventory they are talking about. If the other person is not connected, a heads-up reaches their WhatsApp so the message is not missed.', isNew: true },
     ],
     isNew: 'New',
     tail: 'All of that comes on top of the base: the signal, purchase orders, receptions that learn your supplier’s lead time, the reports and the email alerts — all of it on the free plan too. ',
@@ -690,6 +721,17 @@ const en: LandingCopy = {
     body: 'The user manual covers all nineteen screens at the same depth: what each one is for, what every figure means, how to do the concrete things, and what tends to confuse people. Same product as these captures, not a shortened version.',
     cta: 'Download the manual (PDF)',
     note: 'PDF · English · 59 pages',
+  },
+  tech: {
+    tag: 'For your technical team',
+    title: 'What is underneath, briefly.',
+    lead: 'None of this is needed to buy better. It is here for whoever wants to check it.',
+    items: [
+      { title: 'Models competing per product', desc: 'Nine models are tried on each product’s history, and the one that is least wrong is kept.' },
+      { title: 'Accuracy and backtesting per model', desc: 'Each model’s error, measured on your own history and visible on the forecast screen.' },
+      { title: 'ABC-XYZ classification', desc: 'ABC by weight in sales, XYZ by how steady demand is. It is what places the safety buffer.' },
+      { title: 'Public API and MCP server', desc: 'A REST API with per-company keys, and a read-only MCP server for AI assistants. Same keys, same limits.' },
+    ],
   },
   tour: {
     title: 'Screen by screen.',
@@ -719,7 +761,7 @@ const en: LandingCopy = {
         chapter: 'Analysis',
         when: 'When you want to understand why, or test a decision before making it.',
         screens: [
-          { img: SHOTS_EN.forecast, name: 'Forecast per product', does: 'Nine models compete for every product and the one that is least wrong on your own history wins. Here you see which won and how well it did.', finds: ['History, forecast and the likely sales range', 'Each model’s error, so you know how much to trust it', 'Daily, weekly, monthly or quarterly, matching how you buy'], alt: 'StockAI per-SKU forecast chart: sales history, forecast and the likely sales range, with the model comparison.' },
+          { img: SHOTS_EN.forecast, name: 'Forecast per product', does: 'How much you can expect to sell of each product and within what range, so you know how far to trust the suggested quantity before ordering.', finds: ['History, forecast and the likely sales range', 'How far off the forecast tends to be, so you know how much to trust it', 'Daily, weekly, monthly or quarterly, matching how you buy'], alt: 'StockAI per-SKU forecast chart: sales history, forecast and the likely sales range, with the model comparison.' },
           { img: SHOTS_EN.pattern, name: 'How each product sells', does: 'It separates what is genuinely growing from the weekly pattern repeating itself. That is the difference between a trend and a Monday.', finds: ['Sales with the usual up-and-down already taken out', 'How much of the movement the day of the week explains', 'The average per day, to see where the peak is'], alt: 'StockAI screen separating a product’s real trend from the pattern that repeats every week.' },
           { img: SHOTS_EN.escenarios, name: 'Scenario simulator', does: 'What happens if you sell 40% more, if your supplier runs a week late, or if you promote in December? You see it before committing, product by product.', finds: ['The current plan and the scenario, side by side', 'Which products change state and how much the order changes', 'Saved scenarios, to run them again'], alt: 'StockAI scenario simulator comparing the current plan against a higher-demand scenario, product by product.' },
           { img: SHOTS_EN.impacto, name: 'Impact', does: 'What you did with StockAI this month, from figures that come out of your own records. It does not estimate savings or count avoided stockouts, because those cannot be measured with certainty.', finds: ['How many orders you generated and how many recommendations you followed', 'Where every number comes from, said plainly', 'The same summary reaches your inbox on the first of the month'], alt: 'StockAI impact screen with the monthly summary of what was done with the tool and where each figure comes from.' },
@@ -745,13 +787,13 @@ const en: LandingCopy = {
     lead: 'If you have a question that is not here, write to us directly. We answer within 24 hours.',
     cta: 'Write to us →',
     items: [
-      { q: 'Do I need statistics or programming knowledge to use StockAI?', a: 'No. StockAI is built so anyone on the purchasing or planning team can use it. There is no model configuration and no code. You load your data and the system produces the forecasts.' },
+      { q: 'Do I need statistics or programming knowledge to use StockAI?', a: 'No. StockAI is built for the person who buys: you open the screen and see what to order today, how much and from which supplier. There are no models to configure and no code. You upload your data and the system does the rest.' },
       { q: 'What format does my sales data need to be in?', a: 'StockAI accepts Excel (.xlsx) and CSV. The file needs at least a date column, a product identifier column (SKU or name) and a quantity-sold column. The system works out which column is which.' },
       { q: 'What if I have products with very little sales history, or incomplete data?', a: 'StockAI needs at least 20 periods of history per product to train it. Products below that minimum stay out of the forecast: no projection is invented for them. Before anything runs, the file review tells you how many products are under the threshold, and if none of them clears it the file is stopped with the explanation on screen instead of producing an empty result. Those products still appear in your inventory marked NO DATA — no signal and no suggested quantity — so the decision is yours and not an invented number’s.' },
       { q: 'Is my data safe? Who has access to it?', a: 'The data you upload to StockAI is exclusively yours: it is not shared with third parties and it is not used to train models for other companies — every forecast is trained only on your own account’s history. Every query is filtered by company and access is controlled by role: administrator, analyst or read-only. Your integration credentials — the user and password of your database — are stored encrypted. Your sales files and trained models are kept on StockAI’s server, in a folder separated per company; disk encryption is a property of the server it runs on, not something the application does. And deletion is genuinely complete: it removes every table and every file tied to your account, not just the main record.' },
-      { q: 'How long does it take to implement StockAI in my company?', a: 'In most cases, under a day. If you have a historical sales file you can upload it and see your first forecasts in under an hour. For ERP or in-house system integrations, the time depends on the complexity.' },
+      { q: 'How long does it take to start using StockAI in my company?', a: 'In most cases, under a day. If you have a historical sales file you can upload it and see your first list of what to order in under an hour. For ERP or in-house system integrations, the time depends on the complexity.' },
       { q: 'Can it integrate with our current ERP or inventory system?', a: 'The normal path is by file: export from your system and upload the CSV or Excel. You can also connect StockAI straight to your Postgres or MySQL database and pull sales with a query, with no file in between. A custom ERP integration is something we build with our technical team around your operation, case by case — write to us and we will look at it.' },
-      { q: 'How often are the forecasts updated?', a: 'Every time you load new sales. You can launch it yourself when you upload the month’s file, or leave the scheduled recalculation running: every Monday at 6, every day, weekdays only, hourly, or the first of each month.' },
+      { q: 'How often does what it tells me to order get updated?', a: 'Every time you load new sales. You can launch it yourself when you upload the month’s file, or leave the scheduled recalculation running: every Monday at 6, every day, weekdays only, hourly, or the first of each month.' },
       { q: 'Is StockAI useful if I have more than one warehouse?', a: 'Yes. The free plan comes with one warehouse; on the full plan there is no cap on locations. You define routes between warehouses with transit days and cost. When a product is short in one warehouse and long in another, StockAI suggests moving instead of buying, and only suggests it if the lending warehouse keeps at least 30 days of coverage.' },
       { q: 'Where does StockAI get each supplier’s lead time from?', a: 'At first, from the one you type on the supplier’s card. Every time you record a reception, StockAI stores how many days actually passed between the order and the delivery. From that supplier’s third reception it starts using the real average instead of the declared lead time, and shows you which of the two it is using.' },
       { q: 'How large can the sales file I upload be?', a: 'On the free plan, up to 25 MB per file. Moving to the full plan lifts that to 2 GB. For scale: 3 years of history with 5,000 products selling daily is around 5 million rows, on the order of 200 MB as CSV — within the full plan.' },
@@ -767,7 +809,7 @@ const en: LandingCopy = {
     leadTimeNote: 'And the lead time is not the one they promised, it is the one they keep',
   },
   footer: {
-    tagline: 'Demand forecasting and inventory intelligence for distributors, retail and manufacturing.',
+    tagline: 'What to order, how much and from whom — for distributors, retail and manufacturing.',
     product: 'Product',
     company: 'Company',
     contact: 'Contact',
