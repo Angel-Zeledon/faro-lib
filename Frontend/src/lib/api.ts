@@ -8,7 +8,7 @@ import type {
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
-  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, DeadCapitalResponse, OptimizationResponse,
+  Supplier, SkuSupplier, MorningBriefing, DeadCapitalResponse, OptimizationResponse,
   SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
   CostOfIgnoringResponse, WhyChangedResponse,
   ShrinkageReason, ShrinkageRecord,
@@ -1369,10 +1369,6 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
     method: 'DELETE',
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
-
-// ── Dead stock / immobilised inventory ────────────────────────────────────────
-export const getDeadStock = (sessionId: string, minDays = 30) =>
-  request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
 
 // ── Dead capital / "capital parado" ───────────────────────────────────────────
 // Needs no session: it ranks money that has not moved by real stock-level

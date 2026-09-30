@@ -150,7 +150,7 @@ CHAPTER = {
                 "caveats": [
                     "`capital_freed` es la diferencia entre dos fotos mensuales de sobrestock. El sobrestock también baja por vender, por merma, por borrar productos y por reentrenar: la cifra NO es atribuible a StockAI y el código lo dice.",
                     "No se calcula ningún titular de «StockAI te ahorró $X» ni un conteo de «quiebres evitados», porque ambos necesitan supuestos que no están fundados en los datos del cliente.",
-                    "El stock muerto es una heurística: un SKU está «muerto» cuando su consumo observado es menor al 20% del esperado por pronóstico, con al menos 2 fotos y sin reposición en la ventana.",
+                    "La plata parada (`dead_capital.py`) no usa pronóstico: cuenta los días desde la última baja real del stock en `inventory_snapshots`, y con historial corto el número es un piso («al menos N días»), no una medición. Un SKU sin costo vale `null`, se cuenta aparte y queda fuera del total. La vista anterior basada en consumo esperado (`/dead-stock`) se retiró el 2026-09-30 porque valoraba en 0 un costo desconocido.",
                     "El ABC usa demanda diaria × costo unitario como aproximación de ingreso, cayendo a costo 1.0 cuando no hay costo. Los cortes XYZ son CV 0.5 y 1.0, fijos en el código.",
                 ],
             },
@@ -297,7 +297,7 @@ CHAPTER = {
                 "caveats": [
                     "`capital_freed` is the difference between two monthly overstock snapshots. Overstock also falls on sales, shrinkage, SKU deletion and retraining: the figure is NOT attributable to StockAI, and the code says so.",
                     "No \"StockAI saved you $X\" headline and no \"stockouts avoided\" count are computed, because both need assumptions not grounded in the tenant's own data.",
-                    "Dead stock is a heuristic: a SKU is \"dead\" when observed depletion is under 20% of forecast-expected depletion, with at least 2 snapshots and no restocking in the window.",
+                    "Money not moving (`dead_capital.py`) uses no forecast: it counts the days since the stock level last actually fell in `inventory_snapshots`, and with short history the number is a floor (\"at least N days\"), not a measurement. An unpriced SKU is valued `null`, counted apart and kept out of the total. The earlier depletion-versus-forecast view (`/dead-stock`) was retired on 2026-09-30 because it priced an unknown cost at 0.",
                     "ABC uses daily demand × unit cost as a revenue proxy, falling back to a unit cost of 1.0 when none is on file. The XYZ cutoffs are CV 0.5 and 1.0, hard-coded.",
                 ],
             },

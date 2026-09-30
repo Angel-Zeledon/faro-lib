@@ -1894,48 +1894,6 @@ export interface SuggestedQuestion {
   icon: string
 }
 
-// ── Dead stock / immobilised inventory ────────────────────────────────────────
-export interface DeadStockItem {
-  sku:                    string
-  display_name:           string | null
-  supplier:              string | null
-  current_stock:           number
-  unit_cost:         number | null
-  /** null when `unit_cost` is unknown — NEVER 0. See
-   *  `capital_trapped_unknown_reason`; a 0 here used to read as "nothing at
-   *  risk" for a SKU whose cost was simply never entered. */
-  capital_trapped:        number | null
-  capital_trapped_unknown_reason: DeadCapitalValueUnknownReason | null
-  /** null exactly when `capital_trapped` is null — there is nothing to
-   *  apply the holding rate to. */
-  holding_cost_monthly:   number | null
-  days_without_movement:  number
-  depletion_pct:          number
-  avg_daily_demand:       number
-  signal:                 string
-  abc:                    string
-  // English fallback; the cell renders `inventory.dead_action_<code>`.
-  action_suggested:       string
-  action_suggested_code?: string
-}
-
-export interface DeadStockResponse {
-  items:                        DeadStockItem[]
-  /** Sum of `capital_trapped` over priced items only — unpriced items are
-   *  never folded in as 0. */
-  total_capital_trapped:        number
-  total_holding_cost_monthly:   number
-  sku_count:                    number
-  /** How many of `items` have `capital_trapped: null` (no `unit_cost` on
-   *  file) — counted, never silently dropped or valued at 0. */
-  unpriced_sku_count:           number
-  min_days_static:              number
-  /** Annual holding rate this response was priced with, as a fraction
-   *  (0.20 = 20%). The footer names it: it used to say a hardcoded 25%
-   *  while /compras costed the same stock at the tenant's rate. */
-  holding_cost_pct:             number
-}
-
 /** Why a unit's value could not be priced. Never a silent 0 — see
  *  `backend/inventory/dead_capital.py`'s module docstring. */
 export type DeadCapitalValueUnknownReason = 'no_unit_cost'
