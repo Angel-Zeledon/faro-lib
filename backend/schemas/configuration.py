@@ -5,6 +5,7 @@ from pydantic_core import PydanticCustomError
 from typing import Annotated, Literal, Optional, Dict, Any, List
 
 from backend.errors import AppError
+from backend.inventory.calendar_catalog import DEFAULT_COUNTRY as DEFAULT_HOLIDAY_COUNTRY
 
 
 class AttachDatasetRequest(BaseModel):
@@ -225,7 +226,9 @@ class FeaturesConfigRequest(BaseModel):
     # ISO country code for the holiday calendar. Holidays are among the
     # strongest signals a daily retail series carries, and the product sells
     # across LatAm — a Colombian calendar is simply the wrong one for a
-    # distributor in Mexico. "CO" preserves the historical behaviour.
+    # distributor in Mexico. The default is Costa Rica, the anchor market
+    # (owner's decision, 2026-09-30; "CO" before). It is only a default: a
+    # session whose stored features_cfg names "CO" keeps training on Colombia.
     #
     # Bounded because the failure downstream is SILENT: `HolidayCalendar._load_year`
     # catches the `NotImplementedError` that `holidays.country_holidays("ZZZZ")`
@@ -235,13 +238,14 @@ class FeaturesConfigRequest(BaseModel):
     # string is refused before the validator (and before FastAPI echoes it back
     # inside the 422 body).
     #
-    # "" is REFUSED rather than quietly meaning "CO". `HolidayCalendar` reads it
-    # as `country or DEFAULT_COUNTRY` and lands on Colombia, which is the exact
-    # defect in a milder form: a Mexican distributor who cleared the field gets a
-    # Colombian calendar and is never told. Omitting the field still gets "CO" —
+    # "" is REFUSED rather than quietly meaning the default. `HolidayCalendar`
+    # reads it as `country or DEFAULT_COUNTRY` and lands on Costa Rica, which is
+    # the exact defect in a milder form: a Mexican distributor who cleared the
+    # field gets a Costa Rican calendar and is never told. Omitting the field
+    # still gets "CR" —
     # that is the documented default. Sending "" is a user who erased their
     # answer, and the honest response is to ask again.
-    holiday_country: str = Field(default="CO", min_length=2, max_length=64)
+    holiday_country: str = Field(default=DEFAULT_HOLIDAY_COUNTRY, min_length=2, max_length=64)
 
     @field_validator("holiday_country")
     @classmethod

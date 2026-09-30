@@ -44,7 +44,7 @@ SECTION = {
                 "walkthrough": [
                     "La pantalla se abre en el primero de tres pasos, marcados arriba: «Sube tus ventas», «Confirma columnas» y «El sistema aprende».",
                     "Antes de tocar el archivo llenas el plan: «Ponle un nombre (opcional)», «¿Hasta cuándo quieres planificar?» con las opciones 4 semanas, 8 semanas y 6 meses, y «Nivel de detalle del plan» con Auto (recomendado), Diario, Semanal y Mensual.",
-                    "El último control del plan es «¿En qué país vendes?»: decide de qué calendario de feriados aprende el modelo, ofrece doce países y viene preseleccionado en Colombia.",
+                    "El último control del plan es «¿En qué país vendes?»: decide de qué calendario de feriados aprende el modelo, ofrece doce países y viene preseleccionado en Costa Rica.",
                     "Arrastras tu archivo a la caja punteada o haces clic para buscarlo; la propia caja indica «Formatos aceptados: CSV, Excel (.xlsx, .xls)».",
                     "Si ya subiste archivos antes aparecen dos pestañas más junto a «Subir archivo nuevo»: «Usar un archivo ya subido» y «Repetir una carga anterior», que reutiliza también las columnas de esa carga.",
                     "Cuando el archivo es CSV, StockAI lo revisa en tu propia máquina antes de subirlo y te lista los problemas con el número de fila, además de ofrecerte una plantilla descargable.",
@@ -57,7 +57,7 @@ SECTION = {
                     ("Ponle un nombre (opcional)", "Cómo se llamará esta carga en tu historial. Solo sirve para reconocerla después; puedes dejarlo vacío."),
                     ("¿Hasta cuándo quieres planificar?", "El horizonte del pronóstico en días de calendario: 4 semanas son 28 días, 8 semanas 56 y 6 meses 180."),
                     ("Nivel de detalle del plan", "Si el plan se calcula por día, por semana o por mes. «Auto (recomendado)» deja que StockAI lo decida según la forma de tu archivo."),
-                    ("¿En qué país vendes?", "El calendario de feriados que aprende el modelo. Doce países disponibles; si no lo cambias, se usa Colombia."),
+                    ("¿En qué país vendes?", "El calendario de feriados que aprende el modelo. Doce países disponibles; si no lo cambias, se usa Costa Rica."),
                     ("SKU / Producto ★", "Obligatorio. La columna que identifica cada producto."),
                     ("Fecha ★", "Obligatorio. La columna con la fecha de cada venta."),
                     ("Demanda ★", "Obligatorio. La columna con las unidades vendidas — unidades, no dinero."),
@@ -68,7 +68,7 @@ SECTION = {
                 "tasks": [
                     (
                         "Subir tu primer archivo de ventas",
-                        " 1. Elige el horizonte y el nivel de detalle, y cambia el país si no vendes en Colombia."
+                        " 1. Elige el horizonte y el nivel de detalle, y cambia el país si no vendes en Costa Rica."
                         " 2. Arrastra el CSV o el Excel a la caja punteada."
                         " 3. Revisa los problemas por fila que aparezcan y corrige el archivo si hace falta."
                         " 4. En el paso 2, confirma las tres columnas obligatorias y las opcionales que tengas."
@@ -94,7 +94,7 @@ SECTION = {
                     "Un producto con menos de 20 períodos de historia no se marca con un aviso: se elimina antes de entrenar. No tendrá pronóstico ni aparecerá en el semáforo, y por eso las opciones que borran filas te advierten cuántos productos pueden caer por debajo de ese mínimo.",
                     "En el plan gratuito el archivo no puede pasar de 25 MB y el catálogo se topa en 100 productos; el plan pagado sube el archivo hasta 2000 MB y quita el tope de productos.",
                     "No existe un «continuar de todos modos». Si el control de datos encuentra algo sin arreglo posible, la única salida es corregir el mapeo de columnas arriba o subir otro archivo.",
-                    "El país de feriados viene en Colombia porque es lo que usaban todas las cargas antes de que existiera el control. Si vendes en otro país, cámbialo antes de subir: se aplica a esa carga, no hacia atrás.",
+                    "El país de feriados viene en Costa Rica, el mercado principal del producto. Si vendes en otro país, cámbialo antes de subir: se aplica a esa carga, no hacia atrás.",
                     "Si tu última carga terminada usaba columnas que siguen existiendo en el archivo nuevo, StockAI las reutiliza y te lo dice arriba. Si alguna desapareció, te nombra cuáles y vuelve a proponer el mapeo desde cero.",
                 ],
             },
@@ -320,7 +320,7 @@ SECTION = {
                 "walkthrough": [
                     "The screen opens on the first of three steps, shown along the top: \"Upload your sales\", \"Confirm columns\" and \"The system learns\".",
                     "Before you touch the file you fill in the plan: \"Give it a name (optional)\", \"How far ahead do you want to plan?\" with the options 4 weeks, 8 weeks and 6 months, and \"Plan detail level\" with Auto (recommended), Daily, Weekly and Monthly.",
-                    "The last plan control is \"Which country do you sell in?\": it decides whose public holidays the model learns from, offers twelve countries, and comes preset to Colombia.",
+                    "The last plan control is \"Which country do you sell in?\": it decides whose public holidays the model learns from, offers twelve countries, and comes preset to Costa Rica.",
                     "You drag your file onto the dashed box or click to browse; the box itself states \"Accepted formats: CSV, Excel (.xlsx, .xls)\".",
                     "If you have uploaded before, two more tabs appear next to \"Upload a new file\": \"Use a file you already uploaded\" and \"Repeat a previous upload\", which reuses that run's columns as well.",
                     "When the file is a CSV, StockAI checks it on your own machine before uploading and lists the problems with their row number, alongside a downloadable template.",
@@ -333,7 +333,7 @@ SECTION = {
                     ("Give it a name (optional)", "What this upload will be called in your history. It only helps you recognise it later; you can leave it empty."),
                     ("How far ahead do you want to plan?", "The forecast horizon in calendar days: 4 weeks is 28 days, 8 weeks is 56 and 6 months is 180."),
                     ("Plan detail level", "Whether the plan is computed by day, week or month. \"Auto (recommended)\" lets StockAI decide from the shape of your file."),
-                    ("Which country do you sell in?", "The holiday calendar the model learns from. Twelve countries are offered; leave it alone and Colombia is used."),
+                    ("Which country do you sell in?", "The holiday calendar the model learns from. Twelve countries are offered; leave it alone and Costa Rica is used."),
                     ("SKU / Product ★", "Required. The column identifying each product."),
                     ("Date ★", "Required. The column holding the date of each sale."),
                     ("Demand ★", "Required. The column with units sold — units, not money."),
@@ -344,7 +344,7 @@ SECTION = {
                 "tasks": [
                     (
                         "Upload your first sales file",
-                        " 1. Pick the horizon and the detail level, and change the country if you do not sell in Colombia."
+                        " 1. Pick the horizon and the detail level, and change the country if you do not sell in Costa Rica."
                         " 2. Drag the CSV or Excel file onto the dashed box."
                         " 3. Read any row-level problems reported and fix the file if needed."
                         " 4. On step 2, confirm the three required columns and whichever optional ones you have."
@@ -370,7 +370,7 @@ SECTION = {
                     "A product with fewer than 20 periods of history is not flagged with a warning: it is dropped before training. It gets no forecast and never appears in the traffic light, which is why the options that delete rows warn you how many products could fall below that minimum.",
                     "On the free plan the file cannot exceed 25 MB and the catalogue is capped at 100 products; the paid plan raises the file to 2000 MB and removes the product cap.",
                     "There is no \"continue anyway\". If the data check finds something with no possible fix, the only way out is correcting the column mapping above or uploading a different file.",
-                    "The holiday country starts on Colombia because that is what every upload silently used before this control existed. If you sell elsewhere, change it before uploading: it applies to that run, not retroactively.",
+                    "The holiday country starts on Costa Rica, the product's main market. If you sell elsewhere, change it before uploading: it applies to that run, not retroactively.",
                     "If your last finished upload used columns that still exist in the new file, StockAI reuses them and says so at the top. If any went missing, it names which ones and proposes the mapping from scratch again.",
                 ],
             },

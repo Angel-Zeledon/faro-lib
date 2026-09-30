@@ -118,8 +118,18 @@ class TestGlobalModelReachesTheEngine:
 
 class TestHolidayCountry:
 
-    def test_default_is_colombia(self, make_session):
+    def test_default_is_costa_rica(self, make_session):
+        """Owner's decision 2026-09-30: the anchor market is the default."""
         tenant_id, sid = make_session("holidays-default", columns_cfg=LEGACY_COLUMNS)
+        cfg = build_engine_config(tenant_id, sid)
+        assert cfg["features"]["holiday_country"] == "CR"
+
+    def test_a_stored_colombia_is_preserved(self, make_session):
+        """Changing the default must not move a session that chose Colombia."""
+        tenant_id, sid = make_session(
+            "holidays-co", columns_cfg=LEGACY_COLUMNS,
+            features_cfg={"holiday_country": "CO"},
+        )
         cfg = build_engine_config(tenant_id, sid)
         assert cfg["features"]["holiday_country"] == "CO"
 

@@ -41,6 +41,20 @@ class TestHolidayCalendar:
         assert pd.Timestamp("2025-09-16") in mx
         assert pd.Timestamp("2025-09-16") not in co
 
+    def test_default_country_is_costa_rica(self):
+        """Owner's decision 2026-09-30: the anchor market is the default, in
+        the calendar AND in the engine config, and it resolves the real
+        Costa Rican table rather than the Easter + Christmas fallback."""
+        assert FeaturesConfig().holiday_country == "CR"
+        cal = HolidayCalendar()
+        assert cal.country == "CR"
+        default_set = cal.holidays_for([2025])
+        # Costa Rican Independence Day; not a public holiday in Colombia.
+        assert pd.Timestamp("2025-09-15") in default_set
+        assert pd.Timestamp("2025-09-15") not in HolidayCalendar("CO").holidays_for([2025])
+        # An explicit country still wins over the default.
+        assert HolidayCalendar("CO").country == "CO"
+
     def test_unknown_country_degrades_but_keeps_easter_and_christmas(self):
         cal = HolidayCalendar("ZZ")
         holidays = cal.holidays_for([2025])

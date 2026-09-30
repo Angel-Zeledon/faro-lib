@@ -94,7 +94,7 @@ CHAPTER = {
                     "shift(1) para que la fila no pueda reconstruir su propio objetivo."
                 ),
                 "how": [
-                    "Calendario: 19 columnas, el mismo constructor para entrenamiento e inferencia. Feriados por país desde la librería `holidays`, país por defecto CO; si falta la librería degrada a Pascua y Navidad, nunca a un conjunto vacío.",
+                    "Calendario: 19 columnas, el mismo constructor para entrenamiento e inferencia. Feriados por país desde la librería `holidays`, país por defecto CR (Costa Rica, decisión del dueño del 2026-09-30; antes CO); si falta la librería degrada a Pascua y Navidad, nunca a un conjunto vacío.",
                     "Rezagos [1, 7, 14]; diferencias [1, 7] calculadas sobre shift(1); ventanas [7, 14, 28] con media, desviación, mínimo, máximo y CV.",
                     "El dropna de calentamiento corre SOLO sobre columnas generadas y el objetivo — un dropna general llegó a vaciar datasets enteros.",
                 ],
@@ -245,7 +245,7 @@ CHAPTER = {
                     "reconstruct its own target."
                 ),
                 "how": [
-                    "Calendar: 19 columns, the same builder for training and inference. Holidays per country from the `holidays` library, default country CO; without the library it degrades to Easter and Christmas, never to an empty set.",
+                    "Calendar: 19 columns, the same builder for training and inference. Holidays per country from the `holidays` library, default country CR (Costa Rica, owner's decision of 2026-09-30; CO before); without the library it degrades to Easter and Christmas, never to an empty set.",
                     "Lags [1, 7, 14]; diffs [1, 7] computed on shift(1); rolling [7, 14, 28] with mean, std, min, max and CV.",
                     "The warm-up dropna runs ONLY over generated columns and the target — a blanket dropna once emptied whole datasets.",
                 ],

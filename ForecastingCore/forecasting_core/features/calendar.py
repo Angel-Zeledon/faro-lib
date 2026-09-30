@@ -29,7 +29,11 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-DEFAULT_COUNTRY = "CO"
+# Costa Rica, the product's anchor market (owner's decision, 2026-09-30). It was
+# "CO" until then only because the first calendar ever built was Colombian. A
+# fixed default on purpose — not derived from the tenant timezone — and only a
+# default: an explicit country passed in always wins.
+DEFAULT_COUNTRY = "CR"
 
 # PROCESS-WIDE cache of (country, year) -> holiday dates, shared across every
 # `HolidayCalendar` instance rather than kept per-instance.

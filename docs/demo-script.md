@@ -75,8 +75,8 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
 - **3 suppliers** with lead times, mapped to SKUs.
 - **4 purchase orders** in different states (received, partial, in transit, to
   be sent) plus **1 closed transfer**.
-- **2 shrinkage records**, and a **LatAm calendar** (Colombian fortnights and
-  Holy Week).
+- **2 shrinkage records**, and a **LatAm calendar** (the Costa Rica catalog —
+  fortnights, aguinaldo — plus Holy Week).
 
 ---
 

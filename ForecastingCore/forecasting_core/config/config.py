@@ -95,8 +95,10 @@ class FeaturesConfig:
     # ISO country code for the holiday calendar. The product sells across LatAm;
     # a Colombian holiday table is the wrong calendar for a distributor in
     # Mexico or Peru, and the holidays are among the strongest demand signals a
-    # daily series has. "CO" keeps the pre-existing behaviour as the default.
-    holiday_country: str = "CO"
+    # daily series has. The default is Costa Rica, the anchor market (owner's
+    # decision, 2026-09-30; it was "CO" before). Kept in step with
+    # `features.calendar.DEFAULT_COUNTRY`.
+    holiday_country: str = "CR"
 
 
 @dataclass
