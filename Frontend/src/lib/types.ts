@@ -1079,6 +1079,9 @@ export interface Transfer {
   items: TransferItem[]
 }
 
+/** Why a row's service level cannot be taken at face value. */
+export type ServiceLevelCaveat = 'intermittent_demand'
+
 export interface InventoryStatusItem extends InventoryStock {
   has_forecast:         boolean
   has_stock:            boolean
@@ -1114,6 +1117,9 @@ export interface InventoryStatusItem extends InventoryStock {
   moq_rule_scope?:        RuleScope | null
   service_level_source?:  ValueSource
   service_level_rule_scope?: RuleScope | null
+  /** Set when this SKU's cushion was MEASURED unable to keep the service
+   *  level (stability.md 17b). The screen must say so next to the %. */
+  service_level_caveat?:  ServiceLevelCaveat | null
   reorder_point?:         number | null
   // English fallback sentence. The Spanish is rendered by the frontend from
   // explanation_code + explanation_params (lib/explanationCopy.ts).

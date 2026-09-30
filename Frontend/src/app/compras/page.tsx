@@ -433,6 +433,11 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
        <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
         {provenanceText(t, item.service_level_source, item.service_level_rule_scope)}
        </div>
+       {item.service_level_caveat && (
+        <div role="note" style={{ color: 'var(--warning)', fontSize: 10.5, marginTop: 4, lineHeight: 1.35 }}>
+         {t(`hoy.service_level_caveat_${item.service_level_caveat}`, { pct: Math.round(item.service_level * 100) })}
+        </div>
+       )}
       </div>
      )}
      <div>
@@ -677,6 +682,7 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    service_level:        risk.service_level ?? null,
    service_level_source: risk.service_level_source ?? 'default',
    service_level_rule_scope: risk.service_level_rule_scope ?? null,
+   service_level_caveat: risk.service_level_caveat ?? null,
    moq:              risk.moq ?? null,
    moq_source:       risk.moq_source ?? 'default',
    moq_rule_scope:   risk.moq_rule_scope ?? null,
@@ -715,6 +721,7 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    service_level:        w.service_level ?? null,
    service_level_source: w.service_level_source ?? 'default',
    service_level_rule_scope: w.service_level_rule_scope ?? null,
+   service_level_caveat: w.service_level_caveat ?? null,
    moq:              w.moq ?? null,
    moq_source:       w.moq_source ?? 'default',
    moq_rule_scope:   w.moq_rule_scope ?? null,

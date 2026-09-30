@@ -99,7 +99,10 @@ SECTION = {
                      "configuró todavía."),
                     ("Nivel de servicio",
                      "Probabilidad con la que quieres cubrir la demanda durante el tiempo de entrega. "
-                     "Si no lo configuraste, StockAI usa 95% y lo marca como estimado."),
+                     "Si no lo configuraste, StockAI usa 95% y lo marca como estimado. "
+                     "Límite medido: en productos de venta intermitente (muchos días sin "
+                     "ventas) el colchón cumple cerca de la mitad de las veces, no el 95%; "
+                     "en esos productos el panel lo advierte junto al porcentaje."),
                     ("Costo unitario / MOQ",
                      "El costo que registraste para ese producto y la compra mínima que exige "
                      "el proveedor. Si no los diste, se marcan como estimados (la compra "
@@ -1068,7 +1071,10 @@ SECTION = {
                      "days) because nobody has configured it yet."),
                     ("Service level",
                      "The probability you want to cover demand with during the lead time. If "
-                     "you have not configured it, StockAI uses 95% and marks it as estimated."),
+                     "you have not configured it, StockAI uses 95% and marks it as estimated. "
+                     "Measured limit: on intermittent products (many days with no sales) the "
+                     "cushion holds about half the time, not 95%; on those products the panel "
+                     "says so next to the percentage."),
                     ("Unit cost / MOQ",
                      "The cost you recorded for that product and the minimum order the "
                      "supplier requires. If you did not provide them, they are marked as "

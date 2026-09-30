@@ -3889,7 +3889,16 @@ honour the number the buyer typed is the same shape of problem, and deserves
 the same answer: **say so per SKU, where the cushion is published.** Never a
 silent fallback, never a number with nothing behind it.
 
-**Not built.** It needs a field on the risk payload, a decision-layer that
+**[BUILT 2026-09-30]** Every inventory row (aggregate and per warehouse) now
+carries `service_level_caveat = "intermittent_demand"` when the run's routing
+plan classifies the SKU intermittent — the class where the cushion was measured
+at ~50%. `/compras` prints the reason beside the service level (desktop and
+mobile), and the user manual states the limit. The numbers themselves are
+unchanged; `test_service_level_caveat.py` pins both. What it does NOT do: a
+dense SKU that under-covers for another reason gets no caveat, because nothing
+per SKU measures that yet.
+
+*As originally written:* **Not built.** It needs a field on the risk payload, a decision-layer that
 reads it, and a line on the screen — and it should be built deliberately rather
 than at the end of a long session. Until it is, **the manual must state the
 limit**: a chapter that documents a 95% service level without it is documenting

@@ -1537,6 +1537,7 @@ export const translations = {
     'hoy.assumption_field_unit_cost':     'el costo unitario',
     'hoy.assumption_field_moq':           'la compra mínima',
     'hoy.why_service_level_label': 'Nivel de servicio',
+    'hoy.service_level_caveat_intermittent_demand': 'Este producto se vende de forma intermitente (muchos días sin ventas). Con ese patrón no podemos garantizar el {pct}%: medido, el colchón alcanza cerca de la mitad de las veces. Revisa la cantidad antes de aprobar.',
     'hoy.why_unit_cost_label':     'Costo unitario',
 
     // ── Validación de CSV, narrativa y 404 ──────────────────────────────
@@ -5178,6 +5179,7 @@ export const translations = {
     'hoy.assumption_field_unit_cost':     'the unit cost',
     'hoy.assumption_field_moq':           'the minimum order',
     'hoy.why_service_level_label': 'Service level',
+    'hoy.service_level_caveat_intermittent_demand': 'This product sells intermittently (many days with no sales). With that pattern we cannot guarantee {pct}%: measured, the cushion holds about half the time. Check the quantity before approving.',
     'hoy.why_unit_cost_label':     'Unit cost',
 
     // ── CSV validation, narrative and 404 ───────────────────────────────

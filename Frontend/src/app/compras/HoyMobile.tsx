@@ -511,7 +511,9 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
               label={tOr(t, 'hoy.why_service_level_label', 'Service level')}
               value={`${Math.round(item.service_level * 100)}%`}
               source={item.service_level_source}
-              note={provenanceText(t, item.service_level_source, item.service_level_rule_scope)}
+              note={item.service_level_caveat
+                ? t(`hoy.service_level_caveat_${item.service_level_caveat}`, { pct: Math.round(item.service_level * 100) })
+                : provenanceText(t, item.service_level_source, item.service_level_rule_scope)}
             />
           )}
           <WhyRow

@@ -13,7 +13,7 @@
 import Link from 'next/link'
 import { Info, ArrowRight } from 'lucide-react'
 import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
-import type { MorningBriefing, InventoryStatusItem } from '@/lib/types'
+import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat } from '@/lib/types'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -64,6 +64,9 @@ export interface ActionItem {
  service_level:        number | null
  service_level_source: ValueSource
  service_level_rule_scope: RuleScope | null
+ // Measured unable to keep that service level (stability.md 17b): the panel
+ // says so beside the percentage instead of printing it bare.
+ service_level_caveat: ServiceLevelCaveat | null
  moq:              number | null
  moq_source:       ValueSource
  moq_rule_scope:   RuleScope | null

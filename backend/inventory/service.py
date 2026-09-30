@@ -1110,6 +1110,36 @@ def _calc_signal(coverage_days: float, lead_time: float, reorder_point_days: flo
     return "SOBRESTOCK"
 
 
+# Series classes whose cushion was MEASURED unable to keep the service level the
+# buyer configured (stability.md 17b): on intermittent demand the lead-time sum
+# is zero-inflated and skewed, and four modelling attempts — per-horizon bands
+# twice, stratified banks, a parametric compound model — delivered ~50% against
+# a nominal 95%. Until something measures better, the row SAYS so instead of
+# printing a percentage it does not keep ("degrade out loud", CLAUDE.md).
+# A code, not a sentence: the frontend renders it in the reader's language.
+_SERVICE_LEVEL_CAVEAT_BY_FLAG = {"intermittent": "intermittent_demand"}
+
+
+def _service_level_caveats(result: dict) -> dict[str, str]:
+    """{sku: caveat code} from the run's stored routing plan.
+
+    `routing[sku]["flags"]` is the engine's multi-label series classification
+    (`ForecastEngine.get_routing_plan`), stored with every training result. A
+    session trained before flags were stored yields {} — no caveat is invented
+    for a series nobody classified.
+    """
+    caveats: dict[str, str] = {}
+    for sku, plan in (result.get("routing") or {}).items():
+        if not isinstance(plan, dict):
+            continue
+        flags = set(plan.get("flags") or [])
+        for flag, code in _SERVICE_LEVEL_CAVEAT_BY_FLAG.items():
+            if flag in flags:
+                caveats[str(sku)] = code
+                break
+    return caveats
+
+
 def _measured_safety_stock(
     risk: Optional[dict], lead_time: float, service_level: float,
 ) -> Optional[float]:
@@ -1735,8 +1765,10 @@ def _compute_inventory_status(
     # it. Absent for older sessions and for champions that ran no rolling-origin
     # backtest — the safety stock falls back to the classical formula.
     demand_risk: dict[str, dict] = {}
+    service_level_caveats: dict[str, str] = {}
     try:
         result = session_store.get_training_result(tenant_id, session_id) or {}
+        service_level_caveats = _service_level_caveats(result)
         quality: dict = result.get("data_quality") or {}
         for sku_key, q in quality.items():
             if isinstance(q, dict):
@@ -2102,6 +2134,9 @@ def _compute_inventory_status(
             "moq_source":         moq_source,
             "moq_rule_scope":     moq_rule_scope,
             "service_level":      sku_service_level,
+            # Set when this SKU's cushion was measured unable to keep that
+            # service level (see _SERVICE_LEVEL_CAVEAT_BY_FLAG); None otherwise.
+            "service_level_caveat": service_level_caveats.get(sku),
             "service_level_source": service_level_source,
             "service_level_rule_scope": service_level_rule_scope,
             "supplier":          supplier,
@@ -2275,8 +2310,10 @@ def get_inventory_status_by_warehouse(
     # SKU would otherwise be computed from different models.
     best_model: dict[str, str] = {}
     demand_risk: dict[str, dict] = {}
+    service_level_caveats: dict[str, str] = {}
     try:
         _res = session_store.get_training_result(tenant_id, session_id) or {}
+        service_level_caveats = _service_level_caveats(_res)
         best_model = best_model_by_sku((_res.get("metrics") or {}).get("rows") or [])
         demand_risk = {
             str(k): v for k, v in (_res.get("demand_risk") or {}).items()
@@ -2527,6 +2564,7 @@ def get_inventory_status_by_warehouse(
                 "partial_transfer": None,
                 "unit_cost": (float(stock["unit_cost"])
                               if stock and stock.get("unit_cost") is not None else None),
+                "service_level_caveat": service_level_caveats.get(sku),
             })
 
     if lanes is None:
