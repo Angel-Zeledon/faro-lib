@@ -1,11 +1,11 @@
 """Shared default session-config blobs for flows that auto-provision a
-training session without a human walking the wizard (the demo quickstart and
-the accounting-integrations sync service).
+training session without a human walking the wizard.
 
 Extracted from `backend/api/v1/demo.py`'s former module-private
-`_DEMO_CONFIGS` so `backend/integrations/sync_service.py` can seed the exact
-same six `session_configs` JSONB blobs without importing an API router
-module. Behavior is unchanged — this is a pure constant lift.
+`_DEMO_CONFIGS` so a non-router caller can seed the exact same six
+`session_configs` JSONB blobs without importing an API router module. Today
+`POST /demo/quickstart` is the only caller; it is kept out of the router so the
+next auto-provisioning path cannot quietly seed a DIFFERENT set of defaults.
 """
 import copy
 from typing import Any
@@ -26,7 +26,16 @@ _DEFAULT_QUICKSTART_CONFIGS: dict[str, Any] = {
     # serve. It competes on the same metrics table as the rest.
     "models_cfg": {"selected_models": ["global_lgbm", "lightgbm", "prophet",
                                        "croston", "xgboost"]},
-    "validation_cfg": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 3,
+    # `wfv_splits` is 8, not the 3 it was until 2026-09-21. Those folds are the
+    # rolling origins the cushion's calibration is measured from, and three of
+    # them starve it: measured end to end at a 15-day lead time, the band the
+    # product publishes delivered 83.3% against a promised 95% at three folds
+    # and 96.7% at eight, with nothing else changed (docs/stability.md 17b).
+    # The extra fits are affordable because removing the separate p10/p50/p90
+    # quantile models freed 58% of ML training time. Short series are not hurt:
+    # the splitter still funds eight non-empty folds down to 20 rows, and the
+    # out-of-fold residual count comes out the same or better.
+    "validation_cfg": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 8,
                        "min_history": 20, "seasonal_period": 7},
     "forecast_cfg": {"horizon": 30},
     "business_cfg": {"service_level": 0.95, "lead_time_days": 15,

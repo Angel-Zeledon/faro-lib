@@ -14,7 +14,8 @@ forgotten.
 Only writes, only machines, only successes:
 
 - Reads are not audited. A GET that changed nothing is noise, and at 120 calls a
-  minute the noise would bury the signal.
+  minute the noise would bury the signal. `POST /api/v1/mcp` counts as a read
+  for the same reason and is exempted by path — see the constant below.
 - People are not audited here. Their actions are already attributable through
   their session, and logging every UI click would drown the trail.
 - Refused calls are not audited: 401/403/429 mean nothing happened. A failed
@@ -30,6 +31,21 @@ log = logging.getLogger(__name__)
 
 _MUTATIONS = ("POST", "PUT", "PATCH", "DELETE")
 
+# The one POST in this API that is not a write.
+#
+# MCP is JSON-RPC: the method lives inside the body, so every call — including
+# `tools/list` and every read tool — arrives as a POST. Auditing by HTTP verb
+# would file each of them as `api_write`, which is wrong twice over: it labels a
+# read as a write, and at this endpoint's 120-per-minute ceiling it buries the
+# genuine writes this trail exists to show. There is no write to miss by
+# skipping it: `backend/mcp/catalog.py` is a closed catalogue of reads, pinned
+# by `test_mcp_server.py::test_every_tool_actually_only_calls_GET_endpoints`.
+#
+# If a write tool is ever added there, this exemption has to come off in the
+# same change — which is why it is a named constant and not a condition buried
+# in the dispatch below.
+_NOT_A_MUTATION_DESPITE_THE_VERB = ("/api/v1/mcp",)
+
 # Refusals by the auth layer itself. Nothing was attempted, so nothing is
 # recorded — otherwise a misconfigured client hammering with a dead key would
 # write one audit row per attempt.
@@ -43,6 +59,8 @@ class MachineAuditMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         if request.method not in _MUTATIONS:
+            return response
+        if request.url.path in _NOT_A_MUTATION_DESPITE_THE_VERB:
             return response
         # Read from the SCOPE, not a ContextVar: BaseHTTPMiddleware runs the
         # downstream app in its own task, so anything a dependency sets in a

@@ -17,7 +17,7 @@ python scripts/run_tests.py          # backend, engine, typecheck
 python scripts/e2e_client.py         # the API flow end to end, signup → results
 ```
 
-Then start both servers (see the `running-faro` skill for the port traps) and
+Then start both servers (see the `running-stockai` skill for the port traps) and
 **sign up a brand new tenant**. Not your usual one: half of what breaks only
 breaks on an account with no history.
 
@@ -66,6 +66,21 @@ browser console as you go — it should stay empty.
 
 9. **`/instalacion`** reports each service as configured or off, by name, and
    says which ones an unconfigured service takes down.
+
+10. **The key a customer's system uses, on both surfaces.** `/automatizacion` →
+    generate a **read-only** key. Paste it into `/api`, run `GET /planning`
+    (200, with an `active_session_id`). Then, from the MCP section on the same
+    page, the curl it offers:
+
+    ```sh
+    curl -X POST "$STOCKAI/mcp" -H "Authorization: Bearer $KEY"       -H "Content-Type: application/json"       -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+    ```
+
+    Five tools come back. Now the part worth the line: call
+    `get_inventory_status` and check that `summary` counts the whole catalogue
+    even when `truncated` is true — a summary that shrank with the page tells
+    an assistant there is nothing to buy. Then send a wrong key and confirm the
+    answer is a **401 naming the key**, not a 403 and not a hang.
 
 ## What this walk has caught
 

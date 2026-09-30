@@ -21,7 +21,7 @@ import type { Lang } from './translations'
 export interface Titled { title: string; desc: string }
 export interface Numbered { n: string; title: string; desc: string }
 export interface Case { label: string; title: string; desc: string; does: string[] }
-export interface Compare { feature: string; excel: string; faro: string }
+export interface Compare { feature: string; excel: string; stockai: string }
 export interface Role { role: string; pain: string; gain: string }
 export interface Include { title: string; desc: string; isNew: boolean }
 export interface Signal { signal: string; rule: string; example: string }
@@ -46,7 +46,14 @@ export interface LandingCopy {
     tag: string; title: string; lead: string
     freeLabel: string; freePrice: string; freeNote: string
     paidLabel: string; paidPrice: string; paidNote: string
-    unlimited: string; limits: [string, string][]
+    // [label, what the free tier gets, what the paid tier gets]. The paid
+    // column used to render `unlimited` for every row, which told a paying
+    // customer their upload size was uncapped when entitlements/plans.py
+    // bounds it at 2000 MB — the one ceiling that survives on a paid tenant,
+    // because an upload is read into memory before it is anything else.
+    // Carrying both values per row makes the type refuse a row that does not
+    // say what each tier actually gets.
+    limits: [string, string, string][]
     closing: string; ctaSignup: string; ctaWhatsapp: string; ctaEmail: string
   }
   benefits: string[]
@@ -112,9 +119,9 @@ const es: LandingCopy = {
     eyebrow: 'Para distribuidores, retail y manufactura',
     title1: 'Deja de gestionar el inventario',
     title2: 'a base de intuición.',
-    lead: 'Faro analiza tus ventas históricas y genera pronósticos de demanda por producto — para que sepas cuánto comprar, cuándo comprar y qué productos están en riesgo de quiebre.',
+    lead: 'StockAI analiza tus ventas históricas y genera pronósticos de demanda por producto — para que sepas cuánto comprar, cuándo comprar y qué productos están en riesgo de quiebre.',
     cta: 'Empezar gratis con datos de ejemplo',
-    frame: 'Faro · Panel de compras',
+    frame: 'StockAI · Panel de compras',
   },
   strip: {
     models: 'Modelos compitiendo por producto',
@@ -137,22 +144,22 @@ const es: LandingCopy = {
   how: {
     tag: 'Cómo funciona',
     title: 'De tus datos históricos a decisiones de compra.',
-    lead: 'Faro transforma el historial de ventas en pronósticos precisos por producto. Sin configuración estadística, sin necesitar un analista dedicado.',
+    lead: 'StockAI transforma el historial de ventas en pronósticos precisos por producto. Sin configuración estadística, sin necesitar un analista dedicado.',
     steps: [
       { n: '01', title: 'Carga tu historial de ventas', desc: 'Sube un archivo CSV o Excel con tus ventas. El sistema identifica automáticamente las columnas de fecha, producto y cantidad vendida.' },
-      { n: '02', title: 'Análisis automático por producto', desc: 'Faro detecta la tendencia, estacionalidad y variabilidad de cada SKU de forma independiente. Sin configuración manual por producto.' },
+      { n: '02', title: 'Análisis automático por producto', desc: 'StockAI detecta la tendencia, estacionalidad y variabilidad de cada SKU de forma independiente. Sin configuración manual por producto.' },
       { n: '03', title: 'Pronóstico con intervalos de confianza', desc: 'Genera proyecciones de demanda para cada producto con rangos alto y bajo. Identifica qué SKUs tienen demanda predecible y cuáles son volátiles.' },
       { n: '04', title: 'Recomendaciones de compra', desc: 'El sistema calcula cuánto pedir, cuándo pedir y qué productos están en riesgo de quiebre según el plazo de entrega de cada proveedor.' },
     ],
   },
   decide: {
     tag: 'La regla, sin misterio',
-    title: 'Cómo decide Faro que un producto está en rojo.',
+    title: 'Cómo decide StockAI que un producto está en rojo.',
     lead: 'Ninguna recomendación sale de una caja negra. Todo el semáforo se apoya en una sola cuenta, y la puedes hacer a mano para comprobar que da lo mismo.',
     formulaTitle: 'La cuenta',
     formulaBody: 'Cobertura = existencias ÷ demanda diaria pronosticada. Eso te da cuántos días aguantas si no llega nada más. Esa cifra se compara contra el plazo de tu proveedor: los días que tarda en entregarte desde que le pasas la orden. La lógica es la que ya usas de cabeza, solo que aplicada a los miles de códigos que no alcanzas a revisar: si aguantas menos de lo que tarda en llegar, vas tarde.',
     formulaBody2: 'La lógica es la que ya usas de cabeza, solo que aplicada a los miles de códigos que no alcanzas a revisar: si aguantas menos de lo que tarda en llegar, vas tarde.',
-    leadTimeBody: 'El plazo de entrega es la mitad de la cuenta, así que conviene que sea el real. Cada vez que registras una recepción, Faro guarda cuántos días pasaron de verdad — y a partir de la tercera empieza a planificar con ese promedio en lugar del que te prometieron.',
+    leadTimeBody: 'El plazo de entrega es la mitad de la cuenta, así que conviene que sea el real. Cada vez que registras una recepción, StockAI guarda cuántos días pasaron de verdad — y a partir de la tercera empieza a planificar con ese promedio en lugar del que te prometieron.',
     signals: [
       { signal: 'PEDIR YA', rule: 'La cobertura no llega ni a la mitad del plazo del proveedor', example: 'Menos de 7,5 días · menos de 150 unidades' },
       { signal: 'PEDIR PRONTO', rule: 'La cobertura es menor a 1,2 veces el plazo', example: 'Entre 7,5 y 18 días · 150 a 360 unidades' },
@@ -163,19 +170,19 @@ const es: LandingCopy = {
   about: {
     tag: 'Nosotros',
     title: 'Construido para quien decide las compras, no para científicos de datos.',
-    body1: 'Faro nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría opera con Excel e intuición porque las herramientas de forecasting fueron hechas para grandes empresas con equipos de datos — no para una operación que maneja miles de SKUs con un equipo pequeño.',
-    body2: 'Faro toma el historial de ventas que ya tienes (un CSV o Excel), lo convierte en pronósticos por producto y en decisiones concretas de compra, sin que necesites un analista dedicado. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.',
+    body1: 'StockAI nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría opera con Excel e intuición porque las herramientas de forecasting fueron hechas para grandes empresas con equipos de datos — no para una operación que maneja miles de SKUs con un equipo pequeño.',
+    body2: 'StockAI toma el historial de ventas que ya tienes (un CSV o Excel), lo convierte en pronósticos por producto y en decisiones concretas de compra, sin que necesites un analista dedicado. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.',
   },
   cases: {
     tag: 'Industrias',
     title: 'Diseñado para operaciones reales.',
-    lead: 'El problema de inventario no es el mismo en un mayorista que en un retailer o en una planta de producción. Faro se adapta a las características de cada operación.',
-    doesLabel: 'Lo que Faro hace en',
+    lead: 'El problema de inventario no es el mismo en un mayorista que en un retailer o en una planta de producción. StockAI se adapta a las características de cada operación.',
+    doesLabel: 'Lo que StockAI hace en',
     items: [
       {
         label: 'Retail',
         title: 'Gestión de inventario por tienda y categoría',
-        desc: 'Un retailer con múltiples puntos de venta enfrenta patrones de demanda distintos por ubicación, categorías con estacionalidades diferentes y un ciclo de reposición que no puede fallar. Faro genera pronósticos individuales por tienda y por SKU, detecta cambios en la tendencia de venta y permite planificar con anticipación las temporadas de alta demanda.',
+        desc: 'Un retailer con múltiples puntos de venta enfrenta patrones de demanda distintos por ubicación, categorías con estacionalidades diferentes y un ciclo de reposición que no puede fallar. StockAI genera pronósticos individuales por tienda y por SKU, detecta cambios en la tendencia de venta y permite planificar con anticipación las temporadas de alta demanda.',
         does: [
           'Semáforo por producto y por tienda: PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK, medido contra el plazo de cada proveedor.',
           'Nueve modelos compiten por cada producto y se queda el que menos se equivoca sobre tu propio historial.',
@@ -185,7 +192,7 @@ const es: LandingCopy = {
       {
         label: 'Distribuidores',
         title: 'Reposición optimizada y menos emergencias',
-        desc: 'Los distribuidores trabajan con márgenes ajustados, proveedores con plazos variables y clientes que no toleran faltantes. El error de inventario se paga caro: un cliente insatisfecho migra. Faro calcula el punto de reorden correcto para cada producto según su velocidad de venta real y el lead time del proveedor, reduciendo las compras de emergencia.',
+        desc: 'Los distribuidores trabajan con márgenes ajustados, proveedores con plazos variables y clientes que no toleran faltantes. El error de inventario se paga caro: un cliente insatisfecho migra. StockAI calcula el punto de reorden correcto para cada producto según su velocidad de venta real y el lead time del proveedor, reduciendo las compras de emergencia.',
         does: [
           'Punto de reorden por producto, con el plazo real del proveedor: a partir de la tercera recepción registrada deja de usar el prometido.',
           'La orden de compra sale armada por proveedor, con cantidad sugerida y el motivo de cada línea.',
@@ -195,7 +202,7 @@ const es: LandingCopy = {
       {
         label: 'Mayoristas',
         title: 'Balance de inventario entre bodegas',
-        desc: 'Los mayoristas compran en volumen para obtener mejores precios, pero esa ventaja desaparece cuando el inventario no rota o está mal distribuido. Faro identifica qué productos tienen exceso antes de que llegue la fecha de vencimiento o se vuelvan obsoletos, y señala qué referencias priorizar en la siguiente orden.',
+        desc: 'Los mayoristas compran en volumen para obtener mejores precios, pero esa ventaja desaparece cuando el inventario no rota o está mal distribuido. StockAI identifica qué productos tienen exceso antes de que llegue la fecha de vencimiento o se vuelvan obsoletos, y señala qué referencias priorizar en la siguiente orden.',
         does: [
           'SOBRESTOCK se marca apenas la cobertura pasa de tres veces el plazo del proveedor, no cuando ya toca liquidar.',
           'Traslado entre bodegas en lugar de compra — y solo se propone si a la bodega que presta le quedan al menos 30 días de cobertura.',
@@ -205,7 +212,7 @@ const es: LandingCopy = {
       {
         label: 'Manufactura',
         title: 'Planificación de producción y materias primas',
-        desc: 'Una línea de producción parada por falta de material tiene un costo que va mucho más allá del material: horas hombre perdidas, penalizaciones por entrega tardía y clientes que pierden confianza. Faro convierte el pronóstico de demanda del producto terminado en un plan de requerimientos de materias primas, considerando tiempos de producción y plazos de proveedores.',
+        desc: 'Una línea de producción parada por falta de material tiene un costo que va mucho más allá del material: horas hombre perdidas, penalizaciones por entrega tardía y clientes que pierden confianza. StockAI convierte el pronóstico de demanda del producto terminado en un plan de requerimientos de materias primas, considerando tiempos de producción y plazos de proveedores.',
         does: [
           'Lista de materiales por producto terminado: el pronóstico se explota en requerimiento de componentes, materias primas y empaque.',
           'Los faltantes de material se ven contra el plan, no el día que la línea se detiene.',
@@ -215,7 +222,7 @@ const es: LandingCopy = {
       {
         label: 'E-commerce',
         title: 'Preparación para picos de demanda',
-        desc: 'En e-commerce, llegar sin inventario a un Black Friday o campaña de descuentos es dejar dinero sobre la mesa. Llegar con demasiado significa capital atrapado y liquidación a pérdida. Faro analiza el comportamiento histórico durante eventos promocionales y genera estimaciones para los próximos picos con tiempo suficiente para hacer pedidos.',
+        desc: 'En e-commerce, llegar sin inventario a un Black Friday o campaña de descuentos es dejar dinero sobre la mesa. Llegar con demasiado significa capital atrapado y liquidación a pérdida. StockAI analiza el comportamiento histórico durante eventos promocionales y genera estimaciones para los próximos picos con tiempo suficiente para hacer pedidos.',
         does: [
           'Simulador de escenarios: duplicar la demanda de una categoría, marcar una promoción o atrasar a un proveedor, y comparar contra la base sin tocar nada real.',
           'La estacionalidad se detecta por producto, sin configurar un modelo por SKU.',
@@ -226,18 +233,18 @@ const es: LandingCopy = {
   },
   compare: {
     tag: 'Comparación',
-    title: 'Excel vs Faro.',
+    title: 'Excel vs StockAI.',
     lead: 'Excel es una herramienta de análisis, no un sistema de pronóstico. Funciona para unos pocos productos. El problema aparece cuando el negocio crece y la hoja deja de alcanzar.',
-    head: ['', 'Excel', 'Faro'],
+    head: ['', 'Excel', 'StockAI'],
     rows: [
-      { feature: 'Tiempo para generar pronóstico', excel: 'Días', faro: 'Minutos' },
-      { feature: 'Cantidad de SKUs manejables', excel: 'Decenas', faro: 'Miles' },
-      { feature: 'Actualización del modelo', excel: 'Manual', faro: 'Automática' },
-      { feature: 'Detección de estacionalidad', excel: 'Manual', faro: 'Automática' },
-      { feature: 'Alertas de riesgo de quiebre', excel: 'No disponible', faro: 'Incluido' },
-      { feature: 'Precisión optimizada por SKU', excel: 'Depende del analista', faro: 'Sí' },
-      { feature: 'Trazabilidad y auditoría', excel: 'Difícil', faro: 'Incluido' },
-      { feature: 'Escala sin costo de mantenimiento', excel: 'No', faro: 'Sí' },
+      { feature: 'Tiempo para generar pronóstico', excel: 'Días', stockai: 'Minutos' },
+      { feature: 'Cantidad de SKUs manejables', excel: 'Decenas', stockai: 'Miles' },
+      { feature: 'Actualización del modelo', excel: 'Manual', stockai: 'Automática' },
+      { feature: 'Detección de estacionalidad', excel: 'Manual', stockai: 'Automática' },
+      { feature: 'Alertas de riesgo de quiebre', excel: 'No disponible', stockai: 'Incluido' },
+      { feature: 'Precisión optimizada por SKU', excel: 'Depende del analista', stockai: 'Sí' },
+      { feature: 'Trazabilidad y auditoría', excel: 'Difícil', stockai: 'Incluido' },
+      { feature: 'Escala sin costo de mantenimiento', excel: 'No', stockai: 'Sí' },
     ],
   },
   start: {
@@ -271,14 +278,13 @@ const es: LandingCopy = {
     paidLabel: 'Completo',
     paidPrice: 'Hablemos',
     paidNote: 'El precio se arma sobre tu operación: cuántos productos mueves, cuántas bodegas y qué tan seguido recalculas. No hay checkout — escríbenos y lo vemos con números tuyos.',
-    unlimited: 'Sin límite',
     limits: [
-      ['Productos (SKUs)', '100'],
-      ['Usuarios', '2'],
-      ['Bodegas', '1'],
-      ['Pronósticos guardados', '3'],
-      ['Llaves de API', '1'],
-      ['Tamaño de archivo', '25 MB'],
+      ['Productos (SKUs)', '100', 'Sin límite'],
+      ['Usuarios', '2', 'Sin límite'],
+      ['Bodegas', '1', 'Sin límite'],
+      ['Pronósticos guardados', '3', 'Sin límite'],
+      ['Llaves de API', '1', 'Sin límite'],
+      ['Tamaño de archivo', '25 MB', '2 GB'],
     ],
     closing: 'Empieza gratis hoy. Cuando te quede corto — un catálogo que creció, una segunda bodega, un tercero en el equipo — escríbenos y lo ampliamos. Te respondemos en menos de 24 horas.',
     ctaSignup: 'Crear mi cuenta gratis',
@@ -299,8 +305,8 @@ const es: LandingCopy = {
   ],
   includes: {
     tag: 'Qué incluye',
-    title: 'Lo que Faro hace, en detalle.',
-    lead: 'Dos problemas aparecen apenas la operación crece: no poder mirar todos los productos, y tener el inventario repartido en varios lugares. Esto es lo que Faro pone del lado de ambos — y no hay que activar nada, viene incluido.',
+    title: 'Lo que StockAI hace, en detalle.',
+    lead: 'Dos problemas aparecen apenas la operación crece: no poder mirar todos los productos, y tener el inventario repartido en varios lugares. Esto es lo que StockAI pone del lado de ambos — y no hay que activar nada, viene incluido.',
     rolesTitle: 'A quién le resuelve algo, y qué',
     roles: [
       {
@@ -316,7 +322,7 @@ const es: LandingCopy = {
       {
         role: 'Jefe de bodega',
         pain: 'Anotas las recepciones en un cuaderno, y nadie en la empresa sabe cuánto tarda de verdad cada proveedor.',
-        gain: 'Cada recepción que registras se vuelve dato. A partir de la tercera entrega de un proveedor, Faro deja de usar el plazo que te prometieron y empieza a usar el que cumplen.',
+        gain: 'Cada recepción que registras se vuelve dato. A partir de la tercera entrega de un proveedor, StockAI deja de usar el plazo que te prometieron y empieza a usar el que cumplen.',
       },
       {
         role: 'Administración y finanzas',
@@ -327,13 +333,13 @@ const es: LandingCopy = {
     itemsTitle: 'Qué incluye, concretamente',
     items: [
       { title: 'Clasificación ABC-XYZ', desc: 'A son los productos que concentran el 80 % de tu venta; C es la cola larga. X es demanda estable, Z es errática. Un producto AZ vende mucho y de forma impredecible: ahí conviene el colchón de seguridad, en vez de repartirlo parejo en todo el catálogo.', isNew: false },
-      { title: 'Multibodega y transferencias', desc: 'Las ubicaciones que necesites, con rutas entre ellas: días de tránsito y costo. Cuando un producto está corto en una bodega y sobrado en otra, Faro propone mover en vez de comprar — y solo lo propone si a la bodega que presta le quedan al menos 30 días de cobertura.', isNew: false },
+      { title: 'Multibodega y transferencias', desc: 'Las ubicaciones que necesites, con rutas entre ellas: días de tránsito y costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI propone mover en vez de comprar — y solo lo propone si a la bodega que presta le quedan al menos 30 días de cobertura.', isNew: false },
       { title: 'Optimizador de compra por costo', desc: 'Arma el pedido buscando el menor costo total, no la menor cantidad de unidades: suma el costo de mantener inventario, la penalización por quedarse sin producto, el costo de compra, el costo por unidad transferida y el costo fijo del envío, que se paga una sola vez aunque el camión lleve veinte productos.', isNew: false },
       { title: 'Simulador de escenarios', desc: 'Hasta 50 reglas por escenario: multiplicar la demanda, marcar una promoción, atrasar a un proveedor o cambiar el stock de seguridad, filtrando por producto, categoría, proveedor o rango de fechas. Compara el escenario contra la base sin tocar nada de lo real, y lo puedes guardar para volver a correrlo.', isNew: false },
       { title: 'Alertas por WhatsApp', desc: 'El mismo resumen diario de productos en riesgo que llega por correo, ahora al teléfono de quien decide. Cada persona vincula y verifica su propio número desde su configuración.', isNew: false },
       { title: 'Analista con IA', desc: 'Preguntas en español sobre tus propios datos — «¿por qué subió la demanda de esta categoría?», «¿qué proveedores me están atrasando?» — y cada respuesta viene marcada con de dónde salió, para que sepas cuándo se apoya en tus datos y cuándo no.', isNew: false },
       { title: 'Recálculo programado', desc: 'En vez de acordarte de reentrenar, lo dejas corriendo solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes. La pantalla te muestra cuándo corrió, cuándo vuelve a correr y si falló.', isNew: false },
-      { title: 'Mensajes de equipo', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de Faro, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
+      { title: 'Mensajes de equipo', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de StockAI, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
     ],
     isNew: 'Nuevo',
     tail: 'Todo lo anterior va además de la base: el semáforo, las órdenes de compra, las recepciones que aprenden el plazo del proveedor, los reportes y las alertas por correo — todo eso también en el plan gratis. ',
@@ -347,48 +353,48 @@ const es: LandingCopy = {
   },
   tour: {
     title: 'Pantalla por pantalla.',
-    lead: 'Capturas reales de la aplicación con datos dentro. Los capítulos son los mismos grupos del menú de Faro, en el mismo orden: es el mapa que vas a tener cinco minutos después de entrar.',
+    lead: 'Capturas reales de la aplicación con datos dentro. Los capítulos son los mismos grupos del menú de StockAI, en el mismo orden: es el mapa que vas a tener cinco minutos después de entrar.',
     chapters: [
       {
         chapter: 'Operación diaria',
         when: 'Lo que abres cada mañana, antes del café.',
         screens: [
-          { img: SHOTS.panel, name: 'Panel de compras', does: 'Lo primero que ves al entrar. Reúne en una pantalla lo único que hay que decidir hoy: qué está por quebrarse, qué pedidos vienen en camino y por dónde empezar.', finds: ['Cuántos productos están en riesgo hoy y cuántos esta semana', 'Un resumen escrito con los riesgos, las oportunidades y las acciones del día', 'Los pedidos que ya debían haber llegado, para registrar la entrada'], alt: 'Panel de compras de Faro: indicadores de SKUs monitoreados, riesgo, precisión y valor de inventario, y un resumen ejecutivo con riesgos, oportunidades y acciones para hoy.' },
-          { img: SHOTS.inventory, name: 'Inventario', does: 'Todo tu catálogo en cuatro estados, y para cada producto la cantidad a pedir ya calculada contra el plazo real de su proveedor. No hay que interpretar nada.', finds: ['El semáforo: PEDIR YA, PEDIR PRONTO, OK y SOBRESTOCK', 'Una pestaña por bodega, y la vista consolidada', 'La orden de compra lista para exportar en CSV o PDF'], alt: 'Tabla de inventario de Faro con semáforo de colores por SKU y bodega, la cantidad a pedir y el proveedor de cada producto.' },
-          { img: SHOTS.pedidos, name: 'Pedidos', does: 'Las órdenes que generaste, desde que salen hasta que llegan. Cada recepción que registras le enseña a Faro cuánto tarda de verdad ese proveedor.', finds: ['Órdenes en camino, parciales y recibidas, con su valor', 'Enviar el pedido al proveedor por WhatsApp o correo', 'Registrar la llegada, completa o parcial'], alt: 'Pantalla de pedidos de Faro con órdenes de compra en camino, parciales y recibidas, con envío por WhatsApp y registro de llegada.' },
-          { img: SHOTS.mensajes, name: 'Mensajes', does: 'Conversaciones uno a uno dentro de Faro, sobre los productos que ambos están viendo. La decisión y la conversación no viven en dos aplicaciones distintas.', finds: ['Un hilo por persona del equipo', 'Aviso por WhatsApp o SMS cuando llega un mensaje'], alt: 'Mensajería interna de Faro: una conversación entre el comprador y la analista sobre un producto en riesgo de quiebre.' },
+          { img: SHOTS.panel, name: 'Panel de compras', does: 'Lo primero que ves al entrar. Reúne en una pantalla lo único que hay que decidir hoy: qué está por quebrarse, qué pedidos vienen en camino y por dónde empezar.', finds: ['Cuántos productos están en riesgo hoy y cuántos esta semana', 'Un resumen escrito con los riesgos, las oportunidades y las acciones del día', 'Los pedidos que ya debían haber llegado, para registrar la entrada'], alt: 'Panel de compras de StockAI: indicadores de SKUs monitoreados, riesgo, precisión y valor de inventario, y un resumen ejecutivo con riesgos, oportunidades y acciones para hoy.' },
+          { img: SHOTS.inventory, name: 'Inventario', does: 'Todo tu catálogo en cuatro estados, y para cada producto la cantidad a pedir ya calculada contra el plazo real de su proveedor. No hay que interpretar nada.', finds: ['El semáforo: PEDIR YA, PEDIR PRONTO, OK y SOBRESTOCK', 'Una pestaña por bodega, y la vista consolidada', 'La orden de compra lista para exportar en CSV o PDF'], alt: 'Tabla de inventario de StockAI con semáforo de colores por SKU y bodega, la cantidad a pedir y el proveedor de cada producto.' },
+          { img: SHOTS.pedidos, name: 'Pedidos', does: 'Las órdenes que generaste, desde que salen hasta que llegan. Cada recepción que registras le enseña a StockAI cuánto tarda de verdad ese proveedor.', finds: ['Órdenes en camino, parciales y recibidas, con su valor', 'Enviar el pedido al proveedor por WhatsApp o correo', 'Registrar la llegada, completa o parcial'], alt: 'Pantalla de pedidos de StockAI con órdenes de compra en camino, parciales y recibidas, con envío por WhatsApp y registro de llegada.' },
+          { img: SHOTS.mensajes, name: 'Mensajes', does: 'Conversaciones uno a uno dentro de StockAI, sobre los productos que ambos están viendo. La decisión y la conversación no viven en dos aplicaciones distintas.', finds: ['Un hilo por persona del equipo', 'Aviso por WhatsApp o SMS cuando llega un mensaje'], alt: 'Mensajería interna de StockAI: una conversación entre el comprador y la analista sobre un producto en riesgo de quiebre.' },
         ],
       },
       {
         chapter: 'Tus datos',
         when: 'Lo que preparas una vez, y ajustas cuando cambia algo.',
         screens: [
-          { img: SHOTS.ventas, name: 'Mis ventas', does: 'Subes el archivo que ya tienes. Con fecha, producto y cantidad basta — Faro revisa el archivo antes de entrenar y te dice qué encontró.', finds: ['CSV o Excel, tal como sale de tu sistema', 'Hasta cuándo quieres planificar y con qué nivel de detalle', 'El calendario de tu país, para que las quincenas y feriados cuenten'], alt: 'Pantalla de carga de ventas de Faro: el archivo, el horizonte de planificación, el nivel de detalle y el país.' },
-          { img: SHOTS.configurar, name: 'Configurar inventario', does: 'Las tres cosas que Faro necesita saber de cada producto: cuánto tienes, cuánto cuesta y cuánto tarda en llegar. Te dice exactamente qué pasa si falta alguna.', finds: ['Cargar el stock a mano o desde el archivo de tu sistema', 'Reglas por proveedor o por categoría, en vez de producto por producto', 'Qué productos quedan fuera del semáforo y por qué'], alt: 'Pantalla de configuración de inventario de Faro, explicando qué pasa si falta el stock, el costo o los días de entrega de un producto.' },
-          { img: SHOTS.proveedores, name: 'Proveedores', does: 'La ficha de cada proveedor: cómo contactarlo, cuánto dice que tarda y en cuántas entregas va Faro para aprender cuánto tarda de verdad.', finds: ['Plazo declarado, términos de pago y datos de contacto', 'Escalas de precio por volumen, para saber cuándo conviene subir la orden', 'El avance del aprendizaje del plazo, entrega por entrega'], alt: 'Lista de proveedores de Faro con sus plazos de entrega, términos de pago y el estado del aprendizaje del plazo real.' },
-          { img: SHOTS.scorecard, name: 'Scorecard de proveedores', does: 'Lo que dijeron contra lo que hicieron. Faro compara el plazo declarado con el que midió en tus propias recepciones, y planifica con el segundo.', finds: ['Plazo real aprendido, frente al declarado', 'Porcentaje de entregas a tiempo y qué tan completas llegaron', 'Cuánto le has comprado a cada uno'], alt: 'Scorecard de proveedores de Faro comparando el plazo declarado contra el plazo real aprendido de las recepciones registradas.' },
+          { img: SHOTS.ventas, name: 'Mis ventas', does: 'Subes el archivo que ya tienes. Con fecha, producto y cantidad basta — StockAI revisa el archivo antes de entrenar y te dice qué encontró.', finds: ['CSV o Excel, tal como sale de tu sistema', 'Hasta cuándo quieres planificar y con qué nivel de detalle', 'El calendario de tu país, para que las quincenas y feriados cuenten'], alt: 'Pantalla de carga de ventas de StockAI: el archivo, el horizonte de planificación, el nivel de detalle y el país.' },
+          { img: SHOTS.configurar, name: 'Configurar inventario', does: 'Las tres cosas que StockAI necesita saber de cada producto: cuánto tienes, cuánto cuesta y cuánto tarda en llegar. Te dice exactamente qué pasa si falta alguna.', finds: ['Cargar el stock a mano o desde el archivo de tu sistema', 'Reglas por proveedor o por categoría, en vez de producto por producto', 'Qué productos quedan fuera del semáforo y por qué'], alt: 'Pantalla de configuración de inventario de StockAI, explicando qué pasa si falta el stock, el costo o los días de entrega de un producto.' },
+          { img: SHOTS.proveedores, name: 'Proveedores', does: 'La ficha de cada proveedor: cómo contactarlo, cuánto dice que tarda y en cuántas entregas va StockAI para aprender cuánto tarda de verdad.', finds: ['Plazo declarado, términos de pago y datos de contacto', 'Escalas de precio por volumen, para saber cuándo conviene subir la orden', 'El avance del aprendizaje del plazo, entrega por entrega'], alt: 'Lista de proveedores de StockAI con sus plazos de entrega, términos de pago y el estado del aprendizaje del plazo real.' },
+          { img: SHOTS.scorecard, name: 'Scorecard de proveedores', does: 'Lo que dijeron contra lo que hicieron. StockAI compara el plazo declarado con el que midió en tus propias recepciones, y planifica con el segundo.', finds: ['Plazo real aprendido, frente al declarado', 'Porcentaje de entregas a tiempo y qué tan completas llegaron', 'Cuánto le has comprado a cada uno'], alt: 'Scorecard de proveedores de StockAI comparando el plazo declarado contra el plazo real aprendido de las recepciones registradas.' },
         ],
       },
       {
         chapter: 'Análisis',
         when: 'Cuando quieres entender el porqué, o probar una decisión antes de tomarla.',
         screens: [
-          { img: SHOTS.forecast, name: 'Pronóstico por producto', does: 'Nueve modelos compiten por cada producto y se queda el que menos se equivoca sobre tu propio historial. Aquí ves cuál ganó y qué tan bien lo hizo.', finds: ['Histórico, pronóstico y el rango de venta probable', 'El error de cada modelo, para saber cuánto confiar', 'Diario, semanal, mensual o trimestral, según cómo compres'], alt: 'Gráfico de pronóstico por SKU de Faro: ventas históricas, pronóstico y el rango de venta probable, con la comparación entre modelos.' },
-          { img: SHOTS.pattern, name: 'Cómo se vende cada producto', does: 'Separa lo que de verdad está creciendo de lo que es solo el patrón de la semana repitiéndose. Es la diferencia entre una tendencia y un lunes.', finds: ['La venta con el sube y baja de siempre ya descontado', 'Cuánto del movimiento explica el día de la semana', 'El promedio por día, para ver dónde está el pico'], alt: 'Pantalla de Faro que separa la tendencia real de un producto del patrón que se repite cada semana.' },
-          { img: SHOTS.escenarios, name: 'Simulador de escenarios', does: '¿Qué pasa si vendes 40% más, si tu proveedor se atrasa una semana, o si haces promoción en diciembre? Lo ves antes de comprometerte, producto por producto.', finds: ['El plan actual y el del escenario, lado a lado', 'Qué productos cambian de estado y cuánto cambia la orden', 'Escenarios guardados, para volver a correrlos'], alt: 'Simulador de escenarios de Faro comparando el plan actual contra un escenario de mayor demanda, producto por producto.' },
-          { img: SHOTS.impacto, name: 'Impacto', does: 'Qué hiciste con Faro este mes, con las cifras que salen de tus propios registros. No estima ahorros ni cuenta quiebres evitados, porque eso no se puede medir con certeza.', finds: ['Cuántas órdenes generaste y cuántas recomendaciones seguiste', 'De dónde sale cada número, dicho sin adornos', 'El mismo resumen te llega por correo el primer día del mes'], alt: 'Pantalla de impacto de Faro con el resumen mensual de lo que se hizo con la herramienta y de dónde sale cada cifra.' },
-          { img: SHOTS.asistente, name: 'Analista IA', does: 'Preguntas en español sobre tu propio inventario y te responde con tus cifras. No es un chatbot genérico: lee el mismo semáforo que ves en pantalla.', finds: ['Cuántos productos hay en cada estado, y cuáles son', 'Qué revisar esta semana y a qué proveedor contactar primero', 'Preguntas sugeridas, si no sabes por dónde empezar'], alt: 'Conversación con el analista de IA de Faro respondiendo sobre los productos en riesgo y el capital inmovilizado, con cifras del propio inventario.' },
-          { img: SHOTS.historial, name: 'Historial', does: 'Cada vez que subes ventas nuevas queda una sesión. Puedes volver a cualquiera, compararlas y ver con cuál está calculando el semáforo hoy.', finds: ['Todas tus corridas, con su fecha y su granularidad', 'Cuál es la sesión activa'], alt: 'Historial de sesiones de pronóstico de Faro, con la sesión activa y las anteriores.' },
+          { img: SHOTS.forecast, name: 'Pronóstico por producto', does: 'Nueve modelos compiten por cada producto y se queda el que menos se equivoca sobre tu propio historial. Aquí ves cuál ganó y qué tan bien lo hizo.', finds: ['Histórico, pronóstico y el rango de venta probable', 'El error de cada modelo, para saber cuánto confiar', 'Diario, semanal, mensual o trimestral, según cómo compres'], alt: 'Gráfico de pronóstico por SKU de StockAI: ventas históricas, pronóstico y el rango de venta probable, con la comparación entre modelos.' },
+          { img: SHOTS.pattern, name: 'Cómo se vende cada producto', does: 'Separa lo que de verdad está creciendo de lo que es solo el patrón de la semana repitiéndose. Es la diferencia entre una tendencia y un lunes.', finds: ['La venta con el sube y baja de siempre ya descontado', 'Cuánto del movimiento explica el día de la semana', 'El promedio por día, para ver dónde está el pico'], alt: 'Pantalla de StockAI que separa la tendencia real de un producto del patrón que se repite cada semana.' },
+          { img: SHOTS.escenarios, name: 'Simulador de escenarios', does: '¿Qué pasa si vendes 40% más, si tu proveedor se atrasa una semana, o si haces promoción en diciembre? Lo ves antes de comprometerte, producto por producto.', finds: ['El plan actual y el del escenario, lado a lado', 'Qué productos cambian de estado y cuánto cambia la orden', 'Escenarios guardados, para volver a correrlos'], alt: 'Simulador de escenarios de StockAI comparando el plan actual contra un escenario de mayor demanda, producto por producto.' },
+          { img: SHOTS.impacto, name: 'Impacto', does: 'Qué hiciste con StockAI este mes, con las cifras que salen de tus propios registros. No estima ahorros ni cuenta quiebres evitados, porque eso no se puede medir con certeza.', finds: ['Cuántas órdenes generaste y cuántas recomendaciones seguiste', 'De dónde sale cada número, dicho sin adornos', 'El mismo resumen te llega por correo el primer día del mes'], alt: 'Pantalla de impacto de StockAI con el resumen mensual de lo que se hizo con la herramienta y de dónde sale cada cifra.' },
+          { img: SHOTS.asistente, name: 'Analista IA', does: 'Preguntas en español sobre tu propio inventario y te responde con tus cifras. No es un chatbot genérico: lee el mismo semáforo que ves en pantalla.', finds: ['Cuántos productos hay en cada estado, y cuáles son', 'Qué revisar esta semana y a qué proveedor contactar primero', 'Preguntas sugeridas, si no sabes por dónde empezar'], alt: 'Conversación con el analista de IA de StockAI respondiendo sobre los productos en riesgo y el capital inmovilizado, con cifras del propio inventario.' },
+          { img: SHOTS.historial, name: 'Historial', does: 'Cada vez que subes ventas nuevas queda una sesión. Puedes volver a cualquiera, compararlas y ver con cuál está calculando el semáforo hoy.', finds: ['Todas tus corridas, con su fecha y su granularidad', 'Cuál es la sesión activa'], alt: 'Historial de sesiones de pronóstico de StockAI, con la sesión activa y las anteriores.' },
         ],
       },
       {
         chapter: 'Tu cuenta y tu equipo',
         when: 'Lo que tocas de vez en cuando.',
         screens: [
-          { img: SHOTS.usuarios, name: 'Equipo y permisos', does: 'Invitas a tu gente con el permiso que le corresponde. Quien solo mira, solo mira: los tres roles son los mismos que respeta la API.', finds: ['Administrador, analista y solo lectura', 'Invitación por correo, sin que tengas que inventar contraseñas'], alt: 'Pantalla de usuarios de Faro con los roles administrador, analista y solo lectura.' },
-          { img: SHOTS.cuenta, name: 'Mi cuenta', does: 'Tu perfil, la moneda en la que quieres ver tus cifras, el idioma, la zona horaria — y cuánto espacio te queda en tu plan.', finds: ['Uso contra cada límite, para verlo venir antes de topar', 'Moneda y zona horaria, que afectan a todo lo demás', 'Tu historial de actividad en la cuenta'], alt: 'Pantalla de cuenta de Faro mostrando el plan, el uso contra cada límite y las formas de contactarnos para ampliarlo.' },
-          { img: SHOTS.automatizacion, name: 'Automatización', does: 'Para que Faro recalcule solo. Programas cada cuánto y a qué hora, y generas las llaves que usa tu propio sistema para entrar.', finds: ['Recálculo programado: cada lunes, todos los días o el primero de mes', 'Llaves de API, que se muestran una sola vez'], alt: 'Pantalla de automatización de Faro con las llaves de API y los recálculos programados.' },
-          { img: SHOTS.api, name: 'API pública', does: 'Tu sistema empuja los datos y se lleva la decisión, sin que nadie abra Faro. La documentación viene dentro, con tus propios datos para probar.', finds: ['Los endpoints que tu ERP necesita, con ejemplos listos para copiar', 'Autenticación, límites y el formato de las respuestas'], alt: 'Documentación de la API pública de Faro con la URL base, la autenticación, los límites y los endpoints.' },
+          { img: SHOTS.usuarios, name: 'Equipo y permisos', does: 'Invitas a tu gente con el permiso que le corresponde. Quien solo mira, solo mira: los tres roles son los mismos que respeta la API.', finds: ['Administrador, analista y solo lectura', 'Invitación por correo, sin que tengas que inventar contraseñas'], alt: 'Pantalla de usuarios de StockAI con los roles administrador, analista y solo lectura.' },
+          { img: SHOTS.cuenta, name: 'Mi cuenta', does: 'Tu perfil, la moneda en la que quieres ver tus cifras, el idioma, la zona horaria — y cuánto espacio te queda en tu plan.', finds: ['Uso contra cada límite, para verlo venir antes de topar', 'Moneda y zona horaria, que afectan a todo lo demás', 'Tu historial de actividad en la cuenta'], alt: 'Pantalla de cuenta de StockAI mostrando el plan, el uso contra cada límite y las formas de contactarnos para ampliarlo.' },
+          { img: SHOTS.automatizacion, name: 'Automatización', does: 'Para que StockAI recalcule solo. Programas cada cuánto y a qué hora, y generas las llaves que usa tu propio sistema para entrar.', finds: ['Recálculo programado: cada lunes, todos los días o el primero de mes', 'Llaves de API, que se muestran una sola vez'], alt: 'Pantalla de automatización de StockAI con las llaves de API y los recálculos programados.' },
+          { img: SHOTS.api, name: 'API pública', does: 'Tu sistema empuja los datos y se lleva la decisión, sin que nadie abra StockAI. La documentación viene dentro, con tus propios datos para probar.', finds: ['Los endpoints que tu ERP necesita, con ejemplos listos para copiar', 'Autenticación, límites y el formato de las respuestas'], alt: 'Documentación de la API pública de StockAI con la URL base, la autenticación, los límites y los endpoints.' },
         ],
       },
     ],
@@ -399,22 +405,22 @@ const es: LandingCopy = {
     lead: 'Si tienes alguna pregunta que no está aquí, escríbenos directamente. Respondemos en menos de 24 horas.',
     cta: 'Escríbenos →',
     items: [
-      { q: '¿Necesito conocimientos estadísticos o de programación para usar Faro?', a: 'No. Faro está diseñado para que cualquier persona del equipo de compras o planificación pueda usarlo. No hay configuración de modelos ni código. Solo cargas tus datos y el sistema genera los pronósticos automáticamente.' },
-      { q: '¿En qué formato debo tener mis datos de ventas?', a: 'Faro acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.' },
-      { q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?', a: 'Faro necesita al menos 20 períodos de historial por producto para entrenarlo. Los que no llegan a ese mínimo quedan fuera del pronóstico: no se les inventa una proyección. Antes de correr nada, la revisión del archivo te dice cuántos productos están por debajo del umbral, y si ninguno lo alcanza el archivo se detiene con la explicación en pantalla en vez de producir un resultado vacío. Esos productos siguen apareciendo en tu inventario marcados SIN DATOS — sin señal ni cantidad sugerida — para que la decisión sea tuya y no de un número inventado.' },
-      { q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?', a: 'Los datos que subes a Faro son exclusivamente tuyos: no se comparten con terceros ni se usan para entrenar modelos de otras empresas — cada pronóstico se entrena únicamente con el historial de tu propia cuenta. Cada consulta va filtrada por empresa y el acceso se controla por rol: administrador, analista o solo lectura. Las credenciales de tus integraciones — el usuario y la contraseña de tu base de datos o ERP — se guardan cifradas. Tus archivos de ventas y los modelos entrenados se guardan en el servidor de Faro, en una carpeta separada por empresa; el cifrado del disco depende del servidor donde corre, no lo hace la aplicación. Y la eliminación es completa de verdad: borra cada tabla y cada archivo asociado a tu cuenta, no solo el registro principal.' },
-      { q: '¿Cuánto tiempo toma implementar Faro en mi empresa?', a: 'En la mayoría de casos, menos de un día. Si tienes un archivo de ventas histórico, puedes subir los datos y ver tus primeros pronósticos en menos de una hora. Para integraciones con ERP o sistemas propios, el tiempo varía según la complejidad.' },
-      { q: '¿Se puede integrar con nuestro ERP o sistema de inventario actual?', a: 'La carga normal es por archivo: exportas de tu sistema y subes el CSV o Excel. También puedes conectar Faro directamente a tu base de datos Postgres o MySQL y traer las ventas con una consulta, sin archivos de por medio. Una integración a medida con tu ERP la armamos con nuestro equipo técnico sobre tu operación, caso por caso — escríbenos y lo vemos.' },
+      { q: '¿Necesito conocimientos estadísticos o de programación para usar StockAI?', a: 'No. StockAI está diseñado para que cualquier persona del equipo de compras o planificación pueda usarlo. No hay configuración de modelos ni código. Solo cargas tus datos y el sistema genera los pronósticos automáticamente.' },
+      { q: '¿En qué formato debo tener mis datos de ventas?', a: 'StockAI acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.' },
+      { q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?', a: 'StockAI necesita al menos 20 períodos de historial por producto para entrenarlo. Los que no llegan a ese mínimo quedan fuera del pronóstico: no se les inventa una proyección. Antes de correr nada, la revisión del archivo te dice cuántos productos están por debajo del umbral, y si ninguno lo alcanza el archivo se detiene con la explicación en pantalla en vez de producir un resultado vacío. Esos productos siguen apareciendo en tu inventario marcados SIN DATOS — sin señal ni cantidad sugerida — para que la decisión sea tuya y no de un número inventado.' },
+      { q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?', a: 'Los datos que subes a StockAI son exclusivamente tuyos: no se comparten con terceros ni se usan para entrenar modelos de otras empresas — cada pronóstico se entrena únicamente con el historial de tu propia cuenta. Cada consulta va filtrada por empresa y el acceso se controla por rol: administrador, analista o solo lectura. Las credenciales de tus integraciones — el usuario y la contraseña de tu base de datos — se guardan cifradas. Tus archivos de ventas y los modelos entrenados se guardan en el servidor de StockAI, en una carpeta separada por empresa; el cifrado del disco depende del servidor donde corre, no lo hace la aplicación. Y la eliminación es completa de verdad: borra cada tabla y cada archivo asociado a tu cuenta, no solo el registro principal.' },
+      { q: '¿Cuánto tiempo toma implementar StockAI en mi empresa?', a: 'En la mayoría de casos, menos de un día. Si tienes un archivo de ventas histórico, puedes subir los datos y ver tus primeros pronósticos en menos de una hora. Para integraciones con ERP o sistemas propios, el tiempo varía según la complejidad.' },
+      { q: '¿Se puede integrar con nuestro ERP o sistema de inventario actual?', a: 'La carga normal es por archivo: exportas de tu sistema y subes el CSV o Excel. También puedes conectar StockAI directamente a tu base de datos Postgres o MySQL y traer las ventas con una consulta, sin archivos de por medio. Una integración a medida con tu ERP la armamos con nuestro equipo técnico sobre tu operación, caso por caso — escríbenos y lo vemos.' },
       { q: '¿Con qué frecuencia se actualizan los pronósticos?', a: 'Cada vez que cargas ventas nuevas. Puedes lanzarlo tú al subir el archivo del mes, o dejar el recálculo programado para que corra solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes.' },
-      { q: '¿Faro sirve si tengo más de una bodega?', a: 'Sí. El plan gratis trae una bodega; ampliando el plan no hay tope de ubicaciones. Defines rutas entre bodegas con los días de tránsito y el costo. Cuando un producto está corto en una bodega y sobrado en otra, Faro sugiere mover en lugar de comprar, y solo lo sugiere si a la bodega que presta le quedan al menos 30 días de cobertura.' },
-      { q: '¿De dónde saca Faro el plazo de entrega de cada proveedor?', a: 'Al principio, del que escribes tú en la ficha del proveedor. Cada vez que registras una recepción, Faro guarda cuántos días pasaron de verdad entre la orden y la entrega. A partir de la tercera recepción de ese proveedor empieza a usar el promedio real en lugar del plazo declarado, y te muestra cuál de los dos está usando.' },
-      { q: '¿Qué tan grande puede ser el archivo de ventas que subo?', a: 'Hasta 2 GB por archivo. Para dimensionarlo: 3 años de historial con 5.000 productos y venta diaria son unos 5 millones de filas, del orden de 200 MB en CSV.' },
+      { q: '¿StockAI sirve si tengo más de una bodega?', a: 'Sí. El plan gratis trae una bodega; ampliando el plan no hay tope de ubicaciones. Defines rutas entre bodegas con los días de tránsito y el costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI sugiere mover en lugar de comprar, y solo lo sugiere si a la bodega que presta le quedan al menos 30 días de cobertura.' },
+      { q: '¿De dónde saca StockAI el plazo de entrega de cada proveedor?', a: 'Al principio, del que escribes tú en la ficha del proveedor. Cada vez que registras una recepción, StockAI guarda cuántos días pasaron de verdad entre la orden y la entrega. A partir de la tercera recepción de ese proveedor empieza a usar el promedio real en lugar del plazo declarado, y te muestra cuál de los dos está usando.' },
+      { q: '¿Qué tan grande puede ser el archivo de ventas que subo?', a: 'En el plan gratis, hasta 25 MB por archivo. Pasando al plan completo, hasta 2 GB. Para dimensionarlo: 3 años de historial con 5.000 productos y venta diaria son unos 5 millones de filas, del orden de 200 MB en CSV — dentro del plan completo.' },
     ],
   },
   misc: {
     signalHead: ['Señal', 'Cuándo aparece', 'En el ejemplo'],
     roleToday: 'Hoy',
-    roleWith: 'Con Faro',
+    roleWith: 'Con StockAI',
     exampleTitle: 'Un ejemplo',
     exampleBody: 'Vendes 20 unidades al día de un producto y tu proveedor tarda 15 días en entregar. Con esos dos números, los cuatro estados del semáforo quedan en cantidades concretas — las de la tabla de abajo. Cambia cualquiera de los dos y los cortes se mueven solos, producto por producto.',
     industriesLabel: 'Industrias:',
@@ -425,7 +431,7 @@ const es: LandingCopy = {
     product: 'Producto',
     company: 'Empresa',
     contact: 'Contacto',
-    rights: '© 2026 Faro. Todos los derechos reservados.',
+    rights: '© 2026 StockAI. Todos los derechos reservados.',
     madeIn: 'Hecho en Costa Rica',
   },
 }
@@ -453,9 +459,9 @@ const en: LandingCopy = {
     eyebrow: 'For distributors, retail and manufacturing',
     title1: 'Stop running inventory',
     title2: 'on gut feel.',
-    lead: 'Faro reads your sales history and forecasts demand product by product — so you know how much to order, when to order it, and which products are about to run out.',
+    lead: 'StockAI reads your sales history and forecasts demand product by product — so you know how much to order, when to order it, and which products are about to run out.',
     cta: 'Start free with sample data',
-    frame: 'Faro · Purchasing dashboard',
+    frame: 'StockAI · Purchasing dashboard',
   },
   strip: {
     models: 'Models competing per product',
@@ -478,22 +484,22 @@ const en: LandingCopy = {
   how: {
     tag: 'How it works',
     title: 'From your sales history to purchasing decisions.',
-    lead: 'Faro turns your sales history into per-product forecasts. No statistical setup, no dedicated analyst required.',
+    lead: 'StockAI turns your sales history into per-product forecasts. No statistical setup, no dedicated analyst required.',
     steps: [
       { n: '01', title: 'Upload your sales history', desc: 'Drop in a CSV or Excel file. The system finds the date, product and quantity columns on its own.' },
-      { n: '02', title: 'Automatic analysis per product', desc: 'Faro detects the trend, seasonality and variability of every SKU independently. No per-product configuration.' },
+      { n: '02', title: 'Automatic analysis per product', desc: 'StockAI detects the trend, seasonality and variability of every SKU independently. No per-product configuration.' },
       { n: '03', title: 'Forecast with confidence ranges', desc: 'Demand projections for each product with a high and a low. It shows which SKUs are predictable and which are volatile.' },
       { n: '04', title: 'Purchasing recommendations', desc: 'The system works out how much to order, when to order it, and which products are at risk given each supplier’s lead time.' },
     ],
   },
   decide: {
     tag: 'The rule, no mystery',
-    title: 'How Faro decides a product is in the red.',
+    title: 'How StockAI decides a product is in the red.',
     lead: 'No recommendation comes out of a black box. The whole signal rests on one piece of arithmetic, and you can do it by hand to check it gives the same answer.',
     formulaTitle: 'The arithmetic',
     formulaBody: 'Coverage = stock on hand ÷ forecast daily demand. That tells you how many days you last if nothing else arrives. The figure is compared against your supplier lead time: the days they take to deliver once you place the order. It is the logic you already run in your head, applied to the thousands of codes you never get to review: if you last less than they take, you are already late.',
     formulaBody2: 'It is the logic you already run in your head, only applied to the thousands of codes you never get to review: if you last less than they take to arrive, you are already late.',
-    leadTimeBody: 'The lead time is half the arithmetic, so it had better be the real one. Every time you record a reception, Faro stores how many days actually passed — and from the third one it plans with that average instead of the one you were promised.',
+    leadTimeBody: 'The lead time is half the arithmetic, so it had better be the real one. Every time you record a reception, StockAI stores how many days actually passed — and from the third one it plans with that average instead of the one you were promised.',
     signals: [
       { signal: 'ORDER NOW', rule: 'Coverage does not even reach half the supplier’s lead time', example: 'Under 7.5 days · under 150 units' },
       { signal: 'ORDER SOON', rule: 'Coverage is under 1.2× the lead time', example: '7.5 to 18 days · 150 to 360 units' },
@@ -504,19 +510,19 @@ const en: LandingCopy = {
   about: {
     tag: 'About us',
     title: 'Built for the person who decides the buying, not for data scientists.',
-    body1: 'Faro exists so distributors, shops and wholesalers across Latin America stop buying inventory blind. Most of them run on a spreadsheet and instinct because forecasting tools were built for large companies with data teams — not for an operation handling thousands of SKUs with a small one.',
-    body2: 'Faro takes the sales history you already have (a CSV or Excel), turns it into per-product forecasts and concrete purchasing decisions, without you needing a dedicated analyst. Made in Costa Rica, built for how small and mid-sized companies in the region actually work.',
+    body1: 'StockAI exists so distributors, shops and wholesalers across Latin America stop buying inventory blind. Most of them run on a spreadsheet and instinct because forecasting tools were built for large companies with data teams — not for an operation handling thousands of SKUs with a small one.',
+    body2: 'StockAI takes the sales history you already have (a CSV or Excel), turns it into per-product forecasts and concrete purchasing decisions, without you needing a dedicated analyst. Made in Costa Rica, built for how small and mid-sized companies in the region actually work.',
   },
   cases: {
     tag: 'Industries',
     title: 'Designed for real operations.',
-    lead: 'The inventory problem is not the same for a wholesaler as for a retailer or a production plant. Faro adapts to how each one works.',
-    doesLabel: 'What Faro does in',
+    lead: 'The inventory problem is not the same for a wholesaler as for a retailer or a production plant. StockAI adapts to how each one works.',
+    doesLabel: 'What StockAI does in',
     items: [
       {
         label: 'Retail',
         title: 'Inventory by store and by category',
-        desc: 'A retailer with several points of sale faces different demand patterns per location, categories with different seasons, and a replenishment cycle that cannot fail. Faro forecasts per store and per SKU, spots changes in the sales trend, and lets you plan high-demand seasons ahead of time.',
+        desc: 'A retailer with several points of sale faces different demand patterns per location, categories with different seasons, and a replenishment cycle that cannot fail. StockAI forecasts per store and per SKU, spots changes in the sales trend, and lets you plan high-demand seasons ahead of time.',
         does: [
           'A signal per product and per store: ORDER NOW, ORDER SOON, OK or OVERSTOCK, measured against each supplier’s lead time.',
           'Nine models compete for every product; the one that is least wrong on your own history wins.',
@@ -526,7 +532,7 @@ const en: LandingCopy = {
       {
         label: 'Distributors',
         title: 'Optimised replenishment, fewer emergencies',
-        desc: 'Distributors work on thin margins, with suppliers whose lead times move and customers who do not tolerate shortages. An inventory mistake is expensive: an unhappy customer leaves. Faro works out the right reorder point for each product from its real sales velocity and the supplier’s lead time, cutting emergency purchases.',
+        desc: 'Distributors work on thin margins, with suppliers whose lead times move and customers who do not tolerate shortages. An inventory mistake is expensive: an unhappy customer leaves. StockAI works out the right reorder point for each product from its real sales velocity and the supplier’s lead time, cutting emergency purchases.',
         does: [
           'A reorder point per product, using the supplier’s real lead time: from the third recorded delivery it stops using the promised one.',
           'The purchase order comes out grouped by supplier, with a suggested quantity and the reason for every line.',
@@ -536,7 +542,7 @@ const en: LandingCopy = {
       {
         label: 'Wholesalers',
         title: 'Balancing inventory across warehouses',
-        desc: 'Wholesalers buy in volume to get a better price, and that advantage disappears the moment inventory stops turning or sits in the wrong place. Faro flags which products are in excess before they hit their expiry date or go obsolete, and which references to prioritise on the next order.',
+        desc: 'Wholesalers buy in volume to get a better price, and that advantage disappears the moment inventory stops turning or sits in the wrong place. StockAI flags which products are in excess before they hit their expiry date or go obsolete, and which references to prioritise on the next order.',
         does: [
           'OVERSTOCK is flagged as soon as coverage passes three times the supplier’s lead time — not when it is already clearance time.',
           'Transfer between warehouses instead of buying — and only suggested if the lending warehouse keeps at least 30 days of coverage.',
@@ -546,7 +552,7 @@ const en: LandingCopy = {
       {
         label: 'Manufacturing',
         title: 'Production and raw-material planning',
-        desc: 'A line stopped for want of material costs far more than the material: lost labour hours, late-delivery penalties and customers who stop trusting you. Faro turns the finished-goods demand forecast into a raw-material requirement plan, accounting for production times and supplier lead times.',
+        desc: 'A line stopped for want of material costs far more than the material: lost labour hours, late-delivery penalties and customers who stop trusting you. StockAI turns the finished-goods demand forecast into a raw-material requirement plan, accounting for production times and supplier lead times.',
         does: [
           'A bill of materials per finished product: the forecast is exploded into components, raw materials and packaging.',
           'Material shortfalls show up against the plan, not on the day the line stops.',
@@ -556,7 +562,7 @@ const en: LandingCopy = {
       {
         label: 'E-commerce',
         title: 'Getting ready for demand peaks',
-        desc: 'In e-commerce, reaching Black Friday without stock is money left on the table. Reaching it with too much is trapped capital and a clearance at a loss. Faro reads how your products behaved during past promotional events and estimates the next peaks with enough time to actually place the orders.',
+        desc: 'In e-commerce, reaching Black Friday without stock is money left on the table. Reaching it with too much is trapped capital and a clearance at a loss. StockAI reads how your products behaved during past promotional events and estimates the next peaks with enough time to actually place the orders.',
         does: [
           'Scenario simulator: double a category’s demand, mark a promotion or delay a supplier, and compare against the base without touching anything real.',
           'Seasonality is detected per product, with no model to configure per SKU.',
@@ -567,18 +573,18 @@ const en: LandingCopy = {
   },
   compare: {
     tag: 'Comparison',
-    title: 'Excel vs Faro.',
+    title: 'Excel vs StockAI.',
     lead: 'Excel is an analysis tool, not a forecasting system. It works for a handful of products. The problem shows up when the business grows and the spreadsheet stops keeping up.',
-    head: ['', 'Excel', 'Faro'],
+    head: ['', 'Excel', 'StockAI'],
     rows: [
-      { feature: 'Time to produce a forecast', excel: 'Days', faro: 'Minutes' },
-      { feature: 'SKUs you can actually manage', excel: 'Dozens', faro: 'Thousands' },
-      { feature: 'Model updates', excel: 'Manual', faro: 'Automatic' },
-      { feature: 'Seasonality detection', excel: 'Manual', faro: 'Automatic' },
-      { feature: 'Stockout risk alerts', excel: 'Not available', faro: 'Included' },
-      { feature: 'Accuracy tuned per SKU', excel: 'Depends on the analyst', faro: 'Yes' },
-      { feature: 'Traceability and audit', excel: 'Hard', faro: 'Included' },
-      { feature: 'Scales with no maintenance cost', excel: 'No', faro: 'Yes' },
+      { feature: 'Time to produce a forecast', excel: 'Days', stockai: 'Minutes' },
+      { feature: 'SKUs you can actually manage', excel: 'Dozens', stockai: 'Thousands' },
+      { feature: 'Model updates', excel: 'Manual', stockai: 'Automatic' },
+      { feature: 'Seasonality detection', excel: 'Manual', stockai: 'Automatic' },
+      { feature: 'Stockout risk alerts', excel: 'Not available', stockai: 'Included' },
+      { feature: 'Accuracy tuned per SKU', excel: 'Depends on the analyst', stockai: 'Yes' },
+      { feature: 'Traceability and audit', excel: 'Hard', stockai: 'Included' },
+      { feature: 'Scales with no maintenance cost', excel: 'No', stockai: 'Yes' },
     ],
   },
   start: {
@@ -612,14 +618,13 @@ const en: LandingCopy = {
     paidLabel: 'Full',
     paidPrice: "Let's talk",
     paidNote: 'The price is built around your operation: how many products you move, how many warehouses, how often you recalculate. There is no checkout — write to us and we work it out with your numbers.',
-    unlimited: 'Unlimited',
     limits: [
-      ['Products (SKUs)', '100'],
-      ['Users', '2'],
-      ['Warehouses', '1'],
-      ['Saved forecasts', '3'],
-      ['API keys', '1'],
-      ['File size', '25 MB'],
+      ['Products (SKUs)', '100', 'Unlimited'],
+      ['Users', '2', 'Unlimited'],
+      ['Warehouses', '1', 'Unlimited'],
+      ['Saved forecasts', '3', 'Unlimited'],
+      ['API keys', '1', 'Unlimited'],
+      ['File size', '25 MB', '2 GB'],
     ],
     closing: 'Start free today. When you outgrow it — a catalogue that grew, a second warehouse, a third person on the team — write to us and we lift it. We answer within 24 hours.',
     ctaSignup: 'Create my free account',
@@ -640,8 +645,8 @@ const en: LandingCopy = {
   ],
   includes: {
     tag: "What's included",
-    title: 'What Faro does, in detail.',
-    lead: 'Two problems appear as soon as an operation grows: not being able to look at every product, and having inventory spread across several places. This is what Faro puts on both sides — and nothing has to be switched on, it comes included.',
+    title: 'What StockAI does, in detail.',
+    lead: 'Two problems appear as soon as an operation grows: not being able to look at every product, and having inventory spread across several places. This is what StockAI puts on both sides — and nothing has to be switched on, it comes included.',
     rolesTitle: 'Who it solves something for, and what',
     roles: [
       {
@@ -657,7 +662,7 @@ const en: LandingCopy = {
       {
         role: 'Warehouse lead',
         pain: 'You write receptions in a notebook, and nobody in the company knows how long each supplier really takes.',
-        gain: 'Every reception you record becomes data. From a supplier’s third delivery, Faro stops using the lead time they promised and starts using the one they keep.',
+        gain: 'Every reception you record becomes data. From a supplier’s third delivery, StockAI stops using the lead time they promised and starts using the one they keep.',
       },
       {
         role: 'Finance and admin',
@@ -668,13 +673,13 @@ const en: LandingCopy = {
     itemsTitle: 'What is included, concretely',
     items: [
       { title: 'ABC-XYZ classification', desc: 'A are the products that make up 80% of your sales; C is the long tail. X is steady demand, Z is erratic. An AZ product sells a lot and unpredictably: that is where the safety buffer belongs, instead of spreading it evenly across the catalogue.', isNew: false },
-      { title: 'Multi-warehouse and transfers', desc: 'As many locations as you need, with routes between them: transit days and cost. When a product is short in one warehouse and long in another, Faro proposes moving instead of buying — and only proposes it if the lending warehouse keeps at least 30 days of coverage.', isNew: false },
+      { title: 'Multi-warehouse and transfers', desc: 'As many locations as you need, with routes between them: transit days and cost. When a product is short in one warehouse and long in another, StockAI proposes moving instead of buying — and only proposes it if the lending warehouse keeps at least 30 days of coverage.', isNew: false },
       { title: 'Cost-based purchase optimiser', desc: 'It builds the order for the lowest total cost, not the fewest units: holding cost, the penalty for running out, purchase cost, the per-unit transfer cost and the fixed shipping cost, which is paid once even if the truck carries twenty products.', isNew: false },
       { title: 'Scenario simulator', desc: 'Up to 50 rules per scenario: multiply demand, mark a promotion, delay a supplier or change safety stock, filtering by product, category, supplier or date range. It compares the scenario against the baseline without touching anything real, and you can save it to run again.', isNew: false },
       { title: 'WhatsApp alerts', desc: 'The same daily summary of at-risk products that goes out by email, now to the phone of whoever decides. Each person links and verifies their own number from their settings.', isNew: false },
       { title: 'AI analyst', desc: 'You ask about your own data in plain language — "why did demand for this category go up?", "which suppliers are running late?" — and every answer is marked with where it came from, so you know when it is standing on your data and when it is not.', isNew: false },
       { title: 'Scheduled recalculation', desc: 'Instead of remembering to retrain, you leave it running: every Monday at 6, every day, weekdays only, hourly, or the first of each month. The screen shows when it ran, when it runs next, and whether it failed.', isNew: false },
-      { title: 'Team messages', desc: 'One-to-one conversations between the people in your company, inside Faro, next to the inventory they are talking about. If the other person is not connected, a heads-up reaches their WhatsApp so the message is not missed.', isNew: true },
+      { title: 'Team messages', desc: 'One-to-one conversations between the people in your company, inside StockAI, next to the inventory they are talking about. If the other person is not connected, a heads-up reaches their WhatsApp so the message is not missed.', isNew: true },
     ],
     isNew: 'New',
     tail: 'All of that comes on top of the base: the signal, purchase orders, receptions that learn your supplier’s lead time, the reports and the email alerts — all of it on the free plan too. ',
@@ -688,48 +693,48 @@ const en: LandingCopy = {
   },
   tour: {
     title: 'Screen by screen.',
-    lead: 'Real captures of the running app, with data in them. The chapters are the same groups as Faro’s own menu, in the same order: it is the map you will have five minutes after signing in.',
+    lead: 'Real captures of the running app, with data in them. The chapters are the same groups as StockAI’s own menu, in the same order: it is the map you will have five minutes after signing in.',
     chapters: [
       {
         chapter: 'Daily operation',
         when: 'What you open every morning, before the coffee.',
         screens: [
-          { img: SHOTS_EN.panel, name: 'Purchasing dashboard', does: 'The first thing you see. It gathers on one screen the only thing you have to decide today: what is about to run out, which orders are on their way, and where to start.', finds: ['How many products are at risk today, and how many this week', 'A written summary with the day’s risks, opportunities and actions', 'The orders that should already have arrived, ready to be received'], alt: 'Faro purchasing dashboard: monitored SKUs, risk, accuracy and inventory value, with an executive summary of risks, opportunities and actions for today.' },
-          { img: SHOTS_EN.inventory, name: 'Inventory', does: 'Your whole catalogue in four states, and for each product the quantity to order already worked out against its supplier’s real lead time. Nothing to interpret.', finds: ['The signal: ORDER NOW, ORDER SOON, OK and OVERSTOCK', 'A tab per warehouse, plus the consolidated view', 'The purchase order ready to export as CSV or PDF'], alt: 'Faro inventory table with a colour signal per SKU and warehouse, the quantity to order and each product’s supplier.' },
-          { img: SHOTS_EN.pedidos, name: 'Orders', does: 'The orders you generated, from the moment they leave to the moment they land. Every reception you record teaches Faro how long that supplier really takes.', finds: ['Orders in transit, partial and received, with their value', 'Send the order to the supplier by WhatsApp or email', 'Record the arrival, complete or partial'], alt: 'Faro orders screen with purchase orders in transit, partial and received, with WhatsApp sending and arrival recording.' },
-          { img: SHOTS_EN.mensajes, name: 'Messages', does: 'One-to-one conversations inside Faro, about the products you are both looking at. The decision and the conversation do not live in two different apps.', finds: ['One thread per person on the team', 'A WhatsApp or SMS heads-up when a message arrives'], alt: 'Faro internal messaging: a conversation between the buyer and the analyst about a product at risk of running out.' },
+          { img: SHOTS_EN.panel, name: 'Purchasing dashboard', does: 'The first thing you see. It gathers on one screen the only thing you have to decide today: what is about to run out, which orders are on their way, and where to start.', finds: ['How many products are at risk today, and how many this week', 'A written summary with the day’s risks, opportunities and actions', 'The orders that should already have arrived, ready to be received'], alt: 'StockAI purchasing dashboard: monitored SKUs, risk, accuracy and inventory value, with an executive summary of risks, opportunities and actions for today.' },
+          { img: SHOTS_EN.inventory, name: 'Inventory', does: 'Your whole catalogue in four states, and for each product the quantity to order already worked out against its supplier’s real lead time. Nothing to interpret.', finds: ['The signal: ORDER NOW, ORDER SOON, OK and OVERSTOCK', 'A tab per warehouse, plus the consolidated view', 'The purchase order ready to export as CSV or PDF'], alt: 'StockAI inventory table with a colour signal per SKU and warehouse, the quantity to order and each product’s supplier.' },
+          { img: SHOTS_EN.pedidos, name: 'Orders', does: 'The orders you generated, from the moment they leave to the moment they land. Every reception you record teaches StockAI how long that supplier really takes.', finds: ['Orders in transit, partial and received, with their value', 'Send the order to the supplier by WhatsApp or email', 'Record the arrival, complete or partial'], alt: 'StockAI orders screen with purchase orders in transit, partial and received, with WhatsApp sending and arrival recording.' },
+          { img: SHOTS_EN.mensajes, name: 'Messages', does: 'One-to-one conversations inside StockAI, about the products you are both looking at. The decision and the conversation do not live in two different apps.', finds: ['One thread per person on the team', 'A WhatsApp or SMS heads-up when a message arrives'], alt: 'StockAI internal messaging: a conversation between the buyer and the analyst about a product at risk of running out.' },
         ],
       },
       {
         chapter: 'Your data',
         when: 'What you set up once, and adjust when something changes.',
         screens: [
-          { img: SHOTS_EN.ventas, name: 'My sales', does: 'You upload the file you already have. Date, product and quantity is enough — Faro reviews the file before training and tells you what it found.', finds: ['CSV or Excel, exactly as it comes out of your system', 'How far ahead you want to plan, and at what grain', 'Your country’s calendar, so paydays and holidays count'], alt: 'Faro sales upload screen: the file, the planning horizon, the level of detail and the country.' },
-          { img: SHOTS_EN.configurar, name: 'Inventory setup', does: 'The three things Faro needs to know about each product: how much you have, what it costs and how long it takes to arrive. It tells you exactly what happens if one is missing.', finds: ['Load stock by hand or from your system’s file', 'Rules per supplier or category, instead of product by product', 'Which products stay out of the signal, and why'], alt: 'Faro inventory setup screen, explaining what happens when a product is missing its stock, cost or lead time.' },
-          { img: SHOTS_EN.proveedores, name: 'Suppliers', does: 'Each supplier’s card: how to reach them, how long they say they take, and how many deliveries in Faro is towards learning how long they really take.', finds: ['Declared lead time, payment terms and contact details', 'Volume price breaks, to know when a bigger order pays off', 'The progress of the lead-time learning, delivery by delivery'], alt: 'Faro supplier list with lead times, payment terms and the state of the real lead-time learning.' },
-          { img: SHOTS_EN.scorecard, name: 'Supplier scorecard', does: 'What they said against what they did. Faro compares the declared lead time with the one it measured in your own receptions, and plans with the second.', finds: ['Real learned lead time, against the declared one', 'On-time percentage and how complete the deliveries were', 'How much you have bought from each'], alt: 'Faro supplier scorecard comparing declared lead time against the real one learned from recorded receptions.' },
+          { img: SHOTS_EN.ventas, name: 'My sales', does: 'You upload the file you already have. Date, product and quantity is enough — StockAI reviews the file before training and tells you what it found.', finds: ['CSV or Excel, exactly as it comes out of your system', 'How far ahead you want to plan, and at what grain', 'Your country’s calendar, so paydays and holidays count'], alt: 'StockAI sales upload screen: the file, the planning horizon, the level of detail and the country.' },
+          { img: SHOTS_EN.configurar, name: 'Inventory setup', does: 'The three things StockAI needs to know about each product: how much you have, what it costs and how long it takes to arrive. It tells you exactly what happens if one is missing.', finds: ['Load stock by hand or from your system’s file', 'Rules per supplier or category, instead of product by product', 'Which products stay out of the signal, and why'], alt: 'StockAI inventory setup screen, explaining what happens when a product is missing its stock, cost or lead time.' },
+          { img: SHOTS_EN.proveedores, name: 'Suppliers', does: 'Each supplier’s card: how to reach them, how long they say they take, and how many deliveries in StockAI is towards learning how long they really take.', finds: ['Declared lead time, payment terms and contact details', 'Volume price breaks, to know when a bigger order pays off', 'The progress of the lead-time learning, delivery by delivery'], alt: 'StockAI supplier list with lead times, payment terms and the state of the real lead-time learning.' },
+          { img: SHOTS_EN.scorecard, name: 'Supplier scorecard', does: 'What they said against what they did. StockAI compares the declared lead time with the one it measured in your own receptions, and plans with the second.', finds: ['Real learned lead time, against the declared one', 'On-time percentage and how complete the deliveries were', 'How much you have bought from each'], alt: 'StockAI supplier scorecard comparing declared lead time against the real one learned from recorded receptions.' },
         ],
       },
       {
         chapter: 'Analysis',
         when: 'When you want to understand why, or test a decision before making it.',
         screens: [
-          { img: SHOTS_EN.forecast, name: 'Forecast per product', does: 'Nine models compete for every product and the one that is least wrong on your own history wins. Here you see which won and how well it did.', finds: ['History, forecast and the likely sales range', 'Each model’s error, so you know how much to trust it', 'Daily, weekly, monthly or quarterly, matching how you buy'], alt: 'Faro per-SKU forecast chart: sales history, forecast and the likely sales range, with the model comparison.' },
-          { img: SHOTS_EN.pattern, name: 'How each product sells', does: 'It separates what is genuinely growing from the weekly pattern repeating itself. That is the difference between a trend and a Monday.', finds: ['Sales with the usual up-and-down already taken out', 'How much of the movement the day of the week explains', 'The average per day, to see where the peak is'], alt: 'Faro screen separating a product’s real trend from the pattern that repeats every week.' },
-          { img: SHOTS_EN.escenarios, name: 'Scenario simulator', does: 'What happens if you sell 40% more, if your supplier runs a week late, or if you promote in December? You see it before committing, product by product.', finds: ['The current plan and the scenario, side by side', 'Which products change state and how much the order changes', 'Saved scenarios, to run them again'], alt: 'Faro scenario simulator comparing the current plan against a higher-demand scenario, product by product.' },
-          { img: SHOTS_EN.impacto, name: 'Impact', does: 'What you did with Faro this month, from figures that come out of your own records. It does not estimate savings or count avoided stockouts, because those cannot be measured with certainty.', finds: ['How many orders you generated and how many recommendations you followed', 'Where every number comes from, said plainly', 'The same summary reaches your inbox on the first of the month'], alt: 'Faro impact screen with the monthly summary of what was done with the tool and where each figure comes from.' },
-          { img: SHOTS_EN.asistente, name: 'AI analyst', does: 'You ask about your own inventory in plain language and it answers with your figures. Not a generic chatbot: it reads the same signal you see on screen.', finds: ['How many products are in each state, and which ones', 'What to review this week and which supplier to call first', 'Suggested questions, if you do not know where to start'], alt: 'A conversation with Faro’s AI analyst about at-risk products and trapped capital, using figures from the inventory itself.' },
-          { img: SHOTS_EN.historial, name: 'History', does: 'Every time you upload new sales a session is kept. You can go back to any of them, compare them, and see which one the signal is being calculated from today.', finds: ['All your runs, with their date and grain', 'Which session is the active one'], alt: 'Faro forecast session history, with the active session and the previous ones.' },
+          { img: SHOTS_EN.forecast, name: 'Forecast per product', does: 'Nine models compete for every product and the one that is least wrong on your own history wins. Here you see which won and how well it did.', finds: ['History, forecast and the likely sales range', 'Each model’s error, so you know how much to trust it', 'Daily, weekly, monthly or quarterly, matching how you buy'], alt: 'StockAI per-SKU forecast chart: sales history, forecast and the likely sales range, with the model comparison.' },
+          { img: SHOTS_EN.pattern, name: 'How each product sells', does: 'It separates what is genuinely growing from the weekly pattern repeating itself. That is the difference between a trend and a Monday.', finds: ['Sales with the usual up-and-down already taken out', 'How much of the movement the day of the week explains', 'The average per day, to see where the peak is'], alt: 'StockAI screen separating a product’s real trend from the pattern that repeats every week.' },
+          { img: SHOTS_EN.escenarios, name: 'Scenario simulator', does: 'What happens if you sell 40% more, if your supplier runs a week late, or if you promote in December? You see it before committing, product by product.', finds: ['The current plan and the scenario, side by side', 'Which products change state and how much the order changes', 'Saved scenarios, to run them again'], alt: 'StockAI scenario simulator comparing the current plan against a higher-demand scenario, product by product.' },
+          { img: SHOTS_EN.impacto, name: 'Impact', does: 'What you did with StockAI this month, from figures that come out of your own records. It does not estimate savings or count avoided stockouts, because those cannot be measured with certainty.', finds: ['How many orders you generated and how many recommendations you followed', 'Where every number comes from, said plainly', 'The same summary reaches your inbox on the first of the month'], alt: 'StockAI impact screen with the monthly summary of what was done with the tool and where each figure comes from.' },
+          { img: SHOTS_EN.asistente, name: 'AI analyst', does: 'You ask about your own inventory in plain language and it answers with your figures. Not a generic chatbot: it reads the same signal you see on screen.', finds: ['How many products are in each state, and which ones', 'What to review this week and which supplier to call first', 'Suggested questions, if you do not know where to start'], alt: 'A conversation with StockAI’s AI analyst about at-risk products and trapped capital, using figures from the inventory itself.' },
+          { img: SHOTS_EN.historial, name: 'History', does: 'Every time you upload new sales a session is kept. You can go back to any of them, compare them, and see which one the signal is being calculated from today.', finds: ['All your runs, with their date and grain', 'Which session is the active one'], alt: 'StockAI forecast session history, with the active session and the previous ones.' },
         ],
       },
       {
         chapter: 'Your account and your team',
         when: 'What you touch every once in a while.',
         screens: [
-          { img: SHOTS_EN.usuarios, name: 'Team and permissions', does: 'You invite your people with the permission that fits. Whoever only looks, only looks: the three roles are the same ones the API respects.', finds: ['Administrator, analyst and read-only', 'Invitation by email, with no passwords for you to invent'], alt: 'Faro users screen with the administrator, analyst and read-only roles.' },
-          { img: SHOTS_EN.cuenta, name: 'My account', does: 'Your profile, the currency your figures are shown in, the language, the time zone — and how much room is left on your plan.', finds: ['Usage against each limit, so you see it coming before you hit it', 'Currency and time zone, which affect everything else', 'Your activity history on the account'], alt: 'Faro account screen showing the plan, usage against each limit and the ways to contact us to lift it.' },
-          { img: SHOTS_EN.automatizacion, name: 'Automation', does: 'So Faro recalculates on its own. You schedule how often and at what hour, and generate the keys your own system uses to get in.', finds: ['Scheduled recalculation: every Monday, every day or the first of the month', 'API keys, shown exactly once'], alt: 'Faro automation screen with API keys and scheduled recalculations.' },
-          { img: SHOTS_EN.api, name: 'Public API', does: 'Your system pushes the data and takes the decision away, with nobody opening Faro. The documentation lives inside, with your own data to try it.', finds: ['The endpoints your ERP needs, with examples ready to copy', 'Authentication, limits and the response format'], alt: 'Faro public API documentation with the base URL, authentication, limits and endpoints.' },
+          { img: SHOTS_EN.usuarios, name: 'Team and permissions', does: 'You invite your people with the permission that fits. Whoever only looks, only looks: the three roles are the same ones the API respects.', finds: ['Administrator, analyst and read-only', 'Invitation by email, with no passwords for you to invent'], alt: 'StockAI users screen with the administrator, analyst and read-only roles.' },
+          { img: SHOTS_EN.cuenta, name: 'My account', does: 'Your profile, the currency your figures are shown in, the language, the time zone — and how much room is left on your plan.', finds: ['Usage against each limit, so you see it coming before you hit it', 'Currency and time zone, which affect everything else', 'Your activity history on the account'], alt: 'StockAI account screen showing the plan, usage against each limit and the ways to contact us to lift it.' },
+          { img: SHOTS_EN.automatizacion, name: 'Automation', does: 'So StockAI recalculates on its own. You schedule how often and at what hour, and generate the keys your own system uses to get in.', finds: ['Scheduled recalculation: every Monday, every day or the first of the month', 'API keys, shown exactly once'], alt: 'StockAI automation screen with API keys and scheduled recalculations.' },
+          { img: SHOTS_EN.api, name: 'Public API', does: 'Your system pushes the data and takes the decision away, with nobody opening StockAI. The documentation lives inside, with your own data to try it.', finds: ['The endpoints your ERP needs, with examples ready to copy', 'Authentication, limits and the response format'], alt: 'StockAI public API documentation with the base URL, authentication, limits and endpoints.' },
         ],
       },
     ],
@@ -740,22 +745,22 @@ const en: LandingCopy = {
     lead: 'If you have a question that is not here, write to us directly. We answer within 24 hours.',
     cta: 'Write to us →',
     items: [
-      { q: 'Do I need statistics or programming knowledge to use Faro?', a: 'No. Faro is built so anyone on the purchasing or planning team can use it. There is no model configuration and no code. You load your data and the system produces the forecasts.' },
-      { q: 'What format does my sales data need to be in?', a: 'Faro accepts Excel (.xlsx) and CSV. The file needs at least a date column, a product identifier column (SKU or name) and a quantity-sold column. The system works out which column is which.' },
-      { q: 'What if I have products with very little sales history, or incomplete data?', a: 'Faro needs at least 20 periods of history per product to train it. Products below that minimum stay out of the forecast: no projection is invented for them. Before anything runs, the file review tells you how many products are under the threshold, and if none of them clears it the file is stopped with the explanation on screen instead of producing an empty result. Those products still appear in your inventory marked NO DATA — no signal and no suggested quantity — so the decision is yours and not an invented number’s.' },
-      { q: 'Is my data safe? Who has access to it?', a: 'The data you upload to Faro is exclusively yours: it is not shared with third parties and it is not used to train models for other companies — every forecast is trained only on your own account’s history. Every query is filtered by company and access is controlled by role: administrator, analyst or read-only. Your integration credentials — the user and password of your database or ERP — are stored encrypted. Your sales files and trained models are kept on Faro’s server, in a folder separated per company; disk encryption is a property of the server it runs on, not something the application does. And deletion is genuinely complete: it removes every table and every file tied to your account, not just the main record.' },
-      { q: 'How long does it take to implement Faro in my company?', a: 'In most cases, under a day. If you have a historical sales file you can upload it and see your first forecasts in under an hour. For ERP or in-house system integrations, the time depends on the complexity.' },
-      { q: 'Can it integrate with our current ERP or inventory system?', a: 'The normal path is by file: export from your system and upload the CSV or Excel. You can also connect Faro straight to your Postgres or MySQL database and pull sales with a query, with no file in between. A custom ERP integration is something we build with our technical team around your operation, case by case — write to us and we will look at it.' },
+      { q: 'Do I need statistics or programming knowledge to use StockAI?', a: 'No. StockAI is built so anyone on the purchasing or planning team can use it. There is no model configuration and no code. You load your data and the system produces the forecasts.' },
+      { q: 'What format does my sales data need to be in?', a: 'StockAI accepts Excel (.xlsx) and CSV. The file needs at least a date column, a product identifier column (SKU or name) and a quantity-sold column. The system works out which column is which.' },
+      { q: 'What if I have products with very little sales history, or incomplete data?', a: 'StockAI needs at least 20 periods of history per product to train it. Products below that minimum stay out of the forecast: no projection is invented for them. Before anything runs, the file review tells you how many products are under the threshold, and if none of them clears it the file is stopped with the explanation on screen instead of producing an empty result. Those products still appear in your inventory marked NO DATA — no signal and no suggested quantity — so the decision is yours and not an invented number’s.' },
+      { q: 'Is my data safe? Who has access to it?', a: 'The data you upload to StockAI is exclusively yours: it is not shared with third parties and it is not used to train models for other companies — every forecast is trained only on your own account’s history. Every query is filtered by company and access is controlled by role: administrator, analyst or read-only. Your integration credentials — the user and password of your database — are stored encrypted. Your sales files and trained models are kept on StockAI’s server, in a folder separated per company; disk encryption is a property of the server it runs on, not something the application does. And deletion is genuinely complete: it removes every table and every file tied to your account, not just the main record.' },
+      { q: 'How long does it take to implement StockAI in my company?', a: 'In most cases, under a day. If you have a historical sales file you can upload it and see your first forecasts in under an hour. For ERP or in-house system integrations, the time depends on the complexity.' },
+      { q: 'Can it integrate with our current ERP or inventory system?', a: 'The normal path is by file: export from your system and upload the CSV or Excel. You can also connect StockAI straight to your Postgres or MySQL database and pull sales with a query, with no file in between. A custom ERP integration is something we build with our technical team around your operation, case by case — write to us and we will look at it.' },
       { q: 'How often are the forecasts updated?', a: 'Every time you load new sales. You can launch it yourself when you upload the month’s file, or leave the scheduled recalculation running: every Monday at 6, every day, weekdays only, hourly, or the first of each month.' },
-      { q: 'Is Faro useful if I have more than one warehouse?', a: 'Yes. The free plan comes with one warehouse; on the full plan there is no cap on locations. You define routes between warehouses with transit days and cost. When a product is short in one warehouse and long in another, Faro suggests moving instead of buying, and only suggests it if the lending warehouse keeps at least 30 days of coverage.' },
-      { q: 'Where does Faro get each supplier’s lead time from?', a: 'At first, from the one you type on the supplier’s card. Every time you record a reception, Faro stores how many days actually passed between the order and the delivery. From that supplier’s third reception it starts using the real average instead of the declared lead time, and shows you which of the two it is using.' },
-      { q: 'How large can the sales file I upload be?', a: 'Up to 2 GB per file. For scale: 3 years of history with 5,000 products selling daily is around 5 million rows, on the order of 200 MB as CSV.' },
+      { q: 'Is StockAI useful if I have more than one warehouse?', a: 'Yes. The free plan comes with one warehouse; on the full plan there is no cap on locations. You define routes between warehouses with transit days and cost. When a product is short in one warehouse and long in another, StockAI suggests moving instead of buying, and only suggests it if the lending warehouse keeps at least 30 days of coverage.' },
+      { q: 'Where does StockAI get each supplier’s lead time from?', a: 'At first, from the one you type on the supplier’s card. Every time you record a reception, StockAI stores how many days actually passed between the order and the delivery. From that supplier’s third reception it starts using the real average instead of the declared lead time, and shows you which of the two it is using.' },
+      { q: 'How large can the sales file I upload be?', a: 'On the free plan, up to 25 MB per file. Moving to the full plan lifts that to 2 GB. For scale: 3 years of history with 5,000 products selling daily is around 5 million rows, on the order of 200 MB as CSV — within the full plan.' },
     ],
   },
   misc: {
     signalHead: ['Signal', 'When it appears', 'In the example'],
     roleToday: 'Today',
-    roleWith: 'With Faro',
+    roleWith: 'With StockAI',
     exampleTitle: 'An example',
     exampleBody: 'You sell 20 units a day of a product and your supplier takes 15 days to deliver. With those two numbers, the four signal states become concrete quantities — the ones in the table below. Change either number and the cut-offs move on their own, product by product.',
     industriesLabel: 'Industries:',
@@ -766,7 +771,7 @@ const en: LandingCopy = {
     product: 'Product',
     company: 'Company',
     contact: 'Contact',
-    rights: '© 2026 Faro. All rights reserved.',
+    rights: '© 2026 StockAI. All rights reserved.',
     madeIn: 'Made in Costa Rica',
   },
 }

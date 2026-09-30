@@ -2,7 +2,7 @@
 ROI tracking service for inventory PO generation.
 
 Logs every PO export and provides cumulative ROI metrics so clients
-can see the value Faro has generated for their operation over time.
+can see the value StockAI has generated for their operation over time.
 """
 
 from __future__ import annotations
@@ -139,7 +139,7 @@ def log_po_generation(
 
     items: list of decision dicts. Each may carry:
         sku, display_name, supplier, signal,
-        recommended_qty (what Faro suggested),
+        recommended_qty (what StockAI suggested),
         final_qty        (what the buyer kept),
         unit_cost,
         status ∈ approved | modified | rejected.
@@ -281,7 +281,7 @@ def get_roi_summary(tenant_id: str) -> dict:
     # `active_days` counts the days the buyer actually DID something, which is
     # what the screen's "days active" figure claims. It used to be the span
     # between the first and last order, so a tenant who ordered once and came
-    # back a year later read "365 days active" after using Faro on two days. A
+    # back a year later read "365 days active" after using StockAI on two days. A
     # distinct-day count cannot overstate: it is bounded by the days they showed
     # up.
     #
@@ -367,9 +367,12 @@ def get_roi_summary(tenant_id: str) -> dict:
 def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     """Returns recent PO generation events for the history panel."""
     rows = query(
+        # `sent_at` rides along so the history can show whether an order was
+        # ever sent — and so the screen can offer to undo that send, which it
+        # cannot decide without knowing.
         """SELECT id, session_id, source, generated_at, sku_count, total_units,
                   total_value, skus_order_now, skus_order_soon,
-                  reception_status, received_at, po_number
+                  reception_status, received_at, po_number, sent_at
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC
@@ -507,7 +510,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     return result
 
 
-# ── Monthly recap ("what Faro did for you last month") ────────────────────────
+# ── Monthly recap ("what StockAI did for you last month") ────────────────────────
 #
 # Provenance of every figure below. Each one is a straight aggregation of rows
 # the product already writes; none is modelled, extrapolated or assumed.
@@ -516,7 +519,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
 #   recommendations_shown   SUM(suggested_count) — lines that reached this log,
 #                           i.e. lines the buyer DECIDED on. Recommendations
 #                           they never acted on are not recorded anywhere, so
-#                           this is not "everything Faro put in front of them"
+#                           this is not "everything StockAI put in front of them"
 #                           and the copy must not claim it is. Counting those
 #                           would mean persisting what was displayed, which the
 #                           product does not do.
@@ -539,14 +542,14 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
 #                           partial sum was indistinguishable from a total.
 #   capital_freed           See _capital_freed_during: difference of two
 #                           measured overstock snapshots. NOT attributable to
-#                           Faro — overstock also falls on sales, shrinkage,
+#                           StockAI — overstock also falls on sales, shrinkage,
 #                           SKU deletion and retraining — so the copy says what
 #                           moved, not who moved it.
 #   capital_freed_status    Why capital_freed is what it is: measured /
 #                           not_measured / grew. A single None conflated "no
 #                           measurement" with "your overstock went up".
 #
-# Deliberately NOT computed: any single "Faro saved you $X" headline, and any
+# Deliberately NOT computed: any single "StockAI saved you $X" headline, and any
 # count of "stockouts avoided". Both require assumptions we cannot ground in
 # tenant data (lost margin per stockout, holding-cost rate, the counterfactual
 # of not ordering). Inventing them would put an unfalsifiable number in front of

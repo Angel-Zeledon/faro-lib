@@ -20,7 +20,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Días de cobertura",
-                "where": "backend/inventory/service.py:1662 · coverage_days",
+                "where": "backend/inventory/service.py:1926 · coverage_days",
                 "what": (
                     "Cuánto dura el stock que hay hoy al ritmo de venta pronosticado. "
                     "Es el número del que cuelga todo lo demás."
@@ -54,7 +54,7 @@ CHAPTER = {
             },
             {
                 "name": "Cantidad recomendada",
-                "where": "backend/inventory/service.py:1119 · _calc_recommended",
+                "where": "backend/inventory/service.py:1163 · _calc_recommended",
                 "what": (
                     "Demanda del lead time más stock de seguridad, menos lo que ya "
                     "tienes y lo que viene en camino. Con un piso de MOQ y una "
@@ -83,7 +83,7 @@ CHAPTER = {
             },
             {
                 "name": "Lead time aprendido",
-                "where": "backend/inventory/service.py:1217 · get_learned_lead_times",
+                "where": "backend/inventory/service.py:1314 · get_learned_lead_times",
                 "what": (
                     "Cada recepción completa de una orden deja una observación del "
                     "plazo real del proveedor. Con tres observaciones, el promedio "
@@ -101,7 +101,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-bodega y traslados",
-                "where": "backend/inventory/service.py:1852 · get_inventory_status_by_warehouse",
+                "where": "backend/inventory/service.py:2193 · get_inventory_status_by_warehouse",
                 "what": (
                     "La demanda se reparte entre bodegas de dos formas, y cuando una "
                     "bodega necesita lo que a otra le sobra, se propone un traslado en "
@@ -148,8 +148,8 @@ CHAPTER = {
                     "podría ser, y eso es una decisión, no una carencia."
                 ),
                 "caveats": [
-                    "`capital_freed` es la diferencia entre dos fotos mensuales de sobrestock. El sobrestock también baja por vender, por merma, por borrar productos y por reentrenar: la cifra NO es atribuible a Faro y el código lo dice.",
-                    "No se calcula ningún titular de «Faro te ahorró $X» ni un conteo de «quiebres evitados», porque ambos necesitan supuestos que no están fundados en los datos del cliente.",
+                    "`capital_freed` es la diferencia entre dos fotos mensuales de sobrestock. El sobrestock también baja por vender, por merma, por borrar productos y por reentrenar: la cifra NO es atribuible a StockAI y el código lo dice.",
+                    "No se calcula ningún titular de «StockAI te ahorró $X» ni un conteo de «quiebres evitados», porque ambos necesitan supuestos que no están fundados en los datos del cliente.",
                     "El stock muerto es una heurística: un SKU está «muerto» cuando su consumo observado es menor al 20% del esperado por pronóstico, con al menos 2 fotos y sin reposición en la ventana.",
                     "El ABC usa demanda diaria × costo unitario como aproximación de ingreso, cayendo a costo 1.0 cuando no hay costo. Los cortes XYZ son CV 0.5 y 1.0, fijos en el código.",
                 ],
@@ -168,7 +168,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Coverage days",
-                "where": "backend/inventory/service.py:1662 · coverage_days",
+                "where": "backend/inventory/service.py:1926 · coverage_days",
                 "what": (
                     "How long today's stock lasts at the forecast sales rate. Every "
                     "other number hangs off this one."
@@ -202,7 +202,7 @@ CHAPTER = {
             },
             {
                 "name": "Recommended quantity",
-                "where": "backend/inventory/service.py:1119 · _calc_recommended",
+                "where": "backend/inventory/service.py:1163 · _calc_recommended",
                 "what": (
                     "Lead-time demand plus safety stock, minus what you have and what "
                     "is already coming. With an MOQ floor and a gate on the signal."
@@ -230,7 +230,7 @@ CHAPTER = {
             },
             {
                 "name": "Learned lead time",
-                "where": "backend/inventory/service.py:1217 · get_learned_lead_times",
+                "where": "backend/inventory/service.py:1314 · get_learned_lead_times",
                 "what": (
                     "Every completed reception leaves an observation of the supplier's "
                     "real lead time. At three observations, the learned average "
@@ -248,7 +248,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-warehouse and transfers",
-                "where": "backend/inventory/service.py:1852 · get_inventory_status_by_warehouse",
+                "where": "backend/inventory/service.py:2193 · get_inventory_status_by_warehouse",
                 "what": (
                     "Demand is split across warehouses in one of two ways, and when one "
                     "warehouse needs what another has spare, a transfer is proposed "
@@ -295,8 +295,8 @@ CHAPTER = {
                     "that is a decision rather than a gap."
                 ),
                 "caveats": [
-                    "`capital_freed` is the difference between two monthly overstock snapshots. Overstock also falls on sales, shrinkage, SKU deletion and retraining: the figure is NOT attributable to Faro, and the code says so.",
-                    "No \"Faro saved you $X\" headline and no \"stockouts avoided\" count are computed, because both need assumptions not grounded in the tenant's own data.",
+                    "`capital_freed` is the difference between two monthly overstock snapshots. Overstock also falls on sales, shrinkage, SKU deletion and retraining: the figure is NOT attributable to StockAI, and the code says so.",
+                    "No \"StockAI saved you $X\" headline and no \"stockouts avoided\" count are computed, because both need assumptions not grounded in the tenant's own data.",
                     "Dead stock is a heuristic: a SKU is \"dead\" when observed depletion is under 20% of forecast-expected depletion, with at least 2 snapshots and no restocking in the window.",
                     "ABC uses daily demand × unit cost as a revenue proxy, falling back to a unit cost of 1.0 when none is on file. The XYZ cutoffs are CV 0.5 and 1.0, hard-coded.",
                 ],

@@ -12,7 +12,7 @@
 // 2. It uses raw fetch, not `api.ts`'s `request()`. That helper overwrites
 //    Authorization with the signed-in user's JWT — so the customer's key would
 //    never be sent — and treats any 401 as an expired session, clearing auth and
-//    redirecting to /login. Typing a wrong key must not sign you out of Faro.
+//    redirecting to /login. Typing a wrong key must not sign you out of StockAI.
 //
 // 3. Every endpoint runs, INCLUDING the writes — but a write asks first, and the
 //    question names the actual consequence. There is no sandbox in this product:
@@ -62,14 +62,14 @@ const ENDPOINTS: Endpoint[] = [
     id: 'planning',
     method: 'GET',
     path: '/planning',
-    curl: `curl "$FARO/planning" \\\n  -H "Authorization: Bearer $KEY"`,
+    curl: `curl "$STOCKAI/planning" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'sources',
     method: 'GET',
     path: '/data-sources',
     query: [{ name: 'skip', placeholder: '0' }, { name: 'limit', placeholder: '50' }],
-    curl: `curl "$FARO/data-sources?limit=50" \\\n  -H "Authorization: Bearer $KEY"`,
+    curl: `curl "$STOCKAI/data-sources?limit=50" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'file',
@@ -79,7 +79,7 @@ const ENDPOINTS: Endpoint[] = [
     write: true,
     multipart: true,
     consequenceKey: 'apidocs.consequence_file',
-    curl: `curl -X POST "$FARO/data-sources/$SOURCE_ID/file" \\\n  -H "Authorization: Bearer $KEY" \\\n  -F "file=@ventas.csv"`,
+    curl: `curl -X POST "$STOCKAI/data-sources/$SOURCE_ID/file" \\\n  -H "Authorization: Bearer $KEY" \\\n  -F "file=@ventas.csv"`,
   },
   {
     id: 'train',
@@ -89,14 +89,14 @@ const ENDPOINTS: Endpoint[] = [
     write: true,
     bodyTemplate: '{}',
     consequenceKey: 'apidocs.consequence_train',
-    curl: `curl -X POST "$FARO/sessions/$SESSION/train" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" -d '{}'`,
+    curl: `curl -X POST "$STOCKAI/sessions/$SESSION/train" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" -d '{}'`,
   },
   {
     id: 'train_status',
     method: 'GET',
     path: '/sessions/{session_id}/train/status',
     pathParams: [{ name: 'session_id', required: true }],
-    curl: `curl "$FARO/sessions/$SESSION/train/status" \\\n  -H "Authorization: Bearer $KEY"`,
+    curl: `curl "$STOCKAI/sessions/$SESSION/train/status" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'status',
@@ -107,14 +107,14 @@ const ENDPOINTS: Endpoint[] = [
       { name: 'signal', placeholder: 'PEDIR_YA' },
       { name: 'supplier' },
     ],
-    curl: `curl "$FARO/inventory/status?signal=PEDIR_YA" \\\n  -H "Authorization: Bearer $KEY"`,
+    curl: `curl "$STOCKAI/inventory/status?signal=PEDIR_YA" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'briefing',
     method: 'GET',
     path: '/inventory/morning-briefing',
     query: [{ name: 'session_id' }],
-    curl: `curl "$FARO/inventory/morning-briefing" \\\n  -H "Authorization: Bearer $KEY"`,
+    curl: `curl "$STOCKAI/inventory/morning-briefing" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'logpo',
@@ -129,7 +129,7 @@ const ENDPOINTS: Endpoint[] = [
       "status": "modified", "unit_cost": 12.5 }
   ]
 }`,
-    curl: `curl -X POST "$FARO/inventory/log-po?session_id=$SESSION" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"items":[{"sku":"ABC-1","recommended_qty":120,\n                "final_qty":100,"status":"modified"}]}'`,
+    curl: `curl -X POST "$STOCKAI/inventory/log-po?session_id=$SESSION" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"items":[{"sku":"ABC-1","recommended_qty":120,\n                "final_qty":100,"status":"modified"}]}'`,
   },
 ]
 
@@ -178,14 +178,14 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   )
 }
 
-function CodeBlock({ text }: { text: string }) {
+function CodeBlock({ text, label = 'curl' }: { text: string; label?: string }) {
   const { t } = useLanguage()
   const [copied, setCopied] = useState(false)
   return (
     <div style={{ border: '1px solid var(--border-strong)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface-3)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--dim)', textTransform: 'uppercase', flex: 1 }}>
-          curl
+          {label}
         </span>
         <Button
           variant="ghost" size="sm"
@@ -203,6 +203,100 @@ function CodeBlock({ text }: { text: string }) {
         {text}
       </pre>
     </div>
+  )
+}
+
+/** The MCP endpoint, described rather than wired into the console.
+ *
+ *  It is deliberately NOT another `EndpointCard`. The console's whole grammar
+ *  is a method, a path and a body; MCP is JSON-RPC, where the method lives
+ *  inside the body and `POST` would be painted in the write colour for a
+ *  surface that only reads. Two grammars in one list teaches the wrong thing
+ *  about both.
+ *
+ *  What an integrator needs here is the URL, what the tools are, and the
+ *  sentence that says nothing writes — plus one curl so they can prove their
+ *  key works before going near a client's configuration. */
+function McpSection({ baseUrl, narrow }: { baseUrl: string; narrow: boolean }) {
+  const { t } = useLanguage()
+  const url = baseUrl ? `${baseUrl}/mcp` : '…'
+  const tools: Array<[string, string]> = [
+    ['get_planning_context', t('apidocs.mcp_tool_planning')],
+    ['get_morning_briefing', t('apidocs.mcp_tool_briefing')],
+    ['get_inventory_status', t('apidocs.mcp_tool_status')],
+    ['list_data_sources',    t('apidocs.mcp_tool_sources')],
+    ['get_training_status',  t('apidocs.mcp_tool_training')],
+  ]
+
+  return (
+    <Card id="ep-mcp" padding={narrow ? '18px' : '22px 24px'} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <Eyebrow>{t('apidocs.mcp_eyebrow')}</Eyebrow>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', margin: '8px 0 0' }}>
+          {t('apidocs.mcp_title')}
+        </h2>
+        <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, margin: '8px 0 0', maxWidth: 680 }}>
+          {t('apidocs.mcp_intro')}
+        </p>
+      </div>
+
+      <div>
+        <Eyebrow>{t('apidocs.mcp_url_heading')}</Eyebrow>
+        <code style={{
+          display: 'inline-block', marginTop: 7, fontFamily: MONO, fontSize: 13,
+          color: 'var(--text)', background: 'var(--surface-3)',
+          border: '1px solid var(--border-strong)', borderRadius: 7, padding: '7px 12px',
+          wordBreak: 'break-all',
+        }}>
+          {url}
+        </code>
+      </div>
+
+      <div>
+        <Eyebrow>{t('apidocs.mcp_tools_heading')}</Eyebrow>
+        <ul style={{ listStyle: 'none', margin: '9px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {tools.map(([name, desc]) => (
+            <li key={name} style={{
+              display: 'flex', gap: 10, alignItems: 'baseline',
+              flexDirection: narrow ? 'column' : 'row',
+            }}>
+              <code style={{
+                fontFamily: MONO, fontSize: 11.5, color: 'var(--info)', flexShrink: 0,
+                minWidth: narrow ? undefined : 172,
+              }}>
+                {name}
+              </code>
+              <span style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{desc}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* The one thing somebody handing out a key has to understand, and the
+          reason it is a panel rather than a footnote. */}
+      <div style={{
+        display: 'flex', gap: 10, padding: '12px 14px', borderRadius: 9,
+        background: 'color-mix(in srgb, var(--info) 8%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--info) 26%, transparent)',
+      }}>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7 }}>
+          <strong style={{ color: 'var(--text)' }}>{t('apidocs.mcp_readonly_title')}</strong>{' '}
+          {t('apidocs.mcp_readonly_body')}
+        </div>
+      </div>
+
+      <div>
+        <Eyebrow>{t('apidocs.mcp_test_heading')}</Eyebrow>
+        <div style={{ marginTop: 9 }}>
+          <CodeBlock text={`curl -X POST "$STOCKAI/mcp" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`} />
+        </div>
+      </div>
+
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7 }}>
+        <strong style={{ color: 'var(--text)' }}>{t('apidocs.mcp_desktop_heading')}</strong>{' '}
+        {t('apidocs.mcp_desktop_desc')}
+      </div>
+    </Card>
   )
 }
 
@@ -580,7 +674,7 @@ export default function ApiDocsPage() {
           </p>
 
           {/* The base URL, stated once and prominently. Every curl on this page
-              says `$FARO`, and the console itself calls a RELATIVE path through
+              says `$STOCKAI`, and the console itself calls a RELATIVE path through
               the Next rewrite — so the /v1 an integrator must type was the one
               thing the page never showed. */}
           <div style={{ marginTop: 26, display: 'flex', flexWrap: 'wrap', gap: narrow ? 18 : 40, alignItems: 'flex-end' }}>
@@ -646,9 +740,9 @@ export default function ApiDocsPage() {
               // An unmarked password field is an invitation in BOTH directions:
               // the manager offers to save the raw sk_live_ key (which exists
               // nowhere else — the server keeps only a hash), and it autofills
-              // the user's saved Faro PASSWORD into it, which would then travel
-              // in an Authorization header. `integraciones/page.tsx` already
-              // does this on its credential input; this page had omitted it.
+              // the user's saved StockAI PASSWORD into it, which would then travel
+              // in an Authorization header. Any input that takes a secret
+              // needs all four of the attributes below, not just the first.
               autoComplete="off"
               spellCheck={false}
               data-1p-ignore
@@ -711,6 +805,31 @@ export default function ApiDocsPage() {
                   </a>
                 </li>
               ))}
+              {/* Not an endpoint in the console's sense, but the index is how
+                  anybody discovers this page has an MCP surface at all. */}
+              <li>
+                <a
+                  href="#ep-mcp"
+                  className="api-nav-link"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
+                    borderRadius: 6, textDecoration: 'none', color: 'var(--muted)',
+                  }}
+                >
+                  <span style={{
+                    fontFamily: MONO, fontSize: 9.5, fontWeight: 700, width: 30, flexShrink: 0,
+                    color: 'var(--info)',
+                  }}>
+                    MCP
+                  </span>
+                  <span style={{
+                    fontFamily: MONO, fontSize: 11.5, overflow: 'hidden',
+                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    /mcp
+                  </span>
+                </a>
+              </li>
             </ul>
           </nav>
         )}
@@ -734,6 +853,7 @@ export default function ApiDocsPage() {
           </div>
 
           {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} />)}
+          <McpSection baseUrl={baseUrl} narrow={narrow} />
           <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7 }}>
             {t('apidocs.footer_promise')}
           </div>

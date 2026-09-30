@@ -1,30 +1,34 @@
 # What leaves your network
 
-*Last verified against the code on 2026-09-16.*
+*Last verified against the code on 2026-09-20.*
 
-Faro runs on your server. Your sales history, your stock, your suppliers and
+StockAI runs on your server. Your sales history, your stock, your suppliers and
 your purchase orders live in your Postgres and on your disk, and nothing moves
 them. What follows is the complete list of the times the product opens a
 connection to somebody else, what it sends, and how to turn each one off.
 
 The list is short by design, and every entry is **off until you configure it**.
-A Faro with no credentials in `/instalacion` talks to nothing.
+A StockAI with no credentials in `/instalacion` talks to nothing.
 
 ---
 
-## The five destinations
+## The three destinations
 
 | What | Where it goes | What is sent | Turned off by |
 |---|---|---|---|
 | **AI assistant, RAG, narratives, data-quality diagnosis** | `api.deepseek.com` (`DEEPSEEK_BASE_URL`) | The question the user typed, plus the inventory/forecast context needed to answer it: SKU codes, names, quantities, costs, supplier names | Leave `DEEPSEEK_API_KEY` empty |
 | **Email** (alerts, purchase orders to suppliers, invitations, password changes) | `api.resend.com`, or your own SMTP server | Recipient address, subject, body, and for a purchase order the PDF — which names products, quantities and prices | Leave `RESEND_API_KEY` and the SMTP settings empty |
 | **WhatsApp / SMS** | `api.twilio.com` | Destination number and message text (the stockout digest, the order summary) | Leave the `TWILIO_*` settings empty |
-| **ERP sync — Alegra** | `api.alegra.com` (`ALEGRA_BASE_URL`) | Your Alegra credentials, to READ products, stock and invoices. Nothing of yours is written there | Do not connect the integration |
-| **ERP sync — Siigo** | `api.siigo.com` (`SIIGO_BASE_URL`) | Same: credentials in, catalogue and invoices out | Do not connect the integration |
+
+There used to be two more: the Alegra and Siigo accounting integrations. They
+were removed on 2026-09-20 — the code had never run against a live account —
+so the product no longer opens a connection to any ERP. Data still comes in the
+way it always did in practice: an export your system produces, uploaded or
+pushed to the API.
 
 There is no telemetry, no analytics, no crash reporting, no licence check and
 no "call home". The product never contacts the vendor, and it does not need
-outbound internet to work: with all five unconfigured, forecasting, the stock
+outbound internet to work: with all three unconfigured, forecasting, the stock
 semáforo, purchase orders, receptions and every screen work exactly the same.
 
 ---
@@ -51,6 +55,20 @@ computed locally and never involved the model.
 There is deliberately **one** AI provider and no fallback chain. A missing or
 mistyped key cannot quietly route your data somewhere else; it turns the
 feature off.
+
+### The MCP endpoint is the other direction, and it is yours
+
+`POST /api/v1/mcp` lets an AI client you run — Claude, or anything else that
+speaks MCP — read this tenant with an API key you generate. **StockAI opens no
+connection for it.** Your client calls in; the server answers and hangs up.
+Whatever your client then does with the answer is between you and whoever
+operates it, and is not on this page because it is not StockAI doing it.
+
+Worth knowing before you hand somebody a key: the tools are read-only (the
+catalogue is `backend/mcp/catalog.py`), so nothing reachable that way can change
+your data — but an AI client with a key can READ your stock, costs and supplier
+names. Treat the key like any other credential, and revoke it from the same
+screen that created it.
 
 ---
 
@@ -86,11 +104,11 @@ git ls-files 'Frontend/src/**' | xargs grep -h "https://"   | grep -oE "https://
 curl -s localhost:8000/health | jq .services
 ```
 
-Run on 2026-09-16 the first command returns exactly the five hosts in the table
+Run on 2026-09-20 the first command returns exactly the three hosts in the table
 above, plus `wa.me` and two `example.com` placeholders from comments.
 **`wa.me` is not a connection the server makes**: it is a link put inside a
 WhatsApp message so the person receiving it can open the chat. Nothing is sent
-to it by Faro.
+to it by StockAI.
 
 `/health` reports every optional service as configured or not, by name. A
 service that reports itself off is a connection that will not be opened.

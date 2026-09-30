@@ -734,7 +734,7 @@ def send_po_to_supplier_email(
 
 # ── Monthly recap ─────────────────────────────────────────────────────────────
 # Amounts follow the tenant's currency setting (backend/api/v1/currency.py), not
-# a hardcoded colón: this email is the one figure-bearing message Faro sends on
+# a hardcoded colón: this email is the one figure-bearing message StockAI sends on
 # its own initiative, and a customer on USD used to read ₡ in the subject line.
 # LatAm convention throughout: period as the thousands separator, comma for the
 # decimals — which is why this does not go through `formatting.money`.
@@ -774,7 +774,7 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str,
                            currency: dict | None = None,
                            tenant_id: str | None = None) -> bool:
     """
-    Monthly recap of what the buyer did with Faro.
+    Monthly recap of what the buyer did with StockAI.
 
     Every figure comes straight from `get_month_report`; metrics that could not
     be derived from the tenant's own records are omitted from the email rather

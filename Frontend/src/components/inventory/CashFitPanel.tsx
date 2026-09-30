@@ -6,7 +6,7 @@
  * buyer types the cash they have available — whether the cart on screen fits.
  * Every number and the fits/does-not-fit verdict come from the backend, which
  * dates each line by its own supplier's credit terms. The budget is typed by
- * the user because Faro stores no cash balance; with no budget the panel
+ * the user because StockAI stores no cash balance; with no budget the panel
  * reports totals and shows no verdict rather than guessing one.
  */
 import { useState } from 'react'

@@ -81,7 +81,6 @@ CHAPTER = {
                 "table": [
                     ("job-worker", "Sondea cada 2 s mientras haya cupo. Máximo de trabajos concurrentes: 2 por proceso."),
                     ("job-scheduler", "Cada 60 s: trabajos programados vencidos, con cron evaluado en la zona horaria del tenant."),
-                    ("integration-sync", "06:00 UTC. Antes de las alertas, a propósito."),
                     ("inventory-alerts", "08:00 UTC: digest de quiebres, desvíos de plazo de proveedor y recordatorios de datos viejos."),
                     ("overstock-snapshot", "Día 1, 00:05 UTC: foto de sobrestock y después los correos de recuento mensual. El orden importa."),
                 ],
@@ -136,11 +135,11 @@ CHAPTER = {
             },
             {
                 "name": "Superficie pública y forma de los errores",
-                "where": "backend/api/public_surface.py:26",
+                "where": "backend/api/public_surface.py:25 · PUBLIC_ENDPOINTS",
                 "what": (
-                    "El contrato publicado son ocho pares (método, ruta). Todo lo demás "
-                    "—271 rutas— es alcanzable con una llave pero nadie prometió "
-                    "mantenerlo."
+                    "El contrato publicado son diez pares (método, ruta): ocho REST más "
+                    "el endpoint MCP. Todo lo demás —261 rutas— es alcanzable con una "
+                    "llave pero nadie prometió mantenerlo."
                 ),
                 "formulas": [
                     ("Envoltura de éxito", '{"success": true, "data": …, "meta": {"timestamp": …}}', "En 33 de 35 módulos."),
@@ -148,26 +147,28 @@ CHAPTER = {
                      "El frontend renderiza `errors.<error_code>` interpolando los params; `detail` es el respaldo."),
                 ],
                 "table": [
-                    ("PUBLIC_API_ONLY", "Monta toda la app y después PODA las rutas a la lista pública más /health. Podar después de montar es deliberado: elegir routers dejaría colarse a un vecino interno."),
+                    ("PUBLIC_API_ONLY", "Monta toda la app y después PODA las rutas a la lista pública más /health. Podar después de montar es deliberado: elegir routers dejaría colarse a un vecino interno. Medido: 15 de 277 rutas."),
+                    ("POST /api/v1/mcp", "Servidor MCP sin estado (JSON-RPC sobre Streamable HTTP), misma llave sk_live_ y mismo limitador. Cinco herramientas, TODAS de lectura: backend/mcp/catalog.py. El GET contesta 405 a propósito — no hay stream que ofrecer."),
                     ("400 malformed_path", "Un NUL en la ruta se rechaza de entrada; antes llegaba a psycopg2 y salía como 500."),
                     ("503 server_busy", "Pool de conexiones agotado, con Retry-After. Ocupado no es roto."),
                     ("422 validation_error", "Con el input saneado: un NaN en el eco hacía que Starlette convirtiera el 422 en un 500 sin cuerpo."),
                 ],
                 "caveats": [
                     "PUBLIC_API_ONLY no cambia nada de autenticación ni permisos: es menos alcance, no un segundo modelo de seguridad. Y NO aísla la base — las dos instancias comparten un Postgres.",
-                    "REVISAR: los conteos de rutas en los comentarios (246, 261) están desactualizados; hoy hay 271 decoradores.",
+                    "El catálogo MCP es el techo, no el rol: una llave `analyst` alcanza las mismas cinco lecturas que una `viewer`. Un cliente de IA no puede dibujar la tarjeta de confirmación de StockAI ni sostener un token de deshacer, así que no recibe nada que escriba.",
+                    "REVISAR: los conteos de rutas en los comentarios están desactualizados; hoy hay 277 rutas montadas.",
                 ],
             },
             {
                 "name": "El frontend",
                 "where": "Frontend/src/",
                 "what": (
-                    "Next.js 14 App Router, 24 páginas con rutas en español, un cliente "
-                    "de API de 226 funciones y tres catálogos de i18n con formas "
+                    "Next.js 14 App Router, 20 páginas con rutas en español, un cliente "
+                    "de API de 224 funciones y tres catálogos de i18n con formas "
                     "distintas a propósito."
                 ),
                 "table": [
-                    ("translations.ts", "3.034 claves por idioma, búsqueda en tiempo de ejecución. Un typo devuelve la clave."),
+                    ("translations.ts", "3.187 claves por idioma, búsqueda en tiempo de ejecución. Un typo devuelve la clave."),
                     ("landing.ts / serviceConfig.ts", "Tipados: una traducción faltante es error de COMPILACIÓN, que es la garantía que translations.ts necesita un script para dar."),
                     ("Proxy", "/api/:path* → ${BACKEND_URL}/api/v1/:path*. Ojo: el navegador llama /api/... SIN el v1; el proxy lo agrega."),
                     ("BACKEND_URL", "Por defecto 127.0.0.1:8010 — IPv4 explícito, porque Node resuelve localhost a ::1 y uvicorn escucha en IPv4, produciendo un 500 sin cuerpo."),
@@ -253,7 +254,6 @@ CHAPTER = {
                 "table": [
                     ("job-worker", "Polls every 2 s while there is room. Concurrent jobs per process: 2."),
                     ("job-scheduler", "Every 60 s: due scheduled jobs, with cron evaluated in the tenant's timezone."),
-                    ("integration-sync", "06:00 UTC. Before the alerts, deliberately."),
                     ("inventory-alerts", "08:00 UTC: stockout digest, supplier lead-time deviations and stale-data reminders."),
                     ("overstock-snapshot", "Day 1, 00:05 UTC: overstock snapshot, then the monthly recap emails. The order is load-bearing."),
                 ],
@@ -308,11 +308,11 @@ CHAPTER = {
             },
             {
                 "name": "Public surface and the shape of errors",
-                "where": "backend/api/public_surface.py:26",
+                "where": "backend/api/public_surface.py:25 · PUBLIC_ENDPOINTS",
                 "what": (
-                    "The published contract is eight (method, path) pairs. Everything "
-                    "else — 271 routes — is reachable with a key but nobody promised "
-                    "to keep it."
+                    "The published contract is ten (method, path) pairs: eight REST "
+                    "plus the MCP endpoint. Everything else — 261 routes — is reachable "
+                    "with a key but nobody promised to keep it."
                 ),
                 "formulas": [
                     ("Success envelope", '{"success": true, "data": …, "meta": {"timestamp": …}}', "In 33 of 35 modules."),
@@ -320,26 +320,28 @@ CHAPTER = {
                      "The frontend renders `errors.<error_code>` interpolating the params; `detail` is the fallback."),
                 ],
                 "table": [
-                    ("PUBLIC_API_ONLY", "Mounts the whole app and then PRUNES the routes to the public list plus /health. Pruning after mounting is deliberate: picking routers would let an internal neighbour ride along."),
+                    ("PUBLIC_API_ONLY", "Mounts the whole app and then PRUNES the routes to the public list plus /health. Pruning after mounting is deliberate: picking routers would let an internal neighbour ride along. Measured: 15 of 277 routes."),
+                    ("POST /api/v1/mcp", "Stateless MCP server (JSON-RPC over Streamable HTTP), same sk_live_ key and same limiter. Five tools, ALL reads: backend/mcp/catalog.py. The GET answers 405 on purpose — there is no stream to offer."),
                     ("400 malformed_path", "A NUL in the path is refused up front; it used to reach psycopg2 and surface as a 500."),
                     ("503 server_busy", "Connection pool exhausted, with Retry-After. Busy is not broken."),
                     ("422 validation_error", "With the echoed input sanitised: a NaN in it made Starlette turn the 422 into an empty-bodied 500."),
                 ],
                 "caveats": [
                     "PUBLIC_API_ONLY changes nothing about authentication or permissions: narrower reach, not a second security model. And it does NOT isolate the database — both instances share one Postgres.",
-                    "CHECK THIS: the route counts in the comments (246, 261) are stale; there are 271 decorators today.",
+                    "The MCP catalogue is the ceiling, not the role: an `analyst` key reaches the same five reads a `viewer` key does. An AI client cannot render StockAI’s confirmation card or hold an undo token, so it is given nothing that writes.",
+                    "CHECK THIS: the route counts in the comments are stale; there are 277 mounted routes today.",
                 ],
             },
             {
                 "name": "The frontend",
                 "where": "Frontend/src/",
                 "what": (
-                    "Next.js 14 App Router, 24 pages on Spanish routes, a 226-function "
+                    "Next.js 14 App Router, 20 pages on Spanish routes, a 224-function "
                     "API client, and three i18n catalogues with deliberately different "
                     "shapes."
                 ),
                 "table": [
-                    ("translations.ts", "3,034 keys per language, runtime lookup. A typo returns the key."),
+                    ("translations.ts", "3,187 keys per language, runtime lookup. A typo returns the key."),
                     ("landing.ts / serviceConfig.ts", "Typed: a missing translation is a COMPILE error, which is the guarantee translations.ts needs a script to give."),
                     ("Proxy", "/api/:path* → ${BACKEND_URL}/api/v1/:path*. Note: the browser calls /api/... WITHOUT the v1; the proxy adds it."),
                     ("BACKEND_URL", "Defaults to 127.0.0.1:8010 — explicit IPv4, because Node resolves localhost to ::1 while uvicorn binds IPv4, producing a 500 with an empty body."),

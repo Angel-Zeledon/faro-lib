@@ -43,7 +43,7 @@ _PROFILE_CONTEXT = {
 # same defect as a Spanish string hardcoded in a handler. `{answer_language}` is
 # filled from the request.
 _SYSTEM_PROMPT = """\
-You are the senior business analyst built into Faro, a platform for inventory,
+You are the senior business analyst built into StockAI, a platform for inventory,
 demand, purchasing and production planning.
 
 You receive structured business data and produce concise executive analysis for

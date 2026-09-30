@@ -60,7 +60,7 @@ ADVISORY = "advisory"
 # threshold DataQualityChecker.filter_valid_skus applies to drop a series.
 MIN_TRAINABLE_PERIODS = 20
 
-# A date before this is a typo, not history. Faro forecasts consumer goods for
+# A date before this is a typo, not history. StockAI forecasts consumer goods for
 # SMB distributors; nobody's ERP holds real 1900 sales.
 MIN_PLAUSIBLE_YEAR = 2000
 # Beyond this many days ahead a date is a typo, not a pre-order.

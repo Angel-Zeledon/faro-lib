@@ -15,18 +15,18 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 // Titles resolved via i18n so they follow the language toggle.
 const PAGE_TITLE_KEYS: Record<string, string> = {
-  // One title for the pair: /quick-start and /data are two tabs of the same
+  // One title for the pair: /ventas and /archivos are two tabs of the same
   // sidebar entry, so the bar names the section and the tabs name the tab.
-  '/data':        'topbar.title_data',
-  '/quick-start': 'topbar.title_data',
-  '/analyst':   'topbar.title_analyst',
-  '/config':    'topbar.title_config',
-  '/users':     'topbar.title_users',
-  '/settings':  'topbar.title_settings',
-  '/skus':      'skus.page_title',
-  '/pedidos':   'orders.page_title',
-  '/mensajes':  'messages.page_title',
-  '/sessions':  'sessions.page_title',
+  '/archivos':      'topbar.title_data',
+  '/ventas':        'topbar.title_data',
+  '/asistente':     'topbar.title_analyst',
+  '/mi-cuenta':     'topbar.title_config',
+  '/usuarios':      'topbar.title_users',
+  '/automatizacion': 'topbar.title_settings',
+  '/pronosticos':   'skus.page_title',
+  '/pedidos':       'orders.page_title',
+  '/mensajes':      'messages.page_title',
+  '/historial':     'sessions.page_title',
 }
 
 // Granularity label of the active session, reusing the planning vocabulary.
@@ -34,15 +34,15 @@ const GRAIN_KEY: Record<string, string> = {
   daily: 'planning.daily', weekly: 'planning.weekly', monthly: 'planning.monthly',
 }
 
-// The page owns its session picker (deep links `/skus?session=<id>` and compare
-// mode can point at a session other than the tenant's active one), so a global
-// badge here would contradict what that page is actually showing.
-const PATHS_WITH_OWN_SESSION_PICKER = ['/skus']
+// The page owns its session picker (deep links `/pronosticos?session=<id>` and
+// compare mode can point at a session other than the tenant's active one), so
+// a global badge here would contradict what that page is actually showing.
+const PATHS_WITH_OWN_SESSION_PICKER = ['/pronosticos']
 
 export default function TopBar() {
   const path    = usePathname()
   const { t }   = useLanguage()
-  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'Faro'
+  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'StockAI'
   const { addToast } = useToast()
   // Active-session badge source of truth.
   //

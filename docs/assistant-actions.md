@@ -32,7 +32,7 @@ execute it — ever, not even with confirmation.
 ## 0. Before designing anything: rule 3 is already broken in production
 
 This is not a future risk. **Today an LLM already executes two irreversible
-actions in Faro**, over WhatsApp.
+actions in StockAI**, over WhatsApp.
 
 The agent in `backend/whatsapp/` exposes two write tools
 (`whatsapp/tools.py:237`): `approve_po` and `register_reception`. Confirmed with
@@ -78,9 +78,9 @@ WhatsApp would be incoherent.
 tool-calling against an internal action registry.** The reasons come from this
 code, not from theory.
 
-**MCP solves a problem Faro does not have today.** MCP is a protocol for a
+**MCP solves a problem StockAI does not have today.** MCP is a protocol for a
 client you *do not control* to discover and call tools on a server you *do*.
-Faro's assistant runs inside Faro: the client and the server would be the same
+StockAI's assistant runs inside StockAI: the client and the server would be the same
 FastAPI process. Standing up a transport, a session lifecycle and a second
 authentication story so the backend can talk to itself is complexity with no
 counterpart.
@@ -88,7 +88,7 @@ counterpart.
 **MCP contributes none of the three rules.** The protocol has no concept of
 "preview of the change", of "undo token", or of "diff computed by the server".
 Confirmation in MCP lives on the *client* side (elicitation), which is exactly
-the wrong side: the authority has to be Faro's backend, not whatever renders.
+the wrong side: the authority has to be StockAI's backend, not whatever renders.
 Everything that makes this design valuable would have to be built anyway, on top
 of MCP, and on top of MCP it would be worse.
 
@@ -154,13 +154,13 @@ fit**. So the model's turn has to be a single call that either answers or
 precisely what the owner asked for: the model never executes in the same turn in
 which it speaks.
 
-**What Faro would gain from MCP later, and it is real:** that the owner's Claude
-or ChatGPT can talk to their own tenant from outside. Faro already has the
+**What StockAI would gain from MCP later, and it is real:** that the owner's Claude
+or ChatGPT can talk to their own tenant from outside. StockAI already has the
 primitive for that — the public API and the `sk_live_*` keys, which carry
 **their own role** (`backend/auth/guards.py:88`, `role=key["role"]`), not the
 creator's. An MCP server would then be a **thin adapter over the same internal
 registry**: it would expose the *read* tools and the *proposal* tools, never the
-execution one, because an external client cannot render Faro's preview or hold
+execution one, because an external client cannot render StockAI's preview or hold
 the confirmation.
 
 **The only thing that has to be done today to keep that door open** is for each

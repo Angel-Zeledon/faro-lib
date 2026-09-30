@@ -140,7 +140,7 @@ class TestBlackFridayIsNotUniform:
     def test_electronics_spike_while_milk_does_not(self):
         """
         Black Friday with a x2.2 catalog multiplier: electronics go to x4,
-        milk stays at x1. Without overrides, Faro would over-order milk.
+        milk stays at x1. Without overrides, StockAI would over-order milk.
         """
         start = date.today() + timedelta(days=20)
         end = start + timedelta(days=3)   # 4 días

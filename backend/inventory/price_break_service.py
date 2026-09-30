@@ -41,7 +41,7 @@ way a bigger order can be wrong:
      would be infinite and the "we'd buy them later anyway" premise collapses.
      Never recommended, whatever the discount.
 
-  b) NEVER RECOMMEND WHAT THE SEMÁFORO WILL CALL OVERSTOCK. Faro paints a SKU
+  b) NEVER RECOMMEND WHAT THE SEMÁFORO WILL CALL OVERSTOCK. StockAI paints a SKU
      SOBRESTOCK at coverage >= lead_time * 3 (service._calc_signal). Advising a
      purchase this same product would flag as overstock tomorrow destroys the
      semáforo's credibility, which is the product. We also cap at 90 days in
@@ -332,7 +332,7 @@ def evaluate_cart(
     Runs evaluate_step_up over a cart the browser sends in.
 
     `cart_items` are {sku, quantity} as the buyer currently has them (which may
-    differ from what Faro recommended — the buyer can edit quantities); the
+    differ from what StockAI recommended — the buyer can edit quantities); the
     demand/stock/lead-time inputs come from `status_items`, i.e. from
     service.get_inventory_status, never from the client.
 

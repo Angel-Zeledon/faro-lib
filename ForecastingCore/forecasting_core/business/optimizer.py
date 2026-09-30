@@ -402,7 +402,7 @@ _SOLVE_TIME_LIMIT_S = 10.0
 # property of the solver, not of one caller: a script, the training worker, or a
 # future endpoint would otherwise each have to remember. `solve_slot` remains
 # the admission control that returns a fast 503 instead of queueing requests.
-_SOLVE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="faro-milp")
+_SOLVE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stockai-milp")
 
 # How long a caller waits for the solver thread before giving up on it. HiGHS
 # already gets `time_limit_s`; this is the outer bound that keeps the promise

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ConditionalShell from '@/components/layout/ConditionalShell'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -14,7 +15,7 @@ import { LanguageProvider } from '@/contexts/LanguageContext'
  * `i18n/translations.ts`.
  */
 export const metadata: Metadata = {
-  title: 'Faro — Inventario Inteligente',
+  title: 'StockAI — Inventario Inteligente',
   description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',
 }
 
@@ -42,11 +43,20 @@ export const viewport: Viewport = {
  * Silently falls back to the light default if localStorage throws, which it
  * does in some privacy modes.
  */
-const NO_FLASH = `try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
+/** The wordmark's face (`components/brand/Wordmark.tsx`) — self-hosted by
+ *  Next at build time, so no request leaves for Google at runtime. */
+const brandFont = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-brand',
+  display: 'swap',
+})
+
+const NO_FLASH =`try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" className={brandFont.variable}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>

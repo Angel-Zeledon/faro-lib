@@ -9,7 +9,7 @@
 
 /** What the entry was about. One key per `events.kind.*` i18n string.
  *
- *  The first four are DELIVERIES — something Faro mailed on a schedule. The
+ *  The first four are DELIVERIES — something StockAI mailed on a schedule. The
  *  rest are system events: things the product did, declared in
  *  `backend/activity/events.py`. They share one feed because the user is
  *  asking one question ("what happened?"), and `source` is what tells them

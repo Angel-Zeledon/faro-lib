@@ -34,7 +34,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // So that export stays Spanish (the app's default, and the right thing for
   // a crawler in the primary market) and an English user's tab is corrected
   // here, after hydration. Without this the browser tab said
-  // "Faro — Inventario Inteligente" on an otherwise fully English app.
+  // "StockAI — Inventario Inteligente" on an otherwise fully English app.
   useEffect(() => {
     const dict = translations[lang] as Record<string, string>
     const title = dict['app.title']

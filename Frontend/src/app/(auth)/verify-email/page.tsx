@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { authResendVerification, authVerifyEmail } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
-import { CheckCircle2, XCircle, Loader2, Zap } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Wordmark } from '@/components/brand/Wordmark'
 
 function VerifyEmailContent() {
   const { t } = useLanguage()
@@ -53,12 +54,8 @@ function VerifyEmailContent() {
         background: 'var(--surface)', border: '1px solid var(--surface)',
         borderRadius: 14, padding: '40px 28px',
       }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 11, margin: '0 auto 16px',
-          background: 'linear-gradient(135deg, var(--accent), var(--accent))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Zap size={20} color="#fff" strokeWidth={2.5} />
+        <div style={{ marginBottom: 16 }}>
+          <Wordmark size={26} />
         </div>
 
         {status === 'loading' && (

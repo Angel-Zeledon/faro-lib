@@ -19,7 +19,7 @@
  *     phone the buyer scrolls past the banner in one flick, and a confident red
  *     or green over month-old stock is exactly the failure it exists to prevent
  *   · the KPI caveat under the counters
- *   · the assumptions banner and the "estimado" badge on every value Faro
+ *   · the assumptions banner and the "estimado" badge on every value StockAI
  *     guessed instead of receiving
  *   · the margin caveat on the cart (which SKUs are excluded and why)
  * All of them come from ./shared, so the two views cannot drift apart.

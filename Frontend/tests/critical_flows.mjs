@@ -8,7 +8,7 @@
  * hand after every change: signing in, and getting a sales file through
  * ingestion into the column-mapping step.
  *
- * One fresh @faro-e2e.io account carries the whole run (no MX on that
+ * One fresh @stockai-e2e.io account carries the whole run (no MX on that
  * domain, nothing real is ever reached) — not `demo@faro.app`. Two reasons:
  * it never touches the seeded demo tenant's data, and `POST /auth/login`
  * rate-limits at 5 attempts / 5 minutes per email (backend/api/v1/auth.py:285)
@@ -90,7 +90,7 @@ const consoleErrors = []
 page.on('pageerror', e => consoleErrors.push(String(e).slice(0, 160)))
 
 const stamp = Date.now()
-const email = `e2e-${stamp}@faro-e2e.io`
+const email = `e2e-${stamp}@stockai-e2e.io`
 const password = 'E2eTest!2026'
 // whatsapp_number is unique per account (found running this script twice in
 // a row: the second run 409'd on a reused literal) — derive one per stamp.
@@ -178,7 +178,7 @@ await browser.close()
 try {
   const pythonExe = path.join(REPO_ROOT, 'backend', '.venv', 'Scripts', 'python.exe')
   await execFileAsync(pythonExe, ['-m', 'backend.scripts.cleanup_e2e_tenants'], { cwd: REPO_ROOT })
-  console.log('\n(cleaned up this run\'s @faro-e2e.io tenant)')
+  console.log('\n(cleaned up this run\'s @stockai-e2e.io tenant)')
 } catch (e) {
   console.log(`\n(cleanup skipped: ${String(e).slice(0, 200)} — run ` +
     `"backend/.venv/Scripts/python.exe -m backend.scripts.cleanup_e2e_tenants" by hand)`)

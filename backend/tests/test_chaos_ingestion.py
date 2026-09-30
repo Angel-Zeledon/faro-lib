@@ -1,6 +1,6 @@
 """Chaos: the tabular boundary under real volume and real malice.
 
-Every byte a customer owns enters Faro through `backend/dataframes/io.py`. The
+Every byte a customer owns enters StockAI through `backend/dataframes/io.py`. The
 existing suite exercises that path with files of five and ten rows, which proves
 the parser is wired up and nothing else. It does not answer the two questions
 production actually asks:
@@ -298,7 +298,7 @@ def test_a_malformed_file_can_also_be_previewed(name, tmp_path):
 
 def test_a_formula_is_data_not_a_formula(tmp_path):
     """`=1+1` in a cell must survive as the four characters somebody typed.
-    Faro re-exports these values into CSVs the customer opens in Excel; a value
+    StockAI re-exports these values into CSVs the customer opens in Excel; a value
     that arrives as `2` has been evaluated somewhere it should not have been."""
     path = tmp_path / "formula.csv"
     path.write_bytes(EVIL_FILES["formula_injection"])

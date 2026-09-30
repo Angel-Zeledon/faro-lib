@@ -624,10 +624,14 @@ const ENABLED: Record<Tab, boolean> = {
   'schedules': true,
 }
 
+// Schedules first: it is the one thing on this screen a distributor actually
+// uses (the landing sells it), while api-keys and webhooks are for wiring up
+// an ERP — nobody, for most tenants. `TABS[0]` below is also the page's
+// default tab, so this order is the only place that decision lives.
 const ALL_TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] = [
+  { id: 'schedules',  labelKey: 'settings.tab_schedules',  Icon: Clock },
   { id: 'api-keys',   labelKey: 'settings.tab_api_keys',   Icon: Key },
   { id: 'webhooks',   labelKey: 'settings.tab_webhooks',   Icon: WebhookIcon },
-  { id: 'schedules',  labelKey: 'settings.tab_schedules',  Icon: Clock },
 ]
 const TABS = ALL_TABS.filter(tab => ENABLED[tab.id])
 

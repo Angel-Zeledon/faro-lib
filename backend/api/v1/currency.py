@@ -3,7 +3,7 @@
 Two different kinds of money live in this product and they must not share a
 setting:
 
-  · What Faro COSTS is priced in USD — the plans are the same price for everyone,
+  · What StockAI COSTS is priced in USD — the plans are the same price for everyone,
     and that is a conversation with us, not a setting here.
   · What the customer's OWN money is worth — inventory value, unit costs, a
     purchase order's total — is in whatever currency that business actually
@@ -13,7 +13,7 @@ So this is a tenant-level setting, not a per-user one: it describes the
 company's books, not a display preference. Two people in the same company
 looking at the same purchase order must see the same number with the same symbol.
 
-Changing it relabels existing figures; it does NOT convert them. Faro stores what
+Changing it relabels existing figures; it does NOT convert them. StockAI stores what
 it was given and never guesses an exchange rate, so switching the currency on a
 tenant that already has costs loaded is a mislabel, not a conversion — which is
 why the endpoint is admin-only and the UI says so.

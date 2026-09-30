@@ -1,5 +1,5 @@
 """
-The single vocabulary of things Faro tells the user it did, and why.
+The single vocabulary of things StockAI tells the user it did, and why.
 
 Before this module the activity log recorded almost nothing: one row for a
 deleted session, one per API-key call, and one per scheduled send. Everything
@@ -51,9 +51,9 @@ BELL_SEVERITIES = (CRITICAL, WARNING)
 class EventSpec:
     """One thing that can happen, and how it is presented.
 
-    `kind` groups actions the user thinks of as one thing (a sync that
-    succeeded and a sync that failed are both "integration_sync"), so the UI
-    can filter by kind without knowing every action name.
+    `kind` groups actions the user thinks of as one thing (a training that
+    finished and one that failed are both "training"), so the UI can filter by
+    kind without knowing every action name.
 
     `detail_keys` is a WHITELIST, for the same reason `alert_history` has one:
     the context blob is written by many call sites and must not start leaking
@@ -94,20 +94,6 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("session_id", "session_name", "issues"),
     ),
 
-    # ── Integrations ─────────────────────────────────────────────────────────
-    "integration.sync_completed": EventSpec(
-        kind="integration", severity=INFO,
-        detail_keys=("provider", "skus", "sale_rows", "skipped_sale_lines"),
-    ),
-    "integration.sync_failed": EventSpec(
-        kind="integration", severity=CRITICAL,
-        detail_keys=("provider",),
-    ),
-    "integration.sync_blocked": EventSpec(
-        kind="integration", severity=WARNING,
-        detail_keys=("provider", "issues", "session_id"),
-    ),
-
     # ── Purchasing ───────────────────────────────────────────────────────────
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
@@ -125,6 +111,22 @@ EVENTS: dict[str, EventSpec] = {
     "purchase.reception_recorded": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("reference", "sku_count", "units", "warehouse"),
+    ),
+    # Reverses a reception: stock moved back out, a lead time un-learned.
+    # Warning, not info — unlike a routine reception this is a correction of
+    # something already acted on (the semáforo and the scorecard both moved on
+    # the strength of the original reception), and the tenant should see it
+    # without having to go looking in the plain history feed.
+    "purchase.reception_undone": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference", "sku_count", "units", "warehouse"),
+    ),
+    # Reverses `sent_at`. Same reasoning as reception_undone: it un-anchors the
+    # cash calendar and changes what counts as incoming stock, so it belongs on
+    # the bell, not only in the quiet feed.
+    "purchase.order_unsent": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference",),
     ),
 
     # ── Data the tenant put in ───────────────────────────────────────────────
@@ -186,13 +188,10 @@ EVENTS: dict[str, EventSpec] = {
 # catalogue; the vocabulary test enforces it.
 
 REASONS: tuple[str, ...] = (
-    # training / sync refusals
+    # training refusals
     "engine_error",
     "dataset_missing",
     "data_gate_blocked",
-    "provider_unreachable",
-    "provider_rejected_credentials",
-    "no_readable_quantities",
     # delivery
     "supplier_has_no_contact",
     "no_transport_configured",
@@ -206,6 +205,9 @@ REASONS: tuple[str, ...] = (
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",
+    # reversals — the WHY of an un-receive or un-send is that a person decided
+    # the original action was a mistake and corrected it themselves.
+    "reversed_by_user",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

@@ -506,7 +506,7 @@ class TestMonthlyRecapEmailCarriesTheTenantsCurrency:
                             lambda to, subject, html, attachment=None, **_kw:
                             captured.update(subject=subject, html=html))
         assert email_mod.send_monthly_roi_email(
-            "buyer@faro-e2e.io", dict(_RECAP), "https://faro.test/roi",
+            "buyer@stockai-e2e.io", dict(_RECAP), "https://stockai.test/roi",
             currency=currency) is True
         return captured
 

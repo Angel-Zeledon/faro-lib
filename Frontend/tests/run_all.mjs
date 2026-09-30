@@ -36,9 +36,9 @@ const PYTHON = [
 /** Static first: seconds, and they name the exact key when they fail. */
 const STATIC = [
   { name: 'i18n parity (es/en counts, gaps, duplicates)',
-    cmd: PYTHON, args: ['.claude/skills/faro-i18n/scripts/check_parity.py'] },
+    cmd: PYTHON, args: ['.claude/skills/stockai-i18n/scripts/check_parity.py'] },
   { name: 'i18n missing (keys the UI asks for)',
-    cmd: PYTHON, args: ['.claude/skills/faro-i18n/scripts/check_missing.py'] },
+    cmd: PYTHON, args: ['.claude/skills/stockai-i18n/scripts/check_missing.py'] },
   // `node node_modules/typescript/bin/tsc`, not `npx`: since Node 20,
   // spawning a `.cmd` without a shell throws EINVAL on Windows, and turning
   // the shell on to work around it means quoting every path by hand.

@@ -39,7 +39,7 @@ from backend.db.connection import execute, query, query_one
 @pytest.fixture
 def registered_user(test_tenant):
     from backend.users import service as user_svc
-    email = f"audit-{uuid4().hex[:8]}@faro-e2e.io"
+    email = f"audit-{uuid4().hex[:8]}@stockai-e2e.io"
     password = "TestPass123!"
     user = user_svc.create_user(
         tenant_id=test_tenant["id"],
@@ -1156,7 +1156,7 @@ class TestEventEdgeCases:
         from backend.users import service as user_svc
 
         t2 = create_tenant(f"tenant-b-{uuid4().hex[:6]}")
-        email2 = f"b-{uuid4().hex[:6]}@faro-e2e.io"
+        email2 = f"b-{uuid4().hex[:6]}@stockai-e2e.io"
         u2 = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin", "B")
         user_svc.mark_verified(t2["id"], u2["id"])
 
@@ -1197,7 +1197,7 @@ class TestEventEdgeCases:
         from backend.users import service as user_svc
 
         t2 = create_tenant(f"tenant-c-{uuid4().hex[:6]}")
-        email2 = f"c-{uuid4().hex[:6]}@faro-e2e.io"
+        email2 = f"c-{uuid4().hex[:6]}@stockai-e2e.io"
         u2 = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin", "C")
         user_svc.mark_verified(t2["id"], u2["id"])
 
@@ -1251,7 +1251,7 @@ class TestCrossTenantMutations:
         from backend.tenants.service import create_tenant
         from backend.users import service as user_svc
         t2 = create_tenant(f"{prefix}-{uuid4().hex[:6]}")
-        email2 = f"{prefix}-{uuid4().hex[:6]}@faro-e2e.io"
+        email2 = f"{prefix}-{uuid4().hex[:6]}@stockai-e2e.io"
         user = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin", prefix)
         user_svc.mark_verified(t2["id"], user["id"])
         return t2, email2
@@ -1621,33 +1621,45 @@ class TestPureCalculationEdgeCases:
             {"sku": "B", "daily_demand": 0.0, "unit_cost": 200.0},
         ]) == {"A": "C", "B": "C"}
 
-    @pytest.mark.parametrize("coverage,lead,expected", [
-        (4.0, 10, "PEDIR_YA"),       # < 0.5 * lead
-        (4.99, 10, "PEDIR_YA"),
-        (5.0, 10, "PEDIR_PRONTO"),   # < 1.2 * lead
-        (11.99, 10, "PEDIR_PRONTO"),
-        (12.0, 10, "OK"),            # < 3 * lead
-        (29.99, 10, "OK"),
-        (30.0, 10, "SOBRESTOCK"),
-        (0.0, 10, "PEDIR_YA"),
+    # stability.md 17c: the PEDIR_PRONTO/OK boundary is now the SKU's own
+    # reorder point (`reorder_point_days`), not a flat `1.2 * lead_time` — a
+    # flat threshold could sit below the reorder point for a volatile SKU and
+    # report OK (with the recommendation zeroed) while the SKU was already due
+    # to be ordered. `rop_days=12` below models a SKU with a small safety
+    # stock (reorder point a bit past its lead time of 10), matching the old
+    # `1.2 * lead` boundary's position closely enough that only the exact
+    # boundary values differ from before.
+    @pytest.mark.parametrize("coverage,lead,rop_days,expected", [
+        (4.0, 10, 12, "PEDIR_YA"),        # < 0.5 * lead
+        (4.99, 10, 12, "PEDIR_YA"),
+        (5.0, 10, 12, "PEDIR_PRONTO"),    # >= 0.5*lead, <= reorder point
+        (11.99, 10, 12, "PEDIR_PRONTO"),
+        (12.0, 10, 12, "PEDIR_PRONTO"),   # AT the reorder point: still ordering
+        (12.01, 10, 12, "OK"),            # just past the reorder point
+        (29.99, 10, 12, "OK"),            # < max(3*lead, 2*rop_days) = 30
+        (30.0, 10, 12, "SOBRESTOCK"),
+        (0.0, 10, 12, "PEDIR_YA"),
     ])
-    def test_calc_signal_thresholds(self, coverage, lead, expected):
+    def test_calc_signal_thresholds(self, coverage, lead, rop_days, expected):
         """The semáforo's actual boundaries, pinned. Every one of these was
         previously covered only by `assert result in (the four signals)`, which
         is true for any return value the function can produce."""
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=coverage, lead_time=lead) == expected
+        assert _calc_signal(coverage_days=coverage, lead_time=lead,
+                             reorder_point_days=rop_days) == expected
 
     def test_calc_signal_with_zero_lead_time_does_not_crash(self):
         """
-        lead_time=0 collapses every threshold to 0, so nothing is ever "below"
-        one and the answer is SOBRESTOCK even at zero coverage. Unreachable
-        through the API (`lead_time_days` is ge=1) and via
+        lead_time=0 collapses every threshold to 0 (the reorder point is 0
+        too), so at zero coverage the SKU is exactly AT its own reorder point
+        -- read as an ordering signal, not SOBRESTOCK as before this fix.
+        Unreachable through the API (`lead_time_days` is ge=1) and via
         DEFAULT_LEAD_TIME_DAYS, so this pins "does not raise, returns a real
         signal" rather than endorsing the reading.
         """
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=0.0, lead_time=0) == "SOBRESTOCK"
+        assert _calc_signal(coverage_days=0.0, lead_time=0,
+                             reorder_point_days=0.0) == "PEDIR_PRONTO"
 
     def test_recommended_quantity_rises_with_the_service_level(self):
         """

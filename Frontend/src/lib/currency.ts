@@ -3,7 +3,7 @@
  *
  * Two different kinds of money exist in this product and they do NOT share a
  * setting:
- *  - What Faro costs is priced in USD for everyone, and it is a conversation
+ *  - What StockAI costs is priced in USD for everyone, and it is a conversation
  *    with us — not a number this app renders, and never through here.
  *  - What the CUSTOMER's money is worth — inventory value, unit costs, a purchase
  *    order's total — is in whatever currency that business trades in. That is the
@@ -92,7 +92,7 @@ export function formatMoneyCompact(n: number | null | undefined): string {
 }
 
 /**
- * What Faro itself costs. Always USD, never the tenant's currency: the plans are
+ * What StockAI itself costs. Always USD, never the tenant's currency: the plans are
  * the same price for every customer, and showing "₡649" for a 649-dollar plan
  * would understate it by roughly five hundred times.
  */

@@ -1,6 +1,6 @@
 'use client'
 /**
- * PENDIENTES #1: instead of wiring Faro to every supplier's WhatsApp, the
+ * PENDIENTES #1: instead of wiring StockAI to every supplier's WhatsApp, the
  * order is delivered to the BUYER, who forwards it. Works with zero Twilio
  * configuration — the endpoint always returns the message text and a wa.me
  * deep link, so "open in WhatsApp" and "copy" never depend on delivery.

@@ -9,7 +9,7 @@ CHAPTER = {
     "es": {
         "title": "1. Qué es esto y cómo está partido",
         "intro": (
-            "Faro convierte el historial de ventas de un distribuidor en la decisión "
+            "StockAI convierte el historial de ventas de un distribuidor en la decisión "
             "de compra del día: qué pedir, cuánto, a quién y cuándo hay que ponerlo "
             "para que llegue antes de quedarse sin producto. Este documento describe "
             "cómo lo hace por dentro. Está escrito contra el código, con archivo y "
@@ -79,7 +79,7 @@ CHAPTER = {
     "en": {
         "title": "1. What this is, and how it is split",
         "intro": (
-            "Faro turns a distributor's sales history into the purchase decision of "
+            "StockAI turns a distributor's sales history into the purchase decision of "
             "the day: what to order, how much, from whom, and when it has to be placed "
             "so it arrives before the stock runs out. This document describes how it "
             "does that inside. It is written against the code, with file and line, and "

@@ -118,7 +118,7 @@ class TestTheBellShowsWhatTheLoopSent:
         self, client, auth_headers, registered_user, test_tenant,
     ):
         """A PO send reports its own outcome in the click that caused it; the
-        bell is for what Faro sent while nobody was looking."""
+        bell is for what StockAI sent while nobody was looking."""
         tid, uid = test_tenant["id"], registered_user["user"]["id"]
         _seed(tid, uid, "po_sent_to_suppliers", "failed", {"delivered": []})
         _seed(tid, uid, "session.delete", "success", {})

@@ -56,7 +56,7 @@ CHAPTER_ORDER = ["overview", "ingestion", "forecasting", "inventory", "platform"
 
 COVER = {
     "es": {
-        "title": "Faro — Manual técnico",
+        "title": "StockAI — Manual técnico",
         "sub": "Cómo funciona por dentro: arquitectura, algoritmos, fórmulas y decisiones de diseño.",
         "meta": (
             "Escrito para quien va a mantener este código. Cada afirmación apunta al "
@@ -65,7 +65,7 @@ COVER = {
         "toc": "Contenido",
     },
     "en": {
-        "title": "Faro — Technical manual",
+        "title": "StockAI — Technical manual",
         "sub": "How it works inside: architecture, algorithms, formulas and design decisions.",
         "meta": (
             "Written for whoever will maintain this code. Every claim points at the "
@@ -174,8 +174,8 @@ def build(lang: str, chapters: dict[str, dict], font: str, bold: str, uni: bool)
             flow.extend(_topic(topic, st, uni, labels))
         flow.append(PageBreak())
 
-    out = OUT_DIR / f"faro-technical-{lang}.pdf"
-    doc = Manual(str(out), lang, font, bold, title=cover["title"], author="Faro")
+    out = OUT_DIR / f"stockai-technical-{lang}.pdf"
+    doc = Manual(str(out), lang, font, bold, title=cover["title"], author="StockAI")
     doc.multiBuild(flow)
     return out
 

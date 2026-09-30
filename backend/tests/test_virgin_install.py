@@ -3,7 +3,7 @@
 This is the state every buyer of this source starts in and the one nobody
 develops in: `backend/.env` filled with the three required values and NOTHING
 else. No language model, no mail transport, no Twilio, no vector store, no
-Fernet key for integrations.
+Fernet key for stored secrets.
 
 The promise the product makes about that state is specific, and it is the whole
 reason `service_config` exists:
@@ -73,7 +73,8 @@ def test_health_answers_and_names_every_service_that_is_off(client, virgin):
     assert body["status"] == "ok"
     assert body["database"] is True
     services = body["services"]
-    for key in ("llm", "email", "whatsapp", "sms", "rag", "integrations", "contact"):
+    for key in ("llm", "email", "whatsapp", "sms", "rag", "secret_storage",
+                "contact"):
         assert services[key] == "not_configured", (
             f"{key} claims '{services[key]}' with none of its credentials set"
         )
@@ -85,8 +86,7 @@ def test_capabilities_tell_a_user_what_cannot_answer(client, auth_headers, virgi
     resp = client.get("/api/v1/service-config/capabilities", headers=auth_headers)
     assert resp.status_code == 200
     caps = resp.json()["data"]
-    for key in ("assistant", "documents_search", "email", "whatsapp", "sms",
-                "accounting_integrations"):
+    for key in ("assistant", "documents_search", "email", "whatsapp", "sms"):
         assert caps[key] is False, f"{key} claims to work with no credentials"
     assert caps["contact_channels"] == {"whatsapp": False, "email": False}
 
@@ -115,17 +115,6 @@ def test_the_assistant_refuses_in_words_instead_of_crashing(
     resp = client.post(f"/api/v1/chats/{chat_id}/messages",
                        json={"content": "¿qué compro hoy?"}, headers=auth_headers)
     _assert_not_a_server_error(resp, "POST /chats/{id}/messages")
-
-
-def test_the_integrations_screen_says_it_is_off(client, auth_headers, virgin):
-    """No Fernet key means no credential can be stored, so the feature is off —
-    and it has to SAY so rather than fail at the moment somebody pastes a
-    password."""
-    resp = client.get("/api/v1/integrations", headers=auth_headers)
-    _assert_not_a_server_error(resp, "GET /integrations")
-    if resp.status_code == 200:
-        return
-    assert resp.json().get("error_code"), "refused without a code the UI can render"
 
 
 def test_the_upgrade_request_survives_having_nobody_to_notify(

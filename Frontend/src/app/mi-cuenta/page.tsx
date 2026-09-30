@@ -14,13 +14,12 @@ import { useTheme } from '@/contexts/ThemeContext'
 import BaseCard from '@/components/ui/Card'
 import Input, { FieldLabel } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { roleLabel, modelCategoryLabel, activityActionLabel, modelDescription } from '@/lib/enumLabels'
+import { roleLabel, activityActionLabel } from '@/lib/enumLabels'
 import { getUser, patchUser } from '@/lib/auth'
 import { useErrorDetail } from '@/components/ui/States'
 import {
   getMe, updateMe,
   getPreferences, updatePreferences,
-  getPlatformModels,
   getActivityLogs, getActivityActionTypes,
   requestPasswordChange, confirmPasswordChange,
   linkWhatsappNumber, confirmWhatsappNumber,
@@ -28,7 +27,7 @@ import {
   isApiError,
 } from '@/lib/api'
 import { useToast } from '@/contexts/ToastContext'
-import type { PlatformModel, ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
+import type { ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,18 +36,6 @@ function formatDate(iso: string, lang: 'es' | 'en') {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
-}
-
-const CAT_COLOR: Record<string, string> = {
-  'ML':            'var(--accent)',
-  'Statistical':   '#22c55e',
-  'Deep Learning': '#f59e0b',
-}
-
-const STATUS_COLOR: Record<string, string> = {
-  available: '#22c55e',
-  beta:      '#f59e0b',
-  disabled:  '#64748b',
 }
 
 // ── Section header ────────────────────────────────────────────────────────────
@@ -485,70 +472,23 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
 }
 
 
-// ── Section 3: Available Models ───────────────────────────────────────────────
+// ── Section 3: How StockAI calculates ────────────────────────────────────────────
+//
+// This used to list every algorithm by its raw id (lightgbm, xgboost, prophet,
+// lstm...) tagged "MACHINE LEARNING" / "DEEP LEARNING" / "beta" — an analyst's
+// instrument panel on a screen a distributor opens. It undid the `Modelo N`
+// abstraction that lib/modelLabel.ts exists to provide everywhere else. There
+// is nothing to configure here, so one sentence replaces the catalogue.
 
 function ModelsSection({ t }: { t: (k: string) => string }) {
-  const [models,  setModels]  = useState<PlatformModel[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getPlatformModels()
-      .then(setModels)
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
-
   return (
     <Card>
-      <SectionTitle icon={Cpu} color="#f59e0b" title={t('available_models')} subtitle={`${models.length} ${t('models_count')}`} />
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner size={18} /></div>
-      ) : (
-        <div data-tour="config.models" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-          {models.map(m => {
-            const catColor    = CAT_COLOR[m.category]    ?? '#64748b'
-            const statusColor = STATUS_COLOR[m.status]   ?? '#64748b'
-            return (
-              <div
-                key={m.name}
-                style={{
-                  padding: '14px 16px', borderRadius: 10,
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface-2)',
-                  display: 'flex', flexDirection: 'column', gap: 6,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{
-                    fontFamily: 'monospace', fontSize: 13, fontWeight: 700,
-                    color: 'var(--text)',
-                  }}>{m.name}</span>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, borderRadius: 5,
-                    padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.05em',
-                    background: statusColor + '18', color: statusColor,
-                  }}>
-                    {m.status === 'available' ? t('available') : t('beta')}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 600,
-                    background: catColor + '18', color: catColor,
-                    borderRadius: 5, padding: '2px 7px',
-                    textTransform: 'uppercase', letterSpacing: '0.05em',
-                  }}>
-                    {modelCategoryLabel(t, m.category)}
-                  </span>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.5 }}>
-                  {modelDescription(t, m.name, m.description)}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Cpu size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.5 }}>
+          {t('config.how_stockai_calculates')}
+        </span>
+      </div>
     </Card>
   )
 }
@@ -1247,7 +1187,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
 
 // ── Section: SMS heads-up for team messages ──────────────────────────────────
 //
-// Companion to /mensajes: when someone writes to you and you are away, Faro
+// Companion to /mensajes: when someone writes to you and you are away, StockAI
 // sends one short SMS to the number linked above. It used to be hidden for
 // plans without team_messaging; every tenant has the screen now.
 
@@ -1360,7 +1300,7 @@ export default function ConfigPage() {
         <ProfileSection t={t} lang={lang} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* What the customer's own figures are worth — their choice, and
-              nothing to do with what Faro costs, which is a conversation with
+              nothing to do with what StockAI costs, which is a conversation with
               us and not a setting on this screen. */}
           {/* How much room is left. First in this column on purpose: a
               ceiling nobody can see is a trap, and this is the screen where

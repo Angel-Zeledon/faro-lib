@@ -21,7 +21,7 @@ Concretely:
   those, and does not lift this rule for the next idea. **That list is
   `docs/stability.md`** — the single live backlog and the order the work runs
   in. `docs/screen-inventory.md` is the table it draws from.
-- Verify in a browser as a user, not only with tests. See the `running-faro`
+- Verify in a browser as a user, not only with tests. See the `running-stockai`
   skill for the environment traps and `silent-failures` for the review lens.
 - When robustness and scope conflict, robustness wins.
 - Out of scope on the owner's instruction: CI/CD.
@@ -39,7 +39,7 @@ Concretely:
 
 ## Project Overview
 
-**Faro** — inventory purchasing decisions platform for LatAm SMB distributors.
+**StockAI** — inventory purchasing decisions platform for LatAm SMB distributors.
 Pipeline: sales history (CSV/Excel) → per-SKU forecasting (LightGBM, XGBoost, Prophet, ARIMA, ETS, Croston, LSTM) → stock semáforo (PEDIR_YA / PEDIR_PRONTO / OK / SOBRESTOCK) → purchase-order generation, reception tracking and supplier lead-time learning.
 
 ## Repository Structure
@@ -106,6 +106,24 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 - **Notifications**: `backend/notifications/email.py` (Resend primary via RESEND_API_KEY, SMTP fallback) and `whatsapp.py` (Twilio). Daily inventory alert loop fires at 8:00 UTC from `backend/workers/worker.py`.
 - **AI features** (narrative, RAG analyst, chat, data-quality diagnosis): all go through the single factory `get_local_llm_client()` in `backend/ai/local_llm.py`, and there is exactly **one** backend behind it: **DeepSeek** (`DEEPSEEK_API_KEY`, `settings.deepseek_model`, default `deepseek-chat`), spoken over plain httpx because the API is OpenAI-shaped and needs no SDK. Anthropic and the local Ollama fallback were removed 2026-08-23 — **do not reintroduce a second provider or a fallback chain**: "whichever key is set" meant a missing or mistyped `DEEPSEEK_API_KEY` silently answered from somewhere else, and the only symptom was a different bill. With no key the factory raises `LLMNotConfigured` at the call site; every consumer already degrades to its rule-based text on an exception. `conftest.py` patches the factory session-wide, so tests never bill a real key.
 - **Storage**: Postgres for all metadata/results; binary files (datasets, artifacts, documents) on local disk under `storage/` (gitignored, never version it).
+- **Public surface**: `backend/api/public_surface.py` is the list of routes a
+  customer's own system is invited to call — 8 REST endpoints plus the MCP
+  endpoint (`POST`/`GET /api/v1/mcp`). `PUBLIC_API_ONLY=true` prunes the app to
+  exactly that list; `test_public_api_surface.py` fails if one stops existing.
+- **MCP**: `backend/mcp/` — a stateless Streamable-HTTP JSON-RPC server over
+  **five read-only tools** (`catalog.py`), authenticated with the same
+  `sk_live_*` key and the same rate limit. Hand-rolled rather than the `mcp`
+  SDK, for the reason in `protocol.py`'s header. `mcp_server/stockai_mcp.py` is a
+  stdlib-only stdio pipe to that endpoint for desktop clients — it holds no
+  catalogue. **Never add a tool that writes**: an AI client cannot render a
+  confirmation or hold an undo token (`docs/assistant-actions.md`), and
+  `test_mcp_server.py::test_every_tool_actually_only_calls_GET_endpoints` is
+  the wall: it resolves what each handler calls to its FastAPI route and
+  demands `{GET}`.
+- **Removed 2026-09-20**: the Alegra and Siigo accounting integrations, the
+  `/integraciones` screen and `integration_connections`. Written, never run
+  against a live account. Do not reintroduce an ERP connector without an account
+  to verify it against first.
 
 ## Language (mandatory)
 
@@ -132,7 +150,7 @@ The dedicated sweep has run: identifiers, DB columns and API fields are English 
 ## Configuration
 
 **One registry owns every knob**: `backend/service_config/registry.py` declares
-all 47 `Settings` fields with what each does, whether it is required, secret or
+all 45 `Settings` fields with what each does, whether it is required, secret or
 panel-editable, and **what stops working without it**. `backend/.env.example`
 and `docs/configuration.md` are GENERATED from it
 (`python -m backend.scripts.gen_config_docs`, `--check` in the suite) — edit the
@@ -140,9 +158,10 @@ registry, never those files. A new `Settings` field with no descriptor turns
 `test_registry_covers_every_setting` red, which is the point.
 
 **Two layers, and the app says which one won.** The environment is the floor;
-`/instalacion` writes overrides that are stored encrypted (the integrations
-Fernet key) and take effect without a restart, and **the stored value beats the
-file**. Consumers read `service_config.resolver.effective(tenant_id)`, never
+`/instalacion` writes overrides that are stored encrypted (the Fernet key in
+`backend/service_config/crypto.py`, still named `INTEGRATIONS_SECRET_KEY` for
+compatibility) and take effect without a restart, and **the stored value beats
+the file**. Consumers read `service_config.resolver.effective(tenant_id)`, never
 `settings.x` — a consumer that reads the singleton directly cannot be
 reconfigured without a redeploy. Environment-only on purpose: `SECRET_KEY`,
 `DATABASE_URL`, `FRONTEND_URL`, `ALLOWED_ORIGINS`, `INSTANCE_ADMIN_EMAILS`,

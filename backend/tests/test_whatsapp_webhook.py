@@ -204,8 +204,8 @@ def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, mo
 # An unknown sender yields a polite 200 once the signature passes, so 200-vs-403 cleanly
 # isolates whether signature validation used the right (public) url.
 
-PUBLIC_BASE = "https://app.faro.com"
-PUBLIC_URL = "https://app.faro.com/api/v1/whatsapp/inbound"
+PUBLIC_BASE = "https://app.stockai.com"
+PUBLIC_URL = "https://app.stockai.com/api/v1/whatsapp/inbound"
 _UNKNOWN = {"From": "whatsapp:+59999999999", "Body": "hola", "MessageSid": "SM-proxy"}
 
 
@@ -232,7 +232,7 @@ def test_forwarded_headers_public_signature_accepted(client, twilio_token, monke
     monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
     resp = _post_signed_over(
         client, _UNKNOWN, PUBLIC_URL,
-        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.faro.com"},
+        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.stockai.com"},
     )
     assert resp.status_code == 200
 
@@ -242,7 +242,7 @@ def test_forwarded_headers_internal_signature_rejected(client, twilio_token, mon
     monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
     resp = _post_signed_over(
         client, _UNKNOWN, INBOUND_URL,
-        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.faro.com"},
+        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.stockai.com"},
     )
     assert resp.status_code == 403
 

@@ -1,6 +1,6 @@
 """The published endpoints, called the way a customer actually calls them.
 
-`test_public_api_surface` proves the seven public routes EXIST. That is a
+`test_public_api_surface` proves the published routes EXIST. That is a
 weaker promise than it looks: rename nothing, change what `log-po` accepts, and
 that file stays green while every integration in the field breaks.
 
@@ -66,7 +66,7 @@ class TestAKeyCanDoTheFiveJobs:
         self, client, key_headers, completed_session, test_tenant
     ):
         """The one that only looks optional. Without this row the order does not
-        exist for Faro: reception is tracked against it and supplier lead-time
+        exist for StockAI: reception is tracked against it and supplier lead-time
         learning reads it."""
         before = query_one(
             "SELECT COUNT(*) AS n FROM inventory_po_log WHERE tenant_id = %s",

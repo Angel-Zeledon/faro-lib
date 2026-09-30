@@ -41,7 +41,7 @@
     --surface-3:     #E4EAE9;
     --border:        #DFE6E4;
     --border-strong: #C2CFCC;
-    --accent:        #0F766E;   /* Faro teal — 4.7:1 as text on --bg, 4.8:1 under white text */
+    --accent:        #0F766E;   /* StockAI teal — 4.7:1 as text on --bg, 4.8:1 under white text */
     --accent-dim:    rgba(15,118,110,0.10);
     --text:          #16262A;
     --muted:         #465A5D;
@@ -812,8 +812,8 @@
 
      The attribute selector is doing the real work here. Every spinner in this
      app declares its animation in an INLINE style — `animation: spin 1s ...`,
-     `integrations-spin`, `qs-spin` — so a class-based selector would match
-     none of them and the blanket 1ms rule above would freeze all of them.
+     `qs-spin` — so a class-based selector would match none of them and the
+     blanket 1ms rule above would freeze all of them.
      `[style*="spin"]` catches the lot, whatever the keyframe name. */
   [style*="spin"], [class*="spinner"], svg[data-spinner] {
     animation-duration:        2.4s     !important;

@@ -3,7 +3,7 @@ Cash calendar / accounts payable (feature 3.6).
 
 The binding constraint for a LatAm SMB distributor is cash, not information: an
 order can be perfectly justified by the semáforo and still be impossible to pay
-this week. This module turns two things Faro already has — sent POs and supplier
+this week. This module turns two things StockAI already has — sent POs and supplier
 payment terms — into "this week $X falls due; the recommended purchase fits /
 does not fit".
 
@@ -288,7 +288,7 @@ def evaluate_purchase_fit(
     telling a buyer an order fits when it might be cash-on-delivery is the
     expensive mistake.
 
-    `budget` is user-supplied; Faro stores no cash balance. Without it the
+    `budget` is user-supplied; StockAI stores no cash balance. Without it the
     committed and purchase totals are still returned, and `fits` is None
     (unknown), never a guess.
     """

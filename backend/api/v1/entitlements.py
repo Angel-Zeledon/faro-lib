@@ -1,6 +1,6 @@
 """What this tenant may do, how much of it is left, and how to ask for more.
 
-There is no checkout in Faro. The free tier is a permanent home with short
+There is no checkout in StockAI. The free tier is a permanent home with short
 ceilings; the paid tier lifts them; and the way across is a conversation. So
 this module has exactly two jobs: report the ceilings honestly (with usage, so
 "100 SKUs" is a number the user can see themselves approaching), and record the

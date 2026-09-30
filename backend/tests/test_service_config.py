@@ -198,7 +198,7 @@ def test_a_non_editable_field_cannot_be_written(clean_overrides):
     """`integrations_secret_key` encrypts everything this table stores, including
     itself. A panel that could rewrite it would make its own rows unreadable."""
     with pytest.raises(ValueError):
-        store.set_values("integrations", {"integrations_secret_key": "x"},
+        store.set_values("secret_storage", {"integrations_secret_key": "x"},
                          updated_by="test")
 
 
@@ -231,7 +231,7 @@ def test_a_secret_write_is_refused_when_it_cannot_be_encrypted(
     nor written — a read-only disk — and the refusal must still be a sentence
     rather than a plaintext row.
     """
-    from backend.integrations import crypto
+    from backend.service_config import crypto
 
     monkeypatch.setattr("backend.config.settings.integrations_secret_key", "")
     monkeypatch.setattr("backend.config.settings.storage_path", tmp_path)
@@ -550,7 +550,7 @@ def test_writing_a_secret_that_cannot_be_encrypted_is_a_stated_refusal(
     """The API half of the same promise: a 409 naming the variable, not a 500
     and not a plaintext row. See the store-level test above for why a
     read-only disk is what it takes to get here now."""
-    from backend.integrations import crypto
+    from backend.service_config import crypto
 
     monkeypatch.setattr("backend.config.settings.integrations_secret_key", "")
     monkeypatch.setattr("backend.config.settings.storage_path", tmp_path)

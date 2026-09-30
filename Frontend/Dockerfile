@@ -1,4 +1,4 @@
-# Faro frontend — production Next.js standalone build.
+# StockAI frontend — production Next.js standalone build.
 # Build context is the Frontend/ directory:
 #   docker build --build-arg BACKEND_URL=http://api:8010 Frontend/
 #

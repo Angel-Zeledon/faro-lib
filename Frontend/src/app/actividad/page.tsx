@@ -1,6 +1,6 @@
 'use client'
 /**
- * /actividad — everything Faro did for this account, and why.
+ * /actividad — everything StockAI did for this account, and why.
  *
  * The bell is deliberately a SUBSET: only what needs a decision reaches it,
  * because a bell that rings for every successful import is a bell people stop

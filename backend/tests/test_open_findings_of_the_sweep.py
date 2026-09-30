@@ -1069,7 +1069,7 @@ class TestAReimportCanBeToldNotToOverwriteHandWork:
 
 class TestASupplierOnlyDeclaresALeadTimeWhenSomebodyTypesOne:
     """Three backend call sites gate on `lead_time_set_by` precisely to keep
-    Faro's own assumption from being reported as the supplier's promise. The
+    StockAI's own assumption from being reported as the supplier's promise. The
     create form defeated that guard by always sending a number — and so did the
     API model itself, whose `lead_time_days: int = Field(default=15)` handed the
     service a 15 for every caller that sent none.

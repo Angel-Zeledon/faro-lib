@@ -1,7 +1,7 @@
 'use client'
 /**
  * `/quick-start` and `/data` are one thing in the user's head — "get my sales
- * into Faro" — and they used to be two separate sidebar entries, which taught a
+ * into StockAI" — and they used to be two separate sidebar entries, which taught a
  * new user that they were two different places.
  *
  * The two routes stay exactly as they are (CLAUDE.md keeps route names out of

@@ -10,7 +10,7 @@ SECTION = {
         "title": "Análisis",
         "intro": (
             "Estas seis pantallas son las que explican el porqué de cada decisión de compra. "
-            "Aquí ves lo que Faro proyecta para cada producto, cómo se comporta ese producto en tu "
+            "Aquí ves lo que StockAI proyecta para cada producto, cómo se comporta ese producto en tu "
             "propio historial, qué pasaría si cambiaran los supuestos, qué has hecho con las "
             "recomendaciones y qué te puede contar la IA sobre todo eso. Ninguna de ellas genera "
             "órdenes de compra: son para entender antes de comprar, y el resto de la app se encarga "
@@ -22,28 +22,32 @@ SECTION = {
                 "route": "/pronosticos",
                 "image": "forecast",
                 "purpose": (
-                    "Es la pantalla donde ves, producto por producto, qué vendiste y qué espera Faro "
+                    "Es la pantalla donde ves, producto por producto, qué vendiste y qué espera StockAI "
                     "que vendas. Reúne la curva histórica, el pronóstico con su rango de "
                     "incertidumbre, la tabla de los modelos que compitieron por ese SKU y la calidad "
                     "de sus datos. Todo lo que la app decide después — el semáforo, el punto de "
                     "reorden, la cantidad a pedir — sale del modelo que gana aquí."
                 ),
                 "walkthrough": [
-                    "Arriba a la izquierda está el título «Predicciones» con la cantidad de SKUs de la sesión seleccionada; a la derecha están «Exportar Todos los SKUs», «Comparar», el selector de sesión y «Actualizar».",
-                    "Faro selecciona sola la sesión activa de planificación al abrir la pantalla, y si no hay ninguna resuelta usa la última sesión completada.",
+                    "Arriba a la izquierda está el título «Predicciones» con la cantidad de SKUs de la actualización seleccionada; a la derecha están «Exportar Todos los SKUs», «Comparar», el selector de actualización y «Actualizar».",
+                    "StockAI selecciona sola la actualización activa de planificación al abrir la pantalla, y si no hay ninguna resuelta usa la última actualización completada.",
                     "La columna izquierda lista tus productos, con el buscador «Buscar SKUs…» arriba y la paginación abajo; cada tarjeta muestra el SKU, una miniatura de su serie y su semáforo.",
                     "Al hacer clic en un producto, la cabecera del panel derecho muestra el SKU, su tipo de serie, cuántas filas de historial tiene, su porcentaje de calidad, su «Precisión» y su semáforo.",
-                    "Debajo hay cinco pestañas: «Forecast», «Cómo se vende», «Métricas», «Calidad» e «Inventario».",
-                    "En «Forecast», la barra de herramientas te deja cambiar la «Granularidad» (D, W, M, Q, Y), el «Gráfico» (Línea o Barra) y el «Modelo» que se dibuja.",
-                    "Los chips de «Modelo» son de selección múltiple: el primero que elijas manda sobre los ejes y las estadísticas, y los demás se superponen como líneas de otro color para comparar.",
-                    "El botón «Rango probable» enciende y apaga la nube de incertidumbre, que se dibuja como tres anillos anidados: «Rango amplio», «Rango probable» y «Zona central».",
-                    "La franja de estadísticas bajo la barra resume promedio de ventas, variabilidad, mínimo, máximo, puntos históricos, pasos de forecast, «WAPE del elegido» y «Mejor modelo».",
+                    "Debajo hay tres pestañas por defecto — «Forecast», «Cómo se vende» e «Inventario» — y el interruptor «Ver el detalle técnico», que agrega «Métricas» y «Calidad» cuando lo enciendes.",
+                    "Con el detalle técnico apagado, la franja de estadísticas solo trae «Promedio de ventas», «Rango de ventas» y «Confiabilidad»: lo que hace falta para decidir si confiar en la curva, sin nombrar un solo modelo.",
+                    "En «Forecast», la barra de herramientas te deja cambiar la «Granularidad» (D, W, M, Q, Y) y el «Gráfico» (Línea o Barra); los chips de «Modelo» para comparar curvas solo aparecen con el detalle técnico encendido.",
+                    "El botón «Rango probable» enciende y apaga la nube de incertidumbre, que se dibuja como tres anillos anidados: «Rango amplio», «Rango probable» y «Zona central». No depende del detalle técnico: está siempre disponible.",
+                    "Los chips de «Modelo», cuando el detalle técnico está encendido, son de selección múltiple: el primero que elijas manda sobre los ejes y las estadísticas, y los demás se superponen como líneas de otro color para comparar.",
+                    "Con el detalle técnico encendido, la franja de estadísticas suma variabilidad, puntos históricos, pasos de forecast, «WAPE del elegido» y «Mejor modelo», y se agregan las pestañas «Métricas» y «Calidad».",
                     "La pestaña «Métricas» abre la tabla de todos los modelos que corrieron sobre ese SKU, ordenada por «Costo» del mejor al peor, con la etiqueta «MEJOR» sobre el ganador.",
-                    "Al pie de la página, el panel «Qué habría pasado comprando así» repite tu política de compra sobre las ventas que ya ocurrieron y la compara contra pedir lo mismo que la vez anterior.",
+                    "Al pie de la pestaña «Inventario», el panel «Qué habría pasado comprando así» repite tu política de compra sobre las ventas que ya ocurrieron y la compara contra pedir lo mismo que la vez anterior.",
                 ],
                 "fields": [
+                    ("Ver el detalle técnico", "El interruptor que separa lo que hace falta para decidir una compra de lo que arma un analista. Apagado —el estado con el que abre la pantalla—, ves la curva, cuánto vendes normalmente y qué tanto confiar en el pronóstico. Encendido, se suman los modelos que compitieron, sus métricas y la calidad de los datos."),
+                    ("Confiabilidad", "Alta, Media o Baja: qué tan buena es la evidencia detrás del pronóstico, calculada sobre la calidad de tus datos. No es lo mismo que «Precisión» —esa mide qué tan cerca estuvo el modelo de acertar—; «Confiabilidad» mide qué tan parado está el terreno sobre el que se calculó. Se ve siempre, aunque el detalle técnico esté apagado."),
+                    ("Rango de ventas", "El mínimo y el máximo que de verdad vendiste, no una predicción: para hacerte una idea de qué tan disparejo es el producto de un período a otro sin abrir la pestaña «Cómo se vende». También se ve siempre."),
                     ("Precisión", "Uno menos el WAPE del modelo elegido para ese producto, en porcentaje. No aparece cuando el error del mejor modelo es exactamente cero, porque eso significa que no hubo venta que acertar."),
-                    ("WAPE del elegido", "El WAPE del modelo que Faro terminó usando para ese producto — no el WAPE más bajo de la tabla. El WAPE es la suma de los errores absolutos dividida entre la venta real total."),
+                    ("WAPE del elegido", "El WAPE del modelo que StockAI terminó usando para ese producto — no el WAPE más bajo de la tabla. El WAPE es la suma de los errores absolutos dividida entre la venta real total."),
                     ("Mejor modelo", "El modelo ganador del SKU, excluidas las referencias. Se muestra como «Modelo 1» … «Modelo 9»: el nombre del algoritmo no cambia ninguna decisión de compra, y la numeración es la misma en toda la app."),
                     ("Costo", "Lo que costaría equivocarse con ese modelo, contando un faltante tres veces más caro que un sobrante. Es la columna con la que se elige el modelo ganador."),
                     ("MAE", "Error absoluto promedio, en unidades del producto."),
@@ -56,7 +60,7 @@ SECTION = {
                 "tasks": [
                     (
                         "Comparar dos modelos sobre el mismo producto",
-                        " 1. Elige el producto en la lista de la izquierda. 2. Quédate en la pestaña «Forecast». 3. En «Modelo», haz clic sobre un segundo chip: su pronóstico se dibuja encima en otro color. 4. Apaga «Rango probable» si la nube estorba; solo se dibuja con un modelo seleccionado. 5. Abre «Métricas» para ver cuál de los dos tiene menor «Costo».",
+                        " 1. Elige el producto en la lista de la izquierda. 2. Enciende «Ver el detalle técnico» arriba a la derecha. 3. Quédate en la pestaña «Forecast». 4. En «Modelo», haz clic sobre un segundo chip: su pronóstico se dibuja encima en otro color. 5. Apaga «Rango probable» si la nube estorba; solo se dibuja con un modelo seleccionado. 6. Abre «Métricas» para ver cuál de los dos tiene menor «Costo».",
                     ),
                     (
                         "Llevarte el pronóstico a Excel",
@@ -64,15 +68,16 @@ SECTION = {
                     ),
                     (
                         "Ver si un reentrenamiento mejoró las cosas",
-                        " 1. Pulsa «Comparar» en la barra superior. 2. Elige la otra sesión en «Comparando con:». 3. Elige el SKU en el selector que aparece al lado. 4. La pantalla se parte en dos: arriba la sesión A, abajo la B, con el mismo producto en ambas.",
+                        " 1. Pulsa «Comparar» en la barra superior. 2. Elige la otra actualización en «Comparando con:». 3. Elige el SKU en el selector que aparece al lado. 4. La pantalla se parte en dos: arriba la actualización A, abajo la B, con el mismo producto en ambas.",
                     ),
                 ],
                 "gotchas": [
                     "La tabla de métricas se ordena por «Costo», no por WAPE, así que el modelo con la etiqueta «MEJOR» puede no ser el de menor WAPE. Es a propósito: quedarse sin producto cuesta más que sobrar, y esa es la comparación con la que se compra.",
-                    "Las referencias nunca ganan. Aparecen en la tabla para que veas qué tan lejos quedó pronosticar «lo mismo que la vez pasada», pero Faro no compra con ellas y no reciben la etiqueta «MEJOR».",
+                    "Las referencias nunca ganan. Aparecen en la tabla para que veas qué tan lejos quedó pronosticar «lo mismo que la vez pasada», pero StockAI no compra con ellas y no reciben la etiqueta «MEJOR».",
                     "Los modelos se llaman «Modelo 1» a «Modelo 9». Compiten nueve modelos entrenados, más tres referencias y el «Modelo combinado», que es la mezcla de los numerados.",
                     "«Rango probable» solo se puede encender con un único modelo seleccionado, y algunos modelos no guardaron cuantiles: en ese caso el botón queda apagado y al lado dice «(sin rango)».",
-                    "No todos los modelos corren sobre todos los productos. Faro asigna a cada SKU los modelos que le convienen según su tipo de serie, siempre dentro de los que elegiste al entrenar, así que dos productos de la misma sesión pueden mostrar listas de modelos distintas.",
+                    "No todos los modelos corren sobre todos los productos. StockAI asigna a cada SKU los modelos que le convienen según su tipo de serie, siempre dentro de los que elegiste al entrenar, así que dos productos de la misma actualización pueden mostrar listas de modelos distintas.",
+                    "«Confiabilidad» no dice si el pronóstico acertó: dice qué tan sólidos son los datos con los que se calculó. Un producto puede tener «Precisión» alta en las pruebas y «Confiabilidad» baja si su historial es corto o irregular, y las dos cosas conviene mirarlas juntas.",
                 ],
             },
             {
@@ -128,7 +133,7 @@ SECTION = {
                 "purpose": (
                     "El simulador responde «¿qué pasa si…?» sin tocar nada. Armas una lista de reglas "
                     "— más demanda, una promoción, un proveedor atrasado, otro nivel de servicio — y "
-                    "Faro vuelve a correr exactamente el mismo cálculo del semáforo con esos "
+                    "StockAI vuelve a correr exactamente el mismo cálculo del semáforo con esos "
                     "supuestos, y te muestra el plan actual y el escenario lado a lado."
                 ),
                 "walkthrough": [
@@ -181,7 +186,7 @@ SECTION = {
                 "route": "/impacto",
                 "image": "impacto",
                 "purpose": (
-                    "«Impacto & ROI» es el registro de lo que hiciste con Faro: cuántas órdenes "
+                    "«Impacto & ROI» es el registro de lo que hiciste con StockAI: cuántas órdenes "
                     "generaste, cuántas líneas urgentes pediste, cuánto valor de compra manejaste y "
                     "qué tanto seguiste las recomendaciones. La pantalla es deliberadamente "
                     "conservadora: no estima ahorros y no cuenta quiebres evitados, porque ninguna de "
@@ -193,17 +198,17 @@ SECTION = {
                     "Si no generaste ninguna orden en ese mes, el bloque no muestra ceros: dice que todavía no hay suficiente historial y nombra el mes del que habla.",
                     "Sus mosaicos son órdenes de compra generadas, porcentaje de adopción, líneas urgentes que pediste, baja del sobrestock y compras gestionadas.",
                     "Al pie del recuento, «De dónde sale cada número» explica en una frase el origen de cada cifra y qué es lo que no afirma.",
-                    "Debajo, «Tu historial con Faro» acumula todo el tiempo: órdenes generadas, desde qué fecha, cuántos días activo, líneas urgentes pedidas y el valor de las compras gestionadas.",
+                    "Debajo, «Tu historial con StockAI» acumula todo el tiempo: órdenes generadas, desde qué fecha, cuántos días activo, líneas urgentes pedidas y el valor de las compras gestionadas.",
                     "Cuando ningún producto tiene costo unitario, esa última cifra se reemplaza por las unidades totales ordenadas y te sugiere cargar los costos.",
                     "«Confianza en las recomendaciones» muestra tu tasa de adopción con una barra: cuántas de las líneas sobre las que decidiste terminaste pidiendo.",
                     "«Evolución mensual» es la tabla de los últimos seis meses con pedidos, líneas urgentes pedidas, valor gestionado, porcentaje de adopción y baja del sobrestock.",
                     "Al final, un enlace lleva a la pantalla de pedidos para registrar llegadas, y «Por qué esto importa» cierra explicando que son registros de lo que hiciste, no una medición de lo que evitaste.",
                 ],
                 "fields": [
-                    ("órdenes de compra generadas", "Cuántas órdenes generaste desde Faro. Es un conteo de registros, no una estimación."),
+                    ("órdenes de compra generadas", "Cuántas órdenes generaste desde StockAI. Es un conteo de registros, no una estimación."),
                     ("días activo", "Días de calendario distintos en los que generaste al menos una orden. No es el tiempo transcurrido desde la primera: quien pidió dos veces con un año de diferencia lleva 2 días activo, no 365."),
                     ("líneas urgentes que pediste", "Líneas marcadas PEDIR_YA que realmente ordenaste. Cuenta líneas, no productos distintos, e incluye órdenes que todavía no llegaron."),
-                    ("compras gestionadas con Faro", "Unidades ordenadas por su costo unitario, tomado de tus propios datos. Solo suma las líneas que tienen costo registrado."),
+                    ("compras gestionadas con StockAI", "Unidades ordenadas por su costo unitario, tomado de tus propios datos. Solo suma las líneas que tienen costo registrado."),
                     ("tasa de adopción", "Líneas que aprobaste o ajustaste, dividido entre las líneas sobre las que llegaste a decidir. Las recomendaciones que dejaste pasar sin tocar no entran por ningún lado."),
                     ("Baja del sobrestock", "La diferencia entre el valor de tu inventario en sobrestock al inicio del mes y al inicio del siguiente. Son dos mediciones restadas, no un modelo."),
                     ("Aún no hay suficiente historial", "Lo que dice la columna de sobrestock cuando falta una de las dos mediciones mensuales."),
@@ -221,11 +226,11 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "Esta pantalla nunca dice «Faro te ahorró tanto». No estima ahorros ni cuenta quiebres evitados, porque para eso habría que saber qué habría pasado si no hubieras comprado, y eso no está en tus datos.",
-                    "La baja del sobrestock no se le atribuye a Faro. El sobrestock también baja al vender, al registrar merma, al borrar productos y al reentrenar; la pantalla dice qué se movió, no quién lo movió.",
+                    "Esta pantalla nunca dice «StockAI te ahorró tanto». No estima ahorros ni cuenta quiebres evitados, porque para eso habría que saber qué habría pasado si no hubieras comprado, y eso no está en tus datos.",
+                    "La baja del sobrestock no se le atribuye a StockAI. El sobrestock también baja al vender, al registrar merma, al borrar productos y al reentrenar; la pantalla dice qué se movió, no quién lo movió.",
                     "Un número que no se puede calcular aparece como «No disponible» con la razón, nunca como cero. Un cero se leería como un resultado.",
                     "«Líneas urgentes que pediste» suma líneas: los mismos 30 productos urgentes pedidos cada mes durante un año suman 360. Tampoco comprueba que la mercadería haya llegado.",
-                    "La tasa de adopción no dice qué parte de todo lo que Faro te sugirió llegaste a seguir. Las recomendaciones que nunca tocaste no quedan registradas, así que no están en ninguno de los dos lados de la división.",
+                    "La tasa de adopción no dice qué parte de todo lo que StockAI te sugirió llegaste a seguir. Las recomendaciones que nunca tocaste no quedan registradas, así que no están en ninguno de los dos lados de la división.",
                 ],
             },
             {
@@ -245,7 +250,7 @@ SECTION = {
                     "Las conversaciones se agrupan en «Favoritos» y «Recientes»; la estrella de cada fila las mueve de un grupo al otro y el basurero las borra, pidiendo confirmación antes.",
                     "El título de una conversación nueva lo escribe la propia IA a partir de tu primera pregunta.",
                     "Arriba del hilo, el selector «Sesión:» decide de qué sesión de pronóstico sale el contexto; «— General —» desactiva ese contexto y deja solo preguntas de concepto y de uso de la plataforma.",
-                    "En un hilo vacío, Faro propone «Preguntas frecuentes» para arrancar con un clic.",
+                    "En un hilo vacío, StockAI propone «Preguntas frecuentes» para arrancar con un clic.",
                     "Escribes abajo y envías con Enter; Shift+Enter hace un salto de línea.",
                     "Cada respuesta lleva una etiqueta que dice de dónde salió: «Tus datos», «Respuesta general», «General», «Fuera de tema», «Sin acceso» o «Error».",
                     "El botón de filtro junto al campo de texto abre «Fuentes de Datos» y te deja limitar el contexto a resumen de datos, desempeño de modelos, precisión por producto, inventario, calidad de datos, elección de modelo, configuración o tendencias del pronóstico.",
@@ -275,7 +280,7 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "Las respuestas sobre inventario salen siempre del semáforo de la sesión activa de planificación, no de la sesión que elegiste en el chat. Es a propósito: el inventario tiene una sola respuesta en este producto, y es la que está en la pantalla de Inventario.",
+                    "Las respuestas sobre inventario salen siempre del semáforo de la actualización activa de planificación, no de la sesión que elegiste en el chat. Es a propósito: el inventario tiene una sola respuesta en este producto, y es la que está en la pantalla de Inventario.",
                     "El contexto de inventario que recibe la IA está limitado a los primeros 40 productos. En un catálogo grande, la respuesta describe esa parte y no todo el catálogo.",
                     "La IA solo lee lo que la sesión y el inventario ya calcularon. No corre modelos, no consulta internet y no ve tus archivos originales.",
                     "Cada respuesta se construye con los últimos 6 mensajes del hilo. Lo que dijiste mucho más arriba en una conversación larga ya no está en el contexto.",
@@ -283,20 +288,20 @@ SECTION = {
                 ],
             },
             {
-                "name": "Historial de sesiones",
+                "name": "Historial de actualizaciones",
                 "route": "/historial",
                 "image": "historial",
                 "purpose": (
                     "«Historial de actualizaciones» es la lista de todas las veces que subiste tus "
-                    "ventas y Faro las procesó. Desde aquí abres los resultados de cualquier "
+                    "ventas y StockAI las procesó. Desde aquí abres los resultados de cualquier "
                     "actualización terminada, la renombras para reconocerla después o la eliminas. "
                     "También es donde ves por qué falló una que no llegó a terminar."
                 ),
                 "walkthrough": [
                     "La pantalla abre con la tabla completa, de la actualización más reciente a la más vieja, hasta 200 filas.",
-                    "Cada fila trae nombre, estado, archivo de origen, fecha de creación, horizonte, granularidad y cantidad de SKUs.",
+                    "Cada fila trae nombre, estado, archivo de origen, fecha de creación, hasta cuándo planifica, el detalle y cantidad de SKUs.",
                     "El estado va desde «Borrador» hasta «Completada», pasando por «En cola», «Calculando», «Fallida» y «Cancelada».",
-                    "Hacer clic en una fila «Completada» abre sus resultados en la pantalla de pronósticos, con esa sesión ya seleccionada.",
+                    "Hacer clic en una fila «Completada» abre sus resultados en la pantalla de pronósticos, con esa actualización ya seleccionada.",
                     "Las filas que no están completadas no son clicables: todavía no hay resultados que abrir.",
                     "Cuando una actualización aparece como «Fallida», debajo del estado se muestra el «Detalle técnico:» que reportó el motor de pronóstico.",
                     "El lápiz de la derecha renombra la fila sin salir de la tabla: Enter guarda y Escape cancela.",
@@ -307,8 +312,8 @@ SECTION = {
                     ("Estado", "En qué punto quedó: «Completada» tiene resultados, «Calculando» está en curso, «Fallida» se detuvo."),
                     ("Archivo", "El archivo de ventas del que salió esa actualización."),
                     ("Creada", "La fecha en que se creó."),
-                    ("Horizonte", "Cuántos períodos hacia adelante pronosticó esa corrida."),
-                    ("Granularidad", "Si la serie se trabajó «Diaria», «Semanal» o «Mensual»."),
+                    ("Planifica hasta", "Cuántos períodos hacia adelante pronosticó esa corrida."),
+                    ("Detalle", "Si la serie se trabajó «Diaria», «Semanal» o «Mensual»."),
                     ("SKUs", "Cuántos productos entraron en esa actualización."),
                     ("Detalle técnico:", "El motivo exacto del fallo, tal como lo reportó el motor de pronóstico."),
                 ],
@@ -339,7 +344,7 @@ SECTION = {
         "title": "Analysis",
         "intro": (
             "These six screens are the ones that explain the reasoning behind every purchase "
-            "decision. Here you see what Faro projects for each product, how that product behaves in "
+            "decision. Here you see what StockAI projects for each product, how that product behaves in "
             "your own history, what would happen if the assumptions changed, what you have done with "
             "the recommendations, and what the AI can tell you about all of it. None of them "
             "generates a purchase order: they are for understanding before you buy, and the rest of "
@@ -352,27 +357,31 @@ SECTION = {
                 "image": "forecast",
                 "purpose": (
                     "This is the screen where you see, product by product, what you sold and what "
-                    "Faro expects you to sell. It brings together the historical curve, the forecast "
+                    "StockAI expects you to sell. It brings together the historical curve, the forecast "
                     "with its uncertainty range, the table of models that competed for that SKU, and "
                     "the quality of its data. Everything the app decides afterwards — the signal, the "
                     "reorder point, the quantity to order — comes from the model that wins here."
                 ),
                 "walkthrough": [
-                    "Top left is the title “Predictions” with the number of SKUs in the selected session; on the right are “Export All SKUs”, “Compare”, the session selector and “Refresh”.",
-                    "Faro selects the active planning session on its own when the screen opens, and falls back to the most recent completed session when none is resolved.",
+                    "Top left is the title “Predictions” with the number of SKUs in the selected update; on the right are “Export All SKUs”, “Compare”, the update selector and “Refresh”.",
+                    "StockAI selects the active planning update on its own when the screen opens, and falls back to the most recent completed update when none is resolved.",
                     "The left column lists your products, with the “Search SKUs…” box above and pagination below; each card shows the SKU, a thumbnail of its series and its signal.",
                     "When you click a product, the header of the right-hand panel shows the SKU, its series type, how many rows of history it has, its quality percentage, its “Accuracy” and its signal.",
-                    "Below that are five tabs: “Forecast”, “How it sells”, “Metrics”, “Quality” and “Inventory”.",
-                    "In “Forecast”, the toolbar lets you change the “Granularity” (D, W, M, Q, Y), the “Chart” (Line or Bar) and the “Model” that is drawn.",
-                    "The “Model” chips are multi-select: the first one you pick drives the axes and the statistics, and the rest are overlaid as lines in another colour so you can compare.",
-                    "The “Likely range” button turns the uncertainty cloud on and off; it is drawn as three nested rings: “Wide range”, “Likely range” and “Middle zone”.",
-                    "The stats strip under the toolbar sums up average sales, variability, min, max, historical points, forecast steps, “Chosen model's WAPE” and “Best model”.",
+                    "Below that are three tabs by default — “Forecast”, “How it sells” and “Inventory” — and a “Show technical detail” switch that adds “Metrics” and “Quality” when you turn it on.",
+                    "With technical detail off, the stats strip only carries “Average sales”, “Sales range” and “Reliability”: what you need to decide whether to trust the curve, with no model named.",
+                    "In “Forecast”, the toolbar lets you change the “Granularity” (D, W, M, Q, Y) and the “Chart” (Line or Bar); the “Model” chips for comparing curves only appear once technical detail is on.",
+                    "The “Likely range” button turns the uncertainty cloud on and off; it is drawn as three nested rings: “Wide range”, “Likely range” and “Middle zone”. It does not depend on technical detail: it is always there.",
+                    "The “Model” chips, once technical detail is on, are multi-select: the first one you pick drives the axes and the statistics, and the rest are overlaid as lines in another colour so you can compare.",
+                    "With technical detail on, the stats strip adds variability, historical points, forecast steps, “Chosen model's WAPE” and “Best model”, and the “Metrics” and “Quality” tabs appear.",
                     "The “Metrics” tab opens the table of every model that ran on that SKU, ordered by “Cost”, best first, with the “BEST” badge on the winner.",
-                    "At the foot of the page, the panel “What buying this way would have done” replays your purchasing policy over sales that already happened and compares it against ordering the same as last time.",
+                    "At the foot of the “Inventory” tab, the panel “What buying this way would have done” replays your purchasing policy over sales that already happened and compares it against ordering the same as last time.",
                 ],
                 "fields": [
+                    ("Show technical detail", "The switch that separates what you need to decide a purchase from what an analyst builds. Off — the state the screen opens in — you see the curve, what you normally sell and how much to trust the forecast. On, it adds the models that competed, their metrics and the data quality."),
+                    ("Reliability", "High, Medium or Low: how solid the evidence behind the forecast is, computed from your data quality. Not the same as “Accuracy” — that measures how close the model came; “Reliability” measures how firm the ground it was computed on is. Always shown, even with technical detail off."),
+                    ("Sales range", "The minimum and maximum you actually sold, not a prediction: a quick read on how uneven the product is from one period to the next, without opening the “How it sells” tab. Also always shown."),
                     ("Accuracy", "One minus the WAPE of the model chosen for that product, as a percentage. It is hidden when the best model's error is exactly zero, because that means there was no sale to get right."),
-                    ("Chosen model's WAPE", "The WAPE of the model Faro actually used for that product — not the lowest WAPE in the table. WAPE is the sum of absolute errors divided by total real demand."),
+                    ("Chosen model's WAPE", "The WAPE of the model StockAI actually used for that product — not the lowest WAPE in the table. WAPE is the sum of absolute errors divided by total real demand."),
                     ("Best model", "The SKU's winning model, baselines excluded. It is shown as “Model 1” … “Model 9”: the algorithm's name changes no purchasing decision, and the numbering is the same everywhere in the app."),
                     ("Cost", "What getting it wrong would cost with that model, counting a shortfall three times as expensive as a surplus. This is the column the winning model is picked by."),
                     ("MAE", "Mean absolute error, in units of the product."),
@@ -385,7 +394,7 @@ SECTION = {
                 "tasks": [
                     (
                         "Compare two models on the same product",
-                        " 1. Pick the product in the left-hand list. 2. Stay on the “Forecast” tab. 3. Under “Model”, click a second chip: its forecast is drawn on top in another colour. 4. Turn off “Likely range” if the cloud gets in the way; it is only drawn with a single model selected. 5. Open “Metrics” to see which of the two has the lower “Cost”.",
+                        " 1. Pick the product in the left-hand list. 2. Turn on “Show technical detail” at the top right. 3. Stay on the “Forecast” tab. 4. Under “Model”, click a second chip: its forecast is drawn on top in another colour. 5. Turn off “Likely range” if the cloud gets in the way; it is only drawn with a single model selected. 6. Open “Metrics” to see which of the two has the lower “Cost”.",
                     ),
                     (
                         "Take the forecast into Excel",
@@ -393,15 +402,16 @@ SECTION = {
                     ),
                     (
                         "Check whether a retrain improved things",
-                        " 1. Press “Compare” in the top bar. 2. Pick the other session in “Comparing with:”. 3. Pick the SKU in the selector that appears beside it. 4. The screen splits in two: session A on top, B below, with the same product in both.",
+                        " 1. Press “Compare” in the top bar. 2. Pick the other update in “Comparing with:”. 3. Pick the SKU in the selector that appears beside it. 4. The screen splits in two: update A on top, B below, with the same product in both.",
                     ),
                 ],
                 "gotchas": [
                     "The metrics table is ordered by “Cost”, not by WAPE, so the model carrying the “BEST” badge may not be the one with the lowest WAPE. That is deliberate: running out costs more than having spare, and that is the comparison you buy on.",
-                    "References never win. They are in the table so you can see how far off forecasting “the same as last time” would be, but Faro does not buy from them and they never get the “BEST” badge.",
+                    "References never win. They are in the table so you can see how far off forecasting “the same as last time” would be, but StockAI does not buy from them and they never get the “BEST” badge.",
                     "Models are named “Model 1” through “Model 9”. Nine trained models compete, plus three references and the “Combined model”, which is the blend of the numbered ones.",
                     "“Likely range” can only be turned on with a single model selected, and some models stored no quantiles: in that case the button stays off and “(no range)” appears beside it.",
-                    "Not every model runs on every product. Faro assigns each SKU the models that suit its series type, always within the ones you chose when training, so two products from the same session can show different model lists.",
+                    "Not every model runs on every product. StockAI assigns each SKU the models that suit its series type, always within the ones you chose when training, so two products from the same update can show different model lists.",
+                    "“Reliability” does not say whether the forecast was right: it says how solid the data it was computed on is. A product can have high “Accuracy” in testing and low “Reliability” if its history is short or irregular — the two are worth reading together.",
                 ],
             },
             {
@@ -457,7 +467,7 @@ SECTION = {
                 "purpose": (
                     "The simulator answers “what if…?” without touching anything. You assemble a "
                     "list of rules — more demand, a promotion, a late supplier, a different service "
-                    "level — and Faro re-runs exactly the same signal calculation with those "
+                    "level — and StockAI re-runs exactly the same signal calculation with those "
                     "assumptions, then shows you the current plan and the scenario side by side."
                 ),
                 "walkthrough": [
@@ -510,7 +520,7 @@ SECTION = {
                 "route": "/impacto",
                 "image": "impacto",
                 "purpose": (
-                    "“Impact & ROI” is the record of what you did with Faro: how many orders you "
+                    "“Impact & ROI” is the record of what you did with StockAI: how many orders you "
                     "generated, how many urgent lines you ordered, how much purchasing value you "
                     "handled and how closely you followed the recommendations. The screen is "
                     "deliberately conservative: it does not estimate savings and does not count "
@@ -522,17 +532,17 @@ SECTION = {
                     "If you generated no order that month, the block does not show zeros: it says there is not enough history yet and names the month it is talking about.",
                     "Its tiles are purchase orders generated, adoption percentage, urgent lines you ordered, overstock reduction and managed purchases.",
                     "At the foot of the recap, “Where each number comes from” explains in one paragraph the origin of each figure and what it does not claim.",
-                    "Below it, “Your history with Faro” accumulates across all time: orders generated, since which date, how many days active, urgent lines ordered and the value of the purchases managed.",
+                    "Below it, “Your history with StockAI” accumulates across all time: orders generated, since which date, how many days active, urgent lines ordered and the value of the purchases managed.",
                     "When no product carries a unit cost, that last figure is replaced by the total units ordered and it suggests loading costs.",
                     "“Confidence in recommendations” shows your adoption rate with a bar: how many of the lines you decided on you ended up ordering.",
                     "“Monthly evolution” is the table of the last six months with orders, urgent lines ordered, value managed, adoption percentage and overstock reduction.",
                     "At the end, a link takes you to the orders screen to record receptions, and “Why this matters” closes by explaining that these are records of what you did, not a measurement of what you avoided.",
                 ],
                 "fields": [
-                    ("purchase orders generated", "How many orders you generated from Faro. It is a count of records, not an estimate."),
+                    ("purchase orders generated", "How many orders you generated from StockAI. It is a count of records, not an estimate."),
                     ("days active", "Distinct calendar days on which you generated at least one order. It is not the time elapsed since the first one: someone who ordered twice a year apart has 2 days active, not 365."),
                     ("urgent lines you ordered", "Lines flagged PEDIR_YA that you actually ordered. It counts lines, not distinct products, and it includes orders that have not arrived yet."),
-                    ("purchases managed with Faro", "Units ordered times their unit cost, taken from your own data. It only sums the lines that carry a recorded cost."),
+                    ("purchases managed with StockAI", "Units ordered times their unit cost, taken from your own data. It only sums the lines that carry a recorded cost."),
                     ("adoption rate", "Lines you approved or adjusted, divided by the lines you actually decided on. Recommendations you let pass untouched are on neither side."),
                     ("Overstock reduction", "The difference between the value of your overstocked inventory at the start of the month and at the start of the next. It is two measurements subtracted, not a model."),
                     ("Not enough history yet", "What the overstock column says when one of the two monthly measurements is missing."),
@@ -550,11 +560,11 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "This screen never says “Faro saved you this much”. It does not estimate savings or count stockouts avoided, because that would require knowing what would have happened had you not bought, and that is not in your data.",
-                    "The overstock reduction is not attributed to Faro. Overstock also falls when you sell, record shrinkage, delete products or retrain; the screen says what moved, not who moved it.",
+                    "This screen never says “StockAI saved you this much”. It does not estimate savings or count stockouts avoided, because that would require knowing what would have happened had you not bought, and that is not in your data.",
+                    "The overstock reduction is not attributed to StockAI. Overstock also falls when you sell, record shrinkage, delete products or retrain; the screen says what moved, not who moved it.",
                     "A number that cannot be computed appears as “Not available” with the reason, never as a zero. A zero would read as a result.",
                     "“Urgent lines you ordered” sums lines: the same 30 urgent products ordered every month for a year add up to 360. It also does not check that the goods arrived.",
-                    "The adoption rate does not say what share of everything Faro suggested you followed. Recommendations you never touched are not recorded anywhere, so they are on neither side of the division.",
+                    "The adoption rate does not say what share of everything StockAI suggested you followed. Recommendations you never touched are not recorded anywhere, so they are on neither side of the division.",
                 ],
             },
             {
@@ -573,7 +583,7 @@ SECTION = {
                     "Chats are grouped into “Favorites” and “Recent”; the star on each row moves it between groups and the bin deletes it, asking for confirmation first.",
                     "The title of a new chat is written by the AI itself from your first question.",
                     "Above the thread, the “Session:” selector decides which forecast session the context comes from; “— General —” switches that context off and leaves only conceptual and platform questions.",
-                    "In an empty thread, Faro offers “Suggested questions” so you can start with one click.",
+                    "In an empty thread, StockAI offers “Suggested questions” so you can start with one click.",
                     "You type at the bottom and send with Enter; Shift+Enter inserts a line break.",
                     "Every answer carries a badge saying where it came from: “Your data”, “General answer”, “General”, “Off topic”, “No access” or “Error”.",
                     "The filter button beside the input opens “Data Sources” and lets you limit the context to data overview, model performance, per-product accuracy, inventory, data quality, model routing, configuration or forecast trends.",
@@ -603,7 +613,7 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "Inventory answers always come from the signal of the active planning session, not from the session you picked in the chat. That is deliberate: inventory has exactly one answer in this product, and it is the one on the Inventory screen.",
+                    "Inventory answers always come from the signal of the active planning update, not from the session you picked in the chat. That is deliberate: inventory has exactly one answer in this product, and it is the one on the Inventory screen.",
                     "The inventory context the AI receives is limited to the first 40 products. On a large catalog, the answer describes that slice and not the whole catalog.",
                     "The AI only reads what the session and the inventory already computed. It does not run models, does not browse the internet and does not see your original files.",
                     "Every answer is built from the last 6 messages of the thread. What you said much further up in a long conversation is no longer in the context.",
@@ -611,20 +621,20 @@ SECTION = {
                 ],
             },
             {
-                "name": "Session history",
+                "name": "Update history",
                 "route": "/historial",
                 "image": "historial",
                 "purpose": (
-                    "“Update history” is the list of every time you uploaded your sales and Faro "
+                    "“Update history” is the list of every time you uploaded your sales and StockAI "
                     "processed them. From here you open the results of any finished update, rename it "
                     "so you recognise it later, or delete it. It is also where you see why one that "
                     "never finished failed."
                 ),
                 "walkthrough": [
                     "The screen opens with the full table, newest update first, up to 200 rows.",
-                    "Each row carries name, status, source file, creation date, horizon, granularity and SKU count.",
+                    "Each row carries name, status, source file, creation date, how far it plans, the level of detail and SKU count.",
                     "Status runs from “Draft” to “Completed”, through “Queued”, “Calculating”, “Failed” and “Cancelled”.",
-                    "Clicking a “Completed” row opens its results on the forecasts screen, with that session already selected.",
+                    "Clicking a “Completed” row opens its results on the forecasts screen, with that update already selected.",
                     "Rows that are not completed are not clickable: there are no results to open yet.",
                     "When an update shows as “Failed”, the “Technical detail:” reported by the forecasting engine is shown under the status.",
                     "The pencil on the right renames the row without leaving the table: Enter saves and Escape cancels.",
@@ -635,8 +645,8 @@ SECTION = {
                     ("Status", "Where it ended up: “Completed” has results, “Calculating” is in progress, “Failed” stopped."),
                     ("File", "The sales file that update came from."),
                     ("Created", "The date it was created."),
-                    ("Horizon", "How many periods ahead that run forecast."),
-                    ("Granularity", "Whether the series was worked “Daily”, “Weekly” or “Monthly”."),
+                    ("Plan through", "How many periods ahead that run forecast."),
+                    ("Detail", "Whether the series was worked “Daily”, “Weekly” or “Monthly”."),
                     ("SKUs", "How many products went into that update."),
                     ("Technical detail:", "The exact reason for the failure, as the forecasting engine reported it."),
                 ],

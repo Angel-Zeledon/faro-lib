@@ -1,4 +1,4 @@
-"""Free tier vs paid tier: the only thing money changes in Faro.
+"""Free tier vs paid tier: the only thing money changes in StockAI.
 
 There are no feature gates and no checkout. Both tiers ship every screen; the
 tier decides how much fits, and a tenant crosses over because somebody talked to

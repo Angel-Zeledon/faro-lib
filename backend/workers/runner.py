@@ -221,9 +221,8 @@ def _group_cols(col_cfg: dict) -> list:
     ALL the columns that identify a series, not just the first one.
 
     A series is a (SKU, warehouse) pair whenever the session maps a store
-    column — which the integrations path does automatically for any tenant whose
-    ERP reports a warehouse. Prep steps that group by the SKU alone silently
-    merge every warehouse into one:
+    column. Prep steps that group by the SKU alone silently merge every
+    warehouse into one:
 
         in                                   out
         2026-01-05, SKU-A, 10.0, Norte       2026-01-05, SKU-A, 15.0, Norte
@@ -1334,6 +1333,16 @@ def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str,
 
 def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
     log.info(f"Runner starting job={job_id} session={session_id} tenant={tenant_id}")
+    # The session follows the job into RUNNING. Without this the only statuses
+    # a session ever reached were QUEUED and then COMPLETED/FAILED: the whole
+    # training — minutes of it — was reported as "En cola" on /historial, the
+    # public `/train` status endpoint never emitted the RUNNING its own docs
+    # promise, and every guard written against session=RUNNING was dead code.
+    # Best-effort on purpose: a failure to label the run must not stop it.
+    try:
+        force_status(tenant_id, session_id, "RUNNING", "train")
+    except Exception:
+        log.exception("could not mark session %s RUNNING", session_id)
     # Stress-test shim: when MOCK_TRAINING=1 (only honored under testing_mode), skip the
     # heavy ML and simulate a fast job so the queue/worker/concurrency machinery can be
     # saturated without waiting on real LightGBM/XGBoost/Prophet fits. Default off.
@@ -1679,7 +1688,18 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         error_msg = str(exc)
         log.error(f"Job {job_id} failed: {error_msg}", exc_info=True)
         mark_failed(tenant_id, job_id, error_msg)
-        force_status(tenant_id, session_id, "FAILED")
+        # Same shape as `recover_orphaned_jobs` and the cancel path: the job row
+        # is FAILED either way, and a second failure while writing the session's
+        # status must not swallow the notification, the webhook and the
+        # broadcast below — that would leave whoever is watching the progress
+        # bar waiting on a run that already died.
+        try:
+            force_status(tenant_id, session_id, "FAILED")
+        except Exception:
+            log.exception(
+                "job %s failed and session %s could NOT be moved off RUNNING",
+                job_id, session_id,
+            )
         # The user has to be told. `force_status(FAILED)` above takes this
         # session out of `resolve_active_session`, so every screen that reads
         # the active session goes quiet — and for a SCHEDULED run there is

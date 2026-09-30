@@ -123,7 +123,6 @@ def launch_training_family(
     user_id: str,
     user_horizon_days: int | None = None,
     user_granularity: str = "auto",
-    record_refusal: bool = True,
 ) -> dict:
     """Fan a ready-to-train base session out into its granularity family and
     enqueue every member. The base session must already be validated and in a
@@ -142,8 +141,8 @@ def launch_training_family(
     from backend.sessions import service as session_svc
 
     # THE gate, and it lives here on purpose. Every launch path goes through
-    # this function — POST /sessions/{id}/train, POST /demo/quickstart, the ERP
-    # integrations sync and the seed script — so a caller cannot start a run on
+    # this function — POST /sessions/{id}/train, POST /demo/quickstart, the
+    # scheduled retrain and the seed script — so a caller cannot start a run on
     # data the gate rejected by talking to a different endpoint. Enforcing it in
     # the REST handler alone is what made it a suggestion.
     #
@@ -151,17 +150,9 @@ def launch_training_family(
     # the wizard reads the 422 and knows, but the launches nobody is watching
     # (a scheduled run) refused into silence, and the tenant's only symptom was
     # numbers that stopped moving.
-    #
-    # `record_refusal=False` is for the caller that already reports this
-    # refusal in its own vocabulary — the ERP sync writes
-    # `integration.sync_blocked`, which names the provider and is what the
-    # /integraciones card reads. One refusal is one row in the feed; the flag
-    # is explicit so nobody has to infer it from the user id.
     try:
         data_gate.enforce(tenant_id, base_session_id)
     except AppError as exc:
-        if not record_refusal:
-            raise
         record_event(
             tenant_id, user_id, "training.blocked",
             resource=base_session_id, reason="data_gate_blocked",

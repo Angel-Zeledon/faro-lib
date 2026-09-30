@@ -24,6 +24,23 @@ def _make_df(n=80, skus=("A",), seed=0, add_exog=False):
     return pd.DataFrame(rows)
 
 
+def _make_shocked_tail_df(n_train=120, horizon=10, tail_extra=30, level=50.0, seed=3):
+    """A train window plus a held-out tail whose FIRST `horizon` steps
+    continue the train level and whose LATER steps are deliberately wrong by
+    two orders of magnitude — see forecasting_core/models/ets.py for the
+    rationale and tests/test_models.py for the same fixture used against the
+    other statistical families. `train_ratio` is returned so `cut` lands
+    exactly on `n_train`."""
+    rng = np.random.default_rng(seed)
+    steady = np.maximum(1.0, rng.normal(level, level * 0.06, n_train + horizon))
+    shocked = np.full(tail_extra, level * 100.0)
+    values = np.concatenate([steady, shocked])
+    dates = pd.date_range("2021-01-01", periods=len(values), freq="D")
+    df = pd.DataFrame({"date": dates, "sku": "A", "sales": values})
+    train_ratio = n_train / len(values)
+    return df, train_ratio
+
+
 # ---------------------------------------------------------------------------
 # _safe_order
 # ---------------------------------------------------------------------------
@@ -132,6 +149,40 @@ class TestRunSarimaxCore:
             assert value is not None, f"{key} is None"
             assert isinstance(value, (int, float)), f"{key} is not numeric: {value!r}"
             assert np.isfinite(value), f"{key} is not finite: {value!r}"
+
+
+# ---------------------------------------------------------------------------
+# `cost_horizon` — comparable across every model family (docs/stability.md #17(d))
+# ---------------------------------------------------------------------------
+
+class TestCostHorizonWindow:
+
+    def test_cost_horizon_ignores_the_tail_past_the_horizon(self):
+        df, train_ratio = _make_shocked_tail_df()
+        results = run_sarimax_core(
+            df, dt="date", target="sales", group="sku",
+            train_ratio=train_ratio, min_rows=20, seasonal_period=7,
+            order=(1, 0, 1), seasonal_order=(0, 0, 0, 7), horizon=10,
+        )
+        res = results["A"]
+        assert res["horizon_steps"] == 10
+        # Old code copied the whole-tail `cost` (dominated by the 30 shocked
+        # steps) straight into `cost_horizon`.
+        assert res["cost_horizon"] < res["cost"] / 10
+        assert res["cost_horizon"] < 50.0
+
+    def test_short_tail_reports_over_available_steps_without_padding(self):
+        df = _make_df(n=80, skus=["A"])
+        results = run_sarimax_core(
+            df, dt="date", target="sales", group="sku",
+            train_ratio=0.8, min_rows=20, seasonal_period=7,
+            order=(1, 0, 1), seasonal_order=(0, 0, 0, 7), horizon=30,
+        )
+        res = results["A"]
+        held_out = 80 - int(80 * 0.8)
+        assert held_out < 30, "fixture assumption: tail shorter than horizon"
+        assert res["horizon_steps"] == held_out
+        assert np.isfinite(res["cost_horizon"])
 
 
 # ---------------------------------------------------------------------------

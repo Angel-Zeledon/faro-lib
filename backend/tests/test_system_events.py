@@ -508,8 +508,3 @@ class TestTheRealCallSitesRecord:
         assert rows[0]["context"]["reason"] == "data_gate_blocked"
         assert rows[0]["context"]["issues"] == "gaps"
 
-        with pytest.raises(AppError):
-            fam.launch_training_family(tid, "sess_x", "usr_test", record_refusal=False)
-        rows = query("SELECT context FROM activity_logs "
-                     "WHERE tenant_id=%s AND action='training.blocked'", (tid,))
-        assert len(rows) == 1, "the caller that reports it itself wrote a second row"

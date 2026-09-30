@@ -1,11 +1,10 @@
-"""The endpoints Faro promises to a customer's own system.
+"""The endpoints StockAI promises to a customer's own system.
 
 Everything in `backend/api/v1` is reachable with an API key. That is not the
 same as being PUBLIC: the other 261 routes exist to serve this product's own
-screens, and
-they change whenever a screen changes — several changed this week. An integration
-built against one of those breaks without warning and without anyone deciding to
-break it.
+screens, and they change whenever a screen changes — several changed this week.
+An integration built against one of those breaks without warning and without
+anyone deciding to break it.
 
 So the public API is a LIST, not a permission. These are the routes a customer's
 ERP or POS is invited to call, chosen for the five jobs it actually has:
@@ -36,7 +35,7 @@ PUBLIC_ENDPOINTS: tuple[tuple[str, str], ...] = (
     # Five of the endpoints below take a session_id, and until this was added
     # nothing on the list returned one: the published API demanded an id it gave
     # no way to obtain. `active_session_id` here is the same session the app's
-    # own screens are showing, so an integration and a human looking at Faro see
+    # own screens are showing, so an integration and a human looking at StockAI see
     # the same numbers instead of quietly diverging.
     ("GET", "/planning"),
 
@@ -52,7 +51,18 @@ PUBLIC_ENDPOINTS: tuple[tuple[str, str], ...] = (
 
     # ── Close the loop ────────────────────────────────────────────────────
     # Records that an order was placed. Without this the order does not exist
-    # for Faro: reception tracking and supplier lead-time learning both read it,
+    # for StockAI: reception tracking and supplier lead-time learning both read it,
     # which is what makes the NEXT forecast better than this one.
     ("POST", "/inventory/log-po"),
+
+    # ── The same jobs, for an AI client ───────────────────────────────────
+    # One endpoint speaking MCP over the five READ tools in
+    # `backend/mcp/catalog.py`. It is on this list for the same reason as the
+    # rest: a customer points Claude at it and that URL has to keep working.
+    #
+    # The GET is here so `PUBLIC_API_ONLY` keeps serving it. It answers 405 on
+    # purpose — "this server has nothing to stream" — and dropping it in that
+    # mode would turn a stated refusal into a confusing 404.
+    ("POST", "/mcp"),
+    ("GET", "/mcp"),
 )

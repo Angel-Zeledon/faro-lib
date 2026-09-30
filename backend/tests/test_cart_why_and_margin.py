@@ -81,7 +81,7 @@ def _flat_forecast(daily: float, spread: float, days: int = 30) -> dict:
 
 def _learn_lead_time(client, headers, *, sku: str, supplier: str, days_ago: int) -> str:
     """
-    Makes Faro LEARN a real lead time for `supplier` by walking the actual
+    Makes StockAI LEARN a real lead time for `supplier` by walking the actual
     product flow: log a PO, backdate it, then record its reception today.
     Returns the po_log_id.
     """

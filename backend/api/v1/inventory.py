@@ -42,6 +42,9 @@ from backend.inventory import transfer_service as tr_svc
 from backend.inventory import transfer_lane_service as lane_svc
 from backend.inventory import price_break_service as pb_svc
 from backend.inventory import cash_service
+from backend.inventory import dead_capital as dead_capital_svc
+from backend.inventory import cost_alerts as cost_alerts_svc
+from backend.inventory import forecast_money as forecast_money_svc
 from backend.schemas.common import ok
 from backend.utils import stock_import
 from backend.utils.csv_safe import csv_safe
@@ -1315,7 +1318,7 @@ def get_event_catalog(
     user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Which commercial events Faro knows for a country, and whether this tenant
+    Which commercial events StockAI knows for a country, and whether this tenant
     has them seeded / switched on. Read-only.
     """
     from backend.inventory import calendar_catalog as cat
@@ -1620,7 +1623,7 @@ def receive_po(
 ):
     """
     Record that a PO arrived (fully, partially, or not at all).
-    Side effects: current_stock increases by the received units, and Faro logs
+    Side effects: current_stock increases by the received units, and StockAI logs
     the supplier's REAL lead time (order date → reception date).
     """
     from datetime import datetime as _dt
@@ -1897,7 +1900,7 @@ def send_po_to_self(
 ):
     """
     Deliver the order to the BUYER's own WhatsApp so they forward it to their
-    supplier (PENDIENTES #1) — no Faro↔supplier integration required.
+    supplier (PENDIENTES #1) — no StockAI↔supplier integration required.
 
     Always returns the rendered text plus a wa.me deep link, so the flow works
     end to end even with no Twilio configured and no number on file: the UI can
@@ -2216,7 +2219,7 @@ class SupplierCreate(BaseModel):
     #
     # It used to be `int = Field(default=15)`, so the model handed the service a
     # 15 for every caller that sent none — and `_stamp_lead_time_provenance`
-    # records SOURCE_USER for any call that supplies a lead time. Faro's own
+    # records SOURCE_USER for any call that supplies a lead time. StockAI's own
     # assumption was therefore filed as the supplier's declaration, and the
     # scorecard printed DECLARADO 15d for a supplier who declared nothing
     # (stability 11.32). `exclude_none=True` in the handler now drops it
@@ -2224,6 +2227,11 @@ class SupplierCreate(BaseModel):
     # to have chosen it.
     lead_time_days: Optional[int] = Field(default=None, ge=1, le=365)
     lead_time_std:  int   = Field(default=3, ge=0, le=60)
+    # How often this buyer actually orders from this supplier, in days
+    # (stability.md 17/19.3). 0 (the column's own default) means no cadence
+    # has been declared, and the recommendation reproduces today's arithmetic
+    # exactly — see `backend/inventory/service.py::_calc_recommended`.
+    review_period_days: int = Field(default=0, ge=0, le=365)
     payment_terms:  Optional[str] = None
     # Structured credit days (feature 3.6). Optional: when omitted it is derived
     # from the free-text `payment_terms`, so existing clients keep working and
@@ -2245,6 +2253,7 @@ class SupplierPatch(BaseModel):
     whatsapp:       Optional[str]   = None
     lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
     lead_time_std:  Optional[int]   = Field(default=None, ge=0, le=60)
+    review_period_days: Optional[int] = Field(default=None, ge=0, le=365)
     payment_terms:  Optional[str]   = None
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str]   = None
@@ -2857,17 +2866,29 @@ def dead_stock(
         # Classify as dead if actual depletion is < 20% of expected
         if expected > 0 and depletion < expected * 0.20:
             days_static = len(history)
-            capital = round(float(item.get('current_stock', 0)) * float(item.get('unit_cost') or 0), 2)
-            holding_cost_annual = capital * holding_cost_pct
-            holding_cost_monthly = round(holding_cost_annual / 12, 2)
+            unit_cost = item.get('unit_cost')
+            # An unpriced SKU is unknown money, never zero money — pricing it
+            # at 0 used to sink it to the bottom of the sort as if nothing
+            # were at risk, which is the opposite of the truth. Same
+            # discipline as `dead_capital.get_dead_capital`'s `value`/
+            # `value_unknown_reason` pair.
+            if unit_cost is None:
+                capital = None
+                capital_trapped_unknown_reason = dead_capital_svc.REASON_NO_UNIT_COST
+                holding_cost_monthly = None
+            else:
+                capital = round(float(item.get('current_stock', 0)) * float(unit_cost), 2)
+                capital_trapped_unknown_reason = None
+                holding_cost_monthly = round(capital * holding_cost_pct / 12, 2)
 
             dead_items.append({
                 'sku':              item['sku'],
                 'display_name':     item.get('display_name'),
                 'supplier':        item.get('supplier'),
                 'current_stock':     item.get('current_stock'),
-                'unit_cost':   item.get('unit_cost'),
+                'unit_cost':   unit_cost,
                 'capital_trapped':  capital,
+                'capital_trapped_unknown_reason': capital_trapped_unknown_reason,
                 'holding_cost_monthly': holding_cost_monthly,
                 'days_without_movement': days_static,
                 'depletion_pct':    round(depletion / first_stock * 100, 1) if first_stock > 0 else 0,
@@ -2890,19 +2911,126 @@ def dead_stock(
                 ),
             })
 
-    dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
+    # Priced items first (worst money first), unpriced ones after — grouped
+    # where "we don't know" can be said plainly instead of implied by a 0
+    # that reads as "nothing at risk here".
+    dead_items.sort(key=lambda x: (x['capital_trapped'] is None, -(x['capital_trapped'] or 0)))
 
-    total_capital = sum(d['capital_trapped'] for d in dead_items)
-    total_holding = sum(d['holding_cost_monthly'] for d in dead_items)
+    priced_items = [d for d in dead_items if d['capital_trapped'] is not None]
+    total_capital = sum(d['capital_trapped'] for d in priced_items)
+    total_holding = sum(d['holding_cost_monthly'] for d in priced_items)
 
     return ok({
         'items':                dead_items,
         'total_capital_trapped': round(total_capital, 2),
         'total_holding_cost_monthly': round(total_holding, 2),
         'sku_count':            len(dead_items),
+        'unpriced_sku_count':   len(dead_items) - len(priced_items),
         'min_days_static':      min_days_static,
         'holding_cost_pct':     holding_cost_pct,
     })
+
+
+# ── Dead capital / Capital parado ─────────────────────────────────────────────
+# Answers a different question than `/dead-stock` above: not "did depletion
+# fall short of what the forecast expected" (which needs a session and a
+# model), but "how long has the stock level itself gone without falling, and
+# how much money is that" — from `inventory_snapshots` alone. See
+# `backend/inventory/dead_capital.py`'s module docstring.
+
+@router.get("/dead-capital")
+def dead_capital(
+    window_days: int = Query(
+        default=dead_capital_svc.DEFAULT_WINDOW_DAYS, ge=7, le=365,
+        description="Minimum days without a stock decrease to count as not moving"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Every SKU on hand whose stock level has not fallen in at least
+    `window_days`, ranked worst first by money, with the tenant's total at the
+    top. Needs no session — it reads real stock-level history, not a forecast.
+    """
+    session_id = planning_service.resolve_active_session(user.tenant_id)
+    result = dead_capital_svc.get_dead_capital(
+        user.tenant_id, window_days=window_days, session_id=session_id)
+    return ok(result)
+
+
+# ── Supplier cost inflation / Margin erosion ─────────────────────────────────
+# stability.md #20, items 5-6: both read `inventory_po_items.unit_cost` (a
+# price history nobody realised the product already had) crossed either with
+# itself (inflation) or with `inventory_stock.sale_price` (erosion). Neither
+# needs a session or a new table — see `cost_alerts.py`'s module docstring
+# for the honesty constraints this pair is built under.
+
+@router.get("/supplier-cost-inflation")
+def supplier_cost_inflation(
+    window_days: int = Query(
+        default=cost_alerts_svc.DEFAULT_WINDOW_DAYS, ge=30, le=1095,
+        description="How far back to look for received-order cost observations"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Suppliers who raised a SKU's cost at least once in the window, worst
+    first, with the products each one hit hardest. Built only from POs that
+    were actually received — a quoted or rejected order proves nothing was
+    paid.
+    """
+    result = cost_alerts_svc.get_supplier_cost_inflation(user.tenant_id, window_days=window_days)
+    return ok(result)
+
+
+@router.get("/margin-erosion")
+def margin_erosion(
+    window_days: int = Query(
+        default=cost_alerts_svc.DEFAULT_WINDOW_DAYS, ge=30, le=1095,
+        description="How far back to look for received-order cost observations"),
+    min_erosion_pts: float = Query(
+        default=cost_alerts_svc.DEFAULT_MIN_EROSION_PTS, ge=0, le=100,
+        description="Minimum margin drop, in percentage points, to be listed"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    SKUs whose margin eroded because their cost rose while the product's
+    sale_price is the only price StockAI has ever stored. `price_history_available:
+    false` in the response is load-bearing: the "before" margin is today's
+    price against a past cost, not a historical fact — see
+    `cost_alerts.get_margin_erosion`'s docstring.
+    """
+    result = cost_alerts_svc.get_margin_erosion(
+        user.tenant_id, window_days=window_days, min_erosion_pts=min_erosion_pts)
+    return ok(result)
+
+
+# ── The forecast in money ──────────────────────────────────────────────────
+# stability.md #20 item 1: the engine predicts units, the product knows
+# price and cost per SKU, nobody had multiplied them. See
+# `forecast_money.py`'s module docstring for the honesty constraints.
+
+@router.get("/forecast-money")
+def forecast_money(
+    session_id: Optional[str] = Query(
+        default=None,
+        description="Completed forecast session; defaults to the tenant's active-period session"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Projected revenue, cost and gross margin over the active session's
+    forecast horizon, per SKU and in total, ranked so the top contributors
+    are visible — "your next N days: X in sales, Y in margin, and these
+    products carry it."
+    """
+    if not session_id:
+        session_id = planning_service.resolve_active_session(user.tenant_id)
+        if not session_id:
+            raise AppError(
+                "no_completed_session",
+                "No completed session for this tenant yet",
+                status_code=400,
+            )
+
+    result = forecast_money_svc.get_forecast_money(user.tenant_id, session_id)
+    return ok(result)
 
 
 # ── Export PO as CSV ───────────────────────────────────────────────────────────

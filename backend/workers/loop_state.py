@@ -38,10 +38,9 @@ log = logging.getLogger(__name__)
 # Loop names. Declared here rather than spelled at each call site so a typo
 # cannot quietly create a second, permanently-empty row.
 INVENTORY_ALERTS = "inventory_alerts"
-INTEGRATION_SYNC = "integration_sync"
 MONTHLY_OVERSTOCK = "monthly_overstock"
 
-LOOPS = (INVENTORY_ALERTS, INTEGRATION_SYNC, MONTHLY_OVERSTOCK)
+LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK)
 
 # How late a missed boundary may still be run.
 #

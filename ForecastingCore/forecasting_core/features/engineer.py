@@ -96,7 +96,24 @@ class FeatureEngineer:
             # value is not a training example, it is a gap.
             return df.dropna(subset=[self.target]) if self.target in df.columns else df
 
-        subset = [c for c in generated if c not in all_nan]
+        # `pct_change_*` (see `_lags`) divides by the PREVIOUS value, and on an
+        # intermittent series that previous value is zero most of the time —
+        # every such row computes to inf, gets replaced with NaN two lines up,
+        # and used to force the row itself out of `subset` below. That is not
+        # a warm-up gap (the window IS full; the ratio is simply undefined),
+        # and dropping the row over it throws away a real, usable training
+        # example for exactly the SKUs with the fewest of them to spare.
+        # Measured on a 12-SKU, 400-day synthetic intermittent catalogue
+        # (~75% zero-buckets): `diffs=[1]` alone took 400 rows to ~30, an
+        # 85%+ loss that fed the champion trainer 85% less history than the
+        # series actually has (stability.md 17b — the point forecast on this
+        # stratum posts a WAPE of 1.36, worse than useless).
+        # `pct_change_*` stays as a COLUMN (LightGBM/XGBoost route missing
+        # values natively — see this method's own docstring) but is excluded
+        # from the set that can force a row out, exactly like an all-NaN
+        # column already is two blocks up.
+        pct_change_cols = [c for c in generated if c.startswith("pct_change_")]
+        subset = [c for c in generated if c not in all_nan and c not in pct_change_cols]
         if self.target in df.columns:
             subset.append(self.target)
         df = df.dropna(subset=subset) if subset else df

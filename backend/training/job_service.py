@@ -90,3 +90,20 @@ def count_active_jobs_for_tenant(tenant_id: str) -> int:
         (tenant_id,),
     )
     return row["cnt"] if row else 0
+
+
+def has_in_flight_job(tenant_id: str, session_id: str) -> bool:
+    """True while a worker is going to write to this session.
+
+    The session row does NOT answer this. `runner.py` only ever calls
+    `force_status` with COMPLETED or FAILED, so a session that is training
+    right now still reads QUEUED — the state machine's RUNNING state is
+    reachable only by a test that writes it by hand. Anything that must refuse
+    while training is in progress has to ask the job.
+    """
+    row = query_one(
+        "SELECT 1 AS hit FROM jobs WHERE tenant_id = %s AND session_id = %s "
+        "AND status IN ('QUEUED', 'RUNNING') LIMIT 1",
+        (tenant_id, session_id),
+    )
+    return row is not None

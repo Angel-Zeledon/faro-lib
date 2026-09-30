@@ -249,7 +249,7 @@ class TestForgotPasswordIsNotAnEnumerationOracle:
 
     def test_unknown_address_issues_no_code_and_looks_identical(self, client, registered_user):
         tenant_id = registered_user["tenant"]["id"]
-        ghost = f"ghost-{uuid4().hex}@faro-e2e.io"
+        ghost = f"ghost-{uuid4().hex}@stockai-e2e.io"
 
         ghost_resp = client.post("/api/v1/auth/forgot-password", json={"email": ghost})
         assert ghost_resp.status_code == 200
@@ -448,7 +448,7 @@ class TestTenantIsolation:
         original_name = query_one("SELECT name FROM sessions WHERE id = %s", (sid,))["name"]
 
         t2 = create_tenant(f"isolated-{uuid4().hex[:8]}")
-        email2 = f"iso-{uuid4().hex[:8]}@faro-e2e.io"
+        email2 = f"iso-{uuid4().hex[:8]}@stockai-e2e.io"
         u2 = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin")
         user_svc.mark_verified(t2["id"], u2["id"])
         try:
@@ -793,7 +793,7 @@ class TestInputValidation:
         assert row["validation_cfg"]["train_ratio"] == 0.75
 
     def test_signup_missing_required_fields_creates_no_user(self, client):
-        email = f"partial-{uuid4().hex[:8]}@faro-e2e.io"
+        email = f"partial-{uuid4().hex[:8]}@stockai-e2e.io"
         resp = client.post("/api/v1/auth/signup", json={"email": email})
         assert resp.status_code == 422
         assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
@@ -921,17 +921,53 @@ class TestInputValidation:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestSessionStateEdgeCases:
-    def test_cannot_delete_running_session(self, client, auth_headers, test_tenant):
-        from backend.sessions.service import create_session, force_status
+    @pytest.mark.parametrize("job_status", ["QUEUED", "RUNNING"])
+    def test_cannot_delete_session_with_a_job_in_flight(
+        self, job_status, client, auth_headers, test_tenant,
+    ):
+        """The shape the real flow produces, which is NOT session=RUNNING.
 
-        s = create_session(test_tenant["id"], "usr_test", "running-session")
-        force_status(test_tenant["id"], s["id"], "RUNNING")
+        `runner.py` writes only COMPLETED or FAILED back onto the session, so a
+        session whose worker is training right now reads QUEUED. Forcing the
+        session to RUNNING — which is what this test used to do — builds a
+        state no worker ever creates, and the delete guard passed against it
+        while a real training run could be deleted out from under its worker.
+        """
+        from backend.sessions.service import create_session
+        from backend.training import job_service
+
+        s = create_session(test_tenant["id"], "usr_test", f"in-flight-{job_status}")
+        job = job_service.create_job(test_tenant["id"], s["id"], "usr_test")
+        if job_status == "RUNNING":
+            job_service.mark_running(test_tenant["id"], job["id"], "worker-test")
+        # The session is left exactly where the real flow leaves it.
+        assert query_one(
+            "SELECT status FROM sessions WHERE id = %s", (s["id"],)
+        )["status"] != "RUNNING"
+
         resp = client.delete(f"/api/v1/sessions/{s['id']}", headers=auth_headers)
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "session_running_cannot_delete"
-        row = query_one("SELECT status FROM sessions WHERE id = %s", (s["id"],))
-        assert row is not None, "the 409 was returned and the running session was deleted anyway"
-        assert row["status"] == "RUNNING"
+        assert query_one("SELECT status FROM sessions WHERE id = %s", (s["id"],)) is not None, \
+            "the 409 was returned and the training session was deleted anyway"
+        assert query_one(
+            "SELECT status FROM jobs WHERE id = %s", (job["id"],)
+        ) is not None, "the delete cascaded the in-flight job away"
+
+    def test_can_delete_a_session_whose_job_is_finished(
+        self, client, auth_headers, test_tenant,
+    ):
+        """The guard must not become a door that never opens."""
+        from backend.sessions.service import create_session
+        from backend.training import job_service
+
+        s = create_session(test_tenant["id"], "usr_test", "finished-job")
+        job = job_service.create_job(test_tenant["id"], s["id"], "usr_test")
+        job_service.mark_failed(test_tenant["id"], job["id"], "boom")
+
+        resp = client.delete(f"/api/v1/sessions/{s['id']}", headers=auth_headers)
+        assert resp.status_code == 204
+        assert query_one("SELECT id FROM sessions WHERE id = %s", (s["id"],)) is None
 
     def test_cannot_start_training_on_running_session(self, client, auth_headers, test_tenant):
         from backend.sessions.service import create_session, force_status

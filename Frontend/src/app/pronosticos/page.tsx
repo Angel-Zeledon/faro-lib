@@ -182,6 +182,17 @@ function fmtK(n: number | null | undefined) {
   return n.toFixed(1)
 }
 
+/** Same Alta/Media/Baja read of `quality_score` everywhere it appears —
+ *  the SKU list pill and the Forecast tab's default stat tile — so the two
+ *  never drift into disagreeing about the same SKU. */
+function reliabilityInfo(qs: number, t: Translate): { label: string; color: string } {
+  return qs >= 0.7
+    ? { label: t('skus.reliability_high'),   color: '#22c55e' }
+    : qs >= 0.45
+    ? { label: t('skus.reliability_medium'), color: '#f59e0b' }
+    : { label: t('skus.reliability_low'),    color: '#ef4444' }
+}
+
 // ── CSV Export ────────────────────────────────────────────────────────────────
 
 function downloadCSV(filename: string, headers: string[], rows: (string | number | null)[][]) {
@@ -420,19 +431,6 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
   tourAnchor?: string
 }) {
   const { t } = useLanguage()
-  // The MAE of the model this SKU is BOUGHT from — the same champion the stats
-  // strip and the semáforo obey. This used to be the lowest MAE of any row,
-  // baselines included, so the card advertised an accuracy nobody was using:
-  // on a real SKU it read "MAE 8.61" (Modelo 9) while the orders came from a
-  // model scoring 10.04, and a baseline sat 0.1 away from taking the headline —
-  // the very rows the rest of the code excludes because they exist to be beaten.
-  const rankOf = makeChampionRank(metrics)
-  const best = metrics.filter(r => r.type !== 'baseline').reduce<MetricRow | null>((b, r) => {
-    const value = rankOf(r)
-    if (value === null || value === undefined) return b
-    const current = b === null ? null : rankOf(b)
-    return current === null || current === undefined || value < current ? r : b
-  }, null)
   const seriesType = quality?.series_type ?? 'unknown'
   const color = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
   const sparkVals = metrics.map(r => r.mae).filter((v): v is number => v !== null)
@@ -473,23 +471,15 @@ function SkuCard({ sku, quality, metrics, signal, selected, onClick, tourAnchor 
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, fontWeight: 500, color, background: color + '18', borderRadius: 4, padding: '1px 5px' }}>
-          {seriesTypeLabel(t, seriesType)}
-        </span>
-        {best?.mae !== null && best && (
-          <span style={{ fontSize: 10, color: 'var(--dim)' }}>MAE {fmt(best.mae)}</span>
-        )}
         {quality && (() => {
-          const qs = quality.quality_score
-          const reliabilityLabel = qs >= 0.7 ? t('skus.reliability_high') : qs >= 0.45 ? t('skus.reliability_medium') : t('skus.reliability_low')
-          const reliabilityColor = qs >= 0.7 ? '#22c55e' : qs >= 0.45 ? '#f59e0b' : '#ef4444'
+          const { label, color } = reliabilityInfo(quality.quality_score, t)
           return (
             <span style={{
               fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10,
-              background: reliabilityColor + '18', color: reliabilityColor,
+              background: color + '18', color,
               marginLeft: 'auto',
             }}>
-              {reliabilityLabel}
+              {label}
             </span>
           )
         })()}
@@ -534,7 +524,14 @@ function ChipGroup<T extends string>({ options, value, onChange, label, tourAnch
 
 // ── Stats strip ───────────────────────────────────────────────────────────────
 
-function StatsStrip({ data }: { data: SkuIntelligenceData }) {
+function StatsStrip({ data, quality, showTechnical }: {
+  data: SkuIntelligenceData
+  // Missing in compare mode's second (B) panel — that session's quality
+  // report is never fetched, so the tile degrades to '—' there rather than
+  // being wired up to fetch a report this view doesn't otherwise need.
+  quality?: QualityReport[string]
+  showTechnical: boolean
+}) {
   const { t } = useLanguage()
   const { stats, metrics, historical, forecast } = data
   // The model this SKU's orders are actually computed from — see makeChampionRank.
@@ -548,11 +545,22 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
     return current === null || current === undefined || value < current ? r : b
   }, null)
 
-  const items = [
+  const likelyRange = stats?.min != null && stats?.max != null
+    ? `${fmtK(stats.min)}–${fmtK(stats.max)}`
+    : '—'
+  const reliability = quality ? reliabilityInfo(quality.quality_score, t) : null
+
+  // What a buyer acts on: what it usually sells, the range it moves in, and
+  // whether to trust the curve — always on screen.
+  const primaryItems = [
     { label: t('skus.stat_avg_sales'), value: fmtK(stats?.mean) },
+    { label: t('skus.stat_likely_range'), value: likelyRange },
+    { label: t('skus.stat_reliability'), value: reliability?.label ?? '—', color: reliability?.color },
+  ]
+
+  // An analyst's instrument panel — behind the technical-detail toggle.
+  const technicalItems = [
     { label: t('skus.stat_variability'), value: fmtK(stats?.std) },
-    { label: t('skus.stat_min'), value: fmtK(stats?.min) },
-    { label: t('skus.stat_max'), value: fmtK(stats?.max) },
     { label: t('skus.stat_historical_points'), value: historical.length.toString() },
     { label: t('skus.stat_forecast_steps'), value: forecast.length.toString() },
     // NOT "best WAPE", which is what this tile claimed while showing the WAPE
@@ -565,7 +573,7 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
     { label: t('skus.stat_best_model'), value: modelLabel(t, bestMetric?.model) },
   ]
 
-  return (
+  const row = (items: { label: string; value: string; color?: string }[]) => (
     <div style={{
       display: 'flex', gap: 0,
       borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
@@ -576,11 +584,18 @@ function StatsStrip({ data }: { data: SkuIntelligenceData }) {
           flex: 1, padding: '7px 10px', textAlign: 'center',
           borderRight: i < items.length - 1 ? '1px solid var(--border)' : undefined,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--fg)', lineHeight: 1.2 }}>{item.value}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: item.color ?? 'var(--fg)', lineHeight: 1.2 }}>{item.value}</div>
           <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{item.label}</div>
         </div>
       ))}
     </div>
+  )
+
+  return (
+    <>
+      {row(primaryItems)}
+      {showTechnical && row(technicalItems)}
+    </>
   )
 }
 
@@ -1030,11 +1045,17 @@ function buildChartOption(
 
 // ── Main chart panel ──────────────────────────────────────────────────────────
 
-function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
+function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTechnical }: {
   sessionId: string; sku: string; isDark: boolean
   /** Set on the single-session panel only — in compare mode two of these are
    *  on screen, and a tour anchor has to be unique in the DOM. */
   tourAnchor?: string
+  /** Drives the "how much to trust it" tile. Absent for compare mode's B
+   *  panel — that session's quality report isn't fetched. */
+  quality?: QualityReport[string]
+  /** The analyst's-instrument-panel disclosure: the rest of the stat tiles
+   *  and the model-selection chips. Off by default — see StatsStrip. */
+  showTechnical: boolean
 }) {
   const { t } = useLanguage()
   const [data,        setData]        = useState<SkuIntelligenceData | null>(null)
@@ -1396,8 +1417,10 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
         <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
 
         {/* Model selection — multi-select chips; each selected model renders
-            its own colored series on the same axis. */}
-        {data.available_models.length > 1 && (
+            its own colored series on the same axis. Behind the technical
+            toggle: which model produced the curve is not a buyer decision,
+            and the champion is already selected by default. */}
+        {showTechnical && data.available_models.length > 1 && (
           <div data-tour={tourAnchor ? 'skus.models' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('skus.model_label')}</span>
             <div style={{ display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 8, padding: 3, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
@@ -1514,7 +1537,7 @@ function ChartPanel({ sessionId, sku, isDark, tourAnchor }: {
       </div>
 
       {/* Stats strip */}
-      <StatsStrip data={data} />
+      <StatsStrip data={data} quality={quality} showTechnical={showTechnical} />
 
       {/* Chart */}
       <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={{ flex: 1, minHeight: 300, padding: '8px 0 0' }}>
@@ -2726,9 +2749,9 @@ function PanelPlaceholder({ message }: { message: string }) {
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-function TabBar({ tabs, active, onChange, labelFor, tourAnchor }: { tabs: string[]; active: string; onChange: (tab: string) => void; labelFor?: (tab: string) => string; tourAnchor?: string }) {
+function TabBar({ tabs, active, onChange, labelFor, tourAnchor, trailing }: { tabs: string[]; active: string; onChange: (tab: string) => void; labelFor?: (tab: string) => string; tourAnchor?: string; trailing?: React.ReactNode }) {
   return (
-    <div data-tour={tourAnchor} style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', padding: '0 16px', background: 'var(--surface)' }}>
+    <div data-tour={tourAnchor} style={{ display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid var(--border)', padding: '0 16px', background: 'var(--surface)' }}>
       {tabs.map(tabKey => (
         <button
           key={tabKey}
@@ -2744,6 +2767,7 @@ function TabBar({ tabs, active, onChange, labelFor, tourAnchor }: { tabs: string
           {labelFor ? labelFor(tabKey) : tabKey}
         </button>
       ))}
+      {trailing && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>{trailing}</div>}
     </div>
   )
 }
@@ -2780,6 +2804,19 @@ export default function SkusPage() {
   const [loadError,      setLoadError]      = useState<string | null>(null)
   const [isDark,         setIsDark]         = useState(true)
   const [showSkuStats,   setShowSkuStats]   = useState(false)
+  // The analyst's-instrument-panel disclosure for the whole SKU detail panel:
+  // off by default hides the rest of the Forecast tab's stat tiles, the
+  // model-selection chips, and the Metrics/Quality tabs themselves — see
+  // StatsStrip and the TabBar call below. Not persisted: this screen doesn't
+  // remember any of its other view toggles (showSkuStats, chartType,
+  // compareMode, …) across visits either.
+  const [showTechnical,  setShowTechnical]  = useState(false)
+  // Metrics/Quality only exist as tabs while the technical detail is shown —
+  // hiding it while one of them is active would otherwise leave `tab` pointing
+  // at a tab no longer in the TabBar.
+  useEffect(() => {
+    if (!showTechnical && (tab === 'Metrics' || tab === 'Quality')) setTab('Forecast')
+  }, [showTechnical, tab])
   // Compare mode
   const [compareMode,    setCompareMode]    = useState(false)
   const [cmpSessionId,   setCmpSessionId]   = useState<string | null>(null)
@@ -3180,7 +3217,7 @@ export default function SkusPage() {
           hidden` clipped the chart away. Measured: a 300px canvas alive inside
           a container measuring 0, on a page where the user could find no graph
           at all. The floor is the chart (300) plus its toolbar and stats strip,
-          so the more Faro has to say about the data the more the page scrolls —
+          so the more StockAI has to say about the data the more the page scrolls —
           instead of the graph silently disappearing. */}
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, flex: 1, minHeight: 640 }}>
 
@@ -3300,7 +3337,12 @@ export default function SkusPage() {
 
               <TabBar
                 tourAnchor="skus.tabs"
-                tabs={['Forecast', 'Pattern', 'Metrics', 'Quality', 'Inventory']}
+                // Metrics and Quality are an analyst's tabs, not a buyer's —
+                // they exist only once the technical detail is switched on,
+                // same as the rest of the Forecast tab's stat tiles below.
+                tabs={showTechnical
+                  ? ['Forecast', 'Pattern', 'Metrics', 'Quality', 'Inventory']
+                  : ['Forecast', 'Pattern', 'Inventory']}
                 active={tab}
                 onChange={setTab}
                 labelFor={tabKey => ({
@@ -3310,6 +3352,23 @@ export default function SkusPage() {
                   Quality: t('skus.tab_quality'),
                   Inventory: t('skus.tab_inventory'),
                 }[tabKey] ?? tabKey)}
+                trailing={
+                  <button
+                    onClick={() => setShowTechnical(v => !v)}
+                    title={showTechnical ? t('skus.technical_hide') : t('skus.technical_show')}
+                    style={{
+                      all: 'unset', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '4px 10px', borderRadius: 7, fontSize: 11,
+                      border: `1px solid ${showTechnical ? 'var(--accent)' : 'var(--border)'}`,
+                      color: showTechnical ? 'var(--accent)' : 'var(--dim)',
+                      background: showTechnical ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'var(--surface)',
+                    }}
+                  >
+                    <span style={{ fontSize: 9 }}>{showTechnical ? '▲' : '▼'}</span>
+                    {showTechnical ? t('skus.technical_hide') : t('skus.technical_show')}
+                  </button>
+                }
               />
 
               <div style={{ flex: 1, overflow: tab === 'Forecast' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -3326,7 +3385,7 @@ export default function SkusPage() {
                         }}>
                           A · {sessions.find(s => s.session_id === sessionId)?.name ?? sessionId}
                         </div>
-                        <ChartPanel key={`${sessionId}-${selectedSku}`} sessionId={sessionId} sku={selectedSku} isDark={isDark} />
+                        <ChartPanel key={`${sessionId}-${selectedSku}`} sessionId={sessionId} sku={selectedSku} isDark={isDark} quality={skuQuality} showTechnical={showTechnical} />
                       </div>
                       {/* Bottom: compare session */}
                       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
@@ -3337,11 +3396,13 @@ export default function SkusPage() {
                         }}>
                           B · {sessions.find(s => s.session_id === cmpSessionId)?.name ?? cmpSessionId}
                         </div>
-                        <ChartPanel key={`${cmpSessionId}-${cmpSku}`} sessionId={cmpSessionId} sku={cmpSku} isDark={isDark} />
+                        {/* No quality prop: the compare session's quality report
+                            isn't fetched — the reliability tile degrades to '—'. */}
+                        <ChartPanel key={`${cmpSessionId}-${cmpSku}`} sessionId={cmpSessionId} sku={cmpSku} isDark={isDark} showTechnical={showTechnical} />
                       </div>
                     </div>
                   ) : (
-                    <ChartPanel key={`${sessionId}-${selectedSku}`} tourAnchor="skus.chart" sessionId={sessionId} sku={selectedSku} isDark={isDark} />
+                    <ChartPanel key={`${sessionId}-${selectedSku}`} tourAnchor="skus.chart" sessionId={sessionId} sku={selectedSku} isDark={isDark} quality={skuQuality} showTechnical={showTechnical} />
                   )
                 )}
                 {tab === 'Pattern' && sessionId && (

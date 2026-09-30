@@ -1,14 +1,15 @@
-# Faro's public API
+# StockAI's public API
 
 ## In short
 
-Faro does not want to be the system your inventory lives in. It wants to be the
+StockAI does not want to be the system your inventory lives in. It wants to be the
 layer that decides **what to buy** on top of the system you already have. This
 API is that seam: your ERP pushes what it already knows and takes the decision
 away, without anybody opening the application.
 
 Six calls, in the order the work happens (the full list is eight — the other two
-are further down):
+are further down; there is also an **MCP endpoint** for AI clients, at the end of
+this page):
 
 ```
 0. GET  /planning                      which session am I looking at  ← start here
@@ -55,11 +56,11 @@ three you will meet while integrating:
 For the first two, branch on the **HTTP status**, which is stable.
 
 The fifth call is not optional even though it looks it: without it the order
-does not exist as far as Faro is concerned, and it is where the learning of each
+does not exist as far as StockAI is concerned, and it is where the learning of each
 supplier's real lead time comes from. It is the call that makes the next
 forecast better than this one.
 
-The second one usually **is** unnecessary. If the session has a schedule, Faro
+The second one usually **is** unnecessary. If the session has a schedule, StockAI
 retrains by itself once the file has changed: uploading the export at night and
 doing nothing else is the simplest integration that works.
 
@@ -68,6 +69,8 @@ doing nothing else is the simplest integration that works.
 **Limit:** 120 calls per minute per key, the same for everyone. Over it: `429`
 with `Retry-After`.
 **Included:** always. There is no tier that leaves it out.
+**For an AI client:** the same key also works at `POST /api/v1/mcp` — see
+"Connecting an AI client" below.
 
 ## Where to get your key
 
@@ -172,7 +175,7 @@ GET /api/v1/planning
 `active_session_id` is what goes in the calls that follow. **Do not hard-code it
 in your configuration**: it changes when a new run trains, and it is precisely
 the one the application is showing on screen. Asking for it every time is what
-keeps your integration and the person looking at Faro seeing the same thing.
+keeps your integration and the person looking at StockAI seeing the same thing.
 
 `period` and `horizon` tell you at which granularity and over how many periods
 what you read next was computed.
@@ -219,7 +222,7 @@ seconds until one of the last two.
 ```
 
 **Most of the time you do not need to call them.** If the session has a schedule
-— Automatización → schedule — Faro retrains by itself once the file has changed.
+— Automatización → schedule — StockAI retrains by itself once the file has changed.
 Uploading the export at night and letting the schedule do the rest is the
 simplest integration that works, and it needs neither of these two calls.
 
@@ -257,7 +260,7 @@ From most yours to most ours:
 
 | Value | What it means |
 |---|---|
-| `user` | You typed it into Faro |
+| `user` | You typed it into StockAI |
 | `file` | It came in your own file |
 | `supplier_rule` | It comes from a supplier rule you configured |
 | `learned` | We learned it from your receptions. **Only appears in `lead_time_source`** |
@@ -294,7 +297,7 @@ POST /api/v1/inventory/log-po?session_id={id}
 ```
 
 Records that the order went out. **Without this call the order does not exist
-for Faro**: reception is checked against it, and each supplier's real lead time
+for StockAI**: reception is checked against it, and each supplier's real lead time
 is learned from it. It is what makes the next forecast better than this one.
 
 Send what the buyer decided per line, including the rejected ones — that is the
@@ -318,7 +321,7 @@ This is the entire nightly cron. There is nothing else to do.
 #!/usr/bin/env bash
 set -euo pipefail
 API=https://your-instance/api/v1
-KEY=$FARO_API_KEY          # from your secret manager, not from the repository
+KEY=$STOCKAI_API_KEY          # from your secret manager, not from the repository
 
 # 0. The session the app is looking at. Asked for every time, never hard-coded.
 SESSION=$(curl -sf "$API/planning" -H "Authorization: Bearer $KEY" \
@@ -329,7 +332,7 @@ SESSION=$(curl -sf "$API/planning" -H "Authorization: Bearer $KEY" \
 curl -sf -X POST "$API/data-sources/$SOURCE_ID/file" \
      -H "Authorization: Bearer $KEY" -F "file=@/exports/sales.csv"
 
-# 2. If the session has a schedule, skip this: Faro retrains by itself.
+# 2. If the session has a schedule, skip this: StockAI retrains by itself.
 curl -sf -X POST "$API/sessions/$SESSION/train" \
      -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{}'
 # Wait for QUEUED *and* RUNNING. Right after posting the state is QUEUED, so a
@@ -349,7 +352,7 @@ curl -sf "$API/inventory/status?session_id=$SESSION" \
         | {sku, recommended_qty, lead_time_source, unit_cost_source}'
 
 # 4. And when you issue the order, tell us. Without this the order does not
-#    exist for Faro and your suppliers' real lead times are never learned.
+#    exist for StockAI and your suppliers' real lead times are never learned.
 curl -sf -X POST "$API/inventory/log-po?session_id=$SESSION" \
      -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
      -d '{"items":[{"sku":"ABC-1","recommended_qty":120,"final_qty":100,
@@ -359,7 +362,7 @@ curl -sf -X POST "$API/inventory/log-po?session_id=$SESSION" \
 Two things this script does on purpose and worth copying: it asks for the
 `session_id` on every run instead of fixing it, and it sends a `final_qty`
 different from `recommended_qty` when the buyer adjusts — that is what measures
-whether Faro is helping.
+whether StockAI is helping.
 
 ## Errors
 
@@ -372,6 +375,57 @@ whether Faro is helping.
 
 Errors carry a stable `error_code` alongside the message. Branch on the code,
 not the text: the text is written for people and gets rewritten.
+
+## Connecting an AI client (MCP)
+
+Everything above is for a system that runs on a schedule. If what you want is to
+**ask** — "what should I buy today?" — the same key opens an MCP endpoint:
+
+```
+URL      https://<your-instance>/api/v1/mcp
+Header   Authorization: Bearer sk_live_…
+```
+
+Five tools, all of them reads: `get_planning_context`, `get_morning_briefing`,
+`get_inventory_status`, `list_data_sources`, `get_training_status`. A
+**read-only** key is enough for all five.
+
+**Nothing there writes, and that is deliberate.** An AI client cannot render
+StockAI's confirmation card and cannot hold an undo token, so it is given nothing
+that would need one — `log-po` in particular is irreversible (there is no "void
+an order" anywhere in the product). Uploading, training and logging orders stay
+on the REST calls above, where a person triggers them. A key with `analyst` role
+changes nothing about this: the catalogue is the ceiling, not the role.
+
+Two behaviours worth knowing, because they differ from the REST endpoints on
+purpose:
+
+- **`get_inventory_status` is capped and ordered by urgency.** The REST
+  `/inventory/status` returns every product; an answer a model has to read
+  cannot. It returns the most urgent rows first, sets `truncated`, reports
+  `total_matching_items` — and the `summary` counts **all** of them, not the
+  page. Filter with `signal` or `supplier` rather than raising `limit`.
+- **A refusal comes back as a tool error the model can read**, not as a
+  transport failure it never sees. "No completed session for this tenant yet"
+  arrives as text with its `error_code`, so the assistant can say what to do.
+- **An empty answer says which kind of empty it is.** If a filter matched
+  nothing the response carries `empty_reason`; an unknown `signal` is refused
+  with the valid ones named. Over REST an empty array is fine — a script author
+  reads it and checks their spelling. A model reads it and tells somebody their
+  stock is fine.
+
+The server is stateless: no session to establish, nothing to keep alive. It
+speaks the Streamable HTTP transport, answers `GET` with `405` (there is nothing
+to stream), and accepts protocol revisions `2024-11-05` through `2025-11-25`.
+
+For Claude Desktop and other clients that speak stdio instead of HTTP, copy
+[`mcp_server/stockai_mcp.py`](../mcp_server/stockai_mcp.py) — standard library only,
+no install — and set `STOCKAI_URL` and `STOCKAI_API_KEY`.
+[`mcp_server/README.md`](../mcp_server/README.md) has the configuration block
+and the troubleshooting table.
+
+The same 120-per-minute ceiling applies; it is the same limiter, not a second
+one to forget about.
 
 ## What is not there yet
 
@@ -390,7 +444,7 @@ No second project and no second codebase: it is **the same image with different
 configuration**.
 
 ```bash
-PUBLIC_API_ONLY=true      # only the 8 public routes + /health
+PUBLIC_API_ONLY=true      # only the 10 public routes + /health
 WORKER_ENABLED=false      # does not claim training jobs
 SCHEDULER_ENABLED=false   # runs no crons — exactly ONE instance may have this
                           # true, or the daily emails go out twice
@@ -399,13 +453,14 @@ SCHEDULER_ENABLED=false   # runs no crons — exactly ONE instance may have this
 Started that way, the instance says so in its own log:
 
 ```
-PUBLIC_API_ONLY: serving 13 of 269 routes (8 public endpoints + health)
+PUBLIC_API_ONLY: serving 15 of 277 routes (10 public endpoints + health)
 Worker components: none (API-only instance)
 ```
 
 **What it buys.** The promise stops being a list somebody has to respect and
 becomes a wall: on that host the internal routes answer **404, not 403** — they
-do not exist. An integrator cannot reach an internal endpoint even by guessing,
+do not exist. The MCP endpoint is on the list, so an instance started this way
+still serves AI clients. An integrator cannot reach an internal endpoint even by guessing,
 and an endpoint written for a screen cannot receive machine traffic by accident.
 The customer's integration also stops competing for CPU with the application,
 and a UI deploy does not restart their connection.
@@ -460,3 +515,19 @@ next does not).
 **`PUBLIC_API_ONLY` mode, live.** Instance brought up with the flag: the public
 routes answer 200 and the internal ones — `/auth/login`, `/users`, `/tenant`,
 `/api-keys`, `/messages` — answer **404**. They are not mounted.
+
+**The MCP endpoint, 2026-09-20.** 53 tests cover the handshake, version
+negotiation, the read-only wall, truncation honesty, tenant scoping with a key
+from another tenant, the shared rate limiter and malformed frames. Beyond the
+tests — 42 on the endpoint and 11 driving the stdio adapter as a subprocess
+against a real socket — the adapter was also driven against a running server the
+way Claude Desktop drives it — a real signup, a real read-only key, `initialize` →
+`notifications/initialized` → `tools/list` → two `tools/call`s — and then the
+two failure paths a customer meets first: a wrong key and an unreachable
+instance, both of which must produce a readable frame rather than a client that
+hangs. `PUBLIC_API_ONLY` was brought up again to confirm MCP survives the
+pruning: **15 of 277 routes**, which is where the figure above comes from.
+
+What was **not** exercised against a real client: no commercial MCP client was
+pointed at the endpoint. The protocol shape is checked against the 2025-11-25
+specification and by the frame-level tests, not by Claude Desktop connecting.

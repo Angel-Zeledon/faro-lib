@@ -64,7 +64,7 @@ def _system_prompt() -> str:
     # English prompt, Spanish answer: WhatsApp is a Spanish-only channel for this
     # product, and the free-text `reply` goes straight to the user's phone.
     lines = [
-        "You are Faro's inventory assistant on WhatsApp. Decide which tool to "
+        "You are StockAI's inventory assistant on WhatsApp. Decide which tool to "
         "use to answer the user. Reply with ONLY a JSON object, no other text.",
         'Format: {"tool": <name|null>, "args": {...}, "reply": <text|null>}.',
         "If no tool applies, use tool=null and write a short answer in 'reply'.",

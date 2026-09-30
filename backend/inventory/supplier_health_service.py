@@ -3,7 +3,7 @@ Supplier health: contact-data completeness (feature 2.5) and lead-time
 deviation detection (feature 3.3).
 
 Both answer the same underlying question — "which supplier is about to cost
-me something?" — from data Faro already owns:
+me something?" — from data StockAI already owns:
 
   2.5  `POST /inventory/po/{id}/send` silently skips any supplier with no
        email and no whatsapp on file (and any supplier name that has no

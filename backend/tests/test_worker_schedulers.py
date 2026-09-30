@@ -8,15 +8,13 @@ Two defects are pinned here:
    "day is out of range for month" on the 31st, on Feb 28/29 and on the last
    day of every 30-day month. The bare ``except Exception: time.sleep(3600)``
    below it swallowed the crash without logging, so on those days no stockout
-   alert and no supplier lead-time alert went out, the 6:00 UTC integration
-   sync never ran, and nothing said why. These tests inject a frozen "now" —
-   nothing sleeps for real.
+   alert and no supplier lead-time alert went out, and nothing said why. These
+   tests inject a frozen "now" — nothing sleeps for real.
 
 2. A scheduled retrain whose trigger keeps failing was invisible: the error
    went to the log only, and ``next_run`` stayed in the past so the scheduler
    re-attempted every 60 s forever. It is now recorded on the row
-   (``last_error`` / ``last_error_at``), mirroring
-   ``integration_connections.last_error``, and ``next_run`` moves forward.
+   (``last_error`` / ``last_error_at``), and ``next_run`` moves forward.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -118,11 +116,6 @@ class TestDailyLoopsOnMonthEnd:
         instant = datetime(2026, 2, 28, 12, 0, tzinfo=timezone.utc)
         slept = _first_sleep(monkeypatch, worker._inventory_alert_loop, instant)
         assert slept == 20 * 3600  # 12:00 Feb 28 → 08:00 Mar 1
-
-    def test_integration_sync_loop_sleeps_until_next_6am_on_the_31st(self, monkeypatch):
-        instant = datetime(2026, 3, 31, 7, 0, tzinfo=timezone.utc)
-        slept = _first_sleep(monkeypatch, worker._integration_sync_loop, instant)
-        assert slept == 23 * 3600  # 07:00 Mar 31 → 06:00 Apr 1
 
     def test_loop_failure_is_logged_not_swallowed(self, monkeypatch, caplog):
         """The retry branch must say what it caught. It used to be a bare

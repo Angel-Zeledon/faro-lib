@@ -1,5 +1,5 @@
 """
-Rich, repeatable demo seed for a presentation-ready Faro tenant.
+Rich, repeatable demo seed for a presentation-ready StockAI tenant.
 
 Builds ONE coherent demo tenant — login `demo@faro.app` / `demo1234`, email
 pre-verified — with business-consistent data across the whole product:
@@ -46,7 +46,7 @@ log = logging.getLogger("seed_demo")
 DEMO_TENANT_ID = "ten_faro_demo"
 DEMO_EMAIL = "demo@faro.app"
 DEMO_PASSWORD = "demo1234"
-DEMO_FULL_NAME = "Demo Faro"
+DEMO_FULL_NAME = "Demo StockAI"
 DEMO_WHATSAPP = "+50688887777"
 
 WAREHOUSES = [
@@ -190,7 +190,7 @@ def _create_tenant_and_user() -> str:
     execute(
         """INSERT INTO tenants (id, name, slug, status, quota, settings, tier, created_at)
            VALUES (%s, %s, %s, 'active', '{}', '{}', 'paid', NOW())""",
-        (DEMO_TENANT_ID, "Faro Demo", "faro-demo"),
+        (DEMO_TENANT_ID, "StockAI Demo", "faro-demo"),
     )
     user_id = generate_id("usr")
     execute(
@@ -259,7 +259,7 @@ def _register_dataset(tenant_id: str, user_id: str, csv_path: Path) -> str:
            (id, tenant_id, name, original_filename, file_type, file_path,
             size_bytes, row_count, column_count, uploaded_by, uploaded_at)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
-        (dataset_id, tenant_id, "Ventas Demo Faro", "ventas_demo.csv", "csv",
+        (dataset_id, tenant_id, "Ventas Demo StockAI", "ventas_demo.csv", "csv",
          str(dst), dst.stat().st_size, row_count, 4, user_id),
     )
     return dataset_id
@@ -277,10 +277,11 @@ def _train(tenant_id: str, user_id: str, dataset_id: str) -> str:
     from backend.sessions import family_service as fam
     from backend.sessions import service as session_svc
     from backend.sessions.defaults import default_quickstart_configs
+    from backend.training import queue as job_queue
     from backend.training.job_service import list_jobs_for_session
     from backend.workers.runner import run_training_job
 
-    s = session_svc.create_session(tenant_id, user_id, "Demo Faro")
+    s = session_svc.create_session(tenant_id, user_id, "Demo StockAI")
     session_id = s.get("session_id") or s["id"]
     session_svc.attach_dataset(tenant_id, session_id, dataset_id)
     for field, cfg in default_quickstart_configs().items():
@@ -289,16 +290,59 @@ def _train(tenant_id: str, user_id: str, dataset_id: str) -> str:
 
     family = fam.launch_training_family(tenant_id, session_id, user_id)
     members = family["sessions"]
-    log.info("training %d family member(s) synchronously...", len(members))
+
+    # Claim the WHOLE family before training any of it, and claim it the same
+    # atomic way a worker does. `launch_training_family` leaves real QUEUED
+    # rows, and this script is normally run against a live server — `start.sh
+    # --seed` starts the backend and then seeds — so its worker picks those
+    # rows up within milliseconds and trains the same sessions a second time,
+    # in parallel with this process. Both runs then write the same results and
+    # compete for the same cores; the observed cost was a demo seed that took
+    # two to three times as long and a `training_logs` table with every step
+    # recorded twice under one job id. Claiming first is what makes the worker
+    # skip them: `claim()` only ever takes rows still in QUEUED.
+    claimed: list[tuple[str, str, str]] = []
     for m in members:
         sid = m["session_id"]
         jobs = list_jobs_for_session(tenant_id, sid)
         if not jobs:
             continue
         job_id = jobs[0]["id"]
-        log.info("  training %s (%s)...", m["granularity"], sid)
+        if job_queue.claim_specific(job_id, "seed_demo") is None:
+            # The worker got there first. Its run is the real one; duplicating
+            # it here is the exact defect this block exists to prevent.
+            log.info("  %s (%s) already claimed by the live worker — waiting",
+                     m["granularity"], sid)
+            _await_job(tenant_id, job_id)
+            continue
+        claimed.append((m["granularity"], sid, job_id))
+
+    log.info("training %d family member(s) synchronously...", len(claimed))
+    for granularity, sid, job_id in claimed:
+        log.info("  training %s (%s)...", granularity, sid)
         run_training_job(tenant_id, sid, job_id)
     return session_id
+
+
+def _await_job(tenant_id: str, job_id: str, timeout_s: int = 3600) -> None:
+    """Block until a job somebody else owns reaches a terminal state.
+
+    Returning early would let the seed read forecasts that are not written
+    yet, and the stock placement further down depends on them — the semáforo
+    would come out flat and the demo would look broken for a reason nothing
+    on screen explains.
+    """
+    import time as _t
+
+    from backend.training.job_service import get_job
+
+    deadline = _t.time() + timeout_s
+    while _t.time() < deadline:
+        job = get_job(tenant_id, job_id)
+        if not job or job["status"] in ("COMPLETED", "FAILED", "CANCELLED"):
+            return
+        _t.sleep(5)
+    log.warning("job %s did not finish within %ds — continuing anyway", job_id, timeout_s)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -567,7 +611,7 @@ def seed(train: bool = True) -> dict:
         from backend.db import session_store
         from backend.sessions import service as session_svc
         from backend.sessions.defaults import default_quickstart_configs
-        s = session_svc.create_session(DEMO_TENANT_ID, user_id, "Demo Faro")
+        s = session_svc.create_session(DEMO_TENANT_ID, user_id, "Demo StockAI")
         session_id = s.get("session_id") or s["id"]
         session_svc.attach_dataset(DEMO_TENANT_ID, session_id, dataset_id)
         for field, cfg in default_quickstart_configs().items():
@@ -610,7 +654,7 @@ def seed(train: bool = True) -> dict:
 
 
 def _main() -> None:
-    ap = argparse.ArgumentParser(description="Seed a presentation-ready Faro demo tenant.")
+    ap = argparse.ArgumentParser(description="Seed a presentation-ready StockAI demo tenant.")
     ap.add_argument("--no-train", action="store_true", help="Skip real ML training (fast, sparse semáforo)")
     args = ap.parse_args()
     seed(train=not args.no_train)

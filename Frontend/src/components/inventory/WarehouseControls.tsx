@@ -185,7 +185,7 @@ function AddWarehouse({ onCreated, subtle, open, onOpenChange }: {
 
 function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
   // Transfer lanes (PENDIENTES #2): a lane gives a move between two warehouses
-  // a lead time and a cost, which is what lets Faro decide whether moving
+  // a lead time and a cost, which is what lets StockAI decide whether moving
   // stock actually beats buying it. Unconfigured pairs use the backend default
   // (1 day, free) — the empty state says so instead of pretending it's broken.
   const { t } = useLanguage()

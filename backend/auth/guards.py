@@ -225,8 +225,8 @@ require_any = require_role("admin", "analyst", "viewer")
 # ── Email verification ─────────────────────────────────────────────────────
 # An unverified user is NOT locked out: login succeeds and they can explore,
 # upload data and run the demo. Verification is demanded only where an action
-# leaves the tenant — inviting people, wiring an integration, sending a
-# notification — because those are the ones that hurt if the address turns out
+# leaves the tenant — inviting people, sending a notification — because those
+# are the ones that hurt if the address turns out
 # not to belong to whoever signed up. Everything else stays open, so the user
 # sees value before being asked to go dig through their spam folder.
 #

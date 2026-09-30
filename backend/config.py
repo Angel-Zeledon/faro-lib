@@ -135,7 +135,7 @@ class Settings(BaseSettings):
     # Email — Resend is the primary transport when its key is set; SMTP is the
     # fallback. With neither configured, emails are logged but not sent.
     resend_api_key: str = ""
-    email_from: str = "Faro <onboarding@resend.dev>"  # resend.dev works without domain setup
+    email_from: str = "StockAI <onboarding@resend.dev>"  # resend.dev works without domain setup
 
     # SMTP (fallback transport)
     smtp_server: str = "smtp.gmail.com"
@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     # is a refusal, never a silent truncation.
     sql_materialize_max_rows: int = 500_000
     # Public external base URL Twilio POSTs the inbound webhook to (scheme + host,
-    # e.g. "https://app.faro.com"). Twilio computes X-Twilio-Signature over the
+    # e.g. "https://app.stockai.com"). Twilio computes X-Twilio-Signature over the
     # PUBLIC url; behind the frontend proxy / TLS termination the backend sees an
     # internal url (request.url) that will NOT match, so signature validation
     # would always 403. When set, this is the authoritative base for rebuilding
@@ -177,10 +177,9 @@ class Settings(BaseSettings):
     pinecone_environment: str = ""
     pinecone_index: str = ""
 
-    # Accounting integrations (Alegra + Siigo)
+    # Fernet key for every secret `/instalacion` stores. The name is
+    # historical — renaming it would orphan every deployment's stored secrets.
     integrations_secret_key: str = ""
-    alegra_base_url: str = "https://api.alegra.com/api/v1"
-    siigo_base_url: str = "https://api.siigo.com/v1"
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

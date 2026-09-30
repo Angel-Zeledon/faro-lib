@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router
+from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router
 from backend.errors import AppError
 from backend.db.connection import PoolExhausted
 from backend.api.ws.training_progress import router as ws_router
@@ -348,16 +348,21 @@ app.include_router(api_keys.router,        prefix=_PREFIX)
 app.include_router(webhooks.router,        prefix=_PREFIX)
 app.include_router(schedule.router,        prefix=_PREFIX)
 app.include_router(inventory_router.router, prefix=_PREFIX)
+from backend.api.v1 import inventory_recommendation_log as recommendation_log_router  # noqa: E402
+app.include_router(recommendation_log_router.router, prefix=_PREFIX)
+from backend.api.v1 import reception_reversals as reception_reversals_router  # noqa: E402
+app.include_router(reception_reversals_router.router, prefix=_PREFIX)
 app.include_router(scenarios_router.router, prefix=_PREFIX)
 app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)
 app.include_router(entitlements.router,    prefix=_PREFIX)
 from backend.api.v1 import currency as currency_router  # noqa: E402
 app.include_router(currency_router.router, prefix=_PREFIX)
+from backend.api.v1 import mcp as mcp_router  # noqa: E402
+app.include_router(mcp_router.router, prefix=_PREFIX)
 from backend.api.v1 import timezone as timezone_router  # noqa: E402
 app.include_router(timezone_router.router, prefix=_PREFIX)
 app.include_router(tenant_data.router,     prefix=_PREFIX)
-app.include_router(integrations_router.router, prefix=_PREFIX)
 app.include_router(whatsapp_router.router, prefix=_PREFIX)
 app.include_router(freshness_router.router, prefix=_PREFIX)
 app.include_router(alerts_router.router,    prefix=_PREFIX)
@@ -374,8 +379,8 @@ def health():
 
     Two things this used to get wrong, and both cost an afternoon to diagnose:
 
-    * It answered `{"status": "ok"}` while the assistant, the alerts, the RAG
-      analyst and the integrations were all dead for want of a key. "ok" meant
+    * It answered `{"status": "ok"}` while the assistant, the alerts and the
+      RAG analyst were all dead for want of a key. "ok" meant
       "the process is up", which is not what anybody reads it as. The `services`
       map is the state the panel shows, by name only — no variables, no hints,
       nothing an operator does not already publish in `version`.
@@ -431,8 +436,8 @@ def health():
 #
 # Everything above mounts the whole product. When `PUBLIC_API_ONLY` is set this
 # strips the app back to the endpoints in `backend/api/public_surface.py` — the
-# seven a customer's own system is invited to call — plus /health, which the
-# load balancer needs.
+# ones a customer's own system is invited to call, MCP included — plus
+# /health, which the load balancer needs.
 #
 # Pruning after mounting rather than choosing routers up front is deliberate:
 # the public list names individual (method, path) pairs, and those live in

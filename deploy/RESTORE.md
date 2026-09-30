@@ -1,4 +1,4 @@
-# Restoring Faro from a backup
+# Restoring StockAI from a backup
 
 A backup nobody has restored is a hope, not a backup. This runbook was written
 by **performing** the restore on 2026-09-16, and the numbers below are that
@@ -20,7 +20,7 @@ not.
 | The `STORAGE_PATH` directory | uploaded datasets, trained model artifacts, indexed documents — **and `instance_secret.key`** | the files, and the ability to read every credential in the database |
 
 **`instance_secret.key` is the half people miss.** When
-`INTEGRATIONS_SECRET_KEY` is empty, Faro generates a Fernet key into
+`INTEGRATIONS_SECRET_KEY` is empty, StockAI generates a Fernet key into
 `STORAGE_PATH` on first use and encrypts every credential typed into
 `/instalacion` with it. Restore the database without that file and the rows
 come back meaning nothing. Measured, below.

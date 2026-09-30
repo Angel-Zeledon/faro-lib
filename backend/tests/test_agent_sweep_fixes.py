@@ -213,62 +213,6 @@ class TestLeadTimeDeviationGroupsCaseInsensitively:
         assert alerts[0]["supplier"].casefold() == "acme"
 
 
-# ── 11.29 · the providers invented a zero above the parser ───────────────────
-
-class TestProvidersDoNotInventZeros:
-    def test_a_missing_quantity_survives_as_none(self):
-        """`parse_provider_number`'s contract is that "unreadable" and "none in
-        stock" stay different facts, and `_merge_products_and_stock` acts on
-        it — a None leaves current_stock unset so the tenant keeps the count
-        they had. `or 0` one layer above the parser destroyed the distinction
-        before it could be honoured."""
-        from backend.integrations.alegra import AlegraProvider
-        from backend.integrations.sync_service import _merge_products_and_stock
-
-        p = AlegraProvider.__new__(AlegraProvider)
-        p._fetch_items = lambda: [{"reference": "SKU-1", "inventory": {}}]  # no quantity
-        stock = p.fetch_stock()
-        assert stock[0].quantity is None
-
-        merged = _merge_products_and_stock([], stock)
-        assert "current_stock" not in merged["SKU-1"], (
-            "a provider that omitted the field overwrote real stock with zero"
-        )
-
-    def test_siigo_behaves_the_same(self):
-        from backend.integrations.siigo import SiigoProvider
-        from backend.integrations.sync_service import _merge_products_and_stock
-
-        p = SiigoProvider.__new__(SiigoProvider)
-        p._fetch_products_raw = lambda: [{"code": "SKU-9"}]
-        p._product_sku = lambda item: item.get("code")
-        stock = p.fetch_stock()
-        assert stock[0].quantity is None
-        assert "current_stock" not in _merge_products_and_stock([], stock)["SKU-9"]
-
-    def test_a_real_zero_still_writes_a_zero(self):
-        """The other half of the same contract: an ERP that says "none left"
-        must still be able to say it."""
-        from backend.integrations.base import ProviderStock
-        from backend.integrations.sync_service import _merge_products_and_stock
-        merged = _merge_products_and_stock(
-            [], [ProviderStock(sku="SKU-2", quantity=0, warehouse="principal")])
-        assert merged["SKU-2"]["current_stock"] == 0.0
-
-    def test_an_unreadable_sale_line_is_reported_not_counted_as_zero(self):
-        from backend.integrations.base import ProviderSaleLine
-        from backend.integrations.sync_service import _build_sales_csv
-        from datetime import date
-        unreadable: list = []
-        csv_bytes = _build_sales_csv(
-            [ProviderSaleLine(date=date(2026, 1, 2), sku="A", quantity=None,
-                              unit_price=None)],
-            unreadable=unreadable,
-        )
-        assert len(unreadable) == 1
-        assert b"A,0" not in csv_bytes
-
-
 # ── 11.19 · duplicate import rows won silently, and the count lied ───────────
 
 class TestBulkImportReportsWhatItActuallyWrote:
@@ -392,28 +336,6 @@ class TestExportedCsvIsHonestAndOpensInExcel:
             if cost is not None:
                 assert value == round(10 * cost, 2)
 
-
-# ── 11.35 · reconnecting left a stale gate verdict behind ────────────────────
-
-class TestReconnectClearsEveryErrorColumn:
-    def test_a_blocked_sync_verdict_does_not_survive_a_reconnect(self, test_tenant):
-        from backend.integrations import store
-        tid = test_tenant["id"]
-        conn = store.create_connection(tid, "alegra", {"email": "a@b.c", "token": "t"})
-        execute(
-            "UPDATE integration_connections SET status='error', last_error=%s, "
-            "last_error_code=%s, last_error_details=%s WHERE id=%s",
-            ("blocked", "training_blocked_unresolved", '{"session_id": "dead"}', conn["id"]),
-        )
-        store.create_connection(tid, "alegra", {"email": "a@b.c", "token": "new"})
-        row = query_one(
-            "SELECT status, last_error, last_error_code, last_error_details "
-            "FROM integration_connections WHERE id = %s", (conn["id"],),
-        )
-        assert row["status"] == "connected"
-        assert row["last_error"] is None
-        assert row["last_error_code"] is None, "a healthy row still carried a dead verdict"
-        assert row["last_error_details"] is None
 
 # ── 11.8 (partial) · shrinkage did not canonicalise the warehouse name ───────
 

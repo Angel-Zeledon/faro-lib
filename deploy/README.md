@@ -1,4 +1,4 @@
-# Deploying Faro
+# Deploying StockAI
 
 Single-VPS production deployment with Docker Compose. Target: a 4 vCPU / 8 GB
 Linux box (Hetzner CPX31-class). Containers: Caddy (TLS) → Next.js frontend →
@@ -36,7 +36,7 @@ The stack is pre-wired for the three ways it will need to grow, in order:
 3. **More workers.** The job queue claims with `FOR UPDATE SKIP LOCKED`, so
    extra claim-only workers are safe:
    `docker compose -f docker-compose.prod.yml --profile scale up -d --scale worker-extra=2`.
-   The cron loops (daily alert emails, monthly snapshots, integration sync)
+   The cron loops (daily alert emails, monthly snapshots)
    run **only** in the primary `worker` (`SCHEDULER_ENABLED=true` exactly
    once) — turning them on in a second instance duplicates every daily email.
 

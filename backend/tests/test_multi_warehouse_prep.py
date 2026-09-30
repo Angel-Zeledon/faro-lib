@@ -1,10 +1,10 @@
 """
 A warehouse must not disappear between the upload and the model.
 
-A series is a (SKU, warehouse) pair whenever the session maps a store column —
-which the integrations path does automatically for any tenant whose ERP reports
-one. Two prep steps grouped by the SKU alone, and on that data neither one
-"collapsed duplicates" or "filled gaps": they deleted branches.
+A series is a (SKU, warehouse) pair whenever the session maps a store column,
+which any tenant whose export names a branch has. Two prep steps grouped by the
+SKU alone, and on that data neither one "collapsed duplicates" nor "filled
+gaps": they deleted branches.
 
 Measured before the fix:
 

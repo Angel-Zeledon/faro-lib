@@ -88,10 +88,9 @@ _ALLOWED = {
     "utils/stock_import.py",
     "datasources/service.py",
     "dataframes/canonical.py",
-    # Canonical COLUMN names, not copy: this module writes a CSV that Faro's own
+    # Canonical COLUMN names, not copy: this module writes a CSV that StockAI's own
     # detector reads back, and the quick-start config names the columns in it.
     # Renaming them would break the round trip, not translate anything.
-    "integrations/sync_service.py",
     "sessions/defaults.py",
     # Legacy Spanish DB column names being renamed forward by the migration.
     "db/migrations.py",

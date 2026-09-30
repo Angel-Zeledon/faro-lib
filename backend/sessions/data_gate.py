@@ -2,14 +2,14 @@
 
 The rule the product states is that a file either meets the standard or gets no
 forecast and an explanation. Until now that rule lived in one place: a disabled
-button in the browser. The API, the ERP sync path and any client with a token
-walked straight past it — which makes it a suggestion, not a standard.
+button in the browser. The API and any client with a token walked straight
+past it — which makes it a suggestion, not a standard.
 
 This module is where it becomes enforceable. `enforce()` is called from
 `family_service.launch_training_family`, the single function every launch path
-goes through (the REST endpoint, `POST /demo/quickstart`, the integrations sync
-and the seed script), so there is no route left that can start a run on a file
-the gate rejected.
+goes through (the REST endpoint, `POST /demo/quickstart`, the scheduled
+retrain and the seed script), so there is no route left that can start a run on
+a file the gate rejected.
 
 Two properties matter and both are deliberate:
 

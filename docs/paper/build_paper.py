@@ -1,8 +1,8 @@
 """
-Build the Faro forecasting-engine paper as a PDF.
+Build the StockAI forecasting-engine paper as a PDF.
 
 Run:  python docs/paper/build_paper.py
-Out:  docs/faro-forecasting-engine.pdf
+Out:  docs/stockai-forecasting-engine.pdf
 
 The document is authored as structured blocks rather than a LaTeX source
 because this repository has no TeX toolchain; equations are typeset with
@@ -36,7 +36,7 @@ from reportlab.platypus import (
     PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle,
 )
 
-OUT = Path(__file__).resolve().parents[1] / "faro-forecasting-engine.pdf"
+OUT = Path(__file__).resolve().parents[1] / "stockai-forecasting-engine.pdf"
 EQ_DPI = 400
 
 
@@ -289,7 +289,7 @@ def _decorate(canvas, doc):
     canvas.setFont(SERIF_ITALIC, 7.6)
     canvas.setFillColor(MUTED)
     canvas.drawString(2.2 * cm, 1.5 * cm,
-                      "Faro — Demand forecasting and inventory decision engine")
+                      "StockAI — Demand forecasting and inventory decision engine")
     canvas.drawRightString(A4[0] - 2.2 * cm, 1.5 * cm, f"{doc.page}")
     canvas.setStrokeColor(RULE)
     canvas.setLineWidth(0.4)
@@ -324,11 +324,11 @@ def story():
     A(Paragraph("Angel Zeledon Fernandez", ParagraphStyle(
         "byline", parent=AUTHOR, fontName=SERIF, fontSize=11,
         textColor=INK, spaceAfter=2)))
-    A(Paragraph("Faro &mdash; <i>ForecastingCore</i> technical report", AUTHOR))
+    A(Paragraph("StockAI &mdash; <i>ForecastingCore</i> technical report", AUTHOR))
 
     A(Paragraph("ABSTRACT", ABSTRACT_HEAD))
     A(Paragraph(
-        "We describe the forecasting engine behind Faro, an inventory purchasing "
+        "We describe the forecasting engine behind StockAI, an inventory purchasing "
         "system for small and mid-sized distributors in Latin America. The "
         "operating regime is adversarial to classical per-series forecasting: "
         "catalogues of thousands of SKUs, median histories measured in months "

@@ -17,17 +17,17 @@ SECTION = {
                 "route": "",
                 "image": "",
                 "purpose": (
-                    "Faro no adivina nada de tu negocio: aprende de tu historial de ventas "
+                    "StockAI no adivina nada de tu negocio: aprende de tu historial de ventas "
                     "y compara ese pronóstico contra lo que tienes en bodega. Por eso el "
                     "arranque tiene un orden fijo — primero tus ventas, después tu "
                     "inventario, y solo entonces el semáforo. Este recorrido es el que "
                     "decide si el producto te sirve, y se hace una sola vez."
                 ),
                 "walkthrough": [
-                    "Entra a la página de inicio de Faro y crea tu cuenta: el formulario «Crea tu espacio de trabajo» te pide nombre completo, nombre de la empresa, correo electrónico, WhatsApp y contraseña, y la contraseña tiene que cumplir las cuatro condiciones que ves marcarse en vivo — 8 caracteres, una mayúscula, un número y un símbolo.",
+                    "Entra a la página de inicio de StockAI y crea tu cuenta: el formulario «Crea tu espacio de trabajo» te pide nombre completo, nombre de la empresa, correo electrónico, WhatsApp y contraseña, y la contraseña tiene que cumplir las cuatro condiciones que ves marcarse en vivo — 8 caracteres, una mayúscula, un número y un símbolo.",
                     "El WhatsApp no es un dato de relleno: es a donde te llegan tus órdenes de compra para reenviarlas a tus proveedores, así que escríbelo con el código de país, por ejemplo +50688887777.",
                     "Al enviar el formulario verás «Revisa tu correo»: te mandamos un enlace de verificación, y con abrirlo tu cuenta queda activa para iniciar sesión.",
-                    "Puedes entrar y trabajar antes de verificar — subir el archivo, entrenar y ver el semáforo funcionan igual; lo que queda bloqueado hasta verificar son las acciones que salen de tu empresa: invitar personas, conectar integraciones y enviar notificaciones.",
+                    "Puedes entrar y trabajar antes de verificar — subir el archivo, entrenar y ver el semáforo funcionan igual; lo que queda bloqueado hasta verificar son las acciones que salen de tu empresa: invitar personas y enviar notificaciones.",
                     "Al iniciar sesión caes en el Panel de compras, que con la cuenta vacía dice «Aún no tienes datos» y te ofrece dos caminos: «Subir mi historial de ventas» y «Probar con datos demo», que carga ventas de ejemplo de 5 productos y no toca tus datos.",
                     "El primer botón te lleva a Mis ventas, que trabaja en tres pasos numerados: «Sube tus ventas», «Confirma columnas» y «El sistema aprende».",
                     "Antes de soltar el archivo llena los cuatro campos de arriba: un nombre para la carga (opcional), hasta cuándo quieres planificar, el nivel de detalle del plan y en qué país vendes — este último lo usamos para los días feriados, que son de los días que más mueven las ventas y son distintos en cada país.",
@@ -35,9 +35,9 @@ SECTION = {
                     "En «Confirma tus columnas» nos dices cuál columna es la fecha, cuál la cantidad vendida y cuál el producto; elige la columna de producto aunque manejes uno solo, porque si la dejas en «un solo producto» todo se mezcla en una sola serie y pierdes el detalle por producto.",
                     "Si el archivo trae problemas que producirían un pronóstico equivocado, la pantalla te obliga a resolverlos antes de continuar y cada opción te dice qué hace y qué cuesta; los avisos que no bloquean solo se reportan.",
                     "El entrenamiento corre solo y puede tardar varios minutos según el tamaño del archivo: no cierres la pestaña, y al terminar te llevamos al semáforo con la vista diaria lista mientras las demás se siguen calculando en segundo plano.",
-                    "Ahora abre «Configurar inventario» y completa los tres datos que Faro todavía no tiene de cada producto: cuántas unidades tienes hoy en bodega, cuánto te cuesta a ti la unidad y cuántos días tarda tu proveedor en entregarte.",
+                    "Ahora abre «Configurar inventario» y completa los tres datos que StockAI todavía no tiene de cada producto: cuántas unidades tienes hoy en bodega, cuánto te cuesta a ti la unidad y cuántos días tarda tu proveedor en entregarte.",
                     "Esa lista no viene alfabética sino ordenada por plata, y te dice arriba cuántos productos necesitas completar para cubrir el grueso de tu compra del mes — no hace falta configurarlos todos; si prefieres, sube el archivo de stock tal como te lo exporta tu sistema.",
-                    "Vuelve al Panel de compras y lee el semáforo — Pedir YA, Pedir pronto, OK, Sobrestock y Sin datos — con la cantidad sugerida por producto, y cuando confirmes una compra regístrala en Pedidos: sin ese registro la orden no existe para Faro y nunca se aprende el plazo real de tus proveedores.",
+                    "Vuelve al Panel de compras y lee el semáforo — Pedir YA, Pedir pronto, OK, Sobrestock y Sin datos — con la cantidad sugerida por producto, y cuando confirmes una compra regístrala en Pedidos: sin ese registro la orden no existe para StockAI y nunca se aprende el tiempo de entrega real de tus proveedores.",
                 ],
                 "fields": [
                     ("Fecha", "La columna de tu archivo de ventas con el día de la venta. Es obligatoria."),
@@ -125,7 +125,7 @@ SECTION = {
                     "No puedes cambiarte el estado ni eliminarte a ti mismo: esos dos controles no se dibujan en tu propia fila.",
                     "Lo que decide los permisos es el rol, no una lista de casillas por persona. No hay permisos individuales que configurar.",
                     "«Pendiente» no significa que algo falló: significa que esa persona todavía no abrió el correo de verificación. Reenvíalo con el icono de sobre antes de crearle una cuenta nueva.",
-                    "Cambiarle el correo a alguien lo devuelve a verificar. Hasta que abra el nuevo enlace no podrá invitar gente ni conectar integraciones.",
+                    "Cambiarle el correo a alguien lo devuelve a verificar. Hasta que abra el nuevo enlace no podrá invitar gente ni enviar notificaciones.",
                 ],
             },
             {
@@ -162,7 +162,7 @@ SECTION = {
                     ("Cada cuánto se calculan tus compras", "Día, Semana o Mes, para toda la cuenta y solo por un administrador. Solo se ofrecen los períodos que tu historial permite."),
                     ("Uso y límites", "Cinco barras: Productos (SKUs), Usuarios, Bodegas, Pronósticos guardados y Llaves de API. En el plan gratis son 100, 2, 1, 3 y 1; en el plan completo dicen «Sin límite»."),
                     ("Seguridad", "Cambio de contraseña con un código de 6 dígitos al correo, válido por 10 minutos."),
-                    ("WhatsApp", "Tu número verificado para recibir mensajes de Faro. Sin él, el interruptor de SMS no se puede activar."),
+                    ("WhatsApp", "Tu número verificado para recibir mensajes de StockAI. Sin él, el interruptor de SMS no se puede activar."),
                 ],
                 "tasks": [
                     (
@@ -195,7 +195,7 @@ SECTION = {
                 "route": "/automatizacion",
                 "image": "automatizacion",
                 "purpose": (
-                    "Dos cosas que hacen que Faro trabaje sin que nadie lo abra: las llaves "
+                    "Dos cosas que hacen que StockAI trabaje sin que nadie lo abra: las llaves "
                     "con las que otro sistema entra a tus datos, y el horario en el que tus "
                     "pronósticos se vuelven a calcular solos. Solo un administrador ve esta "
                     "entrada en el menú."
@@ -261,11 +261,11 @@ SECTION = {
                     "La referencia de la API, y además una consola: cada endpoint se puede "
                     "ejecutar desde la misma página con tu propia clave. Sirve para que tu "
                     "sistema empuje los datos y se lleve la decisión sin que nadie abra "
-                    "Faro. No es solo para administradores: un analista es quien "
+                    "StockAI. No es solo para administradores: un analista es quien "
                     "normalmente conecta una integración."
                 ),
                 "walkthrough": [
-                    "El encabezado muestra «La URL base» con la dirección exacta a la que van tus llamadas, incluido el /v1; las rutas de la página se escriben sin ese prefijo, y esa base es el valor de $FARO en los ejemplos.",
+                    "El encabezado muestra «La URL base» con la dirección exacta a la que van tus llamadas, incluido el /v1; las rutas de la página se escriben sin ese prefijo, y esa base es el valor de $STOCKAI en los ejemplos.",
                     "Debajo hay un campo «Tu API key» donde pegas una clave sk_live_: vive solo en esa pestaña mientras la usas y no se guarda ni se manda a ningún otro lado.",
                     "Si todavía no tienes una, el botón «Generar una clave» te lleva directo a Automatización.",
                     "A la izquierda queda fija la lista de endpoints; a la derecha, cada uno con su método, su ruta y una explicación de para qué sirve en el trabajo real.",
@@ -273,6 +273,7 @@ SECTION = {
                     "En cada endpoint, «Probar» ejecuta la llamada de verdad contra tu cuenta y te devuelve el estado HTTP, la duración en milisegundos y la respuesta; «Ejemplo» te da el mismo llamado escrito como comando curl para copiarlo.",
                     "Antes de ejecutar una escritura sale una confirmación que nombra la consecuencia concreta — reemplazar tu archivo, encolar un entrenamiento real o registrar una orden de compra que después se controla en recepción.",
                     "Las secciones de referencia al final explican tres cosas: la autenticación, que va en la cabecera Authorization; los límites, 120 llamadas por minuto y 500 por día en el plan gratis, con 429 y Retry-After al pasarte; y el envoltorio, donde tu contenido siempre viene en data y los errores traen error_code.",
+                    "Al final, antes del cierre, está la sección «Conecta tu asistente (MCP)»: la URL del servidor MCP de tu instalación, las cinco herramientas que ofrece y un curl para comprobar que tu clave funciona. Es para cuando lo que quieres no es que un sistema corra solo, sino preguntarle a un asistente de IA qué comprar hoy.",
                     "El cierre de la página es una promesa explícita: estos endpoints no cambian de ruta ni de forma sin aviso, y cualquier otro endpoint del servicio es interno — alcanzable con tu clave, pero sin compromiso de mantenerlo.",
                 ],
                 "fields": [
@@ -283,7 +284,8 @@ SECTION = {
                     ("GET /sessions/{session_id}/train/status", "El estado del último entrenamiento: QUEUED, RUNNING, COMPLETED o FAILED."),
                     ("GET /inventory/status", "Todos los productos con su señal y su recommended_qty. No hay paginación: filtra con signal o supplier."),
                     ("GET /inventory/morning-briefing", "Lo mismo ordenado como el trabajo del día, con el motivo, el proveedor sugerido y el valor estimado."),
-                    ("POST /inventory/log-po", "Escribe. Registra la orden de compra. Sin esta llamada la orden no existe para Faro y el plazo real de tus proveedores nunca se aprende."),
+                    ("POST /inventory/log-po", "Escribe. Registra la orden de compra. Sin esta llamada la orden no existe para StockAI y el tiempo de entrega real de tus proveedores nunca se aprende."),
+                    ("POST /mcp", "El servidor MCP, para un cliente de IA. Cinco herramientas, todas de lectura: la corrida activa, el trabajo del día, el semáforo por SKU, tus fuentes de datos y el estado de un entrenamiento."),
                 ],
                 "tasks": [
                     (
@@ -293,6 +295,13 @@ SECTION = {
                         "3. Elige GET /planning en la lista de la izquierda y pulsa «Ejecutar». "
                         "4. Copia el active_session_id de la respuesta. "
                         "5. Abre GET /inventory/morning-briefing y ejecútalo: es el mismo trabajo del día que ves en el Panel de compras, en JSON."
+                    ),
+                    (
+                        "Conectar tu asistente de IA (MCP)",
+                        "1. Crea una clave «Solo leer» en Automatización — alcanza para todo lo que sigue. "
+                        "2. Si tu cliente de IA acepta una URL, dale la que aparece en «Conecta tu asistente (MCP)» de la pantalla API, con la cabecera Authorization: Bearer y tu clave. "
+                        "3. Si es un cliente de escritorio como Claude Desktop, que habla por stdin/stdout y no por HTTP, copia el archivo mcp_server/stockai_mcp.py del repositorio y define STOCKAI_URL y STOCKAI_API_KEY; no hay nada que instalar. "
+                        "4. Pregúntale «¿qué compro hoy?»: la respuesta sale del mismo trabajo del día que ves en el Panel de compras."
                     ),
                     (
                         "Automatizar el ciclo completo desde tu sistema",
@@ -312,6 +321,8 @@ SECTION = {
                     "Ramifica por error_code, nunca por el texto del error: el texto puede cambiar de idioma o de redacción, el código no.",
                     "El active_session_id cambia cada vez que se entrena una corrida nueva. Guardarlo fijo en tu integración es la forma más fácil de terminar leyendo un pronóstico viejo.",
                     "Solo estos endpoints tienen compromiso de estabilidad. Tu clave alcanza otros, pero nadie prometió mantenerlos como están.",
+                    "Por MCP no se escribe nada, y no es un límite del rol: aunque uses una clave «Leer y escribir», un cliente de IA solo lee. Subir archivos, entrenar y registrar órdenes se quedan en los endpoints de arriba, donde lo dispara una persona que ve lo que pasó.",
+                    "Una clave de IA lee tu stock, tus costos y los nombres de tus proveedores. Trátala como cualquier otra credencial y revócala desde la misma pantalla donde la creaste si deja de usarse.",
                 ],
             },
             {
@@ -319,8 +330,8 @@ SECTION = {
                 "route": "/instalacion",
                 "image": "instalacion",
                 "purpose": (
-                    "La lista de servicios que este Faro tiene conectados, cuáles están "
-                    "encendidos y qué deja de funcionar con los que no. Faro funciona sin "
+                    "La lista de servicios que este StockAI tiene conectados, cuáles están "
+                    "encendidos y qué deja de funcionar con los que no. StockAI funciona sin "
                     "ninguno de ellos —el pronóstico, el semáforo y las órdenes de compra "
                     "no dependen de nada externo—, pero el asistente, los correos, el "
                     "WhatsApp y la búsqueda en documentos sí. Cuando algo de eso «no "
@@ -395,17 +406,17 @@ SECTION = {
                 "route": "",
                 "image": "",
                 "purpose": (
-                    "Faro guesses nothing about your business: it learns from your sales "
+                    "StockAI guesses nothing about your business: it learns from your sales "
                     "history and compares that forecast against what you hold in the "
                     "warehouse. That is why the start has a fixed order — first your sales, "
                     "then your inventory, and only then the traffic light. This walk is what "
                     "decides whether the product works for you, and you do it once."
                 ),
                 "walkthrough": [
-                    "Go to the Faro landing page and create your account: the “Create your workspace” form asks for your full name, company name, email address, WhatsApp and a password, and the password has to meet the four conditions you see tick off live — 8 characters, one uppercase letter, one number and one symbol.",
+                    "Go to the StockAI landing page and create your account: the “Create your workspace” form asks for your full name, company name, email address, WhatsApp and a password, and the password has to meet the four conditions you see tick off live — 8 characters, one uppercase letter, one number and one symbol.",
                     "The WhatsApp number is not filler: it is where your purchase orders arrive so you can forward them to your suppliers, so write it with the country code, for example +50688887777.",
                     "When you submit the form you will see “Check your email”: we send a verification link, and opening it activates your account so you can sign in.",
-                    "You can sign in and work before verifying — uploading the file, training and seeing the traffic light all work; what stays blocked until you verify are the actions that leave your company: inviting people, wiring integrations and sending notifications.",
+                    "You can sign in and work before verifying — uploading the file, training and seeing the traffic light all work; what stays blocked until you verify are the actions that leave your company: inviting people and sending notifications.",
                     "Signing in lands you on the Purchasing Panel, which on an empty account says “You don’t have data yet” and offers two ways forward: “Upload my sales history” and “Try it with demo data”, which loads sample sales for 5 products and never touches your data.",
                     "The first button takes you to My sales, which works in three numbered steps: “Upload your sales”, “Confirm columns” and “The system learns”.",
                     "Before dropping the file, fill in the four fields at the top: a name for the run (optional), how far ahead you want to plan, the plan detail level, and which country you sell in — we use that last one for public holidays, which are among the days that move sales the most and differ in every country.",
@@ -413,9 +424,9 @@ SECTION = {
                     "In “Confirm your columns” you tell us which column is the date, which is the quantity sold and which is the product; pick the product column even if you carry a single product, because leaving it as “a single product” merges everything into one series and you lose the per-product detail.",
                     "If the file carries problems that would produce a wrong forecast, the screen makes you resolve them before continuing and each option states what it does and what it costs; the warnings that do not block are simply reported.",
                     "Training runs on its own and can take several minutes depending on the size of your file: do not close the tab, and when it finishes we take you to the traffic light with the daily view ready while the rest keeps computing in the background.",
-                    "Now open “Set up inventory” and fill in the three things Faro still does not know about each product: how many units you hold today, what one unit costs you, and how many days your supplier takes to deliver.",
+                    "Now open “Set up inventory” and fill in the three things StockAI still does not know about each product: how many units you hold today, what one unit costs you, and how many days your supplier takes to deliver.",
                     "That list is not alphabetical but ordered by money, and it tells you at the top how many products you need to complete to cover the bulk of this month’s purchase — you do not have to configure them all; if you prefer, upload the stock file exactly as your system exports it.",
-                    "Go back to the Purchasing Panel and read the traffic light — Order NOW, Order soon, OK, Overstock and No data — with the suggested quantity per product, and once you confirm a purchase, record it in Orders: without that record the order does not exist for Faro and your suppliers’ real lead times are never learned.",
+                    "Go back to the Purchasing Panel and read the traffic light — Order NOW, Order soon, OK, Overstock and No data — with the suggested quantity per product, and once you confirm a purchase, record it in Orders: without that record the order does not exist for StockAI and your suppliers’ real lead times are never learned.",
                 ],
                 "fields": [
                     ("Date", "The column in your sales file with the date of the sale. It is required."),
@@ -503,7 +514,7 @@ SECTION = {
                     "You cannot change your own status or delete yourself: neither control is drawn on your own row.",
                     "What decides permissions is the role, not a list of per-person checkboxes. There are no individual permissions to configure.",
                     "“Pending” does not mean something failed: it means that person has not opened the verification email yet. Resend it with the envelope icon before creating them a second account.",
-                    "Changing somebody’s email sends them back to verification. Until they open the new link they cannot invite people or wire integrations.",
+                    "Changing somebody’s email sends them back to verification. Until they open the new link they cannot invite people or send notifications.",
                 ],
             },
             {
@@ -541,7 +552,7 @@ SECTION = {
                     ("How often your purchases are computed", "Day, Week or Month, for the whole account and only by an administrator. Only the periods your history affords are offered."),
                     ("Usage and limits", "Five bars: Products (SKUs), Users, Warehouses, Saved forecasts and API keys. On the free plan those are 100, 2, 1, 3 and 1; on the full plan they read “Unlimited”."),
                     ("Security", "Password change with a 6-digit code emailed to you, valid for 10 minutes."),
-                    ("WhatsApp", "Your verified number for receiving messages from Faro. Without it the SMS toggle cannot be turned on."),
+                    ("WhatsApp", "Your verified number for receiving messages from StockAI. Without it the SMS toggle cannot be turned on."),
                 ],
                 "tasks": [
                     (
@@ -574,7 +585,7 @@ SECTION = {
                 "route": "/automatizacion",
                 "image": "automatizacion",
                 "purpose": (
-                    "Two things that make Faro work without anybody opening it: the keys "
+                    "Two things that make StockAI work without anybody opening it: the keys "
                     "another system uses to reach your data, and the schedule on which your "
                     "forecasts recompute themselves. Only an administrator sees this entry "
                     "in the menu."
@@ -639,12 +650,12 @@ SECTION = {
                 "purpose": (
                     "The API reference, and also a console: every endpoint can be run from "
                     "the page itself with your own key. It exists so your system pushes the "
-                    "data and takes the decision without anyone opening Faro. It is not "
+                    "data and takes the decision without anyone opening StockAI. It is not "
                     "administrators only: an analyst is usually the person who wires an "
                     "integration."
                 ),
                 "walkthrough": [
-                    "The header shows “The base URL” with the exact address your calls go to, /v1 included; the paths on the page are written without that prefix, and the base is the $FARO value in the examples.",
+                    "The header shows “The base URL” with the exact address your calls go to, /v1 included; the paths on the page are written without that prefix, and the base is the $STOCKAI value in the examples.",
                     "Below it there is a “Your API key” field where you paste an sk_live_ key: it lives only in that tab while you use it and is neither stored nor sent anywhere else.",
                     "If you do not have one yet, the “Generate a key” button takes you straight to Automation.",
                     "The endpoint list stays fixed on the left; on the right, each one with its method, its path and an explanation of what it is for in real work.",
@@ -652,6 +663,7 @@ SECTION = {
                     "On each endpoint, “Try it” runs the call for real against your account and returns the HTTP status, the duration in milliseconds and the response; “Example” gives you the same call written as a curl command to copy.",
                     "Before running a write, a confirmation names the concrete consequence — replacing your file, queueing a real training run, or recording a purchase order whose reception is then tracked.",
                     "The reference sections at the end explain three things: authentication, which goes in the Authorization header; the rate limits, 120 calls per minute and 500 per day on the free plan, with 429 and Retry-After once you go over; and the envelope, where your payload always comes in data and errors carry error_code.",
+                    "At the end, just before the closing note, there is a \u201cConnect your assistant (MCP)\u201d section: your installation\u2019s MCP server URL, the five tools it offers and a curl to check that your key works. It is for when what you want is not a system running on a schedule, but to ask an AI assistant what to buy today.",
                     "The page closes with an explicit promise: these endpoints do not change path or shape without notice, and any other endpoint of the service is internal — reachable with your key, but with no commitment to keep it.",
                 ],
                 "fields": [
@@ -662,7 +674,8 @@ SECTION = {
                     ("GET /sessions/{session_id}/train/status", "The state of the last training run: QUEUED, RUNNING, COMPLETED or FAILED."),
                     ("GET /inventory/status", "Every product with its signal and recommended_qty. There is no pagination: filter with signal or supplier."),
                     ("GET /inventory/morning-briefing", "The same data ordered as a day of work, with the reason, the suggested supplier and the estimated value."),
-                    ("POST /inventory/log-po", "Writes. Records the purchase order. Without this call the order does not exist for Faro and your suppliers’ real lead times are never learned."),
+                    ("POST /inventory/log-po", "Writes. Records the purchase order. Without this call the order does not exist for StockAI and your suppliers’ real lead times are never learned."),
+                    ("POST /mcp", "The MCP server, for an AI client. Five tools, all of them reads: the active run, the day of work, the stock signal per SKU, your data sources and a training run’s status."),
                 ],
                 "tasks": [
                     (
@@ -672,6 +685,13 @@ SECTION = {
                         "3. Pick GET /planning in the list on the left and press “Run”. "
                         "4. Copy the active_session_id from the response. "
                         "5. Open GET /inventory/morning-briefing and run it: it is the same day of work you see on the Purchasing Panel, in JSON."
+                    ),
+                    (
+                        "Connect your AI assistant (MCP)",
+                        "1. Create a “Read only” key in Automation — it is enough for everything below. "
+                        "2. If your AI client takes a URL, give it the one shown under “Connect your assistant (MCP)” on the API screen, with the Authorization: Bearer header and your key. "
+                        "3. If it is a desktop client such as Claude Desktop, which speaks over stdin/stdout rather than HTTP, copy mcp_server/stockai_mcp.py from the repository and set STOCKAI_URL and STOCKAI_API_KEY; there is nothing to install. "
+                        "4. Ask it “what should I buy today?”: the answer comes from the same day of work you see on the Purchasing Panel."
                     ),
                     (
                         "Automate the whole cycle from your own system",
@@ -691,6 +711,8 @@ SECTION = {
                     "Branch on error_code, never on the error text: the text can change language or wording, the code does not.",
                     "The active_session_id changes every time a new session trains. Hard-coding it in your integration is the easiest way to end up reading a stale forecast.",
                     "Only these endpoints carry a stability commitment. Your key reaches others, but nobody promised to keep them as they are.",
+                    "Nothing writes over MCP, and that is not a limit of the role: even with a “Read and write” key, an AI client only reads. Uploading files, training and recording orders stay on the endpoints above, where a person triggers them and can see what happened.",
+                    "An AI key reads your stock, your costs and your supplier names. Treat it like any other credential, and revoke it from the same screen that created it once it is no longer used.",
                 ],
             },
             {
@@ -698,8 +720,8 @@ SECTION = {
                 "route": "/instalacion",
                 "image": "instalacion",
                 "purpose": (
-                    "The list of services this Faro has connected, which ones are on, and "
-                    "what stops working with the ones that are not. Faro runs without any "
+                    "The list of services this StockAI has connected, which ones are on, and "
+                    "what stops working with the ones that are not. StockAI runs without any "
                     "of them — the forecast, the traffic light and the purchase orders "
                     "depend on nothing external — but the assistant, email, WhatsApp and "
                     "document search do. When one of those \u201cdoes not answer\u201d, this is the "

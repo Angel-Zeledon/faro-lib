@@ -22,6 +22,26 @@ Opening the screen does **not** count. A walk is:
 A screen walked along one path is not walked along the others. The "what is
 missing" column is the honest part of the table.
 
+## Walks invalidated on 2026-09-21
+
+A row in this table means *a person went through that screen on that date*. Six
+screens changed after their last walk, so those dates now describe something
+that is no longer on screen. **None of the changes below has been seen in a
+browser by anybody** — they are covered by tests and by reading, which is not
+the same claim this table makes.
+
+| Screen | Last walk | What changed under it |
+|---|---|---|
+| `/pronosticos` | 2026-08-10 | The Forecast tab now opens on the curve, its band and three tiles; the other five tiles, the model chips and the **Métricas** and **Calidad** tabs moved behind "Ver el detalle técnico". `MAE` and the series-type pill left the SKU cards. The guided tour's narration was rewritten to match. |
+| `/compras` | 2026-08-10 | "Precisión promedio" removed from three places (KPI, executive summary, footer) along with its HelpTip and its tour step. |
+| `/inventario` | 2026-08-10 | The semáforo's ordering boundary is now the reorder point instead of `1.2 x lead time`; the safety stock now includes the supplier's lead-time variance and is roughly three times larger. A "capital parado" section is being added. |
+| `/mi-cuenta` | 2026-08-06 | The "Modelos disponibles" grid — nine cards printing raw algorithm ids — is gone, replaced by one sentence. |
+| `/instalacion` | — | Now opens on the tab that belongs to the reader instead of always on the operator's panel, and shows no tab until it knows which. |
+| `/automatizacion` | 2026-08-06 | Opens on Schedules instead of API keys. |
+
+Catalogue-wide: the Spanish copy was unified on "tiempo de entrega" and
+"actualización", so wording changed on more screens than these six.
+
 ## State as of 2026-08-06
 
 `Actions` = number of `onClick`/`onSubmit` handlers on the page. It is a crude
@@ -42,7 +62,6 @@ measure of the surface's size, not of its risk.
 | Automation | `/automatizacion` | 14 | 2026-08-06 | Schedules built, history, time zone, re-anchoring | API keys, webhooks, pausing/deleting a schedule |
 | Suppliers | `/proveedores` | 6 | 2026-08-06 (API only) | The learned/unusable lead-time fields | The screen itself; creating and editing a supplier; the scorecard |
 | Impact | `/impacto` | 0 | 2026-08-10 | **The four headline numbers reconciled against the database one by one** (see below); the monthly summary; the evolution table; empty states | The tutorial, navigation links, a month with real freed capital (needs two consecutive monthly measurements) |
-| Integrations | `/integraciones` | 3 | 2026-08-10 (the wall only) | **Verified against the code that what it promises exists**: real Alegra/Siigo connectors, encrypted credentials, and `run_daily_integration_syncs` running from the worker's daily loop. The plan wall was removed on 2026-08-16 | **The entire screen**: connecting, testing the connection, syncing, seeing credential errors. None of the real flow has been walked, and the screen is still out of the menu |
 | Messages | `/mensajes` | 4 | 2026-08-10 | Conversation list, opening one (**marks read for real in the database**), sending — the message lands in `direct_messages` with accents, an em dash and € intact, and stays unread for the recipient | Finding a person, starting a new conversation, long messages, attachments if they exist |
 | Sign-up | `/signup` | 2 | 2026-08-09 | Full registration (tenant + admin), refusal on a duplicate WhatsApp number without stranding rows, an honest notice when the email cannot be sent | Duplicate email, password validations one by one, resending verification |
 | Forgot password | `/forgot-password` | 4 | 2026-08-10 | All **3 steps**: unknown email (does not leak whether the account exists), wrong code, valid code, short password, passwords that do not match, successful change and redirect. Verified in the database: OTP burned (`used=t`), refresh revoked, old password rejected, new one accepted | Resending the code ("Try again"), expired OTP, attempt limit |
@@ -58,6 +77,11 @@ measure of the surface's size, not of its risk.
 **Honest summary (2026-08-11):** **all 26 screens have had some walk.** None is
 walked end to end — the "what is missing" column is still the honest part of the
 table, and an empty cell there means unknown, not correct.
+
+**2026-09-20:** 25 screens. `/integraciones` was deleted with the Alegra and
+Siigo connectors behind it (`stability.md` §15). It is the only row that ever
+sat in this table saying "the entire screen" was unwalked, and it is now the
+only one that never will be.
 
 ### Regression sweep of 2026-08-10
 
@@ -336,7 +360,7 @@ August with 4 orders. Both sentences now name the month.
 **FIXED — "5 days active" were not active days.** `roi_service.py` computed
 `(last order − first order).days`, i.e. the **span** between the first and last
 order. It gave 5 and looked right, but a tenant who ordered once and came back a
-year later would have read "365 days active" after using Faro on two days. It is
+year later would have read "365 days active" after using StockAI on two days. It is
 `COUNT(DISTINCT generated_at::date)` now, which cannot overstate: it is bounded
 by the days the buyer showed up. On screen it went from 5 to **2**, which is
 exactly what the database says (4 and 10 August). With a test named after the

@@ -25,6 +25,12 @@ export interface ExplanationParams {
   lead_time_source?: ValueSource
   lead_time_rule_scope?: RuleScope | null
   reorder_point?: number
+  /** The buyer's own order cadence for this supplier, in days. 0 or absent
+   *  means none was declared, and the sentence says nothing about it. */
+  review_period_days?: number
+  /** lead time + review period: how long the order actually has to last,
+   *  which is what the reorder point is built from once a cadence exists. */
+  protection_interval_days?: number
   signal?: string
 }
 
@@ -76,7 +82,13 @@ export function renderExplanation(
     })
   }
 
-  if (code !== 'inventory_explain_reorder') return fallback || ''
+  // Two codes, one sentence. The backend emits `_review` only when the
+  // supplier has a declared order cadence, because then the order has to
+  // cover until the NEXT one arrives, not just until this one does — and a
+  // reorder point that grew for that reason has to say so, or the number
+  // changes with no explanation.
+  const REORDER_CODES = ['inventory_explain_reorder', 'inventory_explain_reorder_review']
+  if (!REORDER_CODES.includes(code)) return fallback || ''
 
   const coverage = params.coverage_days != null
     ? t('explain.coverage_lasts', { days: days(t, params.coverage_days) })
@@ -92,7 +104,14 @@ export function renderExplanation(
     reorder: (params.reorder_point ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
   })
 
-  if (params.signal === 'PEDIR_YA') return base + t('explain.suffix_order_now')
-  if (params.signal === 'PEDIR_PRONTO') return base + t('explain.suffix_order_soon')
+  const cadence = (params.review_period_days ?? 0) > 0
+    ? t('explain.review_period', {
+        review: days(t, params.review_period_days as number),
+        protection: days(t, params.protection_interval_days as number),
+      })
+    : ''
+
+  if (params.signal === 'PEDIR_YA') return base + cadence + t('explain.suffix_order_now')
+  if (params.signal === 'PEDIR_PRONTO') return base + cadence + t('explain.suffix_order_soon')
   return base + t('explain.suffix_end')
 }

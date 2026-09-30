@@ -1,4 +1,4 @@
-# Continuous Integration for Faro.
+# Continuous Integration for StockAI.
 #
 # Three independent jobs, one per layer of the repo:
 #   1. backend         — FastAPI multi-tenant API (needs Postgres)

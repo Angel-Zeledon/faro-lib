@@ -1,4 +1,4 @@
-# Faro complements, it does not replace
+# StockAI complements, it does not replace
 
 **Written:** 2026-08-10. This is a **direction** document, not a plan and not a
 task list. Its use is deciding what **not** to build.
@@ -12,21 +12,21 @@ task list. Its use is deciding what **not** to build.
 
 ## The rule
 
-> Faro owns the decisions and what it learns from them.
+> StockAI owns the decisions and what it learns from them.
 > The customer's system owns the inventory, the catalogue and the suppliers.
 
 Everything else follows from that.
 
 ## Why now
 
-The owner put it this way: Faro should not be "the software companies live in",
+The owner put it this way: StockAI should not be "the software companies live in",
 SAP-style, but something that **complements** what they already have. This is
 written down because the code had been drifting the other way.
 
-Today Faro stores stock per warehouse, warehouses, transfers, shrinkage,
+Today StockAI stores stock per warehouse, warehouses, transfers, shrinkage,
 suppliers, purchase orders, receptions. Those are ERP tables, and each of them
 already has an owner inside the customer's company. Having them is not the
-problem; the problem is that Faro asks to be **the second source of truth
+problem; the problem is that StockAI asks to be **the second source of truth
 without any way to stay in sync**. Measured on the 2026-08-10 walk:
 
 - `/configurar-inventario` asks a person to type stock, cost and lead time
@@ -43,15 +43,15 @@ like SAP — while competing against something the customer cannot remove.
 ## The four consequences of the rule
 
 1. **Never ask a person to type what a machine already knows.**
-2. The customer's data lives in Faro as a **cache with provenance and a date**,
+2. The customer's data lives in StockAI as a **cache with provenance and a date**,
    not as a record.
-3. The only thing that is Faro's own is what nobody else stores: **learned lead
+3. The only thing that is StockAI's own is what nobody else stores: **learned lead
    times, service levels, and the history of decisions with their outcome.**
 4. The value arrives **without opening the app**. The daily message is the
    product; the app is where you go when you want to argue with it.
 
 Point 3 is the moat. No ERP says "this supplier promises 7 days and delivers in
-11". Faro already computes it.
+11". StockAI already computes it.
 
 ## Customers use "everything" — and that decides the shape
 
@@ -77,32 +77,33 @@ by itself — and it is what attacks the 407 days. The pieces exist separately:
 `/archivos` has sources, `/ventas` remembers the mapping, `/automatizacion` has
 schedules.
 
-### Correction from walking `/integraciones` (same day)
+### Correction from walking `/integraciones` (same day) — and its ending
 
 Having written the above, it turned out that **the automatic cycle already
-exists — but only over the API path**. There are real connectors for Alegra and
-Siigo (`backend/integrations/`, with a registry, DTOs, credential encryption and
-a test suite), and `run_daily_integration_syncs` runs from the worker's daily
-loop, pulling catalogue, stock and sales without anybody opening anything. That
-is exactly the shape this document asks for. None of it is unbuilt.
+existed — but only over the API path**. There were real connectors for Alegra
+and Siigo (`backend/integrations/`, with a registry, DTOs, credential encryption
+and a test suite), and `run_daily_integration_syncs` ran from the worker's daily
+loop, pulling catalogue, stock and sales without anybody opening anything.
 
-That does not invalidate the thesis; it sharpens it, in three ways:
+**Removed on 2026-09-20, on the owner's instruction** (`docs/stability.md`
+§15). The code was written and tested and had **never run against a live
+account**; the stock fetch was known wrong for a multi-branch tenant; and the
+two providers are **Colombian** accounting software while the declared anchor
+market is **Costa Rica** — a misalignment the strategy memory flagged on
+2026-07-19 and nobody ever closed. Selling an integration nobody had run was the
+part that could not stand.
 
-1. **The pattern is already proven in-house.** Nobody has to invent what "it
-   comes in by itself" looks like: it already looks like that for two providers.
-   What is missing is giving the **file** the same treatment — and the file is
-   where the volume will come from.
-2. **Two connectors do not cover "everything".** They cover a slice. The file
-   path is still the only one that serves everybody else.
-3. **They sat behind the most expensive plan.** That is: the capability that
-   makes Faro complement rather than replace was the priciest thing in the
-   catalogue, while typing the inventory by hand was available to all. (Settled
-   since — see the 2026-09-16 note at the top.)
+What the episode leaves behind, and it still sharpens the thesis rather than
+weakening it:
 
-Also, Alegra and Siigo are **Colombian** accounting software, and the declared
-anchor market is **Costa Rica** (see the strategy memory, which already flagged
-this misalignment on 2026-07-19). The real Costa Rican equivalent is still
-undefined.
+1. **Two connectors never covered "everything".** They covered a slice, and the
+   file path was always the only one that served everybody else. That is now
+   the whole of it, which is clarifying.
+2. **The shape they proved is the one the file path has to have**: it comes in
+   by itself, on a schedule, with the mapping remembered. That is the next
+   correction's subject, and it is built.
+3. If an ERP connector is ever built again, the thing to fix first is the one
+   this one never had: **an account to run it against** before it is offered.
 
 ### Second correction: the file cycle is not unbuilt either
 
@@ -119,7 +120,7 @@ and already compose**:
 
 So: replace the file + a schedule = automatic import, with no new code. A
 customer can put a cron on their side that uploads their system's nightly
-export, and Faro retrains by itself.
+export, and StockAI retrains by itself.
 
 **What is missing is not machinery, it is two cheaper and more uncomfortable
 things:**
@@ -144,7 +145,7 @@ scheduled retraining still needs one real run.
 2. **Provenance and a date on every number that moves money.** Half done
    already (the "estimated" badges, "with an estimated cost", "we do not know"
    instead of "no risk") and it is the best thing in the product. An ERP gives
-   you a number; Faro says where it came from and whether it made it up.
+   you a number; StockAI says where it came from and whether it made it up.
 3. **Get the decision out of the building**: the PO in the customer's format,
    the message to the supplier, the daily summary. Partially there, and
    under-invested compared to the record-keeping half.
@@ -155,7 +156,7 @@ scheduled retraining still needs one real run.
   administration, transfers, shrinkage. Just stop growing it.
 - **Do not build an integrations platform.** It is the natural trap after
   buying this thesis, and it fails precisely on "everything".
-- **Do not overcorrect**: Faro cannot stop storing stock, because without stock
+- **Do not overcorrect**: StockAI cannot stop storing stock, because without stock
   there is no semáforo. The rule is not "do not store", it is **"do not be the
   authority"** — always show where each number came from and when, and make
   refreshing it trivial.

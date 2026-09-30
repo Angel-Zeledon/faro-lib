@@ -1,10 +1,10 @@
 """The limits a tenant runs under. One product, two ceilings.
 
-Faro shipped three tiers once — starter / professional / enterprise — each with
+StockAI shipped three tiers once — starter / professional / enterprise — each with
 its own feature set, and a good part of the product was spent telling people
 what they could not use. That is not what this is. **Every tenant gets every
 feature**, on both tiers: the same screens, the same forecasting, the same
-assistant, the same integrations. What differs is only *how much* of it fits.
+assistant, the same public API. What differs is only *how much* of it fits.
 
 - `free` is a real, permanent home for a small operation, not a countdown. It
   is deliberately narrow: a distributor who grows past a hundred SKUs, a second

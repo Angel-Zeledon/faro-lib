@@ -6,7 +6,7 @@ import {
   TrendingUp, Package,
   BrainCircuit, Settings, KeyRound, LogOut, User, Users,
   ChevronLeft, ChevronRight, X,
-  ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
+  ShoppingCart, Truck, Upload, ClipboardList, Plug, History,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
   ScrollText,
 } from 'lucide-react'
@@ -17,6 +17,7 @@ import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { Wordmark } from '@/components/brand/Wordmark'
 
 // ── Nav definition ────────────────────────────────────────────────────────────
 interface NavItem {
@@ -65,12 +66,6 @@ const NAV: NavItem[] = [
   { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis' },
 
   { href: '/usuarios',            labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
-  // Integraciones is still out of the nav. The reason used to be commercial —
-  // whether it was sold, and on which plan — and that question is gone with the
-  // tiers. What is left is that connecting Alegra or Siigo has never been walked
-  // end to end by a person. The route and its page exist; restore this line to
-  // bring it back.
-  //
   // These two used to be crossed: /config held your own profile while being
   // called "Configuración", and /settings held scheduled recalculation while
   // being called "Tareas programadas". Both routes said "settings" and neither
@@ -82,9 +77,9 @@ const NAV: NavItem[] = [
   // INSTANCE_ADMIN_EMAILS, because `admin` is a role inside a tenant and the
   // deployment's credentials are not a tenant's to read.
   { href: '/instalacion',         labelKey: 'nav.installation', Icon: ServerCog,       group: 'system',  adminOnly: true },
-  // NOT adminOnly: an analyst is exactly who wires an integration, and the page
-  // only ever acts with the key the reader pastes into it — never with their
-  // session.
+  // NOT adminOnly: an analyst is exactly who wires a customer's own system up
+  // to the public API, and the page only ever acts with the key the reader
+  // pastes into it — never with their session.
   { href: '/api',                 labelKey: 'nav.api',         Icon: Code2,           group: 'system' },
 ]
 
@@ -187,17 +182,14 @@ export default function Sidebar() {
         display: 'flex', alignItems: 'center',
         justifyContent: collapsedNow ? 'center' : 'flex-start',
       }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: 'var(--brand-grad)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Zap size={17} color="#fff" strokeWidth={2.5} />
-        </div>
-        {!collapsedNow && (
-          <div style={{ marginLeft: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em', color: 'var(--sidebar-text-active)' }}>Faro</div>
-            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 1 }}>
+        {/* Type-only mark; the sidebar is petrol in both themes, so "ai"
+            takes the light end of the brand gradient to hold its contrast. */}
+        {collapsedNow ? (
+          <Wordmark size={17} compact color="var(--sidebar-text-active)" accent="#4CC3B5" />
+        ) : (
+          <div>
+            <Wordmark size={21} color="var(--sidebar-text-active)" accent="#4CC3B5" />
+            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 5 }}>
               {t('sidebar.tagline')}
             </div>
           </div>

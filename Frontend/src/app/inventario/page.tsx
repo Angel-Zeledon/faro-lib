@@ -5,17 +5,21 @@ import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
- listSuppliers, getDeadStock, simulateEvent, logPOGeneration, downloadInventoryTemplate,
+ listSuppliers, getDeadStock, getDeadCapital, simulateEvent, logPOGeneration, downloadInventoryTemplate,
  createShrinkage,
  getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
  listEventMultipliers, setEventMultiplier, deleteEventMultiplier,
+ getSupplierCostInflation, getMarginErosion, getForecastMoney,
+ getCostOfIgnoring, getWhyChanged,
  ApiError,
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
- InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, ExcludedSku,
+ InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, DeadCapitalResponse, ExcludedSku,
  EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry, CoverageUnit,
  EventMultiplier,
+ SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
+ CostOfIgnoringResponse, WhyChangedResponse, WhyChangedFieldOrigin,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import Pagination, { usePage } from '@/components/table/Pagination'
@@ -43,7 +47,7 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
- Zap, PackageMinus, Search, PackagePlus,
+ Zap, PackageMinus, Search, PackagePlus, DollarSign,
 } from 'lucide-react'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -266,7 +270,7 @@ function Sparkline({ data }: { data: { stock: number }[] }) {
  )
 }
 
-// ── My data, or Faro's assumption? ────────────────────────────────────
+// ── My data, or StockAI's assumption? ────────────────────────────────────
 // `t` returns the key itself when the catalog has no entry, so a build whose
 // copy has not landed yet would print "inventory.source_default" at the buyer.
 // Same guard `lib/explanationCopy.ts` uses: probe, and fall back to real words.
@@ -314,7 +318,7 @@ function SourceBadge({ source }: { source?: ValueSource | null }) {
   return (
     <span
       title={tOr(t, 'inventory.source_assumed_tip',
-        'Faro assumed this value — you have not given us one yet.')}
+        'StockAI assumed this value — you have not given us one yet.')}
       style={{
         marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
         textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,
@@ -513,6 +517,42 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)`, fontSize: 11, color: C.dim }}>
  {t('inventory.calc_footer_safety_stock')}
  </div>
+ {/* A declared event (stability.md 19.5) that overlaps this sku's lead-time
+     window right now — a standing fact the semáforo already applied, not a
+     what-if. Kept as a short list, never a table: one line per event, and
+     the override word only when the tenant's own SKU/category number is
+     what actually fired instead of the event's own multiplier. */}
+ {exp.events_applied && exp.events_applied.length > 0 && (
+ <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)` }}>
+ {exp.events_applied.length > 1 && (
+ <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>
+ {t('inventory.calc_events_intro', { n: exp.events_applied.length })}
+ </div>
+ )}
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+ {exp.events_applied.map(ev => (
+ <div key={ev.event_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text }}>
+ <Calendar size={12} color={C.indigo} aria-hidden="true" />
+ <span>
+ {t('inventory.why_event', {
+ event: ev.event_name,
+ multiplier: ev.multiplier.toFixed(1),
+ overlap: ev.overlap_days,
+ window: ev.window_days,
+ })}
+ </span>
+ {ev.multiplier_source !== 'event' && (
+ <span style={{ fontSize: 10, fontWeight: 600, color: C.indigo }}>
+ ({t(ev.multiplier_source === 'sku' ? 'inventory.mult_origin_sku'
+ : ev.multiplier_source === 'family' ? 'inventory.mult_origin_family'
+ : 'inventory.mult_origin_category')})
+ </span>
+ )}
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
  </div>
  )
 }
@@ -572,7 +612,7 @@ function KPICard({ label, value, color, sub, onClick, active }: {
 }
 
 // ── Multiplier: explanation and per-product editing (feature 3.4) ───────────
-// An event multiplier cannot be a number with no provenance: if Faro
+// An event multiplier cannot be a number with no provenance: if StockAI
 // says "order 3x of this on Black Friday", the buyer has to be able to see
 // where that 3x comes from and change it. And it is not a single number —
 // electronics and milk behave differently — so it resolves SKU > category > event.
@@ -1630,6 +1670,113 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  )
 }
 
+// ── "Why is today's number different" (stability.md 19.7) ───────────────────
+// The buyer's actual question is "was it my business or your opinion" — so
+// this answers THAT first, in one sentence, before any field-level detail.
+// Fetched lazily: it rides the same mount-on-demand row this component sits
+// in, one call per SKU the buyer actually opens, never the whole page.
+const WHY_CHANGED_FIELD_LABEL_KEY: Record<string, string> = {
+ avg_daily_demand: 'inventory.calc_step_avg_daily_sales',
+ safety_stock:     'inventory.calc_step_safety_stock',
+ reorder_point:    'inventory.why_changed_field_reorder_point',
+ lead_time_days:   'inventory.col_lead_time',
+ current_stock:    'inventory.calc_step_current_stock',
+ recommended_qty:  'inventory.why_changed_field_recommended_qty',
+ signal:           'inventory.why_changed_field_signal',
+}
+
+function whyChangedOriginKey(origin: WhyChangedFieldOrigin): string {
+ if (origin === 'session') return 'inventory.why_changed_origin_session'
+ if (origin === 'operational') return 'inventory.why_changed_origin_operational'
+ return 'inventory.why_changed_origin_derived'
+}
+
+function WhyChangedPanel({ sku }: { sku: string }) {
+ const { t, lang } = useLanguage()
+ const [data, setData] = useState<WhyChangedResponse | null>(null)
+ const [loading, setLoading] = useState(true)
+
+ useEffect(() => {
+  let alive = true
+  setLoading(true)
+  getWhyChanged(sku)
+   .then(r => { if (alive) setData(r) })
+   .catch(() => { if (alive) setData(null) })
+   .finally(() => { if (alive) setLoading(false) })
+  return () => { alive = false }
+ }, [sku])
+
+ const boxS: React.CSSProperties = {
+  background: 'var(--surface)', border: `1px solid ${C.border}`,
+  borderRadius: 8, padding: '12px 16px', marginTop: 8,
+ }
+ const titleS: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 8,
+  textTransform: 'uppercase', letterSpacing: '0.06em',
+ }
+
+ if (loading) return null // No spinner: this is a secondary panel, not the row itself.
+ if (!data) return null   // The fetch failed — degrade to nothing rather than an error box beside a working row.
+
+ if (!data.available) {
+  const reasonKey = data.reason === 'no_recorded_recommendations'
+   ? 'inventory.why_changed_no_history' : 'inventory.why_changed_one_day'
+  return (
+   <div style={boxS}>
+    <div style={titleS}>{t('inventory.why_changed_title')}</div>
+    <div style={{ fontSize: 12, color: C.dim }}>{t(reasonKey)}</div>
+   </div>
+  )
+ }
+
+ const fields = data.fields || {}
+ // Only the inputs that actually moved — a row with delta 0 (or, for
+ // `signal`, an unchanged string) is not part of "why", it is noise next to it.
+ const changed = Object.entries(fields).filter(([, f]) => {
+  if (f.delta != null) return f.delta !== 0
+  return f.previous !== f.current
+ })
+
+ return (
+  <div style={boxS}>
+   <div style={titleS}>{t('inventory.why_changed_title')}</div>
+   <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>
+    {t(data.session_changed ? 'inventory.why_changed_new_session' : 'inventory.why_changed_same_session')}
+   </div>
+   {data.previous_recorded_on && data.latest_recorded_on && (
+    <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>
+     {t('inventory.why_changed_dates', {
+      previous: new Date(`${data.previous_recorded_on}T12:00:00`).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CR'),
+      latest: new Date(`${data.latest_recorded_on}T12:00:00`).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CR'),
+     })}
+    </div>
+   )}
+   {changed.length === 0 ? (
+    <div style={{ fontSize: 12, color: C.dim }}>{t('inventory.why_changed_no_change_fields')}</div>
+   ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+     {changed.map(([field, f]) => (
+      <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+       <span style={{
+        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+        padding: '2px 6px', borderRadius: 4, color: f.origin === 'operational' ? C.amber : f.origin === 'session' ? C.indigo : C.dim,
+        background: f.origin === 'operational' ? 'color-mix(in srgb, var(--warning, #f59e0b) 14%, transparent)'
+         : f.origin === 'session' ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+       }}>
+        {t(whyChangedOriginKey(f.origin))}
+       </span>
+       <span style={{ color: C.muted, flex: 1 }}>{t(WHY_CHANGED_FIELD_LABEL_KEY[field] || field)}</span>
+       <span style={{ fontFamily: 'monospace', color: C.dim }}>{String(f.previous ?? '—')}</span>
+       <span style={{ color: C.dim }}>→</span>
+       <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.text }}>{String(f.current ?? '—')}</span>
+      </div>
+     ))}
+    </div>
+   )}
+  </div>
+ )
+}
+
 // ── Grow-in-place detail row ─────────────────────────────────────────────────
 // The panel is mounted closed and opened one painted frame later, so the
 // `grid-template-rows: 0fr -> 1fr` transition of `.reveal-panel` has a starting
@@ -1671,6 +1818,10 @@ function ExpandedCalcRow({ item, background }: {
      <div>
       <div style={{ padding: '0 16px 12px 48px' }}>
        <CalcExplainer exp={item.calc_explanation!} moq={item.moq} />
+       {/* "Was it my business or your opinion" (stability.md 19.7) — sits right
+           under the calculation it explains the CHANGE to, not on its own
+           screen: the buyer is already looking at this sku. */}
+       <WhyChangedPanel sku={item.sku} />
        {/* Which of the four planning numbers are the buyer's and which are ours,
            plus what the lead-time learning is waiting for. */}
        <PlanningValues item={item} />
@@ -1685,7 +1836,7 @@ function ExpandedCalcRow({ item, background }: {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
- const { t } = useLanguage()
+ const { t, lang } = useLanguage()
  const { addToast } = useToast()
  // A viewer was offered the whole write toolbar — stock editor, shrinkage,
  // "add warehouse" — could type a value, and only met the refusal at save
@@ -1710,7 +1861,7 @@ export default function InventoryPage() {
  const [sort, setSort] = useState<SortState | null>(null)
  const [page, setPage] = useState(1)
  const [deadPage, setDeadPage] = useState(1)
- const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'dead'>(() =>
+ const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'dead' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored'>(() =>
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
  const [expandedSku, setExpandedSku] = useState<string | null>(null)
@@ -1735,6 +1886,39 @@ export default function InventoryPage() {
  const savingRef = useRef(false)
  const [deadStock,   setDeadStock]   = useState<DeadStockResponse | null>(null)
  const [loadingDead, setLoadingDead] = useState(false)
+ // "Plata parada" (capital parado): independent of the dead-stock view above
+ // — needs no session, reads real stock-level history. See getDeadCapital.
+ const [deadCapital, setDeadCapital] = useState<DeadCapitalResponse | null>(null)
+ const [loadingDeadCapital, setLoadingDeadCapital] = useState(false)
+ const [deadCapitalWindow, setDeadCapitalWindow] = useState(90)
+ const [deadCapitalPage, setDeadCapitalPage] = useState(1)
+ // Supplier cost inflation / margin erosion (stability.md #20, items 5-6):
+ // neither needs a session, both read received-PO cost history. See
+ // getSupplierCostInflation / getMarginErosion.
+ const [costInflation, setCostInflation] = useState<SupplierCostInflationResponse | null>(null)
+ const [loadingCostInflation, setLoadingCostInflation] = useState(false)
+ const [costInflationWindow, setCostInflationWindow] = useState(365)
+ const [costInflationPage, setCostInflationPage] = useState(1)
+ const [marginErosion, setMarginErosion] = useState<MarginErosionResponse | null>(null)
+ const [loadingMarginErosion, setLoadingMarginErosion] = useState(false)
+ const [marginErosionWindow, setMarginErosionWindow] = useState(365)
+ const [marginErosionMinPts, setMarginErosionMinPts] = useState(0.5)
+ const [marginErosionPage, setMarginErosionPage] = useState(1)
+ // The forecast in money (stability.md #20, item 1): needs the active
+ // session's forecast, same as the main status view. See getForecastMoney.
+ const [forecastMoney, setForecastMoney] = useState<ForecastMoneyResponse | null>(null)
+ const [loadingForecastMoney, setLoadingForecastMoney] = useState(false)
+ const [forecastMoneyPage, setForecastMoneyPage] = useState(1)
+ // "What did it cost me to ignore you" (stability.md 19.4): needs no
+ // session, reads the recommendation log itself. See getCostOfIgnoring.
+ const [costOfIgnoring, setCostOfIgnoring] = useState<CostOfIgnoringResponse | null>(null)
+ const [loadingCostOfIgnoring, setLoadingCostOfIgnoring] = useState(false)
+ const todayIso = new Date().toISOString().slice(0, 10)
+ const [ignoringFromDate, setIgnoringFromDate] = useState(
+  new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
+ const [ignoringToDate, setIgnoringToDate] = useState(todayIso)
+ const [ignoringPoWindow, setIgnoringPoWindow] = useState(14)
+ const [ignoringPage, setIgnoringPage] = useState(1)
  const [editedQty, setEditedQty] = useState<Record<string, number>>({})
  const [editingQtySku, setEditingQtySku] = useState<string | null>(null)
  const [showShrinkageModal, setShowShrinkageModal] = useState(false)
@@ -1786,6 +1970,58 @@ export default function InventoryPage() {
   .catch((e: unknown) => setError(e))
   .finally(() => setLoadingDead(false))
  }, [viewMode, sessionId])
+
+ // ── Dead capital ("plata parada") load ─────────────────────────────────────
+ // No session dependency: it works off real stock-level history alone, so a
+ // tenant with no completed session yet can still see it.
+ useEffect(() => {
+ if (viewMode !== 'capital') return
+ setLoadingDeadCapital(true)
+ getDeadCapital(deadCapitalWindow)
+  .then(setDeadCapital)
+  .catch((e: unknown) => setError(e))
+  .finally(() => setLoadingDeadCapital(false))
+ }, [viewMode, deadCapitalWindow])
+
+ // ── Supplier cost inflation load ────────────────────────────────────────────
+ useEffect(() => {
+ if (viewMode !== 'inflation') return
+ setLoadingCostInflation(true)
+ getSupplierCostInflation(costInflationWindow)
+  .then(setCostInflation)
+  .catch((e: unknown) => setError(e))
+  .finally(() => setLoadingCostInflation(false))
+ }, [viewMode, costInflationWindow])
+
+ // ── Margin erosion load ─────────────────────────────────────────────────────
+ useEffect(() => {
+ if (viewMode !== 'erosion') return
+ setLoadingMarginErosion(true)
+ getMarginErosion(marginErosionWindow, marginErosionMinPts)
+  .then(setMarginErosion)
+  .catch((e: unknown) => setError(e))
+  .finally(() => setLoadingMarginErosion(false))
+ }, [viewMode, marginErosionWindow, marginErosionMinPts])
+
+ // ── The forecast in money load ──────────────────────────────────────────────
+ useEffect(() => {
+ if (viewMode !== 'money' || !sessionId) return
+ setLoadingForecastMoney(true)
+ getForecastMoney(sessionId)
+  .then(setForecastMoney)
+  .catch((e: unknown) => setError(e))
+  .finally(() => setLoadingForecastMoney(false))
+ }, [viewMode, sessionId])
+
+ // ── Cost of ignoring load ───────────────────────────────────────────────────
+ useEffect(() => {
+ if (viewMode !== 'ignored') return
+ setLoadingCostOfIgnoring(true)
+ getCostOfIgnoring(ignoringFromDate, ignoringToDate, ignoringPoWindow)
+  .then(setCostOfIgnoring)
+  .catch((e: unknown) => setError(e))
+  .finally(() => setLoadingCostOfIgnoring(false))
+ }, [viewMode, ignoringFromDate, ignoringToDate, ignoringPoWindow])
 
  // ── Update-draft initialization ────────────────────────────────────────────
  useEffect(() => {
@@ -1946,6 +2182,25 @@ export default function InventoryPage() {
  const pageItems = paged.rows
  const deadItems = useMemo(() => deadStock?.items ?? [], [deadStock])
  const deadPaged = usePage(deadItems, deadPage, setDeadPage)
+ const deadCapitalItems = useMemo(() => deadCapital?.items ?? [], [deadCapital])
+ const deadCapitalPaged = usePage(deadCapitalItems, deadCapitalPage, setDeadCapitalPage)
+ const forecastMoneyItems = useMemo(() => forecastMoney?.items ?? [], [forecastMoney])
+ const forecastMoneyPaged = usePage(forecastMoneyItems, forecastMoneyPage, setForecastMoneyPage)
+ const costInflationSuppliers = useMemo(() => costInflation?.suppliers ?? [], [costInflation])
+ const costInflationPaged = usePage(costInflationSuppliers, costInflationPage, setCostInflationPage)
+ const marginErosionItems = useMemo(() => marginErosion?.items ?? [], [marginErosion])
+ const marginErosionPaged = usePage(marginErosionItems, marginErosionPage, setMarginErosionPage)
+ const costOfIgnoringSkus = useMemo(() => costOfIgnoring?.skus ?? [], [costOfIgnoring])
+ const costOfIgnoringPaged = usePage(costOfIgnoringSkus, ignoringPage, setIgnoringPage)
+ // The report itself only carries the sku code (it is a read over the
+ // recommendation log, which does not persist a display name) — the main
+ // status list already loaded for this tenant does, so this joins the two
+ // client-side rather than asking the backend to duplicate that lookup.
+ const skuDisplayName = useMemo(() => {
+ const m: Record<string, string> = {}
+ for (const i of data?.items ?? []) if (i.display_name) m[i.sku] = i.display_name
+ return m
+ }, [data])
  useEffect(() => { setDeadPage(1) }, [deadStock])
 
  // Any change to what is being listed sends you back to the first page:
@@ -2053,7 +2308,7 @@ export default function InventoryPage() {
  // would emit quantities from a view nobody is looking at. The server-side
  // export knows how to scope itself now, so that is what runs instead.
  if (selectedWarehouse) { void handleExport(); return }
- // Every actionable line Faro put in front of the buyer, whatever they did
+ // Every actionable line StockAI put in front of the buyer, whatever they did
  // with it. Splitting here rather than filtering once is what makes
  // 'rejected' reachable at all: a line the buyer zeroed out used to be
  // dropped before the decisions were built, so this export could only ever
@@ -2165,8 +2420,13 @@ export default function InventoryPage() {
  // type and reach an enabled Save that can only ever be refused.
  ...(canEdit ? [['update', <PencilLine size={13} />, t('inventory.view_update')]] : []),
  ['dead', <Package size={13} />, t('inventory.view_dead')],
+ ['capital', <TrendingDown size={13} />, t('inventory.view_dead_capital')],
+ ['inflation', <TrendingUp size={13} />, t('inventory.view_cost_inflation')],
+ ['erosion', <TrendingDown size={13} />, t('inventory.view_margin_erosion')],
+ ['money', <DollarSign size={13} />, t('inventory.view_forecast_money')],
+ ['ignored', <AlertTriangle size={13} />, t('inventory.view_cost_of_ignoring')],
  ] as [string, React.ReactNode, string][]).map(([mode, icon, label]) => (
- <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'dead')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
+ <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'dead' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
  {icon}{label}
  </button>
  ))}
@@ -2704,11 +2964,15 @@ export default function InventoryPage() {
          <td style={{ padding: '10px 12px', color: C.text }}>
           {item.current_stock?.toLocaleString()}
          </td>
-         <td style={{ padding: '10px 12px', fontWeight: 700, color: C.red }}>
-          {formatMoneyCompact(item.capital_trapped)}
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: item.capital_trapped === null ? C.dim : C.red }}>
+          {item.capital_trapped === null
+           ? <Tooltip text={t('inventory.dead_capital_unknown')}><span>{t('inventory.dead_capital_unknown_short')}</span></Tooltip>
+           : formatMoneyCompact(item.capital_trapped)}
          </td>
-         <td style={{ padding: '10px 12px', color: C.amber, fontSize: 11 }}>
-          {formatMoneyCompact(item.holding_cost_monthly)}{t('inventory.unit_per_month_suffix')}
+         <td style={{ padding: '10px 12px', color: item.holding_cost_monthly === null ? C.dim : C.amber, fontSize: 11 }}>
+          {item.holding_cost_monthly === null
+           ? '—'
+           : <>{formatMoneyCompact(item.holding_cost_monthly)}{t('inventory.unit_per_month_suffix')}</>}
          </td>
          <td style={{ padding: '10px 12px' }}>
           <span style={{
@@ -2737,6 +3001,724 @@ export default function InventoryPage() {
      {t('inventory.dead_footer_note_1')}
      {t('inventory.dead_footer_note_2', { pct: fmt((deadStock.holding_cost_pct ?? 0.2) * 100, 0) })}
     </div>
+    {deadStock.unpriced_sku_count > 0 && (
+     <div style={{ marginTop: 4, fontSize: 11, color: C.dim }}>
+      {t('inventory.dead_footer_unpriced', { count: deadStock.unpriced_sku_count })}
+     </div>
+    )}
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'capital' ? (
+ /* ── Capital parado / "plata parada" ─────────────────────────
+    Independent of the dead-stock view above: needs no session, ranks every
+    SKU by money that has not moved (real stock-level history), worst first,
+    with the tenant's total at the top. See getDeadCapital / dead_capital.py. */
+ <div style={{ padding: 16 }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+   <p style={{ margin: 0, fontSize: 12, color: C.dim, maxWidth: 560 }}>
+    {t('inventory.deadcap_intro', { days: deadCapitalWindow })}
+   </p>
+   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+    {t('inventory.deadcap_window_label')}
+    <input
+     type="number" min={7} max={365} value={deadCapitalWindow}
+     onChange={e => {
+      const v = Number(e.target.value)
+      if (Number.isFinite(v) && v >= 7 && v <= 365) setDeadCapitalWindow(v)
+     }}
+     style={{ ...inputS, width: 64 }}
+     aria-label={t('inventory.deadcap_window_label')}
+    />
+   </label>
+  </div>
+
+  {loadingDeadCapital ? (
+   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !deadCapital ? null : deadCapital.sku_count === 0 ? (
+   <div style={{ padding: '40px 0', textAlign: 'center' }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.green, marginBottom: 8 }}>
+     {t('inventory.deadcap_none')}
+    </div>
+    <div style={{ fontSize: 13, color: C.dim }}>
+     {t('inventory.deadcap_none_desc', { days: deadCapital.window_days })}
+    </div>
+   </div>
+  ) : (
+   <>
+    {/* Total in money, first — the number the owner asked to see at the top. */}
+    <div style={{
+     display: 'grid',
+     gridTemplateColumns: deadCapital.unpriced_sku_count > 0 ? 'repeat(3,1fr)' : 'repeat(2,1fr)',
+     gap: 12, marginBottom: 20,
+    }}>
+     <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.red}`,
+     }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{formatMoneyCompact(deadCapital.total_value)}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.deadcap_kpi_total')}</div>
+     </div>
+     <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.amber}`,
+     }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>{deadCapital.sku_count}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.deadcap_kpi_skus')}</div>
+     </div>
+     {deadCapital.unpriced_sku_count > 0 && (
+      <div style={{
+       background: C.surface, border: `1px solid ${C.border}`,
+       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.dim}`,
+      }}>
+       <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{deadCapital.unpriced_sku_count}</div>
+       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.deadcap_kpi_unpriced')}</div>
+      </div>
+     )}
+    </div>
+
+    {deadCapital.unpriced_sku_count > 0 && (
+     <div style={{
+      marginBottom: 14, padding: '10px 14px', borderRadius: 8, fontSize: 11.5,
+      background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim,
+     }}>
+      {t('inventory.deadcap_unpriced_banner', { count: deadCapital.unpriced_sku_count })}
+     </div>
+    )}
+
+    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+       <tr style={{ background: C.card }}>
+        {[
+         t('inventory.deadcap_col_product'), t('inventory.deadcap_col_days_still'),
+         t('inventory.deadcap_col_stock'), t('inventory.deadcap_col_value'),
+         t('inventory.deadcap_col_category'), t('inventory.deadcap_col_signal'),
+        ].map(h => (
+         <th key={h} scope="col" style={{
+          padding: '9px 12px', textAlign: 'left',
+          color: C.dim, fontWeight: 600, fontSize: 10,
+          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
+          letterSpacing: '0.06em',
+         }}>{h}</th>
+        ))}
+       </tr>
+      </thead>
+      <tbody>
+       {deadCapitalPaged.rows.map((item, i: number) => (
+        <tr key={item.sku} style={{
+         background: (deadCapitalPaged.offset + i) % 2 === 0 ? C.surface : C.card,
+         borderBottom: `1px solid ${C.border}`,
+        }}>
+         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text }}>
+          <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
+          <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
+          {item.supplier && <div style={{ fontSize: 10, color: C.muted }}>{item.supplier}</div>}
+         </th>
+         <td style={{ padding: '10px 12px', color: C.red, fontWeight: 700 }}>
+          {t(item.days_still_exact ? 'inventory.deadcap_days_still_exact' : 'inventory.deadcap_days_still_approx', { days: item.days_still })}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.text }}>
+          {item.current_stock.toLocaleString()}
+         </td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: item.value === null ? C.dim : C.red }}>
+          {item.value === null
+           ? <Tooltip text={t('inventory.deadcap_value_unknown')}><span>{t('inventory.deadcap_value_unknown_short')}</span></Tooltip>
+           : formatMoneyCompact(item.value)}
+         </td>
+         <td style={{ padding: '10px 12px', fontSize: 11, color: C.muted }}>
+          {item.category || '—'}
+         </td>
+         <td style={{ padding: '10px 12px' }}>
+          {item.signal
+           ? <SignalBadge s={item.signal} />
+           : <span style={{ fontSize: 10, color: C.dim }}>{t('inventory.deadcap_signal_none')}</span>}
+         </td>
+        </tr>
+       ))}
+      </tbody>
+     </table>
+    </div>
+
+    <Pagination page={deadCapitalPaged.page} pageCount={deadCapitalPaged.pageCount} offset={deadCapitalPaged.offset} total={deadCapitalPaged.total} rowsOnPage={deadCapitalPaged.rows.length} onPage={setDeadCapitalPage} label="SKU" />
+
+    {(deadCapital.excluded_no_history > 0 || deadCapital.excluded_too_recent > 0) && (
+     <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>
+      {t('inventory.deadcap_footer_excluded', {
+       noHistory: deadCapital.excluded_no_history,
+       tooRecent: deadCapital.excluded_too_recent,
+       days: deadCapital.window_days,
+      })}
+     </div>
+    )}
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'inflation' ? (
+ /* ── Supplier cost inflation (stability.md #20 item 5) ───────────
+    Suppliers who raised a SKU's cost at least once in the window, from
+    only received orders — see getSupplierCostInflation / cost_alerts.py. */
+ <div style={{ padding: 16 }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+   <p style={{ margin: 0, fontSize: 12, color: C.dim, maxWidth: 560 }}>
+    {t('inventory.inflation_intro', { days: costInflationWindow })}
+   </p>
+   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+    {t('inventory.inflation_window_label')}
+    <input
+     type="number" min={30} max={1095} value={costInflationWindow}
+     onChange={e => {
+      const v = Number(e.target.value)
+      if (Number.isFinite(v) && v >= 30 && v <= 1095) setCostInflationWindow(v)
+     }}
+     style={{ ...inputS, width: 72 }}
+     aria-label={t('inventory.inflation_window_label')}
+    />
+   </label>
+  </div>
+
+  {loadingCostInflation ? (
+   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !costInflation ? null : costInflation.supplier_count === 0 ? (
+   <div style={{ padding: '40px 0', textAlign: 'center' }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.green, marginBottom: 8 }}>
+     {t('inventory.inflation_none')}
+    </div>
+    <div style={{ fontSize: 13, color: C.dim }}>
+     {t('inventory.inflation_none_desc', { days: costInflation.window_days })}
+    </div>
+   </div>
+  ) : (
+   <>
+    <div style={{
+     background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+     padding: '14px 18px', borderTop: `3px solid ${C.red}`, marginBottom: 20, maxWidth: 260,
+    }}>
+     <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{costInflation.supplier_count}</div>
+     <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.inflation_kpi_suppliers')}</div>
+    </div>
+
+    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+       <tr style={{ background: C.card }}>
+        {[
+         t('inventory.inflation_col_supplier'), t('inventory.inflation_col_increases'),
+         t('inventory.inflation_col_cumulative'), t('inventory.inflation_col_products'),
+        ].map(h => (
+         <th key={h} scope="col" style={{
+          padding: '9px 12px', textAlign: 'left',
+          color: C.dim, fontWeight: 600, fontSize: 10,
+          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
+          letterSpacing: '0.06em',
+         }}>{h}</th>
+        ))}
+       </tr>
+      </thead>
+      <tbody>
+       {costInflationPaged.rows.map((sp, i: number) => (
+        <tr key={sp.supplier} style={{
+         background: (costInflationPaged.offset + i) % 2 === 0 ? C.surface : C.card,
+         borderBottom: `1px solid ${C.border}`,
+        }}>
+         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: C.text }}>
+          {sp.supplier}
+         </th>
+         <td style={{ padding: '10px 12px', color: C.text }}>{sp.increases_count}</td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: C.red }}>+{sp.cumulative_pct}%</td>
+         <td style={{ padding: '10px 12px', fontSize: 11, color: C.muted }}>
+          {sp.worst_products.map(p => (
+           <div key={p.sku} style={{ marginBottom: 2 }}>
+            <span style={{ fontWeight: 600, color: C.text }}>{p.display_name || p.sku}</span>
+            {' — '}
+            {t('inventory.inflation_product_change', { first: p.first_cost, last: p.last_cost, pct: p.cumulative_pct })}
+           </div>
+          ))}
+         </td>
+        </tr>
+       ))}
+      </tbody>
+     </table>
+    </div>
+
+    <Pagination page={costInflationPaged.page} pageCount={costInflationPaged.pageCount} offset={costInflationPaged.offset} total={costInflationPaged.total} rowsOnPage={costInflationPaged.rows.length} onPage={setCostInflationPage} label={t('inventory.inflation_col_supplier')} />
+
+    <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>{t('inventory.inflation_footer_note')}</div>
+    {(costInflation.skus_single_observation > 0 || costInflation.lines_excluded_no_supplier > 0) && (
+     <div style={{ marginTop: 4, fontSize: 11, color: C.dim }}>
+      {t('inventory.inflation_excluded_note', {
+       single: costInflation.skus_single_observation,
+       noSupplier: costInflation.lines_excluded_no_supplier,
+      })}
+     </div>
+    )}
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'erosion' ? (
+ /* ── Margin erosion (stability.md #20 item 6) ─────────────────────
+    Cost history crossed with the SKU's CURRENT sale_price — the only one
+    StockAI stores. See getMarginErosion / cost_alerts.get_margin_erosion for
+    why margin_pct_then is a hypothetical, not a historical fact. */
+ <div style={{ padding: 16 }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+   <p style={{ margin: 0, fontSize: 12, color: C.dim, maxWidth: 560 }}>
+    {t('inventory.erosion_intro')}
+   </p>
+   <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+     {t('inventory.erosion_window_label')}
+     <input
+      type="number" min={30} max={1095} value={marginErosionWindow}
+      onChange={e => {
+       const v = Number(e.target.value)
+       if (Number.isFinite(v) && v >= 30 && v <= 1095) setMarginErosionWindow(v)
+      }}
+      style={{ ...inputS, width: 72 }}
+      aria-label={t('inventory.erosion_window_label')}
+     />
+    </label>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+     {t('inventory.erosion_min_pts_label')}
+     <input
+      type="number" min={0} max={100} step={0.5} value={marginErosionMinPts}
+      onChange={e => {
+       const v = Number(e.target.value)
+       if (Number.isFinite(v) && v >= 0 && v <= 100) setMarginErosionMinPts(v)
+      }}
+      style={{ ...inputS, width: 64 }}
+      aria-label={t('inventory.erosion_min_pts_label')}
+     />
+    </label>
+   </div>
+  </div>
+
+  <div style={{
+   marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 11.5,
+   background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim,
+  }}>
+   {t('inventory.erosion_disclaimer')}
+  </div>
+
+  {loadingMarginErosion ? (
+   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !marginErosion ? null : marginErosion.sku_count === 0 ? (
+   <div style={{ padding: '40px 0', textAlign: 'center' }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.green, marginBottom: 8 }}>
+     {t('inventory.erosion_none')}
+    </div>
+    <div style={{ fontSize: 13, color: C.dim }}>
+     {t('inventory.erosion_none_desc', { pts: marginErosionMinPts, days: marginErosion.window_days })}
+    </div>
+   </div>
+  ) : (
+   <>
+    <div style={{
+     background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+     padding: '14px 18px', borderTop: `3px solid ${C.red}`, marginBottom: 20, maxWidth: 260,
+    }}>
+     <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{marginErosion.sku_count}</div>
+     <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.erosion_kpi_count')}</div>
+    </div>
+
+    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+       <tr style={{ background: C.card }}>
+        {[
+         t('inventory.erosion_col_product'), t('inventory.erosion_col_cost_then'),
+         t('inventory.erosion_col_cost_now'), t('inventory.erosion_col_margin_then'),
+         t('inventory.erosion_col_margin_now'), t('inventory.erosion_col_erosion'),
+        ].map(h => (
+         <th key={h} scope="col" style={{
+          padding: '9px 12px', textAlign: 'left',
+          color: C.dim, fontWeight: 600, fontSize: 10,
+          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
+          letterSpacing: '0.06em',
+         }}>{h}</th>
+        ))}
+       </tr>
+      </thead>
+      <tbody>
+       {marginErosionPaged.rows.map((item, i: number) => (
+        <tr key={item.sku} style={{
+         background: (marginErosionPaged.offset + i) % 2 === 0 ? C.surface : C.card,
+         borderBottom: `1px solid ${C.border}`,
+        }}>
+         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text }}>
+          <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
+          <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
+         </th>
+         <td style={{ padding: '10px 12px', color: C.text }}>{formatMoneyCompact(item.cost_then)}</td>
+         <td style={{ padding: '10px 12px', color: C.text }}>{formatMoneyCompact(item.cost_now)}</td>
+         <td style={{ padding: '10px 12px', color: C.dim }}>{item.margin_pct_then}%</td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: item.margin_pct_now < 0 ? C.red : C.text }}>
+          {item.margin_pct_now < 0
+           ? <Tooltip text={t('inventory.erosion_margin_negative')}><span>{item.margin_pct_now}%</span></Tooltip>
+           : `${item.margin_pct_now}%`}
+         </td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: C.red }}>-{item.erosion_pts} pts</td>
+        </tr>
+       ))}
+      </tbody>
+     </table>
+    </div>
+
+    <Pagination page={marginErosionPaged.page} pageCount={marginErosionPaged.pageCount} offset={marginErosionPaged.offset} total={marginErosionPaged.total} rowsOnPage={marginErosionPaged.rows.length} onPage={setMarginErosionPage} label="SKU" />
+
+    {(marginErosion.excluded_no_sale_price > 0 || marginErosion.excluded_no_cost_history > 0) && (
+     <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>
+      {t('inventory.erosion_excluded_note', {
+       noPrice: marginErosion.excluded_no_sale_price,
+       noHistory: marginErosion.excluded_no_cost_history,
+      })}
+     </div>
+    )}
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'money' ? (
+ /* ── The forecast in money (stability.md #20 item 1) ─────────────
+    The engine predicts units, the product knows sale_price/unit_cost per
+    SKU — this multiplies them over the active session's forecast horizon.
+    See getForecastMoney / forecast_money.get_forecast_money. */
+ <div style={{ padding: 16 }}>
+  {loadingForecastMoney ? (
+   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !forecastMoney ? (
+   <div style={{ padding: 48, textAlign: 'center', color: C.dim, fontSize: 13 }}>
+    {t('inventory.money_select_session')}
+   </div>
+  ) : forecastMoney.sku_count === 0 ? (
+   <div style={{ padding: '40px 0', textAlign: 'center' }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.dim, marginBottom: 8 }}>
+     {t('inventory.money_none')}
+    </div>
+    <div style={{ fontSize: 13, color: C.dim }}>
+     {t('inventory.money_none_desc')}
+    </div>
+   </div>
+  ) : (
+   <>
+    <p style={{ margin: '0 0 12px', fontSize: 12, color: C.dim, maxWidth: 620 }}>
+     {t('inventory.money_intro', {
+      days: forecastMoney.horizon_days,
+      start: forecastMoney.horizon_start ?? '—',
+      end: forecastMoney.horizon_end ?? '—',
+     })}
+    </p>
+
+    {/* StockAI stores no price history — the whole projection is built on
+        today's sale_price, so this says so once instead of implying the
+        product knows tomorrow's price. */}
+    <div style={{
+     marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 11.5,
+     background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim,
+    }}>
+     {t('inventory.money_price_caveat')}
+    </div>
+
+    {/* Totals, first — the number the owner asked to see at the top. */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 12 }}>
+     <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.text}`,
+     }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{formatMoneyCompact(forecastMoney.total_revenue)}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.money_kpi_revenue')}</div>
+     </div>
+     <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${forecastMoney.total_margin < 0 ? C.red : C.green}`,
+     }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: forecastMoney.total_margin < 0 ? C.red : C.green }}>
+       {formatMoneyCompact(forecastMoney.total_margin)}
+      </div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>
+       {t('inventory.money_kpi_margin')}
+       {forecastMoney.total_margin_pct != null && ` (${forecastMoney.total_margin_pct}%)`}
+      </div>
+     </div>
+     <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.amber}`,
+     }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>{forecastMoney.sku_count}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.money_kpi_skus')}</div>
+     </div>
+    </div>
+
+    {forecastMoney.top10_margin_share_pct != null && (
+     <div style={{
+      marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 12,
+      background: 'color-mix(in srgb, var(--accent) 8%, transparent)', color: C.text,
+     }}>
+      {t('inventory.money_top_contributors_note', {
+       n: forecastMoney.top_contributors,
+       pct: forecastMoney.top10_margin_share_pct,
+      })}
+     </div>
+    )}
+
+    {(forecastMoney.excluded_no_price_count > 0 || forecastMoney.excluded_no_cost_count > 0) && (
+     <div style={{
+      marginBottom: 14, padding: '10px 14px', borderRadius: 8, fontSize: 11.5,
+      background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim,
+     }}>
+      {t('inventory.money_excluded_note', {
+       noPrice: forecastMoney.excluded_no_price_count,
+       noCost: forecastMoney.excluded_no_cost_count,
+      })}
+     </div>
+    )}
+
+    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+       <tr style={{ background: C.card }}>
+        {[
+         t('inventory.money_col_product'), t('inventory.money_col_units'),
+         t('inventory.money_col_revenue'), t('inventory.money_col_cost'),
+         t('inventory.money_col_margin'), t('inventory.money_col_margin_pct'),
+         t('inventory.money_col_contribution'),
+        ].map(h => (
+         <th key={h} scope="col" style={{
+          padding: '9px 12px', textAlign: 'left',
+          color: C.dim, fontWeight: 600, fontSize: 10,
+          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
+          letterSpacing: '0.06em',
+         }}>{h}</th>
+        ))}
+       </tr>
+      </thead>
+      <tbody>
+       {forecastMoneyPaged.rows.map((item, i: number) => (
+        <tr key={item.sku} style={{
+         background: (forecastMoneyPaged.offset + i) % 2 === 0 ? C.surface : C.card,
+         borderBottom: `1px solid ${C.border}`,
+        }}>
+         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text }}>
+          <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
+          <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
+          {item.supplier && <div style={{ fontSize: 10, color: C.muted }}>{item.supplier}</div>}
+         </th>
+         <td style={{ padding: '10px 12px', color: C.text }}>
+          {item.units_forecast.toLocaleString()}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.text }}>
+          {item.revenue === null
+           ? <Tooltip text={t('inventory.money_value_unknown', { reason: t(`inventory.money_reason_${item.revenue_unknown_reason}`) })}>
+              <span style={{ color: C.dim }}>{t('inventory.money_value_unknown_short')}</span>
+             </Tooltip>
+           : formatMoneyCompact(item.revenue)}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.text }}>
+          {item.cost === null
+           ? <Tooltip text={t('inventory.money_value_unknown', { reason: t(`inventory.money_reason_${item.cost_unknown_reason}`) })}>
+              <span style={{ color: C.dim }}>{t('inventory.money_value_unknown_short')}</span>
+             </Tooltip>
+           : formatMoneyCompact(item.cost)}
+         </td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: item.margin === null ? C.dim : item.margin < 0 ? C.red : C.green }}>
+          {item.margin === null
+           ? <span>{t('inventory.money_value_unknown_short')}</span>
+           : formatMoneyCompact(item.margin)}
+         </td>
+         <td style={{ padding: '10px 12px', color: item.margin_pct !== null && item.margin_pct < 0 ? C.red : C.dim }}>
+          {item.margin_pct === null ? '—' : `${item.margin_pct}%`}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.dim }}>
+          {item.contribution_pct === null ? '—' : `${item.contribution_pct}%`}
+         </td>
+        </tr>
+       ))}
+      </tbody>
+     </table>
+    </div>
+
+    <Pagination page={forecastMoneyPaged.page} pageCount={forecastMoneyPaged.pageCount} offset={forecastMoneyPaged.offset} total={forecastMoneyPaged.total} rowsOnPage={forecastMoneyPaged.rows.length} onPage={setForecastMoneyPage} label="SKU" />
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'ignored' ? (
+ /* ── Cost of ignoring (stability.md 19.4) ─────────────────────────
+    Every SKU that carried an ordering signal in the window: did a PO
+    follow, and — only when it did not AND a snapshot actually recorded
+    stock at or below zero — what the missed units were worth. See
+    getCostOfIgnoring / recommendation_reports.cost_of_ignoring. The
+    conservatism in that endpoint is the whole point: `no_po_no_stockout_
+    observed` reads as "we cannot show a cost", never as a silent zero. */
+ <div style={{ padding: 16 }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+   <p style={{ margin: 0, fontSize: 12, color: C.dim, maxWidth: 620 }}>
+    {t('inventory.ignoring_intro')}
+   </p>
+   <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+     {t('inventory.ignoring_from_label')}
+     <input
+      type="date" value={ignoringFromDate} max={ignoringToDate}
+      onChange={e => e.target.value && setIgnoringFromDate(e.target.value)}
+      style={{ ...inputS, width: 130 }}
+      aria-label={t('inventory.ignoring_from_label')}
+     />
+    </label>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+     {t('inventory.ignoring_to_label')}
+     <input
+      type="date" value={ignoringToDate} min={ignoringFromDate} max={todayIso}
+      onChange={e => e.target.value && setIgnoringToDate(e.target.value)}
+      style={{ ...inputS, width: 130 }}
+      aria-label={t('inventory.ignoring_to_label')}
+     />
+    </label>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+     {t('inventory.ignoring_po_window_label')}
+     <input
+      type="number" min={1} max={90} value={ignoringPoWindow}
+      onChange={e => {
+       const v = Number(e.target.value)
+       if (Number.isFinite(v) && v >= 1 && v <= 90) setIgnoringPoWindow(v)
+      }}
+      style={{ ...inputS, width: 60 }}
+      aria-label={t('inventory.ignoring_po_window_label')}
+     />
+    </label>
+   </div>
+  </div>
+
+  {loadingCostOfIgnoring ? (
+   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !costOfIgnoring ? null : costOfIgnoring.summary.skus_flagged === 0 ? (
+   <div style={{ padding: '40px 0', textAlign: 'center' }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.green, marginBottom: 8 }}>
+     {t('inventory.ignoring_none')}
+    </div>
+    <div style={{ fontSize: 13, color: C.dim }}>
+     {t('inventory.ignoring_none_desc', { from: costOfIgnoring.from_date, to: costOfIgnoring.to_date })}
+    </div>
+   </div>
+  ) : (
+   <>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 12 }}>
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.text}` }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{costOfIgnoring.summary.skus_flagged}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_flagged')}</div>
+     </div>
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.green}` }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.green }}>{costOfIgnoring.summary.skus_ordered}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_ordered')}</div>
+     </div>
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.red}` }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{costOfIgnoring.summary.skus_likely_stockout}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_stockout')}</div>
+     </div>
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.dim}` }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.dim }}>{costOfIgnoring.summary.skus_unclear}</div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_unclear')}</div>
+     </div>
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16, maxWidth: 520 }}>
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.amber}` }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>
+       {costOfIgnoring.summary.total_estimated_lost_units == null ? '—' : costOfIgnoring.summary.total_estimated_lost_units.toLocaleString()}
+      </div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_lost_units')}</div>
+     </div>
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.red}` }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: costOfIgnoring.summary.total_estimated_lost_value == null ? C.dim : C.red }}>
+       {costOfIgnoring.summary.total_estimated_lost_value == null
+        ? t('inventory.ignoring_kpi_lost_value_none')
+        : formatMoneyCompact(costOfIgnoring.summary.total_estimated_lost_value)}
+      </div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_lost_value')}</div>
+     </div>
+    </div>
+
+    {costOfIgnoring.summary.skus_with_lost_units_but_unknown_value > 0 && (
+     <div style={{
+      marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 11.5,
+      background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim,
+     }}>
+      {t('inventory.ignoring_unknown_value_note', { n: costOfIgnoring.summary.skus_with_lost_units_but_unknown_value })}
+     </div>
+    )}
+
+    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+       <tr style={{ background: C.card }}>
+        {[
+         t('inventory.ignoring_col_product'), t('inventory.col_signal'),
+         t('inventory.ignoring_col_flagged_since'), t('inventory.ignoring_col_outcome'),
+         t('inventory.ignoring_col_days_out'), t('inventory.ignoring_col_lost_units'),
+         t('inventory.ignoring_col_lost_value'),
+        ].map(h => (
+         <th key={h} scope="col" style={{
+          padding: '9px 12px', textAlign: 'left',
+          color: C.dim, fontWeight: 600, fontSize: 10,
+          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
+          letterSpacing: '0.06em',
+         }}>{h}</th>
+        ))}
+       </tr>
+      </thead>
+      <tbody>
+       {costOfIgnoringPaged.rows.map((row, i: number) => (
+        <tr key={row.sku} style={{
+         background: (costOfIgnoringPaged.offset + i) % 2 === 0 ? C.surface : C.card,
+         borderBottom: `1px solid ${C.border}`,
+        }}>
+         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text }}>
+          <div style={{ fontWeight: 600 }}>{skuDisplayName[row.sku] || row.sku}</div>
+          <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{row.sku}</div>
+         </th>
+         <td style={{ padding: '10px 12px' }}><SignalBadge s={row.latest_signal as InventorySignal} /></td>
+         <td style={{ padding: '10px 12px', color: C.muted, fontSize: 11 }}>{row.first_flagged_on}</td>
+         <td style={{ padding: '10px 12px' }}>
+          {row.outcome === 'ordered' ? (
+           <Tooltip text={t('inventory.ignoring_outcome_ordered_detail', { date: row.po_generated_at ? new Date(row.po_generated_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CR') : '—' })}>
+            <span style={{ color: C.green, fontWeight: 600 }}>{t('inventory.ignoring_outcome_ordered')}</span>
+           </Tooltip>
+          ) : row.outcome === 'likely_stockout' ? (
+           <span style={{ color: C.red, fontWeight: 600 }}>
+            {t('inventory.ignoring_outcome_stockout')}
+            {row.partial_window && (
+             <Tooltip text={t('inventory.ignoring_partial_window')}>
+              <span style={{ marginLeft: 4, color: C.dim, fontWeight: 400 }}>*</span>
+             </Tooltip>
+            )}
+           </span>
+          ) : (
+           <Tooltip text={t('inventory.ignoring_outcome_unclear_tooltip')}>
+            <span style={{ color: C.dim, fontWeight: 600 }}>{t('inventory.ignoring_outcome_unclear')}</span>
+           </Tooltip>
+          )}
+         </td>
+         <td style={{ padding: '10px 12px', color: C.text }}>{row.days_out_of_stock ?? '—'}</td>
+         <td style={{ padding: '10px 12px', color: C.text }}>{row.lost_units ?? '—'}</td>
+         <td style={{ padding: '10px 12px', fontWeight: 700, color: row.lost_value != null ? C.red : C.dim }}>
+          {row.lost_value != null
+           ? formatMoneyCompact(row.lost_value)
+           : row.lost_value_reason === 'sale_price_unknown' || row.lost_value_reason === 'no_demand_rate_recorded'
+           ? <Tooltip text={t(`inventory.ignoring_value_unknown_reason_${row.lost_value_reason}`, { units: row.lost_units ?? 0 })}>
+              <span>{t('inventory.ignoring_value_unknown_short')}</span>
+             </Tooltip>
+           : '—'}
+         </td>
+        </tr>
+       ))}
+      </tbody>
+     </table>
+    </div>
+
+    <Pagination page={costOfIgnoringPaged.page} pageCount={costOfIgnoringPaged.pageCount} offset={costOfIgnoringPaged.offset} total={costOfIgnoringPaged.total} rowsOnPage={costOfIgnoringPaged.rows.length} onPage={setIgnoringPage} label="SKU" />
    </>
   )}
  </div>

@@ -21,6 +21,7 @@ Example:
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Iterable, Optional, Set
 
 import numpy as np
@@ -29,6 +30,27 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 DEFAULT_COUNTRY = "CO"
+
+# PROCESS-WIDE cache of (country, year) -> holiday dates, shared across every
+# `HolidayCalendar` instance rather than kept per-instance.
+#
+# `predictor.py::_calendar_rows` and `engineer.py` both construct a FRESH
+# `HolidayCalendar()` on every call — training and a walk-forward fold each get
+# their own — so the per-instance `_by_year` cache this class already had never
+# survived past the call that built it. That was invisible until something
+# called `recursive_ml_predict` a few hundred times in a loop:
+# `Trainer._bank_fold_cumulative_residuals` does exactly that, once per
+# (fold, model), and every one of those recomputed the SAME country's SAME
+# year's holidays from scratch. `holidays.country_holidays()` resolves its
+# locale strings through `gettext`, which re-probes the filesystem for a
+# matching .mo file on every call (`gettext.find()` is not itself cached) —
+# on this repo's dev machine that probe is slow enough that ~200 redundant
+# calls from several walk-forward worker threads at once made a single
+# catalogue's training look hung for tens of seconds at a time.
+# `(country, year)` are immutable once computed, so this is a pure cache: it
+# changes nothing about what is returned, only how many times it is computed.
+_HOLIDAY_CACHE: dict[tuple[str, int], Set[pd.Timestamp]] = {}
+_HOLIDAY_CACHE_LOCK = threading.Lock()
 
 # Emitted by calendar_frame(), in this order. Anything reading calendar features
 # (the feature engineer, the predictor, tests) refers to this list rather than
@@ -81,6 +103,12 @@ class HolidayCalendar:
         if cached is not None:
             return cached
 
+        cache_key = (self.country, int(year))
+        cached = _HOLIDAY_CACHE.get(cache_key)
+        if cached is not None:
+            self._by_year[year] = cached
+            return cached
+
         dates: Set[pd.Timestamp] = set()
         if self._library_ok:
             try:
@@ -103,6 +131,11 @@ class HolidayCalendar:
         dates.add(pd.Timestamp(year=year, month=12, day=25))
 
         self._by_year[year] = dates
+        # Racing writers compute the same deterministic set for the same key,
+        # so the last one in wins harmlessly — a lock here would only protect
+        # against a cost (recomputing once more) this cache already accepts.
+        with _HOLIDAY_CACHE_LOCK:
+            _HOLIDAY_CACHE[cache_key] = dates
         return dates
 
     def holidays_for(self, years: Iterable[int]) -> Set[pd.Timestamp]:

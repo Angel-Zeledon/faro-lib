@@ -7,7 +7,7 @@ to produce per-SKU signals, ABC-XYZ classification, and order recommendations.
 
 import math
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
@@ -563,7 +563,7 @@ def sync_stock_from_dataset(
     if not entries:
         return 0
 
-    # CHOKEPOINT (pre-loop): this is the PRIMARY way SKUs enter Faro (Quick
+    # CHOKEPOINT (pre-loop): this is the PRIMARY way SKUs enter StockAI (Quick
     # Start upload), yet unlike PUT /stock and POST /bulk it had no max_skus
     # check at all — a Starter tenant could seed thousands of SKUs in one
     # upload. Computed BEFORE the loop, atomically over the WHOLE dataset, so
@@ -1062,12 +1062,50 @@ def _steps_for_lead_time(lead_time_days: float, period: str) -> int:
     return max(1, math.ceil(float(lead_time_days) / _days_per_period(period)))
 
 
-def _calc_signal(coverage_days: float, lead_time: int) -> str:
+def _calc_signal(coverage_days: float, lead_time: float, reorder_point_days: float) -> str:
+    """Classifies days-of-stock-cover into the four persisted signals.
+
+    stability.md 17c: the ordering boundary is now the reorder point itself,
+    not an arbitrary multiple of the lead time. The reorder point (lead-time
+    demand + safety stock) already answers "how much cover do I need to
+    survive the wait for a replenishment" — a flat `1.2 * lead_time` ignored
+    it and could sit BELOW the reorder point for any SKU whose safety stock
+    exceeded `0.2 * lead_time * avg_daily`, i.e. most volatile/intermittent
+    SKUs. In that band the old code reported OK and zeroed the recommendation
+    for a SKU that was, by its own reorder point, already due to be ordered.
+
+    Four-way split, `reorder_point_days` being the reorder point expressed in
+    the same days-of-cover unit as `coverage_days` (reorder_point / avg_daily):
+
+    - `coverage_days >= 9990` (the 9999-day sentinel for `avg_daily <= 0`, no
+      measurable demand) -> SOBRESTOCK, unchanged from before this fix. A
+      dead/discontinued SKU with any stock at all is overstock, never an
+      ordering signal — there is nothing to order it FOR.
+    - `coverage_days < 0.5 * lead_time` -> PEDIR_YA. Unchanged: PEDIR_YA has
+      always meant "already in trouble" — less than half a lead time of cover
+      — independent of the safety cushion. Half a lead time is always <= the
+      reorder point in days (reorder_point_days = lead_time + SS/avg_daily >=
+      lead_time > 0.5 * lead_time for any SS >= 0), so this sub-band always
+      sits inside "at or below the reorder point" and never contradicts it.
+    - `coverage_days <= reorder_point_days` -> PEDIR_PRONTO. The new boundary:
+      at or below the reorder point, the incoming shipment would not land
+      before the shelf runs out — "time to place the order."
+    - Between the reorder point and `sobrestock_at` -> OK; at or above it ->
+      SOBRESTOCK. `sobrestock_at` is the GREATER of `3 * lead_time` (the
+      original flat threshold, kept as the floor for the common case of a
+      small safety stock, so a stable SKU's classification does not move) and
+      `2 * reorder_point_days` (so a genuinely volatile SKU, whose own reorder
+      point can already sit past 3 lead times, still gets a real, non-empty OK
+      band instead of an inverted one).
+    """
+    if coverage_days >= 9990:
+        return "SOBRESTOCK"
     if coverage_days < lead_time * 0.5:
         return "PEDIR_YA"
-    if coverage_days < lead_time * 1.2:
+    if coverage_days <= reorder_point_days:
         return "PEDIR_PRONTO"
-    if coverage_days < lead_time * 3:
+    sobrestock_at = max(lead_time * 3, reorder_point_days * 2)
+    if coverage_days < sobrestock_at:
         return "OK"
     return "SOBRESTOCK"
 
@@ -1085,6 +1123,12 @@ def _measured_safety_stock(
     faster than `sqrt(L)`. When the engine ran a rolling-origin backtest it
     measured the cumulative error at each lead time directly, and that number
     needs no assumptions at all.
+
+    This covers DEMAND uncertainty only — the spread of cumulative demand over
+    a lead time assumed FIXED at its mean. Lead-time uncertainty (the supplier
+    sometimes takes longer) is a separate, independent source of variance that
+    this band says nothing about; `_safety_stock` adds it back in quadrature
+    rather than treating this measurement as the whole cushion.
 
     Returns None whenever the measurement is absent — the caller then keeps the
     classical formula rather than pretending.
@@ -1126,6 +1170,8 @@ def _calc_recommended(
     risk: Optional[dict] = None,
     risk_scale: float = 1.0,
     incoming: float = 0.0,
+    lead_time_std: float = 0.0,
+    review_period: float = 0.0,
 ) -> float:
     """How much to order, against the INVENTORY POSITION rather than the shelf.
 
@@ -1137,14 +1183,38 @@ def _calc_recommended(
     send time and the destination does not gain it until reception.
 
     Measured before this: 200 units sent San José -> Cartago, and one second
-    later Faro asked for 250 more at the origin and 90 more at the destination,
+    later StockAI asked for 250 more at the origin and 90 more at the destination,
     for a company that already owned 430.
 
     Defaults to 0.0 so every caller that has nothing on order behaves exactly as
     before.
+
+    `lead_time_std` is the supplier's lead-time standard deviation, ALREADY in
+    the active period's units (see `_lead_time_in_periods` — the same
+    conversion `lead_time` itself went through). Defaults to 0.0, which makes
+    `_safety_stock`'s combined-variance term vanish and reproduces exactly
+    today's number — see `_safety_stock` for why.
+
+    `review_period` is how often this buyer actually orders from this
+    supplier, ALREADY in the active period's units — same conversion, same
+    reason. stability.md 17/19.3: an order-up-to level sized on the lead time
+    alone is exactly one review period short, because the position is back at
+    the reorder point the moment a shipment lands and the next chance to react
+    is not until the next review. The PROTECTION INTERVAL the order has to
+    last through is therefore `lead_time + review_period`, not `lead_time`
+    alone — it replaces `lead_time` in BOTH the demand term below and the
+    safety-stock term `_safety_stock` computes, so the cushion also covers the
+    longer wait, not only the bigger mean. Defaults to 0.0, under which
+    `protection_interval == lead_time` and this reproduces exactly today's
+    number — see `_resolve_review_period_days` for why 0.0 is what "no
+    supplier" and "no declared cadence" both resolve to.
     """
-    lead_time_demand = avg_daily * lead_time
-    safety_stock = _safety_stock(avg_std, lead_time, service_level, risk, risk_scale)
+    protection_interval = lead_time + max(0.0, review_period)
+    lead_time_demand = avg_daily * protection_interval
+    safety_stock = _safety_stock(
+        avg_std, protection_interval, service_level, risk, risk_scale,
+        avg_daily=avg_daily, lead_time_std=lead_time_std,
+    )
     raw = max(0.0, lead_time_demand + safety_stock - current_stock - max(0.0, incoming))
     if moq and moq > 0 and raw > 0:
         # MOQ is a MINIMUM ORDER QUANTITY — a floor under the order — not a pack
@@ -1173,19 +1243,46 @@ def _calc_recommended(
 def _safety_stock(
     avg_std: float, lead_time: float, service_level: float,
     risk: Optional[dict] = None, risk_scale: float = 1.0,
+    avg_daily: float = 0.0, lead_time_std: float = 0.0,
 ) -> float:
     """The cushion above lead-time demand: measured when we have it, modelled
     when we do not. One function so the recommendation, the reorder point and
     the explanation breakdown can never disagree about the number.
 
+    Two independent sources of variance feed the cushion — demand is
+    uncertain even over a FIXED lead time, and the lead time itself is
+    uncertain even for AVERAGE demand — and they combine in quadrature
+    (variances add, standard deviations do not):
+
+        sigma_LT = sqrt(L * avg_std^2 + avg_daily^2 * lead_time_std^2)
+        safety_stock = z * sigma_LT
+
+    which is algebraically `sqrt((z*avg_std*sqrt(L))^2 + (z*avg_daily*lead_time_std)^2)`
+    — the classical term this function has always returned, plus a second
+    term for a supplier who does not always take exactly `lead_time`.
+    `lead_time_std=0.0` (no supplier, or one with neither a learned nor a
+    configured spread — see `_resolve_lead_time_std`) zeroes that second term
+    and reproduces the old number exactly.
+
+    `_measured_safety_stock` replaces the DEMAND term only (it already covers
+    demand uncertainty over the lead time, measured rather than assumed) —
+    the lead-time term is still added in quadrature on top of it, not
+    discarded, because the two protect against different things.
+
     `risk_scale` splits a whole-SKU band across warehouses, mirroring how the
-    per-warehouse view already splits `avg_std` by that warehouse's share.
+    per-warehouse view already splits `avg_std` (and `avg_daily`, for this
+    term) by that warehouse's share. The lead-time term is built from
+    already-scaled inputs at the per-warehouse call site, so it needs no
+    separate scaling of its own — only the measured (whole-SKU) band does.
     """
+    z = _z_for(service_level)
+    lead_time_term = z * avg_daily * max(0.0, lead_time_std)
     measured = _measured_safety_stock(risk, lead_time, service_level)
     if measured is not None:
-        return measured * float(risk_scale)
-    z = _z_for(service_level)
-    return z * avg_std * math.sqrt(lead_time)
+        demand_term = measured * float(risk_scale)
+    else:
+        demand_term = z * avg_std * math.sqrt(lead_time)
+    return math.sqrt(demand_term ** 2 + lead_time_term ** 2)
 
 
 # Signals for which recommending an order is meaningful. On any other signal
@@ -1236,6 +1333,88 @@ def get_learned_lead_times(tenant_id: str) -> dict[str, float]:
         for r in rows
         if r.get("supplier") and r.get("avg_days") is not None
     }
+
+
+def get_learned_lead_time_stds(tenant_id: str) -> dict[str, float]:
+    """
+    Standard deviation of REAL lead times per supplier, learned from the same
+    `supplier_lead_time_obs` receptions `get_learned_lead_times` averages —
+    one more aggregate (STDDEV_SAMP instead of AVG) over a query that already
+    runs, gated on the SAME MIN_LEAD_TIME_OBSERVATIONS threshold so a supplier
+    without enough receptions to trust its learned MEAN lead time does not get
+    a learned SPREAD either. That spread is what `_safety_stock` needs for the
+    lead-time-variance term of the combined-variance formula; the mean alone
+    (what this function's sibling returns) only feeds `lead_time_days` demand.
+
+    Keys are lower-cased supplier names, like `get_learned_lead_times`. Absent
+    here means "not enough evidence yet" — the caller falls back to the
+    supplier's configured `lead_time_std`.
+    """
+    rows = query(
+        """SELECT LOWER(supplier) AS supplier,
+                  STDDEV_SAMP(lead_time_days) AS std_days
+           FROM supplier_lead_time_obs
+           WHERE tenant_id = %s
+           GROUP BY LOWER(supplier)
+           HAVING COUNT(*) >= %s""",
+        (tenant_id, MIN_LEAD_TIME_OBSERVATIONS),
+    )
+    return {
+        r["supplier"]: float(r["std_days"])
+        for r in rows
+        if r.get("supplier") and r.get("std_days") is not None
+    }
+
+
+def _resolve_lead_time_std(
+    supplier: Optional[str],
+    learned_stds: dict[str, float],
+    configured_stds: dict[str, float],
+) -> float:
+    """The lead-time standard deviation (DAYS) the safety-stock formula uses
+    for a SKU's supplier, in priority order:
+
+      (a) the standard deviation of that supplier's real receptions, once
+          MIN_LEAD_TIME_OBSERVATIONS of them exist (`learned_stds` — already
+          gated on that threshold by `get_learned_lead_time_stds`, exactly
+          like `learned_stds` gates the learned MEAN);
+      (b) the `lead_time_std` configured on the supplier record
+          (`configured_stds`, from `supplier_service.get_lead_time_std_map`);
+      (c) 0.0 when the SKU has no supplier at all, or the name matches
+          neither map — which collapses the combined-variance formula in
+          `_safety_stock` back to exactly today's `z * avg_std * sqrt(L)`.
+    """
+    if not supplier:
+        return 0.0
+    key = supplier.strip().lower()
+    learned = learned_stds.get(key)
+    if learned is not None:
+        return max(0.0, learned)
+    configured = configured_stds.get(key)
+    if configured is not None:
+        return max(0.0, configured)
+    return 0.0
+
+
+def _resolve_review_period_days(
+    supplier: Optional[str],
+    review_period_map: dict[str, float],
+) -> float:
+    """The order cadence (DAYS) this buyer actually uses with a SKU's
+    supplier — how long the order placed today has to last past the lead
+    time, because the next chance to react is not until the next review.
+
+    Unlike the lead time there is nothing to learn here: a reception tells you
+    how long a shipment took, never how often you chose to ask for one. So
+    there is exactly one source, `suppliers.review_period_days`
+    (`supplier_service.get_review_period_map`), and no supplier or an unset
+    value (the column's own DEFAULT 0) both mean "no declared cadence" —
+    which is what makes the protection interval collapse back to the lead
+    time alone, reproducing today's numbers exactly.
+    """
+    if not supplier:
+        return 0.0
+    return max(0.0, review_period_map.get(supplier.strip().lower(), 0.0))
 
 
 def get_supplier_observation_counts(tenant_id: str) -> dict[str, int]:
@@ -1340,6 +1519,7 @@ def build_explanation(
     reorder_point: float,
     signal: str,
     lead_time_rule_scope: Optional[str] = None,
+    review_period_days: float = 0.0,
 ) -> dict:
     """
     The reasoning behind a recommendation, as a STRUCTURED value:
@@ -1361,6 +1541,20 @@ def build_explanation(
 
     `text` is the English fallback, shown only by a client that has no mapping
     for `code`.
+
+    `review_period_days` (stability.md 17/19.3) is the order cadence this
+    buyer declared for the supplier, in DAYS. 0.0 (no cadence declared, the
+    overwhelming majority of tenants today) keeps the exact code and sentence
+    this function has always returned — a screen that has never heard of a
+    review period must not change. A positive value switches to
+    `inventory_explain_reorder_review` and names the protection interval —
+    "covers you until your next order, expected in N days" — because a
+    quantity that grew for a new reason and says nothing about it is worse
+    than one that did not grow: CLAUDE.md's silent-failures lens applies to a
+    NUMBER, not only to a missing send. A client that only knows the older
+    code (frontend not yet updated for this — see the module's own comment on
+    graceful degradation) falls back to this English `text` rather than
+    rendering nothing.
     """
     scope = lead_time_rule_scope or "supplier"
 
@@ -1413,7 +1607,23 @@ def build_explanation(
     else:
         text = base + "."
 
-    return {"code": "inventory_explain_reorder", "params": params, "text": text}
+    review_period_days = float(review_period_days or 0.0)
+    if review_period_days <= 0:
+        # No declared cadence: byte-identical to before this feature existed.
+        return {"code": "inventory_explain_reorder", "params": params, "text": text}
+
+    protection_interval = lead_time + review_period_days
+    params["review_period_days"] = round(review_period_days, 2)
+    params["protection_interval_days"] = round(protection_interval, 2)
+    text += (
+        f" That quantity is sized to last until your NEXT order, not just until this "
+        f"one arrives: you order from this supplier roughly every "
+        f"{_english_days(review_period_days)}, so it has to cover "
+        f"{_english_days(protection_interval)} of demand in total "
+        f"({_english_days(lead_time)} for this shipment to arrive, plus "
+        f"{_english_days(review_period_days)} before you place the next one)."
+    )
+    return {"code": "inventory_explain_reorder_review", "params": params, "text": text}
 
 
 def _aggregate_stock_rows_by_sku(
@@ -1589,10 +1799,45 @@ def _compute_inventory_status(
         log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
         primary_suppliers = {}
 
+    # Lead-time VARIABILITY, for the safety-stock formula's lead-time-variance
+    # term (stability.md 17a): the standard deviation of the same receptions
+    # `learned_lead_times` averages, and — for suppliers thin on receptions —
+    # the `lead_time_std` configured on the supplier record. Two more
+    # tenant-wide queries, never per SKU.
+    learned_lead_time_stds = get_learned_lead_time_stds(tenant_id)
+    try:
+        configured_lead_time_stds = _sup_svc.get_lead_time_std_map(tenant_id)
+    except Exception as e:
+        log.debug("configured lead-time std lookup failed tenant=%s: %s", tenant_id, e)
+        configured_lead_time_stds = {}
+
+    # Order cadence per supplier (stability.md 17/19.3): how often this buyer
+    # actually places an order with this supplier, which the protection
+    # interval needs alongside the lead time (see `_calc_recommended`). One
+    # more tenant-wide query, never per SKU; absent/failed means every SKU
+    # resolves review_period=0, i.e. today's arithmetic.
+    try:
+        review_period_map = _sup_svc.get_review_period_map(tenant_id)
+    except Exception as e:
+        log.debug("review period map lookup failed tenant=%s: %s", tenant_id, e)
+        review_period_map = {}
+
     # Supplier/category/global planning rules, one query for the whole tenant.
     # A distributor configures 12 suppliers, not 2.000 SKUs — this is where that
     # configuration enters the recommendation.
     rule_index = _sd_svc.build_rule_index(tenant_id)
+
+    # Declared events (stability.md 19.5): a saved "Semana Santa, x1.8,
+    # 24th-31st" must reach the decision itself, not just the what-if
+    # simulator. One tenant-wide query for the events plus one per active
+    # event for its overrides — never per SKU, same discipline as every
+    # other tenant-wide map above.
+    today = date.today()
+    active_events = _active_events_window(tenant_id, today)
+    overrides_by_event: dict[str, dict] = {
+        ev["id"]: _index_overrides(get_event_multipliers(tenant_id, ev["id"]))
+        for ev in active_events
+    }
 
     items: list[dict] = []
 
@@ -1659,8 +1904,26 @@ def _compute_inventory_status(
             avg_daily, avg_std = _avg_daily_forecast(
                 model_forecasts, steps, best_model.get(sku)
             )
-            coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
-            signal = _calc_signal(coverage_days, lt_periods)
+            # Declared events (stability.md 19.5): when the lead-time window
+            # starting TODAY overlaps a saved event, the demand that drives
+            # the reorder point and the recommended quantity carries that
+            # event's multiplier — blended for however much of the window
+            # the event actually covers (see `_event_demand_multiplier`).
+            # `avg_daily` itself stays the plain forecast (what the model
+            # actually predicts, shown as "daily_demand"); `avg_daily_eff` is
+            # what plans against it. Only the MEAN demand is scaled — the
+            # model's own measured spread (avg_std / the demand_risk band)
+            # describes ordinary conditions and scaling it would invent data
+            # this product has no basis for; the lead-time-variance term
+            # still grows with it because that term is already `z * avg_daily
+            # * lead_time_std`, proportional to demand by construction.
+            event_mult, events_applied = _event_demand_multiplier(
+                {"sku": sku, "family": stock.get("family") if stock else None,
+                 "category": category},
+                today, lead_time, active_events, overrides_by_event,
+            ) if active_events else (1.0, [])
+            avg_daily_eff = avg_daily * event_mult
+            coverage_days = current_stock / avg_daily_eff if avg_daily_eff > 0 else 9999.0
             # The measured band belongs to ONE model's forecast. Pairing it with
             # a different model's point forecast would mix a global model's
             # error distribution with, say, prophet's numbers — a plausible
@@ -1668,18 +1931,51 @@ def _compute_inventory_status(
             sku_risk = demand_risk.get(sku)
             if sku_risk and sku_risk.get("model") != best_model.get(sku):
                 sku_risk = None
+            # Lead-time variance term (stability.md 17a): DAYS, resolved per
+            # supplier, then converted into the same period units as lt_periods
+            # — the exact conversion `lead_time` itself already went through.
+            lt_std_days = _resolve_lead_time_std(
+                supplier, learned_lead_time_stds, configured_lead_time_stds,
+            )
+            lt_std_periods = _lead_time_in_periods(lt_std_days, period)
+            # Order cadence (stability.md 17/19.3): DAYS, resolved per
+            # supplier, then into this period's units — the same conversion
+            # the lead time itself and its std already went through.
+            review_period_days = _resolve_review_period_days(supplier, review_period_map)
+            review_periods = _lead_time_in_periods(review_period_days, period)
+            # The PROTECTION INTERVAL an order has to last through: the lead
+            # time plus the review period. `review_periods` is 0.0 for any
+            # supplier with no declared cadence, so this equals `lt_periods`
+            # for every tenant who has not set one — see `_calc_recommended`.
+            protection_interval = lt_periods + review_periods
+            # Reorder point ahead of the signal (stability.md 17c): the signal's
+            # ordering boundary IS the reorder point, so it must exist before
+            # `_calc_signal` is called, not after.
+            _demand_lt  = round(avg_daily_eff * protection_interval, 2)
+            _safety      = round(
+                _safety_stock(
+                    avg_std, protection_interval, sku_service_level, sku_risk,
+                    avg_daily=avg_daily_eff, lead_time_std=lt_std_periods,
+                ), 2
+            )
+            reorder_point = round(_demand_lt + _safety, 2)
+            reorder_point_days = reorder_point / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+            # `_calc_signal`'s own `lead_time` argument stays the PLAIN lead
+            # time (not the protection interval): PEDIR_YA keeps meaning "less
+            # than half a LEAD TIME of cover" regardless of order cadence, and
+            # that invariant (reorder_point_days >= lead_time > 0.5*lead_time)
+            # only strengthens once the reorder point also carries the review
+            # period — see `_calc_signal`'s docstring.
+            signal = _calc_signal(coverage_days, lt_periods, reorder_point_days)
             recommended = _calc_recommended(
-                current_stock, avg_daily, avg_std, lt_periods, moq,
+                current_stock, avg_daily_eff, avg_std, lt_periods, moq,
                 sku_service_level, risk=sku_risk, incoming=sku_incoming,
+                lead_time_std=lt_std_periods, review_period=review_periods,
             )
             recommended = _gate_recommended_by_signal(signal, recommended)
             inventory_value = (
                 round(current_stock * float(stock["unit_cost"]), 2)
                 if stock.get("unit_cost") is not None else None
-            )
-            _demand_lt  = round(avg_daily * lt_periods, 2)
-            _safety      = round(
-                _safety_stock(avg_std, lt_periods, sku_service_level, sku_risk), 2
             )
             _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
             calc_explanation = {
@@ -1697,6 +1993,21 @@ def _compute_inventory_status(
                 "antes_moq":         _antes_moq,
                 "moq":               moq,
                 "final_qty":    recommended,
+                # Order cadence (stability.md 17/19.3), in DAYS (not periods —
+                # this is what a date is built from). 0 = no declared cadence;
+                # `lead_time_days + review_period_days` is the protection
+                # interval this quantity was actually sized to cover, which is
+                # what "Ver por qué" has to name or the number just grows with
+                # nothing explaining why.
+                "review_period_days":      round(review_period_days, 2),
+                "protection_interval_days": round(lead_time + review_period_days, 2),
+                # Which declared event(s) moved this number and by how much —
+                # empty when none apply. A number that silently changed is
+                # worse than one that did not change at all (CLAUDE.md /
+                # silent-failures): this is what lets "Ver por qué" name the
+                # event instead of leaving the buyer to notice the quantity
+                # moved on its own.
+                "events_applied": events_applied,
             }
             if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
@@ -1705,17 +2016,24 @@ def _compute_inventory_status(
 
             # Reorder point: the stock level at which an order must be placed so
             # the shipment arrives before the shelf empties (lead-time demand
-            # plus the safety cushion).
-            reorder_point = round(_demand_lt + _safety, 2)
+            # plus the safety cushion). Computed earlier now, ahead of the
+            # signal — see the comment above `_demand_lt`.
             explanation_obj = build_explanation(
                 current_stock=current_stock,
-                daily_demand=avg_daily,
+                # The effective (event-adjusted) rate: `coverage_days` and
+                # `reorder_point` below were both computed from it, and the
+                # sentence's own arithmetic (current_stock / daily_demand ==
+                # coverage_days) must hold even when an event is moving the
+                # number — a mismatched sentence would look like a second bug,
+                # not the one line explaining the first.
+                daily_demand=avg_daily_eff,
                 coverage_days=round(coverage_days, 1) if coverage_days < 9990 else None,
                 lead_time=lead_time,
                 lead_time_source=lead_time_source,
                 reorder_point=reorder_point,
                 signal=signal,
                 lead_time_rule_scope=lead_time_rule_scope,
+                review_period_days=review_period_days,
             )
         else:
             avg_daily = avg_std = None
@@ -1839,6 +2157,29 @@ def _compute_inventory_status(
         item["abc_xyz"] = f"{item['abc']}{item['xyz']}" if item["xyz"] != "?" else item["abc"]
 
     items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5), x["coverage_days"] or 9999))
+
+    # Write down what we just told this tenant. Nothing else in the product
+    # does: stock is snapshotted, purchase orders are logged, overstock and
+    # accuracy are snapshotted — the RECOMMENDATION was not, so "what did it
+    # cost me to ignore you" and "why is today's number different" were both
+    # unanswerable (docs/stability.md 19, items 4 and 7).
+    #
+    # This function is the one chokepoint every caller funnels through, which
+    # is why the recorder rides here — and also why it is guarded. Every screen
+    # load, the assistant, the MCP tools and the public API all land in this
+    # function, so an unguarded write would rewrite the whole catalogue's log
+    # on every read. The table's natural key is one row per tenant per SKU per
+    # DAY, so the first look of the day is what gets written down.
+    #
+    # It can never break the read: the recommendation is the product, the log
+    # is a record of it.
+    try:
+        from backend.inventory import recommendation_log
+        if not recommendation_log.already_recorded(tenant_id):
+            recommendation_log.record_recommendations(tenant_id, session_id, items)
+    except Exception:
+        log.exception("recommendation log: not recorded for tenant=%s", tenant_id)
+
     return items
 
 
@@ -1882,6 +2223,7 @@ def get_inventory_status_by_warehouse(
     from backend.db import session_store
     from backend.inventory import warehouse_service as wh_svc
     from backend.inventory import stock_defaults_service as _sd_svc
+    from backend.inventory import supplier_service as _sup_svc
     from backend.inventory.series import stores_in, for_store, split_key
 
     if forecasts is None:
@@ -1905,6 +2247,28 @@ def get_inventory_status_by_warehouse(
     except Exception as e:
         log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
         primary_suppliers = {}
+
+    # Same lead-time-variability maps as the aggregated view (stability.md
+    # 17a) — learned spread first, configured `lead_time_std` fallback. Was
+    # previously reached through `_sup_svc` with no local import in THIS
+    # function, so `primary_suppliers` above silently fell back to `{}` on
+    # every call (the bare NameError was swallowed by the `except Exception`
+    # around it). Fixed by the import added above; this map needs that same
+    # name.
+    learned_lead_time_stds = get_learned_lead_time_stds(tenant_id)
+    try:
+        configured_lead_time_stds = _sup_svc.get_lead_time_std_map(tenant_id)
+    except Exception as e:
+        log.debug("configured lead-time std lookup failed tenant=%s: %s", tenant_id, e)
+        configured_lead_time_stds = {}
+
+    # Order cadence per supplier (stability.md 17/19.3), same map the
+    # aggregated view loads — see `_compute_inventory_status`.
+    try:
+        review_period_map = _sup_svc.get_review_period_map(tenant_id)
+    except Exception as e:
+        log.debug("review period map lookup failed tenant=%s: %s", tenant_id, e)
+        review_period_map = {}
 
     # Same best-model-per-SKU selection as the aggregated view. These rows must
     # not disagree with it: a warehouse row and the tenant total for the same
@@ -1966,6 +2330,19 @@ def get_inventory_status_by_warehouse(
     stocked_warehouses = {wh for (_s, wh) in stock_by_pair}
     stock_is_single_location = len(stocked_warehouses) == 1 and len(warehouses) > 1
 
+    # Declared events (stability.md 19.5): the SAME rule as the aggregated
+    # view (_compute_inventory_status), reusing its own helpers rather than
+    # a second implementation of "does an event overlap this decision
+    # window" — see the module comments above _active_events_window for why
+    # that duplication is exactly how the two views drifted apart before.
+    # Tenant-wide, fetched ONCE here — never per (sku, warehouse) row.
+    today = date.today()
+    active_events = _active_events_window(tenant_id, today)
+    overrides_by_event: dict[str, dict] = {
+        ev["id"]: _index_overrides(get_event_multipliers(tenant_id, ev["id"]))
+        for ev in active_events
+    }
+
     items: list[dict] = []
     for sku in all_skus:
         for wh in warehouses:
@@ -2019,26 +2396,92 @@ def get_inventory_status_by_warehouse(
                 )
                 avg_daily *= share
                 avg_std *= share
+                # Declared events (stability.md 19.5): applied HERE, AFTER
+                # the share/store split, not before — reusing the aggregate
+                # view's own helpers (_active_events_window,
+                # _event_demand_multiplier), never a second implementation of
+                # the overlap/blend math.
+                #
+                # Why after the split rather than before: multiplying a
+                # whole-SKU total by a scalar and then splitting it equals
+                # splitting first and multiplying each part by the same
+                # scalar — the two orders are mathematically identical AS
+                # LONG AS every warehouse uses the same multiplier. They
+                # don't necessarily: the multiplier depends on `lead_time`
+                # (how much of the event window falls inside the decision
+                # window), and lead_time is resolved PER WAREHOUSE here — a
+                # warehouse can carry its own stock row's supplier, and thus
+                # its own learned/configured lead time, independent of the
+                # aggregated row's. Applying the multiplier post-split, with
+                # THIS row's own already-resolved `lead_time`, is what keeps
+                # this row's number honest for the warehouse it actually
+                # describes.
+                #
+                # Consequence for whether the per-warehouse rows sum exactly
+                # to the aggregate: when every warehouse resolves the SAME
+                # lead time as the aggregated row (the common case — one
+                # supplier per SKU), the multiplier is identical everywhere,
+                # it factors out of the sum, and
+                # sum(avg_daily_wh) * mult == mult * sum(avg_daily_wh) ==
+                # the aggregate's avg_daily_eff exactly. When warehouses
+                # disagree on supplier/lead time, each row's event-window
+                # overlap can differ and the rows sum only approximately —
+                # that is a pre-existing property of per-warehouse lead-time
+                # resolution (see the "which is the default warehouse"
+                # comments elsewhere in this file), not something this
+                # change introduces.
+                #
+                # Only the MEAN demand is scaled, matching the aggregate:
+                # avg_std (the model's own measured spread) is left alone —
+                # scaling it would invent data this product has no basis
+                # for — while the lead-time-variance term below still grows
+                # with the event because it is already `z * avg_daily *
+                # lead_time_std`, proportional to demand by construction.
+                event_mult, events_applied = _event_demand_multiplier(
+                    {"sku": sku, "family": stock.get("family") if stock else None,
+                     "category": category},
+                    today, lead_time, active_events, overrides_by_event,
+                ) if active_events else (1.0, [])
+                avg_daily_eff = avg_daily * event_mult
                 sku_risk = demand_risk.get(sku)
                 if sku_risk and sku_risk.get("model") != best_model.get(sku):
                     sku_risk = None
-                coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
-                signal = _calc_signal(coverage_days, lt_periods)
-                recommended = _calc_recommended(
-                    current_stock, avg_daily, avg_std, lt_periods, moq,
-                    sku_service_level, risk=sku_risk, risk_scale=share,
-                    incoming=wh_incoming)
-                recommended = _gate_recommended_by_signal(signal, recommended)
+                # Same resolution as the aggregated view (stability.md 17a):
+                # DAYS, per supplier, then into this period's units.
+                lt_std_days = _resolve_lead_time_std(
+                    supplier, learned_lead_time_stds, configured_lead_time_stds,
+                )
+                lt_std_periods = _lead_time_in_periods(lt_std_days, period)
+                # Order cadence (stability.md 17/19.3): same resolution and
+                # same period conversion as the aggregated view.
+                review_period_days = _resolve_review_period_days(supplier, review_period_map)
+                review_periods = _lead_time_in_periods(review_period_days, period)
+                protection_interval = lt_periods + review_periods
+                coverage_days = current_stock / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+                # Reorder point ahead of the signal (stability.md 17c): the
+                # signal's ordering boundary IS the reorder point.
                 reorder_point = round(
-                    avg_daily * lt_periods
-                    + _safety_stock(avg_std, lt_periods, sku_service_level,
-                                    sku_risk, share), 2)
+                    avg_daily_eff * protection_interval
+                    + _safety_stock(avg_std, protection_interval, sku_service_level,
+                                    sku_risk, share,
+                                    avg_daily=avg_daily_eff, lead_time_std=lt_std_periods), 2)
+                reorder_point_days = reorder_point / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+                # `lt_periods` (plain lead time), not the protection interval —
+                # see the identical comment at the aggregated call site.
+                signal = _calc_signal(coverage_days, lt_periods, reorder_point_days)
+                recommended = _calc_recommended(
+                    current_stock, avg_daily_eff, avg_std, lt_periods, moq,
+                    sku_service_level, risk=sku_risk, risk_scale=share,
+                    incoming=wh_incoming, lead_time_std=lt_std_periods,
+                    review_period=review_periods)
+                recommended = _gate_recommended_by_signal(signal, recommended)
             else:
                 avg_daily = avg_std = None
                 coverage_days = None
                 signal = "SIN_DATOS"
                 recommended = None
                 reorder_point = None
+                events_applied = []
 
             items.append({
                 "sku": sku,
@@ -2061,6 +2504,12 @@ def get_inventory_status_by_warehouse(
                 # (inventory.no_stock_record_here) in the reader's language.
                 "sin_datos_reason": ("stock_not_recorded_in_this_warehouse"
                                      if stock_unknown_here else None),
+                # Which declared event(s) moved this row and by how much — the
+                # same shape as the aggregated view's
+                # `calc_explanation.events_applied` (stability.md 19.5), so
+                # the "Ver por qué" panel can name the event here too, not
+                # just on the aggregate row. Empty when none apply.
+                "events_applied": events_applied,
                 "recommended_qty": recommended,
                 # Already on its way: sent POs + transfers in transit. Exposed so the
                 # UI can say "N units arriving" instead of leaving the buyer to
@@ -2451,6 +2900,128 @@ def _resolve_multiplier(item: dict, base: float, idx: dict) -> tuple[float, str]
     return base, "event"
 
 
+# ── Declared events reaching the standing recommendation (stability.md 19.5) ─
+# Until this, inventory_events / inventory_event_multipliers only fed the
+# event SIMULATOR (simulate_event_impact below): a tenant could declare
+# "Semana Santa, x1.8, 24th to 31st", save it, and the semáforo asked for the
+# same quantity the next day regardless. The functions below let
+# _compute_inventory_status see a saved event when it overlaps the window a
+# decision is being made for RIGHT NOW — the lead-time window starting today.
+# A recommendation is forward-looking: an event that already ended, or one
+# whose window opens after the order would already have arrived, must not
+# move it.
+
+def _active_events_window(tenant_id: str, today: date) -> list[dict]:
+    """Active events whose date range has not entirely passed, fetched ONCE
+    per call — not per SKU. _compute_inventory_status walks hundreds of SKUs
+    and every one of them checks the same small handful of declared events,
+    the same shape as the other tenant-wide maps above (learned_lead_times,
+    incoming_qty, rule_index). A future event is still returned here (its
+    start may or may not fall inside any given SKU's lead-time window, which
+    is what `_event_window_overlap_days` decides per SKU); a past one
+    (end_date < today) never is, which is what keeps a lapsed event from
+    ever reaching a forward-looking decision."""
+    return query(
+        """SELECT * FROM inventory_events
+           WHERE tenant_id = %s AND active IS TRUE AND end_date >= %s
+           ORDER BY start_date""",
+        (tenant_id, today),
+    )
+
+
+def _event_window_overlap_days(today: date, lead_time_days: float, event: dict) -> int:
+    """
+    Calendar-day overlap between the DECISION window — [today, today +
+    lead_time_days), the days an order placed right now would actually have
+    to cover — and the declared event's [start_date, end_date] (inclusive).
+
+    Deliberately calendar arithmetic, not period arithmetic: an event is a
+    fact about the CALENDAR (Semana Santa runs the 24th to the 31st
+    regardless of whether this tenant plans in days, weeks or months). The
+    period conversion happens one level up, when this day COUNT becomes a
+    FRACTION of the lead time (see `_event_demand_multiplier`) — the same
+    trap `lead_time_demand`'s own comment already documents: multiplying a
+    PER-PERIOD figure by a raw CALENDAR-day count silently produces a number
+    off by 7x (weekly) or 30x (monthly). Working in day counts on both sides
+    of the ratio, and only ever using the RATIO downstream, sidesteps that
+    the same way.
+
+    A future event whose start sits at or beyond the end of the decision
+    window (start_date >= today + lead_time_days) returns 0 — that is what
+    keeps "far in the future" from moving today's decision; a past event
+    never reaches this call at all (`_active_events_window` excludes it).
+    """
+    window_start = today
+    window_end = today + timedelta(days=max(0.0, lead_time_days))  # exclusive
+    ev_start = event["start_date"]
+    ev_end_exclusive = event["end_date"] + timedelta(days=1)
+    overlap_start = max(window_start, ev_start)
+    overlap_end = min(window_end, ev_end_exclusive)
+    return max(0, (overlap_end - overlap_start).days)
+
+
+def _event_demand_multiplier(
+    item: dict, today: date, lead_time_days: float, events: list[dict],
+    overrides_by_event: dict[str, dict],
+) -> tuple[float, list[dict]]:
+    """
+    Combined demand multiplier for THIS sku's lead-time window, blended by
+    how much of that window each active event actually covers.
+
+    Partial overlap: a 15-day lead time that covers 4 event days and 11
+    ordinary ones must NOT be scaled by the full multiplier for all 15 — that
+    overstates the order by treating 11 ordinary days as if they were also
+    Semana Santa. `fraction = overlap_days / lead_time_days` is a plain ratio
+    of calendar days on both sides, so it is correct at ANY planning grain
+    without a second conversion: `lead_time_days` here is the same DAYS
+    figure `_lead_time_in_periods` converts for the rest of the pipeline, not
+    periods, and a fraction of days stays the same fraction regardless of
+    what bucket the forecast itself is expressed in.
+    `blended = 1 + fraction * (multiplier - 1)` is the multiplier that,
+    applied to the WHOLE window's demand, gives the same total extra units as
+    applying the real multiplier to only the overlapping days and leaving the
+    rest at the baseline rate — e.g. x1.8 over 4 of 15 days blends to
+    ~1.213, not 1.8.
+
+    Multiple overlapping events compound multiplicatively (each is an
+    independent fact about the calendar); in the normal case a tenant
+    declares one event over any given date range, so this is a correctness
+    net for an edge case, not the expected path.
+
+    Returns (multiplier, applied) where `applied` lists one entry per event
+    that actually touched this window — enough for the "Ver por qué" panel to
+    name it, never a silent change to the number.
+    """
+    if lead_time_days <= 0:
+        return 1.0, []
+    combined = 1.0
+    applied: list[dict] = []
+    for ev in events:
+        overlap_days = _event_window_overlap_days(today, lead_time_days, ev)
+        if overlap_days <= 0:
+            continue
+        idx = overrides_by_event.get(ev["id"]) or {s: {} for s in _MULTIPLIER_SCOPES}
+        sku_mult, mult_source = _resolve_multiplier(item, float(ev["multiplier"]), idx)
+        fraction = min(1.0, overlap_days / float(lead_time_days))
+        blended = 1.0 + fraction * (sku_mult - 1.0)
+        combined *= blended
+        applied.append({
+            "event_id":           ev["id"],
+            "event_name":         ev["name"],
+            # The multiplier actually resolved for THIS sku (event-wide, or
+            # its sku/family/category override) and where it came from.
+            "multiplier":         sku_mult,
+            "multiplier_source":  mult_source,
+            "overlap_days":       overlap_days,
+            "window_days":        int(math.ceil(lead_time_days)),
+            # What was actually applied to the window's demand, after
+            # blending for partial overlap — the number that explains why the
+            # recommendation moved by less than the raw multiplier suggests.
+            "blended_multiplier": round(blended, 4),
+        })
+    return combined, applied
+
+
 def build_multiplier_explanation(event: Optional[dict], base: float,
                                  overrides: list[dict]) -> dict:
     """
@@ -2461,7 +3032,7 @@ def build_multiplier_explanation(event: Optional[dict], base: float,
     from_catalog = bool(event and event.get("catalog_key"))
     return {
         "base_multiplier": base,
-        # 'catalog' = estimate preloaded by Faro; 'user' = set by the
+        # 'catalog' = estimate preloaded by StockAI; 'user' = set by the
         # administrator (or edited on top of the estimate).
         "source": "catalog" if from_catalog else "user",
         "reason": (event or {}).get("notes"),
@@ -2554,14 +3125,14 @@ def simulate_event_impact(
     for it in items:
         daily = it.get("daily_demand")
         if not daily or daily <= 0:
-            continue  # sin forecast no hay nada que simular
+            continue  # nothing to simulate without a forecast
 
         lead_time = int(it.get("lead_time_days") or DEFAULT_LEAD_TIME_DAYS)
         moq       = float(it.get("moq") or 1)
         stock     = it.get("current_stock")
         cost      = it.get("unit_cost")
 
-        # Cada product puede tener su propio multiplier.
+        # Each product can carry its own multiplier.
         sku_mult, mult_source = _resolve_multiplier(it, multiplier, idx)
 
         baseline_units = daily * event_days

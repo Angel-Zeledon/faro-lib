@@ -179,9 +179,8 @@ def _record_schedule_failure(sched_id: str, cron_expr: str, now: datetime, error
                              tenant_id: str | None = None) -> None:
     """Persist why a scheduled trigger failed and move `next_run` forward.
 
-    Mirrors `integration_connections.last_error`: without a stored error a
-    schedule that has been failing for weeks is indistinguishable from a
-    healthy one, because the only trace was a log line. Advancing `next_run`
+    Without a stored error a schedule that has been failing for weeks is
+    indistinguishable from a healthy one, because the only trace was a log line. Advancing `next_run`
     is part of the same fix — a failed trigger used to leave `next_run` in the
     past, so the scheduler re-attempted (and re-failed) every poll.
     """
@@ -314,6 +313,27 @@ def _inventory_alert_loop() -> None:
             )
             time.sleep(_DAILY_LOOP_RETRY_SECONDS)
             continue
+        # Idempotency guard for the path that does NOT restart. `missed_boundary`
+        # above only protects the top of the loop (a crash/restart); the sleep
+        # branch computes `boundary` again after waking and used to run the
+        # three jobs unconditionally. If the system clock is corrected
+        # BACKWARDS during the sleep (NTP), `woke_at` can come back before
+        # `next_run`, `boundary` resolves via `_previous_daily_run` to a pass
+        # this loop already completed, and every tenant would get a second
+        # copy of all three daily digests — the exact duplicate
+        # `loop_state.mark_run` exists to prevent. `continue` here is safe: the
+        # only way to reach the jobs without sleeping is the catch-up branch
+        # above, which already checked `recorded < boundary` itself, so the
+        # next iteration always falls through to a real `time.sleep` rather
+        # than looping hot.
+        already_done = loop_state.last_boundary(loop_state.INVENTORY_ALERTS)
+        if already_done is not None and already_done >= boundary:
+            log.warning(
+                "Inventory alert: boundary %s already recorded (last=%s) — "
+                "the clock did not advance past it, skipping this pass",
+                boundary.isoformat(), already_done.isoformat(),
+            )
+            continue
         try:
             from backend.inventory.service import run_daily_inventory_alerts
             run_daily_inventory_alerts()
@@ -342,50 +362,6 @@ def _inventory_alert_loop() -> None:
         # and re-running the whole pass on the next restart would mail a second
         # digest to everybody the first one reached.
         loop_state.mark_run(loop_state.INVENTORY_ALERTS, boundary)
-
-
-def _integration_sync_loop() -> None:
-    """Daily accounting-integrations sync, at 6:00 AM UTC — before the
-    8:00 AM inventory alert loop, so a freshly synced stock/sales dataset
-    feeds the same day's stockout digest instead of the previous day's."""
-    log.info("Integration sync scheduler started")
-    while True:
-        try:
-            now = datetime.now(timezone.utc)
-            caught_up = loop_state.missed_boundary(
-                loop_state.INTEGRATION_SYNC, _previous_daily_run(now, 6), now,
-                loop_state.DAILY_CATCHUP,
-            )
-            if caught_up is not None:
-                log.warning("Integration sync: catching up the %s pass",
-                            caught_up.isoformat())
-                boundary = caught_up
-            else:
-                next_run = _next_daily_run(now, 6)
-                sleep_secs = (next_run - now).total_seconds()
-                log.info("Integration sync: next run at %s UTC (%.0f s)",
-                         next_run.isoformat(), sleep_secs)
-                time.sleep(max(sleep_secs, 1))
-                woke_at = datetime.now(timezone.utc)
-                boundary = (next_run if woke_at >= next_run
-                            else _previous_daily_run(woke_at, 6))
-        except Exception as e:
-            log.error(
-                "Integration sync scheduler error — retrying in %d s: %s",
-                _DAILY_LOOP_RETRY_SECONDS, e, exc_info=True,
-            )
-            time.sleep(_DAILY_LOOP_RETRY_SECONDS)
-            continue
-        try:
-            from backend.integrations.crypto import integrations_enabled
-            if integrations_enabled():
-                from backend.integrations.sync_service import run_daily_integration_syncs
-                run_daily_integration_syncs()
-            else:
-                log.info("Integration sync skipped: INTEGRATIONS_SECRET_KEY not configured")
-        except Exception as e:
-            log.error("Integration sync error: %s", e, exc_info=True)
-        loop_state.mark_run(loop_state.INTEGRATION_SYNC, boundary)
 
 
 def _previous_month_start(now: datetime) -> datetime:
@@ -450,6 +426,18 @@ def _monthly_overstock_snapshot_loop() -> None:
             )
             time.sleep(_DAILY_LOOP_RETRY_SECONDS)
             continue
+        # Same idempotency guard as `_inventory_alert_loop`, and more important
+        # here: a duplicate run would re-snapshot SOBRESTOCK for a month that
+        # already closed and mail the ROI recap twice. See that loop's comment
+        # for why `continue` cannot busy-loop.
+        already_done = loop_state.last_boundary(loop_state.MONTHLY_OVERSTOCK)
+        if already_done is not None and already_done >= boundary:
+            log.warning(
+                "Overstock snapshot: boundary %s already recorded (last=%s) — "
+                "the clock did not advance past it, skipping this pass",
+                boundary.isoformat(), already_done.isoformat(),
+            )
+            continue
         try:
             from backend.inventory.service import run_monthly_overstock_snapshot
             run_monthly_overstock_snapshot()
@@ -468,8 +456,7 @@ def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
     The job-claim loop runs when worker_enabled; the cron loops (scheduled
-    jobs, daily alerts, monthly snapshot, integration sync) when
-    scheduler_enabled — they are split so a scaled-out deployment can run
+    jobs, daily alerts, monthly snapshot) when scheduler_enabled — they are split so a scaled-out deployment can run
     many claim loops but exactly one scheduler.
     """
     components: list[str] = []
@@ -477,8 +464,7 @@ def enabled_components() -> list[str]:
         components.append("job-worker")
     if settings.scheduler_enabled:
         components += [
-            "job-scheduler", "inventory-alerts",
-            "overstock-snapshot", "integration-sync",
+            "job-scheduler", "inventory-alerts", "overstock-snapshot",
         ]
     return components
 
@@ -487,7 +473,6 @@ _COMPONENT_TARGETS = {
     "job-scheduler":      _scheduler_loop,
     "inventory-alerts":   _inventory_alert_loop,
     "overstock-snapshot": _monthly_overstock_snapshot_loop,
-    "integration-sync":   _integration_sync_loop,
 }
 
 

@@ -19,7 +19,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Punto de entrada y orden del pipeline",
-                "where": "forecasting_core/engine.py:68 → forecasting_core/pipelines/pipeline.py:201 · run",
+                "where": "forecasting_core/engine.py:68 → forecasting_core/pipelines/pipeline.py:162 · run",
                 "what": (
                     "`ForecastEngine` expone una API fluida; `Pipeline.run()` hace el "
                     "trabajo en 16 etapas. El único puente desde el backend es "
@@ -29,7 +29,7 @@ CHAPTER = {
                     "Lectura del archivo → validaciones (en modo AVISO, nunca abortan) → autocorrección → demanda censurada.",
                     "Calidad por SKU, clasificación de series y descarte de series cortas.",
                     "Enrutamiento de modelos → ingeniería de características → baselines.",
-                    "Entrenamiento por SKU con validación hacia adelante, modelos cuantílicos, modelo global, modelos estadísticos.",
+                    "Entrenamiento por SKU con validación hacia adelante, modelo global, modelos estadísticos. El modelo que se sirve se reajusta sobre TODO el histórico; el que se califica se queda en el corte.",
                     "Ensamble ponderado → tabla de métricas → pronósticos futuros → recomendaciones de inventario → registro de la corrida.",
                 ],
                 "caveats": [
@@ -74,9 +74,9 @@ CHAPTER = {
                     ("global_lgbm", "Un LightGBM sobre todo el catálogo, multi-horizonte directo (el horizonte es una característica). 400 árboles, 63 hojas. Matriz apilada con techo de 2.000.000 de filas."),
                     ("arima", "statsmodels, orden (5,1,2). Reajusta sobre la serie completa para el futuro; conf_int(alpha=0.2) da p10/p90."),
                     ("sarimax", "Orden (1,1,1), estacional (1,1,1,período). Solo corre si el usuario lo seleccionó explícitamente."),
-                    ("prophet", "Estacionalidad anual y semanal activas, diaria apagada."),
+                    ("prophet", "Estacionalidades anual y semanal en 'auto' de Prophet — la anual solo con 2 años de historia, la semanal solo si los cubos son más finos que una semana. Diaria apagada. Recibe el calendario de feriados del tenant."),
                     ("ets", "Tendencia aditiva; estacionalidad aditiva solo si hay 2 períodos completos y toda la serie es positiva."),
-                    ("croston", "Croston clásico, alpha 0.1. No es SBA ni TSB."),
+                    ("croston", "Croston con la corrección Syntetos-Boylan, alpha 0.1. El cociente de dos suavizados es un estimador sesgado hacia arriba; SBA lo corrige multiplicando por (1 - alpha/2). No es TSB."),
                     ("lstm", "TensorFlow OPCIONAL: si no está instalado devuelve vacío con un aviso. Ventana 14, 50 épocas, parada temprana."),
                     ("baselines", "naive, seasonal_naive, historical_avg. Se puntúan para comparar y están EXCLUIDOS de ser campeón."),
                 ],
@@ -110,7 +110,7 @@ CHAPTER = {
             },
             {
                 "name": "Validación y elección del campeón",
-                "where": "forecasting_core/pipelines/pipeline.py:794 · _select_champions",
+                "where": "forecasting_core/pipelines/pipeline.py:778 · _select_champions",
                 "what": (
                     "Validación hacia adelante con ventana expansiva y un HUECO igual "
                     "al horizonte, para que la ventana de entrenamiento nunca toque "
@@ -146,8 +146,7 @@ CHAPTER = {
                     "de estos intervalos."
                 ),
                 "table": [
-                    ("Aproximación normal", "bound = max(0, valor + z_q · std(residuos)). Banco de residuos fuera de muestra cuando existe. Es el camino de LightGBM/XGBoost sin cuantílicos, y de ETS, Croston y SARIMAX."),
-                    ("Regresores cuantílicos", "LightGBM/XGBoost entrenados en q = 0.1/0.5/0.9 y predichos directamente."),
+                    ("Aproximación normal", "bound = max(0, valor + z_q · std(residuos)). Banco de residuos fuera de muestra cuando existe. Es el camino de LightGBM/XGBoost, ETS, Croston y SARIMAX. Mismo ancho en el paso 1 y en el paso 30: no conoce el horizonte."),
                     ("Conformal por horizonte", "Solo global_lgbm. Cuantiles empíricos de los residuos del backtest, SEPARADOS por horizonte, mancomunados en unidades escaladas. Mínimo 30 residuos por horizonte; por debajo, toma prestado del banco general."),
                     ("Bandas propias", "ARIMA (IC al 80%), Prophet (yhat_lower/upper), LSTM (Monte-Carlo Dropout, 30 pasadas)."),
                 ],
@@ -171,7 +170,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Entry point and pipeline order",
-                "where": "forecasting_core/engine.py:68 → forecasting_core/pipelines/pipeline.py:201 · run",
+                "where": "forecasting_core/engine.py:68 → forecasting_core/pipelines/pipeline.py:162 · run",
                 "what": (
                     "`ForecastEngine` exposes a fluent API; `Pipeline.run()` does the "
                     "work in 16 stages. The only bridge from the backend is "
@@ -181,7 +180,7 @@ CHAPTER = {
                     "File read → validations (WARNING mode, they never abort) → auto-correct → censored demand.",
                     "Per-SKU quality, series classification, and dropping series that are too short.",
                     "Model routing → feature engineering → baselines.",
-                    "Per-SKU training with walk-forward validation, quantile models, the global model, the statistical models.",
+                    "Per-SKU training with walk-forward validation, the global model, the statistical models. The model that is served is refitted on ALL the history; the one that is graded stops at the cutoff.",
                     "Weighted ensemble → metrics table → future forecasts → inventory recommendations → run registry.",
                 ],
                 "caveats": [
@@ -226,9 +225,9 @@ CHAPTER = {
                     ("global_lgbm", "One LightGBM over the whole catalogue, direct multi-horizon (the horizon is a feature). 400 trees, 63 leaves. Stacked matrix capped at 2,000,000 rows."),
                     ("arima", "statsmodels, order (5,1,2). Refits on the full series for the future forecast; conf_int(alpha=0.2) gives p10/p90."),
                     ("sarimax", "Order (1,1,1), seasonal (1,1,1,period). Only runs when the user selected it explicitly."),
-                    ("prophet", "Yearly and weekly seasonality on, daily off."),
+                    ("prophet", "Yearly and weekly seasonality at Prophet's own 'auto' — yearly only with two years of history, weekly only when the buckets are finer than a week. Daily off. It receives the tenant's holiday calendar."),
                     ("ets", "Additive trend; additive seasonality only with 2 full periods and an all-positive series."),
-                    ("croston", "Classic Croston, alpha 0.1. Not SBA, not TSB."),
+                    ("croston", "Croston with the Syntetos-Boylan correction, alpha 0.1. The ratio of two smoothed quantities is biased upward; SBA corrects it by multiplying by (1 - alpha/2). Not TSB."),
                     ("lstm", "TensorFlow is OPTIONAL: without it the model returns empty with a logged warning. Window 14, 50 epochs, early stopping."),
                     ("baselines", "naive, seasonal_naive, historical_avg. Scored for comparison and EXCLUDED from being champion."),
                 ],
@@ -262,7 +261,7 @@ CHAPTER = {
             },
             {
                 "name": "Validation and champion selection",
-                "where": "forecasting_core/pipelines/pipeline.py:794 · _select_champions",
+                "where": "forecasting_core/pipelines/pipeline.py:778 · _select_champions",
                 "what": (
                     "Walk-forward validation with an expanding window and a GAP equal "
                     "to the horizon, so the training window never touches data the "
@@ -298,8 +297,7 @@ CHAPTER = {
                     "extracts its sigma from these intervals."
                 ),
                 "table": [
-                    ("Normal approximation", "bound = max(0, value + z_q · std(residuals)). Out-of-fold residual bank when available. This is the path for LightGBM/XGBoost without quantile models, and for ETS, Croston and SARIMAX."),
-                    ("Quantile regressors", "LightGBM/XGBoost trained at q = 0.1/0.5/0.9 and predicted directly."),
+                    ("Normal approximation", "bound = max(0, value + z_q · std(residuals)). Out-of-fold residual bank when available. This is the path for LightGBM/XGBoost, ETS, Croston and SARIMAX. Same width at step 1 and at step 30: nothing in the expression knows which step it is."),
                     ("Per-horizon conformal", "global_lgbm only. Empirical quantiles of the backtest residuals, computed SEPARATELY per horizon and pooled in scaled units. Minimum 30 residuals per horizon; below that the horizon borrows the pooled bank."),
                     ("Model-supplied bands", "ARIMA (80% CI), Prophet (yhat_lower/upper), LSTM (Monte-Carlo Dropout, 30 passes)."),
                 ],

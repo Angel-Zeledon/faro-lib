@@ -1,5 +1,5 @@
 """
-The alerts Faro sent, read back from inside the app.
+The alerts StockAI sent, read back from inside the app.
 
 The 08:00 UTC loop already writes one `activity_logs` row per alert per
 recipient, carrying `status` ('success' / 'failed') and a `context` blob — that
@@ -46,7 +46,7 @@ from backend.db.connection import query, query_one
 log = logging.getLogger(__name__)
 
 # ── What counts as an alert ───────────────────────────────────────────────────
-# Every action here is a message Faro decided to send on its own, on a schedule,
+# Every action here is a message StockAI decided to send on its own, on a schedule,
 # to a recipient who was not looking at the app. That is the whole set whose
 # history vanishes with the email.
 #
@@ -133,7 +133,7 @@ def _details(kind: str, context: dict) -> dict[str, Any]:
 
 # ── System events ─────────────────────────────────────────────────────────────
 #
-# The four entries in ALERT_ACTIONS above are all DELIVERIES: something Faro
+# The four entries in ALERT_ACTIONS above are all DELIVERIES: something StockAI
 # mailed on a schedule. Everything else the product does used to reach nobody —
 # a training that failed at 3 a.m., a sync the gate refused, a ceiling that
 # stopped a write, a purchase order that reached no supplier. Those are declared

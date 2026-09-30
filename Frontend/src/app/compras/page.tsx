@@ -62,11 +62,6 @@ import { fmtNum } from '@/lib/numberLocale'
 const fmtM = formatMoneyCompact
 const fmtMoney = formatMoney
 
-function fmtPct(n: number | null) {
- if (n == null) return '—'
- return `${(n * 100).toFixed(1)}%`
-}
-
 function timeSince(date: Date, t: (k: string) => string) {
  const mins = Math.floor((Date.now() - date.getTime()) / 60000)
  if (mins < 1) return t('hoy.time_just_now')
@@ -234,7 +229,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
  onReject:    () => void
  /** Take the line back OUT of the cart — NOT the same thing as rejecting it.
   *  The "Deshacer" button below was wired to `onReject`, so a buyer undoing
-  *  their own mis-tap told Faro the recommendation had been bad: that verdict
+  *  their own mis-tap told StockAI the recommendation had been bad: that verdict
   *  reaches POST /inventory/log-po, is persisted on inventory_po_items, and
   *  is what /impacto counts as adoption feedback. The mobile card has had the
   *  correct handler all along (`unapproveItem`), so the two views recorded
@@ -951,8 +946,6 @@ export default function HoyPage() {
    else
     parts.push(t('hoy.narrative_inventory_under_control'))
   }
-  if (k.avg_accuracy)
-   parts.push(`${t('hoy.narrative_forecast_accuracy')}: ${(k.avg_accuracy * 100).toFixed(1)}%.`)
   return { narrative: parts.join(' '), key_points: [], urgency, fallback: true }
  }
 
@@ -1126,7 +1119,7 @@ export default function HoyPage() {
   // inventory_po_items.unit_cost — the single authority for the supplier PDF,
   // the cash-calendar payable, /impacto's managed value and the scorecard's
   // purchased_value. `effective_unit_price` existed and had no caller outside
-  // its own evaluation, so the discount reached nothing Faro stores or prints.
+  // its own evaluation, so the discount reached nothing StockAI stores or prints.
   setCart(prev => prev.map(i => i.sku === sku
    ? {
      ...i,
@@ -1274,14 +1267,6 @@ export default function HoyPage() {
   setOptimization(prev => prev
    ? { ...prev, orders: prev.orders.filter(o => !(o.sku === order.sku && o.warehouse === order.warehouse)) }
    : prev)
- }
-
- // ── Accuracy colour ───────────────────────────────────────────────────────
- function accuracyColor(v: number | null | undefined): string {
-  if (v == null) return C.muted
-  if (v >= 0.85) return C.green
-  if (v >= 0.70) return C.amber
-  return C.red
  }
 
  const kpis = briefing?.kpis
@@ -1535,8 +1520,6 @@ export default function HoyPage() {
         <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
         <KpiCard label={t('hoy.kpi_risk_today')}        value={nothingCounted ? '—' : String(kpis!.order_now)}   color={kpis!.order_now > 0 ? C.red : C.text} />
         <KpiCard label={t('hoy.kpi_this_week')}         value={nothingCounted ? '—' : String(kpis!.order_soon)}  color={kpis!.order_soon > 0 ? C.amber : C.text} />
-        <KpiCard label={t('hoy.kpi_avg_accuracy')}      value={fmtPct(kpis!.avg_accuracy)}     color={accuracyColor(kpis!.avg_accuracy)}
-         help={t('hoy.kpi_avg_accuracy_help')} />
         {/* "₡0 en bodega" reads as "your stock is worth nothing". With no unit
             cost on file the honest answer is that we were never told. */}
         <KpiCard label={t('hoy.kpi_inventory_value')}
@@ -1904,7 +1887,7 @@ export default function HoyPage() {
            </div>
           )}
 
-          {/* Forward-it-yourself path: no Faro↔supplier integration needed. */}
+          {/* Forward-it-yourself path: no StockAI↔supplier integration needed. */}
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
            <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 8px' }}>
             {t('po.forward_hint')}
@@ -2194,7 +2177,6 @@ export default function HoyPage() {
         <div style={{ fontSize: 12, color: C.dim }}>
          {loadedAt && <>{t('hoy.footer_last_update')}: {timeSince(loadedAt, t)}</>}
          {briefing.session_name && <> &nbsp;|&nbsp; {t('hoy.footer_session')}: {briefing.session_name}</>}
-         {kpis?.avg_accuracy != null && <> &nbsp;|&nbsp; {t('hoy.footer_model_accuracy')}: {fmtPct(kpis.avg_accuracy)}</>}
         </div>
         <button
          onClick={() => load(sessionId)}

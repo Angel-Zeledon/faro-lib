@@ -1,5 +1,5 @@
 """PENDIENTES #1: the PO is delivered to the BUYER's own WhatsApp so they
-forward it to the supplier — no Faro↔supplier integration needed. The endpoint
+forward it to the supplier — no StockAI↔supplier integration needed. The endpoint
 always returns the text and a wa.me link so the flow works with no Twilio and
 no number on file."""
 

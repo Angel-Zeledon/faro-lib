@@ -125,17 +125,6 @@ const DOTS = [
   { top: 63, left: 90, depth: 0.70, dur: 12, delay: 0.2 },
 ]
 
-/** Wordmark glyph — stroke-only, sits beside the "Faro" lockup. */
-export function BeaconGlyph({ size = 17 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9.5 21h5l-1.2-11h-2.6L9.5 21z" stroke="#0a0a0a" strokeWidth="1.35" strokeLinejoin="round" />
-      <path d="M10 10h4l-.5-3.5h-3L10 10z" stroke="#0a0a0a" strokeWidth="1.35" strokeLinejoin="round" />
-      <path d="M10.7 6.5h2.6L12 3.6 10.7 6.5z" stroke="#0a0a0a" strokeWidth="1.35" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 /**
  * Lighthouse — small and correctly proportioned: a tower that TAPERS (wide
  * base, narrow top), a gallery ledge that overhangs, a glazed lamp room and a

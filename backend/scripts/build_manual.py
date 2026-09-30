@@ -1,8 +1,8 @@
-"""Build the Faro user manual as a PDF, one per language.
+"""Build the StockAI user manual as a PDF, one per language.
 
     backend/.venv/Scripts/python.exe -m backend.scripts.build_manual
 
-Writes `Frontend/public/faro-manual-es.pdf` and `faro-manual-en.pdf`, which the
+Writes `Frontend/public/stockai-manual-es.pdf` and `stockai-manual-en.pdf`, which the
 landing page offers for download in whichever language the visitor is reading.
 
 The CONTENT is not here. It lives in `docs/manual/section_*.py` — plain data,
@@ -76,7 +76,7 @@ CHAPTER_ORDER = ["system:first", "operation", "data", "analysis", "system:rest"]
 STRINGS = {
     "es": {
         "manual": "Manual de usuario",
-        "subtitle": "Todo lo que hace Faro, pantalla por pantalla.",
+        "subtitle": "Todo lo que hace StockAI, pantalla por pantalla.",
         "toc": "Contenido",
         "screen": "Pantalla",
         "purpose": "Para qué sirve",
@@ -117,7 +117,7 @@ STRINGS = {
     },
     "en": {
         "manual": "User manual",
-        "subtitle": "Everything Faro does, screen by screen.",
+        "subtitle": "Everything StockAI does, screen by screen.",
         "toc": "Contents",
         "screen": "Screen",
         "purpose": "What it is for",
@@ -270,7 +270,7 @@ class Manual(BaseDocTemplate):
         canvas.line(MARGIN, MARGIN - 5 * mm, PAGE_W - MARGIN, MARGIN - 5 * mm)
         canvas.setFont(self.font, 7.5)
         canvas.setFillColor(MUTED)
-        canvas.drawString(MARGIN, MARGIN - 9.5 * mm, f"Faro · {self.chapter}")
+        canvas.drawString(MARGIN, MARGIN - 9.5 * mm, f"StockAI · {self.chapter}")
         canvas.drawRightString(PAGE_W - MARGIN, MARGIN - 9.5 * mm, str(doc.page))
         canvas.restoreState()
 
@@ -346,9 +346,9 @@ def screenshot(image_key: str, lang: str):
 def build(lang: str, sections: dict[str, dict], font: str, bold: str, uni: bool) -> Path:
     S = STRINGS[lang]
     st = styles(font, bold)
-    out = OUT_DIR / f"faro-manual-{lang}.pdf"
+    out = OUT_DIR / f"stockai-manual-{lang}.pdf"
     doc = Manual(str(out), lang, font, bold,
-                 title=f"Faro — {S['manual']}", author="Faro")
+                 title=f"StockAI — {S['manual']}", author="StockAI")
 
     def E(text: str) -> str:
         return esc(text, uni)
@@ -358,7 +358,7 @@ def build(lang: str, sections: dict[str, dict], font: str, bold: str, uni: bool)
     # ── Cover ────────────────────────────────────────────────────────────────
     story += [
         Spacer(1, 58 * mm),
-        Paragraph("Faro", st["CoverTitle"]),
+        Paragraph("StockAI", st["CoverTitle"]),
         Paragraph(E(S["manual"]), ParagraphStyle(
             "CoverKicker", parent=st["CoverTitle"], fontSize=21, leading=25,
             textColor=ACCENT, spaceAfter=16)),

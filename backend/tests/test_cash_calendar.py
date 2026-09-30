@@ -541,7 +541,7 @@ class TestPurchaseFit:
         assert result["shortfall"] == 300.0
 
     def test_without_a_budget_the_verdict_is_unknown_not_a_guess(self, test_tenant):
-        """Faro stores no cash balance. With no budget supplied it reports the
+        """StockAI stores no cash balance. With no budget supplied it reports the
         totals and refuses to invent a verdict."""
         result = cash.evaluate_purchase_fit(
             test_tenant["id"],

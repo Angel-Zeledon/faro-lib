@@ -117,6 +117,7 @@ interface SupplierForm {
   whatsapp:       string
   lead_time_days: string
   lead_time_std:  string
+  review_period_days: string
   payment_terms:  string
   notes:          string
 }
@@ -128,7 +129,7 @@ interface SupplierForm {
  * it holds — so `_stamp_lead_time_provenance` recorded SOURCE_USER for every
  * supplier created here, and the scorecard printed **DECLARADO 15d** for a
  * supplier who declared nothing. Three backend call sites gate on
- * `lead_time_set_by` precisely to keep Faro's own assumption from being
+ * `lead_time_set_by` precisely to keep StockAI's own assumption from being
  * reported as the supplier's promise; a pre-filled field defeated all three
  * (stability 11.32).
  *
@@ -137,7 +138,7 @@ interface SupplierForm {
  * chose it.
  */
 function blankForm(name = ''): SupplierForm {
-  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '', lead_time_std: '3', payment_terms: '', notes: '' }
+  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '', lead_time_std: '3', review_period_days: '', payment_terms: '', notes: '' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
@@ -148,6 +149,7 @@ function supplierToForm(s: Supplier): SupplierForm {
     whatsapp:       s.whatsapp ?? '',
     lead_time_days: String(s.lead_time_days),
     lead_time_std:  String(s.lead_time_std),
+    review_period_days: s.review_period_days ? String(s.review_period_days) : '',
     payment_terms:  s.payment_terms ?? '',
     notes:          s.notes ?? '',
   }
@@ -230,7 +232,7 @@ function SupplierFormPanel({
           hint={t('suppliers.lead_time_applies_to_catalog')}
           hintStyle={{ fontSize: 10, lineHeight: 1.5 }}
         >
-          {/* Placeholder, not a value: it shows what Faro will assume while
+          {/* Placeholder, not a value: it shows what StockAI will assume while
               leaving the field empty, so nothing is recorded as declared. */}
           <Input name="supplier_lead_time_days" type="number" min={1} max={365}
                  value={form.lead_time_days} onChange={set('lead_time_days')}
@@ -247,6 +249,26 @@ function SupplierFormPanel({
           labelStyle={FORM_LABEL_STYLE}
         >
           <Input name="supplier_lead_time_std" type="number" min={0} max={60} value={form.lead_time_std} onChange={set('lead_time_std')} aria-label={t('suppliers.form_variability_label')} />
+        </Field>
+
+        {/* How often this buyer orders from this supplier. The order has to
+            cover until the NEXT one arrives, not just until this one does, so
+            a weekly cadence on a 10-day lead time is 17 days of protection.
+            Empty is 0 — no declared cadence, and the arithmetic stays as it
+            was for every tenant that never fills this in. */}
+        <Field
+          label={
+            <Tooltip text={t('suppliers.form_review_period_tip')}>
+              <span>{t('suppliers.form_review_period_label')}</span>
+              <Info size={9} color={C.dim} style={{ opacity: 0.5 }} aria-hidden="true" />
+            </Tooltip>
+          }
+          labelStyle={FORM_LABEL_STYLE}
+        >
+          <Input name="supplier_review_period_days" type="number" min={0} max={365}
+                 placeholder={t('suppliers.form_review_period_placeholder')}
+                 value={form.review_period_days} onChange={set('review_period_days')}
+                 aria-label={t('suppliers.form_review_period_label')} />
         </Field>
       </div>
 
@@ -460,6 +482,9 @@ function SuppliersPageInner() {
       lead_time_days: form.lead_time_days.trim() === ''
         ? null : (parseInt(form.lead_time_days) || DEFAULT_LEAD_TIME_DAYS),
       lead_time_std:  parseInt(form.lead_time_std) || 3,
+      // 0 means "no declared cadence" and reproduces the old arithmetic
+      // exactly, so an empty box must send 0 rather than nothing.
+      review_period_days: parseInt(form.review_period_days) || 0,
       payment_terms:  form.payment_terms || null,
       notes:          form.notes.trim() || null,
     }
@@ -597,7 +622,7 @@ function SuppliersPageInner() {
                     [t('suppliers.table_variability'), t('suppliers.table_variability_tip')],
                     [tOr(t, 'suppliers.table_learning', 'Learning'),
                      tOr(t, 'suppliers.table_learning_tip',
-                       'Faro learns each supplier’s real lead time from the receptions you record, and replaces the configured value once there is enough evidence.')],
+                       'StockAI learns each supplier’s real lead time from the receptions you record, and replaces the configured value once there is enough evidence.')],
                     [t('suppliers.table_payment_terms'), ''],
                     [t('suppliers.table_email'), ''],
                     [t('suppliers.table_contact'), ''],

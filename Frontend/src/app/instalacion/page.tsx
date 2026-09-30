@@ -381,7 +381,12 @@ export default function InstallationPage() {
   const copy = SERVICE_CONFIG[lang]
   const ui = copy.ui
 
-  const [tab, setTab] = useState<Tab>('instance')
+  // `null` until the reader's tab is known: the instance-operator check
+  // (`denied`, below) is async, so guessing 'instance' here would highlight
+  // the operator tab for the ordinary tenant-admin reader for one frame before
+  // flipping away from it. Once the reader (or a click) picks one, it sticks —
+  // a reload triggered by a save must not snap them back to the default.
+  const [tab, setTab] = useState<Tab | null>(null)
   const [instance, setInstance] = useState<ServicesReport | null>(null)
   const [tenant, setTenant] = useState<TenantServicesReport | null>(null)
   const [loading, setLoading] = useState(true)
@@ -418,10 +423,13 @@ export default function InstallationPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Land on the tab the reader can actually use.
-  useEffect(() => {
-    if (!loading && denied) setTab('tenant')
-  }, [loading, denied])
+  // Land on the tab the reader can actually use: `denied` (set above, from the
+  // same operator check the instance panel is gated on — the one guard this
+  // screen already has for "is this reader the operator") says so once the
+  // request lands. No click yet and no answer yet -> null, so nothing is
+  // highlighted rather than guessing wrong for a frame. A click always wins,
+  // and it survives the reloads `onChanged` triggers after a save.
+  const effectiveTab: Tab | null = tab ?? (loading ? null : (denied ? 'tenant' : 'instance'))
 
   const tenantServices = tenant?.services ?? []
 
@@ -450,7 +458,7 @@ export default function InstallationPage() {
 
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
         {tabs.map(({ id, label, Icon }) => {
-          const active = tab === id
+          const active = effectiveTab === id
           return (
             <button
               key={id}
@@ -474,7 +482,7 @@ export default function InstallationPage() {
           answers "what can I do" and leaves "why can't I do the other thing"
           hanging — and an unexplained missing screen reads as a broken one.
           The tab stays clickable: the full explanation is behind it. */}
-      {!loading && denied && tab === 'tenant' && (
+      {!loading && denied && effectiveTab === 'tenant' && (
         <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: -8 }}>
           {denied === 'disabled' ? ui.operatorDisabledBody : ui.notOperatorBody}
         </div>
@@ -482,7 +490,7 @@ export default function InstallationPage() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40 }}><Spinner /></div>
-      ) : tab === 'instance' ? (
+      ) : effectiveTab === 'instance' ? (
         denied ? (
           <Card padding="24px">
             <div style={{ fontSize: 14, fontWeight: 600 }}>

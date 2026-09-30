@@ -418,10 +418,11 @@ class TestDatasetSyncSanitization:
     through StockUpsert/StockPatch's ge=0/ge=1 bounds — it parses whatever a
     sales-history column happens to contain and hands it straight to
     upsert_stock. A stray lead_time_days=0 collapses every _calc_signal
-    threshold (lead_time*0.5/1.2/3 all become 0), permanently misreporting the
-    SKU as SOBRESTOCK regardless of real coverage and silently hiding a
-    stockout risk; a stray negative current_stock corrupts the reorder-point
-    math the same way bulk_import's ge=0 guard exists to prevent.
+    threshold (lead_time*0.5, the reorder point, and its 3x-lead-time floor
+    all become 0), permanently misreporting the SKU as SOBRESTOCK regardless
+    of real coverage and silently hiding a stockout risk; a stray negative
+    current_stock corrupts the reorder-point math the same way bulk_import's
+    ge=0 guard exists to prevent.
     """
 
     def test_zero_lead_time_from_dataset_is_rejected(self, client, test_tenant):
@@ -649,22 +650,29 @@ class TestSignalCalculation:
         assert avg == 0.0
         assert std == 0.0
 
+    # `reorder_point_days` below (stability.md 17c) is a low-safety-stock SKU's
+    # own reorder point in days of cover — a bit past the lead time itself, as
+    # `avg_daily * lead_time + safety_stock` always is. It is passed explicitly
+    # rather than derived so each test states the scenario it assumes.
+
     def test_signal_order_now(self):
         from backend.inventory.service import _calc_signal
-        # coverage_days < lead_time * 0.5 → PEDIR_YA
-        assert _calc_signal(coverage_days=3, lead_time=15) == "PEDIR_YA"
+        # coverage_days < lead_time * 0.5 → PEDIR_YA, whatever the reorder point.
+        assert _calc_signal(coverage_days=3, lead_time=15, reorder_point_days=16) == "PEDIR_YA"
 
     def test_signal_order_soon(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=14, lead_time=15) == "PEDIR_PRONTO"
+        # 14 < reorder_point_days(16) → at/below the reorder point → ordering.
+        assert _calc_signal(coverage_days=14, lead_time=15, reorder_point_days=16) == "PEDIR_PRONTO"
 
     def test_signal_ok(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=25, lead_time=15) == "OK"
+        # Past the reorder point (16) and below the 3x-lead-time floor (45).
+        assert _calc_signal(coverage_days=25, lead_time=15, reorder_point_days=16) == "OK"
 
     def test_signal_overstock(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=60, lead_time=15) == "SOBRESTOCK"
+        assert _calc_signal(coverage_days=60, lead_time=15, reorder_point_days=16) == "SOBRESTOCK"
 
     def test_recommended_order_respects_moq_as_a_floor(self):
         from backend.inventory.service import _calc_recommended
@@ -844,7 +852,7 @@ class TestPOExport:
         assert "Cantidad recomendada" in header
         # The exported PO must be transparent about the lead time it used and
         # whether that lead time was learned from real receptions or configured
-        # by hand (Faro plan open risk #6).
+        # by hand (StockAI plan open risk #6).
         assert "Lead time (días)" in header
         assert "Origen lead time" in header
 

@@ -10,7 +10,7 @@ Example:
         "columns": {"target": "sales", "date": "date", "group_keys": ["sku", "store"]},
         "features": {"lags": [1, 7, 14], "rolling": [7, 14]},
         "models": {"lightgbm": {"n_estimators": 300}},
-        "training": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 3},
+        "training": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 8},
         "forecast": {"horizon": 14},
     })
 """
@@ -103,7 +103,14 @@ class FeaturesConfig:
 class TrainingConfig:
     train_ratio: float = 0.8
     walk_forward: bool = True
-    wfv_splits: int = 3
+    # Eight, not three. The cushion the product promises a service level on is
+    # calibrated from the residuals these folds produce, and three origins
+    # starve it: measured end to end through the real pipeline at L=15, the
+    # published band delivered 83.3% against a nominal 95% at three folds and
+    # 96.7% at eight, with nothing else changed (docs/stability.md 17b). The
+    # extra fold fits are affordable because removing the separate p10/p50/p90
+    # quantile models freed 58% of ML training time.
+    wfv_splits: int = 8
     min_history: int = 20
     seasonal_period: int = 7
     tuning: bool = False
@@ -314,7 +321,7 @@ class SessionConfig:
             "training": {
                 "train_ratio":    {"type": "float",   "default": 0.8,   "min": 0.5, "max": 0.95, "label": "Train ratio"},
                 "walk_forward":   {"type": "bool",    "default": True,              "label": "Walk-forward validation"},
-                "wfv_splits":     {"type": "int",     "default": 3,     "min": 1,   "label": "WFV splits"},
+                "wfv_splits":     {"type": "int",     "default": 8,     "min": 1,   "label": "WFV splits"},
                 "min_history":    {"type": "int",     "default": 20,    "min": 5,   "label": "Min history rows"},
                 "seasonal_period":{"type": "int",     "default": 7,     "min": 2,   "label": "Seasonal period"},
                 "tuning":         {"type": "bool",    "default": False,             "label": "Hyperparameter tuning (Optuna)"},

@@ -48,7 +48,7 @@ const ALL_ROUTES = [
   '/proveedores/scorecard', '/archivos', '/ventas', '/historial', '/impacto',
   '/escenarios', '/mi-cuenta', '/usuarios', '/actividad', '/asistente',
   '/mensajes', '/automatizacion', '/configurar-inventario', '/api',
-  '/integraciones', '/instalacion',
+  '/instalacion',
 ]
 
 // Narrowing hooks, for working on one screen instead of waiting out all 21 —

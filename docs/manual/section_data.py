@@ -23,12 +23,12 @@ SECTION = {
     "es": {
         "title": "Tus datos",
         "intro": (
-            "Faro no adivina nada: todo lo que ves en el semáforo sale de cuatro pantallas "
+            "StockAI no adivina nada: todo lo que ves en el semáforo sale de cuatro pantallas "
             "que llenas tú. En «Mis ventas» subes el historial con el que se calcula la demanda; "
             "en «Configurar inventario» dices cuánto tienes, cuánto te cuesta y cuánto tarda en "
             "llegar; en «Proveedores» registras a quién le compras; y en el «Scorecard» comparas "
             "lo que cada proveedor promete con lo que realmente cumple. Mientras falte alguno de "
-            "esos datos, Faro te lo dice en la pantalla en vez de suponerlo en silencio."
+            "esos datos, StockAI te lo dice en la pantalla en vez de suponerlo en silencio."
         ),
         "screens": [
             {
@@ -37,7 +37,7 @@ SECTION = {
                 "image": "ventas",
                 "purpose": (
                     "Es la puerta de entrada del producto. Aquí subes tu historial de ventas, le "
-                    "dices a Faro qué columna es cuál, y arrancas el cálculo que produce el "
+                    "dices a StockAI qué columna es cuál, y arrancas el cálculo que produce el "
                     "pronóstico por producto. Todo lo demás — el semáforo, las órdenes de compra, "
                     "el scorecard — se apoya en lo que entra por esta pantalla."
                 ),
@@ -47,7 +47,7 @@ SECTION = {
                     "El último control del plan es «¿En qué país vendes?»: decide de qué calendario de feriados aprende el modelo, ofrece doce países y viene preseleccionado en Colombia.",
                     "Arrastras tu archivo a la caja punteada o haces clic para buscarlo; la propia caja indica «Formatos aceptados: CSV, Excel (.xlsx, .xls)».",
                     "Si ya subiste archivos antes aparecen dos pestañas más junto a «Subir archivo nuevo»: «Usar un archivo ya subido» y «Repetir una carga anterior», que reutiliza también las columnas de esa carga.",
-                    "Cuando el archivo es CSV, Faro lo revisa en tu propia máquina antes de subirlo y te lista los problemas con el número de fila, además de ofrecerte una plantilla descargable.",
+                    "Cuando el archivo es CSV, StockAI lo revisa en tu propia máquina antes de subirlo y te lista los problemas con el número de fila, además de ofrecerte una plantilla descargable.",
                     "Con el archivo cargado pasas a «Confirma tus columnas»: quince campos, tres de ellos obligatorios y marcados con una estrella roja, donde eliges qué columna de tu archivo corresponde a cada uno.",
                     "Debajo de los selectores hay una «Vista previa de tus datos» con las primeras cinco columnas y tres filas, para que compruebes que leímos lo que creías.",
                     "Si el archivo tiene algo que cambiaría el pronóstico sin avisar, aparece el bloque «Tienes que decidir algo antes de seguir» con una pregunta por hallazgo, y el botón de continuar queda apagado hasta que respondas todas.",
@@ -56,14 +56,14 @@ SECTION = {
                 "fields": [
                     ("Ponle un nombre (opcional)", "Cómo se llamará esta carga en tu historial. Solo sirve para reconocerla después; puedes dejarlo vacío."),
                     ("¿Hasta cuándo quieres planificar?", "El horizonte del pronóstico en días de calendario: 4 semanas son 28 días, 8 semanas 56 y 6 meses 180."),
-                    ("Nivel de detalle del plan", "Si el plan se calcula por día, por semana o por mes. «Auto (recomendado)» deja que Faro lo decida según la forma de tu archivo."),
+                    ("Nivel de detalle del plan", "Si el plan se calcula por día, por semana o por mes. «Auto (recomendado)» deja que StockAI lo decida según la forma de tu archivo."),
                     ("¿En qué país vendes?", "El calendario de feriados que aprende el modelo. Doce países disponibles; si no lo cambias, se usa Colombia."),
                     ("SKU / Producto ★", "Obligatorio. La columna que identifica cada producto."),
                     ("Fecha ★", "Obligatorio. La columna con la fecha de cada venta."),
                     ("Demanda ★", "Obligatorio. La columna con las unidades vendidas — unidades, no dinero."),
                     ("Inventario", "Opcional. Si no la das, un día sin ventas no se distingue de un día sin producto en bodega, y el pronóstico sale conservador."),
-                    ("Lead Time (días)", "Opcional. Si tu archivo no la trae, la pantalla muestra «Default: 15» — los quince días que Faro supone."),
-                    ("Vista previa de tus datos:", "Las tres primeras filas de las cinco primeras columnas, tal como Faro las leyó."),
+                    ("Tiempo de entrega (días)", "Opcional. Si tu archivo no la trae, la pantalla muestra «Default: 15» — los quince días que StockAI supone."),
+                    ("Vista previa de tus datos:", "Las tres primeras filas de las cinco primeras columnas, tal como StockAI las leyó."),
                 ],
                 "tasks": [
                     (
@@ -95,7 +95,7 @@ SECTION = {
                     "En el plan gratuito el archivo no puede pasar de 25 MB y el catálogo se topa en 100 productos; el plan pagado sube el archivo hasta 2000 MB y quita el tope de productos.",
                     "No existe un «continuar de todos modos». Si el control de datos encuentra algo sin arreglo posible, la única salida es corregir el mapeo de columnas arriba o subir otro archivo.",
                     "El país de feriados viene en Colombia porque es lo que usaban todas las cargas antes de que existiera el control. Si vendes en otro país, cámbialo antes de subir: se aplica a esa carga, no hacia atrás.",
-                    "Si tu última carga terminada usaba columnas que siguen existiendo en el archivo nuevo, Faro las reutiliza y te lo dice arriba. Si alguna desapareció, te nombra cuáles y vuelve a proponer el mapeo desde cero.",
+                    "Si tu última carga terminada usaba columnas que siguen existiendo en el archivo nuevo, StockAI las reutiliza y te lo dice arriba. Si alguna desapareció, te nombra cuáles y vuelve a proponer el mapeo desde cero.",
                 ],
             },
             {
@@ -103,15 +103,15 @@ SECTION = {
                 "route": "/configurar-inventario",
                 "image": "configurar",
                 "purpose": (
-                    "Faro ya sabe cuánto vas a vender; esta pantalla es donde le dices contra qué "
+                    "StockAI ya sabe cuánto vas a vender; esta pantalla es donde le dices contra qué "
                     "comparar esa venta. Ofrece dos caminos hacia lo mismo: subir el archivo que "
                     "tu sistema ya exporta, o llenar a mano solo los productos que se llevan tu "
                     "plata. Los dos escriben en el mismo lugar y mueven la misma barra."
                 ),
                 "walkthrough": [
-                    "Bajo el título «Configurar mi inventario» hay un recuadro que explica la regla: sin stock o sin costo el producto no aparece en el semáforo, y sin días de entrega sí aparece, pero calculado sobre los 15 días que Faro supone.",
+                    "Bajo el título «Configurar mi inventario» hay un recuadro que explica la regla: sin stock o sin costo el producto no aparece en el semáforo, y sin días de entrega sí aparece, pero calculado sobre los 15 días que StockAI supone.",
                     "El primer panel es «O sube el archivo de tu sistema»: CSV o Excel tal como te lo exporta tu sistema, sin editar encabezados.",
-                    "Pulsas «Elegir archivo» y Faro lo lee al momento; si es CSV, primero lo revisa en tu máquina y te nombra la fila y la columna de cada problema.",
+                    "Pulsas «Elegir archivo» y StockAI lo lee al momento; si es CSV, primero lo revisa en tu máquina y te nombra la fila y la columna de cada problema.",
                     "Debajo aparece «Así entendimos tus columnas» con un desplegable por campo; cambias el que esté mal y lo que dejes en «No importar» se queda fuera.",
                     "El resumen te dice «Filas listas para importar», «Filas con problemas que quedan fuera» y «Filas sin código de producto que se saltan», con ejemplos concretos del tipo «Fila 214 (SKU-001): \"N/D\"».",
                     "Confirmas con «Importar» — el botón lleva la cuenta entre paréntesis — y al terminar la pantalla dice cuántos productos entraron y cuántas filas quedaron fuera.",
@@ -170,31 +170,31 @@ SECTION = {
                 "purpose": (
                     "Un proveedor es quien te vende cada producto, y registrarlo es lo que "
                     "convierte una alerta de stock en una orden que se puede enviar. Aquí guardas "
-                    "sus datos de contacto, sus plazos, sus términos de pago y sus escalas de "
-                    "precio por volumen — y ves cuánto ha aprendido Faro de sus entregas reales."
+                    "sus datos de contacto, sus tiempos de entrega, sus términos de pago y sus escalas de "
+                    "precio por volumen — y ves cuánto ha aprendido StockAI de sus entregas reales."
                 ),
                 "walkthrough": [
                     "El encabezado «Proveedores» trae dos accesos: «Scorecard», que lleva a la pantalla de desempeño, y «Agregar proveedor».",
                     "Si aún no tienes ninguno, la pantalla muestra un estado vacío que explica para qué sirven y ofrece «Agregar primer proveedor».",
-                    "El formulario pide Nombre — el único obligatorio —, Email (para enviar OC), Teléfono, WhatsApp, Términos de pago, Lead time (días), Variabilidad (días) y Notas.",
+                    "El formulario pide Nombre — el único obligatorio —, Email (para enviar OC), Teléfono, WhatsApp, Términos de pago, Tiempo de entrega (días), Variabilidad (días) y Notas.",
                     "«Términos de pago» es un desplegable con Contado, 15 días, 30 días, 60 días, 90 días y Otro.",
-                    "El lead time llega con 15 días y la variabilidad con 3; puedes cambiar ambos antes de crear la ficha.",
-                    "Bajo el campo de lead time, una nota fija la precedencia: ese plazo se aplica a todos los productos de ese proveedor que no tengan uno propio, y el que tú configuraste en la ficha de un producto gana.",
-                    "La tabla lista Nombre, Lead time, Variabilidad, Aprendizaje, Términos de pago, Email, Teléfono / WhatsApp y Acciones.",
+                    "El tiempo de entrega llega con 15 días y la variabilidad con 3; puedes cambiar ambos antes de crear la ficha.",
+                    "Bajo el campo de tiempo de entrega, una nota fija la precedencia: ese tiempo de entrega se aplica a todos los productos de ese proveedor que no tengan uno propio, y el que tú configuraste en la ficha de un producto gana.",
+                    "La tabla lista Nombre, Tiempo de entrega, Variabilidad, Aprendizaje, Términos de pago, Email, Teléfono / WhatsApp y Acciones.",
                     "La columna «Aprendizaje» dice en qué punto va cada proveedor: «Todavía no tengo entregas tuyas…», «Llevo n de 3 entregas registradas…», «Aprendí de n entregas: tardan X días en promedio…» o el caso en que las entregas registradas no dicen nada.",
                     "El icono de etiqueta al final de la fila despliega las «Escalas de precio» de ese proveedor, con SKU, Cantidad mínima, Precio unitario y Notas.",
                     "Los otros dos iconos editan y eliminan la ficha; eliminar pide confirmación y avisa que la acción es irreversible.",
                 ],
                 "fields": [
                     ("Nombre", "El único campo obligatorio. Es la llave con la que se cruzan los productos, las recepciones y el scorecard, y se compara ignorando mayúsculas."),
-                    ("Email (para enviar OC)", "La dirección a la que salen las órdenes de compra desde Faro."),
+                    ("Email (para enviar OC)", "La dirección a la que salen las órdenes de compra desde StockAI."),
                     ("Teléfono", "Contacto telefónico del proveedor. Se muestra en la tabla junto al WhatsApp."),
                     ("WhatsApp", "Número al que se pueden mandar avisos y órdenes por WhatsApp."),
                     ("Términos de pago", "A cuántos días te cobra. Alimenta el calendario de caja, que estima cuánto vence cada semana."),
-                    ("Lead time (días)", "Días que tarda en entregarte desde que haces el pedido. Se aplica a todos sus productos que no tengan uno propio."),
-                    ("Variabilidad (días)", "Qué tanto puede variar ese plazo. Si dice 15 días pero a veces llega en 18, pon 3. A más variabilidad, más stock de seguridad."),
+                    ("Tiempo de entrega (días)", "Días que tarda en entregarte desde que haces el pedido. Se aplica a todos sus productos que no tengan uno propio."),
+                    ("Variabilidad (días)", "Qué tanto puede variar ese tiempo de entrega. Si dice 15 días pero a veces llega en 18, pon 3. A más variabilidad, más stock de seguridad."),
                     ("Notas", "Condiciones especiales, contacto, observaciones. Texto libre para ti."),
-                    ("Aprendizaje", "Columna de solo lectura: cuántas entregas suyas llevas registradas y si ya son suficientes para que Faro reemplace el plazo configurado."),
+                    ("Aprendizaje", "Columna de solo lectura: cuántas entregas suyas llevas registradas y si ya son suficientes para que StockAI reemplace el tiempo de entrega configurado."),
                     ("Escalas de precio: Cantidad mínima / Precio unitario", "A partir de esa cantidad, cada unidad cuesta ese precio. Se usan para sugerir cuándo conviene pedir más."),
                 ],
                 "tasks": [
@@ -203,7 +203,7 @@ SECTION = {
                         " 1. Pulsa «Agregar proveedor»."
                         " 2. Escribe el nombre exactamente como lo usas en tus productos."
                         " 3. Llena el email: sin email ni WhatsApp, el envío de órdenes lo omite."
-                        " 4. Ajusta el lead time y la variabilidad a lo que ese proveedor te promete."
+                        " 4. Ajusta el tiempo de entrega y la variabilidad a lo que ese proveedor te promete."
                         " 5. Elige los términos de pago y pulsa «Crear proveedor»."
                     ),
                     (
@@ -214,7 +214,7 @@ SECTION = {
                         " 4. Pulsa «Agregar escala» y repite para cada peldaño de la escala."
                     ),
                     (
-                        "Hacer que Faro aprenda el plazo real de un proveedor",
+                        "Hacer que StockAI aprenda el tiempo de entrega real de un proveedor",
                         " 1. Registra la llegada de cada orden de compra cuando la recibas."
                         " 2. Vuelve a esta pantalla y mira la columna «Aprendizaje»."
                         " 3. Cuando lleve 3 entregas registradas, el texto cambia a «Aprendí de n entregas» y ese pasa a ser el número con el que se planifica."
@@ -222,11 +222,11 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "Faro no reemplaza el plazo que configuraste por el aprendido hasta tener 3 recepciones registradas de ese proveedor. Con una sola, una entrega rara — un feriado, una huelga, un camión varado — reescribiría el plazo de todos sus productos.",
-                    "Si todas las entregas registradas llegaron el mismo día que las pediste, el promedio observado es 0 y no dice nada del proveedor. Faro lo declara inutilizable, lo dice en la columna «Aprendizaje» y sigue usando el plazo que configuraste.",
+                    "StockAI no reemplaza el tiempo de entrega que configuraste por el aprendido hasta tener 3 recepciones registradas de ese proveedor. Con una sola, una entrega rara — un feriado, una huelga, un camión varado — reescribiría el tiempo de entrega de todos sus productos.",
+                    "Si todas las entregas registradas llegaron el mismo día que las pediste, el promedio observado es 0 y no dice nada del proveedor. StockAI lo declara inutilizable, lo dice en la columna «Aprendizaje» y sigue usando el tiempo de entrega que configuraste.",
                     "Los términos de pago son texto que se interpreta para el calendario de caja. Se entienden «contado», «contra entrega», «anticipo», «prepago» y «COD» como 0 días; «N meses» como N por 30; «quincenal» como 15; y el primer número de cosas como «30 días» o «net 30».",
-                    "Lo que NO se entiende queda como plazo desconocido, y se reporta como tal en vez de inventarse un número: las cuotas tipo «2x30» o «30/60/90», los rangos como «30-45 días» y los textos como «a convenir».",
-                    "El plazo del proveedor manda sobre todos sus productos que no tengan uno propio; el que escribas en la ficha de un producto siempre gana sobre el del proveedor.",
+                    "Lo que NO se entiende queda como tiempo de entrega desconocido, y se reporta como tal en vez de inventarse un número: las cuotas tipo «2x30» o «30/60/90», los rangos como «30-45 días» y los textos como «a convenir».",
+                    "El tiempo de entrega del proveedor manda sobre todos sus productos que no tengan uno propio; el que escribas en la ficha de un producto siempre gana sobre el del proveedor.",
                 ],
             },
             {
@@ -235,8 +235,8 @@ SECTION = {
                 "image": "scorecard",
                 "purpose": (
                     "La pantalla que compara lo que cada proveedor promete con lo que realmente "
-                    "cumple. Se arma sola con las recepciones que registraste: plazo real contra "
-                    "plazo declarado, porcentaje de entregas a tiempo, cuánto de lo pedido llegó y "
+                    "cumple. Se arma sola con las recepciones que registraste: el tiempo de entrega real "
+                    "contra el declarado, porcentaje de entregas a tiempo, cuánto de lo pedido llegó y "
                     "cuánto le has comprado."
                 ),
                 "walkthrough": [
@@ -244,8 +244,8 @@ SECTION = {
                     "Todo lo que muestra sale de las recepciones registradas: un proveedor sin ninguna llegada anotada no tiene fila.",
                     "Si algún proveedor viene tardando más que de costumbre, arriba aparece un aviso ámbar con cuántos son, cuántos días se desviaron y sobre cuántas recepciones se comparó.",
                     "Ese mismo aviso explica el método al pie: una regla de control estadístico de 3 sigma sobre la mediana y la desviación absoluta mediana del historial de cada proveedor.",
-                    "La tabla tiene nueve columnas: Proveedor, Recepciones, Lead time real, Declarado, Tendencia, % A tiempo, % Fill rate, Valor comprado y Última recepción.",
-                    "«Lead time real» es un rango mínimo–máximo de lo observado, no un promedio: dos entregas de 5 y 25 días se muestran como 5–25d, no como 15d.",
+                    "La tabla tiene nueve columnas: Proveedor, Recepciones, Tiempo de entrega real, Declarado, Tendencia, % A tiempo, % Fill rate, Valor comprado y Última recepción.",
+                    "«Tiempo de entrega real» es un rango mínimo–máximo de lo observado, no un promedio: dos entregas de 5 y 25 días se muestran como 5–25d, no como 15d.",
                     "«% A tiempo» se pinta verde desde 70%, ámbar desde 40% y rojo por debajo, para que la fila se lea de un vistazo.",
                     "«Valor comprado» muestra un guion si ninguna línea de esas órdenes traía costo unitario, y un «≥» delante del monto si solo algunas lo traían.",
                     "Cuando una celda no se puede medir, la pantalla lo dice con palabras — «No concluyente», «Aún no» — en lugar de imprimir un cero que invitaría a la decisión equivocada.",
@@ -254,10 +254,10 @@ SECTION = {
                 "fields": [
                     ("Proveedor", "El nombre tal como venía en las órdenes. Las mayúsculas se ignoran al agrupar, así que «Acme» y «ACME» son una sola fila."),
                     ("Recepciones", "Cuántas llegadas suyas llevas registradas. Es el tamaño de muestra detrás de todo lo demás en la fila."),
-                    ("Lead time real", "El rango de días observados entre el pedido y la llegada, del mínimo al máximo."),
-                    ("Declarado", "El plazo que hay en la ficha del proveedor. Aparece un guion si nadie llegó a llenarlo, para no medirlo contra una promesa que nunca hizo."),
-                    ("Tendencia", "Si su plazo reciente se salió de su propio rango normal. Muestra los días de desviación, «Estable», o «Aún no» cuando todavía no hay con qué comparar."),
-                    ("% A tiempo", "Proporción de entregas cuyo plazo real fue menor o igual al declarado. Queda vacío si no hay plazo declarado."),
+                    ("Tiempo de entrega real", "El rango de días observados entre el pedido y la llegada, del mínimo al máximo."),
+                    ("Declarado", "El tiempo de entrega que hay en la ficha del proveedor. Aparece un guion si nadie llegó a llenarlo, para no medirlo contra una promesa que nunca hizo."),
+                    ("Tendencia", "Si su tiempo de entrega reciente se salió de su propio rango normal. Muestra los días de desviación, «Estable», o «Aún no» cuando todavía no hay con qué comparar."),
+                    ("% A tiempo", "Proporción de entregas cuyo tiempo de entrega real fue menor o igual al declarado. Queda vacío si no hay tiempo de entrega declarado."),
                     ("% Fill rate", "Cuánto de lo que pediste llegó realmente, tope 100%."),
                     ("Valor comprado", "Lo que le has comprado, sumando las líneas que sí traen costo unitario."),
                     ("Última recepción", "La fecha de la llegada más reciente que registraste de ese proveedor."),
@@ -266,16 +266,16 @@ SECTION = {
                     (
                         "Comparar lo que un proveedor promete con lo que cumple",
                         " 1. Ubica su fila y lee «Declarado» — lo que dice su ficha."
-                        " 2. Compáralo con «Lead time real», que es el rango que has visto de verdad."
-                        " 3. Mira «% A tiempo» para saber con qué frecuencia cumple ese plazo."
-                        " 4. Si el real está sistemáticamente por encima del declarado, corrige el plazo en su ficha en Proveedores."
+                        " 2. Compáralo con «Tiempo de entrega real», que es el rango que has visto de verdad."
+                        " 3. Mira «% A tiempo» para saber con qué frecuencia cumple ese tiempo de entrega."
+                        " 4. Si el real está sistemáticamente por encima del declarado, corrige el tiempo de entrega en su ficha en Proveedores."
                     ),
                     (
                         "Entender por qué una fila dice «No concluyente»",
                         " 1. Pasa el cursor sobre el texto para leer la explicación completa."
                         " 2. Significa que todas las entregas registradas llegaron el mismo día que las pediste."
                         " 3. Revisa si registraste la fecha de llegada correcta al recibir esas órdenes."
-                        " 4. Mientras siga así, Faro planifica con el plazo que configuraste, no con un cero."
+                        " 4. Mientras siga así, StockAI planifica con el tiempo de entrega que configuraste, no con un cero."
                     ),
                     (
                         "Llenar el scorecard cuando está vacío",
@@ -286,11 +286,11 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "La columna «Tendencia» necesita al menos 6 recepciones para decir algo: 2 en la ventana reciente y 4 en la base histórica. Con menos, muestra «Aún no» en lugar de llamar «Estable» a un plazo que nadie ha visto variar.",
+                    "La columna «Tendencia» necesita al menos 6 recepciones para decir algo: 2 en la ventana reciente y 4 en la base histórica. Con menos, muestra «Aún no» en lugar de llamar «Estable» a un tiempo de entrega que nadie ha visto variar.",
                     "El fill rate se topa en 100%. Un proveedor que manda 120 contra un pedido de 100 cumplió la orden y además te dejó 20 unidades que nadie pidió: eso es un problema de stock, no un mérito.",
                     "«Valor comprado» nunca es cero por falta de costos. Si ninguna línea traía costo unitario muestra un guion, y si solo algunas lo traían muestra «≥» delante del monto para avisarte que es un piso, no el total.",
-                    "«Declarado» queda vacío cuando nadie llenó el plazo en la ficha del proveedor, y el «% A tiempo» se va con él. Es a propósito: los 15 días que Faro supone no son una promesa del proveedor y no se le pueden cobrar.",
-                    "Faro es más estricto para acusar que para ajustar: le bastan 3 recepciones para aprender un plazo, pero exige 6 antes de señalar a un proveedor por venir tarde. Acusar cuesta más que ajustar.",
+                    "«Declarado» queda vacío cuando nadie llenó el tiempo de entrega en la ficha del proveedor, y el «% A tiempo» se va con él. Es a propósito: los 15 días que StockAI supone no son una promesa del proveedor y no se le pueden cobrar.",
+                    "StockAI es más estricto para acusar que para ajustar: le bastan 3 recepciones para aprender un tiempo de entrega, pero exige 6 antes de señalar a un proveedor por venir tarde. Acusar cuesta más que ajustar.",
                 ],
             },
         ],
@@ -298,12 +298,12 @@ SECTION = {
     "en": {
         "title": "Your data",
         "intro": (
-            "Faro guesses nothing: everything you see in the traffic light comes from four screens "
+            "StockAI guesses nothing: everything you see in the traffic light comes from four screens "
             "you fill in yourself. Under \"My sales\" you upload the history the demand is computed "
             "from; under \"Set up my inventory\" you say how much you hold, what it costs you and how "
             "long it takes to arrive; under \"Suppliers\" you record who you buy from; and the "
             "\"Supplier scorecard\" compares what each supplier promises with what they actually "
-            "deliver. While any of those is missing, Faro says so on screen instead of quietly "
+            "deliver. While any of those is missing, StockAI says so on screen instead of quietly "
             "assuming it."
         ),
         "screens": [
@@ -313,7 +313,7 @@ SECTION = {
                 "image": "ventas",
                 "purpose": (
                     "This is the product's front door. Here you upload your sales history, tell "
-                    "Faro which column is which, and start the run that produces the per-product "
+                    "StockAI which column is which, and start the run that produces the per-product "
                     "forecast. Everything else — the traffic light, the purchase orders, the "
                     "scorecard — rests on what comes in through this screen."
                 ),
@@ -323,7 +323,7 @@ SECTION = {
                     "The last plan control is \"Which country do you sell in?\": it decides whose public holidays the model learns from, offers twelve countries, and comes preset to Colombia.",
                     "You drag your file onto the dashed box or click to browse; the box itself states \"Accepted formats: CSV, Excel (.xlsx, .xls)\".",
                     "If you have uploaded before, two more tabs appear next to \"Upload a new file\": \"Use a file you already uploaded\" and \"Repeat a previous upload\", which reuses that run's columns as well.",
-                    "When the file is a CSV, Faro checks it on your own machine before uploading and lists the problems with their row number, alongside a downloadable template.",
+                    "When the file is a CSV, StockAI checks it on your own machine before uploading and lists the problems with their row number, alongside a downloadable template.",
                     "With the file loaded you move on to \"Confirm your columns\": fifteen fields, three of them required and marked with a red star, where you pick which column of your file each one is.",
                     "Below the selectors there is a \"Preview of your data:\" with the first five columns and three rows, so you can check we read what you thought.",
                     "If the file holds something that would change the forecast without saying so, the block \"There is something you have to decide first\" appears with one question per finding, and the continue button stays dead until you answer them all.",
@@ -332,14 +332,14 @@ SECTION = {
                 "fields": [
                     ("Give it a name (optional)", "What this upload will be called in your history. It only helps you recognise it later; you can leave it empty."),
                     ("How far ahead do you want to plan?", "The forecast horizon in calendar days: 4 weeks is 28 days, 8 weeks is 56 and 6 months is 180."),
-                    ("Plan detail level", "Whether the plan is computed by day, week or month. \"Auto (recommended)\" lets Faro decide from the shape of your file."),
+                    ("Plan detail level", "Whether the plan is computed by day, week or month. \"Auto (recommended)\" lets StockAI decide from the shape of your file."),
                     ("Which country do you sell in?", "The holiday calendar the model learns from. Twelve countries are offered; leave it alone and Colombia is used."),
                     ("SKU / Product ★", "Required. The column identifying each product."),
                     ("Date ★", "Required. The column holding the date of each sale."),
                     ("Demand ★", "Required. The column with units sold — units, not money."),
                     ("Inventory", "Optional. Without it, a day with no sales cannot be told apart from a day with nothing on the shelf, and the forecast runs conservative."),
-                    ("Lead time (days)", "Optional. If your file has no such column, the screen shows \"Default: 15\" — the fifteen days Faro assumes."),
-                    ("Preview of your data:", "The first three rows of the first five columns, exactly as Faro read them."),
+                    ("Lead time (days)", "Optional. If your file has no such column, the screen shows \"Default: 15\" — the fifteen days StockAI assumes."),
+                    ("Preview of your data:", "The first three rows of the first five columns, exactly as StockAI read them."),
                 ],
                 "tasks": [
                     (
@@ -371,7 +371,7 @@ SECTION = {
                     "On the free plan the file cannot exceed 25 MB and the catalogue is capped at 100 products; the paid plan raises the file to 2000 MB and removes the product cap.",
                     "There is no \"continue anyway\". If the data check finds something with no possible fix, the only way out is correcting the column mapping above or uploading a different file.",
                     "The holiday country starts on Colombia because that is what every upload silently used before this control existed. If you sell elsewhere, change it before uploading: it applies to that run, not retroactively.",
-                    "If your last finished upload used columns that still exist in the new file, Faro reuses them and says so at the top. If any went missing, it names which ones and proposes the mapping from scratch again.",
+                    "If your last finished upload used columns that still exist in the new file, StockAI reuses them and says so at the top. If any went missing, it names which ones and proposes the mapping from scratch again.",
                 ],
             },
             {
@@ -379,16 +379,16 @@ SECTION = {
                 "route": "/configurar-inventario",
                 "image": "configurar",
                 "purpose": (
-                    "Faro already knows how much you will sell; this screen is where you tell it "
+                    "StockAI already knows how much you will sell; this screen is where you tell it "
                     "what to compare those sales against. It offers two routes to the same place: "
                     "upload the file your system already exports, or fill in by hand only the "
                     "products that carry your money. Both write to the same place and move the "
                     "same bar."
                 ),
                 "walkthrough": [
-                    "Under the title \"Set up my inventory\" a box states the rule: without stock or cost the product does not appear in the traffic light, and without a lead time it does appear — but planned on the 15 days Faro assumes.",
+                    "Under the title \"Set up my inventory\" a box states the rule: without stock or cost the product does not appear in the traffic light, and without a lead time it does appear — but planned on the 15 days StockAI assumes.",
                     "The first panel is \"Or upload your system's file\": CSV or Excel exactly as your system exports it, with no header editing.",
-                    "You press \"Choose file\" and Faro reads it immediately; for a CSV it checks the file on your machine first and names the row and the column of every problem.",
+                    "You press \"Choose file\" and StockAI reads it immediately; for a CSV it checks the file on your machine first and names the row and the column of every problem.",
                     "Below, \"This is how we read your columns\" appears with one dropdown per field; change whichever is wrong, and anything left on \"Do not import\" stays out.",
                     "The summary tells you \"Rows ready to import\", \"Rows with problems left out\" and \"Rows with no product code, skipped\", with concrete examples such as \"Row 214 (SKU-001): \"N/A\"\".",
                     "You confirm with \"Import\" — the button carries the count in brackets — and when it finishes the screen says how many products came in and how many rows were left out.",
@@ -448,7 +448,7 @@ SECTION = {
                     "A supplier is whoever sells you each product, and registering them is what "
                     "turns a stock alert into an order you can actually send. Here you keep their "
                     "contact details, their lead times, their payment terms and their volume price "
-                    "breaks — and see how much Faro has learned from their real deliveries."
+                    "breaks — and see how much StockAI has learned from their real deliveries."
                 ),
                 "walkthrough": [
                     "The \"Suppliers\" header carries two entries: \"Scorecard\", which opens the performance screen, and \"Add supplier\".",
@@ -464,14 +464,14 @@ SECTION = {
                 ],
                 "fields": [
                     ("Name", "The only required field. It is the key that ties products, receptions and the scorecard together, and it is matched ignoring capitalisation."),
-                    ("Email (to send PO)", "The address purchase orders go out to from Faro."),
+                    ("Email (to send PO)", "The address purchase orders go out to from StockAI."),
                     ("Phone", "The supplier's phone contact. Shown in the table next to the WhatsApp number."),
                     ("WhatsApp", "The number notices and orders can be sent to over WhatsApp."),
                     ("Payment terms", "How many days they give you to pay. It feeds the cash calendar, which estimates how much falls due each week."),
                     ("Lead time (days)", "Days it takes to deliver to you from when you place the order. Applies to every one of their products without its own."),
                     ("Variability (days)", "How much that time can vary. If it says 15 days but sometimes arrives in 18, put 3. More variability means more safety stock."),
                     ("Notes", "Special conditions, contact, remarks. Free text for you."),
-                    ("Learning", "A read-only column: how many of their deliveries you have recorded, and whether that is enough for Faro to replace the configured lead time."),
+                    ("Learning", "A read-only column: how many of their deliveries you have recorded, and whether that is enough for StockAI to replace the configured lead time."),
                     ("Price breaks: Min. quantity / Unit price", "From that quantity on, each unit costs that price. Used to suggest when it is worth ordering more."),
                 ],
                 "tasks": [
@@ -491,7 +491,7 @@ SECTION = {
                         " 4. Press \"Add tier\" and repeat for each rung of the scale."
                     ),
                     (
-                        "Get Faro to learn a supplier's real lead time",
+                        "Get StockAI to learn a supplier's real lead time",
                         " 1. Record the arrival of every purchase order as you receive it."
                         " 2. Come back to this screen and read the \"Learning\" column."
                         " 3. Once it holds 3 recorded deliveries the text changes to \"Learned from n deliveries\", and that becomes the number we plan with."
@@ -499,8 +499,8 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "Faro does not replace the lead time you configured with the learned one until it has 3 recorded receptions from that supplier. With a single one, a freak delivery — a public holiday, a strike, a stranded truck — would rewrite the lead time for all their products.",
-                    "If every recorded delivery arrived the same day it was ordered, the observed average is 0 and says nothing about the supplier. Faro declares it unusable, says so in the \"Learning\" column, and keeps using the lead time you configured.",
+                    "StockAI does not replace the lead time you configured with the learned one until it has 3 recorded receptions from that supplier. With a single one, a freak delivery — a public holiday, a strike, a stranded truck — would rewrite the lead time for all their products.",
+                    "If every recorded delivery arrived the same day it was ordered, the observed average is 0 and says nothing about the supplier. StockAI declares it unusable, says so in the \"Learning\" column, and keeps using the lead time you configured.",
                     "Payment terms are text that gets interpreted for the cash calendar. It understands \"contado\", \"contra entrega\", \"anticipo\", \"prepago\" and \"COD\" as 0 days; \"N meses\" as N times 30; \"quincenal\" as 15; and the first number in things like \"30 días\" or \"net 30\".",
                     "What is NOT understood stays as an unknown term, reported as such rather than filled with an invented number: instalment schedules like \"2x30\" or \"30/60/90\", ranges like \"30-45 días\", and free text like \"a convenir\".",
                     "The supplier's lead time governs all of their products that have none of their own; whatever you type on a product card always beats the supplier's value.",
@@ -552,7 +552,7 @@ SECTION = {
                         " 1. Hover the text to read the full explanation."
                         " 2. It means every recorded delivery arrived the same day it was ordered."
                         " 3. Check whether you recorded the right arrival date when receiving those orders."
-                        " 4. While it stays that way, Faro plans with the lead time you configured, not with a zero."
+                        " 4. While it stays that way, StockAI plans with the lead time you configured, not with a zero."
                     ),
                     (
                         "Fill the scorecard when it is empty",
@@ -566,8 +566,8 @@ SECTION = {
                     "The \"Trend\" column needs at least 6 receptions before it says anything: 2 in the recent window and 4 in the historical baseline. With fewer it shows \"Not yet\" rather than calling \"Stable\" a lead time nobody has seen vary.",
                     "The fill rate is capped at 100%. A supplier who ships 120 against an order of 100 filled the order and also left you 20 units nobody asked for: that is a stock problem, not a merit.",
                     "\"Purchased value\" is never a zero for lack of costs. If no line carried a unit cost it shows a dash, and if only some did it shows \"≥\" in front of the amount to warn you it is a floor, not the total.",
-                    "\"Declared\" is blank when nobody filled the lead time in on the supplier's card, and \"% On time\" goes with it. That is deliberate: the 15 days Faro assumes are not a promise from the supplier and cannot be held against them.",
-                    "Faro is stricter about accusing than about adjusting: 3 receptions are enough to learn a lead time, but 6 are required before a supplier is flagged for running late. Accusing costs more than adjusting.",
+                    "\"Declared\" is blank when nobody filled the lead time in on the supplier's card, and \"% On time\" goes with it. That is deliberate: the 15 days StockAI assumes are not a promise from the supplier and cannot be held against them.",
+                    "StockAI is stricter about accusing than about adjusting: 3 receptions are enough to learn a lead time, but 6 are required before a supplier is flagged for running late. Accusing costs more than adjusting.",
                 ],
             },
         ],

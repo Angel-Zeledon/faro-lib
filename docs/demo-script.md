@@ -1,6 +1,6 @@
-# Demo script — Faro
+# Demo script — StockAI
 
-A practical guide to presenting Faro from end to end, against a tenant already
+A practical guide to presenting StockAI from end to end, against a tenant already
 seeded with rich, coherent data. Written to be read while driving the app: each
 step carries a "what to say" line that names the business value.
 
@@ -89,25 +89,25 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
 ### A. Upload sales → from a CSV to decisions
 
 1. Go to **Mis ventas** (`/ventas`) and open **Mis archivos** (`/archivos`).
-   Select **"Ventas Demo Faro"**.
+   Select **"Ventas Demo StockAI"**.
    > *"It starts with what the distributor already has: their sales history in
    > a CSV. No complex integration to get going."*
 2. Show the size and the row count.
-   > *"Eighteen months of daily sales, 14 products. That is what Faro trains a
+   > *"Eighteen months of daily sales, 14 products. That is what StockAI trains a
    > model per SKU on."*
 
 ### B. Forecast → one model per product
 
-3. Go to **Pronósticos** (`/pronosticos`). The "Demo Faro" session is selected
+3. Go to **Pronósticos** (`/pronosticos`). The "Demo StockAI" session is selected
    automatically.
-   > *"Faro trains several models (LightGBM, XGBoost, Prophet, Croston…) and
+   > *"StockAI trains several models (LightGBM, XGBoost, Prophet, Croston…) and
    > picks the best one per SKU. Here the winner was XGBoost at ~3% error."*
 4. Click a SKU (e.g. **Aceite de Oliva 1L**): the history, the forecast and the
    uncertainty band.
    > *"This is not a fixed 'order when it drops below X' rule. It is projected
    > demand, with weekend and payday seasonality."*
 5. Switch the **granularity D → W** (the D/W/M buttons on the chart) and the
-   **session** selector between "Demo Faro" and "Demo Faro · weekly".
+   **session** selector between "Demo StockAI" and "Demo StockAI · weekly".
    > *"The same data, by day or by week, depending on how the customer buys."*
 
 ### C. The semáforo → what to order today
@@ -117,13 +117,13 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
    > *"This is the screen: at a glance, what is at risk and what is excess. Red
    > runs out before the supplier arrives; blue is sleeping capital."*
 7. Point at an **overstocked** line (rice / sugar): 48 days of coverage.
-   > *"That is money standing still. Faro suggests pausing the next order."*
+   > *"That is money standing still. StockAI suggests pausing the next order."*
 
 ### D. Generate the order → from the signal to a PO
 
 8. Back to **Panel de compras** (`/compras`). Show the "URGENTE" cards (oil,
    flour) with the suggested quantity and the approximate cost.
-   > *"Faro does not just warn: it says how much to order, from which supplier,
+   > *"StockAI does not just warn: it says how much to order, from which supplier,
    > at what estimated cost."*
 9. Click **"Ver por qué"** on an urgent line to open the breakdown (daily
    demand, lead time, safety stock).
@@ -140,10 +140,10 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
     > *"The cycle does not end at the order: the arrival is recorded."*
 12. On an in-transit PO, click **"Registrar llegada"** and confirm the
     reception.
-    > *"When you record the arrival, Faro compares the real date against the
+    > *"When you record the arrival, StockAI compares the real date against the
     > promised one and learns the supplier's true lead time."*
 13. Go to **Proveedores → Scorecard** (`/proveedores/scorecard`).
-    > *"Look: Granos del Valle says 12 days and delivers in 5–8. Faro plans on
+    > *"Look: Granos del Valle says 12 days and delivers in 5–8. StockAI plans on
     > the REAL lead time, not the one on paper."*
 
 ### F. Multi-warehouse and transfers → move before you buy
@@ -152,7 +152,7 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
     > *"The same semáforo, per warehouse."*
 15. Find **Detergente 1kg**: in principal the action is not "buy", it is
     **"Transferir 228 desde Norte"**.
-    > *"Before spending on a purchase, Faro checks whether another warehouse has
+    > *"Before spending on a purchase, StockAI checks whether another warehouse has
     > a surplus. Here it is cheaper to move stock than to buy it."*
 16. (Optional) The purchase panel says the same at the top: *"1 se resuelve
     moviendo stock, sin comprar"* → **Crear transferencia**.
@@ -169,11 +169,11 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
 
 19. In **Inventario**, open **"Eventos y temporadas"** or the **"Simular:
     Quincena…"** buttons.
-    > *"Faro ships the LatAm commercial calendar: paydays, Holy Week. One click
+    > *"StockAI ships the LatAm commercial calendar: paydays, Holy Week. One click
     > simulates the event's impact on demand."*
 20. Run **"Simular: Quincena"** and show how the recommendations move with the
     event multiplier.
-    > *"Payday drives consumption; Faro anticipates it before the signal turns
+    > *"Payday drives consumption; StockAI anticipates it before the signal turns
     > red."*
 
 ### I. Data editor → fixing without leaving the app
@@ -214,7 +214,7 @@ backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
 ## 2. An honest note about the WhatsApp bot
 
 - **Outbound alerts work for real.** With Twilio (sandbox) credentials
-  configured, Faro sends the daily inventory alerts over WhatsApp. Without
+  configured, StockAI sends the daily inventory alerts over WhatsApp. Without
   credentials the send is a no-op recorded in the logs.
 - **The inbound conversational bot needs extra setup.** For a live round trip
   (the user writes to the bot and it answers with their data) you need:

@@ -28,7 +28,6 @@ const SCREENS = [
   '/inventario', '/configurar-inventario', '/proveedores', '/proveedores/scorecard',
   '/pronosticos', '/impacto', '/historial', '/asistente', '/escenarios',
   '/usuarios', '/mi-cuenta', '/automatizacion', '/api', '/instalacion',
-  '/integraciones',
 ]
 
 const problems = []

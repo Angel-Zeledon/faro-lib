@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
+import { Wordmark } from '@/components/brand/Wordmark'
 
 const T = {
  bg: '#ffffff',
@@ -91,8 +92,7 @@ function Nav() {
  padding: '0 48px', height: 60,
  }}>
  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
- <div style={{ width: 30, height: 30, borderRadius: 7, background: T.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, color: '#fff' }}>F</div>
- <span style={{ fontSize: 16, fontWeight: 800, color: T.text, letterSpacing: '-0.03em' }}>Faro</span>
+ <Wordmark size={22} color={T.text} accent={T.accent} />
  </div>
  <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
  {NAV_LINKS.map(([href, label]) => (
@@ -400,7 +400,7 @@ export default function LandingPage() {
  // Same rule as the stats strip below (see the comment there): a figure on this
  // page has to be one the product can back. This block used to carry fifteen
  // result percentages — "reducción de quiebres 20–35%", "compras de emergencia
- // −30–50%", "merma −25–40%" and twelve more. Faro has never measured a single
+ // −30–50%", "merma −25–40%" and twelve more. StockAI has never measured a single
  // one: there is no customer outcome study, no before/after dataset, nothing in
  // the repo that produces them. They were written to look like a case study.
  // What replaces them is what the product actually DOES for that operation,
@@ -728,7 +728,7 @@ export default function LandingPage() {
 
  {/* The manual closes the tour: the visitor has just scrolled nineteen
      screens, and this is where wanting the whole thing on paper happens.
-     The file follows the language — `faro-manual-es.pdf` / `-en.pdf`, both
+     The file follows the language — `stockai-manual-es.pdf` / `-en.pdf`, both
      built by `backend/scripts/build_manual.py` from `docs/manual/`. */}
  <div data-reveal style={{ marginTop: 80, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '34px 36px', display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
   <div style={{ flex: '1 1 380px', minWidth: 0 }}>
@@ -737,7 +737,7 @@ export default function LandingPage() {
   </div>
   <div style={{ flexShrink: 0 }}>
    <a
-    href={`/faro-manual-${lang}.pdf`}
+    href={`/stockai-manual-${lang}.pdf`}
     download
     style={{ display: 'inline-block', background: T.accent, color: '#fff', fontSize: 14, fontWeight: 700, padding: '13px 24px', borderRadius: 9, textDecoration: 'none' }}
    >
@@ -883,13 +883,13 @@ export default function LandingPage() {
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
  <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Capacidad</div>
  <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Excel</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Faro</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>StockAI</div>
  </div>
- {COMPARE.map(({ feature, excel, faro }, i) => (
+ {COMPARE.map(({ feature, excel, stockai }, i) => (
  <div key={feature} style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', padding: '15px 24px', alignItems: 'center', background: i % 2 === 0 ? T.bg : T.bg2, borderBottom: i < COMPARE.length - 1 ? `1px solid ${T.border}` : 'none' }}>
  <span style={{ fontSize: 13, color: T.body }}>{feature}</span>
  <span style={{ fontSize: 13, color: T.red, textAlign: 'center', fontWeight: 500 }}>{excel}</span>
- <span style={{ fontSize: 13, color: T.green, textAlign: 'center', fontWeight: 700 }}>{faro}</span>
+ <span style={{ fontSize: 13, color: T.green, textAlign: 'center', fontWeight: 700 }}>{stockai}</span>
  </div>
  ))}
  </div>
@@ -957,10 +957,13 @@ export default function LandingPage() {
  {L.pricing.paidNote}
  </div>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
- {FREE_LIMITS.map(([label]) => (
+ {/* Each row states what the PAID tier actually gets. This used to print one
+     blanket "unlimited" for every row, which claimed an uncapped upload size
+     on a tier that entitlements/plans.py bounds at 2000 MB. */}
+ {FREE_LIMITS.map(([label, , paid]) => (
  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: T.body, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
  <span>{label}</span>
- <span style={{ fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{L.pricing.unlimited}</span>
+ <span style={{ fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{paid}</span>
  </div>
  ))}
  </div>
@@ -977,12 +980,12 @@ export default function LandingPage() {
  fontSize: 13, fontWeight: 700, textDecoration: 'none',
  background: T.text, color: '#fff',
  }}>{L.pricing.ctaSignup}</Link>
- <a href={`https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent('Hola, quiero ampliar los limites de Faro.')}`} target="_blank" rel="noopener noreferrer" style={{
+ <a href={`https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent('Hola, quiero ampliar los limites de StockAI.')}`} target="_blank" rel="noopener noreferrer" style={{
  display: 'inline-block', padding: '11px 20px', borderRadius: 8,
  fontSize: 13, fontWeight: 700, textDecoration: 'none',
  background: T.bg, color: T.text, border: `1px solid ${T.border}`,
  }}>{L.pricing.ctaWhatsapp}</a>
- <a href="mailto:hola@usefaro.io?subject=Faro%20%E2%80%94%20quiero%20una%20cotizaci%C3%B3n" style={{
+ <a href="mailto:hola@usefaro.io?subject=StockAI%20%E2%80%94%20quiero%20una%20cotizaci%C3%B3n" style={{
  display: 'inline-block', padding: '11px 20px', borderRadius: 8,
  fontSize: 13, fontWeight: 700, textDecoration: 'none',
  background: T.bg, color: T.text, border: `1px solid ${T.border}`,
@@ -1071,8 +1074,7 @@ export default function LandingPage() {
  <div className="footer-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 40, marginBottom: 40 }}>
  <div>
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
- <div style={{ width: 26, height: 26, borderRadius: 6, background: T.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff' }}>F</div>
- <span style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: '-0.02em' }}>Faro</span>
+ <Wordmark size={19} color={T.text} accent={T.accent} />
  </div>
  <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, margin: 0 }}>
  {L.footer.tagline}

@@ -992,7 +992,7 @@ function QuickStartPageContent() {
  // horizon from user_horizon_days at launch (see startTraining below).
 
  // POST business config
- // One source of truth for what Faro assumes (src/lib/inventoryDefaults.ts,
+ // One source of truth for what StockAI assumes (src/lib/inventoryDefaults.ts,
  // mirroring backend/inventory/defaults.py) — this used to be a literal 15
  // sitting next to a literal 7 in the mapping step above.
  await setBusinessConfig(sessionId, {

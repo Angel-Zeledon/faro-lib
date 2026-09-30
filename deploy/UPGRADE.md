@@ -1,16 +1,30 @@
-# Upgrading Faro, and going back
+# Upgrading StockAI, and going back
 
-The property this whole procedure rests on: **every migration in this product
-is additive**. `backend/db/migrations.py` contains `CREATE TABLE IF NOT
-EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` and one-time
-backfills guarded by "only rows that predate the column". Nothing drops a
-column that a previous version reads.
+The property this whole procedure rests on: **migrations are additive**.
+`backend/db/migrations.py` is `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT
+EXISTS`, `CREATE INDEX IF NOT EXISTS` and one-time backfills guarded by "only
+rows that predate the column".
 
 That is what makes rollback cheap: **the old code runs against the new
 schema**. It ignores columns it does not know about. You do not restore a
 database to go back a version — you put the previous image back.
 
-Two things that property does not cover, and both are called out below: a
+**One migration in the product's history breaks that, and it is named here
+rather than discovered.** `drop_integration_connections` (2026-09-20) deletes
+the table the Alegra and Siigo integrations used, because the feature was
+removed and a table of encrypted third-party ERP credentials should not outlive
+it. Consequences, stated plainly:
+
+* Rolling back **across** that release to a version that still has the
+  `/integraciones` screen leaves it reading a table that is gone. Take the
+  backup first and restore it if you go back that far — putting the old image
+  back is not enough for this one hop.
+* Rolling back to any release **after** it is the usual cheap hop.
+* If you had a connection configured, the credentials are gone with the table.
+  They were never readable in plaintext, so there is nothing to migrate; the
+  ERP account itself is untouched.
+
+Two other things the additive property does not cover, both called out below: a
 release that drops something on purpose, and data written in a shape the old
 version cannot read.
 
@@ -36,7 +50,8 @@ schema.
    most likely moment to need it and the worst moment to discover the drill was
    never done.
 2. **Read the release notes for a "breaking" line.** Everything else is
-   additive by construction; a release that is not is labelled.
+   additive by construction; a release that is not is labelled — and there is
+   exactly one so far, named at the top of this file.
 3. **One scheduler.** Unchanged by an upgrade, but worth re-checking after any
    compose edit: `SCHEDULER_ENABLED=true` in exactly one service.
 

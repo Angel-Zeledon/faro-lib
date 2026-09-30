@@ -44,25 +44,10 @@ class ModelFactory:
                 models[name] = XGBRegressor(**{"n_jobs": 1, **params, "verbosity": 0})
         return models
 
-    def build_quantile_ml(self, quantile: float) -> dict:
-        """Return quantile-regression ML models for a given quantile (0.1, 0.5, 0.9)."""
-        from lightgbm import LGBMRegressor
-        from xgboost import XGBRegressor
-
-        models = {}
-        for name, params in self.config.items():
-            params = {k: v for k, v in (params or {}).items()
-                      if k not in ("objective", "alpha", "quantile_alpha")}
-            if name == "lightgbm":
-                models[name] = LGBMRegressor(
-                    **{"n_jobs": 1, **params}, objective="quantile", alpha=quantile, verbosity=-1
-                )
-            elif name == "xgboost":
-                models[name] = XGBRegressor(
-                    **{"n_jobs": 1, **params}, objective="reg:quantileerror",
-                    quantile_alpha=quantile, verbosity=0
-                )
-        return models
+    # There is no build_quantile_ml(). Separately-fitted p10/p50/p90 regressors
+    # were 58% of ML training time and produced a band no decision used; the
+    # intervals come from the out-of-fold residual bank instead. The reasoning
+    # and the measurement are in pipelines/pipeline.py, step 7b.
 
     def ml_names(self) -> list:
         return [n for n in self.config if n in ML_MODELS]

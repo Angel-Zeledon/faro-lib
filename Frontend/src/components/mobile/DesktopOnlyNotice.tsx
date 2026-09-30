@@ -21,9 +21,13 @@ import { useLanguage } from '@/contexts/LanguageContext'
  */
 
 /** Routes with a real narrow-screen implementation.
- *  `/pedidos` earned its place here because registering a delivery is warehouse
- *  work — see app/pedidos/PedidosMobile.tsx. */
-const MOBILE_READY = ['/hoy', '/pedidos']
+ *  `/compras` (formerly `/hoy`) has a dedicated narrow layout — see
+ *  app/compras/HoyMobile.tsx. `/pedidos` earned its place here because
+ *  registering a delivery is warehouse work — see app/pedidos/PedidosMobile.tsx.
+ *  `/mensajes` switches between a conversation list and a single thread with
+ *  a back button on a narrow screen — see the `narrow` branch in
+ *  app/mensajes/page.tsx — rather than laying out a two-pane table. */
+const MOBILE_READY = ['/compras', '/pedidos', '/mensajes']
 
 const DISMISS_KEY = 'fp_mobile_notice_dismissed'
 

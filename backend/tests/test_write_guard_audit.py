@@ -97,6 +97,14 @@ READ_ONLY_POSTS = {
     "/reconcile": "recomputes a hierarchy total and returns it",
     "/run": "runs a saved scenario and returns the comparison",
     "cash-calendar/fit": "fits a payment pattern and returns it",
+    # MCP is JSON-RPC: the method lives in the BODY, so `tools/list` and every
+    # read tool arrive as a POST. The excuse holds only because the catalogue
+    # (`backend/mcp/catalog.py`) is closed and every entry in it reads — which
+    # `test_mcp_server.py::test_every_tool_actually_only_calls_GET_endpoints`
+    # enforces structurally, by resolving each handler's calls to their FastAPI
+    # routes and demanding {GET}. Add a write tool there and this line becomes
+    # a lie; that test goes red first, which is the point.
+    "/mcp": "JSON-RPC over a closed catalogue of reads; see backend/mcp/catalog.py",
 }
 
 

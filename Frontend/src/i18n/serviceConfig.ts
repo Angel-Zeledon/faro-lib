@@ -22,7 +22,7 @@ import type { Lang } from './translations'
 /** Service keys, exactly as `backend/service_config/registry.py` declares them. */
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
-  | 'integrations' | 'contact' | 'worker' | 'limits' | 'api_surface'
+  | 'secret_storage' | 'contact' | 'worker' | 'limits' | 'api_surface'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -36,7 +36,7 @@ export type FieldKey =
   | 'whatsapp_webhook_base_url' | 'whatsapp_bot_generic_mode'
   | 'twilio_sms_from'
   | 'voyageai_api_key' | 'pinecone_api_key' | 'pinecone_index' | 'pinecone_environment'
-  | 'integrations_secret_key' | 'alegra_base_url' | 'siigo_base_url'
+  | 'integrations_secret_key'
   | 'contact_whatsapp' | 'contact_email' | 'upgrade_notify_email'
   | 'worker_enabled' | 'scheduler_enabled' | 'worker_id'
   | 'max_concurrent_jobs' | 'worker_poll_interval_seconds'
@@ -159,11 +159,11 @@ const es: ServiceConfigCopy = {
       whatBreaks: 'Los documentos que subas dejan de indexarse y el analista ya no puede citarlos. El asistente sigue respondiendo con los datos del tenant; simplemente no tiene documentos que citar.',
       note: 'Necesita las llaves y además los paquetes `voyageai` y `pinecone` instalados — un paquete faltante apaga el servicio igual que una llave faltante, y dice cuál. El índice debe ser de 1024 dimensiones y métrica coseno.',
     },
-    integrations: {
-      name: 'Integraciones contables',
-      summary: 'Integraciones contables — Alegra y Siigo.',
-      whatBreaks: 'No se puede crear ni sincronizar ninguna conexión contable: las credenciales no se pueden guardar, porque guardarlas sin cifrar no es una opción que el código ofrezca.',
-      note: '`INTEGRATIONS_SECRET_KEY` es una llave Fernet y es solo de entorno a propósito: cifra toda credencial guardada en la base —incluidas las que escribe este mismo panel—, así que un panel capaz de reescribirla dejaría ilegibles sus propios secretos con un clic. Perderla significa volver a ingresar todas las credenciales.',
+    secret_storage: {
+      name: 'Cifrado de secretos',
+      summary: 'La llave Fernet que cifra todo secreto que guarda /instalación.',
+      whatBreaks: 'Nada, de inmediato — y eso es lo que conviene saber. Con la variable vacía la instalación GENERA una llave en storage/instance_secret.key, así que el panel sigue guardando secretos; dice «sin configurar» porque la variable está vacía, no porque la función esté apagada, y más abajo te dice cuál llave está en uso. Lo que se pierde es durabilidad: hay que respaldar ese archivo junto con storage/, y dos procesos en discos distintos generan llaves DISTINTAS y no pueden leer lo que guardó el otro. Solo cuando tampoco se puede escribir una llave — un disco de solo lectura — empiezan a rechazarse los campos secretos, y lo dicen en voz alta en vez de guardar algo sin cifrar.',
+      note: '`INTEGRATIONS_SECRET_KEY` es una llave Fernet y es solo de entorno a propósito: cifra los secretos que escribe este mismo panel, así que un panel capaz de reescribirla dejaría ilegibles sus propios secretos con un clic. Perderla significa volver a ingresar todos los secretos guardados. El nombre es histórico y se conserva a propósito: renombrarla dejaría huérfanos los secretos de toda instalación existente.',
     },
     contact: {
       name: 'Contacto comercial',
@@ -174,7 +174,7 @@ const es: ServiceConfigCopy = {
     worker: {
       name: 'Worker y tareas programadas',
       summary: 'Worker de entrenamiento y los ciclos programados.',
-      whatBreaks: 'Con el worker apagado, los entrenamientos quedan en cola para siempre: se aceptan y nunca corren. Con el programador apagado, la alerta de inventario de las 8:00 UTC, los recálculos programados, la sincronización de integraciones y el corte mensual nunca se disparan.',
+      whatBreaks: 'Con el worker apagado, los entrenamientos quedan en cola para siempre: se aceptan y nunca corren. Con el programador apagado, la alerta de inventario de las 8:00 UTC, los recálculos programados y el corte mensual nunca se disparan.',
       note: 'Los dos vienen encendidos para que un `uvicorn backend.main:app` pelado se comporte como el entorno de desarrollo. En un despliegue partido el contenedor de API apaga ambos y un contenedor de worker corre los ciclos. El programador debe estar encendido en EXACTAMENTE UNA instancia: dos programadores mandan cada alerta diaria dos veces.',
     },
     limits: {
@@ -222,14 +222,12 @@ const es: ServiceConfigCopy = {
     pinecone_api_key: 'Llave de API de Pinecone para el almacén vectorial.',
     pinecone_index: 'Nombre del índice. Tiene que ser de 1024 dimensiones, coseno, serverless.',
     pinecone_environment: 'Región de Pinecone. Informativa para índices serverless.',
-    integrations_secret_key: 'Llave Fernet que cifra toda credencial guardada en la base — conexiones contables y todo lo que escribe el panel de configuración. Solo por entorno.',
-    alegra_base_url: 'Base de la API de Alegra. Cámbiala solo para apuntar a un ambiente de pruebas.',
-    siigo_base_url: 'Base de la API de Siigo. Cámbiala solo para apuntar a un ambiente de pruebas.',
+    integrations_secret_key: 'Llave Fernet que cifra todo secreto escrito desde el panel de configuración. Solo por entorno. El nombre es histórico y se conserva a propósito.',
     contact_whatsapp: 'E.164 sin el «+», como lo quiere wa.me.',
     contact_email: 'Dirección que abre el botón de «escríbenos».',
     upgrade_notify_email: 'A dónde se envían por correo las solicitudes de más espacio. Si está vacío usa CONTACT_EMAIL. La solicitud también queda guardada en la base, así que un correo fallido nunca pierde el pedido.',
     worker_enabled: 'Corre en este proceso el ciclo que toma y entrena los trabajos.',
-    scheduler_enabled: 'Corre los ciclos programados: trabajos agendados, alertas diarias, sincronización de integraciones y corte mensual. Solo una instancia puede tenerlo encendido.',
+    scheduler_enabled: 'Corre los ciclos programados: trabajos agendados, alertas diarias y corte mensual. Solo una instancia puede tenerlo encendido.',
     worker_id: 'Identidad con la que se toman trabajos y se recuperan los que quedaron corriendo tras una caída. Vacío usa el nombre del host — dale un id FIJO a un worker de larga vida para que sus trabajos huérfanos se sigan reconociendo después de recrear el contenedor.',
     max_concurrent_jobs: 'Entrenamientos que este worker corre a la vez.',
     worker_poll_interval_seconds: 'Segundos entre consultas a la tabla de trabajos.',
@@ -288,7 +286,7 @@ const es: ServiceConfigCopy = {
     notOperatorBody: 'La configuración de servicios pertenece a quien administra el despliegue, no al rol admin de una empresa. Puedes configurar tus propios canales en la otra pestaña.',
     storeUnavailable: 'No se pudo leer la configuración guardada en la base. Lo que ves viene del entorno.',
     encryptionUnavailable: 'Sin INTEGRATIONS_SECRET_KEY no se puede guardar ningún secreto desde acá: se rechaza en vez de guardarse sin cifrar.',
-    encryptionGenerated: 'Esta instalación generó su propia llave de cifrado en storage/instance_secret.key, porque INTEGRATIONS_SECRET_KEY está vacía. Funciona, pero respalda esa carpeta: si se pierde el archivo hay que volver a ingresar todas las credenciales. Y antes de correr un segundo proceso en otro volumen, copia su contenido a INTEGRATIONS_SECRET_KEY o cada uno hará la suya y no podrá leer la del otro.',
+    encryptionGenerated: 'Esta instalación generó su propia llave de cifrado en storage/instance_secret.key, porque INTEGRATIONS_SECRET_KEY está vacía. Funciona, pero respalda esa carpeta: si se pierde el archivo hay que volver a ingresar todos los secretos guardados. Y antes de correr un segundo proceso en otro volumen, copia su contenido a INTEGRATIONS_SECRET_KEY o cada uno hará la suya y no podrá leer la del otro.',
     undocumented: 'Hay ajustes sin documentar en el registro',
     tenantLead: 'Los canales que llevan tu identidad a tu propia gente. Lo que dejes vacío usa lo que tenga la instalación.',
     tenantEmpty: 'Esta instalación no expone ningún canal configurable por empresa.',
@@ -334,11 +332,11 @@ const en: ServiceConfigCopy = {
       whatBreaks: 'Uploaded documents stop being indexed and the analyst can no longer cite them. The assistant still answers from the tenant’s own data; it just has nothing to quote.',
       note: 'Needs the keys and the `voyageai` and `pinecone` packages installed — a missing package disables the service the same way a missing key does, and says which. The index must be 1024 dimensions, cosine metric.',
     },
-    integrations: {
-      name: 'Accounting integrations',
-      summary: 'Accounting integrations — Alegra and Siigo.',
-      whatBreaks: 'No accounting connection can be created or synced: the credentials cannot be stored, because storing them unencrypted is not an option the code offers.',
-      note: '`INTEGRATIONS_SECRET_KEY` is a Fernet key and is environment-only on purpose: it encrypts every credential stored in the database — including the ones this panel writes — so a panel that could rewrite it would make its own secrets unreadable with one click. Losing it means re-entering every credential.',
+    secret_storage: {
+      name: 'Secret encryption',
+      summary: 'The Fernet key that encrypts every secret /instalacion stores.',
+      whatBreaks: 'Nothing, immediately — and that is the part worth knowing. With the variable unset the installation GENERATES a key into storage/instance_secret.key, so the panel keeps saving secrets; it reads “not configured” because the variable is empty, not because the feature is off, and it says below which key is in effect. What is lost is durability: that file must be backed up with storage/, and two processes on separate volumes generate DIFFERENT keys and cannot read each other’s secrets. Only when no key can be written either — a read-only disk — do the secret fields start refusing, and they do it out loud rather than storing anything unencrypted.',
+      note: '`INTEGRATIONS_SECRET_KEY` is a Fernet key and is environment-only on purpose: it encrypts the secrets this very panel writes, so a panel that could rewrite it would make its own stored secrets unreadable with one click. Losing it means re-entering every stored secret. The name is historical and kept on purpose: renaming it would orphan every existing deployment’s stored secrets.',
     },
     contact: {
       name: 'Commercial contact',
@@ -349,7 +347,7 @@ const en: ServiceConfigCopy = {
     worker: {
       name: 'Worker and scheduled jobs',
       summary: 'Training worker and the scheduled loops.',
-      whatBreaks: 'With the worker off, training sessions queue forever: accepted and never run. With the scheduler off, the 08:00 UTC inventory alert, scheduled recalculations, integration sync and the monthly snapshot never fire.',
+      whatBreaks: 'With the worker off, training sessions queue forever: accepted and never run. With the scheduler off, the 08:00 UTC inventory alert, scheduled recalculations and the monthly snapshot never fire.',
       note: 'Both ship on so a bare `uvicorn backend.main:app` behaves like the development setup. In a split deployment the API container turns both off and one worker container runs the loops. The scheduler must be on in EXACTLY ONE instance: two schedulers send every daily alert twice.',
     },
     limits: {
@@ -397,14 +395,12 @@ const en: ServiceConfigCopy = {
     pinecone_api_key: 'Pinecone API key for the vector store.',
     pinecone_index: 'Index name. Must be 1024 dimensions, cosine, serverless.',
     pinecone_environment: 'Pinecone region. Informational for serverless indexes.',
-    integrations_secret_key: 'Fernet key encrypting every credential stored in the database — accounting connections and everything written from the configuration panel. Environment only.',
-    alegra_base_url: 'Alegra API base. Override only to point at a sandbox.',
-    siigo_base_url: 'Siigo API base. Override only to point at a sandbox.',
+    integrations_secret_key: 'Fernet key encrypting every secret written from the configuration panel. Environment only. The name is historical and kept on purpose.',
     contact_whatsapp: 'E.164 without the "+", the way wa.me wants it.',
     contact_email: 'Address the "write to us" button opens.',
     upgrade_notify_email: 'Where in-app requests for more room are emailed. Falls back to CONTACT_EMAIL when empty. The request is also stored, so a failed email never loses the ask.',
     worker_enabled: 'Runs the job-claim and training loop in this process.',
-    scheduler_enabled: 'Runs the scheduled loops: scheduled jobs, daily alerts, integration sync, monthly snapshot. Exactly one instance may have this on.',
+    scheduler_enabled: 'Runs the scheduled loops: scheduled jobs, daily alerts, monthly snapshot. Exactly one instance may have this on.',
     worker_id: 'Identity used to claim jobs and to recover the ones left running after a crash. Empty falls back to the host name — give a long-lived worker a FIXED id so its orphans are still recognised after the container is recreated.',
     max_concurrent_jobs: 'Training jobs this worker runs at once.',
     worker_poll_interval_seconds: 'Seconds between polls of the jobs table.',
@@ -463,7 +459,7 @@ const en: ServiceConfigCopy = {
     notOperatorBody: 'Service configuration belongs to whoever administers the deployment, not to a company’s admin role. You can configure your own channels in the other tab.',
     storeUnavailable: 'The configuration stored in the database could not be read. What you see comes from the environment.',
     encryptionUnavailable: 'Without INTEGRATIONS_SECRET_KEY no secret can be stored from here: it is refused rather than stored unencrypted.',
-    encryptionGenerated: 'This installation generated its own encryption key at storage/instance_secret.key, because INTEGRATIONS_SECRET_KEY is empty. It works, but back that folder up: losing the file means re-entering every credential. And before running a second process on another volume, copy its contents into INTEGRATIONS_SECRET_KEY, or each one will make its own and be unable to read the other’s.',
+    encryptionGenerated: 'This installation generated its own encryption key at storage/instance_secret.key, because INTEGRATIONS_SECRET_KEY is empty. It works, but back that folder up: losing the file means re-entering every stored secret. And before running a second process on another volume, copy its contents into INTEGRATIONS_SECRET_KEY, or each one will make its own and be unable to read the other’s.',
     undocumented: 'There are settings missing from the registry',
     tenantLead: 'The channels that carry your identity to your own people. Anything left empty uses what the installation has.',
     tenantEmpty: 'This installation exposes no per-company channel.',

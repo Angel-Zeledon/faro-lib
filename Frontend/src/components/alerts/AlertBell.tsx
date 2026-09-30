@@ -5,7 +5,7 @@
  * Two sources, kept visibly distinct because they are not the same kind of
  * thing:
  *
- *  1. **Alerts Faro sent** (`GET /alerts`) — the daily stockout digest, the
+ *  1. **Alerts StockAI sent** (`GET /alerts`) — the daily stockout digest, the
  *     supplier lead-time warning, the data-freshness reminder, the monthly
  *     recap. Durable, server-side, survives a reload. Before this existed the
  *     email was the only copy: delete it and the information was gone.

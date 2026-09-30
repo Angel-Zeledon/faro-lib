@@ -8,7 +8,9 @@ import type {
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
-  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
+  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, DeadCapitalResponse, OptimizationResponse,
+  SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
+  CostOfIgnoringResponse, WhyChangedResponse,
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer, TransferLane,
   PlanningState, PlanningPeriod, MeUser,
@@ -363,7 +365,7 @@ export const authLogin = (email: string, password: string) =>
       id: string; email: string; full_name: string | null; role: string
       tenant_id: string
       /** Unverified users log in fine — only outward actions (invites,
-       *  integrations, sending notifications) demand verification. */
+       *  sending notifications) demand verification. */
       email_verified: boolean
     }
   }>('POST', '/auth/login', { email, password })
@@ -1040,6 +1042,17 @@ export const receivePO = (
 export const sendPOToSuppliers = (poLogId: string) =>
   request<import('./types').SendPOResult>('POST', `/inventory/po/${poLogId}/send`)
 
+// Undoing a reception or a send. These exist because the WhatsApp assistant
+// was not allowed to record either action while they were irreversible — see
+// the comment above `WRITE_TOOLS` in backend/whatsapp/tools.py. Both are
+// analyst-or-above and both refuse rather than guess: an un-receive fails if
+// the units have already been sold, an un-send fails once goods arrived.
+export const unreceivePO = (poLogId: string) =>
+  request<{ ok: boolean }>('POST', `/inventory/po/${poLogId}/unreceive`)
+
+export const unsendPO = (poLogId: string) =>
+  request<{ ok: boolean }>('POST', `/inventory/po/${poLogId}/unsend`)
+
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
 
@@ -1231,7 +1244,7 @@ export const getSkuDecomposition = (
   )
 }
 
-// ── Currency (the customer's own money, not what Faro costs) ─────────────────
+// ── Currency (the customer's own money, not what StockAI costs) ─────────────────
 export const getTenantCurrency = (opts?: RequestOpts) =>
   request<{
     current: import('./currency').CurrencyInfo
@@ -1361,6 +1374,48 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
 export const getDeadStock = (sessionId: string, minDays = 30) =>
   request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
 
+// ── Dead capital / "capital parado" ───────────────────────────────────────────
+// Needs no session: it ranks money that has not moved by real stock-level
+// history alone. `windowDays` is a screen filter (default 90), never a
+// setting stored per tenant.
+export const getDeadCapital = (windowDays = 90) =>
+  request<DeadCapitalResponse>('GET', `/inventory/dead-capital?window_days=${windowDays}`)
+
+// ── Supplier cost inflation / margin erosion (stability.md #20, 5-6) ─────────
+// Neither needs a session: both read `inventory_po_items.unit_cost` from
+// orders that were actually RECEIVED. See `cost_alerts.py`.
+export const getSupplierCostInflation = (windowDays = 365) =>
+  request<SupplierCostInflationResponse>('GET', `/inventory/supplier-cost-inflation?window_days=${windowDays}`)
+
+export const getMarginErosion = (windowDays = 365, minErosionPts = 0.5) =>
+  request<MarginErosionResponse>(
+    'GET', `/inventory/margin-erosion?window_days=${windowDays}&min_erosion_pts=${minErosionPts}`)
+
+// ── The forecast in money (stability.md #20, item 1) ──────────────────────────
+// Omit `sessionId` and the endpoint uses the tenant's active-period session,
+// same fallback as getInventoryStatus.
+export const getForecastMoney = (sessionId?: string) =>
+  request<ForecastMoneyResponse>(
+    'GET', `/inventory/forecast-money${sessionId ? `?session_id=${sessionId}` : ''}`)
+
+// ── "What did it cost me to ignore you" (stability.md 19.4) ──────────────────
+// Dates are `YYYY-MM-DD` (a plain `date`, no time component) — omit either
+// bound and the backend defaults to the last 30 days ending today.
+export const getCostOfIgnoring = (fromDate?: string, toDate?: string, poWindowDays = 14) => {
+  const params = new URLSearchParams()
+  if (fromDate) params.set('from_date', fromDate)
+  if (toDate) params.set('to_date', toDate)
+  params.set('po_window_days', String(poWindowDays))
+  return request<CostOfIgnoringResponse>('GET', `/inventory/recommendation-log/cost-of-ignoring?${params}`)
+}
+
+// ── "Why is today's number different" (stability.md 19.7) ───────────────────
+// Read-only, no session: the recommendation log the semáforo itself writes on
+// every computation. `available: false` means the log has fewer than two
+// recorded days for this SKU yet, not an error.
+export const getWhyChanged = (sku: string) =>
+  request<WhyChangedResponse>('GET', `/inventory/recommendation-log/${encodeURIComponent(sku)}/why-changed`)
+
 // Omit `horizonDays` and the endpoint derives it from the tenant's active
 // (period, horizon) — their own planning window.
 //
@@ -1429,48 +1484,6 @@ export const requestUpgrade = (body: { limit_key?: string | null; message?: stri
   request<{ id: string; created: boolean; notified: boolean }>(
     'POST', '/entitlements/upgrade-request', body,
   )
-
-// ── Accounting integrations ────────────────────────────────────────────────────
-export interface Integration {
-  id:            string
-  provider:      string
-  status:        string
-  last_sync_at:  string | null
-  last_error:    string | null
-  // Set when the pre-training gate stopped the sync. `last_error` alone is one
-  // English sentence the screen can only print; these say which decision is
-  // waiting and where to make it, so a blocked sync is not just a red dot with
-  // a forecast quietly going stale behind it.
-  last_error_code?:    string | null
-  last_error_details?: {
-    session_id?: string | null
-    issues?:     string[]
-    remediable?: boolean
-    options?:    Record<string, string[]>
-  } | null
-  created_at:    string
-}
-
-export interface ProviderInfo {
-  fields: string[]
-}
-
-export interface IntegrationsListResponse {
-  connections: Integration[]
-  providers:   Record<string, ProviderInfo>
-}
-
-export const listIntegrations = (opts?: RequestOpts) =>
-  request<IntegrationsListResponse>('GET', '/integrations', undefined, opts)
-
-export const connectIntegration = (provider: string, creds: Record<string, string>) =>
-  request<Integration>('POST', `/integrations/${encodeURIComponent(provider)}/connect`, creds)
-
-export const syncIntegration = (id: string) =>
-  request<unknown>('POST', `/integrations/${encodeURIComponent(id)}/sync`)
-
-export const deleteIntegration = (id: string) =>
-  request<{ deleted: string }>('DELETE', `/integrations/${encodeURIComponent(id)}`)
 
 // ── Multi-period planning (Phase B) ──────────────────────────────────────────
 export const getPlanning = () =>
@@ -1767,7 +1780,6 @@ export interface Capabilities {
   whatsapp: boolean
   sms: boolean
   whatsapp_bot: boolean
-  accounting_integrations: boolean
   contact_channels: { whatsapp: boolean; email: boolean }
   background_worker: boolean
   scheduled_jobs: boolean

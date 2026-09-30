@@ -36,8 +36,8 @@ def unique_phone() -> str:
 
 
 def _email(prefix: str) -> str:
-    """@faro-e2e.io has no MX record, so no test address can reach a person."""
-    return f"{prefix}-{uuid4().hex[:8]}@faro-e2e.io"
+    """@stockai-e2e.io has no MX record, so no test address can reach a person."""
+    return f"{prefix}-{uuid4().hex[:8]}@stockai-e2e.io"
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -323,7 +323,7 @@ class TestLogin:
         It used to 403, which left anyone whose verification mail hit spam
         permanently outside with no self-service way back and nothing of the
         product seen. They now get in with `email_verified: false` on the token,
-        and only outward-facing actions (inviting users, integrations, sending
+        and only outward-facing actions (inviting users, sending
         notifications) are refused — see test_email_verification_unblock.py for
         those, including the pair that proves an unverified admin cannot invite.
         """

@@ -155,7 +155,7 @@ def _items(n: int) -> list[dict]:
 class TestInventoryAlertEmailCopyComesFromTheCatalog:
     def test_summary_subject_and_columns_render_the_catalog_sentences(self, sent):
         assert email_mod.send_inventory_alert_email(
-            "buyer@faro-e2e.io", _items(3), _items(1), "https://faro.test/hoy") is True
+            "buyer@stockai-e2e.io", _items(3), _items(1), "https://stockai.test/hoy") is True
 
         msg = sent[0]
         assert msg["subject"] == render_es("alert_email_subject_critical", n=3, s="s")
@@ -172,7 +172,7 @@ class TestInventoryAlertEmailCopyComesFromTheCatalog:
 
     def test_warning_only_digest_uses_the_warning_subject(self, sent):
         email_mod.send_inventory_alert_email(
-            "buyer@faro-e2e.io", [], _items(4), "https://faro.test/hoy")
+            "buyer@stockai-e2e.io", [], _items(4), "https://stockai.test/hoy")
         assert sent[0]["subject"] == render_es("alert_email_subject_warning", n=4, s="s")
 
     def test_editing_the_catalog_changes_the_email(self, sent, monkeypatch):
@@ -181,7 +181,7 @@ class TestInventoryAlertEmailCopyComesFromTheCatalog:
         monkeypatch.setitem(locale_mod._ES, "alert_email_cta", _SENTINEL + "-cta")
 
         email_mod.send_inventory_alert_email(
-            "buyer@faro-e2e.io", _items(1), [], "https://faro.test/hoy")
+            "buyer@stockai-e2e.io", _items(1), [], "https://stockai.test/hoy")
 
         html = sent[0]["html"]
         assert _SENTINEL in html
@@ -197,8 +197,8 @@ class TestLeadTimeAlertEmailCopyComesFromTheCatalog:
 
     def test_plural_body_and_subject_agree_with_the_count(self, sent):
         email_mod.send_supplier_lead_time_alert_email(
-            "buyer@faro-e2e.io", [self._deviation(), self._deviation()],
-            "https://faro.test/proveedores")
+            "buyer@stockai-e2e.io", [self._deviation(), self._deviation()],
+            "https://stockai.test/proveedores")
 
         msg = sent[0]
         assert msg["subject"] == render_es("lead_time_email_subject", n=2, s="es")
@@ -208,7 +208,7 @@ class TestLeadTimeAlertEmailCopyComesFromTheCatalog:
 
     def test_singular_body_and_subject_agree_with_the_count(self, sent):
         email_mod.send_supplier_lead_time_alert_email(
-            "buyer@faro-e2e.io", [self._deviation()], "https://faro.test/proveedores")
+            "buyer@stockai-e2e.io", [self._deviation()], "https://stockai.test/proveedores")
 
         msg = sent[0]
         assert msg["subject"] == "⏱️ 1 proveedor tardando más de lo habitual"
@@ -218,7 +218,7 @@ class TestLeadTimeAlertEmailCopyComesFromTheCatalog:
 
     def test_row_units_and_headers_render_the_catalog(self, sent):
         email_mod.send_supplier_lead_time_alert_email(
-            "buyer@faro-e2e.io", [self._deviation()], "https://faro.test/proveedores")
+            "buyer@stockai-e2e.io", [self._deviation()], "https://stockai.test/proveedores")
 
         html = sent[0]["html"]
         assert render_es("lead_time_email_days", days=21) in html
@@ -233,7 +233,7 @@ class TestLeadTimeAlertEmailCopyComesFromTheCatalog:
 class TestAuthEmailCopyComesFromTheCatalog:
     def test_change_password_code_email(self, sent, monkeypatch):
         monkeypatch.setitem(locale_mod._ES, "change_password_email_heading", _SENTINEL)
-        assert email_mod.send_change_password_code("user@faro-e2e.io", "482913") is True
+        assert email_mod.send_change_password_code("user@stockai-e2e.io", "482913") is True
 
         msg = sent[0]
         assert msg["subject"] == render_es("change_password_email_subject")
@@ -247,7 +247,7 @@ class TestAuthEmailCopyComesFromTheCatalog:
         assert "<strong" in msg["html"], "emphasis markup must stay in the module"
 
     def test_password_reset_otp_email(self, sent):
-        email_mod.send_password_reset_otp("user@faro-e2e.io", "112233")
+        email_mod.send_password_reset_otp("user@stockai-e2e.io", "112233")
         msg = sent[0]
         assert msg["subject"] == render_es("password_reset_otp_email_subject")
         assert render_es("password_reset_otp_email_heading") in msg["html"]
@@ -265,14 +265,14 @@ class TestAuthEmailCopyComesFromTheCatalog:
         message came back to a dead code — 120x off, and no test noticed because
         both sides asserted the same literal.
         """
-        email_mod.send_password_reset_otp("user@faro-e2e.io", "445566")
+        email_mod.send_password_reset_otp("user@stockai-e2e.io", "445566")
         html = sent[0]["html"]
         assert f"{OTP_EXPIRE_MINUTES} minutos" in html
         assert "30 horas" not in html, "the OTP is quoting the setup link's window"
 
     def test_account_setup_email_interpolates_name_and_app(self, sent):
         email_mod.send_account_setup_email(
-            "nuevo@faro-e2e.io", "Ana Rojas", "https://faro.test/setup?t=x")
+            "nuevo@stockai-e2e.io", "Ana Rojas", "https://stockai.test/setup?t=x")
         msg = sent[0]
         assert msg["subject"] == render_es("account_setup_email_subject", app="ForecastPlatform")
         assert msg["subject"] == "Activa tu cuenta en ForecastPlatform"
@@ -289,7 +289,7 @@ class TestAuthEmailCopyComesFromTheCatalog:
 class TestPurchaseOrderEmailCopyComesFromTheCatalog:
     def test_subject_body_and_reference_render_the_catalog(self, sent):
         email_mod.send_po_to_supplier_email(
-            to="ventas@faro-e2e.io", supplier_name="Distribuidora Andina",
+            to="ventas@stockai-e2e.io", supplier_name="Distribuidora Andina",
             po_log_id="po_abc123", items=_items(2),
             pdf_bytes=b"%PDF-1.4", pdf_filename="po_abc123.pdf", po_ref="OC-0007",
         )
@@ -320,8 +320,8 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
         assert labels[0] == "enero de 2026" and labels[11] == "diciembre de 2026"
 
     def test_subject_headline_and_tiles_render_the_catalog(self, sent):
-        email_mod.send_monthly_roi_email("buyer@faro-e2e.io", dict(self._REPORT),
-                                         "https://faro.test/roi")
+        email_mod.send_monthly_roi_email("buyer@stockai-e2e.io", dict(self._REPORT),
+                                         "https://stockai.test/roi")
         msg = sent[0]
         amount = email_mod._fmt_money(1250000.0)
         assert msg["subject"] == render_es("roi_email_subject_capital",
@@ -336,7 +336,7 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
         # The two numbers have to reach the reader; the sentence around them is
         # copy and lives in the catalog. Asserting the whole sentence here was a
         # second copy of it, and it went stale the day the note was rewritten to
-        # stop claiming the denominator was "everything Faro suggested".
+        # stop claiming the denominator was "everything StockAI suggested".
         assert "6" in html and "8" in html
         for key in ("roi_email_metric_risks_label", "roi_email_metric_capital_note",
                     "roi_email_metric_purchases_label", "roi_email_cta", "roi_email_footer"):
@@ -344,7 +344,7 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
 
     def test_subject_without_capital_uses_the_default_catalog_entry(self, sent):
         report = dict(self._REPORT, capital_freed=None)
-        email_mod.send_monthly_roi_email("buyer@faro-e2e.io", report, "https://faro.test/roi")
+        email_mod.send_monthly_roi_email("buyer@stockai-e2e.io", report, "https://stockai.test/roi")
         assert sent[0]["subject"] == render_es("roi_email_subject_default",
                                                month="junio de 2026")
         # No amount may appear in a subject for a month whose capital figure we
@@ -355,18 +355,18 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
 class TestWhatsAppAlertCopyComesFromTheCatalog:
     def test_plural_lines_agree_with_the_counts(self):
         text = wa_mod.build_inventory_alert_text(
-            _items(7), _items(12), "https://faro.test/hoy", transfer_count=2)
+            _items(7), _items(12), "https://stockai.test/hoy", transfer_count=2)
         assert render_es("alert_whatsapp_critical_many", n=7) in text
         assert "7 productos se agotan" in text
         assert render_es("alert_whatsapp_warning", n=12) in text
         assert render_es("alert_whatsapp_transfer_many", n=2) in text
         assert render_es("alert_whatsapp_more", n=2) in text  # 7 - 5 listed
-        assert render_es("alert_whatsapp_cta", url="https://faro.test/hoy") in text
+        assert render_es("alert_whatsapp_cta", url="https://stockai.test/hoy") in text
         assert render_es("alert_whatsapp_order_qty", qty="100") in text
 
     def test_singular_lines_agree_with_the_counts(self):
         text = wa_mod.build_inventory_alert_text(
-            _items(1), [], "https://faro.test/hoy", transfer_count=1)
+            _items(1), [], "https://stockai.test/hoy", transfer_count=1)
         assert render_es("alert_whatsapp_critical_one", n=1) in text
         assert "1 producto se agota antes" in text
         assert "se agotan" not in text
@@ -375,7 +375,7 @@ class TestWhatsAppAlertCopyComesFromTheCatalog:
 
     def test_editing_the_catalog_changes_the_message(self, monkeypatch):
         monkeypatch.setitem(locale_mod._ES, "alert_whatsapp_warning", _SENTINEL + " {n}")
-        text = wa_mod.build_inventory_alert_text([], _items(3), "https://faro.test/hoy")
+        text = wa_mod.build_inventory_alert_text([], _items(3), "https://stockai.test/hoy")
         assert f"{_SENTINEL} 3" in text
         assert "por reabastecer" not in text
 

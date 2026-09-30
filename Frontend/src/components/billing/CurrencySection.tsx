@@ -2,11 +2,11 @@
 /**
  * Which currency the company's own figures are shown in.
  *
- * Not the same thing as what Faro costs: the plans are priced in USD for
+ * Not the same thing as what StockAI costs: the plans are priced in USD for
  * everyone, and is agreed with us rather than shown here. This is for inventory value,
  * unit costs and purchase-order totals — the customer's money.
  *
- * It relabels, it does not convert. Faro stores the numbers it was given and
+ * It relabels, it does not convert. StockAI stores the numbers it was given and
  * never guesses an exchange rate, so a tenant that already loaded costs in
  * colones and switches to dollars now has dollar-signed colones. The copy says
  * that plainly rather than letting someone find out from a report.

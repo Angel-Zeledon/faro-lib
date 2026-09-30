@@ -1,5 +1,5 @@
 """
-What Faro did, readable inside the app.
+What StockAI did, readable inside the app.
 
 Two reads over one store:
 

@@ -280,3 +280,49 @@ class TestDegradation:
         )
         assert len(results) == 1
         assert len(next(iter(results.values()))["direct_forecaster"].point(5)) == 5
+
+
+# ---------------------------------------------------------------------------
+# The served model and the graded models
+# ---------------------------------------------------------------------------
+
+class TestServedModelSeesTheWholeHistory:
+    """The model that forecasts is fitted through the last observation.
+
+    Nothing this trainer REPORTS comes from it: the metrics, the per-horizon
+    residual bank behind the conformal intervals and the policy backtest all
+    come from the fold models inside `_backtest`, each fitted only on targets
+    that had already occurred at its cutoff. The final model's only job is to
+    forecast forward from the newest origin, and it used to stop at
+    `train_ratio` of the calendar — so the served forecast came from a model
+    that had never seen the newest fifth of the history.
+
+    Measured on the demo catalogue (10 SKUs x 450 buckets, last 30 held out):
+    the forecast ran 14% high on every series and WAPE was 0.150; fitted on the
+    whole history it is unbiased and WAPE is 0.077.
+    """
+
+    def _fit_windows(self, monkeypatch):
+        original = GlobalTrainer._fit
+        windows = []
+
+        def spy(self, rows, model_features):
+            windows.append(pd.Timestamp(rows["_target_date"].max()))
+            return original(self, rows, model_features)
+
+        monkeypatch.setattr(GlobalTrainer, "_fit", spy)
+        df = _catalogue()
+        GlobalTrainer(horizon=7, train_ratio=0.8, wfv_splits=3).train(
+            _features(df), group_cols=["sku"], target="demand", dt="date")
+        return windows, pd.Timestamp(df["date"].max())
+
+    def test_the_last_fit_reaches_the_last_observation(self, monkeypatch):
+        windows, last_date = self._fit_windows(monkeypatch)
+        assert windows, "no model was fitted at all"
+        assert windows[-1] == last_date
+
+    def test_every_graded_fit_stopped_before_it(self, monkeypatch):
+        """Otherwise the backtest that calibrates the intervals is a leak."""
+        windows, last_date = self._fit_windows(monkeypatch)
+        assert len(windows) > 1, "the backtest fitted no fold models"
+        assert all(w < last_date for w in windows[:-1])

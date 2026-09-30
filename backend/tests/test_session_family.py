@@ -316,4 +316,4 @@ class TestDemoQuickstartPlanSettings:
         assert r.status_code == 202, r.text
         sid = r.json()["data"]["session_id"]
         row = query("SELECT name FROM sessions WHERE id=%s AND tenant_id=%s", (sid, tid))[0]
-        assert row["name"] == "Demo Faro"
+        assert row["name"] == "Demo StockAI"

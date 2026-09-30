@@ -4,7 +4,7 @@ Stock already on its way must not be ordered twice.
 `get_inventory_status` read `inventory_stock.current_stock` and nothing else, so
 everything in motion was invisible: a purchase order the buyer had sent, and a
 transfer between two of their own warehouses. Every day until the goods
-physically landed, Faro asked for them again.
+physically landed, StockAI asked for them again.
 
 Multi-store turned one move into two false alarms. Measured before the fix, on a
 tenant that owned 430 units of one SKU:
@@ -86,7 +86,7 @@ class TestASentPurchaseOrderStopsTheRepeatOrder:
         after = _row(scenario)
         assert after["incoming_qty"] == before["recommended_qty"]
         assert after["recommended_qty"] == 0, (
-            "Faro asked again for units it had already been told were ordered: "
+            "StockAI asked again for units it had already been told were ordered: "
             f"{after['recommended_qty']}")
 
     def test_a_purchase_order_that_was_never_sent_does_not_count(self, scenario):

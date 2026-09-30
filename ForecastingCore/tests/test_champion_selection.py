@@ -132,3 +132,44 @@ class TestChampionSelection:
         ])
         champions = _pipeline()._select_champions(metrics, lambda s: str(s).strip())
         assert champions["A"] == "global_lgbm"
+
+
+class TestEnsembleWeights:
+    """The ensemble is weighted by the metric that crowns the champion.
+
+    It used to be weighted by the 1-step `mae` of the ML models only, built
+    from `results_ml` before the metrics table existed. Two consequences, both
+    invisible on screen: the weighting used a number no other layer in the
+    product reads, and every statistical model in the run was given a weight of
+    zero while still being handed to `predict` as an input to average.
+    """
+
+    ROWS = pd.DataFrame([
+        {"sku": "A", "model": "lightgbm",    "type": "ml",       "cost_horizon": 8.0,  "mae": 1.0},
+        {"sku": "A", "model": "prophet",     "type": "stat",     "cost_horizon": 2.0,  "mae": 9.0},
+        {"sku": "A", "model": "global_lgbm", "type": "global",   "cost_horizon": 4.0,  "mae": 5.0},
+        {"sku": "A", "model": "naive",       "type": "baseline", "cost_horizon": 0.5,  "mae": 0.1},
+    ])
+
+    def test_statistical_models_get_a_weight(self):
+        scores = Pipeline._ensemble_scores(self.ROWS)
+        assert "prophet" in scores["A"]
+
+    def test_baselines_are_not_members_of_the_average(self):
+        """Same rule as the champion race: a floor to beat, not a competitor."""
+        assert "naive" not in Pipeline._ensemble_scores(self.ROWS)["A"]
+
+    def test_it_reads_the_champion_metric_not_the_one_step_mae(self):
+        """On `cost_horizon` prophet is the best of the three; on `mae` it is
+        the worst. If the wrong column were read the weights would invert."""
+        scores = Pipeline._ensemble_scores(self.ROWS)
+        assert min(scores["A"], key=scores["A"].get) == "prophet"
+
+    def test_a_row_with_no_score_is_left_out_rather_than_ranked_last(self):
+        rows = pd.concat([self.ROWS, pd.DataFrame([
+            {"sku": "A", "model": "ets", "type": "stat", "cost_horizon": None, "mae": 3.0},
+        ])], ignore_index=True)
+        assert "ets" not in Pipeline._ensemble_scores(rows)["A"]
+
+    def test_no_metrics_means_no_weights(self):
+        assert Pipeline._ensemble_scores(pd.DataFrame()) == {}

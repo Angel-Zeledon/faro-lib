@@ -856,7 +856,7 @@ export interface InventoryCalcExplanation {
   daily_demand?:    number
   lead_time_days?:    number
   // Where the lead time came from: user | file | supplier_rule | learned |
-  // default. 'default' means Faro assumed it — the case the old
+  // default. 'default' means StockAI assumed it — the case the old
   // 'learned' | 'configured' pair could not express, so an untouched SKU was
   // labelled "configurado por ti".
   lead_time_source?: ValueSource
@@ -868,6 +868,30 @@ export interface InventoryCalcExplanation {
   antes_moq?:         number
   moq?:               number
   final_qty?:    number
+  // A declared event (stability.md 19.5) that overlaps THIS sku's lead-time
+  // window and moved the recommendation — never a simulation, a standing
+  // fact the semáforo already applied. Empty when no event touches the
+  // window right now, even if one is declared for a different date range.
+  events_applied?:     InventoryCalcEventApplied[]
+}
+
+/** One declared event whose window overlapped this sku's lead-time window,
+ *  as `_event_demand_multiplier` (backend/inventory/service.py) resolved it. */
+export interface InventoryCalcEventApplied {
+  event_id:           string
+  event_name:         string
+  /** The multiplier actually resolved for this sku — the event's own figure,
+   *  or the narrowest override that matched it. */
+  multiplier:          number
+  /** 'event' = the event's own multiplier; 'sku' | 'family' | 'category' =
+   *  an override the tenant set took effect instead. */
+  multiplier_source:  'sku' | 'family' | 'category' | 'event'
+  overlap_days:        number
+  window_days:         number
+  /** What was actually applied to the window's demand after blending for
+   *  partial overlap — smaller than `multiplier` whenever the event covers
+   *  only part of the lead-time window. */
+  blended_multiplier: number
 }
 
 export interface InventoryEvent {
@@ -1329,6 +1353,10 @@ export interface POLogEntry {
   rejected_count?:   number
   // Reception (feature 1.4): pending | partial | received | not_received
   reception_status?: 'pending' | 'partial' | 'received' | 'not_received'
+  /** When the order was sent to the supplier; null if it never was.
+   *  The payables calendar and `incoming_qty` both read it, which is
+   *  why undoing a send is a real action and not a cosmetic flag. */
+  sent_at?: string | null
   received_at?:      string | null
 }
 
@@ -1667,6 +1695,10 @@ export interface Supplier {
   whatsapp:       string | null
   lead_time_days: number
   lead_time_std:  number
+  /** How often the buyer orders from this supplier, in days. 0 means no
+   *  declared cadence: the order then only has to cover the lead time,
+   *  which is how every tenant behaved before the field existed. */
+  review_period_days?: number
   payment_terms:  string | null
   notes:          string | null
   active:         boolean
@@ -1863,8 +1895,14 @@ export interface DeadStockItem {
   supplier:              string | null
   current_stock:           number
   unit_cost:         number | null
-  capital_trapped:        number
-  holding_cost_monthly:   number
+  /** null when `unit_cost` is unknown — NEVER 0. See
+   *  `capital_trapped_unknown_reason`; a 0 here used to read as "nothing at
+   *  risk" for a SKU whose cost was simply never entered. */
+  capital_trapped:        number | null
+  capital_trapped_unknown_reason: DeadCapitalValueUnknownReason | null
+  /** null exactly when `capital_trapped` is null — there is nothing to
+   *  apply the holding rate to. */
+  holding_cost_monthly:   number | null
   days_without_movement:  number
   depletion_pct:          number
   avg_daily_demand:       number
@@ -1877,14 +1915,288 @@ export interface DeadStockItem {
 
 export interface DeadStockResponse {
   items:                        DeadStockItem[]
+  /** Sum of `capital_trapped` over priced items only — unpriced items are
+   *  never folded in as 0. */
   total_capital_trapped:        number
   total_holding_cost_monthly:   number
   sku_count:                    number
+  /** How many of `items` have `capital_trapped: null` (no `unit_cost` on
+   *  file) — counted, never silently dropped or valued at 0. */
+  unpriced_sku_count:           number
   min_days_static:              number
   /** Annual holding rate this response was priced with, as a fraction
    *  (0.20 = 20%). The footer names it: it used to say a hardcoded 25%
    *  while /compras costed the same stock at the tenant's rate. */
   holding_cost_pct:             number
+}
+
+/** Why a unit's value could not be priced. Never a silent 0 — see
+ *  `backend/inventory/dead_capital.py`'s module docstring. */
+export type DeadCapitalValueUnknownReason = 'no_unit_cost'
+
+export interface DeadCapitalItem {
+  sku:                     string
+  display_name:            string | null
+  supplier:                string | null
+  category:                string | null
+  current_stock:           number
+  unit_cost:               number | null
+  /** null when the unit cost is unknown — never 0. See `value_unknown_reason`. */
+  value:                   number | null
+  value_unknown_reason:    DeadCapitalValueUnknownReason | null
+  days_still:              number
+  /** true when a real stock decrease was found and dated; false means no
+   *  decrease was ever observed and `days_still` is only the span the
+   *  recorded history covers — a floor, not a confirmed count. */
+  days_still_exact:        boolean
+  /** The SKU's current semáforo signal, when a session exists to compute it
+   *  — null otherwise. This view does not need a session to work. */
+  signal:                  InventorySignal | null
+}
+
+export interface DeadCapitalResponse {
+  window_days:            number
+  items:                  DeadCapitalItem[]
+  /** Sum of `value` over priced items only — unpriced items are never folded
+   *  in as 0. */
+  total_value:            number
+  sku_count:              number
+  unpriced_sku_count:     number
+  total_skus_with_stock:  number
+  excluded_no_history:    number
+  excluded_too_recent:    number
+}
+
+// Supplier cost inflation (stability.md #20 item 5): `inventory_po_items
+// .unit_cost` read as a price history, but only from orders that were
+// actually RECEIVED — a quote or a rejected order proves nothing was paid.
+// See `backend/inventory/cost_alerts.py`.
+export interface SupplierInflationProduct {
+  sku:                 string
+  display_name:        string | null
+  first_cost:          number
+  last_cost:            number
+  first_observed_at:    string
+  last_observed_at:     string
+  cumulative_pct:      number
+  increases_count:      number
+  observations_count:  number
+}
+
+export interface SupplierInflation {
+  supplier:              string
+  sku_count_affected:    number
+  increases_count:       number
+  /** Qty-weighted across the supplier's affected SKUs — see the aggregation
+   *  comment in `cost_alerts.get_supplier_cost_inflation`. */
+  cumulative_pct:        number
+  worst_products:        SupplierInflationProduct[]
+}
+
+export interface SupplierCostInflationResponse {
+  window_days:                 number
+  suppliers:                   SupplierInflation[]
+  supplier_count:               number
+  skus_single_observation:      number
+  skus_zero_cost_base:          number
+  lines_excluded_no_supplier:  number
+}
+
+// Margin erosion (stability.md #20 item 6): cost history crossed with the
+// SKU's CURRENT sale_price — the only one StockAI stores. `margin_pct_then` is
+// therefore not a historical margin; see `price_history_available` below and
+// `cost_alerts.get_margin_erosion`'s docstring.
+export interface MarginErosionItem {
+  sku:                 string
+  display_name:        string | null
+  sale_price:          number
+  cost_then:            number
+  cost_now:             number
+  /** null when cost_then is 0 — a % change from a zero base is undefined. */
+  cost_change_pct:      number | null
+  /** `calc_unit_margin`'s discipline: never clamped, negative reported as-is. */
+  unit_margin_then:    number
+  unit_margin_now:      number
+  margin_pct_then:      number
+  margin_pct_now:        number
+  erosion_pts:          number
+  first_observed_at:    string
+  last_observed_at:      string
+}
+
+export interface MarginErosionResponse {
+  window_days:              number
+  items:                    MarginErosionItem[]
+  sku_count:                number
+  /** Always false today — StockAI stores no sale_price history. Load-bearing:
+   *  it is what stops `margin_pct_then` from being read as a historical
+   *  fact rather than a today's-price hypothetical. */
+  price_history_available: boolean
+  excluded_no_cost_history: number
+  excluded_no_sale_price:   number
+  excluded_invalid_price:   number
+  lines_excluded_no_supplier: number
+}
+
+// ── The forecast in money (stability.md #20, item 1) ─────────────────────────
+// The engine predicts units; the product already knows price and cost per
+// SKU. See `backend/inventory/forecast_money.py`'s module docstring for the
+// honesty constraints this payload is built under.
+export type ForecastMoneyUnknownReason = 'no_sale_price' | 'no_unit_cost'
+
+export interface ForecastMoneyItem {
+  sku:                     string
+  display_name:            string | null
+  supplier:                string | null
+  category:                string | null
+  units_forecast:          number
+  /** The CURRENT price/cost on file — StockAI stores no price history, so this
+   *  is what the projection is built from, not a claim about the future. */
+  sale_price:              number | null
+  unit_cost:               number | null
+  /** null when `sale_price` is unknown — NEVER 0. See `revenue_unknown_reason`. */
+  revenue:                 number | null
+  revenue_unknown_reason:  ForecastMoneyUnknownReason | null
+  /** null when `unit_cost` is unknown — NEVER 0. See `cost_unknown_reason`. */
+  cost:                    number | null
+  cost_unknown_reason:     ForecastMoneyUnknownReason | null
+  /** null exactly when either `revenue` or `cost` is null. A negative
+   *  margin (selling below cost) is reported as-is, never clamped. */
+  margin:                  number | null
+  margin_pct:              number | null
+  /** This SKU's share of `total_margin`, null when its own margin is
+   *  unknown or the total is 0. What lets the screen say "these products
+   *  are N% of it". */
+  contribution_pct:        number | null
+}
+
+export interface ForecastMoneyResponse {
+  session_id:                  string
+  /** The session's real forecast horizon, in days — derived from the
+   *  forecast actually stored, not a screen default. */
+  horizon_days:                number
+  horizon_start:               string | null
+  horizon_end:                 string | null
+  /** Always false today — StockAI stores no sale_price history, so this
+   *  projection is built entirely on today's price. Same flag
+   *  `MarginErosionResponse` uses for the identical caveat. */
+  price_history_available:     boolean
+  items:                       ForecastMoneyItem[]
+  /** Sum of `revenue` over priced items only. */
+  total_revenue:                number
+  /** Sum of `cost` over items with both price and cost known. */
+  total_cost:                   number
+  /** Sum of `margin` over items with both price and cost known — never a
+   *  mix with unpriced/uncosted SKUs folded in as 0. */
+  total_margin:                 number
+  /** null when no SKU has both price and cost known. */
+  total_margin_pct:             number | null
+  sku_count:                    number
+  priced_sku_count:             number
+  costed_sku_count:             number
+  excluded_no_price_count:      number
+  excluded_no_cost_count:       number
+  excluded_no_forecast_count:   number
+  top_contributors:             number
+  /** null when `total_margin` is 0. */
+  top10_margin_share_pct:       number | null
+}
+
+// ── "What did it cost me to ignore you" (stability.md 19.4) ──────────────────
+// Per-SKU, over a window: did the semáforo ask to order, did a purchase order
+// follow, and — only when it did not AND a snapshot actually recorded stock
+// at or below zero — the estimated unserved units and their value.
+// `no_po_no_stockout_observed` is the honest default: it means the report
+// cannot show a cost, not that the cost was zero. See
+// `backend/inventory/recommendation_reports.py`.
+export type CostOfIgnoringOutcome = 'ordered' | 'likely_stockout' | 'no_po_no_stockout_observed'
+
+/** Why `lost_value` is null even though the SKU is a likely stockout. */
+export type CostOfIgnoringValueUnknownReason = 'no_stockout_detected' | 'no_demand_rate_recorded' | 'sale_price_unknown'
+
+export interface CostOfIgnoringSku {
+  sku:                       string
+  times_flagged:             number
+  first_flagged_on:          string
+  last_flagged_on:           string
+  latest_signal:             string
+  latest_recommended_qty:    number | null
+  po_window_days:            number
+  outcome:                   CostOfIgnoringOutcome
+  /** Set only when `outcome === 'ordered'`. */
+  po_generated_at?:          string
+  /** Set only when `outcome === 'likely_stockout'`. */
+  stockout_observed_at?:     string
+  recovery_observed_at?:     string | null
+  /** true when the window ended before stock was observed to recover — the
+   *  units/value below are a LOWER BOUND, not the full cost: nothing past
+   *  the requested window was visible. */
+  partial_window?:           boolean
+  days_out_of_stock?:        number
+  avg_daily_demand_used?:    number | null
+  /** null unless a stockout was actually observed. */
+  lost_units:                number | null
+  /** null whenever `lost_units` is null, OR the SKU has no current
+   *  sale_price on file — NEVER a silent 0. See `lost_value_reason`. */
+  lost_value:                number | null
+  lost_value_reason:         CostOfIgnoringValueUnknownReason | null
+}
+
+export interface CostOfIgnoringSummary {
+  skus_flagged:                            number
+  skus_ordered:                            number
+  skus_likely_stockout:                    number
+  /** "Unclear" on purpose — no PO followed AND no stockout was observed, so
+   *  the report cannot say ignoring the advice cost anything. Not a good
+   *  outcome by default: it may simply mean the buyer was still covered. */
+  skus_unclear:                            number
+  /** Sum over priced+quantified SKUs only — never padded with SKUs whose
+   *  units or value are unknown. */
+  total_estimated_lost_units:              number | null
+  total_estimated_lost_value:              number | null
+  skus_with_lost_units_but_unknown_value:  number
+}
+
+export interface CostOfIgnoringResponse {
+  from_date:       string
+  to_date:         string
+  po_window_days:  number
+  summary:         CostOfIgnoringSummary
+  skus:            CostOfIgnoringSku[]
+}
+
+// ── "Why is today's number different" (stability.md 19.7) ───────────────────
+// The latest recorded recommendation for one SKU against the previous
+// recorded one, decomposed into the inputs that moved. See
+// `backend/inventory/recommendation_reports.why_changed`.
+export type WhyChangedFieldOrigin = 'session' | 'operational' | 'derived'
+
+export interface WhyChangedField {
+  previous: number | string | null
+  current:  number | string | null
+  delta:    number | null
+  origin:   WhyChangedFieldOrigin
+}
+
+export type WhyChangedExplanationCode =
+  | 'recommendation_change_new_session'
+  | 'recommendation_change_same_session'
+
+export interface WhyChangedResponse {
+  available:              boolean
+  sku:                    string
+  /** Set when `available` is false: why there is nothing to compare yet. */
+  reason?:                'no_recorded_recommendations' | 'no_previous_recommendation'
+  latest?:                Record<string, unknown>
+  latest_recorded_on?:    string
+  previous_recorded_on?:  string
+  latest_session_id?:     string | null
+  previous_session_id?:   string | null
+  /** true when the change came from a new training run (a model opinion)
+   *  rather than the tenant's own operational data moving. */
+  session_changed?:       boolean
+  fields?:                Record<string, WhyChangedField>
+  explanation_code?:      WhyChangedExplanationCode
 }
 
 // Multi-period planning (Phase B): the tenant's active view granularity.

@@ -6,7 +6,7 @@ forecasting engine had a second suite of its own that you had to remember. On
 shipped with only a `-k` subset run against it: nothing was skipped on purpose,
 the command just did not cover it.
 
-It also carries the three traps that live in `.claude/skills/running-faro` and
+It also carries the three traps that live in `.claude/skills/running-stockai` and
 nowhere the runner could enforce them:
 
 1. A dev server on the same database CLAIMS jobs the tests create, runs them,

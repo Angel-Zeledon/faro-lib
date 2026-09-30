@@ -18,7 +18,7 @@ it against a live server is what found it — no unit test of mine would have.
 
 from typing import Optional
 
-_SCOPE_KEY = "faro_machine_actor"
+_SCOPE_KEY = "stockai_machine_actor"
 
 
 def set_machine_actor(scope: dict, tenant_id: str, actor_id: str) -> None:

@@ -1,5 +1,5 @@
 """
-The single source of truth for the inventory planning values Faro assumes when
+The single source of truth for the inventory planning values StockAI assumes when
 the tenant has configured nothing — and for the vocabulary that says WHERE a
 value came from.
 
@@ -29,7 +29,7 @@ the two are equal, so the duplication cannot silently drift back apart.
 
 from __future__ import annotations
 
-# What Faro assumes when the tenant has told us nothing. See the module
+# What StockAI assumes when the tenant has told us nothing. See the module
 # docstring for the 15-vs-7 reasoning.
 DEFAULT_LEAD_TIME_DAYS = 15
 DEFAULT_SERVICE_LEVEL = 0.95
@@ -50,7 +50,7 @@ DEFAULT_HOLDING_COST_PCT = 0.20
 #   'file'          it came in on an uploaded file (sales history or stock import)
 #   'supplier_rule' it came from a `stock_defaults` rule (supplier / category /
 #                   global scope — see SOURCE_SUPPLIER_RULE's note)
-#   'learned'       Faro derived it from the supplier's real recorded receptions
+#   'learned'       StockAI derived it from the supplier's real recorded receptions
 #   'default'       nobody configured anything; this is our assumption
 #
 # 'default' is the value that makes the whole exercise worth the migration:
@@ -77,7 +77,7 @@ VALUE_SOURCES: tuple[str, ...] = (
     SOURCE_DEFAULT,
 )
 
-# Sources that mean "this number is Faro's assumption, not the tenant's data".
+# Sources that mean "this number is StockAI's assumption, not the tenant's data".
 # The UI badges these as estimated; everything else is the tenant's own input or
 # evidence derived from it.
 ASSUMED_SOURCES: frozenset[str] = frozenset({SOURCE_DEFAULT})
@@ -105,5 +105,5 @@ SYSTEM_DEFAULTS: dict[str, float | int | None] = {
 
 
 def is_assumed(source: str | None) -> bool:
-    """True when the value shown is Faro's assumption rather than tenant data."""
+    """True when the value shown is StockAI's assumption rather than tenant data."""
     return (source or SOURCE_DEFAULT) in ASSUMED_SOURCES

@@ -115,7 +115,7 @@ class TestAnUntrainableFileIsRefusedByTheApi:
         assert _jobs(test_tenant["id"], sid) == []
         assert _status(test_tenant["id"], sid) == "MODELS_CONFIGURED"
 
-    def test_the_integrations_sync_path_cannot_walk_past_it_either(
+    def test_a_non_http_caller_cannot_walk_past_it_either(
             self, client, auth_headers, test_tenant):
         """The gate lives in launch_training_family, which every path goes through."""
         from backend.errors import AppError

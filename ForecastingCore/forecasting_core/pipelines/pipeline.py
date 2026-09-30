@@ -28,6 +28,12 @@ from forecasting_core.evaluation.metrics import CHAMPION_METRIC_ORDER
 
 log = logging.getLogger(__name__)
 
+# norm.ppf(0.9). The engine writes q90 = value + 1.2816 * residual_std (see
+# inference/predictor.py), so dividing the q90 spread by this recovers the
+# residual sigma exactly — the same constant backend/inventory/service.py
+# ::_point_sigma uses, so both layers agree on what "sigma" means.
+_Q90_Z = 1.2816
+
 
 def _primary_group(c) -> "Optional[str]":
     """Return the first group key, or None if group_keys is empty."""
@@ -70,55 +76,6 @@ class PipelineResults:
     metadata:             dict = field(default_factory=dict)
     fitted_models:        dict = field(default_factory=dict)   # {key: ML trainer result}
     stat_forecasts:       dict = field(default_factory=dict)   # {model: {sku: {forecast, residuals}}}
-
-
-# ---------------------------------------------------------------------------
-# ML recursive multi-step forecaster
-# ---------------------------------------------------------------------------
-
-def _ml_recursive_forecast(
-    model,
-    target_history: np.ndarray,
-    last_feature_row: np.ndarray,
-    feature_names: List[str],
-    horizon: int,
-) -> np.ndarray:
-    """
-    Iterative horizon-step forecast for an sklearn-compatible ML model.
-
-    Updates lag features after each step; rolling/calendar features are held
-    constant (valid approximation for short horizons).
-    """
-    # Map lag_N column names → their index in feature_names
-    lag_map: Dict[int, int] = {}
-    for i, col in enumerate(feature_names):
-        if col.startswith("lag_"):
-            try:
-                lag_map[int(col.split("_")[1])] = i
-            except (ValueError, IndexError):
-                pass
-
-    max_lag = max(lag_map.keys()) if lag_map else 1
-    buffer = list(target_history[-max(max_lag, 1):]) if len(target_history) > 0 else [0.0]
-
-    preds = []
-    feat = last_feature_row.copy().astype(float)
-
-    for _ in range(horizon):
-        try:
-            pred = float(model.predict(feat.reshape(1, -1))[0])
-            pred = max(0.0, pred)
-        except Exception:
-            pred = float(buffer[-1]) if buffer else 0.0
-        preds.append(pred)
-        buffer.append(pred)
-
-        # Update lag features: lag_n = value n steps back from end of buffer
-        for n, idx in lag_map.items():
-            if len(buffer) >= n:
-                feat[idx] = buffer[-n]
-
-    return np.array(preds)
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +126,10 @@ class Pipeline:
         # SKUs that finished the run with no inventory recommendation. See
         # _inventory: on screen this is indistinguishable from "well stocked".
         self._skipped_no_forecast: List[dict] = []
+        # {sku: champion model}, set by _select_champions. _demand_risk needs it
+        # so the ONE band it publishes per SKU belongs to the model the purchase
+        # is actually computed from.
+        self._champion_by_sku: Dict[str, str] = {}
 
     def _maybe_resample(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -400,30 +361,27 @@ class Pipeline:
             target=c.target, dt=c.date,
         ) if ml_models else {}
 
-        # 7b. Quantile ML models — train p10/p50/p90 regressors and attach to results
-        if ml_models:
-            log.info("Pipeline: training quantile ML models (p10/p50/p90)...")
-            # These runs are harvested for their fitted models only — their
-            # metrics are never read by anything — so they skip the h-step
-            # evaluation instead of paying for it three more times per SKU.
-            quantile_trainer = Trainer(
-                t.train_ratio, t.walk_forward, t.wfv_splits,
-                tuning=t.tuning, tuning_trials=t.tuning_trials,
-                max_workers=t.max_workers, gap=h,
-            )
-            for q_level, key_suffix in [(0.1, "p10"), (0.5, "p50"), (0.9, "p90")]:
-                try:
-                    q_models = factory.build_quantile_ml(q_level)
-                    q_results = quantile_trainer.train(
-                        df_ml_f, q_models,
-                        group_cols=group_cols,
-                        target=c.target, dt=c.date,
-                    )
-                    for res_key, q_res in q_results.items():
-                        if res_key in results_ml:
-                            results_ml[res_key][f"fitted_model_{key_suffix}"] = q_res.get("fitted_model")
-                except Exception as e:
-                    log.warning(f"Pipeline: quantile {key_suffix} training failed: {e}")
+        # 7b. There is no separate p10/p50/p90 pass, and that is deliberate.
+        #
+        # This step used to fit three extra quantile regressors per ML model per
+        # SKU. Measured on the demo catalogue: the point models took 15.7s and
+        # the three quantile passes 21.5s — 58% of all ML training time, the
+        # single most expensive thing the trainer did.
+        #
+        # Nothing that decides anything used them. Their metrics were discarded
+        # by design, and the layer that turns a band into a purchase quantity
+        # refused their band: `backend/inventory/service.py::_point_sigma`
+        # prefers `q90` and records why — "xgboost's upper spread is 43%
+        # narrower than its own honest q90", because a quantile model fitted on
+        # the training set and then run recursively is graded on nothing and
+        # tightens on its own residuals. So the product was paying the majority
+        # of its training budget for a band drawn on a chart while the money was
+        # computed from a different one.
+        #
+        # One band now, the one the decision already used: the empirical
+        # quantiles of the out-of-fold residual bank (`_compute_quantile_bounds`
+        # in the predictor), with p10/p50/p90 as aliases of q10/q50/q90 so the
+        # chart and the reorder point cannot disagree again.
 
         # 7c. Global cross-learning model — ONE fit over every series at once.
         # Trained on the full feature frame (not `df_ml_f`, which is narrowed to
@@ -487,11 +445,16 @@ class Pipeline:
                 continue
             sub = df[df[_primary_group(c)].astype(str).isin(skus)] if _primary_group(c) else df
             log.info(f"Pipeline: running {model_name} on {len(skus)} SKUs...")
+            # Prophet is the one runner that takes the holiday calendar. The ML
+            # path has had it all along; giving it to Prophet too means both
+            # families see the same holidays for the same tenant.
+            extra = ({"holiday_country": getattr(cfg.features, "holiday_country", "") or ""}
+                     if model_name == "prophet" else {})
             try:
                 result = run_fn(
                     sub, c.date, c.target, _primary_group(c),
                     t.train_ratio, t.min_history, t.seasonal_period,
-                    horizon=h,
+                    horizon=h, **extra,
                 )
                 results_stat[model_name] = result
                 for sku in skus:
@@ -537,18 +500,18 @@ class Pipeline:
 
         _progress(75, "Building ensemble", PipelineStatus.TRAINING)
 
-        # 9. Ensemble
-        sku_model_mae: dict = {}
-        for key, res in results_ml.items():
-            sku, model = res.get("sku"), res.get("model")
-            if sku and model:
-                sku_model_mae.setdefault(sku, {})[model] = res.get("mae", float("inf"))
-        ensemble = WeightedEnsemble()
-        if sku_model_mae:
-            ensemble.fit(sku_model_mae)
-
-        # 10. Flatten evaluation metrics
+        # 9. Flatten evaluation metrics
         metrics_df = self._flatten(results_ml, results_stat, baselines)
+
+        # 10. Ensemble — fitted AFTER the metrics table, from the metrics table.
+        # It used to be fitted before it, from `results_ml` alone and on the
+        # 1-step `mae`: the statistical models were handed a weight of zero
+        # while still being fed into the average, and the weighting metric was
+        # one no other layer in the product uses.
+        ensemble = WeightedEnsemble()
+        ensemble_scores = self._ensemble_scores(metrics_df)
+        if ensemble_scores:
+            ensemble.fit(ensemble_scores)
 
         _progress(85, "Generating forecasts", PipelineStatus.FORECASTING)
 
@@ -791,6 +754,27 @@ class Pipeline:
     # comes from another. See CHAMPION_METRIC_ORDER for the measurement.
     CHAMPION_METRICS = CHAMPION_METRIC_ORDER
 
+    @staticmethod
+    def _ensemble_scores(metrics_df) -> Dict[str, Dict[str, float]]:
+        """
+        {sku: {model: error}} for the ensemble weights, on the champion metric.
+
+        Same column and same exclusion as `_select_champions`: baselines are a
+        floor to beat, not members of an average, and a naive forecast dragging
+        on the ensemble would be the same defect as crowning one.
+        """
+        if metrics_df is None or metrics_df.empty or "sku" not in metrics_df.columns:
+            return {}
+        metric = next((m for m in Pipeline.CHAMPION_METRICS if m in metrics_df.columns), None)
+        if metric is None:
+            return {}
+        rows = metrics_df[metrics_df["type"] != "baseline"] if "type" in metrics_df.columns else metrics_df
+        rows = rows.dropna(subset=[metric, "model"])
+        scores: Dict[str, Dict[str, float]] = {}
+        for sku_val, model, value in zip(rows["sku"], rows["model"], rows[metric]):
+            scores.setdefault(str(sku_val), {})[str(model)] = float(value)
+        return scores
+
     def _select_champions(self, metrics_df, norm_sku) -> Dict[str, str]:
         """
         Pick the model that will drive each SKU's purchase recommendation.
@@ -811,6 +795,25 @@ class Pipeline:
         handed the ML models a systematic advantage on every SKU. They are now
         all asked the same question (see Trainer._horizon_metrics).
 
+        A second, quieter version of the same bug was in the LENGTH of the
+        statistical models' window, not just its origin, and it survived the
+        fix above (docs/stability.md #17(d)). `models/ets.py`, `arima.py`,
+        `prophet.py`, `croston.py`, `sarimax.py` and `lstm.py` each forecast
+        their WHOLE held-out tail — `len(test)` steps — and this method used to
+        take that whole-tail `cost` and put it straight into `cost_horizon`
+        unchanged. On a 450-row daily series at `train_ratio=0.8` that tail is
+        ~90 buckets against the ML models' 30: a strictly harder question, so
+        the statistical families were handicapped by construction and lost the
+        champion race for a reason that had nothing to do with being worse.
+        Each statistical runner now computes its OWN `cost_horizon`, windowed
+        to `min(horizon, len(test))`, before its result ever reaches this
+        table — the length gap is closed at the source, not patched here. Their
+        other metrics (`mae`, `rmse`, `wape`, `bias`, `mape`, `smape`, `cost`)
+        deliberately still cover the WHOLE held-out tail: "how wrong is this
+        model over everything it was asked to forecast" is a real question and
+        nothing else in the product reads those columns as if they were
+        windowed — only `cost_horizon` is the comparable one.
+
         What is still not identical, and is worth stating plainly rather than
         burying:
 
@@ -819,8 +822,10 @@ class Pipeline:
           global model averages several rolling origins, so its number rests on
           more evidence and is less at the mercy of one unusual window.
         * A series with less held-out data than the horizon is scored over
-          fewer steps than a longer one. The shortfall is visible in
-          `horizon_metrics["by_horizon"]`, not hidden, but two SKUs' figures can
+          fewer steps than a longer one. The shortfall is visible — in
+          `horizon_metrics["by_horizon"]` (and the flattened `horizon_steps`
+          column) for the ML/global rows, in each statistical runner's own
+          `horizon_steps` for the rest — not hidden, but two SKUs' figures can
           still cover different numbers of steps.
         * `cost` uses the product's standard 3:1 shortfall-to-surplus ratio for
           every tenant, not the tenant's configured stockout multiplier. The
@@ -830,6 +835,7 @@ class Pipeline:
         """
         champions: Dict[str, str] = {}
         self._outperformed_by_baseline = []
+        self._champion_by_sku = {}
         if metrics_df is None or metrics_df.empty or "sku" not in metrics_df.columns:
             return champions
 
@@ -860,6 +866,10 @@ class Pipeline:
 
             champion = candidates.loc[candidates[metric].idxmin(), "model"]
             champions[norm_sku(sku_val)] = champion
+            # Kept for `_demand_risk`: only the champion's band may survive
+            # into the payload, because the champion is the model the purchase
+            # is computed from. See that method.
+            self._champion_by_sku[str(sku_val)] = str(champion)
 
             if has_type:
                 baselines = valid[valid["type"] == "baseline"]
@@ -1098,24 +1108,53 @@ class Pipeline:
             demand over L buckets at quantile q
                 = sum(point forecast over L) + offsets[L][q]
 
-        Only models that ran a rolling-origin backtest can supply this; SKUs
-        whose champion is a per-SKU model are absent from the result and the
-        consumer keeps its classical formula.
+        Two sources can supply this, and both produce the same shape so the
+        consumer (`backend/inventory/service.py::_measured_safety_stock`)
+        needs no new vocabulary to read either:
+
+          * the global model's own rolling-origin backtest
+            (`GlobalDirectForecaster.cumulative_residuals_by_horizon`);
+          * the per-SKU `Trainer`'s pooled bank — built from the SAME
+            walk-forward folds every per-SKU champion is already scored on
+            (see `Trainer._bank_fold_cumulative_residuals`), pooled across the
+            whole catalogue in scaled units, the same way GlobalTrainer pools
+            across every series it fits.
+
+        A SKU whose champion has neither — no folds ran, or the run's pooled
+        bank could not fund `MIN_RESIDUALS_PER_HORIZON` at any horizon — is
+        absent from the result and the consumer keeps its classical formula
+        rather than being handed a quantile estimated from a handful of
+        points.
         """
         from forecasting_core.evaluation.conformal import (
-            enforce_horizon_monotonic, enforce_monotonic, horizon_bands,
+            MIN_RESIDUALS_PER_HORIZON, enforce_horizon_monotonic,
+            enforce_monotonic, horizon_bands,
         )
 
         levels = [float(q) for q in (quantiles or [0.5, 0.9, 0.95])]
         risk: dict = {}
         for entry in results_ml.values():
             forecaster = entry.get("direct_forecaster")
-            if forecaster is None:
+            if forecaster is not None:
+                cumulative = getattr(forecaster, "cumulative_residuals_by_horizon", None)
+                scale = float(getattr(forecaster.profile, "scale", 1.0))
+            else:
+                # The per-SKU Trainer's pooled bank. Unlike the global model's
+                # own backtest it has no per-series fallback to borrow from
+                # when a horizon is thin (cumulative residuals must not pool
+                # across HORIZONS — see conformal.py), so a horizon under the
+                # floor is dropped here instead of being quantile-d from a
+                # handful of points into a confident-looking number.
+                cumulative = entry.get("cumulative_residuals_by_horizon")
+                scale = entry.get("series_scale")
+                if cumulative:
+                    cumulative = {
+                        h: v for h, v in cumulative.items()
+                        if len(v) >= MIN_RESIDUALS_PER_HORIZON
+                    }
+            if not cumulative or scale is None:
                 continue
-            cumulative = getattr(forecaster, "cumulative_residuals_by_horizon", None)
-            if not cumulative:
-                continue
-            scale = float(getattr(forecaster.profile, "scale", 1.0))
+            scale = float(scale)
             # Cumulative residuals must NOT be pooled across horizons — their
             # scale grows with the horizon by construction. The structure is
             # restored afterwards instead, which is where it belongs.
@@ -1129,12 +1168,36 @@ class Pipeline:
                 }
                 for h, band in sorted(bands.items())
             }
-            if offsets:
-                risk[str(entry.get("sku"))] = {
-                    "model": entry.get("model"),
-                    "quantiles": levels,
-                    "cumulative_offsets": offsets,
-                }
+            if not offsets:
+                continue
+
+            # ONE band per SKU, and it must be the CHAMPION's.
+            #
+            # This dict is keyed by SKU while `results_ml` holds one entry per
+            # (model, SKU), so several entries compete to write the same key
+            # and, before this, the last writer won. The global model is added
+            # with `results_ml.update(global_results)` AFTER the per-SKU ones,
+            # so it always won — measured on the demo catalogue, all ten SKUs
+            # came out labelled `global_lgbm` even where the champion was
+            # xgboost.
+            #
+            # That is not a cosmetic mislabel. `backend/inventory/service.py`
+            # drops a band whose model is not the SKU's champion, so every
+            # per-SKU champion silently fell back to `z*sigma*sqrt(L)` — the
+            # classical cushion this whole exercise exists to replace (see
+            # stability.md 17b: it delivers 69-84% against a promised 95%).
+            sku_key = str(entry.get("sku"))
+            champion = self._champion_by_sku.get(sku_key)
+            if champion is not None and str(entry.get("model")) != champion:
+                continue
+            # No champion known yet (a caller that reaches here before
+            # `_select_champions` has run) keeps the old last-writer-wins
+            # behaviour rather than emitting nothing.
+            risk[sku_key] = {
+                "model": entry.get("model"),
+                "quantiles": levels,
+                "cumulative_offsets": offsets,
+            }
         return risk
 
     def _compute_baselines(self, df, c, t):
@@ -1165,6 +1228,21 @@ class Pipeline:
         hm = res.get("horizon_metrics") or {}
         return (hm.get("all_horizons") or {}).get("cost")
 
+    @staticmethod
+    def _horizon_steps(res: dict):
+        """
+        How many steps `_horizon_cost` was actually computed over, or None.
+
+        `by_horizon` already carries exactly one entry per step the trainer
+        could fund (see `Trainer._horizon_metrics`'s docstring on short
+        series), so this is its length, not a re-derivation — the visible
+        counterpart to `cost_horizon` for ML/global rows, mirroring the
+        `horizon_steps` each statistical runner now reports for itself.
+        """
+        hm = res.get("horizon_metrics") or {}
+        by_h = hm.get("by_horizon")
+        return len(by_h) if isinstance(by_h, dict) else None
+
     def _flatten(self, results_ml, results_stat, baselines) -> pd.DataFrame:
         rows = []
         for key, res in results_ml.items():
@@ -1177,6 +1255,7 @@ class Pipeline:
                 "bias": res.get("bias"), "mape": res.get("mape"),
                 "smape": res.get("smape"), "cost": res.get("cost"),
                 "cost_horizon": self._horizon_cost(res),
+                "horizon_steps": self._horizon_steps(res),
                 "n_folds": res.get("n_folds"),
                 "validation": res.get("validation"),
             })
@@ -1190,19 +1269,35 @@ class Pipeline:
                         "wape": res.get("wape"), "bias": res.get("bias"),
                         "mape": res.get("mape"), "smape": res.get("smape"),
                         "cost": res.get("cost"),
-                        # A statistical model forecasts its whole test window
-                        # from the end of train — it was never scored any other
-                        # way — so its `cost` ALREADY is the h-step number and is
-                        # carried across unchanged. Recomputing it would produce
-                        # the same value from the same predictions.
-                        "cost_horizon": res.get("cost"),
+                        # Each statistical runner (models/ets.py, arima.py,
+                        # prophet.py, croston.py, sarimax.py, lstm.py) now
+                        # computes its OWN `cost_horizon`, windowed to
+                        # `min(horizon, len(test))` so it answers the same
+                        # h-step question as the ML/global rows above rather
+                        # than the whole held-out tail `cost` does
+                        # (docs/stability.md #17(d)). A result produced before
+                        # that existed — a legacy persisted session, or a raw
+                        # dict handed to this method by a test — carries no
+                        # `cost_horizon` key, and falling back to `cost` there
+                        # reproduces the OLD (whole-tail, and on a long series
+                        # too easy for the h-step race) behaviour for that
+                        # data rather than inventing a number that was never
+                        # computed under the new protocol.
+                        "cost_horizon": res.get("cost_horizon", res.get("cost")),
+                        "horizon_steps": res.get("horizon_steps"),
                     })
                 else:
                     rows.append({"model": model_name, "type": model_type, "sku": sku, "mae": float(res)})
         for sku, blines in baselines.items():
             for bname, bm in blines.items():
-                # Same argument as the statistical models: a baseline is
-                # evaluated over the entire test window in one shot.
+                # Baselines are still evaluated over the entire test window in
+                # one shot (BaselineEvaluator.evaluate_baselines is not
+                # windowed) and are not part of this fix's scope: a baseline
+                # is never a champion candidate (`_select_champions` excludes
+                # `type == "baseline"`), it is only compared against the
+                # candidates' minimum cost to flag when none of them beat it.
+                # That comparison is still a length mismatch after this
+                # change — noted here rather than silently left implied.
                 rows.append({"model": bname, "type": "baseline", "sku": sku,
                              **bm, "cost_horizon": bm.get("cost")})
         return pd.DataFrame(rows)
@@ -1226,6 +1321,13 @@ class Pipeline:
         )
 
         fc_arrays: Dict[str, np.ndarray] = {}
+        # {sku: sigma}, sigma = one standard deviation of the forecast ERROR,
+        # recovered from the q90 band the same way backend/inventory/service.py
+        # ::_point_sigma does, so the engine and the backend agree on what
+        # "sigma" means. A SKU with no band is left out of this dict, which
+        # sends InventoryAdvisor.recommend down its own (poorer) fallback —
+        # see the comment there.
+        std_by_sku: Dict[str, float] = {}
         # SKUs whose champion produced no forecast rows, so they end the run with
         # no recommendation. Carried out of here because on screen "no
         # recommendation" and "well stocked" look identical.
@@ -1269,11 +1371,8 @@ class Pipeline:
                 else:
                     rows = sku_fc
 
-                arr = (
-                    rows.sort_values("step")["forecast"]
-                    .astype(float)
-                    .to_numpy()
-                )
+                rows_sorted = rows.sort_values("step")
+                arr = rows_sorted["forecast"].astype(float).to_numpy()
 
                 if len(arr) == 0:
                     continue
@@ -1282,6 +1381,20 @@ class Pipeline:
                     arr = np.pad(arr, (0, horizon - len(arr)), constant_values=arr[-1])
 
                 fc_arrays[sku] = np.clip(arr, 0.0, None)
+
+                # sigma per step, averaged over the horizon — NOT np.std(arr),
+                # which is the spread of the forecast path (near-zero for a
+                # flat, stable-SKU forecast, exactly what a good model
+                # produces). Only computed where q90 is present: legacy
+                # sessions and non-quantile models leave this SKU out of
+                # std_by_sku entirely.
+                if "q90" in rows_sorted.columns:
+                    q90_vals = rows_sorted["q90"].astype(float).to_numpy()
+                    fc_vals  = rows_sorted["forecast"].astype(float).to_numpy()
+                    valid = ~np.isnan(q90_vals)
+                    if valid.any():
+                        sigmas = np.clip((q90_vals[valid] - fc_vals[valid]) / _Q90_Z, 0.0, None)
+                        std_by_sku[sku] = float(np.mean(sigmas))
 
         # -----------------------------
         # FALLBACK SAFE (PER SKU ONLY)
@@ -1318,5 +1431,5 @@ class Pipeline:
             return None
 
         self._skipped_no_forecast = skipped_no_forecast
-        recs = advisor.batch_recommend(fc_arrays)
+        recs = advisor.batch_recommend(fc_arrays, std_by_sku=std_by_sku)
         return advisor.summary_df(recs)

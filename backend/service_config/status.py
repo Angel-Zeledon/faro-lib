@@ -208,7 +208,7 @@ def full_report(tenant_id: str | None = None) -> dict:
 def _encryption_source() -> str:
     """Where the Fernet key came from. Never raises — this is a report."""
     try:
-        from backend.integrations.crypto import key_source
+        from backend.service_config.crypto import key_source
         return key_source()
     except Exception:  # noqa: BLE001 - a report must not become the outage
         return "none"
@@ -287,7 +287,6 @@ def capabilities(tenant_id: str | None = None) -> dict:
         "whatsapp_bot": whatsapp and (
             llm or bool(resolve("whatsapp_bot_generic_mode", tenant_id).value)
         ),
-        "accounting_integrations": _service_is_ready("integrations", tenant_id),
         # The commercial surface: with no channel, a tenant at its ceiling has
         # no way to ask for room, so the buttons hide instead of dead-ending.
         "contact_channels": {

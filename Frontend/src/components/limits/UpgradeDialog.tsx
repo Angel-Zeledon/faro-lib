@@ -8,7 +8,7 @@ import { requestUpgrade } from '@/lib/api'
 import Button from '@/components/ui/Button'
 
 /**
- * The one commercial surface in Faro.
+ * The one commercial surface in StockAI.
  *
  * There is no checkout and no feature gate: both tiers ship every screen. When
  * a free tenant runs out of room, this is what they get — what they hit, the

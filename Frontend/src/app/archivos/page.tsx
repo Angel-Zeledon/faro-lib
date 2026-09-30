@@ -43,7 +43,7 @@ const alpha = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, tran
  *
  * This screen used to carry its own hex set — #10b981 green, #3b82f6 blue,
  * #ef4444 red, #f59e0b amber — which did two bad things at once: it read as a
- * different product from the rest of Faro (the app's accent is the petrol teal
+ * different product from the rest of StockAI (the app's accent is the petrol teal
  * `--accent`, not an emerald), and it failed WCAG AA as text. #10b981 on the
  * white surface is 2.5:1, and it was the colour of the active tab label, the
  * "connected" badge and the SKU column. Everything now points at globals.css,
@@ -584,7 +584,7 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  />
  </div>
  {/* Why this tab has no column editor while a file's does. Read-only is the
-     whole point: the columns you pick here are the ones Faro BRINGS, and the
+     whole point: the columns you pick here are the ones StockAI BRINGS, and the
      table on the other end is never altered. Without saying so, the absence
      looks like a missing feature rather than a deliberate boundary. */}
  <p style={{ margin: '8px 2px 0', fontSize: 11, color: C.muted, lineHeight: 1.6 }}>

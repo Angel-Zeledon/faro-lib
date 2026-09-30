@@ -415,7 +415,7 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      )"""),
     ("create_inventory_po_log_idx",
      "CREATE INDEX IF NOT EXISTS po_log_tenant_idx ON inventory_po_log (tenant_id, generated_at DESC)"),
-    # Adoption metrics on the PO header: how many recommendations Faro made vs.
+    # Adoption metrics on the PO header: how many recommendations StockAI made vs.
     # how many the buyer actually approved / modified / rejected. Lets us prove
     # value ("you followed 8 of 10") instead of just counting downloads.
     ("add_po_log_suggested_count",
@@ -427,7 +427,7 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_po_log_rejected_count",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS rejected_count INT NOT NULL DEFAULT 0"),
     # Per-line record of every recommendation in a PO, with the buyer's decision.
-    # recommended_qty = what Faro suggested; final_qty = what the buyer
+    # recommended_qty = what StockAI suggested; final_qty = what the buyer
     # kept; status ∈ approved | modified | rejected. Rejected lines are stored
     # too (not in the order) so adoption rate is measurable.
     ("create_inventory_po_items",
@@ -789,20 +789,6 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_tenants_trial_ends_at",
      "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ"),
 
-    ("create_integration_connections",
-     """CREATE TABLE IF NOT EXISTS integration_connections (
-         id           TEXT PRIMARY KEY,
-         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-         provider     TEXT NOT NULL,
-         credentials  TEXT NOT NULL,
-         status       TEXT NOT NULL DEFAULT 'connected',
-         last_sync_at TIMESTAMPTZ,
-         last_error   TEXT,
-         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-     )"""),
-    ("create_integration_connections_uniq",
-     "CREATE UNIQUE INDEX IF NOT EXISTS integration_conn_tenant_provider_idx "
-     "ON integration_connections (tenant_id, provider)"),
     # Human-readable per-tenant order number (spec 2026-07-22-po-flow-polish).
     ("po_log_add_po_number",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS po_number INT"),
@@ -1042,8 +1028,7 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS scenarios_tenant_session_idx ON scenarios (tenant_id, session_id)"),
     # ── Scheduled-job failure visibility ─────────────────────────────────────
     # A weekly retrain whose trigger keeps failing used to look exactly like a
-    # healthy one: the error went to the log and nowhere else. Same shape as
-    # integration_connections.last_error / status, which the UI already shows.
+    # healthy one: the error went to the log and nowhere else.
     # Nullable with no default, so every existing row reads as "never failed".
     ("add_scheduled_jobs_last_error",
      "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS last_error TEXT"),
@@ -1212,23 +1197,6 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # Optional expiry. NULL = never expires, which is what every existing key is.
     ("add_api_keys_expires_at",
      "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"),
-    # ── A daily ERP sync stopped by the data gate ────────────────────────────
-    # The pre-training gate holds external-DB data to the same standard as an
-    # upload, which is what the owner asked for — but the upload path has a
-    # human in front of it who can pick a remediation, and the 3 a.m. sync has
-    # nobody. Without this the tenant's only signal is a red dot: the forecast
-    # quietly goes stale and the reason lives in `last_error` as one English
-    # sentence the screen cannot act on.
-    # `last_error_code` is the stable identifier the frontend translates;
-    # `last_error_details` carries the blocking issue types and the options
-    # that were on offer, so the integrations screen can say WHICH decision is
-    # waiting and send the user to make it. Both NULL on every existing row,
-    # which reads correctly as "never failed this way".
-    ("add_integration_connections_last_error_code",
-     "ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS last_error_code TEXT"),
-    ("add_integration_connections_last_error_details",
-     "ALTER TABLE integration_connections ADD COLUMN IF NOT EXISTS "
-     "last_error_details JSONB"),
 
     # Of the 45 tables carrying `tenant_id`, only four declared a foreign key to
     # `tenants`. Deleting a tenant therefore left every other table's rows behind
@@ -1328,7 +1296,7 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_invalid_before TIMESTAMPTZ"),
 
     # ── One plan, and no Stripe (2026-08-16) ─────────────────────────────────
-    # Faro sold three tiers with a subscription behind them. It sells one
+    # StockAI sold three tiers with a subscription behind them. It sells one
     # product now, and there is nothing to buy in the app: a customer who needs
     # something writes to us. So the columns that only existed to answer "which
     # tier is this tenant on" and "what is its subscription doing" go, rather
@@ -1517,6 +1485,99 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("uniq_service_config_scope_field",
      "CREATE UNIQUE INDEX IF NOT EXISTS uniq_service_config_scope_field "
      "ON service_config (COALESCE(tenant_id, ''), field)"),
+
+    # The accounting integrations (Alegra, Siigo) were removed on 2026-09-20.
+    # The code was written and never ran against a live account, the stock
+    # fetch was known wrong for a multi-branch tenant, and nothing in the
+    # product could be verified against a real ERP — so it went rather than
+    # being sold as a checkbox (stability 14.f, owner's call).
+    #
+    # This is the ONE migration in the list that is not additive, and
+    # `deploy/UPGRADE.md` leans on that property for cheap rollbacks: after
+    # this runs, rolling back to a release that still has the integrations
+    # screen leaves it reading a table that no longer exists. Deliberate, and
+    # the only correct alternative — leaving an encrypted-credential table
+    # nothing reads — is worse: those rows are third-party ERP credentials.
+    # They should not outlive the feature that needed them.
+    ("drop_integration_connections",
+     "DROP TABLE IF EXISTS integration_connections"),
+
+    # Daily recommendation log: what the semaphore said and asked for, per
+    # tenant per SKU per day. Every other inventory table records a fact about
+    # the world (stock levels, POs sent, shrinkage) — none of them record the
+    # RECOMMENDATION itself, so the product could never answer "what did it
+    # cost me to ignore you" or "why is today's number different from last
+    # week's". This table is that record, written by
+    # `backend/inventory/recommendation_log.py::record_recommendations` from
+    # the rows `get_inventory_status` already computed (no new computation
+    # here — this only persists what was already decided).
+    #
+    # Natural key is (tenant_id, sku, recorded_on): the log is a daily
+    # snapshot of an opinion, not an event stream — recomputing the status
+    # twice in the same day (a screen view, then the digest an hour later)
+    # must overwrite the same day's row, not create a second one, or the
+    # "why did it change" comparison would be comparing two computations from
+    # the same day instead of two different days. The UNIQUE constraint
+    # enforces that in the schema (upsert via ON CONFLICT), not in Python, so
+    # a second writer or a retried call cannot slip a duplicate in.
+    #
+    # `recorded_on` is a DATE, not a TIMESTAMPTZ, precisely so that key holds —
+    # a TIMESTAMPTZ natural key would let the same day record twice a second
+    # apart.
+    #
+    # `tenant_id` carries `REFERENCES tenants(id) ON DELETE CASCADE` directly
+    # (the `training_run_metrics` / `service_config` pattern below), not the
+    # bare TEXT column the older inventory tables use — this table is created
+    # AFTER `cascade_tenant_id_foreign_keys` in migration order, so a bare
+    # column here would miss that pass's single sweep and sit un-cascaded
+    # until a second server restart re-ran it (test_tenant_cascade_fk.py's
+    # catalog check would fail in between).
+    ("create_inventory_recommendation_log", """
+        CREATE TABLE IF NOT EXISTS inventory_recommendation_log (
+            id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            tenant_id         TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            sku               TEXT NOT NULL,
+            recorded_on       DATE NOT NULL,
+            signal            TEXT NOT NULL,
+            recommended_qty   FLOAT,
+            current_stock     FLOAT,
+            reorder_point     FLOAT,
+            safety_stock      FLOAT,
+            avg_daily_demand  FLOAT,
+            lead_time_days    FLOAT,
+            session_id        TEXT NOT NULL,
+            created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (tenant_id, sku, recorded_on)
+        )
+    """),
+    # Serves both reads this table exists for: the per-SKU "why did it change"
+    # comparison (tenant_id, sku, recorded_on DESC — a prefix of the UNIQUE
+    # index above already serves this) and the tenant-wide "cost of ignoring"
+    # window scan across every SKU, which is NOT a prefix of that index and
+    # needs its own.
+    ("create_inventory_recommendation_log_window_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_recommendation_log_window_idx "
+     "ON inventory_recommendation_log (tenant_id, recorded_on DESC)"),
+
+    # Order cadence per supplier (stability.md 17/19.3): a buyer places one
+    # order to one supplier on a cadence, not forty a day. Without a review
+    # period the product sized the order-up-to level on the reorder point
+    # itself, so the moment a shipment landed the position was back at the
+    # trigger and the next look re-fired — the buyer's own batching, not the
+    # product's arithmetic, was what kept that from showing on screen. The
+    # review period is how many days this buyer actually waits between orders
+    # to this supplier; `backend/inventory/service.py` adds it to the lead
+    # time to form the PROTECTION INTERVAL the order has to last through (see
+    # `_calc_recommended`'s docstring).
+    #
+    # DEFAULT 0 on purpose, and additive: 0 means "no declared cadence",
+    # which collapses the protection interval back to the lead time alone —
+    # today's exact arithmetic, for every supplier nobody has told this to.
+    # `test_review_period_zero_reproduces_today_exactly` pins that.
+    ("add_suppliers_review_period_days",
+     "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS review_period_days INT "
+     "NOT NULL DEFAULT 0 CHECK (review_period_days >= 0)"),
 ]
 
 

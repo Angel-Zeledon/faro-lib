@@ -1,6 +1,6 @@
 """The single source of truth for every knob this deployment has.
 
-Before this module the answer to "what does Faro need to run, and what stops
+Before this module the answer to "what does StockAI need to run, and what stops
 working without it?" was spread across four places that disagreed:
 
   - `backend/config.py`      — 45 Settings fields, the real list
@@ -197,7 +197,7 @@ CORE = Service(
         ConfigField(
             key="app_name", env="APP_NAME", editable=False,
             doc="Product name in email subjects and the API's OpenAPI title.",
-            default="ForecastPlatform", example="Faro",
+            default="ForecastPlatform", example="StockAI",
         ),
         ConfigField(
             key="app_version", env="APP_VERSION", editable=False,
@@ -317,8 +317,8 @@ EMAIL = Service(
             doc="Sender shown to the recipient. 'onboarding@resend.dev' works "
                 "without domain verification and is fine for a trial; a real "
                 "deployment should send from its own verified domain.",
-            default="Faro <onboarding@resend.dev>",
-            example="Faro <onboarding@resend.dev>",
+            default="StockAI <onboarding@resend.dev>",
+            example="StockAI <onboarding@resend.dev>",
         ),
         ConfigField(
             key="smtp_server", env="SMTP_SERVER",
@@ -465,7 +465,7 @@ RAG = Service(
         ConfigField(
             key="pinecone_index", env="PINECONE_INDEX", required=True,
             doc="Index name. Must be 1024 dims, cosine, serverless.",
-            example="faro-documents",
+            example="stockai-documents",
         ),
         ConfigField(
             key="pinecone_environment", env="PINECONE_ENVIRONMENT",
@@ -476,46 +476,56 @@ RAG = Service(
 )
 
 
-INTEGRATIONS = Service(
-    key="integrations",
-    kind="external",
-    probe="probe_integrations",
-    summary="Accounting integrations — Alegra and Siigo.",
+SECRET_STORAGE = Service(
+    key="secret_storage",
+    kind="core",
+    # Nothing here is panel-editable, and the service has to say so: its one
+    # field is the key that protects everything the panel writes, so a panel
+    # able to rewrite it would make its own stored secrets unreadable. Left at
+    # the default `True` the generated documentation said "Editable from the
+    # panel: yes" above a table where every row reads "environment only".
+    editable=False,
+    probe="probe_secret_storage",
+    summary="The Fernet key that encrypts every secret `/instalacion` stores.",
     what_breaks=(
-        "No accounting connection can be created or synced: the credentials "
-        "cannot be stored, because storing them unencrypted is not an option "
-        "the code offers."
+        "Nothing, immediately — and that is the part worth knowing. With the "
+        "variable unset the deployment GENERATES a key into "
+        "`<STORAGE_PATH>/instance_secret.key`, so the panel keeps saving "
+        "secrets; the state below reads 'not configured' because the variable "
+        "is empty, not because the feature is off, and the panel says which "
+        "key is in effect. What is lost is durability: that file must be backed "
+        "up with `storage/`, and two processes on separate volumes generate "
+        "DIFFERENT keys and cannot read each other's secrets. Only when no key "
+        "can be written either — a read-only disk — does every secret field "
+        "start refusing, which it does out loud rather than storing anything "
+        "unencrypted."
     ),
     docs_note=(
         "`INTEGRATIONS_SECRET_KEY` is a Fernet key and is environment-only on "
-        "purpose. It encrypts every stored credential — including the ones this "
-        "very panel writes — so a panel that could rewrite it would make its own "
-        "stored secrets unreadable with one click. Generate it with:\n\n"
+        "purpose. It encrypts the secrets this very panel writes, so a panel "
+        "that could rewrite it would make its own stored secrets unreadable "
+        "with one click. Generate it with:\n\n"
         "    python -c \"from cryptography.fernet import Fernet; "
         "print(Fernet.generate_key().decode())\"\n\n"
-        "Losing it means every stored credential must be re-entered. It belongs "
-        "in your secret manager, not in a backup of the database it protects."
+        "With it unset the deployment generates one into "
+        "`<STORAGE_PATH>/instance_secret.key` on first use and logs a WARNING "
+        "naming the file — which is what makes a virgin install usable. Two "
+        "processes on different volumes then generate DIFFERENT keys and cannot "
+        "read each other's secrets, so promote the generated value into this "
+        "variable before splitting API and worker.\n\n"
+        "Losing it means every stored secret must be re-entered. It belongs in "
+        "your secret manager, not in a backup of the database it protects "
+        "(`deploy/RESTORE.md` walks exactly that failure)."
     ),
     fields=(
         ConfigField(
             key="integrations_secret_key", env="INTEGRATIONS_SECRET_KEY",
             required=True, secret=True, editable=False,
-            doc="Fernet key encrypting every credential stored in the database — "
-                "accounting connections and everything written from the "
-                "configuration panel. Environment only.",
+            doc="Fernet key encrypting every secret written from the "
+                "configuration panel. Environment only. The name is historical "
+                "and kept on purpose: renaming it would silently orphan every "
+                "existing deployment's stored secrets.",
             example="generate-with-fernet-generate-key",
-        ),
-        ConfigField(
-            key="alegra_base_url", env="ALEGRA_BASE_URL",
-            doc="Alegra API base. Override only to point at a sandbox.",
-            default="https://api.alegra.com/api/v1",
-            example="https://api.alegra.com/api/v1",
-        ),
-        ConfigField(
-            key="siigo_base_url", env="SIIGO_BASE_URL",
-            doc="Siigo API base. Override only to point at a sandbox.",
-            default="https://api.siigo.com/v1",
-            example="https://api.siigo.com/v1",
         ),
     ),
 )
@@ -570,8 +580,7 @@ WORKER = Service(
     what_breaks=(
         "With the worker off, training sessions queue forever: they are accepted "
         "and never run. With the scheduler off, the 8:00 UTC inventory alert, "
-        "the scheduled recalculations, the integration sync and the monthly "
-        "snapshot never fire."
+        "the scheduled recalculations and the monthly snapshot never fire."
     ),
     docs_note=(
         "Both default to true so a bare `uvicorn backend.main:app` behaves like "
@@ -590,8 +599,8 @@ WORKER = Service(
         ConfigField(
             key="scheduler_enabled", env="SCHEDULER_ENABLED", kind="bool",
             editable=False,
-            doc="Runs the cron loops: scheduled jobs, daily alerts, integration "
-                "sync, monthly snapshot. Exactly one instance may have this on.",
+            doc="Runs the cron loops: scheduled jobs, daily alerts, monthly "
+                "snapshot. Exactly one instance may have this on.",
             default="true", example="true",
         ),
         ConfigField(
@@ -697,7 +706,7 @@ SERVICES: tuple[Service, ...] = (
     WHATSAPP,
     SMS,
     RAG,
-    INTEGRATIONS,
+    SECRET_STORAGE,
     CONTACT,
     WORKER,
     LIMITS,

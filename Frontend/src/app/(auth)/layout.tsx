@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
-import { AmbientScene, BeaconGlyph } from '@/components/auth/AmbientScene'
+import { AmbientScene } from '@/components/auth/AmbientScene'
+import { Wordmark } from '@/components/brand/Wordmark'
 
 // Persistent stage for the auth screens. Because this layout wraps both
 // routes, React keeps the ambient canvas and the wordmark MOUNTED across a
@@ -74,10 +75,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             animation: 'auth-fade-in 0.9s ease-out both',
           }}
         >
-          <BeaconGlyph size={17} />
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', letterSpacing: '-0.01em' }}>
-            Faro
-          </span>
+          <Wordmark size={20} color="#0a0a0a" accent="#0F766E" />
         </div>
 
         {/* `overflowY: auto` matters on short screens. The box above is

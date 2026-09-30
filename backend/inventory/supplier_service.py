@@ -121,6 +121,52 @@ def list_suppliers(tenant_id: str) -> list[dict]:
     return rows
 
 
+def get_lead_time_std_map(tenant_id: str) -> dict[str, float]:
+    """Configured `lead_time_std` per active supplier, keyed by lower-cased
+    name so `service._resolve_lead_time_std` can match it the same way it
+    matches `get_learned_lead_times`.
+
+    This is fallback (b) in the safety-stock formula: the number the buyer
+    typed on the supplier form, used only once a supplier has not yet cleared
+    MIN_LEAD_TIME_OBSERVATIONS real receptions for its OWN learned spread
+    (`service.get_learned_lead_time_stds`) to be trusted instead.
+    """
+    rows = query(
+        "SELECT LOWER(name) AS name, lead_time_std FROM suppliers "
+        "WHERE tenant_id = %s AND active = TRUE",
+        (tenant_id,),
+    )
+    return {
+        r["name"]: float(r["lead_time_std"])
+        for r in rows
+        if r.get("name") and r.get("lead_time_std") is not None
+    }
+
+
+def get_review_period_map(tenant_id: str) -> dict[str, float]:
+    """Configured `review_period_days` per active supplier, keyed by
+    lower-cased name so `service._resolve_review_period_days` can match it the
+    same way `_resolve_lead_time_std` matches the lead-time maps.
+
+    Unlike the lead time, this number has no "learned" counterpart — it is
+    not something a delivery reveals, it is how often THIS BUYER chooses to
+    place an order with this supplier, so the supplier record is the only
+    source. `0` (the column's default) means no cadence has been declared,
+    and `_resolve_review_period_days` treats that identically to "no
+    supplier": the protection interval collapses back to the lead time alone.
+    """
+    rows = query(
+        "SELECT LOWER(name) AS name, review_period_days FROM suppliers "
+        "WHERE tenant_id = %s AND active = TRUE",
+        (tenant_id,),
+    )
+    return {
+        r["name"]: float(r["review_period_days"])
+        for r in rows
+        if r.get("name") and r.get("review_period_days") is not None
+    }
+
+
 def get_supplier(tenant_id: str, supplier_id: str) -> Optional[dict]:
     return query_one(
         "SELECT * FROM suppliers WHERE tenant_id = %s AND id = %s AND active = TRUE",
@@ -200,7 +246,7 @@ def assert_name_available(
 
 def create_supplier(tenant_id: str, data: dict) -> dict:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
-               "payment_terms", "payment_terms_days", "notes"}
+               "review_period_days", "payment_terms", "payment_terms_days", "notes"}
     safe = _stamp_lead_time_provenance(
         {k: v for k, v in data.items() if k in allowed}, data)
 
@@ -229,7 +275,7 @@ def create_supplier(tenant_id: str, data: dict) -> dict:
 
 def update_supplier(tenant_id: str, supplier_id: str, data: dict) -> Optional[dict]:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
-               "payment_terms", "payment_terms_days", "notes"}
+               "review_period_days", "payment_terms", "payment_terms_days", "notes"}
     safe = _stamp_lead_time_provenance(
         {k: v for k, v in data.items() if k in allowed}, data)
     if not safe:

@@ -10,23 +10,23 @@ backend logic (see CLAUDE.md, Language section).
 from __future__ import annotations
 
 _ES: dict[str, str] = {
-    "whatsapp_verification_code": "Tu código de verificación de Faro es: {code}",
+    "whatsapp_verification_code": "Tu código de verificación de StockAI es: {code}",
     # Team-messaging heads-up (WhatsApp first, SMS fallback): intentionally
     # omits the message body (SMS is unencrypted and billed per segment), so it
     # only names the sender.
-    "dm_new_message_heads_up": "Faro: tienes un mensaje nuevo de {sender}. Léelo en {url}",
+    "dm_new_message_heads_up": "StockAI: tienes un mensaje nuevo de {sender}. Léelo en {url}",
     # Daily stockout digest: the rows a channel could not fit are announced, so
     # the listed rows are never mistaken for the full count.
     "alert_email_more_row":  "… y {n} producto{s} más en la misma condición — velos en el tablero",
     "alert_whatsapp_more":   "  … y {n} más",
-    # Supplier-facing PO message (sent by Faro straight to the supplier).
+    # Supplier-facing PO message (sent by StockAI straight to the supplier).
     "po_supplier_header":    "📦 *Nueva orden de compra* para {supplier}",
     "po_supplier_count":     "{n} producto{s}:",
     "po_supplier_line":      "  • {name} — {qty}",
     "po_supplier_more":      "  … y {n} más",
     "po_supplier_footer":    "\nDetalle completo en el PDF adjunto. Referencia: {reference}",
     # Buyer-facing PO message: the buyer receives this on their own WhatsApp
-    # and forwards it to the supplier, so no Faro↔supplier integration is
+    # and forwards it to the supplier, so no StockAI↔supplier integration is
     # needed (PENDIENTES #1).
     "po_forward_header":     "📦 *Orden de compra {reference}*",
     "po_forward_supplier":   "\n*{supplier}*",
@@ -38,11 +38,11 @@ _ES: dict[str, str] = {
     "freshness_email_subject":       "Tus ventas son de hace {days} días — sube el archivo de este mes",
     "freshness_email_subject_stock": "Tu stock tiene {days} días sin actualizarse",
     "freshness_email_title":         "Tus datos se están quedando viejos",
-    "freshness_email_sales":         "Tus ventas son de hace <strong>{days} días</strong>. Faro sigue pronosticando con ese archivo, así que lo que compres hoy se decide con lo que vendías hace más de un mes.",
+    "freshness_email_sales":         "Tus ventas son de hace <strong>{days} días</strong>. StockAI sigue pronosticando con ese archivo, así que lo que compres hoy se decide con lo que vendías hace más de un mes.",
     "freshness_email_stock":         "Tu stock lleva <strong>{days} días</strong> sin actualizarse. Mientras tanto el semáforo no puede confirmar cuánto te queda, así que dejó de mostrarse en verde.",
     "freshness_email_cta":           "Subir el archivo de este mes",
     "freshness_email_footer":        "Te escribimos porque hace tiempo que no subes datos. En cuanto subas el archivo, dejamos de avisarte.",
-    "freshness_whatsapp_sales":      "📅 *Faro*: tus ventas son de hace {days} días — sube el archivo de este mes",
+    "freshness_whatsapp_sales":      "📅 *StockAI*: tus ventas son de hace {days} días — sube el archivo de este mes",
     "freshness_whatsapp_stock":      "📦 Tu stock lleva {days} días sin actualizarse; el semáforo quedó en “desactualizado”",
     "freshness_whatsapp_cta":        "Subir ahora: {url}",
     # ── Auth emails ───────────────────────────────────────────────────────────
@@ -92,8 +92,8 @@ _ES: dict[str, str] = {
     # ── Daily stockout digest (WhatsApp) ──────────────────────────────────────
     # Separate singular/plural entries wherever the verb agrees with the count —
     # a `{s}` suffix cannot express "se agota" → "se agotan".
-    "alert_whatsapp_critical_one":  "🔴 *Faro*: {n} producto se agota antes de tu próximo pedido",
-    "alert_whatsapp_critical_many": "🔴 *Faro*: {n} productos se agotan antes de tu próximo pedido",
+    "alert_whatsapp_critical_one":  "🔴 *StockAI*: {n} producto se agota antes de tu próximo pedido",
+    "alert_whatsapp_critical_many": "🔴 *StockAI*: {n} productos se agotan antes de tu próximo pedido",
     "alert_whatsapp_order_qty":     " · pedir {qty}",
     "alert_whatsapp_warning":       "🟡 {n} por reabastecer esta semana",
     # Network-aware suggestion: the stock exists, it is in the wrong warehouse.
@@ -124,7 +124,7 @@ _ES: dict[str, str] = {
     "po_email_col_sku":     "SKU",
     "po_email_col_product": "Producto",
     "po_email_col_qty":     "Cantidad",
-    # ── PO document (PDF/TXT) that Faro sends to the supplier ────────────────
+    # ── PO document (PDF/TXT) that StockAI sends to the supplier ────────────────
     # A line with no cost on file used to print "₡0", and the total with it, so
     # the document leaving the tenant's name quoted a price of zero to their
     # supplier. An unknown price is stated as unknown; the total then covers
@@ -135,15 +135,15 @@ _ES: dict[str, str] = {
     "po_pdf_total_none":    "Total: pendiente de cotizar",
     # ── Monthly recap email ───────────────────────────────────────────────────
     # Every tile states where its number came from, so the copy never implies a
-    # saving Faro cannot measure.
+    # saving StockAI cannot measure.
     # These four tiles mirror the /impacto recap key for key. When one changes,
     # both change: a buyer who reads "liberaste ₡8M" in the inbox and "bajó tu
     # sobrestock ₡8M" on screen is looking at two claims about one number.
     "roi_email_title":                  "Tu resumen de {month}",
-    "roi_email_subject_capital":        "Faro — tu sobrestock bajó {amount} en {month}",
-    "roi_email_subject_default":        "Faro — tu resumen de {month}",
+    "roi_email_subject_capital":        "StockAI — tu sobrestock bajó {amount} en {month}",
+    "roi_email_subject_default":        "StockAI — tu resumen de {month}",
     "roi_email_headline_capital":       "En {month} tu inventario detenido bajó {amount}.",
-    "roi_email_headline_default":       "Esto es lo que hiciste con Faro en {month}.",
+    "roi_email_headline_default":       "Esto es lo que hiciste con StockAI en {month}.",
     "roi_email_metric_adoption_label":  "de las recomendaciones que decidiste",
     "roi_email_metric_adoption_note":   "Seguiste {followed} de las {shown} líneas sobre las que llegaste a decidir. Las que dejaste pasar sin tocar no están en ninguno de los dos lados.",
     "roi_email_metric_risks_label":     "líneas urgentes que pediste",
@@ -153,7 +153,7 @@ _ES: dict[str, str] = {
     "roi_email_metric_purchases_label": "en compras gestionadas",
     "roi_email_metric_purchases_note":  "Unidades ordenadas × costo unitario de tus propios datos, hayan llegado o no.",
     "roi_email_cta":                    "Ver el resumen completo",
-    "roi_email_footer":                 "Cada cifra sale de tus propios registros en Faro: las órdenes que generaste y las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos lo que quedó registrado. Y “registrado” no es lo mismo que “atribuido a Faro”: son cosas que pasaron en tu inventario mientras lo usabas.",
+    "roi_email_footer":                 "Cada cifra sale de tus propios registros en StockAI: las órdenes que generaste y las mediciones mensuales de tu inventario. No estimamos ahorros ni contamos quiebres evitados, porque eso no se puede medir con certeza — solo te mostramos lo que quedó registrado. Y “registrado” no es lo mismo que “atribuido a StockAI”: son cosas que pasaron en tu inventario mientras lo usabas.",
     # ── Inventory summary PDF (downloaded, then forwarded to other people) ────
     # The buyer downloads this and sends it on, so it never passes through the
     # frontend and its Spanish belongs here. Note `inventory_pdf_generated_on`
@@ -220,10 +220,10 @@ _ES: dict[str, str] = {
     # ── WhatsApp assistant ────────────────────────────────────────────────────
     # Everything the bot says back on WhatsApp. The channel never reaches the
     # frontend, so this is the catalogue that owns its wording.
-    "wa_unknown_number":     "Hola 👋 No reconozco este número. Vincula tu WhatsApp desde tu perfil en Faro para poder ayudarte por aquí.",
+    "wa_unknown_number":     "Hola 👋 No reconozco este número. Vincula tu WhatsApp desde tu perfil en StockAI para poder ayudarte por aquí.",
     "wa_rate_limited":       "Vas muy rápido 🙏 Espera un momento y vuelve a escribirme.",
     "wa_help":               "Puedo ayudarte con tu inventario: pregúntame por el semáforo (qué pedir), tus órdenes pendientes o el pronóstico de un SKU. Aprobar una orden o registrar una recepción se hace en la app.",
-    "wa_write_in_app":       "Eso se hace en la app 🙂 Aprobar una orden o registrar una recepción no se puede deshacer, así que por aquí no lo ejecuto. Entra a Faro y lo haces en dos clics.",
+    "wa_write_in_app":       "Eso se hace en la app 🙂 Aprobar una orden o registrar una recepción no se puede deshacer, así que por aquí no lo ejecuto. Entra a StockAI y lo haces en dos clics.",
     "wa_generic_mode":       "Recibí tu mensaje. Por ahora estoy en modo básico: puedo confirmar una acción pendiente si respondes “sí”. Muy pronto podré responder tus consultas de inventario por aquí.",
     "wa_apology":            "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?",
     "wa_read_only":          "Tu perfil es de solo lectura, así que no puedo ejecutar acciones. Puedo darte información de inventario si quieres.",

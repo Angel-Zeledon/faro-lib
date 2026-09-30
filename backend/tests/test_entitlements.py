@@ -330,7 +330,7 @@ def test_bulk_import_blocks_new_skus_beyond_max_skus_quota_override(
 def test_dataset_sync_respects_max_skus(monkeypatch, make_tenant_user_headers):
     """
     Regression: the dataset-sync path (runner.py -> sync_stock_from_dataset,
-    the PRIMARY way SKUs enter Faro via Quick Start upload) had NO max_skus
+    the PRIMARY way SKUs enter StockAI via Quick Start upload) had NO max_skus
     enforcement at all, unlike PUT /stock and POST /bulk. A tenant could seed
     thousands of SKUs through an upload despite a low quota.
 

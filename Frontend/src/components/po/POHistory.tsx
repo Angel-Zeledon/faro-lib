@@ -10,6 +10,7 @@ import { formatMoney } from '@/lib/currency'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import { UndoPOActions } from '@/components/po/UndoPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
@@ -347,9 +348,11 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
   )
 }
 
-export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [] }: {
+export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [] }: {
   entries: POLogEntry[]
   onReceive: (id: string) => void
+  /** Reload after an undo rewrote stock or the sent flag. */
+  onUndone?: () => void
   suppliersWithoutContact?: string[]
 }) {
   const { t, lang } = useLanguage()
@@ -456,6 +459,12 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                       )}
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
                       <ForwardPOActions poLogId={entry.id} />
+                      <UndoPOActions
+                        poLogId={entry.id}
+                        receptionStatus={status}
+                        sent={Boolean(entry.sent_at)}
+                        onDone={onUndone}
+                      />
                     </span>
                   )
                 })()}

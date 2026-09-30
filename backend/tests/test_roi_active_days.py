@@ -4,7 +4,7 @@ Named after the failure. /impacto printed "5 días activo" next to "desde 4 de
 agosto de 2026", and the number was `(last_po - first_po).days` — the SPAN
 between the first and last order. It grows while the buyer is away, so a tenant
 who generated one order and came back a year later would have read "365 días
-activo" after using Faro on exactly two days. Nothing errored; the figure simply
+activo" after using StockAI on exactly two days. Nothing errored; the figure simply
 described something other than its own label.
 """
 

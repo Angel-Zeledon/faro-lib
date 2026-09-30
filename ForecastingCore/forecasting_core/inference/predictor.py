@@ -115,9 +115,6 @@ def recursive_ml_predict(
     horizon: int,
     future_dates: List[pd.Timestamp],
     quantiles: Optional[List[float]] = None,
-    fitted_model_p10: Any = None,
-    fitted_model_p50: Any = None,
-    fitted_model_p90: Any = None,
 ) -> List[dict]:
     """
     Multi-step ahead recursive forecasting for an ML model.
@@ -220,22 +217,11 @@ def recursive_ml_predict(
         buf.append(y_pred)
 
         point = {"date": str(future_dt)[:10], "value": round(y_pred, 4)}
-
-        if fitted_model_p10 is not None and fitted_model_p50 is not None and fitted_model_p90 is not None:
-            try:
-                p10_val = max(0.0, float(fitted_model_p10.predict(X)[0]))
-                p50_val = max(0.0, float(fitted_model_p50.predict(X)[0]))
-                p90_val = max(0.0, float(fitted_model_p90.predict(X)[0]))
-                point.update(_compute_quantile_bounds(y_pred, residual_std, quantiles))
-                point["p10"] = round(p10_val, 4)
-                point["p50"] = round(p50_val, 4)
-                point["p90"] = round(p90_val, 4)
-                point["lower"] = point["p10"]
-                point["upper"] = point["p90"]
-            except Exception:
-                point.update(_compute_quantile_bounds(y_pred, residual_std, quantiles))
-        else:
-            point.update(_compute_quantile_bounds(y_pred, residual_std, quantiles))
+        # One band, from the out-of-fold residual bank. This used to be
+        # overwritten by three separately-fitted quantile models whose p10/p90
+        # were measurably too tight and which the purchase quantity ignored —
+        # see pipeline.py step 7b for the measurement and why they are gone.
+        point.update(_compute_quantile_bounds(y_pred, residual_std, quantiles))
 
         results.append(point)
 
@@ -423,9 +409,6 @@ def predict_all_skus(
                 horizon=horizon,
                 future_dates=future_dates,
                 quantiles=quantiles,
-                fitted_model_p10=entry.get("fitted_model_p10"),
-                fitted_model_p50=entry.get("fitted_model_p50"),
-                fitted_model_p90=entry.get("fitted_model_p90"),
             )
             result.setdefault(sku, {})[model_name] = pts
         except Exception as e:

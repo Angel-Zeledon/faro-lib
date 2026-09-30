@@ -1,4 +1,4 @@
-# Faro — production stack.
+# StockAI — production stack.
 #
 #   cd deploy
 #   cp .env.example .env        # fill in secrets
@@ -78,11 +78,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.0"
+          cpus: "${API_CPUS:-2.0}"
           memory: 2G
 
   # The training + cron instance. WORKER_ID is FIXED so its orphaned RUNNING
   # jobs are still recognized after the container is recreated on deploy.
+  # WORKER_CPUS / API_CPUS: Docker refuses a limit above the host's core count,
+  # so a 2-vCPU box must lower them in deploy/.env (e.g. 1.5 and 1.0).
   worker:
     image: faro-backend
     restart: unless-stopped
@@ -105,7 +107,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "3.0"
+          cpus: "${WORKER_CPUS:-3.0}"
           memory: 5G
 
   # Claim-only extra workers: docker compose --profile scale up -d --scale worker-extra=2
@@ -129,7 +131,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "3.0"
+          cpus: "${WORKER_CPUS:-3.0}"
           memory: 5G
 
   # Bundled Postgres — for the single-VPS deployment. To move to a managed

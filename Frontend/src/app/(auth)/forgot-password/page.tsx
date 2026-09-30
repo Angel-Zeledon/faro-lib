@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authForgotPassword, authForgotPasswordVerify, authResetPassword } from '@/lib/api'
 import { clearAuth } from '@/lib/auth'
-import { Zap, CheckCircle2, AlertTriangle, ArrowLeft, KeyRound, Mail, Lock } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, ArrowLeft, KeyRound, Mail, Lock } from 'lucide-react'
+import { Wordmark } from '@/components/brand/Wordmark'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
@@ -130,12 +131,8 @@ export default function ForgotPasswordPage() {
     <div style={{ width: '100%', maxWidth: 420, padding: '0 20px' }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 11, margin: '0 auto 10px',
-          background: 'linear-gradient(135deg, var(--accent), var(--accent))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Zap size={20} color="#fff" strokeWidth={2.5} />
+        <div style={{ marginBottom: 10 }}>
+          <Wordmark size={26} />
         </div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
           {t('auth.recover_title')}

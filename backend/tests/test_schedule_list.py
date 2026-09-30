@@ -2,7 +2,7 @@
 
 The automation screen edits ONE session's schedule and opens on the first
 completed session it finds. Driving it as an admin: the retrain was armed on
-"Demo Faro", the form opened on "Corrida buena 200 SKUs", and the page therefore
+"Demo StockAI", the form opened on "Corrida buena 200 SKUs", and the page therefore
 showed the empty "create a schedule" form — no sign that a schedule existed at
 all, and nothing stopping a second one being armed. The DB row was there the
 whole time.

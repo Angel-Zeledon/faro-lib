@@ -3,10 +3,10 @@ PO reception (feature 1.4 of the 2026-07-05 proposals; that doc was retired in
 the 2026-08-11 docs cleanup and lives in git history).
 
 Closes the purchase loop: when the order physically arrives, the buyer records
-what came in. Two effects that compound Faro's value over time:
+what came in. Two effects that compound StockAI's value over time:
   1. Stock self-corrects (received units are added to inventory_stock), so the
      semáforo keeps matching reality without manual stock edits.
-  2. Faro learns each supplier's REAL lead time (order date → reception date),
+  2. StockAI learns each supplier's REAL lead time (order date → reception date),
      turning the user's guess into observed data.
 """
 
@@ -423,6 +423,223 @@ def receive_po(
     }
 
 
+def unreceive_po(tenant_id: str, po_log_id: str, user_id: str) -> dict:
+    """
+    Reverse a reception: take the units it added back out of stock, restore
+    the PO line's `received_qty` and the order's `reception_status`, and
+    un-teach the supplier lead time it taught (see docs/assistant-actions.md
+    section 0 — this is what receive_po was missing before the WhatsApp
+    assistant's write tools could be trusted with it).
+
+    **Scope, deliberately.** This reverses the PO's WHOLE recorded reception,
+    not just the most recent `receive_po` call. StockAI keeps no per-call
+    reception history — each call only accumulates `received_qty` on the PO
+    line — so "the state before THIS reception" is only reconstructible as
+    "the state before ANY reception", which is also the one state
+    `receive_po`'s own gate (`RECEIVABLE_STATES`) ever returns a PO to (once a
+    PO reaches `received` no further reception call is even accepted). A
+    reception-event log that could undo one partial delivery while keeping a
+    later one is new capability this product does not have yet — flagged, not
+    built here.
+
+    **Stock that already moved on.** If some of the received units were sold,
+    transferred out, or written off as shrinkage since the reception, taking
+    them back out would either go negative (a lie about physical stock) or
+    have to be silently clamped to zero (which would still remove the
+    lead-time observation and the received_qty as if the units came back,
+    when they provably didn't). Neither is acceptable, so this refuses —
+    entirely and atomically, before a single row is written — the moment ANY
+    touched (sku, warehouse) does not currently hold enough stock to give the
+    units back. The caller gets back exactly which SKU/warehouse is short and
+    by how much (`AppError.params["shortfalls"]`), so a human decides: fix the
+    stock count first, or leave the mistaken reception standing.
+
+    **Idempotent by construction, not by a separate flag.** Reversing sets
+    `received_at` back to NULL — the same field `receive_po` treats as "has
+    this PO ever had a reception recorded" — so a second call finds nothing to
+    undo and refuses with 409 instead of decrementing stock a second time for
+    units that were already given back on the first call.
+    """
+    po = get_po(tenant_id, po_log_id)
+    if not po:
+        raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    if po.get("received_at") is None:
+        raise AppError(
+            "reception_nothing_to_undo",
+            "This order has no recorded reception to undo",
+            status_code=409,
+        )
+
+    items = get_po_items(tenant_id, po_log_id)
+    ordered = [i for i in items if i["status"] in _ORDERED]
+
+    # Aggregate by (sku, warehouse): a PO can carry the same SKU on two lines
+    # for two different warehouses (mirrors receive_po's own step 2).
+    to_remove: dict[tuple[str, str], float] = {}
+    for i in ordered:
+        qty = float(i.get("received_qty") or 0)
+        if qty > 0:
+            key = (i["sku"], _line_warehouse(i, po))
+            to_remove[key] = to_remove.get(key, 0.0) + qty
+
+    from backend.entitlements.service import take_tenant_lock
+    from backend.inventory import service as inv_svc
+
+    with transaction() as conn:
+        # Same per-tenant lock receive_po takes, for the same reason: this
+        # read-then-write on inventory_stock must not race a concurrent
+        # reception or another undo touching the same rows.
+        take_tenant_lock(tenant_id, conn)
+
+        # Pre-check EVERY touched row's current stock before writing anything —
+        # all-or-nothing, so a shortfall discovered on the third SKU cannot
+        # leave the first two already decremented.
+        shortfalls = []
+        for (sku, warehouse), qty in to_remove.items():
+            row = inv_svc.get_stock(tenant_id, sku, warehouse=warehouse, conn=conn)
+            available = float(row["current_stock"]) if row else 0.0
+            if available < qty:
+                shortfalls.append({
+                    "sku": sku, "warehouse": warehouse,
+                    "available": available, "needed": qty,
+                })
+        if shortfalls:
+            raise AppError(
+                "reception_undo_insufficient_stock",
+                "Cannot undo this reception: some of the received units are no "
+                "longer in stock (sold, transferred, or written off since the "
+                "reception)",
+                status_code=409,
+                params={"shortfalls": shortfalls},
+            )
+
+        for (sku, warehouse), qty in to_remove.items():
+            execute(
+                """UPDATE inventory_stock
+                      SET current_stock = current_stock - %s, updated_at = NOW()
+                    WHERE tenant_id = %s AND sku = %s AND warehouse = %s""",
+                (qty, tenant_id, sku, warehouse),
+                conn=conn,
+            )
+            # Point-in-time snapshot of the reversal, same as receive_po does
+            # for the original reception — /stock/{sku}/history must show the
+            # undo as an event, not a gap.
+            new_row = inv_svc.get_stock(tenant_id, sku, warehouse=warehouse, conn=conn)
+            execute(
+                """INSERT INTO inventory_snapshots (tenant_id, sku, current_stock, warehouse)
+                   VALUES (%s, %s, %s, %s)""",
+                (tenant_id, sku, new_row["current_stock"], warehouse),
+                conn=conn,
+            )
+
+        for i in ordered:
+            execute(
+                "UPDATE inventory_po_items SET received_qty = 0 WHERE id = %s AND tenant_id = %s",
+                (i["id"], tenant_id),
+                conn=conn,
+            )
+
+        execute(
+            """UPDATE inventory_po_log
+                  SET reception_status = 'pending', received_at = NULL, received_by = NULL
+                WHERE id = %s AND tenant_id = %s""",
+            (po_log_id, tenant_id),
+            conn=conn,
+        )
+
+        # Un-teach the lead time this reception taught. At most one batch of
+        # rows can exist for this po_log_id — supplier_lead_time_obs is only
+        # written the moment a PO reaches 'received' (step 4 of receive_po),
+        # and RECEIVABLE_STATES excludes 'received', so no PO can be received
+        # twice without an undo in between.
+        unlearned = query(
+            """SELECT DISTINCT supplier FROM supplier_lead_time_obs
+               WHERE tenant_id = %s AND po_log_id = %s""",
+            (tenant_id, po_log_id),
+            conn=conn,
+        )
+        execute(
+            "DELETE FROM supplier_lead_time_obs WHERE tenant_id = %s AND po_log_id = %s",
+            (tenant_id, po_log_id),
+            conn=conn,
+        )
+
+    log.info(
+        "[reception] UNDO tenant=%s po=%s undone_by=%s units=%.2f suppliers_unlearned=%s",
+        tenant_id, po_log_id, user_id, sum(to_remove.values()),
+        [r["supplier"] for r in unlearned],
+    )
+
+    return {
+        "po_log_id": po_log_id,
+        "reception_status": "pending",
+        "units_removed": sum(to_remove.values()),
+        "sku_count": len({sku for sku, _ in to_remove}),
+        "suppliers_lead_time_unlearned": [r["supplier"] for r in unlearned],
+        "items": get_po_items(tenant_id, po_log_id),
+    }
+
+
+def unsend_po(tenant_id: str, po_log_id: str, user_id: str) -> dict:
+    """
+    Reverse `mark_po_sent`: clear `sent_at` so the order returns to
+    "not yet sent" — the state `POST /po/{id}/send` reads before it stamps it.
+
+    **What this does NOT do, and cannot do.** It does not recall the email or
+    WhatsApp message `POST /po/{id}/send` already put in a supplier's inbox —
+    nothing in this product, or in email/WhatsApp, can (see
+    docs/assistant-actions.md, class C.1: "it left the system"). This reverses
+    only StockAI's OWN bookkeeping about the order.
+
+    **Why clearing the column is the whole fix.** Nothing downstream stores a
+    second copy of "this order is in transit": `service.get_incoming_qty`
+    (units on the way, which feeds the purchase recommendation) and
+    `cash_service`'s payables calendar both filter live on
+    `inventory_po_log.sent_at IS NOT NULL` — neither caches or snapshots that
+    state anywhere else. Clearing `sent_at` here means the very next read of
+    either screen already stops counting this order as sent; there is nothing
+    else to chase down or go stale.
+
+    **Refuses once a reception exists.** A reception recorded against this PO
+    (`reception_status != 'pending'`) is physical evidence the order DID reach
+    someone — units are on their way or already arrived — so un-sending at
+    that point would misstate something that provably happened, not correct a
+    mistake. If the reception itself was the mistake, `unreceive_po` undoes
+    that first; only then can this run.
+
+    **Idempotent.** `sent_at IS NOT NULL` in the WHERE clause, the same guard
+    `mark_po_sent` uses in reverse, means a second call finds nothing left to
+    clear — refused with 409, not a silent no-op a caller could mistake for
+    "it worked".
+    """
+    po = get_po(tenant_id, po_log_id)
+    if not po:
+        raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    if po.get("sent_at") is None:
+        raise AppError(
+            "po_not_sent",
+            "This order has not been marked as sent; there is nothing to undo",
+            status_code=409,
+        )
+    if po.get("reception_status") != "pending":
+        raise AppError(
+            "po_unsend_after_reception",
+            "This order already has a recorded reception, which is evidence it "
+            "reached the supplier; undo the reception before un-sending",
+            status_code=409,
+            params={"reception_status": po.get("reception_status")},
+        )
+
+    execute(
+        """UPDATE inventory_po_log
+              SET sent_at = NULL
+            WHERE id = %s AND tenant_id = %s AND sent_at IS NOT NULL""",
+        (po_log_id, tenant_id),
+    )
+    log.info("[reception] UNSEND tenant=%s po=%s undone_by=%s", tenant_id, po_log_id, user_id)
+    return {"po_log_id": po_log_id, "sent_at": None}
+
+
 def _fill_rate(total_received: float, order_total: float) -> Optional[float]:
     """
     Share of what was ordered that actually arrived, capped at 1.0.
@@ -549,7 +766,7 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
     # does further down: `suppliers.lead_time_days` is INT NOT NULL DEFAULT 15,
     # so "the card says 15 days" and "nobody ever filled the card" are the same
     # row. Without the gate, a supplier imported by CSV was shown "DECLARADO 15d"
-    # and graded on punctuality against a promise they never made — Faro's own
+    # and graded on punctuality against a promise they never made — StockAI's own
     # assumption, scored as if it were theirs. NULL here lets the UI say "no
     # declarado" instead of inventing one, and takes on_time_rate and
     # deviation_days down with it.

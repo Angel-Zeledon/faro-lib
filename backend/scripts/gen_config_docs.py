@@ -145,7 +145,7 @@ def render_config_doc() -> str:
     lines = [
         "<!-- " + BANNER[2:] + " -->",
         "",
-        "# Configuration - what Faro needs, and what stops working without it",
+        "# Configuration - what StockAI needs, and what stops working without it",
         "",
         "Generated from `backend/service_config/registry.py`, which is the only",
         "source of truth. A variable that is not here does not exist.",

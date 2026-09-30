@@ -227,11 +227,25 @@ class GlobalTrainer:
         folds = self._fold_cutoffs(stacked)
         backtest = self._backtest(stacked, model_features, folds) if folds else None
 
-        final_cut = self._quantile_date(stacked["_target_date"], self.train_ratio)
-        train_rows = stacked[stacked["_target_date"] <= final_cut]
-        if len(train_rows) < 10:
-            train_rows = stacked
-        model = self._fit(train_rows, model_features)
+        # Everything this trainer REPORTS — the metrics, the per-horizon
+        # residual bank the conformal intervals are built from, the policy
+        # backtest — comes from the fold models inside `_backtest`, each fitted
+        # only on targets that had already occurred at its cutoff. The model
+        # built here is never graded; its only job is to forecast forward from
+        # the newest origin. So it is fitted on every (origin, horizon) row
+        # there is, and that is not a leak: the rows all predate the last
+        # observation, and the forecast starts after it.
+        #
+        # It used to stop at `train_ratio` of the calendar, which meant the
+        # served forecast was produced by a model that had never seen the
+        # newest fifth of the history. A direct multi-horizon model cannot
+        # recover that through lag features the way a recursive one partly
+        # does — the origin row is its only contact with the present — and it
+        # showed: measured on the demo catalogue (10 SKUs x 450 buckets, the
+        # last 30 held out), the forecast ran 14% high on EVERY series and the
+        # WAPE was 0.150. Fitted on the whole history it is unbiased (0.997 of
+        # actual) and the WAPE is 0.077. Ten series out of ten improved.
+        model = self._fit(stacked, model_features)
         if model is None:
             return {}
 

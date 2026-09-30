@@ -44,7 +44,7 @@ export interface ActionItem {
  // buyer picked one in the cart. Free-text names from the SKU card have none.
  supplier_id:   string | null
  qty:            number
- recommended:    number   // original quantity Faro suggested (immutable)
+ recommended:    number   // original quantity StockAI suggested (immutable)
  unit_cost:      number | null
  sale_price:   number | null   // sale price — for the margin-protected summary
  signal:         string
@@ -59,7 +59,7 @@ export interface ActionItem {
  lead_time_source: ValueSource
  lead_time_rule_scope: RuleScope | null
  // Same question for the other three values that decide the order. The buyer
- // must be able to tell "I chose 95%" from "Faro assumed 95%" before approving.
+ // must be able to tell "I chose 95%" from "StockAI assumed 95%" before approving.
  unit_cost_source: ValueSource
  service_level:        number | null
  service_level_source: ValueSource
@@ -98,7 +98,7 @@ export function tOr(
 
 // ── Which of these numbers are ours, not yours? ──────────────────────────────
 // Every planning value now carries a provenance, and 'default' is the one that
-// means "nobody told us — this is Faro's assumption". The buyer approving an
+// means "nobody told us — this is StockAI's assumption". The buyer approving an
 // order deserves to know how much of it rests on our guesses before they spend
 // the money, and to get one link to the screen that ranks those gaps by money.
 //
@@ -236,7 +236,7 @@ export function AssumptionsBanner({ summary, stacked = false }: {
  )
 }
 
-// A muted dotted "estimado" badge on a value Faro assumed rather than received.
+// A muted dotted "estimado" badge on a value StockAI assumed rather than received.
 // Only assumed values are badged: no badge means the number is the buyer's own
 // (typed, imported, ruled, or learned from their receptions). Mirrors the badge
 // on /inventory so the two screens make the same promise.
@@ -246,7 +246,7 @@ export function SourceBadge({ source }: { source?: ValueSource | null }) {
  return (
   <span
    title={tOr(t, 'inventory.source_assumed_tip',
-    'Faro assumed this value — you have not given us one yet.')}
+    'StockAI assumed this value — you have not given us one yet.')}
    style={{
     marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
     textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,

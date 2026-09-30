@@ -105,7 +105,7 @@ class TestStepUpRejected:
 
     def test_cheaper_unit_price_but_creates_overstock_is_rejected(self):
         """The headline case the plan warns about: the unit price genuinely
-        drops 20%, but the quantity is a year of stock for this SKU. Faro's own
+        drops 20%, but the quantity is a year of stock for this SKU. StockAI's own
         semáforo would paint it SOBRESTOCK, so it must not be recommended."""
         opp = pb.evaluate_step_up(
             sku="SKU-1", supplier_name="Acme",

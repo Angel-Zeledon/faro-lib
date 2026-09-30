@@ -585,7 +585,7 @@ whatever happens (`email.py:368`, `whatsapp.py:163`), so even fixing the loop
 would leave it mislabelled. The suite covers `/hoy` and the narrative for this;
 the alert loop was never covered.
 
-### 1.2 Faro invents `current_stock = 0` and then flags goods in the warehouse red [verified] — **[HALF FIXED 3e0bde6]**
+### 1.2 StockAI invents `current_stock = 0` and then flags goods in the warehouse red [verified] — **[HALF FIXED 3e0bde6]**
 
 > **The gaps panel no longer does it:** it stopped sending `current_stock: 0`
 > alongside the cost and asks for the count.
@@ -651,7 +651,7 @@ read.
 never measured.
 
 A PO of 5,000 units on 1 August; 20 samples arrive on the 3rd; the rest on 10
-September. Faro learns **2 days**. By the third PO like that, the learned value
+September. StockAI learns **2 days**. By the third PO like that, the learned value
 overrides the declared one for every SKU of that supplier, the reorder point
 collapses, and the scorecard shows "real 2d vs declared 30d" at 100% on time.
 
@@ -778,16 +778,16 @@ you spell "we assumed this".
 > The figure is now presented as what it is: "of the recommendations you
 > decided", with a note that the ones you let pass untouched are on neither side.
 > The caption that called it "the most honest measure of value" now says how to
-> read it: *when you decide, how often you follow Faro* — not *what share of
+> read it: *when you decide, how often you follow StockAI* — not *what share of
 > everything it suggested you followed*. Changed on screen and in the monthly
 > email (`locale.py`), which repeated the same claim.
 
-The copy: *"You followed N of M recommendations **Faro put in front of you**"*
+The copy: *"You followed N of M recommendations **StockAI put in front of you**"*
 (`translations.ts:2222`). `M` is `total_suggested`, which only counts lines that
 reached `log_po_generation`; `/compras` filters `status !== 'pending'` before
 logging, with the comment "the buyer never acted on them".
 
-Faro recommends 20, you approve 3, reject 1, ignore 16 → **"75%, you followed 3
+StockAI recommends 20, you approve 3, reject 1, ignore 16 → **"75%, you followed 3
 of 4"**. The real proportion is 15%. Five times inflated, always on the
 flattering side. The backend's docstring describes it well; the screen claims
 something stronger. And the caption calls this figure "the most honest measure of
@@ -825,12 +825,12 @@ and every urgent SKU counted as a risk handled. With no deduplication: pressing
 It is the same hole that was closed in the `/api` console on 2026-08-11. The
 product's own screen had been living with it for longer.
 
-### 2.3 "Capital freed from overstock" attributes to Faro a subtraction nobody attributed — **[FIXED 2026-08-12]**
+### 2.3 "Capital freed from overstock" attributes to StockAI a subtraction nobody attributed — **[FIXED 2026-08-12]**
 
 > **The attribution, by copy.** The column is now called "Overstock reduction",
 > the headline "your idle inventory went down this month", and the note names the
 > other causes: selling, recording shrinkage, deleting products, retraining. The
-> provenance block adds that "recorded" is not the same as "attributed to Faro".
+> provenance block adds that "recorded" is not the same as "attributed to StockAI".
 > Same in the monthly email.
 >
 > **The two `None`s, by code.** `_capital_freed_during` now returns
@@ -1217,7 +1217,7 @@ pausing the order". "We do not know" painted as "you have plenty".
 ### 4.5 The landing carried fifteen figures with no source, and two false claims — **[FIXED 2026-08-23]**
 
 > The fifteen figures are gone; the industries panel went from «Typical impact in
-> {industry}» with green percentages to «What Faro does in {industry}» with
+> {industry}» with green percentages to «What StockAI does in {industry}» with
 > sentences checkable against the code. The heading was part of the lie: it
 > promised a measured result, and that made the numbers read as measurements.
 >
@@ -1490,7 +1490,7 @@ is.)*
 
 ## The plans are gone (owner's decision)
 
-Faro sold three tiers — starter / professional / enterprise — with a feature set
+StockAI sold three tiers — starter / professional / enterprise — with a feature set
 each and a Stripe subscription behind them. **Now there is a single product:
 everything included, no ceilings on products, users, warehouses or sessions, and
 the price is discussed with us.** What was done:
@@ -1618,7 +1618,7 @@ add it). It covers what `smoke.mjs` did not:
 
 - The `/login` form: a wrong password stays on the screen and shows the error;
   the right one gets in and stores a real token.
-- New signup (`/signup`, `@faro-e2e.io` domain, does not touch the demo tenant) →
+- New signup (`/signup`, `@stockai-e2e.io` domain, does not touch the demo tenant) →
   email verification → login → upload `scripts/sample_sales.csv` in `/ventas` →
   reach the column-mapping step, with no console errors.
 
@@ -1642,13 +1642,13 @@ Verified by running `node tests/critical_flows.mjs` against the real app
 (backend :8011, frontend :5000, `faro_db` on :5544): 8/8, repeated.
 
 **Polished 2026-09-01, after finding the clash with `demo@faro.app`:** the login
-block no longer reuses the demo account — it uses the same fresh `@faro-e2e.io`
+block no longer reuses the demo account — it uses the same fresh `@stockai-e2e.io`
 account as the rest of the run, so two consecutive runs do not collide with the
 5-attempts/5-min limit of `POST /auth/login` (`auth.py:285`). Verified twice in a
 row with no pause: 7/7 both times.
 
 **Cleanup added:** `backend/scripts/cleanup_e2e_tenants.py` deletes every tenant
-whose user is `@faro-e2e.io` (`ON DELETE CASCADE` takes the rest). The e2e script
+whose user is `@stockai-e2e.io` (`ON DELETE CASCADE` takes the rest). The e2e script
 runs it itself at the end of each run, best-effort. It found and deleted **261
 tenants** accumulated since 2026-07-27 — they were not from this session, they
 were months of earlier tests left uncleaned.
@@ -1826,7 +1826,7 @@ shows the forecast chart, the model selector, the metrics table and the "We foun
 problems in your data" banner — functional. `/proveedores` (which CLAUDE.md
 marked as "never opened, only verified over the API") renders the full supplier
 table with lead time, variability, learning and actions — now walked, with no
-surprises. `/archivos` shows the connected data source ("Ventas Demo Faro", 21,640
+surprises. `/archivos` shows the connected data source ("Ventas Demo StockAI", 21,640
 rows) behind a guided welcome tour that fires in every new browser context (empty
 localStorage) — expected in a script that does not persist a session between
 runs, not a defect for a real user who closed it once.
@@ -2153,7 +2153,7 @@ and save ~1,400", the cart total went *up* by the extra units at the old price,
 and the old price was what the decisions payload wrote into
 `inventory_po_items.unit_cost` — the single authority for the PDF the supplier
 receives, the cash-calendar payable, /impacto's managed purchase value and the
-scorecard's `purchased_value`. The saving reached nothing Faro stores or prints.
+scorecard's `purchased_value`. The saving reached nothing StockAI stores or prints.
 Now the rung's `step_unit_price` travels with the quantity, and `unit_margin` is
 recomputed from it so the cart does not report the old margin on the new price.
 
@@ -2459,7 +2459,7 @@ precise and is a new value in `VALUE_SOURCES` — not added unprompted.)
 `proveedores/page.tsx:125`, `:438` always send `lead_time_days`, so
 `_stamp_lead_time_provenance` records `SOURCE_USER` for every supplier created
 in the UI. Three backend call sites gate on `lead_time_set_by` precisely to keep
-Faro's own assumption from being reported as the supplier's promise; the create
+StockAI's own assumption from being reported as the supplier's promise; the create
 form defeats that guard, and the scorecard prints **DECLARADO 15d** for a
 supplier who declared nothing.
 **Why it was open, and how it closed (see §13):** the field is visibly pre-filled in a labelled required
@@ -2773,7 +2773,7 @@ there was nothing to fill and why.
 ## 14. What a company needs before it buys this to run itself (2026-09-16)
 
 The question that produced this section: *what else does a company need before
-it buys Faro for its own operation?* Not "what features are missing" — what a
+it buys StockAI for its own operation?* Not "what features are missing" — what a
 buyer's owner and IT department ask before they sign, and what they discover
 three months in.
 
@@ -2843,19 +2843,24 @@ against the new schema — is now stated, with the one case that would break it
 (a release that changes the meaning of stored data; none has).
 
 **e) A release gate a person can run — [DONE 2026-09-16]**
-[`scripts/SMOKE.md`](../scripts/SMOKE.md): nine paths, twenty minutes, one
+[`scripts/SMOKE.md`](../scripts/SMOKE.md): ten paths (the tenth added with
+MCP on 2026-09-20), twenty minutes, one
 fresh tenant. Written from the walk that found two defects on 2026-09-16 while
 2,938 backend tests were green.
 
 ### Open, and whose call each one is
 
-**f) The ERP integrations have never touched a real account — [OPEN, needs an account]**
-This is §11.5 from the other side: for a LatAm distributor, "does it read my
-Alegra/Siigo?" is often *the* buying question, and the honest answer today is
-that the code is written, nobody has run it against a live account, and the
-stock fetch is known to be wrong for a multi-branch tenant. Either a sandbox
-account closes it, or the sales conversation says plainly that the integration
-is a project and not a checkbox. **Blocked on credentials, not on work.**
+**f) The ERP integrations have never touched a real account — [CLOSED 2026-09-20 by removal]**
+This was §11.5 from the other side: for a LatAm distributor, "does it read my
+Alegra/Siigo?" is often *the* buying question, and the honest answer was that
+the code was written, nobody had run it against a live account, and the stock
+fetch was known to be wrong for a multi-branch tenant. Either a sandbox account
+closed it, or the sales conversation said plainly that the integration was a
+project and not a checkbox.
+
+**The owner chose a third answer on 2026-09-20: remove it.** See §15.a. The
+answer to the buying question is now "by file, or by our API" — which is what it
+had always actually been.
 
 **g) The operator cannot see failures — [OPEN, owner's call]**
 `/health` now carries service state and loop freshness, and the tenant has
@@ -2878,10 +2883,1549 @@ a 16 GB machine — it was killed twice for memory and had to be sliced.
 Deleting a tenant's history is a data-policy decision, not a code change, which
 is why it is here and not done.
 
-**j) The frontend still has no automated test — [OPEN, owner's call]**
-`scripts/SMOKE.md` is a person with a browser. Automating paths 1–6 means
-Playwright in the repo, and with no CI it would still be a script somebody runs
-before tagging. Worth it the day two people are shipping.
+**j) The frontend still has no automated test — [MOSTLY CLOSED, stale entry]**
+Written when it was true. It is not any more: `Frontend/tests/` now holds four
+Playwright suites — `smoke.mjs`, `all_screens.mjs` (every screen, both
+languages, asking the four questions a hand walk asks), `critical_flows.mjs`
+and `virgin_screens.mjs` — behind one `run_all.mjs`. Measured 2026-09-20:
+**160/160** over 25 screens.
+
+What is still true: they are not in `scripts/run_tests.py`, because that run
+requires the app DOWN and these require it UP, so they are a deliberate second
+pass (`python scripts/run_tests.py --e2e`). With no CI, somebody still has to
+remember. `scripts/SMOKE.md` remains the human walk for the paths a script
+cannot judge — whether a number is *right*, not merely present.
+
+**k) No real MCP client has ever connected — [OPEN, needs 30 minutes and a desktop]**
+Added the day MCP shipped, deliberately, because it is the **same shape as
+§14.f** — the finding that got the ERP integrations deleted this morning: code
+written, code tested, never run against the real thing. It would be poor form
+to reopen that hole on the same day it closed.
+
+What IS verified: 53 tests including frame-level conformance against the
+2025-11-25 specification, and the stdio adapter driven as a real subprocess
+against a real socket and against a live server. What is NOT: nobody has pasted
+the URL into Claude Desktop or a claude.ai connector and watched it discover
+the tools. A protocol is a negotiation with somebody else's implementation, and
+ours has only ever negotiated with itself.
+
+Cheap to close: generate a read-only key, point one client at
+`https://<instance>/api/v1/mcp`, ask it what to buy today. Until somebody does,
+the honest sales sentence is "it speaks MCP" and not "it works with Claude".
+
+---
+
+## 15. The ERP integrations are gone, and MCP is in (2026-09-20)
+
+Two instructions from the owner, and they belong in the same entry because the
+second is what the first makes room for: **remove Alegra and Siigo, then make
+the API a customer can actually use — including from an AI client.**
+
+### a) Alegra and Siigo, removed — this closes §14.f
+
+§14.f said it plainly: *"the code is written, nobody has run it against a live
+account, and the stock fetch is known to be wrong for a multi-branch tenant.
+Either a sandbox account closes it, or the sales conversation says plainly that
+the integration is a project and not a checkbox."* The owner chose a third
+answer, and it is the honest one: **take it out.**
+
+Three facts made it the right call rather than a loss:
+
+1. **It had never run.** Seven modules, five test files and a daily worker loop,
+   all exercised against fakes. The one thing that would have told us whether it
+   worked — an account — never existed.
+2. **A known defect shipped inside it.** The multi-branch stock fetch was wrong,
+   and wrong in the expensive direction: §11 already records that a missing
+   stock row read as zero told a tenant to buy a full reorder for every branch
+   while the goods sat in the main warehouse.
+3. **Wrong market.** Both are **Colombian** accounting software; the anchor
+   market is **Costa Rica**. `direction-addendum-2026-08-10.md` flagged the
+   misalignment on 2026-07-19 and nobody closed it in fourteen months.
+
+What went: `backend/integrations/{alegra,siigo,base,registry,store,sync_service,
+http}.py`, `backend/api/v1/integrations.py`, the `/integraciones` screen and its
+58 i18n keys, the 06:00 UTC sync loop and its `loop_state` entry, the three
+`integration.*` activity events and the three reason codes only they used,
+`ALEGRA_BASE_URL`, `SIIGO_BASE_URL`, six test files, and the
+`integration_connections` table.
+
+What stayed, and why each one:
+
+* **The Fernet key module**, moved to `backend/service_config/crypto.py` — it is
+  what `/instalacion` encrypts every stored secret with, and always was. The
+  `INTEGRATIONS_SECRET_KEY` variable **keeps its name**: renaming it would
+  silently orphan every existing deployment's stored credentials, which is a far
+  worse outcome than a historical name. The registry's `integrations` service
+  became `secret_storage` and now describes what it actually does.
+* **`data_gate`'s enforcement in `launch_training_family`.** The ERP sync was
+  one of the callers it was written to catch, but the gate is right regardless
+  and every other launch path still goes through it. Its `record_refusal=False`
+  parameter went, because the sync was its only caller and a flag nothing sets
+  is a trap for whoever reads it next.
+
+**This is the product's first non-additive migration**, and it is worth saying
+out loud because `deploy/UPGRADE.md` leans on the opposite property.
+`drop_integration_connections` deletes a table. The alternative — leaving a
+table of encrypted third-party ERP credentials that nothing reads — is worse:
+those rows should not outlive the feature that needed them. `UPGRADE.md` and
+`CHANGELOG.md` both name the one rollback hop it makes expensive.
+
+`/integraciones` was also the only row in `screen-inventory.md` whose "what is
+missing" column said **the entire screen**. It is the only one that never will
+be walked.
+
+### b) An MCP server, read-only
+
+The ask: *"add MCPs and leave the API customers use well polished and tested."*
+
+`docs/assistant-actions.md` §1 recommended **against** building an MCP server,
+and it was right about the thing it was answering — an MCP server for StockAI's
+**own** assistant is the backend talking to itself over a transport. It also
+said what MCP *would* be good for, and that is exactly what was built:
+
+> "What StockAI would gain from MCP later, and it is real: that the owner's Claude
+> or ChatGPT can talk to their own tenant from outside. StockAI already has the
+> primitive for that — the public API and the `sk_live_*` keys."
+
+**Five tools, all reads**, at `POST /api/v1/mcp`: `get_planning_context`,
+`get_morning_briefing`, `get_inventory_status`, `list_data_sources`,
+`get_training_status`. The decisions worth recording:
+
+* **Nothing writes, and a role cannot change that.** The owner's rule 3 — every
+  action an LLM takes is reversible — cannot be satisfied by an MCP client:
+  StockAI cannot render a confirmation card inside somebody else's chat window, and
+  `log-po` has no inverse anywhere in the product. So the catalogue is the
+  ceiling, not the role: an `analyst` key reaches the same five reads a `viewer`
+  key does. `test_mcp_server.py::test_every_tool_actually_only_calls_GET_endpoints` is the
+  wall, and it is structural rather than a grep: it walks each handler's AST,
+  resolves every router function it calls to the FastAPI route behind it, and
+  demands the route's methods be exactly `{GET}`. An annotation saying
+  `readOnlyHint: true` is a claim; this checks the claim.
+* **Each tool calls the HTTP endpoint's own function**, with every parameter
+  passed explicitly — not the service layer, and not a copy. "No `session_id`
+  means the active session" and the signal/supplier filtering live in the
+  endpoint, and a second implementation of them would give an integration one
+  answer over REST and another over MCP.
+* **`get_inventory_status` truncates and says so.** The REST endpoint returns
+  every SKU, which is right for a script and impossible for a model. The MCP
+  tool returns the most urgent rows first, sets `truncated`, reports
+  `total_matching_items` — and the `summary` counts **all** of them, not the
+  page. A summary that shrank with the page would tell an assistant there are
+  four SKUs to order when there are three hundred, which is the most expensive
+  lie this surface could tell.
+* **A business refusal is a tool error, not a transport error.** "No completed
+  session for this tenant yet" arrives as readable text with its `error_code`,
+  so the model can explain it. A JSON-RPC error would be invisible to the model
+  and the user would get a shrug.
+* **An empty answer says which kind of empty it is.** Applying the
+  `silent-failures` lens to my own work found this one: a `supplier` filter that
+  matched nothing came back as an empty `items` and a zeroed `summary`, which is
+  indistinguishable from a healthy catalogue — and a supplier spelled the way
+  the ERP spells it rather than the way StockAI stores it is the common case. There
+  is now an `empty_reason` on a filtered-to-nothing answer, and an unknown
+  `signal` is refused outright with the valid ones named instead of quietly
+  filtering everything away. Over REST an empty array is fine; a script author
+  reads it and checks their spelling. A model reads it and reports all clear.
+* **The stdio adapter parses before it writes.** A 200 is not proof StockAI
+  answered: a reverse proxy or an SSO portal in front of the instance answers
+  200 with HTML, and passing that through put a malformed frame into the
+  protocol stream, where the client's only symptom is a connector that stops
+  working with nothing on screen. It now names what came back and tells the
+  operator to check `STOCKAI_URL`.
+* **The configuration panel was about to claim something false.** Renaming the
+  `integrations` service to `secret_storage` sharpened its `what_breaks` into
+  "no secret can be saved from the panel" — which is **wrong** on a virgin
+  install, where §10's auto-generated key means saving works fine. The state
+  reads `not_configured` because the variable is empty, not because the feature
+  is off. Rewritten to say exactly that, plus what IS lost (the generated file
+  has to be backed up with `storage/`, and two processes on separate volumes
+  generate different keys), in the registry and in both languages of the panel.
+  The service is also `editable=False` now: it had been printing "Editable from
+  the panel: yes" above a table whose only row says "environment only".
+* **The repo's own audits caught the new router, and they were right.** The
+  first version authenticated by hand inside the handler body — correct at
+  runtime, invisible to `test_edge_cases.py`, which walks the route table asking
+  whether `get_current_user` is in each route's dependency tree. It failed, and
+  the tempting fix was an allowlist entry; that would have been a **lie in the
+  one file whose job is to make lying impossible**, because the route does
+  authenticate. Fixed properly instead: a `mcp_user` dependency that composes
+  `get_current_user` with one that runs before it, purely so an ABSENT header
+  answers 401 rather than `HTTPBearer`'s 403 — the distinction that decides
+  whether somebody wiring up a connector goes looking at their key or at their
+  permissions. `GET /mcp` now asks for the key it has no use for, so no route on
+  this server is open. `test_write_guard_audit.py` also failed, correctly: MCP
+  is JSON-RPC, so every read arrives as a POST. That one IS an allowlist entry,
+  in the list that exists for POSTs that read, and its comment names the test
+  that keeps the excuse true.
+* **An MCP read is not an `api_write`.** The audit middleware
+  (`backend/middleware/machine_audit.py`) files every POST from an `sk_live_`
+  key as a write, and MCP is JSON-RPC — the method lives in the body, so
+  `tools/list` and every read tool arrive as POSTs. Shipped as written, a
+  customer's `/actividad` would have filled with "api_write POST /api/v1/mcp"
+  at up to 120 rows a minute: a read labelled a write, burying the genuine
+  writes the trail exists to show. The endpoint is exempted by path, as a named
+  constant with the instruction that a write tool takes the exemption off in
+  the same change.
+* **Hand-rolled, not the `mcp` SDK.** Five read tools, no sampling, no roots, no
+  server-initiated messages: that is a handler for six methods, testable with
+  the same `TestClient` as everything else instead of needing a live socket.
+  Same reasoning already on the record for DeepSeek over plain httpx.
+* **Stateless.** No `Mcp-Session-Id`; the key is the session. `GET /mcp` answers
+  **405** rather than 404 — "this server has nothing to stream" instead of
+  "wrong URL", which is the difference between reading the answer and going off
+  to check your configuration.
+
+`mcp_server/stockai_mcp.py` is the stdio adapter for Claude Desktop: standard
+library only, no catalogue, no logic — it forwards frames to the endpoint above,
+so a tool fixed on the server needs no new copy distributed to anybody.
+
+**One real defect found by the tests, in the endpoint itself.**
+`structuredContent` went out through a hand-built `JSONResponse`, and
+Starlette's plain `json.dumps` raises on the first `datetime` — which every
+`created_at` in the product is. `list_data_sources` took the whole connection
+down with a 500 that named nothing. Fixed at the root: the payload is encoded
+once through FastAPI's encoder and **both** the text block and
+`structuredContent` are derived from that one result, so they cannot disagree
+either.
+
+### How it was verified
+
+* `test_mcp_server.py`: 42 tests — the handshake and version negotiation, the
+  catalogue frozen by name, the read-only wall, truncation honesty, tenant
+  scoping with a key from another tenant, the shared rate limiter, malformed
+  frames, and that the endpoint is on the published surface. Two of them were
+  written after the repo's own audits failed on this router (below), so they
+  pin the fix rather than the intention.
+* `test_mcp_stdio_adapter.py`: 11 tests driving the real script as a real
+  subprocess against a real socket (`http.server` in a thread — no DB, no app,
+  9 seconds). It is the one piece of this product that runs where nobody can
+  reach it: a buyer's laptop, launched by Claude Desktop, stdout wired into a
+  protocol parser. The hand-walk proved it worked once; this keeps it working.
+  Verified to be able to FAIL: with the parse-before-write removed, exactly one
+  test goes red — the one written for that defect — and the other ten stay
+  green.
+* **The stdio adapter driven against a live server**, not mocked: a real signup,
+  a real `viewer` key, `initialize` → `notifications/initialized` → `tools/list`
+  → two `tools/call`s, one response frame per request and no extra. Then the two
+  failure paths a customer meets first — a wrong key and an unreachable instance
+  — both of which must produce a readable frame rather than a client that hangs.
+  The wrong-key message was ungrammatical on the first run ("expired Check
+  STOCKAI_API_KEY") and is fixed.
+* `PUBLIC_API_ONLY=true` brought up: **15 of 277 routes**, MCP among them. The
+  figure in `docs/public-api.md` is that run's, not an estimate.
+* The browser suite over every screen, both languages: **160/160**, `/api`
+  included, with the new MCP section rendering in both.
+
+### What this did NOT do
+
+* **No write tool, now or later, while rule 3 stands.** If an assistant should
+  ever record a purchase order, *voiding a purchase order* has to exist first —
+  new capability, asked about separately (`assistant-actions.md` §8).
+* **No OAuth.** The credential is the static key the customer generates in the
+  app. A client expecting an OAuth dance gets `WWW-Authenticate: Bearer` and a
+  message naming the screen.
+* **No second rate limit.** It is the same limiter as the REST API, which is why
+  a test asserts it rather than trusting the wiring.
+
+---
+
+## 16. Training and prediction, reviewed and measured (2026-09-20)
+
+The answer to "are there better ways to do the training and the predictions".
+Every claim below was measured, not reasoned about; where a measurement refuted
+the suspicion, the refutation is written down instead.
+
+> **State at the close of 2026-09-20: (a), (b), (f), (g) and (h) are DONE**,
+> on the owner's instruction, with tests that fail on the old behaviour.
+> **(c), (d), (e), (i) and (j) are open** and are listed with what each needs.
+> Each item says which it is.
+
+### How it was measured
+
+The demo catalogue on disk — `storage/datasets/ten_acme_demo_001/…/data.csv`,
+**10 SKUs x 450 daily buckets** — with the engine's own components: the real
+`FeatureEngineer`, the real `Trainer`, the real `GlobalTrainer`, the real
+`recursive_ml_predict`. The last **30 buckets were held out** and no model in
+any run below ever saw them. Features are the quick-start defaults
+(`lags [1,7,14,28]`, `rolling [7,14,28]`, `diffs [1]`, calendar, `ewm [7,14]`),
+horizon 30, `train_ratio` 0.8, 3 walk-forward splits.
+
+**The honest limit of this evidence.** Ten smooth, synthetic, non-intermittent
+series is not a distributor's catalogue. It is enough to prove a structural
+defect exists and to size one; it is not enough to rank the accuracy ideas. A
+real tenant's file would settle the ones marked *unsettled*.
+
+### a) The model that serves the forecast never sees the newest fifth of the history — **[FIXED 2026-09-20]**
+
+`Trainer._wfv` and `Trainer._simple` fit the final model on `X.iloc[:cut]` where
+`cut = len(X) * train_ratio`, and `GlobalTrainer.train` fits on
+`stacked[_target_date <= final_cut]`. That model is the one `predict_all_skus`
+serves from. Nothing refits it afterwards.
+
+**Every statistical model in the same pipeline already does refit**: `ets.py`,
+`arima.py`, `prophet.py` and `croston.py` each build a `full_model` on the whole
+series before forecasting. So the pipeline holds two rules at once and compares
+the results in one table.
+
+Measured, same held-out window, only the final fit changed:
+
+| | forecast / actual | WAPE |
+|---|---|---|
+| `global_lgbm` as it ships (80%) | **1.141** | **0.1501** |
+| `global_lgbm` fitted on all history | **0.997** | **0.0772** |
+
+Ten series out of ten improve. The bias is not noise: the shipped global model
+over-forecasts by **+7% to +21% on every single series**, and refitting removes
+it. That is a 14% systematic over-purchase signal on the model that is in the
+default set precisely because it is the one meant to serve short and
+intermittent SKUs.
+
+For the **per-SKU recursive** models the same change is a wash on this data —
+asymmetric cost 46.0 -> 43.5 (better on 12 of 20 series/model pairs), WAPE
+0.1008 -> 0.0990. The difference in kind makes sense: a recursive model is
+handed the newest observations as lag features at inference time, so it partly
+recovers what its weights do not know. A direct multi-horizon model has no such
+correction — the origin row is its only contact with the present.
+
+**Done.** `Trainer._serving_model` refits after validation and returns the model
+inference uses; `GlobalTrainer` fits its final model on every (origin, horizon)
+row. The graded model still stops at the cutoff — `_horizon_metrics` is computed
+from it, before the refit — so no metric moved. Re-measured on the fixed code:
+the global model's forecast/actual is 0.94-1.06 across the ten series, centred
+on 0.997, and its mean WAPE in a full pipeline run is now the best of the three
+ML families (0.0965 against lightgbm 0.1352 and xgboost 0.1481) where before it
+was the worst.
+
+Guarded by `test_training.py::TestServingModelSeesEverything` (the last fit uses
+every row; a fit at the cutoff still happened, or the refit would have become a
+leak; a failed refit still serves the validated model) and
+`test_global_trainer.py::TestServedModelSeesTheWholeHistory` (the last fit
+reaches the last observation, every graded fit stopped before it).
+
+### b) The p10/p50/p90 quantile models cost more than everything else and the decision ignores them — **[REMOVED 2026-09-20]**
+
+`pipeline.py` step 7b trains three extra quantile regressors per ML model per
+SKU. Measured on this catalogue: point models (lightgbm + xgboost) **15.7 s**,
+the three quantile passes **21.5 s** — **58% of ML training time**.
+
+Their metrics are discarded by design (the comment says so). And the layer that
+turns a band into money refuses their band: `backend/inventory/service.py::
+_point_sigma` prefers `q90` and documents why — "measured over the demo
+tenant's 8,240 points, xgboost's upper spread is 43% narrower than its own
+honest q90".
+
+**Traced end to end, they reached nothing that is read today.** Their values
+landed in `point["p10"]/["p90"]`, which `_generate_forecast_df` writes to the
+`p*` columns — and `runner.py` does not store those columns at all. It stores
+`lower`/`upper` (which the quantile branch had overwritten) plus every `q*`.
+Downstream, `/forecasts` re-derives `p10/p90` from `q10/q90`
+(`api/v1/forecasts.py::_add_p_aliases`), and the chart reads `q5/q95`,
+`q10/q90` and `q25/q75` directly (`FAN_BANDS` in `pronosticos/page.tsx`),
+falling back to `lower`/`upper` only for sessions stored before the quantile
+columns existed.
+
+So the single most expensive step in a training run fed one pair of fields that
+the current chart uses only as a legacy fallback and the current reorder point
+explicitly refuses. Two coherent endings: delete them and take the 58%, or make
+the interval they produce the one the decision uses. What is not defensible is
+paying for both.
+
+**Done — deleted.** The ending chosen is one band, the one the decision already
+used. `pipeline.py` step 7b is gone, `ModelFactory.build_quantile_ml` is gone,
+and `recursive_ml_predict` no longer takes the three model arguments.
+`p10/p50/p90` are now aliases of `q10/q50/q90`, so the chart and the reorder
+point read the same numbers: verified on a full pipeline run over the demo
+catalogue — **0 of 1200 forecast points** have a `p10` that differs from their
+`q10`, and no result entry carries a `fitted_model_p*` key. The other ending
+would have meant fixing their calibration first, which is (c), which is open.
+
+`test_models.py::test_there_is_no_quantile_model_builder` asserts the absence
+rather than merely leaving it deleted: bringing the builder back means bringing
+back 58% of the training cost, so it should be a deliberate act with that test
+in the diff.
+
+### c) The published band is one 1-step sigma, reused at every step — **OPEN; the obvious fix was tried twice and REFUTED**
+
+The ML and statistical paths build intervals in `_compute_quantile_bounds`:
+`value + norm.ppf(q) * std(residuals)`, where the residuals are **1-step**
+out-of-fold errors. Measured on the held-out window: band width at step 1 and
+at step 30, **84.04 units and 84.04 units**. It does not widen because nothing
+in that expression knows what step it is.
+
+Coverage of the nominal **80%** band: **91.8%** (steps 1-10: 88.5%, steps 21-30:
+93.0%). Too wide, not too narrow — which costs cash rather than sales, and
+means a tenant asking for 95% service is being served something else again. It
+is the same class of defect `_point_sigma` already fixed one instance of.
+
+`evaluation/conformal.py` is the machinery that solves this and **only the
+global model uses it**.
+
+**Refuted, and worth recording**: calibrating per-horizon bands from 4 rolling
+origins x 10 SKUs gave **73%** coverage against the same nominal 80% — worse
+than the flat band it was meant to replace. 40 residuals per step is not a
+quantile, it is noise, which is exactly what `MIN_RESIDUALS_PER_HORIZON = 30`
+and the pooled fallback in `conformal.py` exist to prevent. Extending conformal
+bands to the per-SKU models is not "compute residuals per horizon"; it needs the
+catalogue-wide scaled residual bank the global model already builds. On a
+10-SKU catalogue it may not be fundable at all.
+
+#### Second attempt, properly funded, and it failed too
+
+The obvious objection to the refutation above is that it was calibrated badly.
+So it was rebuilt the way the global model builds its own: a residual bank
+pooled **across the catalogue in scaled units**, per horizon — and sourced from
+the rolling origins the walk-forward folds **already** produce, so it costs
+recursive forecasts and **no extra fits**. Run against the same three
+catalogues, 80% nominal band:
+
+| catalogue | flat 1-step sigma | per-horizon bank | residuals per horizon | per-horizon width, h=1 → h=30 |
+|---|---|---|---|---|
+| demo | **88.7%** | 67.0% | 30 | 49.6 → 51.3 |
+| drift | 71.0% | **74.0%** | 30 | 69.5 → **124.8** |
+| intermittent | **77.2%** | 73.9% | 32-36 | 12.6 → **5.2** |
+
+Better on **one of three**. And look at the last column: the band widens with
+the horizon on the drifting catalogue, which is the shape uncertainty actually
+has, and **narrows** on the intermittent one, which is impossible. With 30-36
+residuals per step the shape is noise, not a measurement — the same wall as the
+first attempt, hit from a better angle.
+
+**What this did establish, and it is worth more than the fix would have been:
+neither band is calibrated.** Against a nominal 80% the flat band delivers
+88.7%, 71.0% and 77.2% on the three catalogues. It errs in *both* directions, so
+no constant correction repairs it, and the direction depends on the character of
+the data rather than on anything the product can read. A tenant who asks for a
+95% service level is not being served 95%; they are being served somewhere
+between roughly 85% and 97% depending on which catalogue they happen to own.
+That is the real finding, it is unfixed, and it needs a real customer file — not
+another synthetic one — before anybody writes more code against it.
+
+### d) The metric that crowns the champion rewards bias — **MEASURED 2026-09-20: leave it alone**
+
+`CHAMPION_METRIC_ORDER` leads with `cost_horizon` — the asymmetric 3:1
+shortfall-to-surplus cost. A model that simply forecasts high scores well on it
+by construction.
+
+Measured on the held-out window, per-SKU lightgbm against the shipped global
+model: WAPE **0.096 vs 0.149**, asymmetric cost **44.6 vs 31.0**. The global
+model is 55% worse at predicting demand and wins the ranking on **7 of 10
+SKUs**, entirely because of the +14% bias from (a). Then
+`backend/inventory/service.py` adds a 95%-service-level safety stock on top of
+the winner — so the asymmetry is applied twice, once hidden inside the model
+choice and once as the cushion the user asked for.
+
+Note the interaction: fixing (a) removes the bias and this stops firing on this
+dataset — confirmed after the fix, where the global model now wins 5 of 10 SKUs
+on merit (mean WAPE 0.0965, the best of the three). The property of the metric
+does not go away with it.
+
+`evaluation/metrics.py::pinball_loss` — the proper scoring rule for exactly this
+quantity, with a docstring explaining why — exists, is unit-tested, and is
+called by **nothing** in any production path.
+
+#### Scored as a decision instead of as an error, and the metric survives
+
+The argument above is about a mechanism. The product has an instrument for
+settling it: `business/policy_backtest.py::simulate_policy` replays the ordering
+policy over REAL demand and reports what the buyer lives through. So each
+ranking rule was used to crown a champion per SKU, the same cushion was applied
+in every case — so the only thing being compared is the pick — and the policy
+was replayed over the held-out window:
+
+| catalogue | rule | fill rate | average stock held |
+|---|---|---|---|
+| demo | cost_horizon | 99.43% | 797.4 |
+| demo | wape | 99.43% | **775.5** |
+| demo | pinball@0.95 | 99.43% | 804.5 |
+| drift | cost_horizon | 98.84% | 984.3 |
+| drift | wape | 98.84% | **982.0** |
+| drift | pinball@0.95 | 98.84% | 994.8 |
+| intermittent | cost_horizon | **91.57%** | 28.9 |
+| intermittent | wape | 89.61% | **25.9** |
+| intermittent | pinball@0.95 | **91.57%** | 29.9 |
+
+On the dense catalogues it is a wash: identical fill rate, and ranking by WAPE
+holds 0.2-2.7% less stock. On the intermittent one — the catalogue where the
+choice is hardest and the money is slowest — `cost_horizon` buys **11.6% more
+stock and serves 1.96 percentage points more demand**. That is the trade the
+metric was chosen to make, made in the intended direction, on the products where
+it matters most.
+
+So the mechanism is real and the consequence is not worth acting on. **The
+champion metric stays as it is.** Writing it down because "the ranking can be
+gamed by bias" is a true sentence that will occur to somebody again, and the
+answer is not an argument, it is this table.
+
+(The bias that prompted the question is gone anyway — it came from (a), not from
+the metric.)
+
+### e) Cheap accuracy ideas — **REFUTED 2026-09-20, do not ship**
+
+Same held-out window, per-SKU lightgbm, one change at a time:
+
+| variant | WAPE | cost | better than shipped, on |
+|---|---|---|---|
+| seasonal naive (the floor) | 0.1002 | 38.59 | — |
+| **as it ships** | 0.0962 | 44.57 | — |
+| refit on all history | 0.0983 | 43.17 | 3/10 |
+| tweedie objective | 0.1011 | 45.11 | 2/10 |
+| **recency weights (half-life 90)** | **0.0953** | **42.33** | **6/10** |
+| log1p target | 0.1006 | 46.43 | 3/10 |
+
+Recency weighting is the only one that improved both columns, and it is one
+`sample_weight` argument. Tweedie and log1p did nothing here, which is what a
+smooth non-intermittent series should do to them — they are the treatments for
+intermittent and count-like demand, and this catalogue has neither. **Unsettled
+until a real file with intermittent SKUs runs.**
+
+Worth seeing in the table: **seasonal naive beats every per-SKU ML variant on
+cost**, because they all under-forecast (bias -7 units/bucket) and the 3:1 loss
+punishes that. `_outperformed_by_baseline` already reports this per SKU; on this
+catalogue it would be reporting it about most of them.
+
+#### The second dataset arrived, and recency weighting failed it
+
+The caveat above was the right one. Run against three catalogues of different
+character — the demo file, a **drifting** one (multi-scale levels, weekly shape,
+random-walk drift: the shape a real catalogue has) and an **intermittent** one
+(12 SKUs, 60-88% zero buckets: the slow movers, which nothing in this product
+had ever been measured on) — at three half-lives, so the idea is not condemned
+by one arbitrary constant:
+
+| catalogue | variant | WAPE | cost | bias | pinball@0.95 |
+|---|---|---|---|---|---|
+| demo | as it ships | 0.0983 | 43.17 | -4.72 | 11.74 |
+| demo | recency 90 | **0.0953** | **42.33** | -5.05 | **11.59** |
+| demo | recency 180 / 365 | 0.0973 / 0.0980 | 43.12 / 43.92 | | 11.80 / 12.10 |
+| drift | as it ships | 0.1678 | **67.24** | +10.30 | **14.75** |
+| drift | recency 90 | **0.1440** | 72.31 | -5.77 | 19.23 |
+| drift | recency 180 / 365 | 0.1578 / 0.1599 | 75.04 / 76.79 | | 19.18 / 19.78 |
+| intermittent | as it ships | **1.3616** | **7.37** | -0.21 | **1.88** |
+| intermittent | recency 90 / 180 / 365 | 1.3836 / 1.3687 / 1.3615 | 7.53 / 7.49 / 7.44 | | 1.93 / 1.93 / 1.91 |
+
+It wins on **one catalogue of three**, and the way it loses on the drifting one
+is the interesting part: it **improves WAPE** (0.1678 → 0.1440) while making the
+business metric **worse** (cost 67.2 → 72.3, pinball 14.7 → 19.2), because
+weighting the recent buckets flips the bias from +10.3 to -5.8 and this business
+charges 3:1 for being short. That is precisely the trap the asymmetric cost
+exists to catch, and a change judged on accuracy alone would have shipped it.
+
+No half-life rescues it, so there is no constant to pick — and CLAUDE.md does not
+allow making it a knob. **Not shipped.** Tweedie and log1p were never re-run
+against the intermittent catalogue; they remain untested rather than refuted.
+
+### f) Croston starts its interval average from a zero — **[FIXED 2026-09-20]**
+
+`models/croston.py::croston_forecast` computes intervals as
+`np.diff(idx, prepend=idx[0])`, which makes the **first interval 0**. That zero
+is the initial level of the exponential smoothing (`_smooth` seeds with
+`series[0]`), so with `alpha=0.1` it takes dozens of demand events to decay out
+of the estimate. A too-small mean interval means a too-large demand rate:
+Croston over-forecasts on exactly the intermittent SKUs it is routed to, and it
+is in the default model set. Textbook Croston takes the differences *between*
+demand instants; there is also no Syntetos-Boylan correction, which is the
+standard de-bias for the method.
+
+**Done, for the zero.** The intervals are now `np.diff(idx)` — the gaps between
+demand instants — and a series with a single demand is rated over its own length
+instead of being handed a rate of 1. Two tests pin the arithmetic: 10 units
+every 5 buckets is **exactly 2** per bucket (it was ~7.4, 3.7x the truth), and
+one sale of 10 in 50 buckets is **0.2**, not 10.
+
+**Also done: the Syntetos-Boylan correction** (owner's instruction, same day).
+Classic Croston forms the rate as the ratio of two independently smoothed
+quantities, and `E[z/p] != E[z]/E[p]` — by Jensen's inequality, since `1/p` is
+convex, the bias is systematically **positive**, i.e. classic Croston
+over-forecasts. SBA's `(1 - alpha/2)` is the standard correction and is now
+applied unconditionally; there is no classic/SBA switch, because the bias is
+inherent to the ratio and not a special case.
+
+Three tests pin it, and the third is the one that matters:
+`test_sba_correction_factor_is_one_minus_alpha_over_two` uses a series constant
+in both size and interval, so the smoothing converges to those exact values for
+ANY alpha and the raw rate is 2.0 whatever alpha is. At alpha=0.4 the answer must
+be 1.6. Writing `(1 - alpha)` gives 1.2 and dropping the correction gives 2.0 —
+both fail. That is a test that cannot pass by accident.
+
+### g) Prophet is forced into a yearly seasonality it usually cannot support — **[FIXED 2026-09-20]**
+
+`models/prophet.py` passes `yearly_seasonality=True` unconditionally. Prophet's
+own default is `'auto'`, which switches yearly OFF below two years of history,
+because below that the yearly Fourier terms fit noise and then extrapolate it.
+A tenant uploading 8 or 14 months — the common case — gets a yearly cycle
+invented out of one incomplete pass. Prophet is in the default model set.
+
+Same file: the product owns a `HolidayCalendar` and gives it to the ML path;
+Prophet never receives it (`add_country_holidays` is never called), so the model
+family whose whole selling point is calendar effects is the one flying without
+the calendar.
+
+**Done.** A single `_build()` now constructs both the graded model and the one
+that forecasts — they were built separately, so a change to one was a change to
+a model nobody scored — with `yearly_seasonality` and `weekly_seasonality` at
+Prophet's own `'auto'` and the tenant's `holiday_country` passed through from
+`cfg.features`. Measured directly on the fitted models: 80 daily buckets fit
+`{weekly}` where they used to fit `{weekly, yearly}`; three years of history
+still fit `{weekly, yearly}`, so `'auto'` is "when the evidence is there", not
+"never"; and 60 **monthly** buckets now fit `{yearly}` alone, where the forced
+setting had been fitting a weekly cycle to monthly data. A country Prophet has
+no table for logs a warning and costs the holidays, not the run.
+
+Five tests in `test_prophet.py::TestProphetSeasonalityAndHolidays`.
+
+### h) The ensemble cannot be chosen, and is weighted by the wrong number — **[HALF FIXED 2026-09-20]**
+
+`WeightedEnsemble.fit` is given `sku_model_mae` built only from `results_ml`,
+using `res["mae"]` — the **1-step** fold score, while champions are picked on
+30-step cost. `predict` is then called with a dict that also holds the
+statistical models, which get weight 0 and are silently dropped from the
+average.
+
+And `_flatten` never emits a metrics row for `"ensemble"`, so `_select_champions`
+cannot crown it and `best_model_by_sku` cannot either. The ensemble is computed
+for every SKU, stored, and shown on a chart it can never be planned from.
+
+**The weighting is fixed.** The ensemble is now fitted AFTER the metrics table
+and FROM it (`Pipeline._ensemble_scores`), on the same `CHAMPION_METRIC_ORDER`
+column the champion is picked with, over every model that competed —
+statistical models included — and with baselines excluded by the same rule that
+keeps them out of the champion race. `predict` renormalizes over the models that
+actually produced points, so a weighted model whose forecast failed no longer
+drags the line toward zero (it used to return half the forecast of the only
+model that ran, with no error anywhere; `test_edge_cases.py` had a test that
+documented the silent failure and now asserts the repair).
+
+**Still open: it is display-only.** Making it a champion candidate means
+measuring it h steps ahead on held-out data the way every other family is
+measured — a real evaluation, not a weighting, and a new capability. Until then
+it is a line on a chart that no purchase order can come from, which is written
+into the module docstring so the next reader does not have to rediscover it.
+Whether that line should exist at all is the owner's call.
+
+### i) Tuning, if it were ever switched on, optimises the wrong thing — **[FIXED 2026-09-20]**
+
+`HyperparamTuner` minimises **1-step MAE** with **no gap**, while the model it
+is tuning is selected on 30-step asymmetric cost with `gap=horizon`. It runs per
+SKU per model. It is off by default, which is the only reason this is not
+already a problem.
+
+*One part of this closed itself*: `pipeline.py` used to hand `tuning=t.tuning`
+to the quantile trainer as well, so switching tuning on multiplied the run by
+three more passes. Those passes are gone with (b).
+
+**Done.** The objective is now `asymmetric_cost` — the same question the champion
+is picked on — and `HyperparamTuner` takes a `gap` that it honours through
+`effective_gap`, with the same fold-count and window-size protections
+`Trainer._wfv` gets. Its private `_wfv_splits` is deleted: it was a second copy
+of the expanding-window splitter, free to drift from the real one, which is the
+same class of defect as (k). A test now asserts the tuner's folds are identical
+to calling `WalkForwardSplitter` directly, so a third copy cannot appear quietly.
+
+The objective was factored out of the Optuna closure so it can be tested without
+depending on trial order: a fake model that predicts `y ± shift` must score the
+over-forecaster strictly lower. Under the old MAE objective those two tied
+exactly, which is what makes the `<` the thing that catches a regression.
+
+Still true, and deliberate: tuning remains **off by default**, and the new
+parameters are not wired into `Trainer` — that would change what a tuned run
+costs, and nobody has asked for tuning to be on.
+
+### j) The engine's `InventoryAdvisor` is dead weight with a wrong formula — **[FIXED 2026-09-20, and it was not dead]**
+
+`business/inventory.py` computes `safety_stock = z * std(forecast) * sqrt(L)`
+where `std(forecast)` is the dispersion of the **forecast path**, not of the
+forecast **error**. A flat forecast — what a good model produces on a stable SKU
+— yields a safety stock of roughly zero, and a seasonal one yields a cushion
+sized by its seasonality.
+
+It does not reach the semáforo: `backend/inventory/service.py` has its own
+`_safety_stock`, which prefers the measured bands. Its output is still computed
+on every run and stored as `result["inventory"]`, and `rag_service.py` carries a
+comment about the one time something read it ("100% of your products are
+critical" to a tenant whose screen said otherwise). Either it gets the same
+treatment `_safety_stock` got, or it stops being computed.
+
+**Fixed, and calling it "dead weight" was wrong — it reaches a screen.** The
+audit of consumers found four: `GET /sessions/{id}/inventory`, the Excel/PDF
+report generator, the RAG narrative, and — the one that matters —
+`/pronosticos`, which falls back to this recommendation's `action` whenever a SKU
+has no live inventory row (`ACTION_SIGNAL[rec.action]`).
+
+Follow that through. The engine never receives stock levels, so `current_stock`
+was `0.0` for every SKU, so `current_stock <= reorder_point` was true for every
+SKU, so `action` was `"REORDER"` for every SKU, which `/pronosticos` renders as
+**PEDIR_YA**. On any tenant that has not imported stock, every product on that
+screen was shown as urgent. Not a number that was slightly off: the most alarming
+signal the product has, on the whole catalogue, from an assumption.
+
+Two changes:
+
+* **"No stock supplied" is now its own state.** `current_stock` defaults to
+  `None` and produces `stockout_risk=None`, `days_of_coverage=None`,
+  `action="UNKNOWN"` — never a figure computed from an assumed empty shelf. An
+  explicit `current_stock=0.0` keeps today's behaviour exactly, and two tests
+  guard the difference in both directions. `/pronosticos` maps the unknown action
+  to `SIN_DATOS`, which is the honest signal and already has its own copy.
+  (`batch_recommend` sorted by `stockout_risk` and would have raised comparing
+  `None` to a float; the sort key now puts unknown last instead.)
+* **The sigma is the forecast error, not the forecast path.** `Pipeline._inventory`
+  now derives `{sku: sigma}` from the champion's own `q90` and `forecast` columns
+  the same way `backend/inventory/service.py::_point_sigma` does — `(q90 - value)
+  / 1.2816` averaged over the horizon — and passes it as `std_by_sku`. The engine
+  and the backend now mean the same thing by "sigma". `np.std(forecast)` survives
+  only as the fallback for a SKU with no band, with a comment saying why it is a
+  poor one. A test pins the exact expected safety stock, and another pins that a
+  FLAT forecast now gets a non-zero cushion — which is what used to come out as
+  zero.
+
+### k) A second recursive forecaster exists, worse, and only its tests call it — **[REMOVED 2026-09-20]**
+
+`pipelines/pipeline.py::_ml_recursive_forecast` is an iterative multi-step
+forecaster that holds the rolling and calendar features **constant** across the
+horizon — its own docstring calls that "a valid approximation for short
+horizons", against a default horizon of 30. Production does not use it: the real
+path is `inference/predictor.py::recursive_ml_predict`, which rebuilds every
+feature at every step from the same builders training used.
+
+Nothing imports it but `test_pipeline.py`, which gives it six tests. So the
+repository holds two implementations of the same idea, the worse one is the one
+with a dedicated test class, and the only thing keeping it alive is those tests.
+
+**Deleted**, with the claim verified repo-wide first: the only occurrences were
+the `def` itself and the import and calls in `test_pipeline.py` — it was never
+called even from elsewhere inside `pipeline.py`. The function and its six tests
+are gone; the rest of `test_pipeline.py` is untouched.
+
+### l) Three things the audit of consumers turned up — **OPEN, all pre-existing**
+
+Found while tracing who reads what the engine emits. None was caused by this
+work; all three are the same shape — a reader and a writer that agree on a name
+and disagree on what is behind it.
+
+* `rag_service.py:314` formats `rec_item.get('holding_cost', 0)` into the
+  narrative, and `InventoryRecommendation` **has no `holding_cost` field**. Every
+  real session therefore tells the assistant "estimated holding cost 0.00".
+* `Frontend/src/lib/types.ts:480` declares `days_coverage`; the engine emits
+  `days_of_coverage`. Inert today because the screen reads only `.action`, and a
+  trap for the next screen that renders the rest.
+* `test_integration_forecasting.py` and `test_runner_store_series.py` build
+  forecast points the OLD way — `p90_lo`/`p90_hi`, no `lower`/`upper`, no `q*`.
+  They pass only through `runner.py`'s legacy fallback, so **neither exercises
+  the path every real session now takes**. A regression in the q-key handling or
+  in `_point_sigma`'s q90 branch would not be caught by either. A coverage gap,
+  not a defect.
+
+### What was done, and what is left
+
+**Nine changes landed on 2026-09-20**, each with tests that fail on the old
+behaviour: **(a)** the served model is refitted on the full history, **(b)** the
+quantile models are gone and there is one band, **(f)** Croston's interval zero
+plus **(f-bis)** the Syntetos-Boylan de-bias, **(g)** Prophet's forced
+seasonality and its missing holiday calendar, the weighting half of **(h)**,
+**(i)** the tuner's objective and its duplicate splitter, **(j)** the inventory
+advisor's sigma and its fabricated stock signal, and **(k)** the dead second
+forecaster.
+
+Verified together on a full `Pipeline.run()` over the demo catalogue with the
+quick-start defaults: the run completes in 70s, 1200 forecast points, chart band
+and decision band identical on all of them, no leftover quantile keys, and the
+cross-learning model now leads the accuracy table instead of trailing it.
+
+**Three were measured and NOT shipped**, which is the part of this section worth
+re-reading before anybody proposes them again:
+
+* **(c)** per-horizon conformal bands — tried twice, the second time funded the
+  way the global model funds its own, and beaten by the crude flat band on two
+  catalogues of three. The band's *shape* came out backwards on the intermittent
+  one. What the attempt established instead: **no band this product publishes is
+  calibrated**, in either direction, and that is unfixed.
+* **(e)** recency weighting — wins on one catalogue of three at three different
+  half-lives, and on the drifting one it improves WAPE while making the business
+  metric worse. A change judged on accuracy alone would have shipped it.
+* **(d)** the champion metric — scored as a *decision* with the product's own
+  policy simulator rather than as an error. It buys 11.6% more stock for 1.96
+  points more fill on the intermittent catalogue and is a wash on the dense ones.
+  That is the trade it was chosen to make. It stays.
+
+**Left:**
+
+1. **(c)** and the calibration finding under it — needs a real customer file, not
+   a fourth synthetic one. Do not write more code against this until one exists.
+2. **(l)** three reader/writer mismatches found while auditing consumers, all
+   pre-existing: a `holding_cost` that does not exist, a `days_coverage` that is
+   spelled differently on each side, and two backend test files whose fixtures
+   no longer resemble what the engine emits.
+3. **(h-bis)** whether the ensemble line should exist at all, given that no
+   purchase order can be computed from it.
+4. Tweedie and log1p against the intermittent catalogue — untested, not refuted.
+
+The three refusals above are the whole point of the rule in CLAUDE.md. Every one
+of them was a sound-sounding improvement with a plausible mechanism, and each was
+measured before being believed.
+
+---
+
+## 17. The decision layer, not the model (2026-09-21)
+
+§16 asked whether the forecasting was done well. This asked whether the right
+problem is being solved, and the answer moved the interesting failures to either
+side of the model. **The modelling frame is sound** — a direct multi-horizon
+cross-learning model with a pooled scaled residual bank is the right shape for
+this decision, and it is what the product now serves. Everything below is
+downstream of the forecast or upstream of the cushion.
+
+**Nothing here is built.** Three items were verified in the code during the
+review and are marked so; the rest is labelled.
+
+### a) The product asks the buyer for the lead-time variability and then ignores it — **VERIFIED**
+
+`suppliers.lead_time_std` is a real column (`db/migrations.py:463`, `NOT NULL
+DEFAULT 3`), it is editable through the API with its own validation
+(`api/v1/inventory.py:2226`, `ge=0, le=60`), the supplier form asks for it
+(`Frontend/src/app/proveedores/page.tsx:249`, labelled "La variabilidad del lead
+time (días)"), the supplier card prints it back as `±Nd` (:323), and every
+supplier in both seeds carries one.
+
+`_safety_stock` (`backend/inventory/service.py:1173`) is
+`z * avg_std * math.sqrt(lead_time)`. It never reads it. Nothing does.
+
+This is the worst shape a field can have: the product asks a person for a number,
+shows it back to them so they believe it is being used, and drops it in the one
+calculation it exists for.
+
+And it is not a rounding error. For an importer at 21 ± 5 days against a SKU
+selling ~250/day with a per-bucket forecast-error sigma of ~32, the two terms of
+the textbook combined variance are `L·σ_d² ≈ 21,500` and `d²·σ_L² ≈ 1,560,000`.
+The lead-time term is roughly **seventy times** the demand term, and it is the
+one that is missing. (Arithmetic on the seed's own values, not a run.)
+
+The data to do better already exists twice over: the configured `lead_time_std`,
+and `supplier_lead_time_obs`, which records real receptions and is already
+averaged by `get_learned_lead_times` — the standard deviation of the same
+observations is one more aggregate over a table that is already queried.
+
+**What settles it**: extend `simulate_policy` to draw the lead time per order
+from the supplier's (mean, std) instead of treating it as constant, and re-run
+the shipped formula against one that includes `d²·σ_L²`. The fill-rate gap is
+the price of the column being ignored.
+
+### b) The quantity the money rides on is never scored — **VERIFIED, with a measurement**
+
+Everything measured in §16(c) is **per-bucket** coverage. The number the buyer is
+actually exposed to is the **sum over the lead time** plus the cushion, and its
+coverage has never been computed by anything.
+
+The two do not transfer. Measured on the demo file at L=15, for a level-type
+forecaster (a trailing 28-day mean — the error shape a flat recursive forecast
+has on a stable SKU), the residuals carry lag-1 autocorrelation of 0.08-0.26 and
+
+    std(15-bucket sum of residuals) / (sqrt(15) * sigma_1)  =  1.53 .. 1.82
+
+on all ten series, mean **1.65**. For a seasonal-naive forecaster the same ratio
+is 0.93. So `sqrt(L)` is about right for one error type and understates the
+cumulative sigma by around 65% for the other — and nothing in the decision layer
+knows which type the champion it was handed produces.
+
+Note how this sits against §16(c): per-bucket **over**-coverage (+8.7 points on
+the demo catalogue) and cumulative **under**-coverage (x1.65 on the sigma) are
+both true of the same catalogue at the same time. They are not contradictory;
+they are different quantities, and only one of them is on the screen.
+
+The plumbing for the honest version exists and is wired to one model family of
+five: `conformal.py::lead_time_demand_quantile` and
+`GlobalDirectForecaster.cumulative_residuals_by_horizon`, read by
+`_measured_safety_stock` only when the champion is `global_lgbm`
+(`service.py:1668`). Everyone else gets `z*sigma*sqrt(L)`.
+
+**What settles it**: per catalogue, per (SKU x rolling origin), the empirical
+coverage of `sum(point[:L]) + safety_stock` at the nominal 95%, for the shipped
+formula against a cumulative residual bank. That is the promise on the screen and
+it has never been measured.
+
+#### Measured 2026-09-21, and it is the worst number in this document
+
+Run as described: L = 15, nominal **95%**, 8 rolling origins per series, three
+catalogues, 80-96 (series x origin) pairs each. The question asked at every
+origin is the one the buyer is exposed to — did the stock last the lead time?
+
+    sum(actual over L)  <=  sum(forecast over L) + safety_stock
+
+| cushion | demo | drift | intermittent |
+|---|---|---|---|
+| **classic `z*sigma_1*sqrt(L)`** (what shipped before 17a) | **68.8%** | **83.8%** | **80.2%** |
+| + today's lead-time term, supplier +/-2d | 95.0% | 100% | 81.2% |
+| + today's lead-time term, supplier +/-5d | 100% | 100% | 84.4% |
+| **empirical L-sum quantile** (what this item proposes) | **95.0%** | **95.0%** | **94.8%** |
+
+**A tenant asking for 95% was being served 69-84%.** Not in one direction on one
+catalogue — under-covered on all three, systematically. That is unlike the
+per-bucket band in 16(c), which erred both ways; here the error has a sign, and
+the sign is the dangerous one. This is the number behind every "nivel de
+servicio 95%" the product has ever shown.
+
+**The empirical L-sum quantile lands on 95.0 / 95.0 / 94.8.** One number per
+catalogue — the 95th percentile of the measured L-sum error, pooled across
+series in scaled units — calibrated from the rolling origins the walk-forward
+folds already produce. This is exactly the **pooled scalar calibration** that
+17(d)'s first bullet said 16(c) had never tested, as opposed to the per-horizon
+*shape* that failed twice. It was right, and this is the measurement.
+
+**And it reframes what shipped today under 17(a).** The lead-time variance term
+is real and the formula is textbook-correct, but look at what it is actually
+doing: it is being added to a demand term that is **understated**, so the sum
+lands wherever the arithmetic happens to put it. On the dense catalogues it
+overshoots to 100% — that is over-buying, not safety. On the intermittent one it
+barely moves (80.2 -> 81.2 / 84.4), because `d * sigma_L` is small when daily
+demand is small, so the SKUs that were worst served stay worst served. And a SKU
+with no supplier is untouched at 68.8%.
+
+So 17(a) is currently compensating for a different error than the one it
+describes. Two consequences, and they are the owner's call:
+
+* **The order is wrong.** The demand term has to be calibrated FIRST. Then the
+  lead-time term adds what it is actually for, and coverage gets re-measured.
+* **Stacked as they are, they double-count.** Cumulative + lead-time term takes
+  the dense catalogues to 100%.
+
+The honest trade, stated plainly: the cushion that delivers a true 95% on the
+demo catalogue is **636 units against the 134 that shipped**. Either the product
+holds that stock, or it stops printing 95%.
+
+#### Run through the product itself, and intermittent demand is far worse
+
+The table above compares formulas offline. This one runs the real `Pipeline`,
+its real champion selection, and the cushion `backend/inventory/service.py::
+_measured_safety_stock` would actually derive from what the engine publishes —
+three rolling origins per catalogue, L=15, nominal 95%:
+
+| catalogue | classical `z*sigma*sqrt(L)` | published cumulative band |
+|---|---|---|
+| demo | 86.7% | 83.3% |
+| drift | 80.0% | **90.0%** (cushion 437 vs 185) |
+| **intermittent** | **44.4%** | 47.2% |
+
+**Intermittent demand is served 44.4% of the time against a promised 95%.** That
+is the worst number measured anywhere in this document, and it lands on exactly
+the products where the cushion IS the decision: the point forecast on that
+catalogue posts a WAPE of 1.36 (16e), i.e. worse than useless, so everything the
+buyer is protected by comes from the band. The band does not protect them.
+
+Why the cumulative band does not rescue it, and this is a design fact rather
+than a tuning problem: the L-sum of intermittent demand is skewed and
+zero-inflated, and the bank **scales by the series' own mean**. Dividing by a
+mean of 1.2 units/day amplifies noise instead of normalising it, and an
+empirical quantile pooled over SKUs with different intermittency describes none
+of them. The technique works on dense and drifting series and fails on slow
+movers.
+
+Two consequences worth stating before anyone builds further:
+
+* **A single pooled bank is the wrong shape.** `series_flags` already classifies
+  every series (intermittent / volatile / seasonal / stable). Stratifying the
+  bank by that class is the obvious next attempt, and it is cheap — but it is an
+  attempt, not a known answer, and this document's record on obvious answers to
+  this particular question is two refutations out of two.
+
+  **Tried 2026-09-22. Measured neutral, and it did not rescue intermittent
+  demand — refutation number three.** The bank is now keyed
+  `{model: {stratum: {horizon: residuals}}}`, `classify_series` supplying the
+  stratum. Re-measured end to end:
+
+  | catalogue | before stratifying | after |
+  |---|---|---|
+  | demo (dense) | 96.7% | **96.7%** |
+  | intermittent | 52.8% | **50.0%** |
+
+  No band was lost to a thin stratum on either catalogue, and dense coverage is
+  unchanged to the point. So the change is free, and it is **kept** — on the
+  same grounds the per-model split was kept after measuring neutral: a residual
+  from a 70%-zero SKU and one from a smooth daily seller do not describe the
+  same uncertainty, and pooling incomparable things is what this document
+  corrects everywhere else. Keeping it is a consistency argument, not a
+  performance one, and that is stated here rather than dressed up as a win.
+
+  **What this closes: the "wrong shape" hypothesis.** It was the stated reason
+  intermittent demand failed, and fixing the shape changed nothing. The cause is
+  elsewhere — most likely that an empirical quantile of a zero-inflated L-sum is
+  not estimable from the number of origins any small catalogue can fund,
+  whatever it is keyed by. The next idea should not be another key.
+
+#### Fourth attempt: a parametric compound model. Also refuted (2026-09-22)
+
+The reasoning was that the empirical quantile is the wrong *instrument* rather
+than the wrong *key*: a lead-time sum of intermittent demand is a compound
+distribution — a count of demand occasions times a size per occasion — and both
+parts are estimable from far less data than a 95th percentile of the sum needs.
+`models/croston.py` already estimates exactly those two pieces. So
+`evaluation/compound.py` and `Trainer._bank_fold_compound_residuals` were built
+to fund the intermittent stratum parametrically instead of by counting
+residuals.
+
+| cushion on the intermittent catalogue | coverage at nominal 95% |
+|---|---|
+| classical `z*sigma*sqrt(L)` | 47.2% |
+| empirical bank (stratified) | 50.0% |
+| **compound parametric** | **50.0%** |
+
+**Verified engaged, not merely absent:** all 12 series of that catalogue
+classify `intermittent` (77-86% zeros, CV 2.0-2.9), so the compound path ran.
+The cushion moved (mean 17.3 units against 20.4) and the coverage did not.
+
+**Four hypotheses, four refutations.** Per-horizon bands, twice. A bank pooled
+across models. Stratification by series class. A parametric compound model. The
+route of "estimate the quantile of the lead-time sum better" is closed for this
+data at this scale.
+
+#### What follows, and it is a product decision rather than a modelling one
+
+The product prints a service level it does not keep for these SKUs: 95%
+configured, ~50% delivered, on precisely the products where the point forecast
+is useless (WAPE 1.36) and the cushion is therefore the entire decision.
+
+CLAUDE.md already requires this of every optional service — *degrade out loud*:
+"missing credential -> the feature reports itself off and names what is lost,
+never a 500 and never an answer from somewhere else." A cushion that cannot
+honour the number the buyer typed is the same shape of problem, and deserves
+the same answer: **say so per SKU, where the cushion is published.** Never a
+silent fallback, never a number with nothing behind it.
+
+**Not built.** It needs a field on the risk payload, a decision-layer that
+reads it, and a line on the screen — and it should be built deliberately rather
+than at the end of a long session. Until it is, **the manual must state the
+limit**: a chapter that documents a 95% service level without it is documenting
+a claim this document has measured four times and disproved.
+* **The demo figure moved the wrong way** (86.7% classical vs 83.3% measured)
+  because the bank pooled residuals across MODELS — see the fix below.
+
+#### The answer, in two halves (2026-09-21)
+
+Two causes were chased. The first was wrong, the second was right, and the
+result splits cleanly by the kind of series.
+
+**Wrong hypothesis, real defect, no effect on coverage.** The bank was keyed by
+horizon alone and pooled residuals from EVERY model, so the band published for a
+SKU whose champion is xgboost was built from lightgbm's errors mixed with
+xgboost's — a cushion describing neither. Fixed (the bank is per model now, and
+`test_series_scale_and_bank_are_attached_to_every_entry` pins it). Coverage did
+not move: 83.3% before, 83.3% after. A champion's cushion should be built from
+its own errors regardless, so the fix stays — but it was not the cause.
+
+**Right hypothesis: the bank was starved of origins.** The offline harness that
+produced 95% used 8 rolling origins per series. The product uses `wfv_splits`,
+which `backend/sessions/defaults.py` sets to **3**. Re-measured end to end with
+nothing changed but that number:
+
+| catalogue | | 3 folds | 8 folds |
+|---|---|---|---|
+| demo | classical | 86.7% | 93.3% |
+| demo | **cumulative band** | 83.3% | **96.7%** |
+| intermittent | classical | 44.4% | 50.0% |
+| intermittent | **cumulative band** | 47.2% | **52.8%** |
+
+**On dense series the calibration delivers the promise.** 96.7% against a
+nominal 95%, at a cushion of 330 units against the classical 169. The technique
+was never wrong; the default fold count starves it. Note the classical formula
+improves too (86.7 -> 93.3), because its sigma comes from the same out-of-fold
+residuals.
+
+**On intermittent demand it does not, and more origins do not help.** 52.8%
+against 95%. More data does not repair a wrong shape: the bank scales each
+residual by the series' own MEAN, and dividing by a mean of 1.2 units/day on a
+series that is 70% zeros amplifies noise rather than normalising it. This is the
+same conclusion the shape evidence gave earlier, now confirmed with the sample
+size that was supposed to rescue it.
+
+**What this leaves the owner deciding:**
+
+1. **Raise `wfv_splits` from 3.** It is the difference between 83% and 97% on
+   dense catalogues. It costs fold fits — 8 against 3 is roughly 2.7x the
+   walk-forward work — but removing the quantile models freed 58% of ML training
+   time, so the budget exists. This is a default, not a bug, so it is a decision.
+2. **Intermittent demand still has no honest cushion.** ~50% against a promised
+   95%, on the products where the point forecast is useless (WAPE 1.36) and the
+   band is therefore the entire decision. Stratifying the bank by `series_flags`
+   and scaling by something other than the mean is the next thing to try. It is
+   a hypothesis; this document's record on hypotheses about this question is one
+   confirmed out of three.
+
+### c) The semáforo can say OK about a SKU that is below its own reorder point — **[FIXED 2026-09-21]**
+
+`_calc_signal` (`service.py:1065`) returns OK for coverage in `[1.2L, 3L)`. Below
+the reorder point means coverage `< L + SS/d`. The two overlap whenever
+`SS > 0.2*L*d`, and with L=15 and z=1.645 that is any SKU whose forecast-error
+sigma exceeds **0.47 times its daily demand** — which is most volatile and most
+intermittent products.
+
+In that band `_gate_recommended_by_signal` (:1197) zeroes the recommendation. So
+the product computes a reorder point, sees the stock below it, and tells the
+buyer not to order.
+
+Checked on the screen, and it is **worse than a visible contradiction**:
+`/inventario` prints the reorder point only on rows whose signal already says to
+order (`notYetLabel`, `Frontend/src/app/inventario/page.tsx:119-128`). An OK row
+just reads "No pedir". So nothing on screen reveals the conflict — there is no
+inconsistency for the user to catch, only a wrong answer.
+
+The three thresholds (0.5 / 1.2 / 3 x L) are not derived from the reorder point.
+They predate it, and nobody has reconciled the two.
+
+**Fixed.** The ordering boundary is now the reorder point itself, which is what
+a reorder point means. `_calc_signal` takes it as a third argument and both call
+sites were reordered so the reorder point is computed BEFORE the signal — the
+old code computed it only to throw it away when judging.
+
+The four persisted values are untouched, and two ends of the scale deliberately
+do not move:
+
+* `PEDIR_YA` keeps its old meaning, less than half a lead time of cover. It can
+  never contradict the new boundary, and the reason is arithmetic rather than
+  luck: `reorder_point_days = L + SS/d >= L > 0.5 L` for any non-negative safety
+  stock, so that sub-band always sits inside "at or below the reorder point".
+* `SOBRESTOCK` starts at the GREATER of `3 L` (the old flat threshold, so a
+  stable SKU is classified exactly as it was) and `2 x reorder_point_days` — a
+  genuinely volatile SKU can have a reorder point past three lead times, and
+  without that floor its OK band would be inverted, i.e. empty.
+
+**Blast radius, measured against the demo tenant** (40 SKUs on its most recent
+completed session): **0 of 40 change signal today**, and **40 of 40 were
+exposed**. Both halves matter. Nothing moves right now because that tenant's
+stock is stale against a session trained a month earlier, so every SKU already
+reads PEDIR_YA or PEDIR_PRONTO and none sits in the old buggy band. But every
+SKU's own reorder point sits **0.7 to 4.7 days of cover above** the old
+`1.2 x L` boundary — so any of them passing through that gap would have been
+told OK with the quantity zeroed. The 0% is a property of today's stock levels,
+not evidence the defect was theoretical.
+
+Guarded by `TestReorderPointSignalRegression`, which asserts against a helper
+that reproduces the OLD formula — so the test states the difference rather than
+just the new answer.
+
+### d) Two corrections to §16, both fair
+
+* **The (c) refutation covers per-horizon *shape*, not a pooled scalar level.**
+  Both attempts estimated a *different width per horizon* from ~30 residuals per
+  step, and the shape came out as noise. A split-conformal calibration that keeps
+  the flat shape and learns one multiplier per catalogue from every horizon and
+  every series at once has ~900 residuals on the 10-SKU file and thousands on a
+  real one. The sample-size objection that killed the per-horizon version does
+  not apply to it, and it was never tried. The §16(c) sentence "no constant
+  correction fixes it" is true *across* catalogues and does not rule out a
+  constant learned *within* one.
+* **The champion race differs in protocol LENGTH as well as origin**, and the
+  `_select_champions` docstring lists the origin difference but not this one. The
+  statistical runners score over the **entire** held-out tail — `ets.py:29`,
+  `arima.py:29`, `prophet.py:59`, `croston.py` all forecast `len(test)` — and
+  `pipeline.py:1178` copies that into `cost_horizon`. On a 450-row daily series
+  that is a ~90-step forecast being ranked against the ML models' 30. A 90-step
+  forecast is a harder question, so the statistical families are handicapped by
+  construction. Fixing the protocol is a bug-class change, not a frame change.
+
+  **[FIXED 2026-09-21]** Every statistical runner now computes its own
+  `cost_horizon` over `min(horizon, len(test))` steps and reports
+  `horizon_steps` beside it, so a series whose tail is shorter than the horizon
+  says so instead of being averaged over a different length — the same
+  precedent `Trainer._horizon_metrics` set. `mae`/`rmse`/`wape`/`bias`/`cost`
+  deliberately keep covering the whole tail, which is a different and still
+  useful question, and each runner says which is which. `_flatten` prefers the
+  runner's own figure and falls back to `cost` only for sessions persisted
+  before this existed. The `_select_champions` docstring now names the length
+  gap and records that it is closed. Guarded per family by a "shocked tail"
+  fixture whose held-out data goes wildly wrong only PAST the horizon: the old
+  code leaks that into `cost_horizon` and fails.
+
+  **The handicap was real, and its blast radius depends entirely on routing.**
+  With routing disabled so every model runs on every series, Prophet's whole-tail
+  `cost` was **1.4x to 2.9x** its windowed `cost_horizon` on every SKU, and
+  un-rigging the comparison moved the champion on **8 of 10** SKUs — Prophet
+  winning 8 where it had won none. But re-measured on the **default**
+  configuration, with routing on, the champions on this catalogue do not change
+  at all: these series classify as stable, so the router never sends Prophet to
+  them and it is not in the race to begin with. Both numbers are true and
+  neither is the whole story — on a catalogue of seasonal or volatile series,
+  where Prophet IS routed, the fix will move real purchase recommendations.
+
+### e) Parked, and correctly — with one thing worth knowing
+
+* **Hierarchical reconciliation** is not merely off, it is **inert as wired**.
+  `engine.py:755` runs only when `hierarchy_levels` is set and no frontend file
+  sets it; the pipeline never trains an aggregate level, and `forecast_df` carries
+  only leaf rows. MinT therefore sees every row as a leaf, S is the identity, and
+  the projection returns its input. Switching it on today is a no-op that logs
+  that it was applied. The cross-sectional borrowing MinT would buy is already
+  what the global model does.
+* **Price and promo as features** — `_drop_unservable_features` drops them
+  because they cannot be known for a future date, which is wrong in principle
+  (the distributor *sets* the price) and right in practice today: using them at
+  inference needs a "planned price per SKU per future date" input, which is new
+  surface, and no file in this repo has a price column to measure with.
+* **The (d) and (e) refutations stand** on re-examination.
+
+### f) One vocabulary problem
+
+`z(0.95)` sizes a **cycle service level** — the probability of not stocking out
+during a replenishment cycle. The policy backtest reports a **fill rate** — the
+share of demand served. The UI calls the setting "nivel de servicio" and shows
+one number. The 99.4% fill rate at a "95%" setting in the §16(d) table is that
+gap, not headroom.
+
+### The order, if the owner wants any of it
+
+1. **(a)** the ignored `lead_time_std` — the cheapest, and the only one where the
+   product is visibly asking for something it discards.
+2. **(c)** the semáforo / reorder-point overlap — a wrong answer with nothing on
+   screen to catch it.
+3. **(b)** scoring the lead-time sum, which is also what makes **(d)**'s pooled
+   calibration worth doing and would close §16(c) properly.
+4. **(d)** the protocol-length fix in the champion race.
+
+(a), (c) and (d) are corrections to existing behaviour. (b) changes what the
+product computes the cushion from. A periodic-review policy — an order cadence
+per supplier — would need a new field and is **not** proposed here.
+
+---
+
+## 20. Financial forecasting as a service — the list and the plan (2026-09-21)
+
+A distributor's business is a cash cycle: buy stock, hold it, sell it, collect,
+buy again. The product forecasts the demand half of that and says nothing about
+the money half. This is what could be offered on top, **what is already built**
+(more than expected — it was checked, not assumed), and the order it would have
+to happen in.
+
+**Nothing here is authorised or started.** It is a plan, in the document the
+owner actually reads, rather than a proposal file that goes stale — seven of
+those were deleted on 2026-08-11 for exactly that reason.
+
+### What already exists, verified in the code
+
+Checked before writing any of this down, because half of what looked missing is
+not:
+
+| Piece | Where |
+|---|---|
+| Payables calendar, bucketed by rolling 7-day weeks | `inventory/cash_service.py::get_payables` |
+| Supplier credit days, parsed out of the buyer's own free text | `cash_service.parse_payment_terms_days`, `resolve_credit_days`; `suppliers.payment_terms` (free text, never rewritten) + `payment_terms_days` (structured) |
+| "Does this purchase fit?" | `cash_service.evaluate_purchase_fit` |
+| Gross margin per unit, `None` (never 0) when a side is missing, negatives reported as-is | `service.py::calc_unit_margin`, surfaced on every status row |
+| Unit cost on stock, on every PO line, on every shrinkage row | `inventory_stock.unit_cost`, `inventory_po_items.unit_cost`, `inventory_shrinkage.unit_cost` |
+| Sale price per SKU | `inventory_stock.sale_price` |
+| `price`, `cost`, `regular_price`, `promo_price` accepted from the user's file | `forecasting_core/data/canonical.py` (all optional) |
+| ROI, dead capital, dead stock, shrinkage, price breaks | `roi_service.py`, `dead_capital.py`, `/inventory/dead-stock`, `shrinkage_service.py`, `price_break_service.py` |
+
+**What is NOT there:** any forward projection in money, any price history per SKU
+(only the current `sale_price`), any receivables, and any currency concept on the
+tenant.
+
+### The list, ordered by value x how close the data already is
+
+**1. The forecast in money.** The engine predicts units; the product knows price
+and cost per SKU; nobody multiplies. "Your next 90 days: X in sales, Y in gross
+margin, and these ten products are 70% of it." For an owner this is *the* number.
+*Needs:* price mapped on upload (optional column today), and `calc_unit_margin`'s
+discipline carried forward — unknown price is `null` and excluded with a count,
+never zero. *Blocked by:* nothing.
+
+**2. The cash calendar of what we are about to tell you to buy.** `get_payables`
+covers what is already owed on issued POs. The projected outflow of the
+recommendations **not yet placed** does not exist. "Follow the plan and you
+commit X in October and pay it in November." *Needs:* the recommendation, the
+supplier's credit days and the forecast — all three stored. *Blocked by:* nothing.
+
+**3. The seasonal cash crunch, called early.** December sells, October buys,
+November pays, January collects. Distributors get caught by this annually.
+*Needs:* seasonality (the engine has it), lead time, credit days. *Blocked by:*
+nothing, but it is worth little until (1) and (2) exist, because it is their
+combination stated as a warning.
+
+**4. Where the inventory value is heading.** "Plata parada" looks backwards; the
+forward twin says "following the plan your stock goes from 18M to 21M by
+December, of which 3M is the Christmas build and unwinds in January." *Blocked
+by:* (2) — same projection, different axis.
+
+**5. Supplier cost inflation.** `inventory_po_items.unit_cost` is already a price
+history per supplier per SKU, written on every reception. "This supplier raised
+you four times this year, +12% cumulative." *Needs:* nothing new. In a market
+where cost drifts monthly this is felt every week.
+
+**6. Margin erosion alerts.** Unit margin already exists; cost history already
+exists. "This product went from 22% to 9% margin because the cost rose and the
+price did not." *Needs:* nothing new. Cheapest thing on this list and arguably
+the one a buyer would pay for on its own.
+
+**Two that are honestly further away:**
+
+**7. Cash conversion cycle.** Days of inventory: yes. Days payable: yes. Days
+receivable: **no** — receivables appear in no table. Publish two thirds and name
+the missing third, or ask the tenant for it. What is not acceptable is shipping
+the metric as if it were whole.
+
+**8. FX exposure.** An importer buys in dollars and sells in local currency; a
+devaluation against committed purchases is real money. There is no currency
+concept on the tenant, so this needs new storage before it needs any maths.
+
+### The plan
+
+**Phase 0 — the precondition, and it is not negotiable.**
+Close 17(b). The promised 95% service level is delivered at **69-84%**. Every
+item above turns a unit error into a peso error in somebody's cash flow, so
+selling financial projections on top of an uncalibrated forecast amplifies the
+one defect this document says matters most. **Nothing in phases 1-3 should ship
+before this measures 95%.**
+
+**Phase 1 — the two that need no new data** (5 and 6).
+Supplier cost inflation and margin erosion. Both read history that is already
+being written, neither needs a schema change, and both are alerts rather than
+screens — they fit the channels that already exist. They also make the product
+useful to a buyer who has not mapped a price column, which is most of them on
+day one.
+
+**Phase 2 — money forward** (1, then 2, then 4).
+(1) is a multiplication and a discipline about unknowns. (2) reuses (1)'s
+valuation and the credit days already parsed. (4) is (2) projected onto stock
+value instead of cash. They share one projection engine; building them apart
+would produce the two-surfaces-one-question defect this document is full of.
+
+**Phase 3 — the warning** (3).
+The seasonal crunch is phases 1 and 2 stated as a sentence with a date on it. It
+is worth building only once those numbers are trusted, because a false alarm
+about cash is worse than no alarm.
+
+**Not scheduled** (7, 8). Each needs data the product does not collect. Both are
+worth asking a real tenant about before either is designed.
+
+### The rule this list lives under
+
+Every item is new surface. CLAUDE.md's standing rule is stability over scope, and
+a one-off "build those" covers only what it names. This section exists so the
+choice is informed, not so the work is assumed.
+
+---
+
+## 19. What the owner would want if they were buying it (2026-09-21)
+
+Asked what they would want from this product as a distributor rather than as its
+author, the owner named seven things and then authorised building them. Under
+CLAUDE.md that authorisation covers **these** and does not lift the rule for the
+next idea. Recorded here with what each one turned out to need, because three of
+them are half-built already and one of them is not a feature at all.
+
+**1. That the numbers be true, before any new feature.** Not on this list as a
+wish — it is 17(b), measured: the promised 95% service level is delivered at
+69-84%. No addition below is worth as much as that being true.
+
+**2. The capital that is not moving, ranked by money.** The semáforo has
+SOBRESTOCK, but that is a *coverage* judgement — you hold more days than you
+need — and it is not the same question as "this money has not moved in a
+quarter". Nor is it a ranked list with a total at the top. Feasible with what is
+stored: `inventory_snapshots` carries `(tenant_id, sku, current_stock,
+recorded_at)` with an index that serves it. **Built — and it landed beside
+something that was already there, which is now the open question.**
+
+`GET /inventory/dead-stock` already existed. It asks a related but different
+question (did this SKU deplete the way the forecast expected?), requires an
+active session, and — the part that matters — prices an unknown unit cost at
+zero:
+
+    capital = round(float(item.get('current_stock', 0)) * float(item.get('unit_cost') or 0), 2)
+
+The list is then **sorted by `capital_trapped` descending**, so every SKU whose
+cost the tenant never entered sinks to the bottom and reads as "no money at risk
+here". The truthful statement is "we do not know what this is worth". It is the
+same silent-failure shape as `po_pdf.py`'s own `unit_cost or 0`, which carries a
+comment about having been fixed for exactly this reason.
+
+The new `GET /inventory/dead-capital` refuses that: an unknown cost returns
+`value: null` with a reason, is counted separately and is excluded from the
+total rather than dropped. It measures stillness from the real snapshot history,
+caps a claim at the age of the earliest snapshot so two days of history can
+never read as ninety, and works with no session at all — the blind spot the
+older endpoint has.
+
+**So there are now two surfaces answering what a buyer reads as one question.**
+That is the defect shape this document spends most of its length on. It needs a
+decision, not a third screen:
+
+* fix `/dead-stock`'s `or 0` and fold the two into one, or
+* retire `/dead-stock` in favour of the snapshot-based one, or
+* keep both and make the two questions unmistakable on screen.
+
+Whoever decides should know `/dead-stock` has pinned tests
+(`test_holding_rate_is_one_number.py`, `test_entitlements.py`), and that the
+agent that found this deliberately left it alone, which was the right call.
+
+**3. Buying by supplier, on a cadence.** A buyer places one order to one
+supplier on Tuesday, not forty orders a day. There is no order cadence anywhere
+in the backend — `grep review_period|order_cycle|order_up_to` hits only
+`policy_backtest.py`, which knows about it and says why it matters. This is the
+same finding as 17's first item, from the buyer's side instead of the
+statistician's. Needs a new supplier field.
+
+**4. What it cost to ignore the advice.** In money, per product, after the fact.
+**Blocked on a missing record**: every table was checked and the product never
+writes down what it recommended. Stock is snapshotted, purchase orders are
+logged, overstock value is snapshotted monthly, accuracy is snapshotted — the
+recommendation is not. **The log is being built**; the retrospective rides on it.
+
+**5. Declaring a fact about the business, not simulating one.** `inventory_events`
+and `inventory_event_multipliers` already exist and already store a name, a date
+range and a per-SKU or per-category multiplier. **But they only reach a
+simulation.** The multipliers are read exactly once, by the event simulator,
+which calls `get_inventory_status` and scales its output; nothing in
+`_compute_inventory_status` knows an event exists. So a tenant can declare "Semana
+Santa, x1.8, 24th to 31st", save it, and the semáforo will ask for the same
+quantity tomorrow as it did today. The gap is not the storage or the screen — it
+is that a declared event is a what-if instead of a standing fact.
+
+**6. The daily loop in WhatsApp — blocked by design, and the block is right.**
+Alerts already go out there, and the assistant already has query tools. What is
+missing is the round trip. But this was not an oversight: `backend/whatsapp/
+tools.py` ships `WRITE_TOOLS = {}` with `approve_po` and `register_reception`
+**suspended, not deleted**, and the comment above it is the specification:
+
+> `register_reception` calls `receive_po` — it adds units to real stock AND
+> writes `supplier_lead_time_obs`, which moves the supplier's learned lead time
+> and its scorecard. There is no un-receive anywhere in the codebase.
+> `approve_po` stamps `sent_at`, which anchors the cash calendar. There is no
+> un-send either. [...] A WhatsApp message is the one surface with no
+> confirmation screen, no undo button and no audit the user can see; a misrouted
+> "sí" wrote inventory that nobody can walk back.
+> **Do it when `receive_po` and `mark_po_sent` have inverses, not before.**
+
+So the work this item actually needs is **the inverses**, not the conversation:
+an un-receive that takes the units back out, restores the order's reception
+state and neutralises the lead-time observation it created; an un-send that
+returns the order from "in transit" without leaving `incoming_qty` or the
+payables calendar stale; both idempotent, both permissioned, both leaving a
+trail in the activity registry that already exists.
+
+**Being built 2026-09-21**, with `WRITE_TOOLS` left empty on purpose.
+Re-enabling them is a separate decision for the owner, once the inverses exist
+and have been used in anger — not something that follows automatically from the
+inverses shipping.
+
+**7. Why today's number differs from last week's.** The "Ver por qué" panels
+explain today's calculation, not the *change*. Same blocker as #4 — without the
+recommendation log there is no previous number to difference against — and the
+same fix unlocks both. The decomposition has to separate what moved in the
+tenant's own data from what moved because a new session was trained, which is
+why the session id belongs on every logged row.
+
+---
+
+## 18. The buyer's screens, read as the buyer (2026-09-21)
+
+A review of the whole app with one question: what stops a non-technical
+distributor from using this? It went in with my hypothesis — that the product
+makes them configure a forecasting pipeline — and **demolished it**, which is
+the useful outcome.
+
+### The hypothesis was wrong, and the core loop is right
+
+**The user never sees the pipeline.** `app/ventas/page.tsx` posts all six
+`session_configs` blobs with hardcoded defaults, silently, after one click. What
+the person sees is three steps: drop a file with four plain-language settings
+("¿Hasta cuándo quieres planificar?" with 4 sem / 8 sem / 6 meses, "Nivel de
+detalle" defaulting to "Auto (recomendado)"), confirm the columns, and a progress
+screen already written in their language ("Eligiendo el mejor método por
+producto…").
+
+**And it is the default path, not a side door.** Login lands on `/compras`; a
+tenant with no session gets an empty state whose two buttons are "Subir mi
+historial de ventas" and "Probar con datos demo", the second auto-running
+`POST /demo/quickstart`. The landing CTA carries `?demo=1` through signup.
+
+**The 59-page manual is not the smell either.** The three-screen daily path does
+not need it. Its Análisis chapter has to define WAPE, MAE, RMSE, Sesgo and Folds
+— but that is the leak below, documented, not a second problem.
+
+### What is actually wrong: an analyst's instrument panel on a buyer's screen
+
+* **`/compras` shows "Precisión promedio" three times** — a headline KPI, a
+  sentence in the executive summary, and a footer line — coloured amber for a
+  normal tenant (measured sessions: 75.1%, 75.2%, 89%). It is a warning number
+  they cannot act on, three times a day, on the one screen they open daily. Its
+  own explanation disagrees three ways: the HelpTip says 85%+/below 70%, the tour
+  says above 80%/below 60%, the code colours at 85/70.
+* **`/mi-cuenta` has a "Modelos disponibles" section** with nine cards printing
+  the **raw algorithm ids in monospace** — `lightgbm`, `xgboost`, `prophet`,
+  `lstm` — tagged "MACHINE LEARNING" / "DEEP LEARNING". It undoes by hand the
+  `Modelo N` abstraction that `lib/modelLabel.ts` exists to provide.
+* **`/pronosticos` prints `MAE 8.61`** on the cards of a list whose job is
+  choosing a product.
+* **`/historial`** has columns "Horizonte" and "Granularidad" on a screen whose
+  own title already got it right ("Historial de actualizaciones").
+* **Three words for one concept**, measured in the `es` catalogue: "lead time"
+  23x, "tiempo de entrega" 12x, "plazo" 11x. A training run is "sesión" 44x,
+  "carga", "actualización", "Datos en uso". And `PEDIR_YA` — a value **stored in
+  the database and in purchase-order history** — reaches the screen verbatim in
+  `/escenarios`.
+* **The sidebar gives an admin 18 entries in 5 groups**, and every signup creates
+  an admin. About seven matter to a buyer in a normal week. The rest are all
+  legitimate and they are the wall of doors somebody sees on day one.
+
+### Dead ends for this user — the cheapest wins
+
+A screen, control or number they can neither act on nor be harmed by not seeing:
+the `/mi-cuenta` model cards; the `/compras` accuracy number in all three places;
+`MAE` on the `/pronosticos` cards; the `/historial` horizon and granularity
+columns; `/instalacion` opening on the operator tab (which names
+`INSTANCE_ADMIN_EMAILS` and is not a tenant admin's to read); and the help FAQ
+below.
+
+### Four defects found while reading — **BEING FIXED 2026-09-21**
+
+1. **Phone users are told the daily screen needs a desktop, and sent to it.**
+   `components/mobile/DesktopOnlyNotice.tsx` has `MOBILE_READY = ['/hoy',
+   '/pedidos']`, but `/hoy` is now a 308 to `/compras` — which **does** have a
+   narrow-screen implementation (`HoyMobile`). The notice is mounted app-wide and
+   its call to action links back to where the user already is.
+2. **The top bar is keyed by routes that no longer exist.**
+   `components/layout/TopBar.tsx::PAGE_TITLE_KEYS` maps `/data`, `/quick-start`,
+   `/analyst`, `/config`, `/users`, `/settings`, `/skus`, `/sessions` — so the bar
+   reads "StockAI" instead of naming the page on eight screens. Worse,
+   `PATHS_WITH_OWN_SESSION_PICKER = ['/skus']` no longer matches `/pronosticos`,
+   so the global session badge renders beside that page's own picker — exactly
+   the contradiction the comment above the list says it prevents.
+   Both are fallout from the route rename; `next.config.mjs::MOVED` is the map
+   neither table was updated against.
+3. **The help FAQ teaches a feature that was deleted.** `docs/help/index.html`
+   still explains "una pantalla con candado" and a plan that unlocks it. There
+   are no feature gates (CLAUDE.md, 2026-08-22): a limit is a number, never a
+   locked door.
+4. **The landing contradicts itself**: the FAQ says 2 GB per file, the plan table
+   says 25 MB. Both numbers were right for different tiers and presented as a
+   flat contradiction; the FAQ now states both. It also still referred to ERP
+   credentials after the 2026-09-20 removal.
+5. **The landing promised a paying customer something the code refuses.**
+   `app/page.tsx` rendered the paid column by mapping every free-tier row to one
+   blanket "Sin límite" — including file size, which
+   `backend/entitlements/plans.py` caps at **2000 MB** on paid. Its own comment
+   calls that "the one number still bounded on a paying customer's own data",
+   and the landing said it was not. This is the same class as §4.5, the two
+   false claims fixed on 2026-08-23, arriving again by a different route.
+   Fixed structurally rather than by editing a string: `pricing.limits` is now
+   `[label, free, paid][]`, so a row that does not say what **each** tier gets is
+   a compile error — the property `landing.ts` exists for. The blanket
+   `pricing.unlimited` key is gone from both catalogues.
+
+### Owner's call, not a fix
+
+* The landing sells to two audiences at once — "Construido para quien decide las
+  compras, no para científicos de datos" sits next to "Modelos compitiendo por
+  producto", "Métricas de precisión y backtesting por modelo" and "Clasificación
+  automática ABC-XYZ". Pick one.
+* Splitting `/pronosticos` into a buyer half and a technical half behind one
+  toggle. The right change, and the only one here that costs real engineering:
+  the file is 3,444 lines.
+* The holiday calendar defaults to Colombia for a product whose anchor market is
+  Costa Rica, and signup never asks the country. The tenant timezone is already
+  stored and could derive it — but either way it changes a default.
+
+### The limit of this review
+
+It was read, not used: the test suite was running and a live backend would have
+stolen its jobs. So it establishes what a screen **contains**, with file and
+line, not how dense it **feels**. Nothing here replaces walking it in a browser.
 
 ---
 
@@ -2907,5 +4451,5 @@ dead paths.
 documentation), `screen-inventory.md` (the live table),
 `direction-addendum-2026-08-10.md` (the standing product direction),
 `demo-script.md`, `help/index.html` (the bilingual user guide) and `paper/` plus
-the engine's PDF. The three skills in `.claude/skills/` — `faro-i18n`,
-`running-faro`, `silent-failures` — are current and CLAUDE.md references them.
+the engine's PDF. The three skills in `.claude/skills/` — `stockai-i18n`,
+`running-stockai`, `silent-failures` — are current and CLAUDE.md references them.

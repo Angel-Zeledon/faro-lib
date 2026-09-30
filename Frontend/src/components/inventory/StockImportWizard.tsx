@@ -262,7 +262,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
           ))}
 
           {/* THE QUESTION. The file writes numbers like 1.250 and nothing in it
-              says whether that is 1250 or 1.25. Faro used to pick 1.25 in
+              says whether that is 1250 or 1.25. StockAI used to pick 1.25 in
               silence: no row errors, "1,200 products imported", and the whole
               catalogue in PEDIR_YA with every quantity divided by a thousand
               (stability 11.2). Asked in the file's own numbers, because

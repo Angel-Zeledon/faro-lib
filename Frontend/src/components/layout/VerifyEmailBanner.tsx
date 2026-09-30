@@ -1,7 +1,7 @@
 'use client'
 /**
  * An unverified account is no longer refused at login — it can explore, upload
- * and look around; only the outward actions (inviting people, integrations,
+ * and look around; only the outward actions (inviting people,
  * sending notifications) demand a verified address. That left one gap: the user
  * had no way of knowing they were unverified until they walked into one of
  * those walls, halfway through doing something.

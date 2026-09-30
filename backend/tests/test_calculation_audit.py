@@ -20,6 +20,8 @@ from backend.inventory.service import (
     _avg_daily_forecast,
     _classify_abc,
     _classify_xyz,
+    _gate_recommended_by_signal,
+    _safety_stock,
     best_model_by_sku,
 )
 
@@ -165,68 +167,242 @@ class TestCalcRecommended:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CALCULATION 3 — _calc_signal
+#
+# stability.md 17c: the ordering boundary is now the reorder point itself
+# (lead-time demand + safety stock), not a flat `1.2 * lead_time`. The old
+# flat threshold could sit BELOW the reorder point for any SKU whose safety
+# stock exceeded `0.2 * lead_time * avg_daily` — most volatile/intermittent
+# SKUs — and in that overlap the old code reported OK and (via
+# `_gate_recommended_by_signal`) zeroed the recommendation for a SKU that was,
+# by its own reorder point, already due to be ordered.
+#
+# `_rop_days` below computes `reorder_point_days` the same way the real call
+# sites in `service.py` do — `_safety_stock(...) / avg_daily` — so these tests
+# exercise the actual formula the signal is judged against, not a value picked
+# to make the test pass.
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCalcSignal:
     """Verify signal classification boundaries."""
 
+    @staticmethod
+    def _rop_days(avg_daily, avg_std, lead_time, service_level=0.95):
+        safety = _safety_stock(avg_std, lead_time, service_level)
+        return (avg_daily * lead_time + safety) / avg_daily
+
     def test_order_now_when_coverage_less_than_half_lead_time(self):
-        assert _calc_signal(3, 15) == "PEDIR_YA"    # 3 < 15*0.5=7.5
-        assert _calc_signal(7, 15) == "PEDIR_YA"    # 7 < 7.5
+        # PEDIR_YA is unchanged by this fix: always half a lead time of cover,
+        # whatever the reorder point. A reorder point in days is never below
+        # the lead time itself (safety stock >= 0), so this sub-band always
+        # sits inside "at or below the reorder point" regardless of sigma.
+        rop_days = self._rop_days(10.0, 1.0, 15)
+        assert _calc_signal(3, 15, rop_days) == "PEDIR_YA"    # 3 < 15*0.5=7.5
+        assert _calc_signal(7, 15, rop_days) == "PEDIR_YA"    # 7 < 7.5
 
-    def test_order_soon_between_half_and_1_2_lead_time(self):
-        assert _calc_signal(8, 15) == "PEDIR_PRONTO"   # 7.5 <= 8 < 18
-        assert _calc_signal(17, 15) == "PEDIR_PRONTO"  # 17 < 18
+    def test_order_soon_at_or_below_the_reorder_point(self):
+        """A small-sigma (stable) SKU: the reorder point sits just past the
+        lead time, and PEDIR_PRONTO now runs up to exactly that point instead
+        of a flat 1.2x lead time."""
+        rop_days = self._rop_days(10.0, 1.0, 15)      # cv=0.1 -> rop ~15.6 days
+        assert _calc_signal(8, 15, rop_days) == "PEDIR_PRONTO"
+        assert _calc_signal(rop_days, 15, rop_days) == "PEDIR_PRONTO"  # AT the ROP: still ordering
 
-    def test_ok_between_1_2_and_3_lead_times(self):
-        assert _calc_signal(20, 15) == "OK"    # 18 <= 20 < 45
-        assert _calc_signal(44, 15) == "OK"    # 44 < 45
+    def test_ok_between_the_reorder_point_and_3_lead_times(self):
+        rop_days = self._rop_days(10.0, 1.0, 15)
+        assert _calc_signal(rop_days + 0.01, 15, rop_days) == "OK"  # just past the ROP
+        assert _calc_signal(44, 15, rop_days) == "OK"                # 44 < 45
 
-    def test_overstock_at_3x_lead_time(self):
-        assert _calc_signal(45, 15) == "SOBRESTOCK"
-        assert _calc_signal(100, 15) == "SOBRESTOCK"
+    def test_overstock_at_3x_lead_time_for_a_low_safety_stock_sku(self):
+        # Small safety stock -> the 3x-lead-time floor governs, same as before
+        # this fix (stable SKUs must not be reclassified).
+        rop_days = self._rop_days(10.0, 1.0, 15)
+        assert _calc_signal(45, 15, rop_days) == "SOBRESTOCK"
+        assert _calc_signal(100, 15, rop_days) == "SOBRESTOCK"
 
     def test_boundary_exact_half_lead_time(self):
         """days == LT*0.5 exactly → PEDIR_PRONTO (not strict less-than)."""
         lt = 10
+        rop_days = self._rop_days(10.0, 1.0, lt)
         # days < 5.0 → PEDIR_YA; days >= 5.0 → PEDIR_PRONTO
-        assert _calc_signal(4.99, lt) == "PEDIR_YA"
-        assert _calc_signal(5.0, lt) == "PEDIR_PRONTO"
+        assert _calc_signal(4.99, lt, rop_days) == "PEDIR_YA"
+        assert _calc_signal(5.0, lt, rop_days) == "PEDIR_PRONTO"
 
-    def test_boundary_1_2x_lead_time(self):
-        """days == LT*1.2 exactly → OK (not strict less-than)."""
+    def test_boundary_at_the_reorder_point(self):
+        """days == reorder_point_days exactly → PEDIR_PRONTO (ordering); one
+        day later → OK. This is the boundary stability.md 17c moved: it used
+        to be a flat `1.2 * lead_time`, blind to the SKU's own safety stock."""
         lt = 10
-        assert _calc_signal(11.99, lt) == "PEDIR_PRONTO"
-        assert _calc_signal(12.0, lt) == "OK"
+        rop_days = self._rop_days(10.0, 1.0, lt)
+        assert _calc_signal(rop_days - 0.01, lt, rop_days) == "PEDIR_PRONTO"
+        assert _calc_signal(rop_days, lt, rop_days) == "PEDIR_PRONTO"
+        assert _calc_signal(rop_days + 0.01, lt, rop_days) == "OK"
 
     def test_boundary_3x_lead_time(self):
-        """days == LT*3 exactly → SOBRESTOCK."""
+        """days == LT*3 exactly → SOBRESTOCK, for a SKU whose own reorder
+        point sits below that floor (small safety stock)."""
         lt = 10
-        assert _calc_signal(29.99, lt) == "OK"
-        assert _calc_signal(30.0, lt) == "SOBRESTOCK"
+        rop_days = self._rop_days(10.0, 1.0, lt)
+        assert _calc_signal(29.99, lt, rop_days) == "OK"
+        assert _calc_signal(30.0, lt, rop_days) == "SOBRESTOCK"
 
     def test_zero_lead_time_always_overstock(self):
         """
         BEHAVIOR DOCUMENTED (not a bug in itself, but semantically misleading):
-        With lead_time=0, all thresholds become 0.0.
-        coverage_days < 0 is NEVER true for any non-negative days value,
-        so the function falls through to return "SOBRESTOCK" for ANY positive stock.
+        With lead_time=0, the reorder point (lead-time demand + a
+        sqrt(0)-scaled safety stock) is 0 too, so every threshold collapses to
+        0 and the function falls through to SOBRESTOCK for any positive
+        coverage.
 
         The API endpoint enforces lead_time_days ge=1, so this case only
         occurs if service functions are called directly with LT=0.
         """
-        result = _calc_signal(5, 0)
+        result = _calc_signal(5, 0, reorder_point_days=0.0)
         assert result == "SOBRESTOCK"  # Documented: LT=0 → always SOBRESTOCK
 
     def test_zero_coverage_with_zero_lead_time(self):
-        """days=0, LT=0: 0 < 0 is False → SOBRESTOCK, not PEDIR_YA."""
-        result = _calc_signal(0, 0)
-        assert result == "SOBRESTOCK"
+        """days=0, LT=0, reorder_point_days=0: 0 <= 0 is True → PEDIR_PRONTO.
+
+        Changed by this fix (was SOBRESTOCK): with LT=0 the reorder point is
+        also 0, so zero stock is now read as exactly AT the (zero) reorder
+        point, which this function always treats as an ordering signal. LT=0
+        is unreachable through the API (`lead_time_days` is ge=1); this pins
+        the new degenerate-input reading rather than endorsing it as a real
+        scenario.
+        """
+        result = _calc_signal(0, 0, reorder_point_days=0.0)
+        assert result == "PEDIR_PRONTO"
 
     def test_high_coverage_no_demand_overstock(self):
-        """9999 days coverage (avgDaily~0) → SOBRESTOCK. Correct behavior."""
-        result = _calc_signal(9999, 15)
+        """9999 days coverage (avgDaily~0, the sentinel) → SOBRESTOCK,
+        regardless of `reorder_point_days` — unchanged by this fix. A
+        dead/discontinued SKU with any stock at all reads as overstock, never
+        as an ordering signal."""
+        result = _calc_signal(9999, 15, reorder_point_days=9999.0)
         assert result == "SOBRESTOCK"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CALCULATION 3b — the reorder-point/signal regression (stability.md 17c)
+#
+# Before this fix, `_calc_signal` classified a SKU purely by days-of-cover
+# against flat multiples of the lead time (0.5L / 1.2L / 3L), computed with no
+# reference to the reorder point computed on the very same row
+# (`avg_daily * lead_time + safety_stock`). Whenever the safety stock exceeded
+# `0.2 * lead_time * avg_daily` — a coefficient of variation past roughly
+# 0.47, i.e. most volatile or intermittent SKUs — the flat OK band
+# `[1.2L, 3L)` overlapped "below the reorder point", and
+# `_gate_recommended_by_signal` zeroed the recommendation in that band: the
+# product computed a reorder point, saw the stock below it, and told the
+# buyer not to order.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pre_fix_signal(coverage_days: float, lead_time: float) -> str:
+    """The exact formula `_calc_signal` used before stability.md 17c — kept
+    ONLY here, to demonstrate the regression this fix closes. Never call this
+    from production code."""
+    if coverage_days < lead_time * 0.5:
+        return "PEDIR_YA"
+    if coverage_days < lead_time * 1.2:
+        return "PEDIR_PRONTO"
+    if coverage_days < lead_time * 3:
+        return "OK"
+    return "SOBRESTOCK"
+
+
+class TestReorderPointSignalRegression:
+    """The regression itself, and the cases around it that must NOT move."""
+
+    def test_volatile_sku_below_its_own_reorder_point_now_orders(self):
+        """A realistic volatile/intermittent SKU (cv=1.5): avg_daily=10,
+        avg_std=15, lead_time=15, service_level=0.95, current_stock=200.
+
+        safety_stock  = 1.645 * 15 * sqrt(15)           ~= 95.56
+        reorder_point = 10*15 + 95.56                   ~= 245.56
+        reorder_point_days = 245.56 / 10                ~= 24.56 days
+        coverage_days = 200 / 10                        = 20 days
+
+        20 is inside the OLD flat OK band [1.2*15=18, 3*15=45) -> pre-fix
+        signal is OK, and `_gate_recommended_by_signal` zeroes the
+        recommendation. But 20 < 24.56: the stock is BELOW this SKU's own
+        reorder point. This is exactly the overlap stability.md 17c describes
+        (safety_stock=95.56 > 0.2*15*10=30), and it is the test that fails
+        against the pre-fix code.
+        """
+        avg_daily, avg_std, lead_time, sl = 10.0, 15.0, 15, 0.95
+        current_stock = 200.0
+
+        safety = _safety_stock(avg_std, lead_time, sl)
+        reorder_point = avg_daily * lead_time + safety
+        reorder_point_days = reorder_point / avg_daily
+        coverage_days = current_stock / avg_daily
+
+        # Confirms the scenario actually lands in the old flat OK band, and
+        # below the true reorder point -- i.e. this IS the overlap.
+        assert lead_time * 1.2 <= coverage_days < lead_time * 3
+        assert coverage_days < reorder_point_days
+        assert _pre_fix_signal(coverage_days, lead_time) == "OK"
+
+        signal = _calc_signal(coverage_days, lead_time, reorder_point_days)
+        assert signal in ("PEDIR_YA", "PEDIR_PRONTO"), (
+            f"stock is below its own reorder point ({current_stock} < "
+            f"{reorder_point:.2f}) but the signal is {signal!r}, not an "
+            "ordering signal"
+        )
+
+        recommended = _calc_recommended(
+            current_stock, avg_daily, avg_std, lead_time, moq=1, service_level=sl,
+        )
+        gated = _gate_recommended_by_signal(signal, recommended)
+        assert gated > 0, "the gated recommendation must not be zeroed"
+        assert gated == pytest.approx(reorder_point - current_stock, abs=1.0)
+
+    def test_stock_exactly_at_reorder_point_and_one_unit_either_side(self):
+        avg_daily, avg_std, lead_time, sl = 10.0, 15.0, 15, 0.95
+        safety = _safety_stock(avg_std, lead_time, sl)
+        reorder_point = avg_daily * lead_time + safety
+        reorder_point_days = reorder_point / avg_daily
+
+        at_rop = _calc_signal(reorder_point_days, lead_time, reorder_point_days)
+        assert at_rop in ("PEDIR_YA", "PEDIR_PRONTO"), (
+            "AT the reorder point must be an ordering signal"
+        )
+
+        one_below_days = (reorder_point - 1) / avg_daily
+        below = _calc_signal(one_below_days, lead_time, reorder_point_days)
+        assert below in ("PEDIR_YA", "PEDIR_PRONTO")
+
+        one_above_days = (reorder_point + 1) / avg_daily
+        above = _calc_signal(one_above_days, lead_time, reorder_point_days)
+        assert above == "OK"
+
+    def test_stable_sku_keeps_todays_signal(self):
+        """Small sigma (cv=0.1): the old and new boundaries are close enough
+        that a SKU comfortably inside a band keeps the same reading."""
+        avg_daily, avg_std, lead_time, sl = 10.0, 1.0, 15, 0.95
+        safety = _safety_stock(avg_std, lead_time, sl)
+        reorder_point_days = (avg_daily * lead_time + safety) / avg_daily
+
+        for coverage_days in (3.0, 20.0, 100.0):
+            pre = _pre_fix_signal(coverage_days, lead_time)
+            post = _calc_signal(coverage_days, lead_time, reorder_point_days)
+            assert post == pre, (
+                f"a low-cv SKU at coverage={coverage_days} changed from "
+                f"{pre!r} to {post!r}"
+            )
+
+    def test_zero_demand_stays_out_of_an_ordering_signal(self):
+        """avg_daily<=0 -> the 9999-day sentinel -> SOBRESTOCK, exactly as
+        before this fix, whatever the (irrelevant) reorder point."""
+        assert _calc_signal(9999.0, 15, reorder_point_days=0.0) == "SOBRESTOCK"
+        assert _calc_signal(9999.0, 15, reorder_point_days=9999.0) == "SOBRESTOCK"
+
+    def test_genuinely_overstocked_sku_still_reads_sobrestock(self):
+        avg_daily, avg_std, lead_time, sl = 10.0, 2.0, 15, 0.95
+        safety = _safety_stock(avg_std, lead_time, sl)
+        reorder_point_days = (avg_daily * lead_time + safety) / avg_daily
+        # 10x the lead time of cover: unambiguously overstocked.
+        coverage_days = lead_time * 10
+        assert _calc_signal(coverage_days, lead_time, reorder_point_days) == "SOBRESTOCK"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

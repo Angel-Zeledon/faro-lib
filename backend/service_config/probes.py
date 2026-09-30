@@ -250,13 +250,13 @@ def probe_rag(tenant_id: str | None = None) -> ProbeResult:
         )
 
 
-def probe_integrations(tenant_id: str | None = None) -> ProbeResult:
+def probe_secret_storage(tenant_id: str | None = None) -> ProbeResult:
     """Verify the Fernet key round-trips. Nothing external to reach.
 
-    Alegra and Siigo are per-connection credentials entered by the tenant, so
-    there is no instance-level credential to test. What CAN be wrong here, and
-    is silent until the first sync, is the encryption key: a malformed one only
-    fails when something is finally stored.
+    What CAN be wrong here, and is silent until the first save, is the key
+    itself: a malformed one only fails when a secret is finally stored, which is
+    the moment somebody is typing a credential into `/instalacion` and being
+    told it did not save.
     """
     from backend.service_config import store
 
@@ -266,9 +266,9 @@ def probe_integrations(tenant_id: str | None = None) -> ProbeResult:
             "INTEGRATIONS_SECRET_KEY is empty — no credential can be stored.",
         )
     try:
-        from backend.integrations.crypto import decrypt_value, encrypt_value
+        from backend.service_config.crypto import decrypt_value, encrypt_value
 
-        probe_text = "faro-config-probe"
+        probe_text = "stockai-config-probe"
         if decrypt_value(encrypt_value(probe_text)) != probe_text:
             return ProbeResult(False, "unexpected", "The key did not round-trip.")
         return ProbeResult(True, "ok", "Encryption key is valid.")
@@ -284,7 +284,7 @@ PROBES = {
     "probe_email": probe_email,
     "probe_twilio": probe_twilio,
     "probe_rag": probe_rag,
-    "probe_integrations": probe_integrations,
+    "probe_secret_storage": probe_secret_storage,
 }
 
 

@@ -10,7 +10,7 @@ CHAPTER = {
     "es": {
         "title": "2. Ingesta: del archivo del cliente a una serie modelable",
         "intro": (
-            "Faro no pide un formato. Lee el export que el cliente ya tiene — CSV o "
+            "StockAI no pide un formato. Lee el export que el cliente ya tiene — CSV o "
             "Excel, con separador y codificación variables, encabezados en español y "
             "fechas dd/mm/yyyy — y lo convierte en una tabla canónica. Esta es la "
             "parte que más trabajo de campo tiene y la que más barato es subestimar: "
@@ -137,7 +137,7 @@ CHAPTER = {
     "en": {
         "title": "2. Ingestion: from the customer's file to a modellable series",
         "intro": (
-            "Faro does not ask for a format. It reads the export the customer already "
+            "StockAI does not ask for a format. It reads the export the customer already "
             "has — CSV or Excel, with varying separators and encodings, Spanish "
             "headers and dd/mm/yyyy dates — and turns it into a canonical table. This "
             "is the part with the most field work in it and the cheapest to "

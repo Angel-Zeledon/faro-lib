@@ -10,7 +10,7 @@ USD still read ₡ on exactly the documents they forward to other people.
 
 Two rules that come with it:
 
-  · The setting RELABELS, it never converts. Faro stores the amount it was given
+  · The setting RELABELS, it never converts. StockAI stores the amount it was given
     and never guesses an exchange rate.
   · Resolving a tenant's currency is a DB read. Resolve it ONCE per document or
     narrative and pass the dict down; never call the reader inside a row loop.

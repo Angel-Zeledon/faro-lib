@@ -69,22 +69,22 @@ class SecretStorageUnavailable(RuntimeError):
 
 
 # ── Encryption ──────────────────────────────────────────────────────────────
-# Reuses the Fernet key that already protects integration credentials. One key
-# for everything stored-and-secret is a deliberate choice: a second key is a
-# second thing to lose, and losing either has the same consequence.
+# One Fernet key for everything stored-and-secret is a deliberate choice: a
+# second key is a second thing to lose, and losing either has the same
+# consequence. It lives in `backend/service_config/crypto.py`.
 
 def encryption_available() -> bool:
-    from backend.integrations.crypto import integrations_enabled
-    return integrations_enabled()
+    from backend.service_config.crypto import secret_storage_enabled
+    return secret_storage_enabled()
 
 
 def _encrypt(value: str) -> str:
-    from backend.integrations.crypto import encrypt_value
+    from backend.service_config.crypto import encrypt_value
     return encrypt_value(value)
 
 
 def _decrypt(token: str) -> str:
-    from backend.integrations.crypto import decrypt_value
+    from backend.service_config.crypto import decrypt_value
     return decrypt_value(token)
 
 

@@ -1,4 +1,4 @@
-"""Daily-operation section of the Faro user manual (Spanish + English).
+"""Daily-operation section of the StockAI user manual (Spanish + English).
 
 Content only: no imports, no logic. The PDF assembler reads SECTION.
 Image keys are fixed: panel, inventory, pedidos, mensajes.
@@ -15,7 +15,7 @@ SECTION = {
             "compras en la mañana para decidir qué pedir, entras a Inventario cuando "
             "necesitas revisar o corregir un producto en particular, pasas por Pedidos "
             "cuando llega la mercadería, y usas Mensajes para coordinar con tu equipo sin "
-            "salir de Faro. Las tres primeras trabajan sobre los mismos datos —el "
+            "salir de StockAI. Las tres primeras trabajan sobre los mismos datos —el "
             "pronóstico de demanda y el stock que tienes registrado— así que lo que "
             "corriges en una se ve en las otras."
         ),
@@ -60,7 +60,7 @@ SECTION = {
                     "señal, el SKU, el motivo, el proveedor, la cantidad y los botones "
                     "«Aprobar» y «Rechazar».",
                     "«Ver por qué» abre el desglose de la tarjeta: cobertura actual, demanda "
-                    "diaria pronosticada, lead time del proveedor, nivel de servicio, costo "
+                    "diaria pronosticada, tiempo de entrega del proveedor, nivel de servicio, costo "
                     "unitario, MOQ, stock actual y punto de reorden.",
                     "Al aprobar la primera línea aparece abajo la barra del carrito, con la "
                     "cantidad de productos aprobados, el total, el margen que protege el "
@@ -92,21 +92,21 @@ SECTION = {
                      "servidor; la pantalla no inventa ninguno."),
                     ("Cobertura actual",
                      "Cuánto te dura el stock que tienes al ritmo de venta pronosticado. La "
-                     "unidad sigue el período de tu sesión (días en una sesión diaria)."),
-                    ("Lead time del proveedor",
+                     "unidad sigue el período de tu actualización (días en una actualización diaria)."),
+                    ("Tiempo de entrega del proveedor",
                      "Días entre que haces el pedido y llega a tu bodega. Si aparece la "
-                     "etiqueta «estimado», es el supuesto de Faro (15 días) porque nadie lo "
+                     "etiqueta «estimado», es el supuesto de StockAI (15 días) porque nadie lo "
                      "configuró todavía."),
                     ("Nivel de servicio",
-                     "Probabilidad con la que quieres cubrir la demanda durante el lead time. "
-                     "Si no lo configuraste, Faro usa 95% y lo marca como estimado."),
+                     "Probabilidad con la que quieres cubrir la demanda durante el tiempo de entrega. "
+                     "Si no lo configuraste, StockAI usa 95% y lo marca como estimado."),
                     ("Costo unitario / MOQ",
                      "El costo que registraste para ese producto y la compra mínima que exige "
                      "el proveedor. Si no los diste, se marcan como estimados (la compra "
                      "mínima por defecto es 1)."),
                     ("Punto de reorden",
                      "Nivel de stock al que hay que pedir para que la mercadería llegue antes "
-                     "de quedarte en cero: demanda durante el lead time más el colchón de "
+                     "de quedarte en cero: demanda durante el tiempo de entrega más el colchón de "
                      "seguridad."),
                     ("Pedir:",
                      "La cantidad sugerida. Puedes hacer clic sobre el número y escribir "
@@ -127,7 +127,7 @@ SECTION = {
                      "Bodega de destino de la orden. Solo aparece si tienes dos o más "
                      "bodegas."),
                     ("Descargar orden de compra",
-                     "Baja el CSV de la orden y, al mismo tiempo, registra la orden en Faro "
+                     "Baja el CSV de la orden y, al mismo tiempo, registra la orden en StockAI "
                      "para que aparezca en Pedidos y se le pueda registrar la llegada."),
                     ("Enviar a proveedores ahora",
                      "Aparece justo después de generar la orden. Manda la orden por email o "
@@ -138,7 +138,7 @@ SECTION = {
                      "vuelve una línea en orden de compra sin pasar por el carrito."),
                     ("Anticípate — picos de demanda próximos",
                      "Picos que el pronóstico ve antes de que el semáforo se ponga rojo, con "
-                     "la fecha límite para pedir según el lead time del proveedor."),
+                     "la fecha límite para pedir según el tiempo de entrega del proveedor."),
                     ("Oportunidades de capital",
                      "Cuánto dinero tienes inmovilizado en productos con cobertura excesiva, "
                      "y cuáles son."),
@@ -154,7 +154,7 @@ SECTION = {
                      "margen protegido. 5. Si tienes varias bodegas, elige la bodega en "
                      "«Entregar en». 6. Pulsa «Descargar orden de compra»: baja el CSV y la "
                      "orden queda registrada en Pedidos."),
-                    ("Cambiar la cantidad que Faro sugiere",
+                    ("Cambiar la cantidad que StockAI sugiere",
                      " 1. Haz clic sobre el número que está junto a «Pedir:». 2. Escribe la "
                      "cantidad que vas a pedir. 3. Pulsa Enter o haz clic fuera del campo. "
                      "4. La línea queda marcada como modificada y entra al carrito con tu "
@@ -181,7 +181,7 @@ SECTION = {
                 "gotchas": [
                     "«Descargar orden de compra» hace dos cosas a la vez: baja el archivo y "
                     "registra la orden. Si el registro falla verás un aviso de error: en ese "
-                    "caso tienes el CSV pero la orden NO existe en Faro, y hay que generarla "
+                    "caso tienes el CSV pero la orden NO existe en StockAI, y hay que generarla "
                     "de nuevo.",
                     "«Compras y transferencias sugeridas» normalmente pide más unidades que "
                     "las tarjetas de arriba. No es una contradicción: las tarjetas responden "
@@ -194,7 +194,7 @@ SECTION = {
                     "aprobarlas: en lugar de los botones aparece «Tu rol no puede generar "
                     "órdenes».",
                     "La etiqueta «estimado» junto a un número no es un error. Significa que "
-                    "ese valor lo puso Faro porque nadie lo configuró; en cuanto lo "
+                    "ese valor lo puso StockAI porque nadie lo configuró; en cuanto lo "
                     "registres, deja de aparecer.",
                 ],
             },
@@ -206,7 +206,7 @@ SECTION = {
                     "Es la lista completa de tus productos con el semáforo de stock. Aquí "
                     "revisas producto por producto cuánta cobertura te queda, cuánto habría "
                     "que pedir y de dónde sale ese número; y aquí corriges los datos sobre "
-                    "los que descansa todo lo demás: stock actual, proveedor, lead time, "
+                    "los que descansa todo lo demás: stock actual, proveedor, tiempo de entrega, "
                     "costo, precio de venta y compra mínima."
                 ),
                 "walkthrough": [
@@ -214,7 +214,9 @@ SECTION = {
                     "Recomendaciones de compra», y a la derecha el indicador de frescura de "
                     "los datos.",
                     "Junto a él está el selector de vistas: Tabla, Simple, Proveedor, "
-                    "Actualizar stock (solo si tu rol puede editar) e Inmovilizado.",
+                    "Actualizar stock (solo si tu rol puede editar), Inmovilizado, Plata "
+                    "parada, Costos al alza, Margen que se achica, Pronóstico en plata y "
+                    "Costo de ignorar.",
                     "La barra de herramientas trae el botón de recarga, la importación de "
                     "CSV, «Plantilla», «Exportar OC», «Exportar OC (editada)», PDF, y los "
                     "accesos a Impacto, Proveedores y «Registrar salida».",
@@ -232,14 +234,14 @@ SECTION = {
                     "En la barra de la tabla hay un buscador por SKU, nombre o proveedor, y a "
                     "la derecha cuántos SKUs quedan tras el filtro.",
                     "La tabla lista un producto por fila: Señal, SKU / Nombre, Stock, "
-                    "Tendencia, Cobertura, Dem. (LT), Cantidad a pedir, Lead time, MOQ, "
+                    "Tendencia, Cobertura, Dem. (LT), Cantidad a pedir, Entrega (días), MOQ, "
                     "ABC-XYZ y Valor bodega.",
                     "La flecha ▶ del inicio de la fila abre «Cómo se calculó esta "
                     "recomendación»: la resta paso a paso, desde las ventas diarias promedio "
                     "hasta la cantidad final.",
-                    "Los iconos del final de la fila abren el simulador de escenarios (lead "
-                    "time, variación de demanda y stock extra) y el editor del producto, "
-                    "donde se cambian nombre, categoría, stock, proveedor, lead time, MOQ, "
+                    "Los iconos del final de la fila abren el simulador de escenarios (tiempo "
+                    "de entrega, variación de demanda y stock extra) y el editor del producto, "
+                    "donde se cambian nombre, categoría, stock, proveedor, tiempo de entrega, MOQ, "
                     "costo, precio de venta y nivel de servicio.",
                     "Al pie de la pantalla están «Eventos y temporadas», para registrar "
                     "Black Friday o fin de año con su multiplicador, y la leyenda que explica "
@@ -247,9 +249,9 @@ SECTION = {
                 ],
                 "fields": [
                     ("Señal",
-                     "El semáforo del producto, calculado comparando su cobertura con su lead "
-                     "time: PEDIR_YA por debajo de medio lead time, PEDIR_PRONTO por debajo "
-                     "de 1,2 lead times, OK por debajo de 3, y SOBRESTOCK de 3 lead times en "
+                     "El semáforo del producto, calculado comparando su cobertura con su tiempo "
+                     "de entrega: PEDIR_YA por debajo de medio tiempo de entrega, PEDIR_PRONTO por debajo "
+                     "de 1,2 tiempos de entrega, OK por debajo de 3, y SOBRESTOCK de 3 tiempos de entrega en "
                      "adelante. Sin datos aparece cuando falta el stock o el pronóstico."),
                     ("SKU / Nombre",
                      "El código del producto, el nombre que le pusiste y su proveedor."),
@@ -260,20 +262,20 @@ SECTION = {
                      "Miniatura de cómo se movió tu stock en los últimos 14 días."),
                     ("Cobertura",
                      "Cuánto te dura el stock actual al ritmo pronosticado. El encabezado "
-                     "indica la unidad, que sigue el período de tu sesión."),
+                     "indica la unidad, que sigue el período de tu actualización."),
                     ("Dem. (LT)",
                      "Cuánto esperas vender mientras esperas que llegue el pedido."),
                     ("Cantidad a pedir",
-                     "Lo que deberías pedir hoy: demanda durante el lead time más colchón de "
+                     "Lo que deberías pedir hoy: demanda durante el tiempo de entrega más colchón de "
                      "seguridad, menos el stock actual y menos lo que ya viene en camino; "
                      "nunca por debajo del MOQ. Se puede editar haciendo clic sobre el "
                      "número."),
                     ("No pedir / Aún no · al bajar a N",
                      "Lo que aparece en lugar de una cantidad cuando todavía no toca pedir. "
                      "«Aún no» indica a qué nivel de stock habrá que hacerlo."),
-                    ("Lead time",
+                    ("Entrega (días)",
                      "Días que tarda el proveedor. Lleva la etiqueta «estimado» mientras sea "
-                     "el supuesto de Faro (15 días); pasa a ser aprendido cuando registras "
+                     "el supuesto de StockAI (15 días); pasa a ser aprendido cuando registras "
                      "3 recepciones de ese proveedor."),
                     ("MOQ",
                      "Compra mínima por pedido. Nunca te recomendamos menos que ese número; "
@@ -287,9 +289,12 @@ SECTION = {
                     ("Cómo se calculó esta recomendación",
                      "El desglose que abre la flecha ▶: ventas diarias promedio × días de "
                      "entrega, + colchón de seguridad, − stock actual, = antes de redondear, "
-                     "y el redondeo al MOQ cuando aplica."),
+                     "y el redondeo al MOQ cuando aplica. Debajo, cuando hay con qué comparar, "
+                     "«Por qué cambió» dice si el cambio frente a la vez anterior vino de una "
+                     "actualización nueva del pronóstico o de algo que se movió en tu propio "
+                     "negocio — tu stock o tu tiempo de entrega."),
                     ("Simulador de escenarios",
-                     "Deslizadores de lead time, variación de demanda y stock extra que "
+                     "Deslizadores de tiempo de entrega, variación de demanda y stock extra que "
                      "muestran cómo cambiaría la cantidad recomendada. No guarda nada: es "
                      "para mirar."),
                     ("Vista Simple",
@@ -299,7 +304,7 @@ SECTION = {
                      "Agrupa los productos por proveedor, con cuántos urgentes y cuántos "
                      "próximos tiene cada uno."),
                     ("Vista Actualizar stock",
-                     "Tabla editable de stock, lead time y proveedor para corregir muchos "
+                     "Tabla editable de stock, días de entrega y proveedor para corregir muchos "
                      "productos seguidos y guardarlos de una vez. Solo para roles que pueden "
                      "editar."),
                     ("Vista Inmovilizado",
@@ -319,9 +324,10 @@ SECTION = {
                      "—rotura, vencimiento, consumo propio, obsequio o muestra— y acumula su "
                      "costo en el resumen de mermas."),
                     ("Eventos y temporadas",
-                     "Temporadas altas con un multiplicador de demanda (×1.2 a ×3.0) para "
-                     "que el sistema te avise con anticipación. Se pueden simular sobre tu "
-                     "inventario real."),
+                     "Temporadas altas con un multiplicador de demanda (×1.2 a ×3.0). En "
+                     "cuanto guardas el evento cambia la cantidad a pedir de los productos "
+                     "que le tocan — no es solo un ejercicio del simulador. Ver «Eventos que "
+                     "mueven la recomendación» más adelante en este capítulo."),
                 ],
                 "tasks": [
                     ("Corregir el stock de un producto",
@@ -336,7 +342,7 @@ SECTION = {
                      "importaron de cuántas."),
                     ("Ver de dónde sale una cantidad sugerida",
                      " 1. Pulsa la flecha ▶ al inicio de la fila del producto. 2. Lee la "
-                     "resta paso a paso. 3. Fíjate en el origen del lead time que aparece "
+                     "resta paso a paso. 3. Fíjate en el origen del tiempo de entrega que aparece "
                      "junto a los días de entrega. 4. Si quieres probar otro escenario, abre "
                      "el simulador con el icono de deslizadores."),
                     ("Registrar una merma",
@@ -351,7 +357,7 @@ SECTION = {
                      "abajo con la acción sugerida de cada fila."),
                 ],
                 "gotchas": [
-                    "«Sin datos» no es un error de Faro: es un producto al que nunca le "
+                    "«Sin datos» no es un error de StockAI: es un producto al que nunca le "
                     "registraste el stock. Mientras esté así queda fuera de las "
                     "recomendaciones de compra, porque cuánto pedir depende justamente de "
                     "cuánto te queda.",
@@ -359,13 +365,378 @@ SECTION = {
                     "No se contradicen: la señal avisa que el colchón está corto, y la "
                     "cantidad dice que todavía estás por encima del punto de reorden.",
                     "Dos productos con la misma cobertura pueden tener señales distintas. El "
-                    "semáforo compara la cobertura contra el lead time de cada producto, así "
+                    "semáforo compara la cobertura contra el tiempo de entrega de cada producto, así "
                     "que 10 días de stock son cómodos con un proveedor de 5 días y críticos "
                     "con uno de 30.",
                     "Editar la cantidad directamente en la tabla no guarda nada en el "
                     "producto: ese número solo se usa si bajas «Exportar OC (editada)».",
                     "La vista «Actualizar stock» no aparece con rol de viewer. Es un editor, "
                     "no una vista, y guardar sería rechazado de todos modos.",
+                ],
+            },
+            {
+                "name": "Plata parada",
+                "route": "/inventario",
+                "image": "deadcapital",
+                "purpose": (
+                    "Es la lista de productos cuyo stock lleva mucho tiempo sin bajar, "
+                    "ordenada por cuánto dinero representan, el más caro primero. No es "
+                    "lo mismo que la señal SOBRESTOCK: esa señal compara tu cobertura "
+                    "contra el tiempo de entrega del producto, así que un producto puede "
+                    "estar «OK» o incluso «Pedir pronto» en el semáforo y aun así ser "
+                    "plata que no se mueve hace meses, si la demanda simplemente se "
+                    "detuvo sin que el stock llegara a cruzar el umbral de sobrestock. "
+                    "Esta vista no necesita una actualización entrenada ni un pronóstico: "
+                    "mira directamente el historial real de tu stock."
+                ),
+                "walkthrough": [
+                    "Se abre desde la vista «Plata parada» del selector de Inventario.",
+                    "Arriba hay un total en dinero —solo cuenta los productos con costo "
+                    "registrado— y una nota de cuántos productos parados no tienen costo "
+                    "y quedan fuera de ese total.",
+                    "La tabla lista un producto por fila: nombre y SKU, proveedor, stock "
+                    "actual, cuánto vale (o «Sin costo») y desde cuándo no baja.",
+                    "Los productos con valor conocido van primero, del más caro al más "
+                    "barato; los que no tienen costo van al final, ordenados por cuántos "
+                    "días llevan quietos.",
+                    "Cuando el historial guardado no alcanza para haber visto caer el "
+                    "stock ni una vez, la cifra de días no es una fecha exacta: aparece "
+                    "como «al menos N días», el piso de lo que se sabe, no una medición "
+                    "cerrada.",
+                    "Si tienes una actualización activa, cada fila trae también su señal "
+                    "del semáforo, para comparar las dos lecturas sin salir de la "
+                    "pantalla; sin ninguna actualización activa, la señal aparece como "
+                    "«Sin sesión activa».",
+                ],
+                "fields": [
+                    ("SKU / Nombre", "El producto, su proveedor y su categoría."),
+                    ("Stock actual", "Unidades que tienes hoy en bodega."),
+                    ("Vale", "Stock actual por costo unitario. Si el producto no tiene "
+                     "costo registrado, no se muestra un cero: dice «Sin costo — no "
+                     "sabemos cuánto vale»."),
+                    ("Desde cuándo no baja", "Los días desde la última vez que el stock "
+                     "de ese producto cayó. Cuando el historial guardado es corto, la "
+                     "cifra viene con «al menos», porque es un piso, no una fecha "
+                     "exacta."),
+                    ("Señal", "El semáforo actual del producto, si tienes una "
+                     "actualización activa. No condiciona nada de esta lista: un "
+                     "producto puede aparecer aquí con cualquier semáforo, o sin "
+                     "ninguno."),
+                ],
+                "tasks": [
+                    (
+                        "Encontrar dónde tienes más plata parada",
+                        " 1. Abre la vista «Plata parada» en Inventario. 2. Mira el total "
+                        "de arriba: solo suma los productos con costo registrado. 3. Baja "
+                        "por la tabla: ya viene ordenada de más a menos dinero. 4. Si el "
+                        "producto que te interesa dice «Sin costo», cárgale el costo en "
+                        "su ficha para que entre al total.",
+                    ),
+                ],
+                "gotchas": [
+                    "Esta vista no es lo mismo que «Inmovilizado», en el mismo selector: "
+                    "«Inmovilizado» mide si un producto se agotó como esperaba el "
+                    "pronóstico en los últimos 30 días; «Plata parada» mide si el stock "
+                    "bajó, con o sin pronóstico de por medio. Pueden darte listas "
+                    "distintas para el mismo producto, y ninguna de las dos está mal: "
+                    "responden preguntas distintas.",
+                    "Un producto sin costo registrado nunca cuenta como cero. Si "
+                    "contara como cero se leería como «no hay plata en riesgo aquí», "
+                    "que es lo contrario de lo que significa no tener el dato: se "
+                    "muestra aparte y se cuenta aparte.",
+                    "«Al menos N días» no es lo mismo que «N días». Aparece cuando el "
+                    "historial guardado no alcanza para haber visto caer el stock ni "
+                    "una vez, y es el piso de lo que se sabe, no una medición exacta.",
+                    "No hace falta tener una actualización entrenada para ver esta "
+                    "lista: se arma sola con el historial real de tu stock, así que un "
+                    "producto que nunca metiste a un pronóstico igual puede aparecer "
+                    "aquí.",
+                ],
+            },
+            {
+                "name": "Costos al alza y margen que se achica",
+                "route": "/inventario",
+                "image": "costalerts",
+                "purpose": (
+                    "Dos vistas que leen la misma fuente: lo que de verdad pagaste en "
+                    "cada recepción de mercadería, no lo que dice la ficha del "
+                    "proveedor. «Costos al alza» ordena a tus proveedores por cuánto "
+                    "han subido sus precios; «Margen que se achica» ordena tus "
+                    "productos por cuántos puntos perdió su margen. Las dos existen "
+                    "para que una subida de costo no se te pase por revisarla producto "
+                    "por producto."
+                ),
+                "walkthrough": [
+                    "Se abren desde las vistas «Costos al alza» y «Margen que se "
+                    "achica» del selector de Inventario.",
+                    "Las dos leen solo recepciones que de verdad llegaron: un pedido "
+                    "cotizado o rechazado no cuenta como evidencia de lo que pagaste.",
+                    "«Costos al alza» agrupa por proveedor: cada fila trae cuánto subió "
+                    "en total y, adentro, los productos que más empujaron esa subida.",
+                    "«Margen que se achica» ordena tus productos del que más perdió "
+                    "margen al que menos, con el margen de antes y el de ahora lado a "
+                    "lado.",
+                    "Arriba de «Margen que se achica» hay un control para el mínimo de "
+                    "puntos de margen perdidos que quieres ver; por defecto medio "
+                    "punto, para no llenar la lista de ruido.",
+                    "Un aviso fijo explica la limitación de las dos vistas: StockAI guarda "
+                    "solo tu precio de venta de HOY, nunca un historial de precios, así "
+                    "que el margen «de antes» se arma con el precio de hoy y el costo "
+                    "de entonces — nunca puede acusar a una baja de precio, solo a una "
+                    "subida de costo.",
+                ],
+                "fields": [
+                    ("Subió", "El porcentaje que ese proveedor, o ese producto, subió "
+                     "de precio en la ventana que estás mirando, comparando la primera "
+                     "recepción registrada con la más reciente."),
+                    ("Productos más subidos", "Dentro de un proveedor, los que más "
+                     "empujaron esa subida."),
+                    ("Margen antes / Margen ahora", "El margen con el costo de la "
+                     "primera recepción registrada y con el de la más reciente, los dos "
+                     "usando tu precio de venta de HOY. No es un margen histórico real: "
+                     "es lo que habría pasado si el precio nunca hubiera cambiado."),
+                    ("Puntos perdidos", "La diferencia entre el margen de antes y el "
+                     "de ahora, en puntos porcentuales. Solo entran a la lista los "
+                     "productos que perdieron al menos el mínimo que elegiste arriba."),
+                    ("Estás vendiendo bajo el costo", "Aviso que aparece cuando el "
+                     "margen de ahora es negativo: el costo ya superó el precio de "
+                     "venta."),
+                ],
+                "tasks": [
+                    (
+                        "Ver qué proveedor te ha subido más el precio",
+                        " 1. Abre la vista «Costos al alza». 2. La tabla ya viene "
+                        "ordenada por el proveedor que más subió. 3. Abre su fila para "
+                        "ver qué productos empujaron esa subida. 4. Si vas a "
+                        "renegociar, esos son los productos con los que empezar.",
+                    ),
+                    (
+                        "Encontrar el producto cuyo margen se te está yendo",
+                        " 1. Abre la vista «Margen que se achica». 2. Ajusta el mínimo "
+                        "de puntos si la lista es muy larga o muy corta. 3. Compara "
+                        "«Margen antes» con «Margen ahora» en la fila que te interese. "
+                        "4. Si el margen ahora es negativo, la fila lo dice "
+                        "explícitamente: estás vendiendo bajo costo.",
+                    ),
+                ],
+                "gotchas": [
+                    "Ambas vistas piden al menos dos recepciones registradas de ese "
+                    "producto o proveedor dentro de la ventana. Con una sola no hay "
+                    "con qué comparar, y el producto queda fuera en vez de mostrarse "
+                    "con un cambio inventado.",
+                    "«Margen que se achica» nunca dice que bajaste el precio, aunque "
+                    "eso también explicaría un margen menor. StockAI no guarda tus "
+                    "precios pasados, solo tus costos pasados, así que solo puede "
+                    "acusar al costo — nunca al precio, porque no tiene cómo "
+                    "probarlo.",
+                    "Un producto sin precio de venta registrado, o sin suficiente "
+                    "historial de costo, queda fuera de «Margen que se achica» y se "
+                    "cuenta aparte, no se descarta en silencio.",
+                    "El margen que ves aquí puede salir negativo, y se muestra tal "
+                    "cual: la pantalla no lo recorta a cero para que se vea mejor.",
+                ],
+            },
+            {
+                "name": "Costo de ignorar",
+                "route": "/inventario",
+                "image": "ignoring",
+                "purpose": (
+                    "Es el registro de lo que StockAI te recomendó cada día y qué pasó "
+                    "después. Por cada producto que estuvo en PEDIR_YA o PEDIR_PRONTO, "
+                    "dice si terminaste pidiéndolo, si probablemente te quedaste sin "
+                    "stock por no pedirlo, o si no hay forma de saberlo con lo que "
+                    "tienes registrado — y esa tercera opción no es un cero: es que "
+                    "falta el dato para afirmar cualquier cosa."
+                ),
+                "walkthrough": [
+                    "Se abre desde la vista «Costo de ignorar» del selector de "
+                    "Inventario.",
+                    "Lista un producto por fila con el resultado de cada alerta que le "
+                    "saliste: pediste a tiempo, probable quiebre de stock, o no se "
+                    "puede saber.",
+                    "«Probable quiebre de stock» solo aparece cuando StockAI vio de "
+                    "verdad tu stock llegar a cero después de la alerta, nunca porque "
+                    "lo suponga.",
+                    "Cuando el quiebre todavía seguía abierto al final de la ventana "
+                    "que estás mirando, la pantalla lo marca como un mínimo: lo que "
+                    "perdiste hasta ahí, no lo que vas a perder en total.",
+                    "«No se puede saber» aparece cuando ni generaste la orden a tiempo "
+                    "ni viste el stock llegar a cero: no hay evidencia para decir que "
+                    "ignorar la alerta te costó algo, y tampoco la hay para lo "
+                    "contrario.",
+                    "Las unidades y el valor perdidos usan tu venta diaria promedio y "
+                    "tu precio de venta de HOY; si falta cualquiera de los dos, la "
+                    "fila lo dice en vez de adivinar un número.",
+                ],
+                "fields": [
+                    ("Pediste a tiempo", "Generaste una orden de compra para ese "
+                     "producto dentro de los 14 días siguientes a la alerta."),
+                    ("Probable quiebre de stock", "No generaste la orden a tiempo, y "
+                     "StockAI vio tu stock llegar a cero después. Las unidades y el valor "
+                     "perdidos vienen calculados, nunca en cero."),
+                    ("No se puede saber", "No generaste la orden a tiempo, pero "
+                     "tampoco viste el stock llegar a cero. No es que no haya pasado "
+                     "nada: es que no hay evidencia para afirmarlo ni para "
+                     "descartarlo."),
+                    ("Precio desconocido", "Aparece cuando sí se sabe cuántas "
+                     "unidades perdiste pero no su valor, porque el producto no tiene "
+                     "precio de venta registrado."),
+                ],
+                "tasks": [
+                    (
+                        "Ver qué te costó no pedir a tiempo",
+                        " 1. Abre la vista «Costo de ignorar». 2. Busca las filas "
+                        "marcadas «Probable quiebre de stock». 3. Revisa las unidades "
+                        "y el valor perdido de cada una. 4. Si alguna dice que es un "
+                        "mínimo, el quiebre seguía abierto al final de la ventana: lo "
+                        "real es igual o mayor.",
+                    ),
+                ],
+                "gotchas": [
+                    "«No se puede saber» no es una forma disimulada de decir cero. "
+                    "Es la respuesta honesta cuando no hay ni una orden ni un quiebre "
+                    "de stock observado: falta evidencia, en cualquiera de los dos "
+                    "sentidos.",
+                    "El valor perdido es venta, no margen: unidades por precio de "
+                    "venta de hoy, no lo que realmente habrías ganado.",
+                    "Esta pantalla usa el precio de venta de HOY para valorar un "
+                    "quiebre pasado, porque StockAI no guarda un historial de precios. "
+                    "Inventarse el precio de entonces sería justo el tipo de número "
+                    "que esta pantalla existe para evitar.",
+                    "Un producto sin venta diaria promedio registrada no puede tener "
+                    "unidades perdidas calculadas, y la fila lo dice en vez de "
+                    "mostrar un cero.",
+                ],
+            },
+            {
+                "name": "Eventos que mueven la recomendación",
+                "route": "/inventario",
+                "image": "events",
+                "purpose": (
+                    "Declarar una temporada alta — Semana Santa, Black Friday, tu "
+                    "propia fecha de campaña — no es un ejercicio: en cuanto la "
+                    "guardas, cambia lo que StockAI te dice que pidas, todos los días, "
+                    "hasta que la fecha pase. El multiplicador que escribes no se "
+                    "aplica entero de un día para otro: se reparte según cuánto de tu "
+                    "tiempo de entrega cae dentro de las fechas del evento."
+                ),
+                "walkthrough": [
+                    "Se declara al pie de Inventario, en «Eventos y temporadas»: "
+                    "nombre, fecha de inicio, fecha de fin y un multiplicador de "
+                    "demanda, con un SKU o una categoría opcional.",
+                    "En cuanto guardas el evento, empieza a mover la cantidad a pedir "
+                    "de los productos que le tocan — no solo el resultado del "
+                    "Simulador de escenarios.",
+                    "El efecto depende de cuánto del tiempo de entrega de cada "
+                    "producto cae dentro de las fechas del evento: si tu proveedor "
+                    "tarda 15 días y el evento cubre 4 de esos días, no recibes el "
+                    "multiplicador completo, sino una fracción de él.",
+                    "Por ejemplo: un evento de x1.8 que cubre 4 de los 15 días de "
+                    "tiempo de entrega de un producto no multiplica su demanda por "
+                    "1.8, sino por cerca de 1.21 — la parte del camino que el evento "
+                    "realmente alcanza a cubrir.",
+                    "Cuando la fila de un producto cambió por un evento, «Por qué "
+                    "cambió» te lo dice con el cálculo exacto: el nombre del evento, "
+                    "el multiplicador y sobre cuántos de los días del tiempo de "
+                    "entrega se aplicó.",
+                    "Varios eventos que se solapan en el mismo producto se combinan "
+                    "entre sí, no se reemplazan uno al otro.",
+                ],
+                "fields": [
+                    ("Multiplicador de demanda", "Cuánto más vas a vender durante el "
+                     "evento. ×1.8 es 80% más. La pantalla lo clasifica de leve a "
+                     "pico según qué tan alto sea."),
+                    ("Por qué cambió (evento)", "Cuando el cambio de una fila viene "
+                     "de un evento, la frase trae su nombre, el multiplicador y sobre "
+                     "cuántos de los días de tiempo de entrega se aplicó — por "
+                     "ejemplo, «Semana Santa: x1.8 sobre 4 de los 15 días»."),
+                ],
+                "tasks": [
+                    (
+                        "Preparar el inventario para una temporada alta",
+                        " 1. Ve al pie de Inventario y abre «Eventos y temporadas». "
+                        "2. Crea el evento con su nombre, sus fechas y el "
+                        "multiplicador que esperas. 3. Vuelve al semáforo: los "
+                        "productos que le tocan ya piden más, en proporción a cuánto "
+                        "del evento cae dentro de su tiempo de entrega. 4. Si quieres "
+                        "ver el efecto antes de guardarlo, usa el Simulador de "
+                        "escenarios con una regla de «Promoción» en las mismas "
+                        "fechas.",
+                    ),
+                ],
+                "gotchas": [
+                    "El multiplicador que escribes no se aplica completo salvo que el "
+                    "evento cubra todo el tiempo de entrega del producto. El mismo "
+                    "evento de una semana mueve mucho menos la recomendación de un "
+                    "proveedor de 30 días que la de uno de 5.",
+                    "Esto es distinto del Simulador de escenarios: una regla de "
+                    "simulación no toca nada hasta que la borras; un evento guardado "
+                    "en «Eventos y temporadas» sí cambia lo que ves en el semáforo "
+                    "todos los días, mientras dure.",
+                    "Si dos eventos se solapan sobre el mismo producto, sus "
+                    "multiplicadores se combinan; no gana el más alto.",
+                ],
+            },
+            {
+                "name": "El pronóstico en plata",
+                "route": "/inventario",
+                "image": "forecastmoney",
+                "purpose": (
+                    "Multiplica lo que el pronóstico dice que vas a vender por tu "
+                    "precio y tu costo de hoy, para dar una cifra en dinero en vez de "
+                    "solo en unidades: cuánto vas a vender, cuánto margen te va a "
+                    "dejar, y qué productos concentran esa plata."
+                ),
+                "walkthrough": [
+                    "Se abre desde la vista «Pronóstico en plata» del selector de "
+                    "Inventario, y necesita una actualización activa.",
+                    "Arriba hay tres cifras: ventas proyectadas, margen proyectado y "
+                    "cuántos productos entraron en la cuenta.",
+                    "Debajo, un aviso fijo recuerda que la proyección usa tu precio de "
+                    "venta de HOY, porque StockAI no guarda un historial de precios y no "
+                    "sabe cuál será el precio en el futuro.",
+                    "La tabla lista un producto por fila —unidades pronosticadas, "
+                    "ventas, costo, margen y margen porcentual— ordenada del que más "
+                    "margen aporta al que menos.",
+                    "Un aviso arriba de la tabla dice qué porcentaje del margen "
+                    "proyectado explican los diez productos que más aportan.",
+                    "Si un producto no tiene precio o costo registrado, no "
+                    "desaparece de la tabla: se queda con esa celda marcada como "
+                    "desconocida, y se cuenta aparte en el pie de la pantalla.",
+                ],
+                "fields": [
+                    ("Ventas proyectadas", "Unidades que el pronóstico espera que "
+                     "vendas en lo que queda del horizonte, multiplicadas por tu "
+                     "precio de venta de hoy."),
+                    ("Margen proyectado", "Lo mismo, pero con el margen unitario de "
+                     "cada producto en vez del precio completo."),
+                    ("Productos pronosticados", "Cuántos productos entraron en la "
+                     "cuenta. Los que no tienen pronóstico, precio o costo no "
+                     "entran, y se cuentan aparte."),
+                    ("Unidades pronosticadas", "La suma del pronóstico de ese "
+                     "producto para lo que queda del horizonte de esta "
+                     "actualización, nunca negativa."),
+                    ("Margen / Margen %", "Igual que en el resto de la app: si falta "
+                     "el precio o el costo, la celda dice que no se sabe, nunca un "
+                     "cero."),
+                ],
+                "tasks": [
+                    (
+                        "Ver qué productos concentran tu plata futura",
+                        " 1. Abre la vista «Pronóstico en plata». 2. Lee la frase de "
+                        "arriba de la tabla: te dice qué parte del margen explican "
+                        "los diez primeros. 3. Revisa esos diez productos primero: "
+                        "son los que más te conviene no dejar sin stock.",
+                    ),
+                ],
+                "gotchas": [
+                    "La cifra usa el precio y el costo de HOY, no uno futuro. Si vas "
+                    "a subir un precio, o tu proveedor te va a subir el costo, esta "
+                    "pantalla todavía no lo sabe.",
+                    "Un producto sin precio o sin costo no se descarta: se cuenta "
+                    "aparte para que el total no parezca completo cuando no lo es.",
+                    "El margen puede salir negativo, y se muestra así, sin "
+                    "recortarlo a cero.",
                 ],
             },
             {
@@ -376,7 +747,7 @@ SECTION = {
                     "Aquí vive todo lo que ya pediste. Cada orden que generaste queda "
                     "registrada con lo que pediste, a quién y cuándo; desde esta pantalla la "
                     "envías al proveedor y registras la llegada de la mercadería. Registrar "
-                    "la llegada es lo que actualiza tu stock y lo que le enseña a Faro cuánto "
+                    "la llegada es lo que actualiza tu stock y lo que le enseña a StockAI cuánto "
                     "tarda de verdad cada proveedor."
                 ),
                 "walkthrough": [
@@ -486,8 +857,8 @@ SECTION = {
                     "no ocurrió, no sobre una orden cancelada, así que la orden sigue "
                     "contando en «por recibir».",
                     "Registrar la llegada no es papeleo: es lo que sube tu stock y lo que le "
-                    "enseña a Faro el plazo real de ese proveedor. Con 3 recepciones "
-                    "registradas Faro reemplaza el lead time configurado por el promedio "
+                    "enseña a StockAI el tiempo de entrega real de ese proveedor. Con 3 recepciones "
+                    "registradas StockAI reemplaza el tiempo de entrega configurado por el promedio "
                     "real.",
                     "«Enviar pedido» omite en silencio a los proveedores sin email ni "
                     "WhatsApp en su ficha; por eso la confirmación te los nombra antes. Para "
@@ -503,7 +874,7 @@ SECTION = {
                 "route": "/mensajes",
                 "image": "mensajes",
                 "purpose": (
-                    "Mensajería uno a uno entre las personas de tu empresa, dentro de Faro. "
+                    "Mensajería uno a uno entre las personas de tu empresa, dentro de StockAI. "
                     "Sirve para lo que ocurre alrededor de una decisión de compra —«ya "
                     "confirmé con el proveedor», «esa cantidad la bajé a la mitad»— sin "
                     "salir a otra aplicación ni perder el contexto."
@@ -571,7 +942,7 @@ SECTION = {
                      "Interruptor que vive en Mi cuenta, no aquí. Cuando está encendido y "
                      "tienes tu número vinculado, recibes un aviso por WhatsApp (o SMS si "
                      "WhatsApp no está disponible) si te escriben mientras no estás en "
-                     "Faro."),
+                     "StockAI."),
                 ],
                 "tasks": [
                     ("Escribirle a alguien por primera vez",
@@ -612,7 +983,7 @@ SECTION = {
             "These four screens are your everyday routine: you open the Purchasing Panel "
             "in the morning to decide what to order, go into Inventory when you need to "
             "check or fix a particular product, pass through Orders when goods arrive, and "
-            "use Messages to coordinate with your team without leaving Faro. The first "
+            "use Messages to coordinate with your team without leaving StockAI. The first "
             "three work on the same data — the demand forecast and the stock you have on "
             "record — so what you fix in one shows up in the others."
         ),
@@ -690,14 +1061,14 @@ SECTION = {
                      "the screen invents none of them."),
                     ("Current coverage",
                      "How long the stock you have lasts at the forecasted sales rate. The "
-                     "unit follows your session's period (days in a daily session)."),
+                     "unit follows your update's period (days in a daily update)."),
                     ("Supplier lead time",
                      "Days between placing the order and it reaching your warehouse. If it "
-                     "carries the “estimated” tag, it is Faro's assumption (15 "
+                     "carries the “estimated” tag, it is StockAI's assumption (15 "
                      "days) because nobody has configured it yet."),
                     ("Service level",
                      "The probability you want to cover demand with during the lead time. If "
-                     "you have not configured it, Faro uses 95% and marks it as estimated."),
+                     "you have not configured it, StockAI uses 95% and marks it as estimated."),
                     ("Unit cost / MOQ",
                      "The cost you recorded for that product and the minimum order the "
                      "supplier requires. If you did not provide them, they are marked as "
@@ -724,7 +1095,7 @@ SECTION = {
                      "warehouses."),
                     ("Download purchase order",
                      "Downloads the order's CSV and, at the same time, records the order in "
-                     "Faro so it shows up in Orders and its arrival can be logged."),
+                     "StockAI so it shows up in Orders and its arrival can be logged."),
                     ("Send to suppliers now",
                      "Appears right after the order is generated. Sends the order by email or "
                      "WhatsApp to every supplier that has contact details on their record."),
@@ -752,7 +1123,7 @@ SECTION = {
                      "5. If you have several warehouses, pick one under “Deliver "
                      "to”. 6. Press “Download purchase order”: the CSV "
                      "downloads and the order is recorded in Orders."),
-                    ("Change the quantity Faro suggests",
+                    ("Change the quantity StockAI suggests",
                      " 1. Click the number next to “Order:”. 2. Type the quantity "
                      "you are going to order. 3. Press Enter or click outside the field. "
                      "4. The line is marked as modified and goes into the cart with your "
@@ -781,7 +1152,7 @@ SECTION = {
                     "“Download purchase order” does two things at once: it "
                     "downloads the file and records the order. If the recording fails you "
                     "will see an error notice: in that case you have the CSV but the order "
-                    "does NOT exist in Faro, and you have to generate it again.",
+                    "does NOT exist in StockAI, and you have to generate it again.",
                     "“Suggested purchases and transfers” usually asks for more "
                     "units than the cards above. That is not a contradiction: the cards "
                     "answer “what do I order today” and the optimiser answers "
@@ -794,7 +1165,7 @@ SECTION = {
                     "them: instead of the buttons you get “Your role cannot generate "
                     "orders”.",
                     "The “estimated” tag next to a number is not an error. It means "
-                    "Faro chose that value because nobody configured it; as soon as you "
+                    "StockAI chose that value because nobody configured it; as soon as you "
                     "record yours, it stops appearing.",
                 ],
             },
@@ -814,7 +1185,8 @@ SECTION = {
                     "signal · Purchase recommendations”, and the data-freshness "
                     "indicator on the right.",
                     "Next to it is the view switcher: Table, Simple, Provider, Update stock "
-                    "(only if your role can edit) and Dead stock.",
+                    "(only if your role can edit), Dead stock, Money not moving, Rising "
+                    "costs, Shrinking margin, Forecast in money and Cost of ignoring.",
                     "The toolbar holds the refresh button, the CSV import, "
                     "“Template”, “Export PO”, “Export PO "
                     "(edited)”, PDF, and the links to Impact, Suppliers and “Log "
@@ -861,7 +1233,7 @@ SECTION = {
                      "A thumbnail of how your stock moved over the last 14 days."),
                     ("Coverage",
                      "How long your current stock lasts at the forecasted rate. The header "
-                     "states the unit, which follows your session's period."),
+                     "states the unit, which follows your update's period."),
                     ("Demand (LT)",
                      "How much you expect to sell while waiting for the order to arrive."),
                     ("Qty to order",
@@ -873,7 +1245,7 @@ SECTION = {
                      "“Not yet” states the stock level at which it will be."),
                     ("Lead time",
                      "Days your supplier takes. It carries the “estimated” tag "
-                     "while it is Faro's assumption (15 days); it becomes learned once you "
+                     "while it is StockAI's assumption (15 days); it becomes learned once you "
                      "record 3 receptions from that supplier."),
                     ("MOQ",
                      "Minimum units per order. We never recommend less than that number; "
@@ -888,7 +1260,11 @@ SECTION = {
                     ("How this recommendation was calculated",
                      "The breakdown the ▶ arrow opens: average daily sales × lead "
                      "time days, + safety stock, − current stock, = before rounding, and "
-                     "the rounding up to the MOQ when it applies."),
+                     "the rounding up to the MOQ when it applies. Below it, when there is a "
+                     "prior value to compare against, “Why it changed” says whether the "
+                     "change since last time came from a new forecast update or from "
+                     "something that moved in your own business — your stock or your lead "
+                     "time."),
                     ("Scenario simulator",
                      "Sliders for lead time, demand variation and extra stock that show how "
                      "the recommended quantity would change. It saves nothing: it is for "
@@ -920,9 +1296,10 @@ SECTION = {
                      "— breakage, expiry, self-consumption, gift or sample — and "
                      "accumulates their cost in the shrinkage summary."),
                     ("Events and seasons",
-                     "High-demand seasons with a demand multiplier (×1.2 to ×3.0) "
-                     "so the system warns you in advance. They can be simulated against your "
-                     "real inventory."),
+                     "High-demand seasons with a demand multiplier (×1.2 to ×3.0). As "
+                     "soon as you save the event it changes the quantity to order for the "
+                     "products it applies to — not just a simulator exercise. See “Events "
+                     "that move the recommendation” later in this chapter."),
                 ],
                 "tasks": [
                     ("Fix a product's stock",
@@ -951,7 +1328,7 @@ SECTION = {
                      "each row's suggested action."),
                 ],
                 "gotchas": [
-                    "“No data” is not a Faro error: it is a product whose stock you "
+                    "“No data” is not a StockAI error: it is a product whose stock you "
                     "never recorded. While it stays that way it is left out of the purchase "
                     "recommendations, because how much to order depends on exactly how much "
                     "you have left.",
@@ -970,6 +1347,371 @@ SECTION = {
                 ],
             },
             {
+                "name": "Money not moving",
+                "route": "/inventario",
+                "image": "deadcapital",
+                "purpose": (
+                    "The list of products whose stock has gone a long time without "
+                    "falling, ordered by how much money they represent, the most "
+                    "expensive first. It is not the same as the SOBRESTOCK signal: that "
+                    "signal compares your coverage against the product's lead time, so a "
+                    "product can read “OK” or even “Order soon” on the traffic light and "
+                    "still be money that has not moved in months, if demand simply "
+                    "stalled without stock ever crossing the overstock threshold. This "
+                    "view needs no trained update and no forecast: it reads your stock's "
+                    "real history directly."
+                ),
+                "walkthrough": [
+                    "Opens from the “Money not moving” view in the Inventory switcher.",
+                    "At the top is a total in money — it only counts products with a "
+                    "cost on file — and a note of how many idle products have no cost "
+                    "and are left out of that total.",
+                    "The table lists one product per row: name and SKU, supplier, "
+                    "current stock, what it is worth (or “No cost on file”), and how "
+                    "long it has gone without falling.",
+                    "Priced products come first, most expensive to least; unpriced ones "
+                    "come last, ordered by how many days they have been still.",
+                    "When the recorded history is not long enough to have ever seen the "
+                    "stock fall, the day count is not an exact date: it reads “at least "
+                    "N days” — a floor, not a closed measurement.",
+                    "With an active update, every row also carries its current signal, "
+                    "so you can compare the two readings without leaving the screen; "
+                    "with none active, the signal reads “No active session”.",
+                ],
+                "fields": [
+                    ("SKU / Name", "The product, its supplier and its category."),
+                    ("Current stock", "Units you hold today."),
+                    ("Worth", "Current stock times unit cost. If the product has no "
+                     "cost on file, it does not show a zero: it reads “No cost on "
+                     "file — we don't know what it's worth”."),
+                    ("Still since", "The days since that product's stock last fell. "
+                     "When the recorded history is short, the figure carries “at "
+                     "least”, because it is a floor, not an exact date."),
+                    ("Signal", "The product's current traffic-light signal, if you "
+                     "have an active update. It gates nothing on this list: a product "
+                     "can appear here under any signal, or none."),
+                ],
+                "tasks": [
+                    (
+                        "Find where most of your money is sitting still",
+                        " 1. Open the “Money not moving” view in Inventory. 2. Check "
+                        "the total at the top: it only adds up products with a cost on "
+                        "file. 3. Scroll down the table: it is already ordered from "
+                        "most to least money. 4. If the product you care about says "
+                        "“No cost on file”, add its cost on the product card so it "
+                        "enters the total.",
+                    ),
+                ],
+                "gotchas": [
+                    "This view is not the same as “Dead stock”, in the same switcher: "
+                    "“Dead stock” measures whether a product depleted the way the "
+                    "forecast expected over the last 30 days; “Money not moving” "
+                    "measures whether the stock fell, with or without a forecast "
+                    "involved. They can give you different lists for the same "
+                    "product, and neither is wrong: they answer different questions.",
+                    "A product with no cost on file never counts as zero. If it did, "
+                    "it would read as “no money at risk here”, which is the "
+                    "opposite of what missing the data means: it is shown apart and "
+                    "counted apart instead.",
+                    "“At least N days” is not the same as “N days”. It appears when "
+                    "the recorded history does not reach far enough back to have "
+                    "ever seen the stock fall, and it is a floor on what is known, "
+                    "not an exact measurement.",
+                    "You do not need a trained update to see this list: it builds "
+                    "itself from your stock's real history, so a product you never "
+                    "put through a forecast can still show up here.",
+                ],
+            },
+            {
+                "name": "Rising costs and shrinking margin",
+                "route": "/inventario",
+                "image": "costalerts",
+                "purpose": (
+                    "Two views that read the same source: what you actually paid on "
+                    "every reception of goods, not what the supplier's card claims. "
+                    "“Rising costs” ranks your suppliers by how much they have raised "
+                    "their prices; “Shrinking margin” ranks your products by how many "
+                    "points their margin lost. Both exist so a cost increase does not "
+                    "slip past you for lack of checking every product one by one."
+                ),
+                "walkthrough": [
+                    "Open from the “Rising costs” and “Shrinking margin” views in the "
+                    "Inventory switcher.",
+                    "Both read only receptions that actually arrived: a quoted or "
+                    "rejected order is not evidence of what you paid.",
+                    "“Rising costs” groups by supplier: each row carries how much they "
+                    "raised overall and, inside it, the products that pushed that "
+                    "increase the most.",
+                    "“Shrinking margin” ranks your products from the one that lost "
+                    "the most margin to the one that lost the least, with the before "
+                    "and after margin side by side.",
+                    "Above “Shrinking margin” there is a control for the minimum "
+                    "margin points lost you want to see; half a point by default, so "
+                    "the list is not full of noise.",
+                    "A fixed notice explains the limit both views share: StockAI stores "
+                    "only your CURRENT sale price, never a price history, so the "
+                    "“before” margin is built from today's price and the cost from "
+                    "back then — it can never blame a price cut, only a cost "
+                    "increase.",
+                ],
+                "fields": [
+                    ("Increase", "The percentage that supplier, or that product, rose "
+                     "in price over the window you are looking at, comparing the "
+                     "first recorded reception with the most recent one."),
+                    ("Products that rose most", "Within a supplier, the ones that "
+                     "pushed that increase the hardest."),
+                    ("Margin before / Margin now", "The margin with the cost from "
+                     "the first recorded reception and with the most recent one, "
+                     "both using your CURRENT sale price. It is not a real "
+                     "historical margin: it is what would have happened had the "
+                     "price never changed."),
+                    ("Points lost", "The gap between the before and the now margin, "
+                     "in percentage points. Only products that lost at least the "
+                     "minimum you set above make the list."),
+                    ("You are selling below cost", "A notice that appears when the "
+                     "current margin is negative: cost has already overtaken the "
+                     "sale price."),
+                ],
+                "tasks": [
+                    (
+                        "See which supplier has raised your prices the most",
+                        " 1. Open the “Rising costs” view. 2. The table is already "
+                        "ordered by the supplier that rose the most. 3. Open their "
+                        "row to see which products drove that increase. 4. If you "
+                        "are going to renegotiate, those are the products to start "
+                        "with.",
+                    ),
+                    (
+                        "Find the product whose margin is slipping away",
+                        " 1. Open the “Shrinking margin” view. 2. Adjust the minimum "
+                        "points if the list is too long or too short. 3. Compare "
+                        "“Margin before” with “Margin now” on the row you care "
+                        "about. 4. If the current margin is negative, the row says "
+                        "so explicitly: you are selling below cost.",
+                    ),
+                ],
+                "gotchas": [
+                    "Both views need at least two recorded receptions of that "
+                    "product or supplier within the window. With only one there is "
+                    "nothing to compare against, and the product is left out "
+                    "instead of shown with an invented change.",
+                    "“Shrinking margin” never says you cut the price, even though "
+                    "that would also explain a lower margin. StockAI does not store "
+                    "your past prices, only your past costs, so it can only blame "
+                    "cost — never price, because it has no way to prove it.",
+                    "A product with no sale price on file, or without enough cost "
+                    "history, is left out of “Shrinking margin” and counted "
+                    "separately, not silently dropped.",
+                    "The margin you see here can come out negative, and is shown "
+                    "as such: the screen does not clip it to zero to look better.",
+                ],
+            },
+            {
+                "name": "Cost of ignoring",
+                "route": "/inventario",
+                "image": "ignoring",
+                "purpose": (
+                    "The record of what StockAI recommended each day and what happened "
+                    "afterwards. For every product that carried a PEDIR_YA or "
+                    "PEDIR_PRONTO signal, it says whether you ended up ordering it, "
+                    "whether you likely ran out of stock for not ordering it, or "
+                    "whether there is no way to tell from what is on record — and "
+                    "that third answer is not a zero: it is that the evidence to "
+                    "claim anything is missing."
+                ),
+                "walkthrough": [
+                    "Opens from the “Cost of ignoring” view in the Inventory "
+                    "switcher.",
+                    "Lists one product per row with the outcome of every alert it "
+                    "carried: ordered in time, likely stockout, or cannot tell.",
+                    "“Likely stockout” only appears when StockAI actually saw your "
+                    "stock hit zero after the alert, never because it assumed it "
+                    "would.",
+                    "When the stockout was still open at the end of the window you "
+                    "are looking at, the screen flags it as a floor: what you lost "
+                    "so far, not what you will lose in total.",
+                    "“Cannot tell” appears when you neither generated the order in "
+                    "time nor saw stock hit zero: there is no evidence that "
+                    "ignoring the alert cost you anything, and none for the "
+                    "opposite either.",
+                    "Lost units and lost value use your average daily demand and "
+                    "your CURRENT sale price; if either is missing, the row says "
+                    "so instead of guessing a number.",
+                ],
+                "fields": [
+                    ("Ordered in time", "You generated a purchase order for that "
+                     "product within the 14 days after the alert."),
+                    ("Likely stockout", "You did not order in time, and StockAI saw "
+                     "your stock hit zero afterwards. Lost units and lost value "
+                     "come computed, never as zero."),
+                    ("Cannot tell", "You did not order in time, but you also never "
+                     "saw stock hit zero. It is not that nothing happened: it is "
+                     "that there is no evidence to say so, nor to rule it out."),
+                    ("Price unknown", "Appears when the lost units are known but "
+                     "their value is not, because the product has no sale price on "
+                     "file."),
+                ],
+                "tasks": [
+                    (
+                        "See what not ordering in time cost you",
+                        " 1. Open the “Cost of ignoring” view. 2. Look for the rows "
+                        "marked “Likely stockout”. 3. Check the lost units and "
+                        "lost value on each. 4. If one says it is a floor, the "
+                        "stockout was still open at the end of the window: the "
+                        "real figure is at least that much.",
+                    ),
+                ],
+                "gotchas": [
+                    "“Cannot tell” is not a disguised way of saying zero. It is "
+                    "the honest answer when there is neither an order nor an "
+                    "observed stockout: the evidence is missing, in either "
+                    "direction.",
+                    "Lost value is revenue, not margin: units times today's sale "
+                    "price, not what you would actually have earned.",
+                    "This screen prices a past stockout with today's sale price, "
+                    "because StockAI stores no price history. Inventing what the "
+                    "price was back then would be exactly the kind of number "
+                    "this screen exists to avoid.",
+                    "A product with no average daily demand on record cannot "
+                    "have lost units computed, and the row says so instead of "
+                    "showing a zero.",
+                ],
+            },
+            {
+                "name": "Events that move the recommendation",
+                "route": "/inventario",
+                "image": "events",
+                "purpose": (
+                    "Declaring a high season — Easter, Black Friday, your own "
+                    "campaign date — is not an exercise: as soon as you save it, it "
+                    "changes what StockAI tells you to order, every day, until the date "
+                    "passes. The multiplier you type does not apply in full "
+                    "overnight: it is scaled by how much of your lead time falls "
+                    "inside the event's dates."
+                ),
+                "walkthrough": [
+                    "Declared at the foot of Inventory, under “Events and "
+                    "seasons”: name, start date, end date and a demand "
+                    "multiplier, with an optional SKU or category.",
+                    "As soon as you save the event, it starts moving the quantity "
+                    "to order for the products it applies to — not just the "
+                    "Scenario simulator's result.",
+                    "The effect depends on how much of each product's lead time "
+                    "falls inside the event's dates: if your supplier takes 15 "
+                    "days and the event covers 4 of them, you do not get the full "
+                    "multiplier, only a fraction of it.",
+                    "For example: a ×1.8 event covering 4 of a product's 15 "
+                    "lead-time days does not multiply its demand by 1.8, but by "
+                    "roughly 1.21 — the share of the delivery window the event "
+                    "actually reaches.",
+                    "When a product's row changed because of an event, “Why it "
+                    "changed” tells you with the exact math: the event's name, "
+                    "its multiplier and how many of the lead-time days it applied "
+                    "over.",
+                    "Several events that overlap on the same product combine "
+                    "with each other; they do not replace one another.",
+                ],
+                "fields": [
+                    ("Demand multiplier", "How much more you will sell during "
+                     "the event. ×1.8 is 80% more. The screen classifies it from "
+                     "mild to peak depending on how high it is."),
+                    ("Why it changed (event)", "When a row's change came from an "
+                     "event, the sentence carries its name, the multiplier and "
+                     "how many of the lead-time days it applied over — for "
+                     "example, “Easter: x1.8 over 4 of 15 days”."),
+                ],
+                "tasks": [
+                    (
+                        "Get your inventory ready for a high season",
+                        " 1. Go to the foot of Inventory and open “Events and "
+                        "seasons”. 2. Create the event with its name, dates and "
+                        "the multiplier you expect. 3. Go back to the traffic "
+                        "light: the products it applies to already ask for more, "
+                        "in proportion to how much of the event falls inside "
+                        "their lead time. 4. To see the effect before saving it, "
+                        "use the Scenario simulator with a “Promotion” rule on "
+                        "the same dates.",
+                    ),
+                ],
+                "gotchas": [
+                    "The multiplier you type does not apply in full unless the "
+                    "event covers the product's whole lead time. The same "
+                    "one-week event moves a 30-day supplier's recommendation far "
+                    "less than a 5-day one's.",
+                    "This is different from the Scenario simulator: a simulated "
+                    "rule touches nothing until you delete it; an event saved "
+                    "under “Events and seasons” does change what you see on the "
+                    "traffic light every day, for as long as it runs.",
+                    "If two events overlap on the same product, their "
+                    "multipliers combine; the higher one does not simply win.",
+                ],
+            },
+            {
+                "name": "The forecast in money",
+                "route": "/inventario",
+                "image": "forecastmoney",
+                "purpose": (
+                    "Multiplies what the forecast says you will sell by today's "
+                    "price and cost, to give a figure in money instead of just in "
+                    "units: how much you will sell, how much margin it will leave "
+                    "you, and which products carry that money."
+                ),
+                "walkthrough": [
+                    "Opens from the “Forecast in money” view in the Inventory "
+                    "switcher, and needs an active update.",
+                    "At the top are three figures: projected sales, projected "
+                    "margin and how many products made it into the count.",
+                    "Below, a fixed notice reminds you the projection uses your "
+                    "CURRENT sale price, because StockAI stores no price history "
+                    "and does not know what the price will be in the future.",
+                    "The table lists one product per row — units forecast, "
+                    "revenue, cost, margin and margin percentage — ordered from "
+                    "the one that contributes the most margin to the one that "
+                    "contributes the least.",
+                    "A notice above the table says what percentage of the "
+                    "projected margin the top ten contributing products "
+                    "explain.",
+                    "A product with no price or cost on file does not disappear "
+                    "from the table: it stays with that cell marked unknown, and "
+                    "is counted separately at the foot of the screen.",
+                ],
+                "fields": [
+                    ("Projected sales", "Units the forecast expects you to sell "
+                     "over the rest of the horizon, multiplied by today's sale "
+                     "price."),
+                    ("Projected margin", "The same, but with each product's "
+                     "unit margin instead of the full price."),
+                    ("Products forecast", "How many products made it into the "
+                     "count. Ones with no forecast, price or cost do not, and "
+                     "are counted separately."),
+                    ("Units forecast", "The sum of that product's forecast over "
+                     "the rest of this update's horizon, never negative."),
+                    ("Margin / Margin %", "Same rule as the rest of the app: if "
+                     "the price or the cost is missing, the cell says it is "
+                     "unknown, never a zero."),
+                ],
+                "tasks": [
+                    (
+                        "See which products carry your future money",
+                        " 1. Open the “Forecast in money” view. 2. Read the "
+                        "line above the table: it tells you what share of the "
+                        "margin the top ten explain. 3. Check those ten "
+                        "products first: they are the ones you can least "
+                        "afford to run out of.",
+                    ),
+                ],
+                "gotchas": [
+                    "The figure uses TODAY's price and cost, not a future one. "
+                    "If you are about to raise a price, or your supplier is "
+                    "about to raise a cost, this screen does not know it yet.",
+                    "A product with no price or no cost is not dropped: it is "
+                    "counted separately so the total does not look complete "
+                    "when it is not.",
+                    "The margin can come out negative, and is shown as such, "
+                    "with no clipping to zero.",
+                ],
+            },
+            {
                 "name": "Orders",
                 "route": "/pedidos",
                 "image": "pedidos",
@@ -978,7 +1720,7 @@ SECTION = {
                     "you generated is recorded with what you bought, from whom and when; "
                     "from this screen you send it to the supplier and log the arrival of the "
                     "goods. Logging the arrival is what updates your stock and what teaches "
-                    "Faro how long each supplier really takes."
+                    "StockAI how long each supplier really takes."
                 ),
                 "walkthrough": [
                     "The header reads “Orders” with the subtitle “Generated "
@@ -1092,8 +1834,8 @@ SECTION = {
                     "statement about a delivery that did not happen, not about a cancelled "
                     "order, so the order keeps counting under “awaiting reception”.",
                     "Logging the arrival is not paperwork: it is what raises your stock and "
-                    "what teaches Faro that supplier's real lead time. After 3 recorded "
-                    "receptions Faro replaces the configured lead time with the real "
+                    "what teaches StockAI that supplier's real lead time. After 3 recorded "
+                    "receptions StockAI replaces the configured lead time with the real "
                     "average.",
                     "“Send order” silently skips suppliers with no email or "
                     "WhatsApp on their record; that is why the confirmation names them "
@@ -1109,7 +1851,7 @@ SECTION = {
                 "route": "/mensajes",
                 "image": "mensajes",
                 "purpose": (
-                    "One-to-one messaging between the people in your company, inside Faro. "
+                    "One-to-one messaging between the people in your company, inside StockAI. "
                     "It is for what happens around a purchasing decision — “already "
                     "confirmed with the supplier”, “I halved that quantity” "
                     "— without leaving for another app or losing the context."
@@ -1172,7 +1914,7 @@ SECTION = {
                     ("Get a heads-up when someone writes to you",
                      "A switch that lives in My account, not here. When it is on and your "
                      "number is linked, you get a WhatsApp heads-up (or an SMS if WhatsApp is "
-                     "unavailable) if someone writes to you while you are away from Faro."),
+                     "unavailable) if someone writes to you while you are away from StockAI."),
                 ],
                 "tasks": [
                     ("Write to someone for the first time",

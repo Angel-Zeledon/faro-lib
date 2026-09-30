@@ -1,6 +1,6 @@
-# Faro — inventory purchasing decisions for distributors
+# StockAI — inventory purchasing decisions for distributors
 
-Faro turns a distributor's sales history into the purchase decision of the day:
+StockAI turns a distributor's sales history into the purchase decision of the day:
 what to order, how much, from whom, and when it has to be placed so it arrives
 before the stock runs out.
 
@@ -29,7 +29,7 @@ whoever runs it rather than by whoever wrote it.
 | Disk | a writable `storage/` directory for datasets, model artifacts and documents |
 
 **Nothing else is required.** Every external service — the language model,
-email, WhatsApp, SMS, document search, accounting integrations — is optional,
+email, WhatsApp, SMS, document search — is optional,
 and each one turns itself off and says so on the screen that would have used
 it. A deployment with no API keys at all still forecasts, still computes the
 signal, and still produces purchase orders.
@@ -61,9 +61,19 @@ cd Frontend && npm install && npm run dev
 
 Then open <http://localhost:5000> and create the first account.
 
-Steps 4 and 5 are what `./run.sh` (or `run.bat` on Windows) does for you, Postgres
-included. **8010 is the port everything agrees on**: the frontend proxies there
-unless `BACKEND_URL` says otherwise, and both run scripts start the API on it.
+Steps 4 and 5 are what `./start.sh` (or `start.bat` on Windows) does for you,
+Postgres included — and `--seed` fills the demo tenant on the way up. Both wait
+until the API actually answers `/health` before telling you it is ready, because
+a bound port is not the same as a running app.
+
+**The backend port is derived, not fixed.** `Frontend/.env.local` is gitignored,
+per-machine, read by Next, and it beats a shell `BACKEND_URL`, so it is the only
+thing that really decides where the browser's `/api/*` calls land — the scripts
+read it and fall back to `next.config.mjs`'s default when the file is absent.
+Hardcoding a port broke this twice in opposite directions: 8010 fails on a
+machine where another project's container already holds it, and 8011 fails on a
+fresh clone that has no `.env.local` and proxies to a port nothing is listening
+on.
 
 Two traps worth knowing before they cost you an hour:
 
@@ -162,8 +172,8 @@ different readers:
 
 | Manual | For | Source | Rebuild |
 |---|---|---|---|
-| `faro-manual-{es,en}.pdf` (62 pp.) | the purchasing manager: screen by screen, what to click, what the numbers mean | `docs/manual/` | `python -m backend.scripts.build_manual` |
-| `faro-technical-{es,en}.pdf` (19 pp.) | **you**: architecture, algorithms, the exact formulas, and what each number does NOT mean | `docs/tech/` | `python -m backend.scripts.build_tech_manual` |
+| `stockai-manual-{es,en}.pdf` (62 pp.) | the purchasing manager: screen by screen, what to click, what the numbers mean | `docs/manual/` | `python -m backend.scripts.build_manual` |
+| `stockai-technical-{es,en}.pdf` (19 pp.) | **you**: architecture, algorithms, the exact formulas, and what each number does NOT mean | `docs/tech/` | `python -m backend.scripts.build_tech_manual` |
 
 The user manual is built into `Frontend/public/` and is downloadable from the
 landing page in the visitor's language. The technical one is built into

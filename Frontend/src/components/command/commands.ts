@@ -55,10 +55,10 @@ export const COMMANDS: Command[] = [
   { id: 'go.sessions',     group: 'navigate', href: '/historial',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
   { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: BrainCircuit },
   { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical },
-  // Integraciones is hidden from the sidebar for now (see the note there), so
-  // it must not be reachable from the palette either — a command palette that
-  // navigates somewhere the nav deliberately hides is a back door, not a
-  // shortcut.
+  // A command palette must not navigate anywhere the sidebar deliberately
+  // hides — that is a back door, not a shortcut. Nothing is hidden today; the
+  // rule stays written down because the next hidden screen will be added by
+  // somebody who only edits the sidebar.
   { id: 'go.config',       group: 'navigate', href: '/mi-cuenta',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
   { id: 'go.users',        group: 'navigate', href: '/usuarios',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
   { id: 'go.api',          group: 'navigate', href: '/automatizacion',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true },

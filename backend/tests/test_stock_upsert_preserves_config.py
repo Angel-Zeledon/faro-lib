@@ -9,8 +9,8 @@ upsert wrote them over the tenant's configuration.
 
 Measured before the fix, on a supplier whose minimum order is 100 units:
 
-    before the stock update   moq=100   ->  Faro recommends 100 units
-    after  the stock update   moq=1     ->  Faro recommends  81 units
+    before the stock update   moq=100   ->  StockAI recommends 100 units
+    after  the stock update   moq=1     ->  StockAI recommends  81 units
 
 81 is below a minimum the supplier will not ship, and nothing warned: the screen
 said "saved". The stock count and the supplier's minimum have nothing to do with
