@@ -45,6 +45,24 @@ _ES: dict[str, str] = {
     "freshness_whatsapp_sales":      "📅 *StockAI*: tus ventas son de hace {days} días — sube el archivo de este mes",
     "freshness_whatsapp_stock":      "📦 Tu stock lleva {days} días sin actualizarse; el semáforo quedó en “desactualizado”",
     "freshness_whatsapp_cta":        "Subir ahora: {url}",
+    # ── Daily operator digest (stability §14.g) ───────────────────────────────
+    # Read by whoever operates the installation, across every tenant. Only sent
+    # when something failed, so the subject leads with the count. Error
+    # excerpts, loop names and event actions are interpolated as recorded
+    # (English identifiers) — they are what the operator will grep the logs for.
+    "operator_digest_subject":           "StockAI — {n} falla{s} en la instalación en las últimas 24 horas",
+    "operator_digest_title":             "Resumen diario de fallas",
+    "operator_digest_intro":             "Esto falló en la instalación entre {start} y {end} (UTC), en todas las empresas. Este correo solo llega a los operadores y solo los días en que algo falló.",
+    "operator_digest_section_jobs":      "Entrenamientos fallidos ({n})",
+    "operator_digest_section_schedules": "Reentrenamientos programados que no se pudieron disparar ({n})",
+    "operator_digest_section_loops":     "Tareas de fondo que no completaron su pasada ({n})",
+    "operator_digest_section_events":    "Eventos críticos y envíos fallidos ({n})",
+    "operator_digest_job_line":          "{tenant} · sesión «{session}» · {at}",
+    "operator_digest_loop_line":         "{loop} · estado {status} · {at}",
+    "operator_digest_event_line":        "{tenant} · {action} · {at}",
+    "operator_digest_no_error":          "(sin mensaje de error registrado)",
+    "operator_digest_more":              "… y {n} más",
+    "operator_digest_footer":            "Lo envía el resumen diario de operador (12:00 UTC). Destinatarios: INSTANCE_ADMIN_EMAILS o, si está vacía y hay una sola empresa, sus administradores. No es un servicio de monitoreo: los detalles completos están en los registros del servidor y en /health.",
     # ── Auth emails ───────────────────────────────────────────────────────────
     # Read in an inbox, never rendered by the frontend, so the Spanish lives
     # here. `{app}` is the product name the module passes in.

@@ -644,6 +644,104 @@ def send_data_freshness_reminder_email(
         return False
 
 
+# Rows each operator-digest section lists before collapsing into "+N more".
+_OPERATOR_DIGEST_MAX_ROWS = 15
+
+
+def _digest_time(value) -> str:
+    return value.strftime("%Y-%m-%d %H:%M") if hasattr(value, "strftime") else str(value or "")
+
+
+def send_operator_digest_email(
+    to: str, failures: dict, window_start, window_end,
+) -> bool:
+    """The daily list of what failed on this installation (stability §14.g).
+
+    Built by `notifications.operator_digest.run_operator_digest`. Platform
+    mail: it speaks for the installation, so it always uses the instance
+    transport, never a tenant's. Returns True if the message reached a transport.
+    """
+    from html import escape
+
+    def _row(headline: str, detail: str) -> str:
+        return (
+            f'<li style="margin:0 0 10px;">{_strong(escape(headline))}'
+            f'<br><span style="color:{_DIM};font-size:12px;">{escape(detail)}</span></li>'
+        )
+
+    def _section(title_key: str, rows: list[str]) -> str:
+        if not rows:
+            return ""
+        shown = rows[:_OPERATOR_DIGEST_MAX_ROWS]
+        more = len(rows) - len(shown)
+        tail = (f'<li style="color:{_DIM};">{escape(render_es("operator_digest_more", n=more))}</li>'
+                if more > 0 else "")
+        return (
+            f'<p style="font-weight:700;margin:20px 0 8px;">'
+            f'{escape(render_es(title_key, n=len(rows)))}</p>'
+            f'<ul style="padding-left:18px;margin:0;">{"".join(shown)}{tail}</ul>'
+        )
+
+    no_error = render_es("operator_digest_no_error")
+    jobs = [
+        _row(render_es("operator_digest_job_line",
+                       tenant=j.get("tenant_name") or j.get("tenant_id"),
+                       session=j.get("session_name") or j.get("session_id"),
+                       at=_digest_time(j.get("failed_at"))),
+             j.get("error") or no_error)
+        for j in failures.get("jobs", [])
+    ]
+    schedules = [
+        _row(render_es("operator_digest_job_line",
+                       tenant=s.get("tenant_name") or s.get("tenant_id"),
+                       session=s.get("session_name") or s.get("session_id"),
+                       at=_digest_time(s.get("failed_at"))),
+             s.get("error") or no_error)
+        for s in failures.get("schedules", [])
+    ]
+    loops = [
+        _row(render_es("operator_digest_loop_line",
+                       loop=lp.get("loop"), status=lp.get("last_status"),
+                       at=_digest_time(lp.get("last_run_at"))),
+             lp.get("last_error") or no_error)
+        for lp in failures.get("loops", [])
+    ]
+    events = [
+        _row(render_es("operator_digest_event_line",
+                       tenant=e.get("tenant_name") or e.get("tenant_id"),
+                       action=e.get("action"), at=_digest_time(e.get("failed_at"))),
+             e.get("detail") or no_error)
+        for e in failures.get("events", [])
+    ]
+    total = len(jobs) + len(schedules) + len(loops) + len(events)
+
+    title = render_es("operator_digest_title")
+    html = _base_html(
+        title,
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 12px;">{title}</p>
+        <p style="color:{_DIM};margin:0 0 8px;">
+          {escape(render_es("operator_digest_intro",
+                            start=_digest_time(window_start), end=_digest_time(window_end)))}
+        </p>
+        {_section("operator_digest_section_jobs", jobs)}
+        {_section("operator_digest_section_schedules", schedules)}
+        {_section("operator_digest_section_loops", loops)}
+        {_section("operator_digest_section_events", events)}
+        <p style="color:{_DIM};font-size:11px;margin:24px 0 0;">
+          {escape(render_es("operator_digest_footer"))}
+        </p>
+        """,
+    )
+    subject = render_es("operator_digest_subject", n=total, s="" if total == 1 else "s")
+    try:
+        _send(to, subject, html)
+        return True
+    except Exception as exc:
+        log.error("Failed to send operator digest to %s: %s", to, exc)
+        return False
+
+
 def send_training_complete_email(
     to: str, session_name: str, dashboard_url: str,
     tenant_id: str | None = None,

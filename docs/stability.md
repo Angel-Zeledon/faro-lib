@@ -2862,12 +2862,27 @@ project and not a checkbox.
 answer to the buying question is now "by file, or by our API" — which is what it
 had always actually been.
 
-**g) The operator cannot see failures — [OPEN, owner's call]**
+**g) The operator cannot see failures — [DONE 2026-09-30] daily operator digest**
 `/health` now carries service state and loop freshness, and the tenant has
 `/actividad`. But when a training fails at 3 a.m. on a customer's own server,
 nothing reaches a person. The cheap version is a daily operator digest over the
 mail channel that already exists; the thorough version is error aggregation,
 which is a dependency and a decision. A new channel, so: ask first.
+
+*Done, the cheap version (owner-approved 2026-09-30).* A new `operator-digest`
+loop (`backend/notifications/operator_digest.py`, scheduled in `worker.py` at
+**12:00 UTC**, `SCHEDULER_ENABLED` only, listed in `/health` `loops`) mails the
+operators — `INSTANCE_ADMIN_EMAILS`, or the sole tenant's admins on a deployment
+that named nobody — what failed in the 24h ending at that boundary, across all
+tenants: FAILED training jobs (tenant, session, error excerpt), scheduled
+retrains that could not fire, background loops whose last pass was skipped or
+failed, and `critical` / delivery-`failed` activity events. A quiet day sends
+nothing but records the pass; no operator or no mail transport records a
+`skipped` pass with the reason, visible in `/health`; one pass per boundary, so a
+restart never resends. What it is **not**: error aggregation — no stack traces,
+no grouping, no alert within the hour, and nothing about an exception that was
+only logged and never written to a table. If the scheduler itself is dead, the
+digest dies with it; `/health` `loops` is the only place that shows.
 
 **h) Capacity has no measured number — [OPEN]**
 A buyer with 20,000 SKUs and three years of history will ask whether it holds,

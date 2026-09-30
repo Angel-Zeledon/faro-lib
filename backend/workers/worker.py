@@ -364,6 +364,66 @@ def _inventory_alert_loop() -> None:
         loop_state.mark_run(loop_state.INVENTORY_ALERTS, boundary)
 
 
+# 12:00 UTC: after the 08:00 tenant digests (so a failure in THAT pass is
+# already in `system_loop_runs`), and the morning in LatAm (06:00–09:00), so the
+# night's failures reach the operator at the start of their working day.
+_OPERATOR_DIGEST_HOUR_UTC = 12
+
+
+def _operator_digest_loop() -> None:
+    """Mails the instance operators what failed in the last 24h, daily at
+    12:00 UTC (stability §14.g). Same boundary/catch-up/idempotency shape as
+    `_inventory_alert_loop` — see that loop for why each step is there."""
+    log.info("Operator digest scheduler started")
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            caught_up = loop_state.missed_boundary(
+                loop_state.OPERATOR_DIGEST,
+                _previous_daily_run(now, _OPERATOR_DIGEST_HOUR_UTC), now,
+                loop_state.DAILY_CATCHUP,
+            )
+            if caught_up is not None:
+                log.warning("Operator digest: catching up the %s pass",
+                            caught_up.isoformat())
+                boundary = caught_up
+            else:
+                next_run = _next_daily_run(now, _OPERATOR_DIGEST_HOUR_UTC)
+                sleep_secs = (next_run - now).total_seconds()
+                log.info("Operator digest: next run at %s UTC (%.0f s)",
+                         next_run.isoformat(), sleep_secs)
+                time.sleep(max(sleep_secs, 1))
+                woke_at = datetime.now(timezone.utc)
+                boundary = (next_run if woke_at >= next_run
+                            else _previous_daily_run(woke_at, _OPERATOR_DIGEST_HOUR_UTC))
+        except Exception as e:
+            log.error(
+                "Operator digest scheduler error — retrying in %d s: %s",
+                _DAILY_LOOP_RETRY_SECONDS, e, exc_info=True,
+            )
+            time.sleep(_DAILY_LOOP_RETRY_SECONDS)
+            continue
+        already_done = loop_state.last_boundary(loop_state.OPERATOR_DIGEST)
+        if already_done is not None and already_done >= boundary:
+            log.warning(
+                "Operator digest: boundary %s already recorded (last=%s) — "
+                "the clock did not advance past it, skipping this pass",
+                boundary.isoformat(), already_done.isoformat(),
+            )
+            continue
+        try:
+            # Records its own pass (completed / skipped with a reason / failed):
+            # unlike the tenant digests, the outcome here IS the signal.
+            from backend.notifications.operator_digest import run_operator_digest
+            result = run_operator_digest(boundary)
+            log.info("Operator digest: %s", result)
+        except Exception as e:
+            log.error("Operator digest error: %s", e, exc_info=True)
+            loop_state.mark_run(loop_state.OPERATOR_DIGEST, boundary,
+                                status=loop_state.STATUS_FAILED,
+                                error=f"{type(e).__name__}: {e}"[:500])
+
+
 def _previous_month_start(now: datetime) -> datetime:
     """The most recent day-1 00:05 UTC boundary at or before `now`."""
     candidate = now.replace(day=1, hour=0, minute=5, second=0, microsecond=0)
@@ -456,7 +516,7 @@ def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
     The job-claim loop runs when worker_enabled; the cron loops (scheduled
-    jobs, daily alerts, monthly snapshot) when scheduler_enabled — they are split so a scaled-out deployment can run
+    jobs, daily alerts, monthly snapshot, operator digest) when scheduler_enabled — they are split so a scaled-out deployment can run
     many claim loops but exactly one scheduler.
     """
     components: list[str] = []
@@ -465,6 +525,7 @@ def enabled_components() -> list[str]:
     if settings.scheduler_enabled:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
+            "operator-digest",
         ]
     return components
 
@@ -473,6 +534,7 @@ _COMPONENT_TARGETS = {
     "job-scheduler":      _scheduler_loop,
     "inventory-alerts":   _inventory_alert_loop,
     "overstock-snapshot": _monthly_overstock_snapshot_loop,
+    "operator-digest":    _operator_digest_loop,
 }
 
 
