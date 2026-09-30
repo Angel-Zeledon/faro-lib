@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import List
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from typing import Annotated, List
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -34,7 +35,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
 
     # CORS
-    allowed_origins: List[str] = ["http://localhost:3000", "http://localhost:4000","http://localhost:5000"]
+    allowed_origins: Annotated[List[str], NoDecode] = ["http://localhost:3000", "http://localhost:4000","http://localhost:5000"]
 
     # Who may see and edit the INSTANCE-wide service configuration (the panel at
     # /instalacion). `admin` is a role INSIDE a tenant, so it cannot be the
@@ -49,7 +50,25 @@ class Settings(BaseSettings):
     # says so, naming this variable. It is the safe default for a multi-tenant
     # deployment; a buyer running their own single-tenant instance puts their
     # own address here and gets the panel.
-    instance_admin_emails: List[str] = []
+    instance_admin_emails: Annotated[List[str], NoDecode] = []
+
+    @field_validator("allowed_origins", "instance_admin_emails", mode="before")
+    @classmethod
+    def _list_from_env(cls, value):
+        """Accept a JSON list OR a comma-separated string.
+
+        `.env.example` documents `INSTANCE_ADMIN_EMAILS=you@example.com`, and
+        pydantic-settings only decodes JSON for a list field: the documented
+        form made the API crash at import on a production deploy.
+        """
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            return json.loads(text)
+        return [part.strip() for part in text.split(",") if part.strip()]
 
     # Storage
     storage_path: Path = BASE_DIR / "storage"
