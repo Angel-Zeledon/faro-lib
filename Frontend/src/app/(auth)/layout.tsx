@@ -1,95 +1,42 @@
 'use client'
-import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
-import { AmbientScene } from '@/components/auth/AmbientScene'
 import { Wordmark } from '@/components/brand/Wordmark'
+import { AuthPanel } from '@/components/auth/AuthPanel'
 
-// Persistent stage for the auth screens. Because this layout wraps both
-// routes, React keeps the ambient canvas and the wordmark MOUNTED across a
-// /login ↔ /signup navigation — the beam never restarts its swing, the
-// particles never jump back to their start positions, and only the card
-// itself re-enters. That continuity is the whole point of putting the scene
-// here rather than inside each page.
+// Persistent stage for /login and /signup: the form on the left, the product's
+// own morning list on the right. Because this layout wraps both routes, the
+// panel stays MOUNTED across a /login ↔ /signup navigation and only the form
+// changes.
 //
-// Scoped to /login and /signup on purpose: the other (auth) routes
-// (verify-email, forgot-password, reset-password) still use the dark
-// treatment, and dropping them onto this white canvas would break them.
+// It replaced a lighthouse scene (the product used to be called Faro). A
+// buyer opening the login should see what the app does for them, not a
+// metaphor for a name it no longer has.
+//
+// Scoped to /login and /signup on purpose: verify-email, forgot-password and
+// reset-password keep their own full-screen treatment.
 const SCENE_ROUTES = ['/login', '/signup']
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const markRef = useRef<HTMLDivElement>(null)
   const showScene = SCENE_ROUTES.some(p => pathname === p || pathname.startsWith(p + '/'))
-
-  // Wordmark parallax — a couple of pixels against the cursor, damped harder
-  // than the particle layer so the fixed UI never feels loose.
-  useEffect(() => {
-    if (!showScene) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    let frame = 0
-    function onMove(e: PointerEvent) {
-      if (frame) return
-      frame = requestAnimationFrame(() => {
-        frame = 0
-        const el = markRef.current
-        if (!el) return
-        const dx = (e.clientX / window.innerWidth  - 0.5) * 2
-        const dy = (e.clientY / window.innerHeight - 0.5) * 2
-        el.style.transform = `translate3d(${(dx * 3.5).toFixed(2)}px, ${(dy * 2.5).toFixed(2)}px, 0)`
-      })
-    }
-    window.addEventListener('pointermove', onMove, { passive: true })
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      if (frame) cancelAnimationFrame(frame)
-    }
-  }, [showScene])
 
   if (!showScene) return <>{children}</>
 
   return (
-    <>
-      {/* `spin` is global (globals.css). It used to be declared here, which
-          meant the spinners on /verify-email and /reset-password froze
-          whenever this layout took its early `!showScene` return. */}
-      <style>{`
-        body { margin: 0; }
-        .auth-field label { transition: color 0.22s ease; }
-        .auth-field:focus-within label { color: #0a0a0a; }
-      `}</style>
-
-      {/* position:fixed — ConditionalShell wraps auth routes in a flex box with
-          no width:100%, so an in-flow child would shrink to its content
-          instead of covering the viewport. */}
-      <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: '#fff' }}>
-        <AmbientScene />
-
-        {/* Wordmark — persistent across both routes, so it holds still while
-            the card beneath it changes. */}
-        <div
-          ref={markRef}
-          style={{
-            position: 'absolute', top: 'clamp(28px, 4.5vw, 52px)', left: 'clamp(28px, 5vw, 64px)',
-            display: 'flex', alignItems: 'center', gap: 9, zIndex: 2,
-            transition: 'transform 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
-            animation: 'auth-fade-in 0.9s ease-out both',
-          }}
-        >
+    // position:fixed — ConditionalShell wraps auth routes in a flex box with no
+    // width:100%, so an in-flow child would shrink to its content instead of
+    // covering the viewport.
+    <div className="auth-split">
+      <div className="auth-split-form">
+        <header className="auth-split-mark">
           <Wordmark size={20} color="#0a0a0a" accent="#0F766E" />
-        </div>
-
-        {/* `overflowY: auto` matters on short screens. The box above is
-            `position: fixed; inset: 0; overflow: hidden` so the ambient scene
-            stays clipped to the viewport — but that clipping applied to the
-            form too, and a form taller than the screen simply had its bottom
-            cut off with no way to reach it. On a 640px-tall phone the signup
-            button sat at y=792 and the page would not scroll: nobody on a
-            normal phone could create an account. The scene keeps its clip;
-            only this column scrolls, and only when it has to. */}
-        <div style={{ position: 'relative', height: '100%', overflowY: 'auto', zIndex: 1 }}>
-          {children}
-        </div>
+        </header>
+        {/* Only this column scrolls: a form taller than a short phone screen
+            must stay reachable (on a 640px phone the signup button once sat
+            at y=792 with no way to scroll to it). */}
+        <main className="auth-split-body">{children}</main>
       </div>
-    </>
+      <AuthPanel />
+    </div>
   )
 }

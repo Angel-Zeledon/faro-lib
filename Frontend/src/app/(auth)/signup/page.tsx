@@ -113,25 +113,12 @@ function SignupPageContent() {
   // autofilled field therefore erased its own background and left Chrome's
   // wash showing through. Letting the cascade decide is the fix.
 
-  const cardStyle: React.CSSProperties = {
-    background: '#fff',
-    border: '1px solid rgba(9,9,11,0.09)',
-    borderRadius: 20,
-    padding: '32px 36px',
-    boxShadow:
-      '0 1px 2px rgba(9,9,11,0.04),' +
-      '0 12px 28px -14px rgba(9,9,11,0.14),' +
-      '0 44px 80px -36px rgba(9,9,11,0.16)',
-  }
+  // No card: the split layout's white column is the surface (see /login).
+  const cardStyle: React.CSSProperties = {}
 
   return (
-    <div className="auth-shell" style={{
-      height: '100%', display: 'flex', alignItems: 'center',
-      // See /login: the offset is a desktop composition, evened out on phones.
-      paddingLeft: 'clamp(28px, 13vw, 200px)', paddingRight: 'clamp(28px, 6vw, 64px)',
-      paddingBottom: '2vh',
-    }}>
-      <div style={{ width: '100%', maxWidth: 452 }}>
+    <div className="auth-shell">
+      <div style={{ width: '100%', maxWidth: 440 }}>
 
         {done ? (
           <div className="auth-enter" style={{ ...cardStyle, animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both' }}>
@@ -171,7 +158,7 @@ function SignupPageContent() {
             )}
             <Link href={loginHref} className="auth-submit" style={{
               display: 'inline-flex', alignItems: 'center', padding: '11.5px 24px',
-              background: '#0a0a0a', color: '#fff', borderRadius: 11,
+              background: '#0C3A40', color: '#fff', borderRadius: 11,
               fontSize: 13.5, fontWeight: 600, textDecoration: 'none',
             }}>
               {t('auth.go_to_login')}
@@ -184,7 +171,7 @@ function SignupPageContent() {
               marginBottom: 26, paddingLeft: 2,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both',
             }}>
-              <h1 style={{ fontSize: 34, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
+              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
                 {t('auth.signup_title')}
               </h1>
               <p style={{ fontSize: 14.5, color: '#71717a', margin: 0, lineHeight: 1.55 }}>
@@ -296,7 +283,7 @@ function SignupPageContent() {
                   type="submit" disabled={loading} className="auth-submit"
                   style={{
                     width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                    background: loading ? '#a1a1aa' : '#0a0a0a', color: '#fff',
+                    background: loading ? '#a1a1aa' : '#0C3A40', color: '#fff',
                     fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
                     marginTop: 6,
                     transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease',

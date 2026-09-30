@@ -4,14 +4,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authLogin, authResendVerification, isApiError } from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
-import { Eye, EyeOff, AlertTriangle, ArrowRight, MailCheck } from 'lucide-react'
+import { Eye, EyeOff, AlertTriangle, MailCheck } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
-// Composition: the card sits left of centre and a touch above the optical
-// midline, leaving the open right-hand field for the beam to sweep into and
-// the lighthouse to occupy. The ambient canvas, wordmark and fixed shell all
-// come from (auth)/layout.tsx — this file renders only the card.
+// The split stage (wordmark, form column, the morning-list panel) comes from
+// (auth)/layout.tsx — this file renders only the form, centred in its column.
 
 function LoginPageContent() {
   const { t } = useLanguage()
@@ -89,35 +87,14 @@ function LoginPageContent() {
   // keeps the browser's own pseudo-classes in the same cascade as ours.
 
   return (
-    <div className="auth-shell" style={{
-      height: '100%', display: 'flex', alignItems: 'center',
-      // Deliberately asymmetric on desktop: the card sits left of centre so the
-      // illustrated half of the layout reads as the other half of a composition.
-      // On a phone there is no other half, so globals.css evens this out — an
-      // off-centre card on a 390px screen just looks like a mistake.
-      paddingLeft: "clamp(28px, 10vw, 150px)", paddingRight: "clamp(28px, 6vw, 64px)",
-      paddingBottom: '3vh',   // optical centring — sits a touch above true middle
-    }}>
-      <div style={{ width: '100%', maxWidth: 392 }}>
+    <div className="auth-shell">
+      <div style={{ width: '100%', maxWidth: 380 }}>
 
-        <div className="auth-enter" style={{
-          // Solid white with a real border. A translucent card over a pale
-          // background just looks washed out — the crispness IS the premium
-          // signal here, not the transparency.
-          background: '#fff',
-          border: '1px solid rgba(9,9,11,0.09)',
-          borderRadius: 20,
-          padding: '38px 36px',
-          // Contact hairline, close ambient pool, wide soft cast.
-          boxShadow:
-            '0 1px 2px rgba(9,9,11,0.04),' +
-            '0 12px 28px -14px rgba(9,9,11,0.14),' +
-            '0 44px 80px -36px rgba(9,9,11,0.16)',
-          animation: 'auth-fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both',
-        }}>
+        {/* No card: on a plain white column the form itself is the surface. */}
+        <div className="auth-enter" style={{ animation: 'auth-fade-in 0.5s ease-out both' }}>
 
           <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontSize: 26, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.032em', lineHeight: 1.15 }}>
+            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
               {t('auth.login_title')}
             </h1>
             <p style={{ fontSize: 14, color: '#71717a', margin: 0, lineHeight: 1.5 }}>
@@ -202,7 +179,7 @@ function LoginPageContent() {
               type="submit" disabled={loading} className="auth-submit auth-enter"
               style={{
                 width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                background: loading ? '#a1a1aa' : '#0a0a0a',
+                background: loading ? '#a1a1aa' : '#0C3A40',
                 color: '#fff', fontSize: 14, fontWeight: 600,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
@@ -210,8 +187,6 @@ function LoginPageContent() {
                 transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease',
                 animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.22s both',
               }}
-              onMouseEnter={e => { if (!loading) { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(-1.5px)'; b.style.boxShadow = '0 10px 22px -10px rgba(9,9,11,0.45)' } }}
-              onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(0)'; b.style.boxShadow = 'none' }}
             >
               {loading ? (
                 <>
@@ -223,14 +198,14 @@ function LoginPageContent() {
                   {t('auth.signing_in')}
                 </>
               ) : (
-                <>{t('auth.login_title')} <ArrowRight size={13} /></>
+                t('auth.login_title')
               )}
             </button>
           </form>
         </div>
 
         <p className="auth-enter" style={{
-          marginTop: 22, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
+          marginTop: 28, fontSize: 13.5, color: '#71717a',
           animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.3s both',
         }}>
           {t('auth.no_account')}{' '}

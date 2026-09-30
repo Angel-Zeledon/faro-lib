@@ -4,6 +4,7 @@
 // signing in. The copy itself lives in i18n/landing.ts, typed so the two
 // languages cannot drift apart.
 import Link from 'next/link'
+import { appHref } from '@/lib/siteUrls'
 import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -104,10 +105,10 @@ function Nav() {
  </div>
  <div className="nav-cta" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
  <LangToggle lang={lang} setLang={setLang} />
- <Link href="/login" className="nav-tap" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
+ <Link href={appHref('/login')} className="nav-tap" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
  {L.nav.signIn}
  </Link>
- <Link href="/signup" className="nav-signup" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
+ <Link href={appHref('/signup')} className="nav-signup" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
  {L.nav.signUp}
  </Link>
  </div>
@@ -131,9 +132,9 @@ function Nav() {
  <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>
  ))}
  <div className="nav-sheet-sep" />
- <Link href="/login" onClick={() => setMenuOpen(false)}>{L.nav.signIn}</Link>
+ <Link href={appHref('/login')} onClick={() => setMenuOpen(false)}>{L.nav.signIn}</Link>
  <Link
- href="/signup"
+ href={appHref('/signup')}
  onClick={() => setMenuOpen(false)}
  className="nav-sheet-cta"
  >
@@ -579,7 +580,7 @@ export default function LandingPage() {
  </p>
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 60 }}>
- <Link href="/signup?demo=1" className="btn-primary">{L.hero.cta}</Link>
+ <Link href={appHref('/signup?demo=1')} className="btn-primary">{L.hero.cta}</Link>
  </div>
 
  {/* Framed real product screenshot */}
@@ -975,7 +976,7 @@ export default function LandingPage() {
  {L.pricing.closing}
  </div>
  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
- <Link href="/signup" style={{
+ <Link href={appHref('/signup')} style={{
  display: 'inline-block', padding: '11px 20px', borderRadius: 8,
  fontSize: 13, fontWeight: 700, textDecoration: 'none',
  background: T.text, color: '#fff',

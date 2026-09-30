@@ -1,0 +1,30 @@
+# Landing on its own domain, app on a subdomain.
+#   CADDYFILE=Caddyfile.split  LANDING_DOMAIN=stockai.es  DOMAIN=app.stockai.es
+#   APP_URL=https://app.stockai.es   (baked into the frontend build)
+#
+# One Next.js server behind both. The landing domain serves "/" and the static
+# files the landing itself loads; any other path is an app route and is sent to
+# the app's origin, so a bookmarked stockai.es/compras still lands somewhere
+# real. On the app domain "/" is the landing, so it goes to /login instead —
+# which already forwards a signed-in user into the app.
+
+{$LANDING_DOMAIN}, www.{$LANDING_DOMAIN} {
+	encode gzip
+
+	@www host www.{$LANDING_DOMAIN}
+	redir @www https://{$LANDING_DOMAIN}{uri} 308
+
+	@landing path / /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest
+	handle @landing {
+		reverse_proxy frontend:5000
+	}
+	handle {
+		redir https://{$DOMAIN}{uri} 308
+	}
+}
+
+{$DOMAIN} {
+	encode gzip
+	redir / /login 302
+	reverse_proxy frontend:5000
+}

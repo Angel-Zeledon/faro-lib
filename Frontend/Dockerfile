@@ -14,7 +14,11 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG BACKEND_URL=http://api:8010
+# The app's public origin when the landing lives on another domain (see
+# src/lib/siteUrls.ts). Empty = single domain, links stay relative.
+ARG NEXT_PUBLIC_APP_URL=
 ENV BACKEND_URL=$BACKEND_URL \
+    NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules

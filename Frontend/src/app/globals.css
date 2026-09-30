@@ -604,7 +604,6 @@
   content: ''; position: absolute; top: 0; left: -60%; width: 38%; height: 100%;
   background: linear-gradient(115deg, transparent, rgba(255,255,255,0.30), transparent);
   transform: skewX(-18deg); pointer-events: none;
-  animation: auth-btn-sheen 9s ease-in-out infinite;
 }
 .auth-submit:hover::after { animation: none; left: 130%; transition: left 0.6s ease; }
 
@@ -884,4 +883,71 @@
     gap: 22px !important;
     margin-bottom: 44px !important;
   }
+}
+
+/* ── Auth split: form left, the morning list right (/login, /signup) ───────── */
+.auth-split {
+  position: fixed; inset: 0; background: #fff;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+}
+.auth-split-form { display: flex; flex-direction: column; min-height: 0; }
+.auth-split-mark { padding: clamp(24px, 3.5vw, 40px) clamp(24px, 5vw, 64px) 0; flex-shrink: 0; }
+.auth-split-body { flex: 1; min-height: 0; overflow-y: auto; }
+.auth-split .auth-shell {
+  height: 100%; display: flex; align-items: center; justify-content: center;
+  padding: 24px clamp(24px, 5vw, 64px) 6vh !important;
+}
+
+.auth-panel {
+  position: relative; overflow: hidden;
+  background: #0C3A40; color: #e7f0ef;
+  display: flex; align-items: center; justify-content: center;
+  padding: clamp(32px, 5vw, 72px);
+}
+/* One quiet structural cue: the list sits on a slightly lifted field. */
+.auth-panel::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(120% 80% at 100% 0%, rgba(15,118,110,0.35), transparent 60%);
+  pointer-events: none;
+}
+.auth-panel-inner { position: relative; width: 100%; max-width: 460px; }
+.auth-panel-title {
+  font-family: var(--font-brand), system-ui, sans-serif;
+  font-size: clamp(28px, 2.6vw, 38px); font-weight: 500; line-height: 1.12;
+  letter-spacing: -0.025em; color: #fff; margin: 0 0 36px; text-wrap: balance;
+}
+.auth-panel-list {
+  border-radius: 14px; background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.09); padding: 6px 0;
+}
+.auth-panel-list-head {
+  display: flex; justify-content: space-between; padding: 10px 18px 8px;
+  font-size: 12px; color: rgba(231,240,239,0.55);
+}
+.auth-panel-row {
+  display: grid; grid-template-columns: 8px minmax(0,1fr) auto 64px; gap: 14px;
+  align-items: center; padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.07);
+  animation: auth-row-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-panel-dot { width: 8px; height: 8px; border-radius: 50%; }
+.auth-panel-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; color: #fff; }
+.auth-panel-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.auth-panel-supplier { font-size: 12px; color: rgba(231,240,239,0.55); margin-top: 2px; }
+.auth-panel-signal { font-size: 12px; font-weight: 600; }
+.auth-panel-qty {
+  text-align: right; font-size: 14px; font-weight: 600; color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.auth-panel-note { margin: 22px 2px 0; font-size: 13px; line-height: 1.55; color: rgba(231,240,239,0.62); max-width: 40ch; }
+
+@keyframes auth-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-panel-row { animation: none; }
+}
+@media (max-width: 900px) {
+  .auth-split { grid-template-columns: 1fr; }
+  .auth-panel { display: none; }
+}
+@media (max-width: 560px) {
+  .auth-split .auth-shell { align-items: flex-start; padding: 28px 20px 32px !important; height: auto; }
 }

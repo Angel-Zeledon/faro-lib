@@ -25,8 +25,12 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+      # Only read by Caddyfile.split (landing on its own domain).
+      LANDING_DOMAIN: ${LANDING_DOMAIN:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # CADDYFILE=Caddyfile.split serves the landing on LANDING_DOMAIN and the
+      # app on DOMAIN; the default serves everything on DOMAIN.
+      - ./${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -37,6 +41,9 @@ services:
       context: ../Frontend
       args:
         BACKEND_URL: http://api:8010
+        # Set with CADDYFILE=Caddyfile.split so the landing's sign-in links
+        # leave for the app's origin, e.g. https://app.stockai.es
+        NEXT_PUBLIC_APP_URL: ${APP_URL:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO/dev/null", "http://127.0.0.1:5000/"]
