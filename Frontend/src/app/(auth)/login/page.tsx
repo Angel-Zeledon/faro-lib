@@ -94,10 +94,10 @@ function LoginPageContent() {
         <div className="auth-enter" style={{ animation: 'auth-fade-in 0.5s ease-out both' }}>
 
           <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
+            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
               {t('auth.login_title')}
             </h1>
-            <p style={{ fontSize: 14, color: '#71717a', margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: 0, lineHeight: 1.5 }}>
               {t('auth.login_subtitle')}
             </p>
           </div>
@@ -120,7 +120,7 @@ function LoginPageContent() {
                   style={{
                     all: 'unset', alignSelf: 'flex-start', cursor: resending ? 'wait' : 'pointer',
                     display: 'flex', alignItems: 'center', gap: 6,
-                    fontSize: 12.5, fontWeight: 600, color: '#0a0a0a',
+                    fontSize: 12.5, fontWeight: 600, color: 'var(--a-ink)',
                     textDecoration: 'underline', textUnderlineOffset: 3,
                   }}
                 >
@@ -129,7 +129,7 @@ function LoginPageContent() {
                 </button>
               )}
               {resentNote && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: '#52525b' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: 'var(--a-muted)' }}>
                   <MailCheck size={13} style={{ flexShrink: 0 }} />
                   {resentNote}
                 </div>
@@ -140,7 +140,7 @@ function LoginPageContent() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.10s both' }}>
-              <label htmlFor="login-email" style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: '#52525b' }}>
+              <label htmlFor="login-email" style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: 'var(--a-muted)' }}>
                 {t('auth.email_label')}
               </label>
               <input
@@ -153,8 +153,8 @@ function LoginPageContent() {
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
-                <label htmlFor="login-password" style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>{t('auth.password_label')}</label>
-                <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: '#71717a', textDecoration: 'none' }}>
+                <label htmlFor="login-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)' }}>{t('auth.password_label')}</label>
+                <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: 'var(--a-muted)', textDecoration: 'none' }}>
                   {t('auth.forgot_password')}
                 </Link>
               </div>
@@ -179,8 +179,8 @@ function LoginPageContent() {
               type="submit" disabled={loading} className="auth-submit auth-enter"
               style={{
                 width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                background: loading ? '#a1a1aa' : '#0C3A40',
-                color: '#fff', fontSize: 14, fontWeight: 600,
+                background: loading ? 'var(--a-dim)' : 'var(--a-cta-bg)',
+                color: 'var(--a-cta-fg)', fontSize: 14, fontWeight: 600,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                 marginTop: 8,
@@ -205,11 +205,11 @@ function LoginPageContent() {
         </div>
 
         <p className="auth-enter" style={{
-          marginTop: 28, fontSize: 13.5, color: '#71717a',
+          marginTop: 28, fontSize: 13.5, color: 'var(--a-muted)',
           animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.3s both',
         }}>
           {t('auth.no_account')}{' '}
-          <Link href="/signup" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
+          <Link href="/signup" className="auth-link" style={{ color: 'var(--a-ink)', textDecoration: 'none', fontWeight: 600 }}>
             {t('auth.request_access')}
           </Link>
         </p>

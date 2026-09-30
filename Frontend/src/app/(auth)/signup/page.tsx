@@ -40,7 +40,7 @@ function PasswordStrength({ password }: { password: string }) {
         {checks.map(({ label, ok }) => (
           <div key={label} style={{
             display: 'flex', gap: 5, alignItems: 'center', fontSize: 11,
-            color: ok ? '#16a34a' : '#a1a1aa', transition: 'color 0.25s ease',
+            color: ok ? '#16a34a' : 'var(--a-dim)', transition: 'color 0.25s ease',
           }}>
             <CheckCircle2 size={10} />
             {label}
@@ -123,17 +123,17 @@ function SignupPageContent() {
         {done ? (
           <div className="auth-enter" style={{ ...cardStyle, animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both' }}>
             <div style={{
-              width: 42, height: 42, borderRadius: '50%', background: '#0a0a0a',
+              width: 42, height: 42, borderRadius: '50%', background: 'var(--a-cta-bg)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
             }}>
-              <CheckCircle2 size={21} color="#fff" strokeWidth={2} />
+              <CheckCircle2 size={21} color="var(--a-cta-fg)" strokeWidth={2} />
             </div>
-            <h1 style={{ fontSize: 23, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
+            <h1 style={{ fontSize: 23, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
               {verifyUrl ? t('auth.verify_link_onscreen_title') : t('auth.check_email_title')}
             </h1>
             {verifyUrl ? (
               <>
-                <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 16px', lineHeight: 1.6 }}>
+                <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: '0 0 16px', lineHeight: 1.6 }}>
                   {t('auth.verify_link_onscreen_body')}
                 </p>
                 <a
@@ -142,7 +142,7 @@ function SignupPageContent() {
                     display: 'block', wordBreak: 'break-all', marginBottom: 22,
                     padding: '11px 13px', borderRadius: 10,
                     background: 'rgba(9,9,11,0.035)', border: '1px solid rgba(9,9,11,0.09)',
-                    fontSize: 12.5, color: '#0a0a0a', fontFamily: 'ui-monospace, monospace',
+                    fontSize: 12.5, color: 'var(--a-ink)', fontFamily: 'ui-monospace, monospace',
                     textDecoration: 'none', lineHeight: 1.45,
                   }}
                 >
@@ -150,15 +150,15 @@ function SignupPageContent() {
                 </a>
               </>
             ) : (
-              <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 26px', lineHeight: 1.6 }}>
-                {t('auth.check_email_sent_to')} <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
+              <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: '0 0 26px', lineHeight: 1.6 }}>
+                {t('auth.check_email_sent_to')} <strong style={{ color: 'var(--a-ink)', fontWeight: 600 }}>{form.email}</strong>.
                 {' '}{t('auth.check_email_click')}
                 {wantsDemo && ` ${t('auth.check_email_demo_hint')}`}
               </p>
             )}
             <Link href={loginHref} className="auth-submit" style={{
               display: 'inline-flex', alignItems: 'center', padding: '11.5px 24px',
-              background: '#0C3A40', color: '#fff', borderRadius: 11,
+              background: 'var(--a-cta-bg)', color: 'var(--a-cta-fg)', borderRadius: 11,
               fontSize: 13.5, fontWeight: 600, textDecoration: 'none',
             }}>
               {t('auth.go_to_login')}
@@ -171,10 +171,10 @@ function SignupPageContent() {
               marginBottom: 26, paddingLeft: 2,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both',
             }}>
-              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
+              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
                 {t('auth.signup_title')}
               </h1>
-              <p style={{ fontSize: 14.5, color: '#71717a', margin: 0, lineHeight: 1.55 }}>
+              <p style={{ fontSize: 14.5, color: 'var(--a-muted)', margin: 0, lineHeight: 1.55 }}>
                 {t('auth.signup_tagline')}
               </p>
             </div>
@@ -202,7 +202,7 @@ function SignupPageContent() {
                   animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.14s both',
                 }}>
                   <div className="auth-field">
-                    <label htmlFor="signup-full-name" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                    <label htmlFor="signup-full-name" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                       {t('auth.full_name_label')}
                     </label>
                     <input
@@ -214,7 +214,7 @@ function SignupPageContent() {
                     />
                   </div>
                   <div className="auth-field">
-                    <label htmlFor="signup-company" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                    <label htmlFor="signup-company" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                       {t('auth.company_label')} <span style={{ color: '#dc2626' }}>*</span>
                     </label>
                     <input
@@ -228,7 +228,7 @@ function SignupPageContent() {
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.19s both' }}>
-                  <label htmlFor="signup-email" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                  <label htmlFor="signup-email" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                     {t('auth.email_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
@@ -241,7 +241,7 @@ function SignupPageContent() {
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.215s both' }}>
-                  <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                  <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                     {t('auth.whatsapp_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
@@ -251,13 +251,13 @@ function SignupPageContent() {
                     placeholder="+50688887777"
                     className="auth-input"
                   />
-                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#71717a', lineHeight: 1.45 }}>
+                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--a-muted)', lineHeight: 1.45 }}>
                     {t('auth.whatsapp_hint')}
                   </p>
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.24s both' }}>
-                  <label htmlFor="signup-password" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                  <label htmlFor="signup-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                     {t('auth.password_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <div style={{ position: 'relative' }}>
@@ -283,7 +283,7 @@ function SignupPageContent() {
                   type="submit" disabled={loading} className="auth-submit"
                   style={{
                     width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                    background: loading ? '#a1a1aa' : '#0C3A40', color: '#fff',
+                    background: loading ? 'var(--a-dim)' : 'var(--a-cta-bg)', color: 'var(--a-cta-fg)',
                     fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
                     marginTop: 6,
                     transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease',
@@ -298,11 +298,11 @@ function SignupPageContent() {
             </div>
 
             <p className="auth-enter" style={{
-              marginTop: 20, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
+              marginTop: 20, marginLeft: 2, fontSize: 13, color: 'var(--a-dim)',
               animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.35s both',
             }}>
               {t('auth.have_account')}{' '}
-              <Link href="/login" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
+              <Link href="/login" className="auth-link" style={{ color: 'var(--a-ink)', textDecoration: 'none', fontWeight: 600 }}>
                 {t('auth.login_title')}
               </Link>
             </p>

@@ -1,5 +1,6 @@
 'use client'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { Wordmark } from '@/components/brand/Wordmark'
 
 // The right half of /login and /signup: what the app hands a buyer every
 // morning, drawn in the product's own vocabulary — one line per product, the
@@ -38,12 +39,20 @@ export function AuthPanel() {
 
   return (
     <aside className="auth-panel" aria-hidden="true">
+      {/* The brand, oversized and bled off the corner: the one bold gesture
+          on this screen. */}
+      <div className="auth-panel-mark">
+        <Wordmark size={190} color="rgba(255,255,255,0.045)" accent="rgba(43,167,154,0.16)" />
+      </div>
       <div className="auth-panel-inner">
         <h2 className="auth-panel-title">{t('auth.panel_title')}</h2>
 
         <div className="auth-panel-list">
           <div className="auth-panel-list-head">
-            <span>{t('auth.panel_list_title')}</span>
+            <span className="auth-panel-live">
+              <span className="auth-panel-pulse" />
+              {t('auth.panel_list_title')}
+            </span>
             <span>{t('auth.panel_list_qty')}</span>
           </div>
           {ROWS.map((row, i) => (
