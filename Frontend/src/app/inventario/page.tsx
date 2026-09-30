@@ -5,7 +5,7 @@ import {
  getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
- listSuppliers, getDeadStock, getDeadCapital, simulateEvent, logPOGeneration, downloadInventoryTemplate,
+ listSuppliers, getDeadCapital, simulateEvent, logPOGeneration, downloadInventoryTemplate,
  createShrinkage,
  getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
  listEventMultipliers, setEventMultiplier, deleteEventMultiplier,
@@ -15,7 +15,7 @@ import {
 } from '@/lib/api'
 import type {
  InventoryStatusItem, InventorySignal,
- InventoryCalcExplanation, InventoryEvent, Supplier, DeadStockResponse, DeadCapitalResponse, ExcludedSku,
+ InventoryCalcExplanation, InventoryEvent, Supplier, DeadCapitalResponse, ExcludedSku,
  EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry, CoverageUnit,
  EventMultiplier,
  SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
@@ -1860,8 +1860,7 @@ export default function InventoryPage() {
  const [search, setSearch] = useState('')
  const [sort, setSort] = useState<SortState | null>(null)
  const [page, setPage] = useState(1)
- const [deadPage, setDeadPage] = useState(1)
- const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'dead' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored'>(() =>
+ const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored'>(() =>
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
  const [expandedSku, setExpandedSku] = useState<string | null>(null)
@@ -1884,10 +1883,10 @@ export default function InventoryPage() {
  const [suppliers, setSuppliers] = useState<Supplier[]>([])
  const importRef = useRef<HTMLInputElement>(null)
  const savingRef = useRef(false)
- const [deadStock,   setDeadStock]   = useState<DeadStockResponse | null>(null)
- const [loadingDead, setLoadingDead] = useState(false)
- // "Plata parada" (capital parado): independent of the dead-stock view above
- // — needs no session, reads real stock-level history. See getDeadCapital.
+ // "Plata parada" (capital parado): the one view of money that is not
+ // moving — needs no session, reads real stock-level history. See
+ // getDeadCapital. The session-bound "dead stock" view it used to sit beside
+ // was retired 2026-09-30 (stability.md 19.2).
  const [deadCapital, setDeadCapital] = useState<DeadCapitalResponse | null>(null)
  const [loadingDeadCapital, setLoadingDeadCapital] = useState(false)
  const [deadCapitalWindow, setDeadCapitalWindow] = useState(90)
@@ -1960,16 +1959,6 @@ export default function InventoryPage() {
  }, [t])
 
  useEffect(() => { if (sessionId) load(sessionId) }, [sessionId, load])
-
- // ── Dead stock load ────────────────────────────────────────────────────────
- useEffect(() => {
- if (viewMode !== 'dead' || !sessionId) return
- setLoadingDead(true)
- getDeadStock(sessionId)
-  .then(setDeadStock)
-  .catch((e: unknown) => setError(e))
-  .finally(() => setLoadingDead(false))
- }, [viewMode, sessionId])
 
  // ── Dead capital ("plata parada") load ─────────────────────────────────────
  // No session dependency: it works off real stock-level history alone, so a
@@ -2180,8 +2169,6 @@ export default function InventoryPage() {
 
  const paged = usePage(orderedItems, page, setPage)
  const pageItems = paged.rows
- const deadItems = useMemo(() => deadStock?.items ?? [], [deadStock])
- const deadPaged = usePage(deadItems, deadPage, setDeadPage)
  const deadCapitalItems = useMemo(() => deadCapital?.items ?? [], [deadCapital])
  const deadCapitalPaged = usePage(deadCapitalItems, deadCapitalPage, setDeadCapitalPage)
  const forecastMoneyItems = useMemo(() => forecastMoney?.items ?? [], [forecastMoney])
@@ -2201,7 +2188,6 @@ export default function InventoryPage() {
  for (const i of data?.items ?? []) if (i.display_name) m[i.sku] = i.display_name
  return m
  }, [data])
- useEffect(() => { setDeadPage(1) }, [deadStock])
 
  // Any change to what is being listed sends you back to the first page:
  // staying on page 14 of a list that now has 2 pages is never what you meant.
@@ -2419,14 +2405,13 @@ export default function InventoryPage() {
  // "Actualizar stock" is the editor, not a view: a viewer who opens it can
  // type and reach an enabled Save that can only ever be refused.
  ...(canEdit ? [['update', <PencilLine size={13} />, t('inventory.view_update')]] : []),
- ['dead', <Package size={13} />, t('inventory.view_dead')],
  ['capital', <TrendingDown size={13} />, t('inventory.view_dead_capital')],
  ['inflation', <TrendingUp size={13} />, t('inventory.view_cost_inflation')],
  ['erosion', <TrendingDown size={13} />, t('inventory.view_margin_erosion')],
  ['money', <DollarSign size={13} />, t('inventory.view_forecast_money')],
  ['ignored', <AlertTriangle size={13} />, t('inventory.view_cost_of_ignoring')],
  ] as [string, React.ReactNode, string][]).map(([mode, icon, label]) => (
- <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'dead' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
+ <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
  {icon}{label}
  </button>
  ))}
@@ -2468,7 +2453,7 @@ export default function InventoryPage() {
  </div>
  </div>
 
- {/* Secondary failure over an already-rendered screen (e.g. dead-stock view). */}
+ {/* Secondary failure over an already-rendered screen (e.g. the money-not-moving view). */}
  {error != null && data != null && (
  <InlineError error={error} onRetry={() => sessionId && load(sessionId)} onDismiss={() => setError(null)} />
  )}
@@ -2891,128 +2876,9 @@ export default function InventoryPage() {
  <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </div>
 
- ) : viewMode === 'dead' ? (
- /* ── Dead stock ───────────────────────────────────────────── */
- <div style={{ padding: 16 }}>
-  {loadingDead ? (
-   <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
-  ) : !deadStock ? (
-   <div style={{ padding: 48, textAlign: 'center', color: C.dim, fontSize: 13 }}>
-    {t('inventory.dead_select_session')}
-   </div>
-  ) : deadStock.sku_count === 0 ? (
-   <div style={{ padding: '40px 0', textAlign: 'center' }}>
-    <div style={{ fontSize: 14, fontWeight: 600, color: C.green, marginBottom: 8 }}>
-     {t('inventory.dead_none_detected')}
-    </div>
-    <div style={{ fontSize: 13, color: C.dim }}>
-     {t('inventory.dead_none_detected_desc')}
-    </div>
-   </div>
-  ) : (
-   <>
-    {/* Summary bar */}
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
-     {[
-      { label: t('inventory.dead_kpi_skus'), value: deadStock.sku_count, color: C.amber },
-      { label: t('inventory.dead_kpi_capital_trapped'),
-       value: formatMoneyCompact(deadStock.total_capital_trapped),
-       color: C.red },
-      { label: t('inventory.dead_kpi_holding_cost'),
-       value: formatMoneyCompact(deadStock.total_holding_cost_monthly),
-       color: C.amber },
-     ].map(({ label, value, color }) => (
-      <div key={label} style={{
-       background: C.surface, border: `1px solid ${C.border}`,
-       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${color}`,
-      }}>
-       <div style={{ fontSize: 20, fontWeight: 800, color }}>{value}</div>
-       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{label}</div>
-      </div>
-     ))}
-    </div>
-
-    {/* Items table */}
-    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
-     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-      <thead>
-       <tr style={{ background: C.card }}>
-        {[t('inventory.dead_col_product'), t('inventory.dead_col_days_stalled'), t('inventory.dead_col_stock'), t('inventory.dead_col_capital_trapped'), t('inventory.dead_col_cost_per_month'), t('inventory.dead_col_category'), t('inventory.dead_col_suggested_action')].map(h => (
-         <th key={h} scope="col" style={{
-          padding: '9px 12px', textAlign: 'left',
-          color: C.dim, fontWeight: 600, fontSize: 10,
-          borderBottom: `1px solid ${C.border}`, textTransform: 'uppercase' as const,
-          letterSpacing: '0.06em',
-         }}>{h}</th>
-        ))}
-       </tr>
-      </thead>
-      <tbody>
-       {deadPaged.rows.map((item, i: number) => (
-        <tr key={item.sku} style={{
-         background: (deadPaged.offset + i) % 2 === 0 ? C.surface : C.card,
-         borderBottom: `1px solid ${C.border}`,
-        }}>
-         <th scope="row" style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 400, color: C.text }}>
-          <div style={{ fontWeight: 600 }}>{item.display_name || item.sku}</div>
-          <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{item.sku}</div>
-          {item.supplier && <div style={{ fontSize: 10, color: C.muted }}>{item.supplier}</div>}
-         </th>
-         <td style={{ padding: '10px 12px', color: C.red, fontWeight: 700 }}>
-          {item.days_without_movement}d
-         </td>
-         <td style={{ padding: '10px 12px', color: C.text }}>
-          {item.current_stock?.toLocaleString()}
-         </td>
-         <td style={{ padding: '10px 12px', fontWeight: 700, color: item.capital_trapped === null ? C.dim : C.red }}>
-          {item.capital_trapped === null
-           ? <Tooltip text={t('inventory.dead_capital_unknown')}><span>{t('inventory.dead_capital_unknown_short')}</span></Tooltip>
-           : formatMoneyCompact(item.capital_trapped)}
-         </td>
-         <td style={{ padding: '10px 12px', color: item.holding_cost_monthly === null ? C.dim : C.amber, fontSize: 11 }}>
-          {item.holding_cost_monthly === null
-           ? '—'
-           : <>{formatMoneyCompact(item.holding_cost_monthly)}{t('inventory.unit_per_month_suffix')}</>}
-         </td>
-         <td style={{ padding: '10px 12px' }}>
-          <span style={{
-           fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-           background: item.abc === 'A' ? 'rgba(34,197,94,0.1)' : item.abc === 'B' ? 'rgba(245,158,11,0.1)' : 'rgba(100,116,139,0.1)',
-           color: item.abc === 'A' ? '#22c55e' : item.abc === 'B' ? '#f59e0b' : '#64748b',
-          }}>{item.abc}</span>
-         </td>
-         <td style={{ padding: '10px 12px', fontSize: 11, color: C.muted }}>
-          {item.action_suggested_code
-           ? (t(`inventory.dead_action_${item.action_suggested_code}`) ===
-              `inventory.dead_action_${item.action_suggested_code}`
-               ? item.action_suggested
-               : t(`inventory.dead_action_${item.action_suggested_code}`))
-           : item.action_suggested}
-         </td>
-        </tr>
-       ))}
-      </tbody>
-     </table>
-    </div>
-
-    <Pagination page={deadPaged.page} pageCount={deadPaged.pageCount} offset={deadPaged.offset} total={deadPaged.total} rowsOnPage={deadPaged.rows.length} onPage={setDeadPage} label="SKU" />
-
-    <div style={{ marginTop: 12, fontSize: 11, color: C.dim }}>
-     {t('inventory.dead_footer_note_1')}
-     {t('inventory.dead_footer_note_2', { pct: fmt((deadStock.holding_cost_pct ?? 0.2) * 100, 0) })}
-    </div>
-    {deadStock.unpriced_sku_count > 0 && (
-     <div style={{ marginTop: 4, fontSize: 11, color: C.dim }}>
-      {t('inventory.dead_footer_unpriced', { count: deadStock.unpriced_sku_count })}
-     </div>
-    )}
-   </>
-  )}
- </div>
-
  ) : viewMode === 'capital' ? (
  /* ── Capital parado / "plata parada" ─────────────────────────
-    Independent of the dead-stock view above: needs no session, ranks every
+    The one view of money that is not moving: needs no session, ranks every
     SKU by money that has not moved (real stock-level history), worst first,
     with the tenant's total at the top. See getDeadCapital / dead_capital.py. */
  <div style={{ padding: 16 }}>

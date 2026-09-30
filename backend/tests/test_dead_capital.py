@@ -1,8 +1,8 @@
 """GET /inventory/dead-capital — "capital parado": money that is not moving.
 
-Distinct from `/inventory/dead-stock` (which needs a completed session and a
-forecast, and classifies against EXPECTED depletion). This endpoint needs
-neither: it reads `inventory_snapshots` — real recorded stock levels — to ask
+The one surface for money that is not moving since `/inventory/dead-stock`
+(depletion against a forecast, which needed a completed session) was retired
+on 2026-09-30, stability.md 19.2. This endpoint needs no session: it reads `inventory_snapshots` — real recorded stock levels — to ask
 how long a SKU's stock has gone without falling, and prices what is sitting
 in it. Every test here builds the snapshot history directly with explicit
 `recorded_at` timestamps so the "days still" math is pinned against ground

@@ -640,62 +640,6 @@ def test_the_routers_that_used_to_be_walled_answer_everyone(
     assert r.status_code == 200, r.text
 
 
-def test_dead_stock_returns_the_classification_to_everyone(
-    monkeypatch, make_tenant_user_headers, client,
-):
-    """
-    GET /dead-stock used to strip `abc`/`xyz`/`abc_xyz` — and the derived
-    `action_suggested`, which leaked the classification just as plainly — from
-    any tenant without Feature.ABC_XYZ. There is no such feature now, so the
-    classification and its action must reach the response. A tenant that got a
-    silently thinner payload than the one next door is exactly what the strip
-    did, and this is the guard against it coming back.
-
-    Real dead-stock classification depends on stock-history-derived demand
-    data that's impractical to seed deterministically through the API, so this
-    monkeypatches the two service calls the handler makes
-    (get_inventory_status / get_stock_history) to produce exactly one
-    dead-stock item, while still exercising the real endpoint handler
-    end-to-end.
-    """
-    monkeypatch.setattr("backend.config.settings.testing_mode", False)
-
-    def _fake_item():
-        return {
-            "sku": "DEAD-1", "has_stock": True, "current_stock": 50,
-            "daily_demand": 5, "unit_cost": 2.0, "abc": "C", "xyz": "Z",
-            "signal": "OK", "display_name": "Dead Item", "supplier": "Acme",
-        }
-
-    # first_stock == last_stock == 50 -> depletion 0; expected = 5 * 2 = 10;
-    # 0 < 10 * 0.20 -> classified as dead stock.
-    history = [{"stock": 50}, {"stock": 50}]
-
-    monkeypatch.setattr(
-        "backend.inventory.service.get_inventory_status",
-        lambda tenant_id, session_id, *a, **kw: [_fake_item()],
-    )
-    monkeypatch.setattr(
-        "backend.inventory.service.get_stock_history",
-        lambda tenant_id, sku, days=30: history,
-    )
-
-    headers = make_tenant_user_headers(role="analyst")
-    r = client.get(
-        "/api/v1/inventory/dead-stock",
-        params={"session_id": "sess_x"},
-        headers=headers,
-    )
-    assert r.status_code == 200, r.text
-    items = r.json()["data"]["items"]
-    assert len(items) == 1
-    assert items[0]["abc"] == "C"
-    # The action is a code plus an English fallback; the frontend renders
-    # `inventory.dead_action_<code>`.
-    assert items[0]["action_suggested_code"] == "return_to_supplier"
-    assert items[0]["action_suggested"] == "Return to the supplier"
-
-
 def test_send_now_fires_both_channels_for_any_tenant(
     monkeypatch, make_tenant_user_headers, client,
 ):

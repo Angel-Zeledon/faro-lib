@@ -4253,6 +4253,22 @@ Whoever decides should know `/dead-stock` has pinned tests
 (`test_holding_rate_is_one_number.py`, `test_entitlements.py`), and that the
 agent that found this deliberately left it alone, which was the right call.
 
+**[DONE 2026-09-30] retired `/dead-stock`, owner's decision** (the second
+option). The route, `getDeadStock`, its types, the «Inmovilizado» / "Dead
+stock" view on `/inventario` and its 24 i18n keys per language are gone;
+«Plata parada» (`/dead-capital`) is the one surface, and it already showed an
+unpriced SKU as «Sin costo», counted apart and kept out of the total. No MCP
+tool, public-surface route or WhatsApp tool used `/dead-stock`. Tests:
+`test_dead_stock_unpriced.py`, the `/dead-stock` case in
+`test_entitlements.py` and the formula replica in `test_calculation_audit.py`
+were deleted (they only pinned the retired endpoint — `test_dead_capital.py`
+already pins unknown-cost-is-null there); `test_holding_rate_is_one_number.py`
+now pins the property against what is left — every declared fallback agrees
+and the configured rate reaches `/price-breaks/evaluate`. `dead-capital`
+carries no holding cost, so the "cost per month to keep it" figure the old
+view showed has no replacement; adding one would be a new capability. The user
+and technical manuals (es/en) were updated and rebuilt.
+
 **3. Buying by supplier, on a cadence.** A buyer places one order to one
 supplier on Tuesday, not forty orders a day. There is no order cadence anywhere
 in the backend — `grep review_period|order_cycle|order_up_to` hits only

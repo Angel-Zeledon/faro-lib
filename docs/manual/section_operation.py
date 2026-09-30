@@ -214,7 +214,7 @@ SECTION = {
                     "Recomendaciones de compra», y a la derecha el indicador de frescura de "
                     "los datos.",
                     "Junto a él está el selector de vistas: Tabla, Simple, Proveedor, "
-                    "Actualizar stock (solo si tu rol puede editar), Inmovilizado, Plata "
+                    "Actualizar stock (solo si tu rol puede editar), Plata "
                     "parada, Costos al alza, Margen que se achica, Pronóstico en plata y "
                     "Costo de ignorar.",
                     "La barra de herramientas trae el botón de recarga, la importación de "
@@ -307,10 +307,6 @@ SECTION = {
                      "Tabla editable de stock, días de entrega y proveedor para corregir muchos "
                      "productos seguidos y guardarlos de una vez. Solo para roles que pueden "
                      "editar."),
-                    ("Vista Inmovilizado",
-                     "Productos con menos del 20% de la depleción esperada en los últimos "
-                     "30 días, con el capital atrapado y el costo de bodegaje mensual "
-                     "estimado al 25% anual del valor del inventario."),
                     ("Exportar OC / Exportar OC (editada)",
                      "La primera baja la orden que calcula el servidor; la segunda baja la "
                      "orden con las cantidades que tú editaste en la tabla. Ambas registran "
@@ -350,11 +346,6 @@ SECTION = {
                      "elige el producto. 3. Escribe cuántas unidades salieron y elige el "
                      "motivo. 4. Confirma: el stock baja de inmediato y el costo queda "
                      "registrado."),
-                    ("Encontrar el capital atrapado",
-                     " 1. Cambia a la vista «Inmovilizado». 2. Revisa los tres indicadores: "
-                     "SKUs inmovilizados, capital atrapado y costo de bodegaje al mes. "
-                     "3. Ordena la tabla por capital atrapado y trabaja de arriba hacia "
-                     "abajo con la acción sugerida de cada fila."),
                 ],
                 "gotchas": [
                     "«Sin datos» no es un error de StockAI: es un producto al que nunca le "
@@ -434,12 +425,10 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "Esta vista no es lo mismo que «Inmovilizado», en el mismo selector: "
-                    "«Inmovilizado» mide si un producto se agotó como esperaba el "
-                    "pronóstico en los últimos 30 días; «Plata parada» mide si el stock "
-                    "bajó, con o sin pronóstico de por medio. Pueden darte listas "
-                    "distintas para el mismo producto, y ninguna de las dos está mal: "
-                    "responden preguntas distintas.",
+                    "Esta vista reemplaza a la antigua «Inmovilizado». Aquella "
+                    "valoraba en cero un producto sin costo registrado y lo mandaba "
+                    "al fondo de la lista, como si no hubiera plata en riesgo; por "
+                    "eso se retiró y quedó una sola lista para esta pregunta.",
                     "Un producto sin costo registrado nunca cuenta como cero. Si "
                     "contara como cero se leería como «no hay plata en riesgo aquí», "
                     "que es lo contrario de lo que significa no tener el dato: se "
@@ -1185,7 +1174,7 @@ SECTION = {
                     "signal · Purchase recommendations”, and the data-freshness "
                     "indicator on the right.",
                     "Next to it is the view switcher: Table, Simple, Provider, Update stock "
-                    "(only if your role can edit), Dead stock, Money not moving, Rising "
+                    "(only if your role can edit), Money not moving, Rising "
                     "costs, Shrinking margin, Forecast in money and Cost of ignoring.",
                     "The toolbar holds the refresh button, the CSV import, "
                     "“Template”, “Export PO”, “Export PO "
@@ -1279,10 +1268,6 @@ SECTION = {
                      "An editable table of stock, lead time and supplier so you can fix many "
                      "products in a row and save them at once. Only for roles that can "
                      "edit."),
-                    ("Dead stock view",
-                     "Products with less than 20% of expected depletion over the last 30 "
-                     "days, with the capital trapped and the monthly holding cost estimated "
-                     "at 25% annual of the inventory value."),
                     ("Export PO / Export PO (edited)",
                      "The first downloads the order the server computes; the second "
                      "downloads the order with the quantities you edited in the table. Both "
@@ -1321,11 +1306,6 @@ SECTION = {
                      " 1. Press “Log stock-out” in the top bar. 2. Type the SKU and "
                      "pick the product. 3. Enter how many units left and choose the reason. "
                      "4. Confirm: stock drops immediately and the cost is recorded."),
-                    ("Find your trapped capital",
-                     " 1. Switch to the “Dead stock” view. 2. Check the three "
-                     "indicators: dead stock SKUs, capital trapped and holding cost per "
-                     "month. 3. Sort the table by capital trapped and work top down using "
-                     "each row's suggested action."),
                 ],
                 "gotchas": [
                     "“No data” is not a StockAI error: it is a product whose stock you "
@@ -1403,12 +1383,10 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "This view is not the same as “Dead stock”, in the same switcher: "
-                    "“Dead stock” measures whether a product depleted the way the "
-                    "forecast expected over the last 30 days; “Money not moving” "
-                    "measures whether the stock fell, with or without a forecast "
-                    "involved. They can give you different lists for the same "
-                    "product, and neither is wrong: they answer different questions.",
+                    "This view replaces the old “Dead stock” one. That view priced a "
+                    "product with no cost on file at zero and sent it to the bottom "
+                    "of the list, as if no money were at risk; it was retired so this "
+                    "question has one list.",
                     "A product with no cost on file never counts as zero. If it did, "
                     "it would read as “no money at risk here”, which is the "
                     "opposite of what missing the data means: it is shown apart and "
