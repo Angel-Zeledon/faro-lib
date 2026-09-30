@@ -377,7 +377,7 @@ export default function LandingPage() {
   const PROBLEMS   = L.problem.items
   const STEPS      = L.how.steps
   const CASES      = L.cases.items
-  const BENEFITS   = L.benefits
+  const BENEFITS   = L.benefits.items
   const COMPARE    = L.compare.rows
   const ROLES      = L.includes.roles
   const INCLUDES   = L.includes.items
@@ -612,14 +612,14 @@ export default function LandingPage() {
      on real sessions the app shows its own users 75–89%. Advertising 94% while
      the screen says 75% is the one thing this product cannot afford to do —
      its whole argument is that it tells you the truth about your numbers.
-     What replaces them is countable: how many models compete per SKU
-     (MODEL_ORDER), the deliveries it takes to learn a supplier's real lead time
+     What replaces them is countable: the four states every product lands in
+     (the semaforo), the deliveries it takes to learn a supplier's real lead time
      (MIN_LEAD_TIME_OBSERVATIONS = 3), and the catalogue size the product is
      exercised against.
      If a real average accuracy ever gets measured across customers, it belongs
      here — with the number the app actually shows. */}
  {[
- { value: '9', label: L.strip.models },
+ { value: '4', label: L.strip.models },
  { value: '3', label: L.strip.deliveries },
  { value: '5K+', label: L.strip.skus },
  { value: 'CSV', label: L.strip.csv },
@@ -854,10 +854,10 @@ export default function LandingPage() {
  <Section>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 72, alignItems: 'start' }}>
  <div>
- <Tag>{L.includes.tag}</Tag>
- <H2>{L.includes.title}</H2>
+ <Tag>{L.benefits.tag}</Tag>
+ <H2>{L.benefits.title}</H2>
  <Lead>
- {L.includes.lead}
+ {L.benefits.lead}
  </Lead>
  </div>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
@@ -881,9 +881,9 @@ export default function LandingPage() {
  <Scroller minWidth={620}>
  <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Capacidad</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Excel</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>StockAI</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.compare.head[0]}</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{L.compare.head[1]}</div>
+ <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{L.compare.head[2]}</div>
  </div>
  {COMPARE.map(({ feature, excel, stockai }, i) => (
  <div key={feature} style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', padding: '15px 24px', alignItems: 'center', background: i % 2 === 0 ? T.bg : T.bg2, borderBottom: i < COMPARE.length - 1 ? `1px solid ${T.border}` : 'none' }}>
@@ -1035,6 +1035,26 @@ export default function LandingPage() {
  </p>
  </Section>
 
+ {/* ── FOR YOUR TECHNICAL TEAM ──────────────────────────────────────── */}
+ {/* The only place the page names the machinery (model competition,
+     backtesting, ABC-XYZ, API/MCP). Kept compact and below the fold on
+     purpose: the landing speaks to the buyer (owner's call, 2026-09-30). */}
+ <Section id="tecnico" style={{ padding: '56px 0', borderTop: `1px solid ${T.border}` }}>
+ <Tag>{L.tech.tag}</Tag>
+ <H3>{L.tech.title}</H3>
+ <p style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, margin: '0 0 20px', maxWidth: 640 }}>
+ {L.tech.lead}
+ </p>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+ {L.tech.items.map(({ title, desc }) => (
+ <div key={title} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 18px' }}>
+ <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>{title}</div>
+ <div style={{ fontSize: 12.5, color: T.body, lineHeight: 1.6 }}>{desc}</div>
+ </div>
+ ))}
+ </div>
+ </Section>
+
  {/* ── FAQ ──────────────────────────────────────────────────────────── */}
  <Section alt>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 72, alignItems: 'start' }}>
@@ -1045,7 +1065,7 @@ export default function LandingPage() {
  {L.faq.lead}
  </p>
  <a href="mailto:hola@usefaro.io" className="cta-link" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
- Escribir al equipo →
+ {L.faq.cta}
  </a>
  </div>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>

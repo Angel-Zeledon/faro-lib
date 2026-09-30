@@ -4414,6 +4414,11 @@ below.
   compras, no para científicos de datos" sits next to "Modelos compitiendo por
   producto", "Métricas de precisión y backtesting por modelo" and "Clasificación
   automática ABC-XYZ". Pick one.
+  **[DONE 2026-09-30] owner chose the buyer.** Hero, section titles, feature
+  cards and FAQ answers now speak in outcomes (what to order today, how much,
+  from whom, what money is stuck, what arrives when). Model competition,
+  backtesting, ABC-XYZ and the API/MCP are named only in the compact "Para tu
+  equipo técnico" block near the bottom (`landing.ts` `tech`). No new figures.
 * Splitting `/pronosticos` into a buyer half and a technical half behind one
   toggle. The right change, and the only one here that costs real engineering:
   the file is 3,444 lines.
