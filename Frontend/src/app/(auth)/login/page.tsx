@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authLogin, authResendVerification, isApiError } from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
+import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
 import { Eye, EyeOff, AlertTriangle, MailCheck } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
@@ -69,6 +70,8 @@ function LoginPageContent() {
         role:      res.user.role,
         tenant_id: res.user.tenant_id,
       })
+      // Every sign-in opens the app with its entrance (AppIntro).
+      try { sessionStorage.removeItem(INTRO_SEEN_KEY) } catch { /* storage blocked */ }
       router.replace(destination)
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.login_failed'))

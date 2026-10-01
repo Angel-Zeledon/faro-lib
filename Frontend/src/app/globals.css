@@ -1058,3 +1058,79 @@
 .auth-panel-mark { right: auto; left: -18px; bottom: -58px; }
 .auth-split .auth-shell { padding-top: 40px !important; }
 @media (max-width: 560px) { .auth-split-foot { display: none; } }
+
+/* ── Login tips panel (components/auth/TipsPanel.tsx) ───────────────────── */
+.tips-panel { animation: tips-panel-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.tips-kicker {
+  display: inline-flex; align-items: center; gap: 7px; margin: 0 0 26px;
+  padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  color: #CCFBF1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+}
+.tips-card { min-height: 236px; animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.tips-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; border-radius: 16px; margin-bottom: 22px; color: #5EEAD4;
+  background: linear-gradient(145deg, rgba(94,234,212,0.16), rgba(94,234,212,0.04));
+  border: 1px solid rgba(94,234,212,0.22);
+  animation: tips-icon-in 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;
+}
+.tips-title {
+  font-family: var(--font-brand), system-ui, sans-serif;
+  font-size: clamp(26px, 2.4vw, 34px); font-weight: 600; line-height: 1.12;
+  letter-spacing: -0.025em; color: #fff; margin: 0 0 14px; text-wrap: balance;
+  animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+}
+.tips-body {
+  margin: 0; font-size: 15.5px; line-height: 1.6; color: rgba(231,240,239,0.74); max-width: 42ch;
+  animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
+}
+.tips-progress {
+  margin-top: 30px; height: 3px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,0.1);
+}
+.tips-progress-fill {
+  display: block; height: 100%; width: 100%; transform-origin: left center;
+  background: linear-gradient(90deg, #2BA79A, #5EEAD4);
+  animation-name: tips-fill; animation-timing-function: linear; animation-fill-mode: both;
+}
+.tips-dots { display: flex; align-items: center; gap: 7px; margin-top: 18px; }
+.tips-dot {
+  all: unset; cursor: pointer; width: 7px; height: 7px; border-radius: 999px;
+  background: rgba(255,255,255,0.22); transition: width 0.35s ease, background 0.35s ease;
+}
+.tips-dot:hover { background: rgba(255,255,255,0.45); }
+.tips-dot.is-on { width: 22px; background: #5EEAD4; }
+.tips-dot:focus-visible { outline: 2px solid #5EEAD4; outline-offset: 3px; }
+.tips-count { margin-left: auto; font-size: 12px; color: rgba(231,240,239,0.5); font-variant-numeric: tabular-nums; }
+
+@keyframes tips-panel-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tips-in { from { opacity: 0; transform: translateY(14px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes tips-icon-in { from { opacity: 0; transform: scale(0.6) rotate(-8deg); } to { opacity: 1; transform: none; } }
+@keyframes tips-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tips-panel, .tips-card, .tips-icon, .tips-title, .tips-body { animation: none; }
+  .tips-progress-fill { animation: none; transform: scaleX(1); opacity: 0.4; }
+}
+
+/* ── App entrance (components/layout/AppIntro.tsx) ─────────────────────── */
+.app-intro {
+  position: fixed; inset: 0; z-index: 20000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background: radial-gradient(900px 520px at 80% 0%, rgba(43,167,154,0.32), transparent 60%), #0C3A40;
+  color: #fff; animation: app-intro-out 0.5s ease-in 1.15s both;
+}
+.app-intro-mark { animation: app-intro-mark 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.app-intro-bar { width: 180px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.app-intro-bar > span {
+  display: block; height: 100%; width: 100%; transform-origin: left center;
+  background: linear-gradient(90deg, #2BA79A, #5EEAD4);
+  animation: tips-fill 1.15s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.app-intro-tip {
+  max-width: 40ch; text-align: center; font-size: 14px; line-height: 1.55;
+  color: rgba(231,240,239,0.72); padding: 0 24px;
+  animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+@keyframes app-intro-mark { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes app-intro-out { to { opacity: 0; visibility: hidden; } }

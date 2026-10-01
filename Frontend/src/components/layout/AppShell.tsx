@@ -23,6 +23,7 @@ import { UpgradeProvider } from '@/components/limits/UpgradeDialog'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import VerifyEmailBanner from './VerifyEmailBanner'
 import TrialBanner from './TrialBanner'
+import AppIntro from './AppIntro'
 import MobileNavButton from '@/components/mobile/MobileNavButton'
 import DesktopOnlyNotice from '@/components/mobile/DesktopOnlyNotice'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -104,6 +105,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
       <CurrencyBoot />
+      <AppIntro />
       <Sidebar />
       <div className="main-content" style={narrow ? { minWidth: 0 } : undefined}>
         <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, minWidth: 0 }}>

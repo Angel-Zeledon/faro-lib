@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { AlertTriangle, Check, Copy, Clock, Sparkles } from 'lucide-react'
 import { authLogin, createTrialAccount, type TrialAccount } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
+import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
@@ -114,6 +115,7 @@ export default function TrialPage() {
         role:      res.user.role,
         tenant_id: res.user.tenant_id,
       })
+      try { sessionStorage.removeItem(INTRO_SEEN_KEY) } catch { /* storage blocked */ }
       router.replace('/ventas?demo=1')
     } catch (err) {
       setError(authErrorText(err, 'auth.login_failed'))

@@ -3,6 +3,7 @@ import { usePathname } from 'next/navigation'
 import { Moon, Sun } from 'lucide-react'
 import { Wordmark } from '@/components/brand/Wordmark'
 import { AuthPanel } from '@/components/auth/AuthPanel'
+import { TipsPanel } from '@/components/auth/TipsPanel'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -65,7 +66,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <main className="auth-split-body">{children}</main>
         <footer className="auth-split-foot">© {new Date().getFullYear()} StockAI</footer>
       </div>
-      <AuthPanel />
+      {/* Signing in is for people who already have an account: they get tips
+          for using it. Signup and the trial keep the pitch. */}
+      {pathname === '/login' ? <TipsPanel /> : <AuthPanel />}
     </div>
   )
 }
