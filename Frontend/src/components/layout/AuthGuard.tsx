@@ -4,7 +4,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { isAuthenticated, tryRefresh } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 
-const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password']
+const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()

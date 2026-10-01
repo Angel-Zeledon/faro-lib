@@ -22,6 +22,7 @@ import { CapabilitiesProvider } from '@/lib/capabilities'
 import { UpgradeProvider } from '@/components/limits/UpgradeDialog'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import VerifyEmailBanner from './VerifyEmailBanner'
+import TrialBanner from './TrialBanner'
 import MobileNavButton from '@/components/mobile/MobileNavButton'
 import DesktopOnlyNotice from '@/components/mobile/DesktopOnlyNotice'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -115,6 +116,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           className="page-content"
           style={narrow ? { overflowX: 'hidden', padding: 12 } : undefined}
         >
+          <TrialBanner />
           <ReadOnlyBanner />
           <VerifyEmailBanner />
           <DesktopOnlyNotice />

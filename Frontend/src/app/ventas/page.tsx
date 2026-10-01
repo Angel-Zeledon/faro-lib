@@ -663,8 +663,15 @@ function QuickStartPageContent() {
  // moved on to, minutes later, discarding anything unsaved there. Every
  // other effect on this page already has a `cancelled` flag; this one, the
  // longest-lived of them (MAX_POLLS ≈ 30 min), did not.
+ //
+ // Reset on (re)mount: React's development mode mounts, unmounts and mounts
+ // again, and a flag that is only ever set to true left the poll exiting on
+ // its first lap — the demo trained and the screen never moved on.
  const unmountedRef = useRef(false)
- useEffect(() => () => { unmountedRef.current = true }, [])
+ useEffect(() => {
+ unmountedRef.current = false
+ return () => { unmountedRef.current = true }
+ }, [])
 
  const autoDemoRanRef = useRef(false)
  useEffect(() => {

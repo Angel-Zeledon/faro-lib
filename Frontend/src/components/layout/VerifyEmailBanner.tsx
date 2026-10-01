@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { MailWarning, MailCheck, X } from 'lucide-react'
 import { getMe, authResendVerification } from '@/lib/api'
 import { getUser } from '@/lib/auth'
+import { useEntitlements } from '@/lib/entitlements'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 const AMBER = '#f59e0b'
@@ -31,6 +32,9 @@ export default function VerifyEmailBanner() {
   const [email,      setEmail]      = useState('')
   const [resending,  setResending]  = useState(false)
   const [sentNote,   setSentNote]   = useState<string | null>(null)
+  // A trial account's address is made up and can never be verified; asking
+  // would send them to an inbox that does not exist. TrialBanner speaks instead.
+  const { ent } = useEntitlements()
 
   useEffect(() => {
     let alive = true
@@ -69,7 +73,7 @@ export default function VerifyEmailBanner() {
     setDismissed(true)
   }
 
-  if (!unverified || dismissed) return null
+  if (!unverified || dismissed || ent?.tier === 'demo') return null
 
   return (
     <div

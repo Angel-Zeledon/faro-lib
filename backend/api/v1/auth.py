@@ -293,6 +293,17 @@ async def login(body: LoginRequest):
     if not user:
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
 
+    # A trial account between its end and the hourly reaper. After the
+    # password matched, so it says nothing to somebody guessing addresses.
+    from backend.tenants.service import get_tenant
+    from backend.trial.service import is_expired_trial
+    if is_expired_trial(get_tenant(entry["tenant_id"])):
+        raise AppError(
+            "trial_account_expired",
+            "This trial account has ended. Start a new one from the home page.",
+            status_code=403,
+        )
+
     # An unverified address no longer blocks the login. It travels in the token
     # instead (`email_verified` claim), and backend/auth/guards.py demands
     # verification only on the actions that reach outside the tenant. Refusing
@@ -348,6 +359,14 @@ async def refresh(body: RefreshRequest):
     if not user:
         raise AppError(
             "refresh_token_invalid", "Invalid or expired refresh token", status_code=401,
+        )
+    from backend.tenants.service import get_tenant
+    from backend.trial.service import is_expired_trial
+    if is_expired_trial(get_tenant(user["tenant_id"])):
+        raise AppError(
+            "trial_account_expired",
+            "This trial account has ended. Start a new one from the home page.",
+            status_code=401,
         )
 
     # Re-read from the row, not from the old token: a user who verifies mid

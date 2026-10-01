@@ -18,6 +18,8 @@ from backend.db.connection import query_one
 from backend.entitlements.service import (
     is_read_only, tenant_limits, tenant_tier, trial_state,
 )
+from backend.entitlements.plans import DEMO
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.tenants.service import get_tenant
 from backend.utils.ids import generate_id
@@ -121,6 +123,14 @@ def create_upgrade_request(
     failed SMTP call is the most expensive thing this product could drop.
     """
     tenant = get_tenant(user.tenant_id) or {}
+    # A trial account's own address is made up (backend/trial/), so "use the
+    # account's email" would file a lead nobody can answer.
+    if tenant.get("tier") == DEMO and not body.contact:
+        raise AppError(
+            "contact_required",
+            "Tell us how to reach you: this trial account has no real email.",
+            status_code=400,
+        )
     # One open ask per tenant. A second click — or the second person on the same
     # account, hitting the same wall the same morning — updates the one we have
     # instead of filing another, because the funnel is a list we read by hand.

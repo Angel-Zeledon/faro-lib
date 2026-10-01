@@ -20,7 +20,7 @@ _LIMIT_FIELDS = tuple(f.name for f in fields(PlanDef))
 
 
 def tenant_tier(tenant: dict) -> str:
-    """The tier this tenant runs on: 'free' or 'paid'.
+    """The tier this tenant runs on: 'free', 'paid' or 'demo'.
 
     Anything unrecognised — a NULL column on a row that predates the migration,
     a typo somebody typed into psql — resolves to free. Failing to the paid

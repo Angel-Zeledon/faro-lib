@@ -24,7 +24,9 @@ export default function LimitsSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   if (!ent) return null
-  const free = ent.tier === 'free'
+  // A trial account has ceilings like the free tier, so it is drawn like one.
+  const free = ent.tier !== 'paid'
+  const tierKey = ent.tier === 'demo' ? 'trial' : free ? 'free' : 'paid'
 
   return (
     <div>
@@ -36,11 +38,11 @@ export default function LimitsSection() {
           color: free ? 'var(--muted)' : '#fff',
           border: '1px solid var(--border)',
         }}>
-          {t(free ? 'limits.tier.free' : 'limits.tier.paid')}
+          {t(`limits.tier.${tierKey}`)}
         </span>
       </div>
       <p style={{ margin: '0 0 18px', fontSize: 12.5, lineHeight: 1.6, color: 'var(--dim)' }}>
-        {t(free ? 'limits.section.subtitle_free' : 'limits.section.subtitle_paid')}
+        {t(`limits.section.subtitle_${tierKey}`)}
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

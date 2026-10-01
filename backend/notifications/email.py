@@ -201,6 +201,12 @@ def _transport_send(
     instance transport: those speak for the installation, not for a customer,
     and a tenant must not be able to send the address that resets a password.
     """
+    # A trial login is a made-up address on a TLD that does not exist. Handing
+    # it to a provider would only earn a bounce against our sender.
+    from backend.trial.service import is_trial_email
+    if is_trial_email(to):
+        raise EmailDeliveryError(f"Trial account address, never mailed: {to}")
+
     cfg = effective(tenant_id)
 
     if cfg.resend_api_key:

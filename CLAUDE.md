@@ -36,6 +36,13 @@ Concretely:
   one-plan-everything-free rule of 2026-08-16.
   **Never reintroduce**: a feature gate, a `require_feature`, a plan comparison
   screen, or a payment flow. A limit is a number, never a locked door.
+  **Trial accounts** (2026-10-01, owner's request): the landing's "Probar sin
+  registrarme" → `/prueba` → `POST /trial` (`backend/trial/`) mints a throwaway
+  tenant on a third ceiling set, `demo` (30 SKUs, 1 user, 1 job at a time,
+  5 MB), with a made-up `@stockai.demo` login that is never verified and that
+  the email transport refuses — so it can reach nobody. It lives 24 h; the
+  `trial-reaper` worker loop erases it, unless it filed an upgrade request
+  still `new` (a lead is never lost to a cron job).
 
 ## Project Overview
 

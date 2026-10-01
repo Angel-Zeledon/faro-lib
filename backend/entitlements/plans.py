@@ -16,6 +16,12 @@ assistant, the same public API. What differs is only *how much* of it fits.
 There is no checkout. A tenant moves to `paid` because somebody talked to us
 and we set `tenants.tier`. That is the whole billing system, on purpose.
 
+- `demo` is the throwaway account the landing hands out to somebody who wants
+  to look before talking to us (`backend/trial/`). Same features again — the
+  ceilings are just small enough that nobody runs a business on it, and it is
+  erased 24 hours after it was created. Nobody signs up into it and nobody is
+  moved to it by hand.
+
 `None` means unlimited.
 """
 
@@ -23,6 +29,7 @@ from dataclasses import dataclass
 
 FREE = "free"
 PAID = "paid"
+DEMO = "demo"
 
 
 @dataclass(frozen=True)
@@ -75,6 +82,24 @@ PLANS: dict[str, PlanDef] = {
         # stays because an upload is read into memory before it is anything
         # else. For scale: 3 years of daily sales over 5.000 SKUs is ~200 MB.
         max_dataset_size_mb=2000,
+    ),
+    DEMO: PlanDef(
+        # Room to walk every screen once, and nothing more. The bundled demo
+        # history is 5 SKUs; 30 leaves space to upload a small sample of
+        # one's own catalogue and see it forecast.
+        max_skus=30,
+        # The visitor alone. Inviting somebody is an email to a real address.
+        max_users=1,
+        # Two, so transfers and the network view can actually be tried.
+        max_locations=2,
+        # The seeded run plus one upload of their own.
+        max_sessions=2,
+        max_api_keys=1,
+        max_api_calls_per_day=100,
+        # Lower than the infrastructure ceiling: a burst of visitors must not
+        # take every worker thread from the tenants who run on this server.
+        max_concurrent_jobs=1,
+        max_dataset_size_mb=5,
     ),
 }
 

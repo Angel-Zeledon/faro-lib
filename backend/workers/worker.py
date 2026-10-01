@@ -512,6 +512,23 @@ def _monthly_overstock_snapshot_loop() -> None:
         loop_state.mark_run(loop_state.MONTHLY_OVERSTOCK, boundary)
 
 
+# Trial accounts last 24 hours (backend/trial/service.py). Hourly is late by at
+# most an hour, and between the end and the sweep the tenant is already read
+# only and refused at login, so the hour costs nothing but disk.
+_TRIAL_REAPER_SECONDS = 3600
+
+
+def _trial_reaper_loop() -> None:
+    log.info("Trial reaper loop started")
+    while True:
+        try:
+            from backend.trial.service import reap_expired_trials
+            reap_expired_trials()
+        except Exception as e:
+            log.error("Trial reaper error: %s", e, exc_info=True)
+        time.sleep(_TRIAL_REAPER_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -525,7 +542,7 @@ def enabled_components() -> list[str]:
     if settings.scheduler_enabled:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
-            "operator-digest",
+            "operator-digest", "trial-reaper",
         ]
     return components
 
@@ -535,6 +552,7 @@ _COMPONENT_TARGETS = {
     "inventory-alerts":   _inventory_alert_loop,
     "overstock-snapshot": _monthly_overstock_snapshot_loop,
     "operator-digest":    _operator_digest_loop,
+    "trial-reaper":       _trial_reaper_loop,
 }
 
 

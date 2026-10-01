@@ -6,7 +6,7 @@ import { AuthPanel } from '@/components/auth/AuthPanel'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 
-// Persistent stage for /login and /signup: the form on the left, the product's
+// Persistent stage for /login, /signup and /prueba (the trial account): the form on the left, the product's
 // own morning list on the right. Because this layout wraps both routes, the
 // panel stays MOUNTED across a /login ↔ /signup navigation and only the form
 // changes.
@@ -22,7 +22,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 //
 // Scoped to /login and /signup on purpose: verify-email, forgot-password and
 // reset-password keep their own full-screen treatment.
-const SCENE_ROUTES = ['/login', '/signup']
+const SCENE_ROUTES = ['/login', '/signup', '/prueba']
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

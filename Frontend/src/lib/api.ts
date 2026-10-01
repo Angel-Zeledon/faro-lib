@@ -370,6 +370,18 @@ export const authLogin = (email: string, password: string) =>
     }
   }>('POST', '/auth/login', { email, password })
 
+/** A throwaway account from the landing: 24 hours, the `demo` tier, the demo
+ *  run already queued. The password exists only in this response. */
+export interface TrialAccount {
+  email: string
+  password: string
+  expires_at: string
+  hours: number
+}
+
+export const createTrialAccount = () =>
+  request<TrialAccount>('POST', '/trial', undefined, { silent: true })
+
 export const authVerifyEmail = (token: string) =>
   request<{ message: string }>('POST', '/auth/verify-email', { token })
 
@@ -1464,7 +1476,7 @@ export const getSuggestedQuestions = (profile = 'distributor', hasInventory = tr
  * button is not shown at all.
  */
 export interface Entitlements {
-  tier: 'free' | 'paid'
+  tier: 'free' | 'paid' | 'demo'
   trial: { state: string; ends_at: string | null }
   limits: Record<string, number | null>
   usage: Record<string, number>

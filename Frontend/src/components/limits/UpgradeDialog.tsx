@@ -83,6 +83,11 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
   const used = limitKey ? ent?.usage?.[limitKey] : undefined
   const whatsapp = ent?.contact?.whatsapp || ''
   const email = ent?.contact?.email || ''
+  // A trial account's own address is made up (backend/trial/), so the backend
+  // refuses the ask without a way to reach the person — say so before they
+  // press the button, not after.
+  const trial = ent?.tier === 'demo'
+  const needsContact = trial && !contact.trim()
 
   async function submit() {
     setState('sending')
@@ -101,7 +106,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={t('limits.dialog.title')}
+      aria-label={t(trial ? 'trial.dialog.title' : 'limits.dialog.title')}
       className="modal-backdrop-enter"
       style={{
         position: 'fixed', inset: 0, zIndex: 10000,
@@ -122,7 +127,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
         }}
       >
         <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
-          {t('limits.dialog.title')}
+          {t(trial ? 'trial.dialog.title' : 'limits.dialog.title')}
         </h3>
 
         {limitKey && limit != null && used != null && (
@@ -136,7 +141,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
         )}
 
         <p style={{ margin: '0 0 18px', fontSize: 13, lineHeight: 1.6, color: 'var(--dim)' }}>
-          {t('limits.dialog.explain')}
+          {t(trial ? 'trial.dialog.explain' : 'limits.dialog.explain')}
         </p>
 
         <ContactButtons whatsapp={whatsapp} email={email} t={t} />
@@ -162,7 +167,9 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
               rows={3}
               style={{ ...FIELD, resize: 'vertical', fontFamily: 'inherit' }}
             />
-            <label style={{ ...LABEL, marginTop: 12 }}>{t('limits.form.contact_label')}</label>
+            <label style={{ ...LABEL, marginTop: 12 }}>
+              {t('limits.form.contact_label')}{trial && ' *'}
+            </label>
             <input
               value={contact}
               onChange={(e) => setContact(e.target.value)}
@@ -179,6 +186,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
               <Button
                 variant="primary"
                 loading={state === 'sending'}
+                disabled={needsContact}
                 onClick={submit}
               >
                 {state === 'sending' ? t('limits.form.sending') : t('limits.form.submit')}
