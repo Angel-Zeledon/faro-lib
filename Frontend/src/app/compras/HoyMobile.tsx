@@ -680,6 +680,8 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
 }) {
   const { t } = useLanguage()
   const total = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
+  // Lines with no cost on file are left out of the total, and it says so.
+  const uncostedLines = approved.filter(i => i.unit_cost == null).length
 
   // Same split as the desktop cart: lines without a price or without a cost are
   // excluded from the margin figure and reported, so the number is never
@@ -714,13 +716,18 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
               {t('hoy.cart_total_label')}: {formatMoney(total)}
             </div>
           )}
+          {total > 0 && uncostedLines > 0 && (
+            <div style={{ fontSize: 10.5, color: C.amber, marginTop: 1 }}>
+              {t('hoy.cart_total_uncosted', { count: uncostedLines })}
+            </div>
+          )}
           {priced.length > 0 && marginProtected > 0 && (
             <div style={{ fontSize: 11, color: C.green, marginTop: 1 }}>
               {formatMoney(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
             </div>
           )}
-          {/* The caveat is tied to the MARGIN figure, never to the total above
-              it — the total uses cost and is complete. */}
+          {/* This caveat is tied to the MARGIN figure; the total above has its
+              own, for the lines with no cost on file. */}
           {unpriced.length > 0 && priced.length > 0 && (
             <div style={{ fontSize: 10.5, color: C.amber, marginTop: 1 }}>
               {t('hoy.cart_margin_excludes_prefix')} {unpriced.length} {t('hoy.cart_margin_excludes_suffix')}

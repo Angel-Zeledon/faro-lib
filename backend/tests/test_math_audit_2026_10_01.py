@@ -209,3 +209,55 @@ class TestDeadCapitalSignalUsesTheTenantsGrain:
         monkeypatch.setattr(inv_svc, "get_inventory_status", _status)
         dead_capital.get_dead_capital(test_tenant["id"], session_id="any")
         assert seen["period"] == "weekly"
+
+
+# ── "You sell X a day, so it lasts you N days" ──────────────────────────────
+
+class TestExplanationSpeaksDays:
+
+    def test_a_weekly_tenant_reads_per_day_figures(self):
+        """70/week and 3 weeks of cover used to read "you sell 70 a day, it
+        lasts you 3 days" — both numbers in the wrong unit for their words."""
+        exp = inv_svc.build_explanation(
+            current_stock=210, daily_demand=70.0, coverage_days=3.0, lead_time=14,
+            lead_time_source="user", reorder_point=180.0, signal="OK", period="weekly",
+        )
+        assert exp["params"]["daily_demand"] == pytest.approx(10.0)
+        assert exp["params"]["coverage_days"] == pytest.approx(21.0)
+        assert "sell 10.0 per day" in exp["text"]
+        assert "lasts you 21 days" in exp["text"]
+
+    def test_daily_is_unchanged(self):
+        exp = inv_svc.build_explanation(
+            current_stock=30, daily_demand=10.0, coverage_days=3.0, lead_time=14,
+            lead_time_source="user", reorder_point=180.0, signal="PEDIR_YA",
+        )
+        assert exp["params"]["daily_demand"] == pytest.approx(10.0)
+        assert exp["params"]["coverage_days"] == pytest.approx(3.0)
+
+
+class TestBreakdownAddsUp:
+    """`antes_moq` is the last step of a sum shown to the buyer. It left out
+    the units already on their way, so "before rounding 150" was followed by
+    an order of 50."""
+
+    def test_incoming_is_a_step_of_the_sum(self, client, auth_headers, test_tenant, monkeypatch):
+        from backend.db import session_store
+        from backend.sessions.service import create_session
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "ma-breakdown")["id"]
+        r = client.put("/api/v1/inventory/stock/MA-BRK",
+                       json={"current_stock": 0, "lead_time_days": 10, "moq": 1},
+                       headers=auth_headers)
+        assert r.status_code == 200, r.text
+        session_store.set_forecasts(tid, sid, {"MA-BRK": {"lightgbm": {"forecast": [
+            {"date": f"2026-01-{i + 1:02d}", "value": 10.0, "lower": 10.0, "upper": 10.0}
+            for i in range(14)]}}})
+        monkeypatch.setattr(inv_svc, "get_incoming_qty",
+                            lambda tid: {("MA-BRK", "principal"): 60.0})
+        item = next(i for i in inv_svc.get_inventory_status(tid, sid) if i["sku"] == "MA-BRK")
+        calc = item["calc_explanation"]
+        assert calc["incoming"] == pytest.approx(60.0)
+        # 10/day x 10 days = 100, no spread, 0 on hand, 60 on the way -> 40.
+        assert calc["antes_moq"] == pytest.approx(40.0)
+        assert item["recommended_qty"] == pytest.approx(40.0)

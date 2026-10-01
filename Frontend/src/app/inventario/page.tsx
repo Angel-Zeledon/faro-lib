@@ -90,6 +90,17 @@ function leadTimeOrUnset(raw: string): number | undefined {
  return raw.trim() === '' || Number.isNaN(n) ? undefined : n
 }
 
+/** The lead time to send from a bulk-edit row: only when the user changed the
+ *  box. The box starts at the RESOLVED value, and the backend stamps whatever
+ *  it receives as the user's own choice. */
+function changedLeadTime(
+ draft: { lead_time_days: string },
+ baseline: { lead_time_days: string } | undefined,
+): number | undefined {
+ if (baseline && draft.lead_time_days === baseline.lead_time_days) return undefined
+ return leadTimeOrUnset(draft.lead_time_days)
+}
+
 // A dataset with no SKU column trains as ONE series, and the backend labels that
 // row with the `__all__` sentinel's English name. Relabel it once here, on the
 // way in, so every cell below — table, detail panel, edit form, CSV — shows the
@@ -486,9 +497,15 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  : t(sourceLabelKey(leadSource))
  const steps = [
  { label: t('inventory.calc_step_avg_daily_sales'), value: `${exp.daily_demand!.toFixed(1)} ${t('inventory.calc_unit_per_day')}`, op: null },
- { label: `× ${t('inventory.calc_step_lead_days')} (${exp.lead_time_days}d${leadOrigin ? ` · ${leadOrigin}` : ''})`, value: `= ${exp.lead_time_demand!.toFixed(0)} ${unitWord}`, op: '×' },
+ // The days the demand is multiplied by: the lead time, plus the supplier's
+ // review period when one is declared — the protection interval the backend
+ // actually multiplied by, so the step reads as arithmetic that adds up.
+ { label: `× ${t('inventory.calc_step_lead_days')} (${exp.protection_interval_days ?? exp.lead_time_days}d${leadOrigin ? ` · ${leadOrigin}` : ''})`, value: `= ${exp.lead_time_demand!.toFixed(0)} ${unitWord}`, op: '×' },
  { label: `+ ${t('inventory.calc_step_safety_stock')}`, value: `+ ${exp.safety_stock!.toFixed(0)} ${unitWord}`, op: '+' },
  { label: `− ${t('inventory.calc_step_current_stock')}`, value: `− ${exp.current_stock!.toFixed(0)} ${unitWord}`, op: '−' },
+ ...((exp.incoming ?? 0) > 0
+  ? [{ label: `− ${t('inventory.calc_step_incoming')}`, value: `− ${exp.incoming!.toFixed(0)} ${unitWord}`, op: '−' }]
+  : []),
  { label: `= ${t('inventory.calc_step_before_rounding')}`, value: `${exp.antes_moq!.toFixed(0)} ${unitWord}`, op: '=' },
  ...(moq > 1
  ? [{ label: `↑ ${t('inventory.calc_step_rounded_moq')} (${moq})`, value: `→ ${exp.final_qty!.toFixed(0)} ${unitWord}`, op: '↑' }]
@@ -1532,20 +1549,28 @@ function fmt(n: number | null | undefined, d = 1) { if (n == null) return '—';
 function fmtCurrency(n: number | null | undefined) { return formatMoney(n) }
 
 // ── Simulator helpers ─────────────────────────────────────────────────────────
+// The simulator answers "how would the order MOVE if…", so it is anchored to
+// the backend's own recommendation and only adds the difference between two
+// runs of this approximation (changed inputs minus unchanged ones). It used to
+// print its own approximation as the "with changes" figure, and that
+// approximation disagreed with the real one before any slider moved: it read
+// a per-WEEK demand as per day (7x on a weekly tenant), rounded up to MOQ
+// MULTIPLES (need 520, minimum 500 -> 1000), and ignored stock already on its
+// way — a fake delta at the defaults (math audit 2026-10-01).
 function simulateRecommendation(
  currentStock: number,
  dailyDemand: number,
  avgStd: number,
  leadTime: number,
  moq: number,
- serviceLevel = 0.95,
+ incoming = 0,
 ): number {
- const Z_MAP: Record<number, number> = { 0.90: 1.282, 0.95: 1.645, 0.97: 1.881, 0.99: 2.326 }
- const z = Z_MAP[serviceLevel] ?? 1.645
+ const z = 1.645
  const demandLT = dailyDemand * leadTime
  const safetyStock = z * avgStd * Math.sqrt(leadTime)
- const raw = Math.max(0, demandLT + safetyStock - currentStock)
- if (moq > 0) return Math.ceil(raw / moq) * moq
+ const raw = Math.max(0, demandLT + safetyStock - currentStock - incoming)
+ // MOQ is a MINIMUM, never a multiple — the backend's _calc_recommended.
+ if (raw > 0 && moq > 0) return Math.max(Math.ceil(raw), moq)
  return Math.round(raw)
 }
 
@@ -1558,19 +1583,27 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const [demandMult, setDemandMult] = useState(100)
  const [stockDelta, setStockDelta] = useState(0)
 
- const simLeadTime = Math.max(1, (item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS) + ltDelta)
- const simDemand   = (item.daily_demand ?? 0) * demandMult / 100
+ // Per DAY, from the breakdown (the status row's `daily_demand` is per bucket
+ // of the planning period); the days are the protection interval the
+ // backend multiplied by (lead time + review period).
+ const baseDemand  = exp.daily_demand ?? 0
+ const origLT      = exp.protection_interval_days ?? item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS
+ const simLeadTime = Math.max(1, origLT + ltDelta)
+ const simDemand   = baseDemand * demandMult / 100
  const simStock    = Math.max(0, (item.current_stock ?? 0) + stockDelta)
+ const incoming    = exp.incoming ?? 0
 
- // Approximate avgStd from safety stock and original lead_time
- // safety_stock = z * avgStd * sqrt(lead_time) → avgStd ≈ safety_stock / (z * sqrt(lead_time))
- const origLT = item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS
+ // Approximate a per-day sigma from the published safety stock:
+ // safety_stock = z * avgStd * sqrt(days) -> avgStd = safety_stock / (z * sqrt(days))
  const origSS = exp.safety_stock ?? 0
  const z      = 1.645
  const avgStd = origLT > 0 ? origSS / (z * Math.sqrt(origLT)) : 0
 
- const simRecommended = simulateRecommendation(simStock, simDemand, avgStd, simLeadTime, item.moq ?? 1)
+ const moq            = item.moq ?? 1
+ const baseline       = simulateRecommendation(item.current_stock ?? 0, baseDemand, avgStd, origLT, moq, incoming)
+ const changed        = simulateRecommendation(simStock, simDemand, avgStd, simLeadTime, moq, incoming)
  const originalRec    = item.recommended_qty ?? 0
+ const simRecommended = Math.max(0, originalRec + changed - baseline)
  const delta          = simRecommended - originalRec
  const deltaColor     = delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.muted
 
@@ -2062,8 +2095,11 @@ export default function InventoryPage() {
  current_stock: parseFloat(draft.current_stock) || 0,
  // A blank box means "leave it as it is", not "use 15 days". Sending the
  // default wrote it over whatever the user had configured, and the app then
- // reported it back as their own choice.
- lead_time_days: leadTimeOrUnset(draft.lead_time_days),
+ // reported it back as their own choice. And an UNCHANGED box is the same:
+ // it is pre-filled with the RESOLVED lead time (a supplier rule, a learned
+ // value, the assumed 15), and sending it back stamped it as typed by the
+ // user — counting stock pinned the lead time (math audit 2026-10-01).
+ lead_time_days: changedLeadTime(draft, rowBaseline[sku]),
  supplier: draft.supplier || undefined,
  })
  setRowBaseline(prev => ({ ...prev, [sku]: { ...draft } }))
@@ -2114,10 +2150,8 @@ export default function InventoryPage() {
  try {
  await upsertInventoryStock(sku, {
  current_stock: parseFloat(draft.current_stock) || 0,
- // A blank box means "leave it as it is", not "use 15 days". Sending the
- // default wrote it over whatever the user had configured, and the app then
- // reported it back as their own choice.
- lead_time_days: leadTimeOrUnset(draft.lead_time_days),
+ // Only a lead time the user actually changed — see saveRow.
+ lead_time_days: changedLeadTime(draft, rowBaseline[sku]),
  supplier: draft.supplier || undefined,
  })
  saved++
@@ -2228,7 +2262,16 @@ export default function InventoryPage() {
  if (!editState || savingRef.current) return
  savingRef.current = true; setSaving(true)
  try {
- await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: leadTimeOrUnset(editState.lead_time_days), unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: parseFloat(editState.moq) || DEFAULT_MOQ, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || DEFAULT_SERVICE_LEVEL, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
+ // The form is pre-filled with RESOLVED values — a supplier rule's lead time
+ // or minimum, a learned lead time, the assumed defaults. Sending them back
+ // unchanged stamped each one as typed by the user, so fixing a product's
+ // name pinned its lead time and MOQ against every later rule change
+ // (stability 1.9's defect through the edit form; math audit 2026-10-01).
+ const shown = data?.items.find(i => i.sku === sku)
+ const before = shown ? rowToEdit(shown) : null
+ const leadChanged = !before || editState.lead_time_days !== before.lead_time_days
+ const moqChanged = !before || editState.moq !== before.moq
+ await upsertInventoryStock(sku, { display_name: editState.display_name || undefined, current_stock: parseFloat(editState.current_stock) || 0, lead_time_days: leadChanged ? leadTimeOrUnset(editState.lead_time_days) : undefined, unit_cost: editState.unit_cost ? parseFloat(editState.unit_cost) : undefined, moq: moqChanged ? (parseFloat(editState.moq) || DEFAULT_MOQ) : undefined, supplier: editState.supplier || undefined, service_level: parseFloat(editState.service_level) || DEFAULT_SERVICE_LEVEL, sale_price: editState.sale_price ? parseFloat(editState.sale_price) : undefined, category: editState.category || undefined, family: editState.family || undefined, brand: editState.brand || undefined, unit_of_measure: editState.unit_of_measure || undefined, barcode: editState.barcode || undefined })
  setEditId(null); setEditState(null); await load(sessionId)
  } catch (e: unknown) { setError(e instanceof Error ? e.message : t('inventory.err_saving')) }
  finally { savingRef.current = false; setSaving(false) }

@@ -13,7 +13,7 @@
 import Link from 'next/link'
 import { Info, ArrowRight } from 'lucide-react'
 import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
-import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat } from '@/lib/types'
+import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit } from '@/lib/types'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -48,7 +48,8 @@ export interface ActionItem {
  unit_cost:      number | null
  sale_price:   number | null   // sale price — for the margin-protected summary
  signal:         string
- days:           number | null
+ days:           number | null   // coverage, in `coverage_unit`
+ coverage_unit?: CoverageUnit
  lead_time:      number
  daily_demand: number | null   // forecasted daily demand — for the "why" panel
  current_stock:   number | null   // current stock — for the "why" panel

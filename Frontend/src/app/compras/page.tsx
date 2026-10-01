@@ -26,7 +26,7 @@ import {
 } from '@/components/suppliers/SupplierHealthBanners'
 import { TransferSuggestions } from '@/components/inventory/TransferSuggestions'
 import { useWarehouses, defaultWarehouse } from '@/components/inventory/WarehouseControls'
-import { coverageUnitLabel } from '@/lib/period'
+import { coverageUnitLabel, daysPerUnit } from '@/lib/period'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import { useAutoSession } from '@/hooks/useAutoSession'
@@ -392,7 +392,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
         {t('hoy.why_coverage_label')}
        </div>
        <div style={{ color: 'var(--text)', fontWeight: 700, marginTop: 2 }}>
-        {Math.round(item.days)} {t('hoy.why_days')}
+        {Math.round(item.days)} {coverageUnitLabel(item.coverage_unit, Math.round(item.days), t)}
        </div>
       </div>
      )}
@@ -672,7 +672,10 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    signal:         'PEDIR_YA',
    days:           risk.coverage_days ?? null,
    lead_time:      risk.lead_time_days,
-   daily_demand: risk.daily_demand ?? null,
+   // Per DAY, as the panel labels it: the briefing's figure is per bucket of
+   // the planning period (per week on a weekly tenant).
+   daily_demand: risk.daily_demand != null ? risk.daily_demand / daysPerUnit(cu) : null,
+   coverage_unit:  cu,
    current_stock:   risk.current_stock ?? null,
    // No source at all means we cannot prove authorship, so it reads as our
    // assumption — never as something the user configured.
@@ -713,7 +716,8 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    signal:         'PEDIR_PRONTO',
    days:           w.coverage_days ?? null,
    lead_time:      w.lead_time_days,
-   daily_demand: w.daily_demand ?? null,
+   daily_demand: w.daily_demand != null ? w.daily_demand / daysPerUnit(cu) : null,
+   coverage_unit:  cu,
    current_stock:   w.current_stock ?? null,
    lead_time_source: w.lead_time_source ?? 'default',
    lead_time_rule_scope: w.lead_time_rule_scope ?? null,
@@ -1065,6 +1069,10 @@ export default function HoyPage() {
 
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
+ // Lines with no cost on file are NOT zero-cost lines; the total above leaves
+ // them out and must say so, or ten priced units and fifty unpriced ones read
+ // as a complete order of the first ten (math audit 2026-10-01).
+ const uncostedLines = approved.filter(i => i.unit_cost == null).length
 
  // Feature 2.10 — margin visible in the cart. The per-unit margin is
  // computed by the backend (unit_margin = sale_price − unit_cost, null when
@@ -1733,6 +1741,11 @@ export default function HoyPage() {
             {totalValue > 0 && (
              <span key={totalValue} className="value-changed" style={{ borderRadius: 4, padding: '0 3px' }}>
               {` · ${t('hoy.cart_total_label')}: ${fmtMoney(totalValue)}`}
+             </span>
+            )}
+            {totalValue > 0 && uncostedLines > 0 && (
+             <span style={{ color: C.amber }}>
+              {` (${t('hoy.cart_total_uncosted', { count: uncostedLines })})`}
              </span>
             )}
            </div>

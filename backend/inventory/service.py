@@ -1616,6 +1616,7 @@ def build_explanation(
     signal: str,
     lead_time_rule_scope: Optional[str] = None,
     review_period_days: float = 0.0,
+    period: str = "daily",
 ) -> dict:
     """
     The reasoning behind a recommendation, as a STRUCTURED value:
@@ -1653,6 +1654,16 @@ def build_explanation(
     rendering nothing.
     """
     scope = lead_time_rule_scope or "supplier"
+
+    # The sentence says "you sell X a day, so it lasts you N days". On a weekly
+    # or monthly tenant `daily_demand` is per WEEK/MONTH and `coverage_days` is
+    # in weeks/months, so a weekly buyer read "you sell 70 a day, it lasts you
+    # 3 days" about 10 a day and 3 weeks (math audit 2026-10-01). Converted to
+    # calendar days here, the unit the sentence names and the lead time is in.
+    dpp = _days_per_period(period)
+    daily_demand = float(daily_demand) / dpp
+    if coverage_days is not None:
+        coverage_days = float(coverage_days) * dpp
 
     if daily_demand <= 0:
         # No projected sales at all: coverage is effectively unlimited, saying
@@ -2075,9 +2086,20 @@ def _compute_inventory_status(
                 round(current_stock * float(stock["unit_cost"]), 2)
                 if stock.get("unit_cost") is not None else None
             )
-            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
+            # The breakdown is a sum the buyer can redo by hand:
+            #   daily demand x protection days = LT demand; + safety - stock
+            #   - incoming = before rounding. Three things kept it from adding
+            #   up (math audit 2026-10-01): `daily_demand` was per PERIOD on a
+            #   weekly tenant (70/"day" x 14 days = "140"); it was the plain
+            #   forecast while LT demand used the event-adjusted rate; and the
+            #   units already on their way were subtracted from `final_qty`
+            #   but missing from the steps, so "before rounding 150" was
+            #   followed by an order of 50.
+            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock
+                                     - max(0.0, sku_incoming)), 2)
             calc_explanation = {
-                "daily_demand":    round(avg_daily, 2),
+                "daily_demand":    round(avg_daily_eff / _days_per_period(period), 2),
+                "incoming":        round(max(0.0, float(sku_incoming)), 2),
                 "lead_time_days":    lead_time,
                 # Where the lead time came from, so the breakdown labels it the
                 # same way /hoy does — now across all five real sources, not the
@@ -2132,6 +2154,7 @@ def _compute_inventory_status(
                 signal=signal,
                 lead_time_rule_scope=lead_time_rule_scope,
                 review_period_days=review_period_days,
+                period=period,
             )
         else:
             avg_daily = avg_std = None
