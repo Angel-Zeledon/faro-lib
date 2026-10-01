@@ -253,9 +253,13 @@ SECTION = {
                 "fields": [
                     ("Señal",
                      "El semáforo del producto, calculado comparando su cobertura con su tiempo "
-                     "de entrega: PEDIR_YA por debajo de medio tiempo de entrega, PEDIR_PRONTO por debajo "
-                     "de 1,2 tiempos de entrega, OK por debajo de 3, y SOBRESTOCK de 3 tiempos de entrega en "
-                     "adelante. Sin datos aparece cuando falta el stock o el pronóstico."),
+                     "de entrega: PEDIR_YA por debajo de medio tiempo de entrega, PEDIR_PRONTO "
+                     "mientras no alcance su punto de reorden (lo que vende mientras llega el "
+                     "pedido más el colchón), OK por encima, y SOBRESTOCK de 3 tiempos de entrega "
+                     "en adelante (o el doble del punto de reorden, si es mayor). El medio tiempo "
+                     "y los 3 tiempos son los valores de fábrica: se cambian en «Configurar "
+                     "inventario», «Reglas del semáforo», para toda la empresa o por proveedor. "
+                     "Sin datos aparece cuando falta el stock o el pronóstico."),
                     ("SKU / Nombre",
                      "El código del producto, el nombre que le pusiste y su proveedor."),
                     ("Stock",
@@ -1216,8 +1220,12 @@ SECTION = {
                 "fields": [
                     ("Signal",
                      "The product's traffic light, computed by comparing its coverage against "
-                     "its lead time: PEDIR_YA below half a lead time, PEDIR_PRONTO below 1.2 "
-                     "lead times, OK below 3, and SOBRESTOCK from 3 lead times up. No data "
+                     "its lead time: PEDIR_YA below half a lead time, PEDIR_PRONTO while it "
+                     "has not reached its reorder point (what it sells while the order travels "
+                     "plus the buffer), OK above that, and SOBRESTOCK from 3 lead times up (or "
+                     "twice the reorder point, if larger). Half a lead time and 3 lead times "
+                     "are the factory values: change them under “Set up inventory”, “Stock "
+                     "signal rules”, for the whole company or per supplier. No data "
                      "appears when the stock or the forecast is missing."),
                     ("SKU / Name",
                      "The product code, the name you gave it and its supplier."),

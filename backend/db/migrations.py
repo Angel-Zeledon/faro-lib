@@ -1578,6 +1578,22 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_suppliers_review_period_days",
      "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS review_period_days INT "
      "NOT NULL DEFAULT 0 CHECK (review_period_days >= 0)"),
+
+    # ── Semáforo multipliers (backend/inventory/signal_thresholds.py) ──────────
+    # The two lead-time multiples the signal is judged by, configurable per
+    # tenant (scope 'global'), supplier or category on the existing planning-
+    # rule rows. NULL on purpose: NULL means "nobody configured this", which is
+    # NOT the same as a tenant that saved 0.5/3.0 (silent-failures, question
+    # 3). Both are written together and resolved as one pair, so the CHECK only
+    # has to guard the ordering when a pair is present.
+    ("add_stock_defaults_order_now_factor",
+     "ALTER TABLE stock_defaults ADD COLUMN IF NOT EXISTS order_now_factor FLOAT"),
+    ("add_stock_defaults_overstock_factor",
+     "ALTER TABLE stock_defaults ADD COLUMN IF NOT EXISTS overstock_factor FLOAT"),
+    ("add_stock_defaults_signal_factors_check",
+     "ALTER TABLE stock_defaults ADD CONSTRAINT stock_defaults_signal_factors_check "
+     "CHECK (order_now_factor IS NULL OR overstock_factor IS NULL OR "
+     "(order_now_factor > 0 AND order_now_factor < overstock_factor))"),
 ]
 
 

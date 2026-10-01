@@ -4511,6 +4511,77 @@ line, not how dense it **feels**. Nothing here replaces walking it in a browser.
 
 ---
 
+## 21. The semáforo's multipliers are configurable (2026-10-01)
+
+**Owner's request:** "que las alertas se puedan configurar, cambiando el
+múltiplo… creo que ahorita es 1, 2 y 3 veces según el tiempo del proveedor".
+
+**What the rule actually was** (`service._calc_signal`, since 17c): PEDIR_YA
+below **0.5×** the lead time; PEDIR_PRONTO at or below the **reorder point**
+(lead-time demand + cushion — not a multiple); SOBRESTOCK from
+**max(3× lead time, 2× reorder point)**; OK in between. "1 / 2 / 3" was never
+the rule; "0.5 / 1.2 / 3" was, until 17c replaced the 1.2.
+
+**Built:** the two multiples are configurable per company, supplier or
+category (`backend/inventory/signal_thresholds.py`, stored on `stock_defaults`,
+`GET/PUT/DELETE /inventory/signal-thresholds` + a read-only `/preview` that runs
+the real semáforo twice). Defaults reproduce the shipped rule exactly
+(`test_signal_thresholds.py` replays every production call against a frozen
+copy of the old function). One resolver feeds the aggregate and per-warehouse
+status, hence the 08:00 alerts, the PDF, `/hoy`, the assistant and MCP; the
+price-break overstock guard and the OVERSTOCK recommendation read the row's
+resolved factor; a tokenized grep test fails if any backend module multiplies a
+lead time by a literal again. UI: third panel of `/configurar-inventario`, and
+the `/inventario` legend prints the configured values.
+
+**Deliberately not built — the owner's decision:** PEDIR_PRONTO as a
+multiple. The recommended quantity tops up to the reorder point, so a
+PEDIR_PRONTO boundary above it would show "order soon: 0 units". Making it a
+multiple means also lifting what the quantity is sized to (an order-up-to
+floor of `b × lead time × demand`) — a change to the quantity rule, not to the
+alert. Its knob today is the service level. For the same reason `order_now`
+is capped at 0.95 (at 1.0+ an urgent row could carry a zero quantity).
+
+**Findings, not fixed (outside this change or someone else's area):**
+
+1. The landing's "Cómo decide" (`Frontend/src/i18n/landing.ts:229-232`, en
+   `:660-661`, plus `:272`/`:701`) still says PEDIR PRONTO is "< 1,2 veces el
+   plazo" and OK "1,2 a 3 veces" — false since 17c, and silent about the rule
+   now being configurable.
+2. `/skus`' inventory tab (`InventoryPanel.tsx`, `ACTION_SIGNAL`) falls back,
+   when a SKU has no live stock row, to the ENGINE's training-time action
+   (`REORDER` at stock <= ROP, `OVERSTOCK` above 1.5×(ROP+SS)) painted as
+   PEDIR_YA/SOBRESTOCK — a second rule with different numbers that no
+   configuration reaches.
+3. `stock_defaults` supplier/category rules for lead time, service level and
+   MOQ have a full cascade in code and **no API or screen**: only the supplier
+   card's lead time reaches it. The service level per supplier/category is the
+   real "warn me earlier" knob and nobody can set it.
+4. The demo tenant's active session shows 35 of 40 SKUs SIN_DATOS (stock rows
+   keyed to SKUs the session does not carry).
+
+### Further alert knobs worth offering, ranked (report only)
+
+1. **Send time in the tenant's timezone.** The digest fires at 08:00 UTC —
+   02:00 in Costa Rica — while the tenant's timezone is already stored
+   (`/tenant/timezone`, used today only for scheduled trainings).
+2. **Per-user channel and severity**: email / WhatsApp / none, and "only
+   PEDIR YA". Today every admin and analyst gets every day's digest including
+   PEDIR PRONTO, with no opt-out short of changing role.
+3. **Service level per supplier/category on screen** (finding 3): moves the
+   PEDIR_PRONTO boundary and the quantity together, and the cascade exists.
+4. **"Only what is new" digests**: skip SKUs already reported yesterday with
+   no change, so the daily email stops being the same list.
+5. **Materiality filter**: leave C-class (ABC) or low-value SKUs out of the
+   alert, keeping them on screen.
+6. **PEDIR PRONTO as a multiple with an order-up-to floor** (above) — only if
+   the owner wants the quantity rule to change with it.
+7. **Overstock alerts**: SOBRESTOCK never triggers a message today; the
+   monthly snapshot only feeds `/impacto`.
+8. **Cadence**: daily vs weekly (Monday) digest.
+
+---
+
 ## What was deleted on 2026-08-11, and why
 
 Seven documents of plans, proposals and audits already executed or superseded.

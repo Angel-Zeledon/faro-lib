@@ -15,6 +15,7 @@
 import { useCallback, useState } from 'react'
 
 import SetupGapsPanel from '@/components/inventory/SetupGapsPanel'
+import SignalThresholdsPanel from '@/components/inventory/SignalThresholdsPanel'
 import StockImportWizard from '@/components/inventory/StockImportWizard'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
 
@@ -57,6 +58,9 @@ export default function InventorySetupPage() {
         <div data-tour="setup.gaps">
           <SetupGapsPanel key={version} onChanged={refresh} />
         </div>
+        {/* The semáforo's own rules: when it says "order now" and when it
+            says "you have too much", as multiples of the supplier's time. */}
+        <SignalThresholdsPanel />
       </div>
     </div>
   )
