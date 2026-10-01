@@ -4151,6 +4151,12 @@ def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
     return {sku: model for sku, (_s, model) in best.items()}
 
 
+# A WAPE at or above this is the engine's `sum|e| / (0 + 1e-8)` — a validation
+# window with no demand at all — not an error rate: a real one would need errors
+# a million times the units actually sold.
+_WAPE_UNDEFINED = 1e6
+
+
 def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[float]:
     """Session-level accuracy: 1 - WAPE of the model each SKU is bought from.
 
@@ -4184,6 +4190,14 @@ def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[fl
         if wape is None:
             continue
         if float(wape) == 0.0 and float(r.get('mae') or 0.0) == 0.0:
+            continue
+        # The other face of the same 0/0: no demand in the window but a
+        # forecast that was not exactly zero. The engine divides by
+        # `sum|y| + 1e-8`, so 30 days of 0.3 against 30 zeros scores a WAPE of
+        # 900,000,000 — and one such dead SKU, at any weight, took the session's
+        # "Precisión promedio" from 89% to 0% (math audit 2026-10-01). A WAPE
+        # that large only exists as that epsilon; it measures nothing.
+        if not math.isfinite(float(wape)) or float(wape) >= _WAPE_UNDEFINED:
             continue
         sku = str(r.get('sku'))
         if champions.get(sku) == r.get('model'):

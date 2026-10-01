@@ -308,6 +308,10 @@ export default function SkusPage() {
     // zeros. Both errors landing on exactly 0 means there was no signal to be
     // accurate about — show nothing rather than false confidence.
     if (best.wape === 0 && (best.mae ?? 0) === 0) return null
+    // The other face of that 0/0: no demand in the window and a forecast that
+    // was not exactly zero gives the engine's sum|e| / 1e-8 — a WAPE in the
+    // hundreds of millions that measures nothing (backend _WAPE_UNDEFINED).
+    if (!Number.isFinite(best.wape) || best.wape >= 1e6) return null
     // Clamped at 0 like the server's compute_session_accuracy: WAPE can exceed
     // 1, and a WAPE of 1.4 printed "Precisión -40%" (math audit 2026-10-01).
     return Math.max(0, Math.round((1 - best.wape) * 100))

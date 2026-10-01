@@ -255,6 +255,22 @@ class TestTransferIsNotRoundedToTheSupplierMinimum:
         assert needy["transfer_suggestion"]["qty"] == pytest.approx(520.0)
 
 
+# ── "Precisión promedio" and a SKU that did not sell ────────────────────────
+
+class TestOneDeadSkuDoesNotZeroTheAccuracy:
+
+    def test_an_epsilon_wape_is_left_out(self):
+        """No demand in the validation window, a forecast of 0.3/day: the
+        engine's WAPE is 9e8 and the session's 89% read 0%."""
+        dead = 30 * 0.3 / 1e-8
+        rows = [{"sku": "A", "model": "m", "cost_horizon": 1, "wape": 0.10, "mae": 5},
+                {"sku": "B", "model": "m", "cost_horizon": 1, "wape": 0.12, "mae": 6},
+                {"sku": "DEAD", "model": "m", "cost_horizon": 1, "wape": dead, "mae": 0.3}]
+        items = [{"sku": "A", "daily_demand": 100}, {"sku": "B", "daily_demand": 80},
+                 {"sku": "DEAD", "daily_demand": 0.3}]
+        assert inv_svc.compute_session_accuracy(rows, items) == pytest.approx(0.8911, abs=1e-4)
+
+
 # ── Monthly recap email: a partial purchase total says so ───────────────────
 
 class TestRecapEmailDoesNotPresentAPartialTotalAsComplete:
