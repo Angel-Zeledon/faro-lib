@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, Check, Copy, Clock, Sparkles } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Clock, Sparkles, ShieldAlert } from 'lucide-react'
 import { authLogin, createTrialAccount, type TrialAccount } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
 import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
@@ -82,6 +82,20 @@ export default function TrialPage() {
   const [acct, setAcct] = useState<TrialAccount | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [entering, setEntering] = useState(false)
+  // Entering is held until the visitor says they kept the credentials: the
+  // backend allows three trials per connection a day, so a lost password is a
+  // locked door until tomorrow, and the page that shows it is the only copy.
+  const [saved, setSaved] = useState(false)
+  const [copiedBoth, setCopiedBoth] = useState(false)
+
+  async function copyBoth() {
+    if (!acct) return
+    try {
+      await navigator.clipboard.writeText(`${t('trial.user_label')}: ${acct.email}\n${t('auth.password_label')}: ${acct.password}`)
+      setCopiedBoth(true)
+      setTimeout(() => setCopiedBoth(false), 1800)
+    } catch { /* the fields above stay selectable */ }
+  }
   // React runs effects twice in development; without this a reload would
   // create two accounts and show one.
   const started = useRef(false)
@@ -192,13 +206,50 @@ export default function TrialPage() {
                 </div>
               </div>
 
+              <div role="note" style={{
+                display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', borderRadius: 11,
+                background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+              }}>
+                <div style={{ display: 'flex', gap: 9 }}>
+                  <ShieldAlert size={16} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--a-ink)', marginBottom: 3 }}>
+                      {t('trial.save_warning_title')}
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--a-muted)' }}>
+                      {t('trial.save_warning_body')}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button" onClick={copyBoth}
+                    style={{
+                      all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '7px 11px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+                      border: '1px solid var(--a-dim)', color: 'var(--a-ink)',
+                    }}
+                  >
+                    {copiedBoth ? <Check size={13} /> : <Copy size={13} />}
+                    {copiedBoth ? t('trial.copied_both') : t('trial.copy_both')}
+                  </button>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--a-ink)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox" checked={saved} onChange={e => setSaved(e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: '#0F766E' }}
+                    />
+                    {t('trial.saved_check')}
+                  </label>
+                </div>
+              </div>
+
               <button
-                type="button" onClick={enter} disabled={entering} className="auth-submit"
+                type="button" onClick={enter} disabled={entering || !saved} className="auth-submit"
                 style={{
                   width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                  background: entering ? 'var(--a-dim)' : 'var(--a-cta-bg)',
+                  background: entering || !saved ? 'var(--a-dim)' : 'var(--a-cta-bg)',
                   color: 'var(--a-cta-fg)', fontSize: 14, fontWeight: 600,
-                  cursor: entering ? 'not-allowed' : 'pointer', marginTop: 4,
+                  cursor: entering || !saved ? 'not-allowed' : 'pointer', marginTop: 4,
                 }}
               >
                 {entering ? t('auth.signing_in') : t('trial.enter')}

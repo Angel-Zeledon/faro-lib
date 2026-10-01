@@ -66,9 +66,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <main className="auth-split-body">{children}</main>
         <footer className="auth-split-foot">© {new Date().getFullYear()} StockAI</footer>
       </div>
-      {/* Signing in is for people who already have an account: they get tips
-          for using it. Signup and the trial keep the pitch. */}
-      {pathname === '/login' ? <TipsPanel /> : <AuthPanel />}
+      {/* Signing in or signing up: tips for using the product (owner team,
+          2026-10-01 — signup too). The trial page keeps the pitch. */}
+      {pathname === '/login' || pathname === '/signup' ? <TipsPanel /> : <AuthPanel />}
     </div>
   )
 }

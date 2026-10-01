@@ -1134,3 +1134,9 @@
 }
 @keyframes app-intro-mark { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
 @keyframes app-intro-out { to { opacity: 0; visibility: hidden; } }
+
+/* ── Sidebar unfold (components/layout/Sidebar.tsx) ───────────────────── */
+.sb-unfold { animation: sb-unfold 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes sb-unfold { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sb-unfold { animation: none; } }
+.intro-playing .sb-unfold { animation-play-state: paused; }

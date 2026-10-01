@@ -12,6 +12,8 @@ import { setApiErrorNotifier, type ApiError } from '@/lib/api'
 import { useToast } from '@/contexts/ToastContext'
 import { useErrorCopy } from '@/components/ui/States'
 import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
+import { useBugReport } from '@/lib/bugReport'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 // A screen that fires several requests at once (the daily dashboard pulls
 // briefing + suppliers + overdue POs together) would otherwise stack four
@@ -23,6 +25,8 @@ export default function ApiErrorBridge() {
   const { addToast } = useToast()
   const errorCopy = useErrorCopy()
   const openUpgrade = useUpgradePrompt()
+  const reportBug = useBugReport()
+  const { t } = useLanguage()
   const lastSeen = useRef<Map<string, number>>(new Map())
 
   // Kept in a ref so the effect can register the notifier once instead of
@@ -46,7 +50,17 @@ export default function ApiErrorBridge() {
     lastSeen.current.set(key, now)
 
     const { title, body, detail } = errorCopy(err)
-    addToast(title, detail || body, 'error')
+    // A failure on our side gets a way to tell us, prefilled. One the user can
+    // fix (a validation message, a limit, a lost connection) does not: the
+    // toast already says what to do, and a report would be noise.
+    const ours = err.kind === 'server'
+    addToast(title, detail || body, 'error', ours ? {
+      duration: 9000,
+      action: {
+        label: t('bugreport.action'), kind: 'report',
+        onClick: () => reportBug({ code: err.code || `HTTP ${err.status}`, detail: detail || body }),
+      },
+    } : undefined)
   }
 
   useEffect(() => setApiErrorNotifier(err => handler.current(err)), [])

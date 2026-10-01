@@ -39,8 +39,16 @@ export default function AppIntro() {
   // restarted, leaving the overlay mounted forever.
   useEffect(() => {
     if (!show) return
+    // While the intro covers the screen, the sidebar's unfold waits behind it
+    // (globals.css `.intro-playing .sb-unfold`) and plays as the curtain lifts.
+    // A little before the end, so the two overlap instead of queueing.
+    document.documentElement.classList.add('intro-playing')
+    const lift = setTimeout(() => document.documentElement.classList.remove('intro-playing'), TOTAL_MS - 450)
     const id = setTimeout(() => setShow(false), TOTAL_MS)
-    return () => clearTimeout(id)
+    return () => {
+      clearTimeout(lift); clearTimeout(id)
+      document.documentElement.classList.remove('intro-playing')
+    }
   }, [show])
 
   if (!show) return null

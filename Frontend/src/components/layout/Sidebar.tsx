@@ -219,7 +219,8 @@ export default function Sidebar() {
           return (
             <div key={group} style={{ marginBottom: collapsedNow ? 12 : 20 }}>
               {!collapsedNow && (
-                <div style={{
+                <div className="sb-unfold" style={{
+                  animationDelay: `${0.12 + visibleNav.indexOf(items[0]) * 0.035}s`,
                   fontSize: 10, fontWeight: 700, color: 'var(--sidebar-dim)',
                   textTransform: 'uppercase', letterSpacing: '0.08em',
                   padding: '0 10px', marginBottom: 4,
@@ -236,8 +237,12 @@ export default function Sidebar() {
                   <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
                         style={{ textDecoration: 'none' }} title={collapsedNow ? label : undefined}>
                     <div
-                      className={clsx('nav-item', active ? 'nav-item-active' : 'nav-item-idle')}
+                      className={clsx('nav-item', 'sb-unfold', active ? 'nav-item-active' : 'nav-item-idle')}
                       style={{
+                        // The menu unfolds top to bottom when the app opens
+                        // (globals.css "Sidebar unfold"). The sidebar stays
+                        // mounted across navigations, so it plays once per load.
+                        animationDelay: `${0.15 + visibleNav.indexOf(visibleNav.find(n => n.href === href)!) * 0.035}s`,
                         display: 'flex', alignItems: 'center',
                         // A finger, not a mouse pointer: 44px minimum in the
                         // drawer, unchanged 8px padding on desktop.
