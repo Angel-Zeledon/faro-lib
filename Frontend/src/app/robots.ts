@@ -14,7 +14,9 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: '*',
-      allow: ['/$', '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
+      allow: [
+        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$',
+        '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
       disallow: ['/'],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

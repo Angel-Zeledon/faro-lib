@@ -14,7 +14,9 @@
 	@www host www.{$LANDING_DOMAIN}
 	redir @www https://{$LANDING_DOMAIN}{uri} 308
 
-	@landing path / /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest
+	# The landing's own pages (Frontend/src/app/{precios,como-funciona,...}) are
+	# listed by name: anything not named here is an app route.
+	@landing path / /precios /como-funciona /preguntas-frecuentes /seguridad /icon.svg /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest
 	handle @landing {
 		reverse_proxy frontend:5000
 	}
