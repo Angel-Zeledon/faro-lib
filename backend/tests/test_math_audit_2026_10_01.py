@@ -255,6 +255,30 @@ class TestTransferIsNotRoundedToTheSupplierMinimum:
         assert needy["transfer_suggestion"]["qty"] == pytest.approx(520.0)
 
 
+# ── Monthly recap email: a partial purchase total says so ───────────────────
+
+class TestRecapEmailDoesNotPresentAPartialTotalAsComplete:
+
+    def _html(self, monkeypatch, complete):
+        from backend.notifications import email as email_mod
+        captured = {}
+        monkeypatch.setattr(email_mod, "_send",
+                            lambda to, subject, html, attachment=None, **_kw:
+                            captured.update(html=html))
+        report = {"month": "2026-06", "managed_purchase_value": 2100000.0,
+                  "managed_purchase_value_complete": complete}
+        assert email_mod.send_monthly_roi_email("b@x.io", report, "https://s/roi") is True
+        return captured["html"]
+
+    def test_partial_coverage_is_marked(self, monkeypatch):
+        """40 lines ordered, 6 with a cost: the costed 6 were mailed as the
+        month's purchases, while /impacto prints the same figure as "≥"."""
+        assert "≥ " in self._html(monkeypatch, False)
+
+    def test_complete_coverage_is_unmarked(self, monkeypatch):
+        assert "≥" not in self._html(monkeypatch, True)
+
+
 # ── Cash calendar: "this week" is the first weekly bucket ───────────────────
 
 class TestThisWeekIsSevenDays:
