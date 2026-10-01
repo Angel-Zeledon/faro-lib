@@ -18,11 +18,14 @@
 //    button that opened it.
 //  · The chapters and screens are rendered exactly as they were on the page —
 //    same copy, same alt text, same alternating rows.
+//
+// /como-funciona renders the same chapters inline (TourChapters below), with
+// every screenshot loading lazily as it nears view.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import type { LandingCopy } from '@/i18n/landing'
 
-const GUIDE_CSS = `
+export const GUIDE_CSS = `
 .sg-teaser {
  margin-top: 72px; position: relative; border-radius: 18px; padding: 1px;
  background: linear-gradient(150deg, var(--lp-border-strong), var(--lp-border) 45%, var(--lp-accent-bd));
@@ -84,7 +87,7 @@ const GUIDE_CSS = `
 .sg-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: center; margin-bottom: 56px; }
 .sg-row.is-flip .tour-shot { order: 2; }
 .sg-shot-ph { aspect-ratio: 16 / 10; background: var(--lp-surface); }
-.sg-row h4 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 21px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.02em; margin: 0 0 10px; }
+.sg-row .sg-screen-name { font-family: var(--font-brand), system-ui, sans-serif; font-size: 21px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.02em; margin: 0 0 10px; }
 .sg-row p { font-size: 15px; color: var(--lp-body); line-height: 1.7; margin: 0 0 16px; }
 .sg-row ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 9px; }
 .sg-row li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--lp-body); line-height: 1.6; }
@@ -113,6 +116,51 @@ const GUIDE_CSS = `
 }
 `
 
+const chapterId = (i: number) => `guia-capitulo-${i + 1}`
+
+// The chapters and their screens, under an h2 (the dialog's title, or the
+// guide section's heading on /como-funciona): chapters are h3, screens h4.
+// `shots` false renders a sized placeholder instead of each image — the dialog
+// does that until it is first opened, so a closed guide downloads nothing.
+export function TourChapters({ tour, shots }: {
+  tour: LandingCopy['tour']
+  shots: boolean
+}) {
+  return (
+    <>
+      {tour.chapters.map(({ chapter, when, screens }, ci) => (
+        <section key={chapter} id={chapterId(ci)} className="sg-chapter" aria-labelledby={`${chapterId(ci)}-h`}>
+          <div className="tour-chapter">
+            <h3 id={`${chapterId(ci)}-h`} className="lp-h3" style={{ fontSize: 23, margin: '0 0 6px' }}>{chapter}</h3>
+            <p style={{ fontSize: 14.5, color: 'var(--lp-muted)', margin: 0, lineHeight: 1.6 }}>{when}</p>
+          </div>
+
+          {screens.map(({ img, name, does, finds, alt }, i) => (
+            <div key={img} className={`sg-row tour-row${i % 2 === 1 ? ' is-flip' : ''}`}>
+              <div className="tour-shot">
+                <div className="tour-shot-in">
+                  {shots
+                    ? <img src={img} alt={alt} loading="lazy" decoding="async" width={3200} height={2000} />
+                    : <div className="sg-shot-ph" role="img" aria-label={alt} />}
+                </div>
+              </div>
+              <div>
+                <h4 className="sg-screen-name">{name}</h4>
+                <p>{does}</p>
+                <ul>
+                  {finds.map(f => (
+                    <li key={f}><span aria-hidden className="tour-dot" />{f}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ))}
+        </section>
+      ))}
+    </>
+  )
+}
+
 function fill(template: string, n: number, c: number) {
   return template.replace('{n}', String(n)).replace('{c}', String(c))
 }
@@ -133,7 +181,6 @@ export function ScreenGuide({ tour, manual, lang, primaryClass }: {
   const [pendingChapter, setPendingChapter] = useState<number | null>(null)
 
   const screenCount = tour.chapters.reduce((sum, ch) => sum + ch.screens.length, 0)
-  const chapterId = (i: number) => `guia-capitulo-${i + 1}`
 
   const scrollToChapter = useCallback((i: number) => {
     const body = bodyRef.current
@@ -248,35 +295,7 @@ export function ScreenGuide({ tour, manual, lang, primaryClass }: {
         <div className="sg-body" ref={bodyRef}>
           <p className="sg-intro">{tour.lead}</p>
 
-          {tour.chapters.map(({ chapter, when, screens }, ci) => (
-            <section key={chapter} id={chapterId(ci)} className="sg-chapter" aria-labelledby={`${chapterId(ci)}-h`}>
-              <div className="tour-chapter">
-                <h3 id={`${chapterId(ci)}-h`} className="lp-h3" style={{ fontSize: 23, margin: '0 0 6px' }}>{chapter}</h3>
-                <p style={{ fontSize: 14.5, color: 'var(--lp-muted)', margin: 0, lineHeight: 1.6 }}>{when}</p>
-              </div>
-
-              {screens.map(({ img, name, does, finds, alt }, i) => (
-                <div key={img} className={`sg-row tour-row${i % 2 === 1 ? ' is-flip' : ''}`}>
-                  <div className="tour-shot">
-                    <div className="tour-shot-in">
-                      {shotsMounted
-                        ? <img src={img} alt={alt} loading="lazy" decoding="async" width={3200} height={2000} />
-                        : <div className="sg-shot-ph" role="img" aria-label={alt} />}
-                    </div>
-                  </div>
-                  <div>
-                    <h4>{name}</h4>
-                    <p>{does}</p>
-                    <ul>
-                      {finds.map(f => (
-                        <li key={f}><span aria-hidden className="tour-dot" />{f}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ))}
-            </section>
-          ))}
+          <TourChapters tour={tour} shots={shotsMounted} />
 
           <div className="sg-manual">
             <div>

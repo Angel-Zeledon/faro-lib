@@ -35,13 +35,23 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // a crawler in the primary market) and an English user's tab is corrected
   // here, after hydration. Without this the browser tab said
   // "StockAI — Inventario Inteligente" on an otherwise fully English app.
+  //
+  // Only the app's generic title is swapped. The landing and its subpages
+  // (/precios, /como-funciona, …) export their own title and description, and
+  // this used to overwrite them too — so a crawler that runs JavaScript read
+  // "StockAI — Inventario Inteligente" on every public page. A title that is
+  // not one of the two app titles belongs to that page and is left alone.
   useEffect(() => {
+    const dicts = Object.values(translations) as Record<string, string>[]
     const dict = translations[lang] as Record<string, string>
     const title = dict['app.title']
     const description = dict['app.description']
-    if (title) document.title = title
+    if (title && dicts.some(d => d['app.title'] === document.title)) document.title = title
     const meta = document.querySelector('meta[name="description"]')
-    if (meta && description) meta.setAttribute('content', description)
+    const current = meta?.getAttribute('content')
+    if (meta && description && dicts.some(d => d['app.description'] === current)) {
+      meta.setAttribute('content', description)
+    }
   }, [lang])
 
   const setLang = useCallback((l: Lang) => {
