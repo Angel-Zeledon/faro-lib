@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0C3A40">
+<title>StockAI — Sin conexión</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7f0ef; text-align: center;
+    background: radial-gradient(900px 520px at 80% 0%, rgba(43,167,154,.32), transparent 60%), #0C3A40;
+  }
+  main { max-width: 420px; }
+  img { width: 64px; height: 64px; border-radius: 14px; margin-bottom: 22px; }
+  h1 { font-size: 24px; margin-bottom: 10px; color: #fff; }
+  p { font-size: 15px; line-height: 1.6; color: rgba(231,240,239,.75); }
+  p + p { margin-top: 8px; font-size: 13.5px; color: rgba(231,240,239,.55); }
+  button {
+    margin-top: 24px; padding: 12px 22px; border: 0; border-radius: 10px; cursor: pointer;
+    font: 600 14px system-ui, sans-serif; color: #0C3A40; background: #5EEAD4;
+  }
+</style>
+</head>
+<body>
+<main>
+  <img src="/icons/icon-192.png" alt="">
+  <h1>Sin conexión</h1>
+  <p>StockAI necesita internet para mostrarte tu inventario: tus cifras no se guardan en el teléfono, así nunca decides con datos viejos.</p>
+  <p>No connection. StockAI needs the internet to show your inventory.</p>
+  <button onclick="location.reload()">Reintentar / Retry</button>
+</main>
+</body>
+</html>

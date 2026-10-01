@@ -38,6 +38,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // The installed app's title bar and the phone's status bar (manifest.ts).
+  themeColor: '#0C3A40',
 }
 
 /**

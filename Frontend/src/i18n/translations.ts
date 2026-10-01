@@ -15,6 +15,10 @@ export const translations = {
     // entirely in English, which was the very first thing a new user saw.
     'auth.login_title':            'Iniciar sesión',
     'auth.panel_title':            'Cada mañana, qué pedir, cuánto y a quién.',
+    'pwa.install': 'Instalar app',
+    'pwa.ios_title': 'Instálala en tu iPhone',
+    'pwa.ios_step1': 'Toca Compartir',
+    'pwa.ios_step2': 'Elige «Agregar a inicio»',
     'tips.kicker': 'Consejo para hoy',
     'tips.counter': '{n} de {total}',
     'tips.goto': 'Ver consejo {n}',
@@ -3774,6 +3778,10 @@ export const translations = {
     // ── Auth screens (pre-login) — see the `es` block.
     'auth.login_title':            'Sign in',
     'auth.panel_title':            'Every morning: what to order, how much, and from whom.',
+    'pwa.install': 'Install app',
+    'pwa.ios_title': 'Install it on your iPhone',
+    'pwa.ios_step1': 'Tap Share',
+    'pwa.ios_step2': 'Choose "Add to Home Screen"',
     'tips.kicker': 'Tip for today',
     'tips.counter': '{n} of {total}',
     'tips.goto': 'Show tip {n}',

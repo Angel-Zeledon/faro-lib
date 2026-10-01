@@ -1,4 +1,5 @@
 'use client'
+import { InstallAppButton } from './InstallAppButton'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -260,6 +261,8 @@ export default function Sidebar() {
             </div>
           )
         })}
+
+        <InstallAppButton collapsed={collapsedNow} />
 
         {/* Collapse toggle — desktop only. In the drawer there is nothing to
             collapse to: the panel is either open over the page or gone. */}
