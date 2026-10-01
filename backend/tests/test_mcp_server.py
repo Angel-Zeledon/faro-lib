@@ -573,6 +573,7 @@ class TestItIsPartOfThePublicPromise:
         """`PUBLIC_API_ONLY` prunes everything not on that list. An MCP endpoint
         missing from it would 404 on exactly the instance a customer's
         integration points at."""
-        from backend.api.public_surface import PUBLIC_ENDPOINTS
-        assert ("POST", "/mcp") in PUBLIC_ENDPOINTS
-        assert ("GET", "/mcp") in PUBLIC_ENDPOINTS
+        from backend.api.public_surface import public_endpoints
+        from backend.main import app
+        assert ("POST", "/mcp") in public_endpoints(app)
+        assert ("GET", "/mcp") in public_endpoints(app)

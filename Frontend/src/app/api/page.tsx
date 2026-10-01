@@ -23,13 +23,17 @@
 //    tenant — they are owed the button and the truth about it.
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Play, Copy, Check, KeyRound, AlertTriangle } from 'lucide-react'
+import { Play, Copy, Check, KeyRound, AlertTriangle, BookOpen } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input, { Textarea } from '@/components/ui/Input'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { getApiKeyUsage } from '@/lib/api'
+import { getUser } from '@/lib/auth'
+import type { ApiKeyUsage } from '@/lib/types'
+import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
 
 const MONO = "ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, 'Liberation Mono', monospace"
 
@@ -55,8 +59,10 @@ type Endpoint = {
   curl: string
 }
 
-// Mirrors backend/api/public_surface.py. Kept in the same order as the doc, so
-// the page reads as the job it describes rather than as an alphabetical index.
+// The nightly-integration job, runnable from here. Not the whole API any more:
+// every route an API key may call (backend/api/public_surface.py decides) is in
+// the generated reference at /desarrolladores. Kept in the order of the job, so
+// the page reads as the work it describes rather than as an alphabetical index.
 const ENDPOINTS: Endpoint[] = [
   {
     id: 'planning',
@@ -296,6 +302,133 @@ function McpSection({ baseUrl, narrow }: { baseUrl: string; narrow: boolean }) {
         <strong style={{ color: 'var(--text)' }}>{t('apidocs.mcp_desktop_heading')}</strong>{' '}
         {t('apidocs.mcp_desktop_desc')}
       </div>
+    </Card>
+  )
+}
+
+/** "Llamadas este mes": what the API is billed on, read from the meter.
+ *
+ *  Admin only, like the endpoint behind it. A non-admin sees one line saying
+ *  who can see it rather than an empty box — an empty box reads as "zero
+ *  calls", which is exactly the wrong thing to tell somebody about a bill. */
+function UsagePanel({ narrow }: { narrow: boolean }) {
+  const { t, lang } = useLanguage()
+  const openContact = useUpgradePrompt()
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  const [usage, setUsage] = useState<ApiKeyUsage | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const admin = getUser()?.role === 'admin'
+    setIsAdmin(admin)
+    if (!admin) return
+    getApiKeyUsage()
+      .then(setUsage)
+      .catch(() => setFailed(true))
+  }, [])
+
+  if (isAdmin === null) return null
+  const fmt = (n: number) => n.toLocaleString(lang === 'es' ? 'es-CR' : 'en-US')
+  const peak = usage ? Math.max(1, ...usage.by_day.map(d => d.calls)) : 1
+
+  return (
+    <Card id="api-usage" padding={narrow ? '18px' : '20px 24px'} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
+          {t('apidocs.usage_heading')}
+        </h2>
+        {usage && (
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {usage.month} · <strong style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
+              {t('apidocs.usage_total', { n: fmt(usage.total) })}
+            </strong>
+            {usage.today !== null && <> · {t('apidocs.usage_today', { n: fmt(usage.today) })}</>}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.65, margin: 0, maxWidth: 760 }}>
+        {t('apidocs.usage_desc')}
+      </p>
+
+      {!isAdmin && (
+        <div style={{ fontSize: 12.5, color: 'var(--dim)' }}>{t('apidocs.usage_admin_only')}</div>
+      )}
+      {isAdmin && failed && (
+        <div role="alert" style={{ fontSize: 12.5, color: 'var(--danger)' }}>{t('apidocs.usage_error')}</div>
+      )}
+
+      {usage && (
+        <>
+          <div>
+            <Eyebrow>{t('apidocs.usage_by_day')}</Eyebrow>
+            {/* One bar per day of the month so far. Zero days are drawn as a
+                hairline so the axis reads as time, not as missing data. */}
+            <div
+              role="img"
+              aria-label={`${t('apidocs.usage_by_day')}: ${t('apidocs.usage_total', { n: fmt(usage.total) })}`}
+              style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 96, marginTop: 10 }}
+            >
+              {usage.by_day.map(d => (
+                <div
+                  key={d.day}
+                  title={t('apidocs.usage_day_title', { day: d.day, n: fmt(d.calls) })}
+                  // Capped width: on the 1st of the month one bar must read as
+                  // one day, not as a block spanning the whole panel.
+                  style={{
+                    flex: 1, minWidth: 2, maxWidth: 26, borderRadius: '3px 3px 0 0',
+                    height: d.calls === 0 ? 1 : `${Math.max(4, (d.calls / peak) * 100)}%`,
+                    background: d.calls === 0 ? 'var(--border-strong)' : 'var(--accent)',
+                  }}
+                />
+              ))}
+            </div>
+            {usage.by_day.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--dim)', marginTop: 5, fontFamily: MONO, maxWidth: Math.max(96, usage.by_day.length * 29), whiteSpace: 'nowrap' }}>
+                <span>{usage.by_day[0].day.slice(5)}</span>
+                {usage.by_day.length > 1 && <span>{usage.by_day[usage.by_day.length - 1].day.slice(5)}</span>}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Eyebrow>{t('apidocs.usage_by_key')}</Eyebrow>
+            {usage.by_key.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 8 }}>{t('apidocs.usage_empty')}</div>
+            ) : (
+              <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {usage.by_key.map(k => (
+                  <li key={k.api_key_id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 13 }}>
+                    <span style={{ color: 'var(--text)', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {k.name}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--dim)' }}>
+                      {!k.active
+                        ? t('apidocs.usage_revoked')
+                        : k.scope === 'write' ? t('settings.scope_write') : t('settings.scope_read')}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: 'var(--text)' }}>
+                      {fmt(k.calls)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+            <span>
+              {usage.limits.per_day_per_key === null
+                ? t('apidocs.usage_limit_none')
+                : t('apidocs.usage_limit_day', { n: fmt(usage.limits.per_day_per_key) })}
+            </span>
+            <span>·</span>
+            <span>{t('apidocs.usage_pricing')}</span>
+            <Button variant="secondary" size="sm" onClick={() => openContact(null)}>
+              {t('apidocs.usage_contact')}
+            </Button>
+          </div>
+        </>
+      )}
     </Card>
   )
 }
@@ -760,6 +893,13 @@ export default function ApiDocsPage() {
               {t('apidocs.get_your_key')}
             </Button>
           </Link>
+          {/* A plain anchor: /desarrolladores is a landing page with its own
+              chrome, not a screen of the app shell. */}
+          <a href="/desarrolladores" style={{ textDecoration: 'none' }}>
+            <Button variant="ghost" size="sm" icon={<BookOpen size={12} />}>
+              {t('apidocs.full_reference')}
+            </Button>
+          </a>
         </div>
       </div>
 
@@ -835,6 +975,7 @@ export default function ApiDocsPage() {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+          <UsagePanel narrow={narrow} />
           <div style={{
             display: 'grid',
             gridTemplateColumns: narrow ? '1fr' : 'repeat(3, minmax(0,1fr))',
@@ -855,7 +996,10 @@ export default function ApiDocsPage() {
           {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} />)}
           <McpSection baseUrl={baseUrl} narrow={narrow} />
           <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7 }}>
-            {t('apidocs.footer_promise')}
+            {t('apidocs.footer_promise')}{' '}
+            <a href="/desarrolladores" style={{ color: 'var(--accent)', fontWeight: 600 }}>
+              {t('apidocs.full_reference')}
+            </a>
           </div>
         </div>
       </div>

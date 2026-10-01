@@ -5,7 +5,8 @@ import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 
 const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba']
 // The landing and its public subpages: no app shell, no sign-in.
-const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS)]
+// /desarrolladores: the API reference, a landing page with its own chrome.
+const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), '/desarrolladores']
 
 export default function ConditionalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

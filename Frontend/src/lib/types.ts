@@ -793,11 +793,27 @@ export interface AccuracyReport {
 }
 
 // ── API Keys ──────────────────────────────────────────────────────────────────
+export type ApiKeyScope = 'read' | 'write'
+
 export interface ApiKey {
   id:         string
   name:       string
+  role:       'viewer' | 'analyst'
+  scope:      ApiKeyScope
+  last4:      string | null
   last_used:  string | null
+  expires_at: string | null
   created_at: string
+}
+
+export interface ApiKeyUsage {
+  month:    string            // YYYY-MM, UTC
+  timezone: 'UTC'
+  total:    number
+  today:    number | null     // null when `month` is not the current one
+  by_day:   { day: string; calls: number }[]
+  by_key:   { api_key_id: string; name: string; scope: ApiKeyScope | null; active: boolean; calls: number }[]
+  limits:   { per_minute_per_key: number; per_day_per_key: number | null }
 }
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────

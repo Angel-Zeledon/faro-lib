@@ -8,7 +8,7 @@ import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 // The landing's public subpages are listed too. ConditionalShell already keeps
 // them out of the app shell (and so out of this guard); naming them here means
 // they stay public even if that ever changes.
-const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', ...Object.values(SUBPAGE_PATHS)]
+const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', ...Object.values(SUBPAGE_PATHS), '/desarrolladores']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
