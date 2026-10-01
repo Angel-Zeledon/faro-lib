@@ -255,6 +255,29 @@ class TestTransferIsNotRoundedToTheSupplierMinimum:
         assert needy["transfer_suggestion"]["qty"] == pytest.approx(520.0)
 
 
+# ── The briefing's overstock count ──────────────────────────────────────────
+
+class TestBriefingCountsEveryOverstockedSku:
+
+    def test_a_sku_with_no_cost_is_still_counted(self, client, auth_headers, test_tenant):
+        """Measured on the demo tenant: one SOBRESTOCK row with no unit cost,
+        and the briefing said `overstock: 0` while /status said 1."""
+        from backend.db import session_store
+        from backend.sessions.service import create_session
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "ma-overstock-count")["id"]
+        r = client.put("/api/v1/inventory/stock/MA-PILE",
+                       json={"current_stock": 5000, "lead_time_days": 10, "moq": 1},
+                       headers=auth_headers)
+        assert r.status_code == 200, r.text
+        session_store.set_forecasts(tid, sid, {"MA-PILE": {"lightgbm": {"forecast": [
+            {"date": f"2026-01-{i + 1:02d}", "value": 1.0, "lower": 1.0, "upper": 1.0}
+            for i in range(14)]}}})
+        b = inv_svc.get_morning_briefing(tid, sid)
+        assert b["kpis"]["overstock"] == 1
+        assert b["kpis"]["capital_in_overstock"] == 0
+
+
 # ── "Precisión promedio" and a SKU that did not sell ────────────────────────
 
 class TestOneDeadSkuDoesNotZeroTheAccuracy:

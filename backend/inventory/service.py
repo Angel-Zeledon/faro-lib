@@ -4352,7 +4352,12 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
             'order_now':             len(risks),
             'order_soon':         len(warnings),
             'ok':                   sum(1 for i in items if i['signal'] == 'OK'),
-            'overstock':           len(overstocked),
+            # Every SKU in SOBRESTOCK, as /status, the dashboard summary and
+            # scenarios count it. `overstocked` keeps only the ones with a cost
+            # (it feeds the capital figure), so counting it read "0 in
+            # overstock" on the demo tenant beside a SOBRESTOCK row with no
+            # cost on file (math audit 2026-10-01).
+            'overstock':           sum(1 for i in items if i['signal'] == 'SOBRESTOCK'),
             'sin_datos':            sum(1 for i in items if i['signal'] == 'SIN_DATOS'),
             'avg_accuracy':         avg_accuracy,
             'total_inventory_value': round(total_value, 2),
