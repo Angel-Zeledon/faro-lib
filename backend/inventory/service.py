@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
 from backend.errors import AppError
-from backend.formatting import money, format_days as _format_days, format_coverage_en
+from backend.formatting import money, format_days as _format_days, format_coverage, format_coverage_en
 from backend.inventory.defaults import (
     DEFAULT_LEAD_TIME_DAYS,
     DEFAULT_MOQ,
@@ -3577,7 +3577,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     }
     # This document is downloaded and forwarded, so the frontend never renders
     # it: its Spanish comes from the backend copy catalog, keyed in English.
-    from backend.notifications.locale import render_es, render_date
+    from backend.notifications.locale import render_es, render_date, coverage_short
     SIGNAL_LABELS = {
         "PEDIR_YA":     render_es("inventory_pdf_signal_order_now"),
         "PEDIR_PRONTO": render_es("inventory_pdf_signal_order_soon"),
@@ -3678,7 +3678,10 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(sig_label, ParagraphStyle("sig", fontSize=8,
                           fontName="Helvetica-Bold", textColor=sig_color)),
                 Paragraph(f"{item['current_stock']:,.0f}" if item.get("current_stock") is not None else "—", CELL),
-                Paragraph(_format_days(item["coverage_days"]) if item.get("coverage_days") is not None else "—", CELL),
+                # In the planning period's unit: the figure is in weeks on a
+                # weekly tenant, and this printed "4 días" for 4 weeks (math
+                # audit 2026-10-01). The email already said "4 semanas".
+                Paragraph(format_coverage(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(f"<b>{item['recommended_qty']:,.0f}</b>" if item.get("recommended_qty") else "—",
                           ParagraphStyle("qty", fontSize=8, fontName="Helvetica-Bold", textColor=GREEN)),
                 Paragraph(item.get("supplier") or "—", CELL),
@@ -3719,7 +3722,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(item.get("display_name") or "—", CELL),
                 Paragraph(SIGNAL_LABELS.get(item["signal"], "—"),
                           ParagraphStyle("s2", fontSize=8, textColor=SIGNAL_COLORS.get(item["signal"], colors.grey))),
-                Paragraph(f"{item['coverage_days']:.0f}d" if item.get("coverage_days") is not None else "—", CELL),
+                Paragraph(coverage_short(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(item.get("abc_xyz") or "—", CELL),
             ])
         st = Table(small_data, colWidths=[3*cm, 5*cm, 3.2*cm, 3*cm, 2*cm])

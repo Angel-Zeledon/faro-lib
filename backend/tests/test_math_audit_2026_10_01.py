@@ -211,6 +211,73 @@ class TestDeadCapitalSignalUsesTheTenantsGrain:
         assert seen["period"] == "weekly"
 
 
+# ── The optimizer plans on the inventory position ───────────────────────────
+
+class TestOptimizerNetsWhatIsAlreadyOnItsWay:
+
+    def test_units_on_order_are_not_bought_twice(self, client, test_tenant, test_session, monkeypatch):
+        """40 on the shelf and 200 on order: the semáforo nets the 200, the
+        MILP's opening balance ignored it and planned to buy it again."""
+        from backend.db import session_store
+        from backend.inventory import optimizer_service as opt_svc
+        tid, sid, sku = test_tenant["id"], test_session["id"], "MA-OPT-1"
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 40, "unit_cost": 10.0,
+                                        "warehouse": "principal"})
+        session_store.set_forecasts(tid, sid, {sku: {"lightgbm": {"forecast": [
+            {"date": f"2026-01-{i + 1:02d}", "value": 10.0, "lower": 10.0, "upper": 10.0}
+            for i in range(20)]}}})
+        monkeypatch.setattr(inv_svc, "get_incoming_qty",
+                            lambda tid: {(sku, "principal"): 200.0})
+        inp = opt_svc.build_optimization_input(tid, sid, horizon_days=14)
+        assert inp.stock0[(sku, "principal")] == pytest.approx(240.0)
+
+
+# ── Cash calendar: "this week" is the first weekly bucket ───────────────────
+
+class TestThisWeekIsSevenDays:
+
+    def test_a_payment_due_on_day_seven_is_in_week_two_only(self, test_tenant):
+        from uuid import uuid4
+        from backend.inventory import cash_service as cash
+        from tests.test_cash_calendar import _make_po, _make_supplier_row
+        tid = test_tenant["id"]
+        name = f"Day7-{uuid4().hex[:6]}"
+        _make_supplier_row(tid, name, "10 dias", 10)
+        _make_po(tid, name, 1, 700.0, sent_days_ago=3)     # due in exactly 7 days
+        result = cash.get_payables(tid, 30)
+        assert result["due_items"][0]["days_until_due"] == 7
+        assert result["weeks"][0]["amount"] == 0.0
+        assert result["weeks"][1]["amount"] == 700.0
+        assert result["this_week_total"] == result["weeks"][0]["amount"]
+
+
+# ── The inventory PDF names the coverage unit ───────────────────────────────
+
+class TestInventoryPdfCoverageUnit:
+
+    def test_weekly_coverage_is_printed_in_weeks(self, client, test_tenant, monkeypatch):
+        """4 weeks of cover printed as "4 días" in the document that leaves the
+        app, while the 08:00 email for the same SKU said "4 semanas"."""
+        import reportlab.platypus as platypus
+        texts: list[str] = []
+        real = platypus.Paragraph
+
+        def _spy(text, *a, **k):
+            texts.append(str(text))
+            return real(text, *a, **k)
+
+        monkeypatch.setattr(platypus, "Paragraph", _spy)
+        monkeypatch.setattr(inv_svc, "get_inventory_status", lambda *a, **k: [
+            {"sku": "PDF-1", "display_name": "Arroz", "signal": "PEDIR_YA",
+             "current_stock": 40.0, "coverage_days": 4.0, "recommended_qty": 10,
+             "supplier": "Acme", "inventory_value": 400.0, "abc_xyz": "AX",
+             "lead_time_days": 14},
+        ])
+        inv_svc.generate_inventory_pdf(test_tenant["id"], "sess", period="weekly")
+        assert any("4 semanas" in t for t in texts), [t for t in texts if "4" in t]
+        assert not any(t.strip() in ("4 días", "4d") for t in texts)
+
+
 # ── "You sell X a day, so it lasts you N days" ──────────────────────────────
 
 class TestExplanationSpeaksDays:

@@ -230,7 +230,11 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
     this_week_total = round(
         sum(
             d["amount"] for d in due_items
-            if not d["overdue"] and 0 <= d["days_until_due"] <= 7
+            # Days 0..6 — the same seven days as the first bucket of `weeks`.
+            # `<= 7` counted eight, so a payment due on day 7 was in "this
+            # week" and in the second week's bucket at once (math audit
+            # 2026-10-01).
+            if not d["overdue"] and 0 <= d["days_until_due"] < 7
         ),
         2,
     )

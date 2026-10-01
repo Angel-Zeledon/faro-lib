@@ -306,8 +306,12 @@ def build_optimization_input(
     period: str = "daily",
     lanes: Optional[dict] = None,
     planning: Optional[dict[str, dict]] = None,
+    incoming: Optional[dict] = None,
 ) -> Optional[OptimizationInput]:
     """
+    `incoming`: preloaded `service.get_incoming_qty` ({(sku, warehouse): qty});
+    fetched here when omitted.
+
     `horizon_days` is in CALENDAR DAYS, whatever the active period is — it is
     the caller's natural unit and the endpoint's query parameter. The MILP's
     buckets, however, are the ACTIVE PERIOD's buckets, because that is the unit
@@ -378,6 +382,10 @@ def build_optimization_input(
 
     if not skus or not warehouses:
         return None
+
+    if incoming is None:
+        from backend.inventory.service import get_incoming_qty
+        incoming = get_incoming_qty(tenant_id)
 
     # Lead time and MOQ come from the semáforo's cascade, not from the raw
     # column — see resolve_planning_inputs for what reading the column raw cost.
@@ -453,6 +461,15 @@ def build_optimization_input(
         # counted NOWHERE never reaches this loop (see skus_missing_stock).
         for w in warehouses:
             stock0[(sku, w)] = float(sku_rows[w]["current_stock"] or 0) if w in sku_rows else 0.0
+            # The INVENTORY POSITION, not the shelf: what is already on its way
+            # (sent POs, transfers in transit) — the same netting `/hoy`
+            # applies in `service._calc_recommended`. Without it the plan
+            # bought again, on the same screen, every unit the buyer had
+            # ordered last week and the semáforo had already netted out: stock
+            # 40 with 200 on order planned a 200-unit purchase (math audit
+            # 2026-10-01). Counted as available from the first bucket, which is
+            # exactly the inventory-position convention the semáforo uses.
+            stock0[(sku, w)] += max(0.0, float(incoming.get((sku, w), 0.0)))
 
         if per_wh_forecasts:
             for w in warehouses:

@@ -192,7 +192,8 @@ _ES: dict[str, str] = {
     "inventory_pdf_col_name":        "Nombre",
     "inventory_pdf_col_signal":      "Señal",
     "inventory_pdf_col_stock":       "Stock actual",
-    "inventory_pdf_col_coverage":    "Días cobertura",
+    # The cells carry their own unit (días / semanas / meses).
+    "inventory_pdf_col_coverage":    "Cobertura",
     "inventory_pdf_col_order":       "Pedir",
     "inventory_pdf_col_supplier":    "Proveedor",
     "inventory_pdf_col_abc_xyz":     "ABC-XYZ",
