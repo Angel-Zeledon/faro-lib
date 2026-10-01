@@ -34,9 +34,17 @@ export interface Signal { signal: string; rule: string; example: string }
 export interface Faq { q: string; a: string }
 export interface TourScreen { img: string; name: string; does: string; finds: string[]; alt: string }
 export interface TourChapter { chapter: string; when: string; screens: TourScreen[] }
+// A public subpage (/precios, /como-funciona, /preguntas-frecuentes,
+// /seguridad). `label` is its name in menus and breadcrumbs. `title` (the H1)
+// and `intro` MUST differ from the home-page section the subpage deepens: two
+// URLs opening with the same heading and paragraph read to a search engine as
+// one page published twice.
+export interface Subpage { label: string; title: string; intro: string }
 
 export interface LandingCopy {
-  // ariaLabel names the <nav> landmark for screen readers.
+  // ariaLabel names the <nav> landmark for screen readers. A link's href is
+  // either `#anchor` (a section of the home page) or `/slug` (a subpage);
+  // components/landing/chrome.tsx resolves both from wherever it is rendered.
   nav: { links: [string, string][]; signIn: string; signUp: string; menu: string; ariaLabel: string }
   heroPills: string[]
   footerLinks: { product: [string, string][]; company: [string, string][] }
@@ -112,6 +120,17 @@ export interface LandingCopy {
     industriesLabel: string
   }
   footer: { tagline: string; product: string; company: string; contact: string; rights: string; madeIn: string }
+  // The public subpages. Every claim here restates one already on the home
+  // page (verified against code in commit 06f2955) — nothing new is promised.
+  pages: {
+    home: string; breadcrumb: string; onThisPage: string; related: string
+    pricing: Subpage
+    how: Subpage
+    faq: Subpage
+    // `ruleDesc` replaces the last trust item's text on /seguridad, where the
+    // rule is not on "this page" but one link away.
+    security: Subpage & { trialTitle: string; trialDesc: string; ruleDesc: string }
+  }
 }
 
 /* Two capture sets, one per language: the tour shows the app running in the
@@ -143,10 +162,10 @@ const es: LandingCopy = {
   nav: {
     links: [
       ['#problema', 'El problema'],
-      ['#solucion', 'Cómo funciona'],
+      ['/como-funciona', 'Cómo funciona'],
       ['#casos', 'Industrias'],
       ['#incluye', 'Qué incluye'],
-      ['#precio', 'Precio'],
+      ['/precios', 'Precio'],
       ['#contacto', 'Contacto'],
     ],
     signIn: 'Iniciar sesión',
@@ -156,8 +175,8 @@ const es: LandingCopy = {
   },
   heroPills: ['Distribución', 'Retail', 'Manufactura', 'Mayoristas', 'E-commerce'],
   footerLinks: {
-    product: [['#solucion', 'Cómo funciona'], ['#casos', 'Industrias'], ['#incluye', 'Qué incluye'], ['#precio', 'Precio'], ['#comparacion', 'vs Excel']],
-    company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['#contacto', 'Contacto']],
+    product: [['/como-funciona', 'Cómo funciona'], ['#casos', 'Industrias'], ['#incluye', 'Qué incluye'], ['/precios', 'Precio'], ['#comparacion', 'vs Excel']],
+    company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['/seguridad', 'Seguridad'], ['/preguntas-frecuentes', 'Preguntas frecuentes'], ['#contacto', 'Contacto']],
   },
   hero: {
     eyebrow: 'Para quien decide las compras',
@@ -537,16 +556,45 @@ const es: LandingCopy = {
     rights: '© 2026 StockAI. Todos los derechos reservados.',
     madeIn: 'Hecho en Costa Rica',
   },
+  pages: {
+    home: 'Inicio',
+    breadcrumb: 'Estás en',
+    onThisPage: 'En esta página',
+    related: 'Sigue leyendo',
+    pricing: {
+      label: 'Precios',
+      title: 'Precios de StockAI: gratis para empezar, a tu medida para crecer.',
+      intro: 'El plan gratis es para siempre y trae todas las funciones; lo único que tiene son techos de tamaño. Aquí están esos techos, lo que cambia al ampliarlos y cómo se hace: conversando con nosotros, sin tarjeta y sin checkout.',
+    },
+    how: {
+      label: 'Cómo funciona',
+      title: 'Cómo funciona StockAI: los pasos, la regla y cada pantalla.',
+      intro: 'Primero, el recorrido completo en cuatro pasos. Después, la cuenta exacta con la que un producto pasa a rojo, para que la compruebes a mano. Y al final, la aplicación pantalla por pantalla, con capturas reales y datos dentro.',
+    },
+    faq: {
+      label: 'Preguntas frecuentes',
+      title: 'Preguntas frecuentes sobre StockAI.',
+      intro: 'Lo que suelen preguntar los equipos de compras antes de subir su primer archivo: qué datos hacen falta, cómo se amplía el plan gratis, dónde quedan tus datos y cómo aprende el plazo de cada proveedor.',
+    },
+    security: {
+      label: 'Seguridad',
+      title: 'Seguridad y privacidad de tus datos en StockAI.',
+      intro: 'Antes de subir tus ventas conviene saber quién puede verlas, qué se guarda cifrado y qué pasa con todo si un día te vas. Esto es lo que hace la aplicación hoy.',
+      trialTitle: 'La cuenta de prueba se borra sola',
+      trialDesc: 'Si pruebas sin registrarte, la cuenta temporal trae datos de ejemplo, dura 24 horas y después se borra.',
+      ruleDesc: 'La regla que pone un producto en rojo está publicada en «Cómo funciona», y la puedes hacer a mano para comprobar que da lo mismo.',
+    },
+  },
 }
 
 const en: LandingCopy = {
   nav: {
     links: [
       ['#problema', 'The problem'],
-      ['#solucion', 'How it works'],
+      ['/como-funciona', 'How it works'],
       ['#casos', 'Industries'],
       ['#incluye', "What's included"],
-      ['#precio', 'Pricing'],
+      ['/precios', 'Pricing'],
       ['#contacto', 'Contact'],
     ],
     signIn: 'Sign in',
@@ -556,8 +604,8 @@ const en: LandingCopy = {
   },
   heroPills: ['Distribution', 'Retail', 'Manufacturing', 'Wholesale', 'E-commerce'],
   footerLinks: {
-    product: [['#solucion', 'How it works'], ['#casos', 'Industries'], ['#incluye', "What's included"], ['#precio', 'Pricing'], ['#comparacion', 'vs Excel']],
-    company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['#contacto', 'Contact']],
+    product: [['/como-funciona', 'How it works'], ['#casos', 'Industries'], ['#incluye', "What's included"], ['/precios', 'Pricing'], ['#comparacion', 'vs Excel']],
+    company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['/seguridad', 'Security'], ['/preguntas-frecuentes', 'FAQ'], ['#contacto', 'Contact']],
   },
   hero: {
     eyebrow: 'For the person who decides the buying',
@@ -936,6 +984,35 @@ const en: LandingCopy = {
     contact: 'Contact',
     rights: '© 2026 StockAI. All rights reserved.',
     madeIn: 'Made in Costa Rica',
+  },
+  pages: {
+    home: 'Home',
+    breadcrumb: 'You are here',
+    onThisPage: 'On this page',
+    related: 'Keep reading',
+    pricing: {
+      label: 'Pricing',
+      title: 'StockAI pricing: free to start, sized to you as you grow.',
+      intro: 'The free plan is forever and has every feature; all it has are size ceilings. Here are those ceilings, what changes when they are lifted and how that happens: by talking to us, with no card and no checkout.',
+    },
+    how: {
+      label: 'How it works',
+      title: 'How StockAI works: the steps, the rule and every screen.',
+      intro: 'First, the whole journey in four steps. Then the exact calculation that turns a product red, so you can check it by hand. And finally, the application screen by screen, with real captures and data inside.',
+    },
+    faq: {
+      label: 'FAQ',
+      title: 'Frequently asked questions about StockAI.',
+      intro: 'What purchasing teams usually ask before uploading their first file: what data is needed, how the free plan is lifted, where your data lives and how each supplier’s lead time is learned.',
+    },
+    security: {
+      label: 'Security',
+      title: 'Security and privacy of your data in StockAI.',
+      intro: 'Before you upload your sales it is worth knowing who can see them, what is stored encrypted and what happens to all of it if you ever leave. This is what the application does today.',
+      trialTitle: 'The trial account erases itself',
+      trialDesc: 'If you try it without signing up, the temporary account comes with sample data, lasts 24 hours and is then erased.',
+      ruleDesc: 'The rule that puts a product in the red is published under “How it works”, and you can do it by hand to check it gives the same answer.',
+    },
   },
 }
 

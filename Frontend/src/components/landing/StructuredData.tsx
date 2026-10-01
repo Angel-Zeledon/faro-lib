@@ -1,16 +1,93 @@
 import { LANDING } from '@/i18n/landing'
 import { SITE_URL } from '@/lib/siteUrls'
+import { SUBPAGE_PATHS, type SubpageKey } from '@/components/landing/subpagePaths'
 
-// schema.org data for the landing, rendered on the server so a crawler reads
-// it without running the page's JavaScript. Spanish, like the server-rendered
-// title: it is the primary market and the language a crawler sees first.
+// schema.org data for the landing and its subpages, rendered on the server so
+// a crawler reads it without running the page's JavaScript. Spanish, like the
+// server-rendered title: it is the primary market and the language a crawler
+// sees first.
 //
-// Only what the page itself already says. The FAQ is read from the same
+// Only what the pages themselves already say. The FAQ is read from the same
 // catalogue the page renders, so the two cannot disagree; the offer is the free
 // plan at 0 because that is the one price that exists — the full plan has no
 // list price (it is a conversation), so it is not published as one.
+
+const L = LANDING.es
+
+// A catalogue href (`#anchor` on the home page, or `/slug`) as an absolute URL.
+const absolute = (href: string) => (href.startsWith('#') ? `${SITE_URL}/${href}` : `${SITE_URL}${href}`)
+
+export function JsonLd({ graph }: { graph: object[] }) {
+  return (
+    <script
+      type="application/ld+json"
+      // `<` escaped so no string in the catalogue can close the script tag.
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })
+          .replace(/</g, '\\u003c'),
+      }}
+    />
+  )
+}
+
+// Inicio → <subpage>, for the subpage's own head.
+export function breadcrumbFor(page: SubpageKey) {
+  return {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: L.pages.home, item: `${SITE_URL}/` },
+      { '@type': 'ListItem', position: 2, name: L.pages[page].label, item: `${SITE_URL}${SUBPAGE_PATHS[page]}` },
+    ],
+  }
+}
+
+// One subpage's head: the breadcrumb, the page itself as part of the site,
+// and whatever else that page carries (the FAQ page adds FAQPage).
+export function SubpageStructuredData({ page, extra = [] }: { page: SubpageKey; extra?: object[] }) {
+  const url = `${SITE_URL}${SUBPAGE_PATHS[page]}`
+  return (
+    <JsonLd
+      graph={[
+        {
+          '@type': 'WebPage',
+          '@id': `${url}#webpage`,
+          url,
+          name: L.pages[page].title,
+          description: L.pages[page].intro,
+          inLanguage: 'es',
+          isPartOf: { '@id': `${SITE_URL}/#website` },
+        },
+        breadcrumbFor(page),
+        ...extra,
+      ]}
+    />
+  )
+}
+
+// The FAQ as FAQPage. Published once, on /preguntas-frecuentes — the page
+// where every answer is visible — rather than on every page that lists them.
+export function faqPageGraph() {
+  return {
+    '@type': 'FAQPage',
+    mainEntity: L.faq.items.map(f => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  }
+}
+
 export default function StructuredData() {
-  const L = LANDING.es
+  // The site's sections, named the way its own menu names them: the menu's
+  // entries (two of which are now real pages, /como-funciona and /precios;
+  // the rest anchors that live only on the home page), plus the two subpages
+  // reached from the footer. Google builds sitelinks from URLs it can name;
+  // this hands it the names and the URLs instead of leaving it to guess.
+  const sections: [string, string][] = [
+    ...L.nav.links,
+    [SUBPAGE_PATHS.faq, L.pages.faq.label],
+    [SUBPAGE_PATHS.security, L.pages.security.label],
+  ]
   const graph = [
     {
       '@type': 'Organization',
@@ -44,51 +121,32 @@ export default function StructuredData() {
         price: '0',
         priceCurrency: 'USD',
         description: L.pricing.freeNote,
+        url: `${SITE_URL}${SUBPAGE_PATHS.pricing}`,
       },
     },
-    // The page's sections, named the way its own menu names them. Google builds
-    // the "jump to" links under a result from anchors it can name; this hands
-    // it the names and the anchors instead of leaving it to guess.
     {
       '@type': 'WebPage',
       '@id': `${SITE_URL}/#webpage`,
       url: `${SITE_URL}/`,
       name: 'StockAI',
       isPartOf: { '@id': `${SITE_URL}/#website` },
-      hasPart: L.nav.links.map(([href, label]) => ({
+      hasPart: sections.map(([href, label]) => ({
         '@type': 'WebPageElement',
         name: label,
-        url: `${SITE_URL}/${href}`,
+        url: absolute(href),
       })),
     },
     {
       '@type': 'ItemList',
       name: 'StockAI',
-      itemListElement: L.nav.links.map(([href, label], i) => ({
+      itemListElement: sections.map(([href, label], i) => ({
         '@type': 'SiteNavigationElement',
         position: i + 1,
         name: label,
-        url: `${SITE_URL}/${href}`,
-      })),
-    },
-    {
-      '@type': 'FAQPage',
-      mainEntity: L.faq.items.map(f => ({
-        '@type': 'Question',
-        name: f.q,
-        acceptedAnswer: { '@type': 'Answer', text: f.a },
+        url: absolute(href),
       })),
     },
   ]
 
-  return (
-    <script
-      type="application/ld+json"
-      // `<` escaped so no string in the catalogue can close the script tag.
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })
-          .replace(/</g, '\\u003c'),
-      }}
-    />
-  )
+  return <JsonLd graph={graph} />
 }

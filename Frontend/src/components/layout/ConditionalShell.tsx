@@ -1,9 +1,11 @@
 'use client'
 import { usePathname } from 'next/navigation'
 import AppShell from './AppShell'
+import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 
 const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba']
-const LANDING_PATHS = ['/']
+// The landing and its public subpages: no app shell, no sign-in.
+const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS)]
 
 export default function ConditionalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
