@@ -4535,3 +4535,123 @@ documentation), `screen-inventory.md` (the live table),
 `demo-script.md`, `help/index.html` (the bilingual user guide) and `paper/` plus
 the engine's PDF. The three skills in `.claude/skills/` — `stockai-i18n`,
 `running-stockai`, `silent-failures` — are current and CLAUDE.md references them.
+
+
+---
+
+# Mathematical audit (2026-10-01)
+
+**Owner's request:** check that every number the app states is mathematically
+correct and valid, because buyers in production place real purchase orders from
+them. Method: for each number, find the code path, work out the correct formula
+from first principles, and check it against concrete inputs. Every FIXED item
+has a test that failed on the code before this date. Most are in
+`backend/tests/test_math_audit_2026_10_01.py`. The open threshold finding is in
+`test_math_audit_open_thresholds.py`, which **is red on purpose** (see O2).
+Nothing here is marked [verified] on reading alone. Each item was either run as
+a test or computed with a probe.
+
+**The common class.** Ten of the 24 fixes are the §1.6 / §3.1 defect again. On
+a weekly or monthly tenant, `daily_demand` is demand **per week or month**, and
+`coverage_days` is coverage **in weeks or months**. Code kept multiplying them
+by day counts, comparing them with day counts, or labelling them "días". §3.1
+fixed the call sites that did not pass `period`. These are call sites that do
+pass it and then forget what it means.
+
+## Fixed
+
+| # | Sev. | Where | Inputs | Shown | Correct | Test |
+|---|---|---|---|---|---|---|
+| M1 | HIGH | `service._measured_safety_stock` | band measured at 0.5/0.9/0.95, SKU set to **99%** | the 0.95 cushion verbatim (40) | 40 × z(.99)/z(.95) = 56.6 | `test_safety_stock_quantiles::test_a_level_above_the_measured_ones_is_not_served_the_95_cushion` |
+| M2 | HIGH | same | lead time 60 buckets, backtest reaches 30 (default horizon is 30) | the 30-bucket offset, unchanged | offset × √(60/30) at least | `…::test_lead_time_beyond_the_backtest_extends_the_longest_measured` |
+| M3 | CRITICAL | `bom_service.explode_requirements` | weekly, 70/week, horizon 28 days | 1,960 units to produce | 280 | `TestBomSpeaksDays` |
+| M4 | HIGH | `price_break_service.evaluate_cart` | weekly, 70/week, 50 on hand, step 100→500 | coverage "7.9 days" → step-up **recommended** | 55 days > 45-day limit → refused (holding was also 7× low) | `TestPriceBreakSpeaksDays::test_a_weekly_forecast…` |
+| M5 | MEDIUM | `price_break_service.evaluate_step_up` holding cost | S=300 on hand at arrival, q0=100, q1=500, d=10/day | (q1−q0)²/2d = 8,000 unit-days | (q1−q0)(2S+q1)/2d = 22,000 (derivation in the module docstring) | `…::test_holding_counts_the_wait_behind_the_shelf` |
+| M6 | HIGH | `recommendation_log` + `recommendation_reports.cost_of_ignoring` | weekly tenant; Norte at 0 while principal holds 500 | lost units 7× too high; a "stockout" in one branch charged as company-wide lost sales | per-day rate stored; tenant-wide level read | `TestRecommendationLogStoresADailyRate`, `TestCostOfIgnoringReadsTheTenantWideLevel` |
+| M7 | HIGH | `dead_capital.get_dead_capital` | weekly tenant | signal column computed daily (PEDIR_YA where /hoy says OK) | tenant's grain | `TestDeadCapitalSignalUsesTheTenantsGrain` |
+| M8 | HIGH | `service.get_stock_history`, `dead_capital._snapshot_series` | principal written Monday (500), Norte Wednesday (20) | series 500, 20: a 480-unit "fall" | 500, 520: each warehouse carried forward | `TestTenantWideLevelCarriesEveryWarehouseForward` |
+| M9 | HIGH | `service._calc_demand_trend` | 4 writes over 13 days, selling exactly the forecast | "+225% above forecast" (snapshots counted as days); weekly tenants "−86%"; a reception cancelled the sales | 0% (no alert) | `TestDemandTrend` |
+| M10 | HIGH | `generate_recommendations` OVERSTOCK | 46 days of cover, lead time 15, ₡46,000 on the shelf | "pausing would free ₡46,000" | ₡1,000 (the 1 day above the 45-day ceiling) | `TestOverstockFreesOnlyTheExcess` |
+| M11 | HIGH | `build_explanation` + /compras why panel (desktop and mobile) | weekly, 70/week, 3 weeks of cover | "vendes 70 al día, te alcanza para 3 días"; tile "3 días" | 10 al día, 21 días; tile "3 semanas" | `TestExplanationSpeaksDays` |
+| M12 | MEDIUM | `/inventario` "how it is calculated" | 60 units on the way | "before rounding 150" followed by an order of 50; per-period, pre-event demand × days | the incoming quantity as its own step; per-day effective demand × protection days | `TestBreakdownAddsUp` |
+| M13 | HIGH | `/inventario` what-if simulator | need 520, MOQ 500, sliders untouched | "with changes: 1,000" (+480 with nothing moved); weekly ×7; incoming ignored | anchored to the real recommendation: zero sliders give zero delta | tsc (no frontend tests exist) |
+| M14 | HIGH | `/inventario` edit form and bulk update | edit only a product's name | the resolved lead time and MOQ (supplier rule, learned, assumed 15) re-sent and stamped `set_by='user'` | only fields the user changed are sent (the §1.9 defect, through another door) | tsc |
+| M15 | MEDIUM | /compras cart total (desktop and mobile) | 10 × ₡1,000 + 50 units with no cost | "Total ₡10,000", as if complete | the same total plus "1 sin costo registrado, fuera del total" | tsc, i18n parity |
+| M16 | MEDIUM | `/pronosticos` per-SKU accuracy | WAPE 1.4; or a champion with no WAPE | "Precisión −40%"; or the runner-up model's accuracy | 0%; or nothing (as `compute_session_accuracy` does) | tsc |
+| M17 | MEDIUM | `/proveedores` form | lead-time spread typed as 0 | saved as 3 days → safety stock += z·d·3 in quadrature | 0 | tsc |
+| M18 | CRITICAL | `optimizer_service.build_optimization_input` | 40 on the shelf, 200 already on order | the MILP's opening stock is 40 → buys the 200 again | inventory position 240, as the semáforo uses | `TestOptimizerNetsWhatIsAlreadyOnItsWay` |
+| M19 | MEDIUM | inventory PDF | weekly, 4 weeks of cover | "4 días" / "4d" under "Días cobertura" | "4 semanas" under "Cobertura" | `TestInventoryPdfCoverageUnit` |
+| M20 | LOW | `cash_service.get_payables` | payment due on day 7 | in "this week" (8 days) and in week 2 at once | week 2 only | `TestThisWeekIsSevenDays` |
+| M21 | MEDIUM | `service._network_transfer_pass` | supplier minimum 500, sister warehouse can spare 450 | 0 transferred, 520 bought; spare 900 → 500 moved, 20 never bought | whole units: 450 / 520 move | `TestTransferIsNotRoundedToTheSupplierMinimum` (+ the old box-size test rewritten) |
+| M22 | MEDIUM | monthly recap email | 40 lines ordered, 6 with a cost | "₡2.1M en compras gestionadas" | "≥ ₡2.1M", as /impacto prints it | `TestRecapEmailDoesNotPresentAPartialTotalAsComplete` |
+| M23 | HIGH | `compute_session_accuracy` | one SKU: no demand in the validation window, forecast 0.3/day | WAPE = 9e8 → "Precisión promedio" **0%** | 89.1% (the SKU is left out, like the 0/0 case) | `TestOneDeadSkuDoesNotZeroTheAccuracy` |
+| M24 | MEDIUM | `get_morning_briefing` KPI | one SOBRESTOCK SKU with no cost (live on the demo tenant) | `overstock: 0` (while /status says 1) | 1 | `TestBriefingCountsEveryOverstockedSku` |
+
+Notes on the fixes:
+
+- **M1/M2** change only the measured branch. When the requested level is
+  measured, its band is used exactly. Otherwise the nearest measured level above
+  the median is rescaled by the z ratio: the measured spread is kept and only
+  the tail's shape is assumed. Past the backtest, √(L/key) is the conservative
+  extension. It is exact for independent errors and an underestimate for
+  persistent ones, and never an inflation.
+- **M5** compares against the module's own stated alternative: buying the same
+  units later, in the q0-sized orders the buyer already places. The old formula
+  is that result with S = 0 and q0 = 0.
+- **M6**: rows already in `inventory_recommendation_log` are per-period for
+  weekly/monthly tenants. Only new rows are per-day. For those tenants
+  `why_changed` will show one ÷7 (or ÷30) step on 2026-10-01. That is a unit
+  change, not a demand change.
+- **M13–M17** are frontend changes. `tsc` and i18n parity pass. The app could
+  **not** be walked in a browser in this session (the Chrome extension was not
+  connected), so per CLAUDE.md these still owe a walk: /compras why panel and
+  cart, /inventario breakdown, simulator and edit form, /pronosticos, the
+  /proveedores form.
+
+## Open
+
+| # | Sev. | Where | Proof | Why it is open |
+|---|---|---|---|---|
+| O1 | HIGH | optimizer horizon (`ForecastingCore business/optimizer.py:275` gate + `planning_service` default horizon 14) | Engine probe, demand 10/bucket, horizon 14: lead time 15 → **0 orders**, 120 short; lead time 10 → orders 40 (covers buckets 11–14 only). Default lead time is 15, so every unconfigured SKU on a daily plan is planned at 0. The /compras copy says these quantities "cover the next 14 days, which is why they are larger" — for these SKUs the plan is empty or smaller. | A finite-horizon end effect. The fix is a product choice: extend the horizon to lead time + coverage, or report SKUs whose lead time exceeds the horizon. Either changes problem size or adds a field. |
+| O2 | HIGH | semáforo thresholds — **owned by the threshold workstream, code not touched** | (a) `test_math_audit_open_thresholds.py` (red): 0 on hand and a forecast of 0 → `coverage = 0/0` → 9999 sentinel → **SOBRESTOCK on an empty shelf**. `_calc_signal`'s docstring says the sentinel applies to a SKU "with any stock at all"; the caller never checks. (b) The landing (`i18n/landing.ts` signals table, both languages) still promises PEDIR PRONTO below 1.2× lead time and OK from 1.2× to 3×. Since §17c the boundary is the reorder point (L + SS/d), and SOBRESTOCK starts at max(3L, 2·reorder-point days). "You can do it by hand to check it gives the same answer" is no longer true for any SKU with a safety stock. The "landing's checkable mechanics hold up" line in *What was tested and is solid* is stale. | Another agent owns the threshold multipliers and the landing. |
+| O3 | HIGH | `cash_service` | No "paid" state exists, so every PO ever sent stays a payable and `overdue_total` grows forever (affordability → permanently "does not fit"). `SUM(final_qty * COALESCE(unit_cost,0))` prices uncosted lines at 0. A PO with no costs at all is dropped (`amount <= 0`), even from `unknown_terms`, and `evaluate_purchase_fit` says "fits". | Needs a paid/closed state and an "amount unknown" surface. Both are new capability. |
+| O4 | HIGH | /impacto hero "compras gestionadas"; /pedidos PO `total_value` | Both sum only the costed lines (`roi_service.py:297`, `:54`) and print the result as the total, with no "≥". §2.6 fixed this on the monthly report only. | Needs a completeness field on two responses, like `managed_purchase_value_complete`. |
+| O5 | HIGH | /inventario bulk update + edit form | `current_stock: parseFloat('') \|\| 0`. Changing only the supplier of an uncounted SKU creates its row with stock **0** → PEDIR_YA at full quantity. | The §1.2 class: the DB cannot hold a row without a count (`current_stock NOT NULL DEFAULT 0`). The fix is the pending `current_stock_set_by` decision, or refusing the save with new copy. |
+| O6 | MEDIUM | /compras supplier switch | Re-pointing a line at another supplier keeps the SKU's `unit_cost`, which goes into the PO, its PDF, cash and /impacto. | Known §4.7: `sku_suppliers.unit_cost` reaches no planning path. |
+| O7 | MEDIUM | per-warehouse rows (`avg_std *= share`, `risk_scale=share`) | Splits sigma linearly, which assumes branch demands are perfectly correlated. With 4 equal branches each gets 0.25σ; under independence it needs 0.5σ (square-root law), so each branch's safety stock is half. | A modelling assumption. Settling it needs per-branch residuals, not an edit. |
+| O8 | MEDIUM | `formatting.money` (PDF, emails, narratives) | Always comma thousands: `$1,250` for COP/ARS/CLP, where "1,250" reads as 1.25, while the screen renders `$1.250` (Intl) and the recap email `1.250.000,00`. Three conventions for one amount. | Changing every document's format is the owner's call. The anchor market's "₡1,234" is pinned deliberately. |
+| O9 | MEDIUM | narrative / RAG fallback / WhatsApp bot | Per-period coverage and demand labelled as days (`narrative_service.py:272,335,354`). `rag_service.py:753` reads `r.get("recommended")`, a key that does not exist (always null). `holding_cost` 0.00 (§16 l) still live. | AI-assistant area (another agent); the WhatsApp bot is out of scope (§3.3). |
+| O10 | MEDIUM | `export-po` CSV | Coverage in periods under "Días cobertura". "Demanda (lead time)" is lead time **plus review period**. Every non-learned source is labelled "Configurado", including the assumed 15. | API file shared with the public-API workstream. Copy plus a param. |
+| O11 | LOW | various | Coverage rounded to whole periods (0.4 weeks → "0 semanas" on a PEDIR_YA card); /escenarios "Demanda diaria" (per period); `SkuSearchOverlay` "{n}d"; "cost of ignoring" date defaults use the UTC date (one day late after 18:00 CR); `parseInt` truncates a typed 12.5; PDF/WhatsApp/email quantities `:.0f` (unreachable from the UI, which takes integers); "₡X inmovilizados en sobrestock" quotes the full value of overstocked SKUs; `forecast_money` reports steps as `horizon_days`; the optimizer's per-bucket orders are dated as one PO sent today in the cash fit. | Cosmetic, or each needs copy. |
+
+## What was checked and found correct (with the check)
+
+- **Semáforo arithmetic on live data.** Demo tenant, 5 SKUs with forecast and
+  stock, recomputed by hand from the published parts: reorder point = d·(L+R) +
+  SS, quantity = max(ceil(ROP − stock − incoming), MOQ) when the signal orders,
+  and the PEDIR_PRONTO/OK boundary at the reorder point. 0 mismatches. Example,
+  SKU-001: 23.04 × 15 + 17.26 = 362.91; 362.91 − 300 = 62.9 → 63; 13.0 days of
+  cover ≤ 15.75 reorder-point days → PEDIR_PRONTO.
+- **Service level → z** (`_z_for`): exact at the four table points; Acklam
+  elsewhere, e.g. 0.98 → 2.054.
+- **Combined lead-time variance** sqrt(L·σ² + d²·σ_L²), in period units on both
+  terms. The σ_L conversion is the same `_lead_time_in_periods`.
+- **MOQ as a floor** (§1.7), whole-unit ceil, and "nothing to order stays 0".
+- **Learned lead time** from completion only (§1.4); n ≥ 3; non-positive
+  averages refused; case-insensitive grouping.
+- **Fill rate** capped at 1, with in-transit orders excluded (§11.12).
+- **Optimizer** holding cost: annual rate → per bucket (`× dpp / 365`).
+- **Croston SBA, metrics, engine inventory advisor**: 172 engine tests pass,
+  including the (1 − α/2) pin.
+- **Negative stock** cannot enter: API `ge=0` on every stock write.
+- **The 08:00 email and WhatsApp coverage units** (§1.1, §11.16).
+
+## What could not be verified
+
+- **Browser walk.** The Chrome extension was not connected. The frontend fixes
+  are type-checked only.
+- **Calibration of the cushion on real customer data** (§16c, §17b). Still open,
+  and M1/M2 do not settle it: they stop two ways the measured band was silently
+  cut, nothing more.
+- **The full backend suite.** Only targeted files were run, on the shared DB, as
+  instructed. All of them pass.
