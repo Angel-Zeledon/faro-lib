@@ -46,6 +46,31 @@ export default function StructuredData() {
         description: L.pricing.freeNote,
       },
     },
+    // The page's sections, named the way its own menu names them. Google builds
+    // the "jump to" links under a result from anchors it can name; this hands
+    // it the names and the anchors instead of leaving it to guess.
+    {
+      '@type': 'WebPage',
+      '@id': `${SITE_URL}/#webpage`,
+      url: `${SITE_URL}/`,
+      name: 'StockAI',
+      isPartOf: { '@id': `${SITE_URL}/#website` },
+      hasPart: L.nav.links.map(([href, label]) => ({
+        '@type': 'WebPageElement',
+        name: label,
+        url: `${SITE_URL}/${href}`,
+      })),
+    },
+    {
+      '@type': 'ItemList',
+      name: 'StockAI',
+      itemListElement: L.nav.links.map(([href, label], i) => ({
+        '@type': 'SiteNavigationElement',
+        position: i + 1,
+        name: label,
+        url: `${SITE_URL}/${href}`,
+      })),
+    },
     {
       '@type': 'FAQPage',
       mainEntity: L.faq.items.map(f => ({
