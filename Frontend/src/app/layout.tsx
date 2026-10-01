@@ -4,6 +4,7 @@ import './globals.css'
 import ConditionalShell from '@/components/layout/ConditionalShell'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
+import { SITE_URL } from '@/lib/siteUrls'
 
 /**
  * Rendered on the server, where the user's language is unknowable — it lives
@@ -15,8 +16,16 @@ import { LanguageProvider } from '@/contexts/LanguageContext'
  * `i18n/translations.ts`.
  */
 export const metadata: Metadata = {
+  // Resolves every relative URL in page metadata (og:image, canonical) against
+  // the landing's public origin — see lib/siteUrls.ts.
+  metadataBase: new URL(SITE_URL),
   title: 'StockAI — Inventario Inteligente',
   description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',
+  applicationName: 'StockAI',
+  // Every route but the landing is the signed-in app or a sign-in form, so the
+  // default is to stay out of search results; app/page.tsx opts back in.
+  // robots.ts says the same thing to crawlers that read robots.txt first.
+  robots: { index: false, follow: false },
 }
 
 /**

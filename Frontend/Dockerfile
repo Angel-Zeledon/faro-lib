@@ -17,8 +17,12 @@ ARG BACKEND_URL=http://api:8010
 # The app's public origin when the landing lives on another domain (see
 # src/lib/siteUrls.ts). Empty = single domain, links stay relative.
 ARG NEXT_PUBLIC_APP_URL=
+# The landing's own public origin, for canonical URLs, the sitemap and the
+# preview image search engines and chat apps fetch (src/lib/siteUrls.ts).
+ARG NEXT_PUBLIC_SITE_URL=
 ENV BACKEND_URL=$BACKEND_URL \
     NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
