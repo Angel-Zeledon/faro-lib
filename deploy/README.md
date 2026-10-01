@@ -114,3 +114,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
   selling. (Running a local model on this box was never viable anyway: it needs
   more RAM than the entire rest of the stack.)
 - Logs: `docker compose -f docker-compose.prod.yml logs -f api worker`.
+- **Caddy does not see an edited Caddyfile until it is recreated.** The file is
+  bind-mounted, and replacing it (git pull, tar extract) gives it a new inode
+  the running container never sees: new routes answer with the old config. After
+  any change to `Caddyfile*`:
+  `docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
