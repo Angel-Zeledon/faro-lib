@@ -232,6 +232,29 @@ class TestOptimizerNetsWhatIsAlreadyOnItsWay:
         assert inp.stock0[(sku, "principal")] == pytest.approx(240.0)
 
 
+# ── Transfers move whole units, not supplier minimums ───────────────────────
+
+class TestTransferIsNotRoundedToTheSupplierMinimum:
+
+    def _row(self, wh, *, stock, daily, signal, qty, moq):
+        return {"sku": "T-1", "warehouse": wh, "current_stock": stock,
+                "daily_demand": daily, "reorder_point": 0.0, "signal": signal,
+                "recommended_qty": qty, "moq": moq, "recommended_action": None,
+                "transfer_suggestion": None, "transfer_rejected_reason": None,
+                "lead_time_days": 15, "unit_cost": None}
+
+    def test_the_whole_need_moves_when_the_donor_can_spare_it(self):
+        """Need 520 (supplier minimum 500), donor spares 900: it moved
+        floor(520/500)*500 = 500 and left 20 units unbought by anyone."""
+        needy = self._row("Norte", stock=0, daily=10, signal="PEDIR_YA", qty=520, moq=500)
+        donor = self._row("principal", stock=2000, daily=10, signal="SOBRESTOCK", qty=0, moq=500)
+        lanes = {("principal", "Norte"): {"lead_time_days": 1, "cost_per_unit": 0.0,
+                                         "fixed_cost": 0.0}}
+        inv_svc._network_transfer_pass([needy, donor], "daily", lanes=lanes)
+        assert needy["recommended_action"] == "transfer"
+        assert needy["transfer_suggestion"]["qty"] == pytest.approx(520.0)
+
+
 # ── Cash calendar: "this week" is the first weekly bucket ───────────────────
 
 class TestThisWeekIsSevenDays:

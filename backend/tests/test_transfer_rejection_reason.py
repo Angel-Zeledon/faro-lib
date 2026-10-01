@@ -121,15 +121,16 @@ class TestTheQuantityIsMovable:
         assert qty == int(qty), f"transfer of {qty} cannot be moved off a shelf"
         assert qty == 33, f"expected the 33.5 floored to 33, got {qty}"
 
-    def test_the_sku_granularity_is_respected(self):
-        """A SKU that moves in boxes of 12 gets a multiple of 12, rounded DOWN.
-
-        Down, never up: the donor cannot lend more than it can spare.
+    def test_the_supplier_minimum_is_not_a_box_size(self):
+        """`moq` is the SUPPLIER'S minimum order (owner's decision 2026-08-12),
+        not a box the SKU moves in — the product has no pack-size field. This
+        test used to assert a multiple of 12 and so rounded a 100-unit need
+        down to 96 between two of the buyer's own warehouses (math audit
+        2026-10-01). The need moves whole.
         """
         needy = _row("Cartago", stock=0, daily=20, signal="PEDIR_YA", qty=100, moq=12)
         donor = _row("principal", stock=5000, daily=1, signal="SOBRESTOCK", qty=0)
         needy["lead_time_days"] = 30
         _network_transfer_pass([needy, donor], "daily", lanes=_lane("principal", "Cartago", days=2))
         qty = needy["transfer_suggestion"]["qty"]
-        assert qty % 12 == 0, f"{qty} is not a whole number of boxes"
-        assert qty <= 100
+        assert qty == 100

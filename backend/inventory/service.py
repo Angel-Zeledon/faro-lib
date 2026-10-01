@@ -2824,7 +2824,17 @@ def _network_transfer_pass(
                 # 132.95" — and nobody moves 0.95 of a bottle. FLOOR, never
                 # ceil: the donor cannot lend more than it can spare. A SKU sold
                 # by weight keeps its fractions through its own moq.
-                step = float(r.get("moq") or 0) or 1.0
+                #
+                # The step is ONE unit. It was the SKU's `moq`, from when MOQ was
+                # read as a pack multiple; since 2026-08-12 it is the SUPPLIER'S
+                # minimum order, which says nothing about moving goods between
+                # two of the buyer's own warehouses. With a minimum of 500, a
+                # sister warehouse able to spare 450 lent 0 and the buyer was
+                # told to purchase all 520 — and a spare of 900 against a need
+                # of 520 moved only 500 (math audit 2026-10-01). A fractional
+                # MOQ (a SKU sold by weight) still sets a finer step.
+                moq_val = float(r.get("moq") or 0)
+                step = moq_val if 0 < moq_val < 1 else 1.0
                 donatable = math.floor(donatable / step) * step
                 if donatable <= 0:
                     continue
