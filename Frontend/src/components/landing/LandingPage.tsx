@@ -17,9 +17,33 @@ import { ScreenGuide } from '@/components/landing/ScreenGuide'
 import { T, DISPLAY } from '@/components/landing/theme'
 import { LandingStyles, Section, Tag, H2, H3, Lead, Check, Dash, Scroller, useScrollReveal } from '@/components/landing/primitives'
 import { Nav, Footer } from '@/components/landing/chrome'
-import { HowSteps, DecideSection, PricingSection, TrustSection, FaqAccordion, FinalSection } from '@/components/landing/sections'
+import { DecideSection, PricingSection, TrustSection, FaqAccordion, FinalSection } from '@/components/landing/sections'
+import { EngineFlow, ModelsSection, ENGINE_CSS } from '@/components/landing/engine'
 
 const HOME = { onHome: true } as const
+
+// The headline, set word by word on load (see .lp-w in theme.ts). Each word is
+// its own clipping box; `--i` counts words across both lines so the second
+// line carries on where the first stopped. The spaces stay real text nodes,
+// so the heading reads and copies exactly as written.
+function HeroTitle({ lines }: { lines: string[] }) {
+ let i = 0
+ return (
+ <h1 className="lp-h1">
+ {lines.map((line, li) => (
+ <span key={li}>
+ {li > 0 && <br />}
+ {line.split(' ').map((word, wi) => (
+ <span key={wi}>
+ {wi > 0 && ' '}
+ <span className="lp-w"><span className="lp-wi" style={{ '--i': i++ } as React.CSSProperties}>{word}</span></span>
+ </span>
+ ))}
+ </span>
+ ))}
+ </h1>
+ )
+}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
@@ -60,6 +84,7 @@ export default function LandingPage() {
  return (
  <div className="lp" id="top">
  <LandingStyles />
+ <style dangerouslySetInnerHTML={{ __html: ENGINE_CSS }} />
 
  <Nav {...HOME} />
 
@@ -68,22 +93,13 @@ export default function LandingPage() {
  {/* ── HERO ─────────────────────────────────────────────────────────── */}
  <section className="hero-sec">
  <div className="hero-bg" aria-hidden>
- <div className="hero-glow hero-glow-a" />
- <div className="hero-glow hero-glow-b" />
  <div className="hero-grid" />
  </div>
  <div className="hero-inner">
 
- <div className="hero-eyebrow lp-rise">
- <span className="hero-eyebrow-dot" aria-hidden />
- {L.hero.eyebrow}
- </div>
+ <p className="hero-eyebrow lp-rise lp-d1">{L.hero.eyebrow}</p>
 
- <h1 className="lp-h1 lp-rise lp-d1">
- {L.hero.title1}{' '}
- <br />
- {L.hero.title2}
- </h1>
+ <HeroTitle lines={[L.hero.title1, L.hero.title2]} />
 
  <p className="hero-lead lp-rise lp-d2">
  {L.hero.lead}
@@ -109,7 +125,6 @@ export default function LandingPage() {
  <span>{L.hero.frame}</span>
  </div>
  <img src={HERO_SHOT.img} alt={HERO_SHOT.alt} fetchPriority="high" width={3200} height={2000} style={{ height: 'auto' }} />
- <div className="lp-sheen" aria-hidden />
  </div>
  </div>
  </div>
@@ -175,18 +190,24 @@ export default function LandingPage() {
  <Section id="solucion">
  <Tag>{L.how.tag}</Tag>
  <H2>{L.how.title}</H2>
- <Lead>
+ <Lead maxWidth={660}>
  {L.how.lead}
  </Lead>
- <HowSteps />
+ {/* The workflow as an animated diagram, with the model competition
+     illustrated beside it (owner's team, 2026-10-01: the engine is the
+     headline). Every step's claim is backed in i18n/landing.ts. */}
+ <EngineFlow />
 
  {/* The screen guide is an opt-in deep dive (owner, 2026-10-01): a teaser
      here, the chapters in a dialog. See components/landing/ScreenGuide. */}
  <ScreenGuide tour={L.tour} manual={L.manual} lang={lang} primaryClass="btn-primary" />
  </Section>
 
+ {/* ── THE MODELS ───────────────────────────────────────────────────── */}
+ <ModelsSection />
+
  {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
- <DecideSection />
+ <DecideSection alt={false} />
 
  {/* ── ABOUT US ─────────────────────────────────────────────────────── */}
  <Section id="nosotros">
@@ -362,9 +383,9 @@ export default function LandingPage() {
  </Section>
 
  {/* ── FOR YOUR TECHNICAL TEAM ──────────────────────────────────────── */}
- {/* The only place the page names the machinery (model competition,
-     backtesting, ABC-XYZ, API/MCP). Kept compact and below the fold on
-     purpose: the landing speaks to the buyer (owner's call, 2026-09-30). */}
+ {/* The integration details for whoever the buyer forwards the link to.
+     The model competition moved up into its own section (#motor) on
+     2026-10-01; what stays here is ABC-XYZ, the API/MCP and the calendar. */}
  <Section id="tecnico" alt style={{ padding: '64px 0' }}>
  <Tag>{L.tech.tag}</Tag>
  <h2 className="lp-h3">{L.tech.title}</h2>
@@ -379,6 +400,7 @@ export default function LandingPage() {
  </div>
  ))}
  </div>
+ <a href="/desarrolladores" className="trust-link" style={{ marginTop: 16 }}>{L.tech.devLink}</a>
  </Section>
 
  {/* ── FAQ ──────────────────────────────────────────────────────────── */}

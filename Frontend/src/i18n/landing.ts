@@ -16,16 +16,18 @@
  * removed on 2026-08-23 for exactly that reason, and they do not come back in
  * either language.
  *
- * Audience (owner's call, 2026-09-30): the page speaks to the BUYER — the
- * person who decides purchases at a distributor — in outcomes: what to order
- * today, how much, from whom, what money is stuck, what arrives when. Model
- * competition, backtesting, ABC-XYZ and the API/MCP are named only in `tech`,
- * the compact section near the bottom. Keep new copy on that side of the line.
+ * Audience: the page speaks to the BUYER — the person who decides purchases at
+ * a distributor — in outcomes: what to order today, how much, from whom.
+ * Since 2026-10-01 (owner's team) the forecasting engine is ALSO the headline:
+ * `engine` explains, specifically, what the models do and how the workflow
+ * runs. That is not licence for decoration: every sentence in `engine` names a
+ * mechanism that exists in ForecastingCore or the decision layer (the file
+ * that backs each one is noted beside it), and the limits are stated next to
+ * the claims. No accuracy percentage, no "powered by AI" filler.
  */
 import type { Lang } from './translations'
 
 export interface Titled { title: string; desc: string }
-export interface Numbered { n: string; title: string; desc: string }
 export interface Case { label: string; title: string; desc: string; does: string[] }
 export interface Compare { feature: string; excel: string; stockai: string }
 export interface Role { role: string; pain: string; gain: string }
@@ -54,7 +56,23 @@ export interface LandingCopy {
   hero: { eyebrow: string; title1: string; title2: string; lead: string; cta: string; ctaTrial: string; trialNote: string; frame: string }
   strip: { models: string; deliveries: string; skus: string; csv: string }
   problem: { tag: string; title: string; lead: string; items: Titled[] }
-  how: { tag: string; title: string; lead: string; steps: Numbered[] }
+  how: { tag: string; title: string; lead: string }
+  // The forecasting engine. `flow` is the workflow, in order (a real
+  // sequence, so it is numbered on the page). `illus` labels the animated
+  // illustration beside it — an illustration, never data, and it says so.
+  engine: {
+    flowLabel: string
+    flow: { title: string; desc: string; detail: string }[]
+    illus: { caption: string; history: string; today: string; candidates: string; winner: string; band: string; signal: string }
+    tag: string; title: string; lead: string
+    routingTitle: string; routingHead: [string, string]
+    routing: { pattern: string; when: string; models: string }[]
+    routingNote: string
+    alwaysTitle: string; always: Titled[]
+    ideasTitle: string; ideas: Titled[]
+    assistantTitle: string; assistantBody: string; assistantPoints: string[]
+    limitsTitle: string; limits: string[]
+  }
   decide: { tag: string; title: string; lead: string; formulaTitle: string; formulaBody: string; formulaBody2: string; leadTimeBody: string; signals: Signal[] }
   about: { tag: string; title: string; body1: string; body2: string }
   cases: { tag: string; title: string; lead: string; doesLabel: string; items: Case[] }
@@ -63,7 +81,7 @@ export interface LandingCopy {
   pricing: {
     tag: string; title: string; lead: string
     freeLabel: string; freePrice: string; freeNote: string
-    paidLabel: string; paidPrice: string; paidNote: string
+    paidLabel: string; paidNote: string
     // [label, what the free tier gets, what the paid tier gets]. The paid
     // column used to render `unlimited` for every row, which told a paying
     // customer their upload size was uncapped when entitlements/plans.py
@@ -82,7 +100,27 @@ export interface LandingCopy {
     noStrings: string[]
     // Prefilled text of the WhatsApp message and the email subject line.
     waPrefill: string; mailSubject: string
+    // The full plan's "from" price. `{price}` is filled from
+    // components/landing/pricingModel.ts — no price is ever written here.
+    paidFrom: string; perMonth: string; calcLink: string
   }
+  // The estimate calculator on /precios. Every figure comes from
+  // pricingModel.ts; these strings only carry `{n}`/`{price}` placeholders.
+  calc: {
+    tag: string; title: string; lead: string
+    inputs: Record<'skus' | 'users' | 'warehouses' | 'apiCalls', { label: string; included: string }>
+    resultTitle: string; base: string; noExtras: string
+    lines: Record<'skus' | 'users' | 'warehouses' | 'apiCalls', string>
+    freeFits: string; freeFitsNote: string
+    // Under the $0 when everything fits the free plan; `{total}` is the full plan's price.
+    fullWouldBe: string
+    note: string
+    ctaEmail: string; ctaWhatsapp: string; ctaForm: string
+    mailSubject: string; mailBody: string; waPrefill: string
+    form: { title: string; lead: string; name: string; company: string; phone: string; message: string; submit: string; hint: string }
+  }
+  // Per-call API pricing, explained. `{n}` placeholders come from pricingModel.ts.
+  api: { tag: string; title: string; lead: string; points: string[]; devLink: string }
   // Trust block. Every item is a property of the code, not a promise of
   // service — see the comment beside the block in app/page.tsx for the file
   // that backs each one. No figures, logos, testimonials or certifications.
@@ -93,6 +131,8 @@ export interface LandingCopy {
     signupTitle: string; signupDesc: string
     trialTitle: string; trialDesc: string
     talkTitle: string; talkDesc: string
+    // `{email}` and `{phone}` are filled from components/landing/contact.ts.
+    reach: string
     madeIn: string
   }
   benefits: { tag: string; title: string; lead: string; items: string[] }
@@ -100,7 +140,7 @@ export interface LandingCopy {
   // The one place the technical capabilities are named. Deliberately below the
   // fold and compact: the page speaks to the buyer (owner's call, 2026-09-30);
   // this block exists for whoever the buyer forwards the link to.
-  tech: { tag: string; title: string; lead: string; items: Titled[] }
+  tech: { tag: string; title: string; lead: string; items: Titled[]; devLink: string }
   // The screen guide is an opt-in deep dive, not part of the main read: the
   // page shows a teaser (`teaser*`) and the chapters open in a dialog.
   // `count` takes {n} screens and {c} chapters, both computed from `chapters`.
@@ -161,11 +201,11 @@ const SHOTS_EN = shots('en')
 const es: LandingCopy = {
   nav: {
     links: [
-      ['#problema', 'El problema'],
       ['/como-funciona', 'Cómo funciona'],
+      ['#motor', 'Los modelos'],
       ['#casos', 'Industrias'],
-      ['#incluye', 'Qué incluye'],
       ['/precios', 'Precio'],
+      ['/desarrolladores', 'API'],
       ['#contacto', 'Contacto'],
     ],
     signIn: 'Iniciar sesión',
@@ -175,14 +215,14 @@ const es: LandingCopy = {
   },
   heroPills: ['Distribución', 'Retail', 'Manufactura', 'Mayoristas', 'E-commerce'],
   footerLinks: {
-    product: [['/como-funciona', 'Cómo funciona'], ['#casos', 'Industrias'], ['#incluye', 'Qué incluye'], ['/precios', 'Precio'], ['#comparacion', 'vs Excel']],
+    product: [['/como-funciona', 'Cómo funciona'], ['#motor', 'Los modelos'], ['#casos', 'Industrias'], ['#incluye', 'Qué incluye'], ['/precios', 'Precio'], ['/desarrolladores', 'API para desarrolladores'], ['#comparacion', 'vs Excel']],
     company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['/seguridad', 'Seguridad'], ['/preguntas-frecuentes', 'Preguntas frecuentes'], ['#contacto', 'Contacto']],
   },
   hero: {
-    eyebrow: 'Para quien decide las compras',
+    eyebrow: 'Pronóstico de demanda por producto, para quien decide las compras',
     title1: 'Qué pedir hoy, cuánto',
     title2: 'y a qué proveedor.',
-    lead: 'StockAI lee tus ventas y tu inventario y cada mañana te dice qué productos se van a quebrar, cuántas unidades pedir de cada uno y a quién, cuánto dinero tienes parado en lo que no rota y qué pedidos vienen en camino.',
+    lead: 'StockAI entrena un pronóstico para cada uno de tus productos: varios modelos compiten sobre tu propio historial y se queda el que mejor aguanta la prueba. Con eso, cada mañana te dice qué se va a quebrar, cuántas unidades pedir y a quién, y cuánto dinero tienes parado en lo que no rota.',
     cta: 'Empezar gratis con datos de ejemplo',
     ctaTrial: 'Probar sin registrarme',
     trialNote: 'Cuenta de prueba al instante: usuario y contraseña temporales, 24 horas, sin tarjeta.',
@@ -209,12 +249,80 @@ const es: LandingCopy = {
   how: {
     tag: 'Cómo funciona',
     title: 'De tu historial de ventas a la orden de compra.',
-    lead: 'Subes lo que ya tienes y StockAI te devuelve la lista de compras. No configuras nada estadístico y no necesitas un analista.',
-    steps: [
-      { n: '01', title: 'Sube tus ventas y tu inventario', desc: 'Un archivo CSV o Excel, tal como sale de tu sistema. StockAI reconoce solo cuál columna es la fecha, cuál el producto y cuál la cantidad vendida.' },
-      { n: '02', title: 'StockAI aprende cómo se vende cada producto', desc: 'Temporadas, quincenas, tendencia y altibajos, producto por producto. Tú no configuras nada por código.' },
-      { n: '03', title: 'Te dice qué pedir hoy y cuánto', desc: 'Cada producto queda en un estado — PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK — con la cantidad sugerida calculada contra el plazo de su proveedor.' },
-      { n: '04', title: 'Pides, recibes y el sistema aprende', desc: 'La orden sale armada por proveedor. Cuando registras la llegada, StockAI anota cuánto tardó de verdad y lo usa para la siguiente.' },
+    lead: 'Ocho pasos, de los cuales tú haces dos: subir el archivo y registrar lo que llega. El resto lo corre StockAI, producto por producto, y cada paso deja algo que puedes revisar en pantalla.',
+  },
+  engine: {
+    flowLabel: 'El flujo de StockAI, paso a paso',
+    flow: [
+      // Canonical column detection: ForecastingCore/forecasting_core/data/canonical.py
+      { title: 'Tus ventas', desc: 'Un CSV o Excel tal como sale de tu sistema. StockAI reconoce cuál columna es la fecha, cuál el producto y cuál la cantidad vendida.', detail: 'Fecha, producto y cantidad: con eso basta' },
+      // Pre-training gate: data/gate.py; censored demand: data/censoring.py
+      { title: 'Revisión y limpieza', desc: 'Antes de entrenar se revisa cada producto: fechas que faltan, valores atípicos, historial insuficiente. Si el archivo daría un pronóstico equivocado, no corre hasta que elijas cómo corregirlo: rellenar huecos con cero e interpolarlos dicen cosas distintas sobre lo que pasó.', detail: 'Con tu inventario histórico, los días sin producto dejan de contar como días sin demanda' },
+      // Series classification: data/quality.py; routing: training/router.py
+      { title: 'Competencia de modelos por producto', desc: 'Cada producto se clasifica por cómo se vende (estable, estacional, intermitente o volátil) y compiten los modelos que mejor manejan ese patrón, de entre nueve disponibles: modelos de árboles con gradient boosting, modelos estadísticos clásicos y una red neuronal.', detail: 'LightGBM, XGBoost, ARIMA, SARIMAX, Prophet, ETS, Croston, LSTM y un modelo global' },
+      // Walk-forward validation: training/trainer.py; champion: evaluation/metrics.py, pipelines/pipeline.py
+      { title: 'Prueba contra el pasado', desc: 'A cada modelo se le esconde el tramo final de tu historial y se le pide pronosticarlo, en varios cortes. Gana el que menos cuesta equivocarse, y tiene que superar a dos pronósticos ingenuos.', detail: 'Quedarse corto pesa tres veces más que sobrar' },
+      // Serving refit: training/trainer.py (_serving_model); band: inference/predictor.py
+      { title: 'Pronóstico con rango', desc: 'El ganador se vuelve a entrenar con todo tu historial, incluido lo más reciente, y proyecta la demanda con un rango probable alrededor.', detail: 'Diario, semanal, mensual o trimestral' },
+      // Signal thresholds and safety stock: backend/inventory/service.py
+      { title: 'Semáforo y cantidad', desc: 'La demanda pronosticada se cruza con tus existencias y con el plazo de tu proveedor. Cada producto queda en PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK, con la cantidad sugerida.', detail: 'La regla está publicada y se puede hacer a mano' },
+      { title: 'Orden de compra', desc: 'La orden sale armada por proveedor, con el motivo de cada línea. La revisas, la ajustas y la envías por correo o WhatsApp.', detail: 'Exportable en CSV o PDF' },
+      // Learned lead time: backend/inventory/service.py (MIN_LEAD_TIME_OBSERVATIONS = 3)
+      { title: 'Recepción que enseña el plazo', desc: 'Cuando registras la llegada, StockAI anota cuántos días tardó de verdad. A partir de la tercera entrega de un proveedor planifica con ese plazo, no con el prometido.', detail: 'Y ese plazo vuelve al paso del semáforo' },
+    ],
+    illus: {
+      caption: 'Ilustración del proceso para un producto. No son datos reales.',
+      history: 'Historial',
+      today: 'Hoy',
+      candidates: 'Candidatos',
+      winner: 'Ganador',
+      band: 'Rango probable',
+      signal: 'PEDIR PRONTO',
+    },
+    tag: 'Los modelos',
+    title: 'Un modelo distinto para cada producto, elegido a prueba.',
+    lead: 'Un producto que se vende todos los días no se pronostica igual que uno que pasa semanas sin moverse. Por eso StockAI no usa un solo modelo para todo el catálogo: pone a competir varios sobre la historia de cada producto y planifica con el que gana.',
+    routingTitle: 'Quién compite, según cómo se vende',
+    routingHead: ['Cómo se vende', 'Modelos que compiten'],
+    // ROUTING_TABLE in ForecastingCore/forecasting_core/training/router.py;
+    // thresholds in data/quality.py (classify_series).
+    routing: [
+      { pattern: 'Estable', when: 'Venta regular, sin un ciclo marcado', models: 'LightGBM, XGBoost, ARIMA, SARIMAX, LSTM' },
+      { pattern: 'Estacional', when: 'Se repite un patrón: la semana, la quincena, la temporada', models: 'Prophet, ETS, LightGBM, SARIMAX, LSTM' },
+      { pattern: 'Intermitente', when: 'Muchos periodos sin una sola venta', models: 'Croston, ETS' },
+      { pattern: 'Volátil', when: 'Altibajos grandes de un periodo al otro', models: 'LightGBM, XGBoost, Prophet, ARIMA, ETS, SARIMAX' },
+      { pattern: 'Historial corto', when: 'Menos de 30 periodos', models: 'Todos los que tengas activos, sin filtrar' },
+    ],
+    routingNote: 'Un producto puede tener dos patrones a la vez, estacional y volátil por ejemplo, y entonces compiten los de ambos. La clasificación solo acota los modelos que tienes activos: nunca entrena uno que no elegiste.',
+    alwaysTitle: 'En todas las competencias',
+    always: [
+      // UNIVERSAL_MODELS = {"global_lgbm"} in training/router.py; training/global_trainer.py
+      { title: 'Un modelo global, entrenado con todo tu catálogo', desc: 'Compite en todos los productos. Donde más aporta es en los de poca historia o venta intermitente: aprende de cómo se comporta el resto de tu catálogo, algo que ningún modelo de un solo producto puede hacer.' },
+      // Baselines kept out of the champion race: pipelines/pipeline.py (_select_champions)
+      { title: 'Dos pronósticos ingenuos como vara', desc: 'Repetir el último valor y repetir la temporada anterior. No pueden ganar, pero sí medir: si ningún modelo los supera en un producto, la corrida te lo avisa en lugar de esconderlo.' },
+    ],
+    ideasTitle: 'Lo que hace distinto al motor',
+    ideas: [
+      // CHAMPION_METRIC_ORDER = ("cost_horizon", ...) and DEFAULT_STOCKOUT_MULTIPLIER = 3.0, evaluation/metrics.py
+      { title: 'Gana el que menos cuesta equivocarse', desc: 'Quedarte sin producto te hace perder ventas; que te sobre te inmoviliza dinero. No cuestan lo mismo, así que el ganador se elige con un costo en el que quedarse corto pesa tres veces más que sobrar, medido sobre todo el horizonte que vas a comprar.' },
+      // data/censoring.py, wired in pipelines/pipeline.py
+      { title: 'Un quiebre no se confunde con falta de demanda', desc: 'Si un producto se agotó, sus ventas en cero no dicen que nadie lo quería. Con tu inventario histórico, StockAI marca esos días y estima lo que se habría vendido, para no aprender el quiebre como una caída y volver a pedir de menos.' },
+      // training/trainer.py (_serving_model): graded at the cut, served from a refit on everything
+      { title: 'Probado con fechas que no vio, entrenado con todas', desc: 'La competencia se juzga sobre un tramo que el modelo nunca vio. Una vez elegido, el ganador se reentrena con el historial completo, para que tus últimas semanas de venta entren en el pronóstico con el que compras.' },
+      // data/gate.py and the 20-period minimum in data/quality.py
+      { title: 'Si el archivo no alcanza, no se inventa un número', desc: 'Un producto sin historia suficiente queda fuera del pronóstico y aparece como SIN DATOS, sin cantidad sugerida. Y un archivo que produciría un pronóstico equivocado se detiene antes de entrenar, con la explicación en pantalla.' },
+    ],
+    assistantTitle: 'Y un analista al que le preguntas en español',
+    assistantBody: 'El asistente responde sobre tu propia cuenta («¿qué proveedor me está atrasando?», «¿por qué subió esta categoría?») leyendo el mismo semáforo y los mismos pedidos que ves en pantalla. Cada respuesta indica de dónde salió.',
+    assistantPoints: [
+      'Redacta y explica; las cantidades a pedir las calcula el motor de pronóstico, no el chat.',
+      'Usa un modelo de lenguaje externo. Si no está disponible, la pantalla lo dice antes de que escribas.',
+    ],
+    limitsTitle: 'Lo que no te vamos a prometer',
+    limits: [
+      'Un porcentaje de precisión en esta página. El error de cada producto se mide sobre tu historial y lo ves en la pantalla de pronóstico.',
+      'Que el rango sea una garantía. Es la franja donde probablemente caerá la venta, y sirve para saber cuánto confiar en la cantidad sugerida.',
+      'Adivinar lo que nunca pasó. Una promoción nueva o un cliente grande nuevo se prueban en el simulador de escenarios, no en el historial.',
     ],
   },
   decide: {
@@ -341,14 +449,14 @@ const es: LandingCopy = {
     freePrice: '$0',
     freeNote: 'Para siempre, sin tarjeta. Suficiente para que un negocio chico opere de verdad.',
     paidLabel: 'Completo',
-    paidPrice: 'Hablemos',
-    paidNote: 'El precio se arma sobre tu operación: cuántos productos mueves, cuántas bodegas y qué tan seguido recalculas. No hay checkout — escríbenos y lo vemos con números tuyos.',
+    paidNote: 'Una base mensual que incluye {skus} productos, {users} usuarios y {warehouses} bodegas; lo que pase de ahí se suma por bloques. No hay checkout: escríbenos y lo cerramos con tus números.',
     limits: [
       ['Productos (SKUs)', '100', 'Sin límite'],
       ['Usuarios', '2', 'Sin límite'],
       ['Bodegas', '1', 'Sin límite'],
       ['Pronósticos guardados', '3', 'Sin límite'],
       ['Llaves de API', '1', 'Sin límite'],
+      ['Llamadas a la API', '500 al día', 'Sin límite'],
       ['Tamaño de archivo', '25 MB', '2 GB'],
     ],
     closing: 'Empieza gratis hoy. Cuando te quede corto — un catálogo que creció, una segunda bodega, un tercero en el equipo — escríbenos y lo ampliamos. Te respondemos en menos de 24 horas.',
@@ -364,6 +472,60 @@ const es: LandingCopy = {
     noStrings: ['Sin tarjeta', 'Sin checkout', 'Sin funciones bloqueadas'],
     waPrefill: 'Hola, quiero ampliar los límites de StockAI.',
     mailSubject: 'StockAI — quiero una cotización',
+    paidFrom: 'Desde {price}',
+    perMonth: 'al mes',
+    calcLink: 'Calcula tu estimado',
+  },
+  calc: {
+    tag: 'Calculadora',
+    title: 'Cuánto te costaría el plan completo.',
+    lead: 'Pon los números de tu operación y te mostramos un estimado mensual con el desglose. Es el punto de partida de la conversación, no una factura.',
+    inputs: {
+      skus: { label: 'Productos (SKUs)', included: 'La base incluye {n}; luego {price} por cada {per} más.' },
+      users: { label: 'Usuarios', included: 'La base incluye {n}; luego {price} por cada usuario más.' },
+      warehouses: { label: 'Bodegas', included: 'La base incluye {n}; luego {price} por cada bodega más.' },
+      apiCalls: { label: 'Llamadas a la API al mes', included: 'La base incluye {n}; luego {price} por cada {per} más.' },
+    },
+    resultTitle: 'Estimado mensual',
+    base: 'Plan completo, base',
+    noExtras: 'Todo cabe en la base',
+    lines: {
+      skus: 'Productos sobre la base: {n}',
+      users: 'Usuarios sobre la base: {n}',
+      warehouses: 'Bodegas sobre la base: {n}',
+      apiCalls: 'Llamadas sobre la base: {n}',
+    },
+    freeFits: 'Esto cabe en el plan gratis',
+    fullWouldBe: 'Con estos números, el plan completo serían {total} al mes. Este es su desglose:',
+    freeFitsNote: 'Con estos números no pagas nada, y el plan gratis no vence. El límite de la API gratis es por día: {n} llamadas.',
+    note: 'Estimado. El precio final lo acordamos contigo; no hay checkout ni tarjeta.',
+    ctaEmail: 'Enviar este estimado por correo',
+    ctaWhatsapp: 'Conversarlo por WhatsApp',
+    ctaForm: 'Prefiero que me contacten',
+    mailSubject: 'StockAI — estimado del plan completo',
+    mailBody: 'Hola, armé este estimado en la calculadora de StockAI:\n\n{summary}\n\nMe gustaría conversarlo.',
+    waPrefill: 'Hola, armé un estimado de {total} al mes en la calculadora de StockAI y me gustaría conversarlo.',
+    form: {
+      title: 'Déjanos tus datos',
+      lead: 'Con esto se arma un correo con tu estimado, listo para enviar desde tu propia cuenta.',
+      name: 'Nombre',
+      company: 'Empresa',
+      phone: 'Teléfono',
+      message: 'Algo que debamos saber (opcional)',
+      submit: 'Preparar el correo',
+      hint: 'Se abre tu aplicación de correo con todo escrito. Nada se envía hasta que tú lo mandes.',
+    },
+  },
+  api: {
+    tag: 'API',
+    title: 'La API se cobra por llamada.',
+    lead: 'Tu sistema puede subir ventas y existencias y llevarse el semáforo sin que nadie abra StockAI. En el plan completo cada mes incluye {included} llamadas; pasado eso, {price} por cada {per} más.',
+    points: [
+      'Lecturas y escrituras cuentan igual: una llamada es una llamada.',
+      'El plan gratis incluye {free} llamadas al día, con la misma API completa.',
+      'El servidor MCP para asistentes de IA usa las mismas llaves y cuenta contra el mismo límite.',
+    ],
+    devLink: 'Ver la documentación para desarrolladores',
   },
   trust: {
     tag: 'Confianza',
@@ -388,6 +550,7 @@ const es: LandingCopy = {
     trialDesc: 'Una cuenta de prueba al instante, con datos de ejemplo. Dura 24 horas y después se borra.',
     talkTitle: 'Habla con nosotros',
     talkDesc: 'Si tu operación ya no cabe en el plan gratis, o quieres verlo con tus datos y acompañado. Respondemos en menos de 24 horas.',
+    reach: 'Ventas y contacto: {email}. Teléfono: {phone}.',
     madeIn: 'Hecho en Costa Rica para distribuidores de Latinoamérica.',
   },
   benefits: {
@@ -459,11 +622,11 @@ const es: LandingCopy = {
     tag: 'Para tu equipo técnico',
     title: 'Lo que hay debajo, en corto.',
     lead: 'Nada de esto hace falta para comprar mejor. Está aquí para quien quiera revisarlo.',
+    devLink: 'Documentación de la API',
     items: [
-      { title: 'Modelos que compiten por producto', desc: 'Nueve modelos se prueban sobre el historial de cada producto y se queda el que menos se equivoca.' },
-      { title: 'Precisión y backtesting por modelo', desc: 'El error de cada modelo, medido sobre tu propio historial y visible en la pantalla de pronóstico.' },
       { title: 'Clasificación ABC-XYZ', desc: 'ABC por peso en la venta, XYZ por estabilidad de la demanda. Es lo que ubica el colchón de seguridad.' },
       { title: 'API pública y servidor MCP', desc: 'API REST con llaves por empresa, y un servidor MCP de solo lectura para asistentes de IA. Mismas llaves y mismos límites.' },
+      { title: 'El calendario de tu país', desc: 'Los feriados de tu país y el día del mes entran como variables del pronóstico, para que el modelo pueda separar un puente o la quincena de un cambio de tendencia.' },
     ],
   },
   tour: {
@@ -527,7 +690,7 @@ const es: LandingCopy = {
     cta: 'Escríbenos →',
     items: [
       { q: '¿Necesito conocimientos estadísticos o de programación para usar StockAI?', a: 'No. StockAI está hecho para quien compra: abres la pantalla y ves qué pedir hoy, cuánto y a qué proveedor. No hay modelos que configurar ni código. Subes tus datos y el resto lo hace el sistema.' },
-      { q: '¿Cómo paso del plan gratis al completo?', a: 'Escribiéndonos, por WhatsApp o por correo. No hay checkout ni se pide tarjeta: conversamos sobre tu operación — cuántos productos, bodegas y personas —, acordamos el precio y ampliamos los límites en tu misma cuenta, con tus datos tal como están. Mientras tanto el plan gratis sigue funcionando con todas las funciones; no vence.' },
+      { q: '¿Cómo paso del plan gratis al completo?', a: 'Escribiéndonos, por WhatsApp o por correo. No hay checkout ni se pide tarjeta. En la página de precios hay una calculadora que te da un estimado antes de escribirnos; después conversamos sobre tu operación — cuántos productos, bodegas y personas —, acordamos el precio y ampliamos los límites en tu misma cuenta, con tus datos tal como están. Mientras tanto el plan gratis sigue funcionando con todas las funciones; no vence.' },
       { q: '¿En qué formato debo tener mis datos de ventas?', a: 'StockAI acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.' },
       { q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?', a: 'StockAI necesita al menos 20 períodos de historial por producto para entrenarlo. Los que no llegan a ese mínimo quedan fuera del pronóstico: no se les inventa una proyección. Antes de correr nada, la revisión del archivo te dice cuántos productos están por debajo del umbral, y si ninguno lo alcanza el archivo se detiene con la explicación en pantalla en vez de producir un resultado vacío. Esos productos siguen apareciendo en tu inventario marcados SIN DATOS — sin señal ni cantidad sugerida — para que la decisión sea tuya y no de un número inventado.' },
       { q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?', a: 'Los datos que subes a StockAI son exclusivamente tuyos: no se comparten con terceros ni se usan para entrenar modelos de otras empresas — cada pronóstico se entrena únicamente con el historial de tu propia cuenta. Cada consulta va filtrada por empresa y el acceso se controla por rol: administrador, analista o solo lectura. Las credenciales de tus integraciones — el usuario y la contraseña de tu base de datos — se guardan cifradas. Tus archivos de ventas y los modelos entrenados se guardan en el servidor de StockAI, en una carpeta separada por empresa; el cifrado del disco depende del servidor donde corre, no lo hace la aplicación. Y la eliminación es completa de verdad: borra cada tabla y cada archivo asociado a tu cuenta, no solo el registro principal.' },
@@ -590,11 +753,11 @@ const es: LandingCopy = {
 const en: LandingCopy = {
   nav: {
     links: [
-      ['#problema', 'The problem'],
       ['/como-funciona', 'How it works'],
+      ['#motor', 'The models'],
       ['#casos', 'Industries'],
-      ['#incluye', "What's included"],
       ['/precios', 'Pricing'],
+      ['/desarrolladores', 'API'],
       ['#contacto', 'Contact'],
     ],
     signIn: 'Sign in',
@@ -604,14 +767,14 @@ const en: LandingCopy = {
   },
   heroPills: ['Distribution', 'Retail', 'Manufacturing', 'Wholesale', 'E-commerce'],
   footerLinks: {
-    product: [['/como-funciona', 'How it works'], ['#casos', 'Industries'], ['#incluye', "What's included"], ['/precios', 'Pricing'], ['#comparacion', 'vs Excel']],
+    product: [['/como-funciona', 'How it works'], ['#motor', 'The models'], ['#casos', 'Industries'], ['#incluye', "What's included"], ['/precios', 'Pricing'], ['/desarrolladores', 'Developer API'], ['#comparacion', 'vs Excel']],
     company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['/seguridad', 'Security'], ['/preguntas-frecuentes', 'FAQ'], ['#contacto', 'Contact']],
   },
   hero: {
-    eyebrow: 'For the person who decides the buying',
+    eyebrow: 'Demand forecasting per product, for the person who decides the buying',
     title1: 'What to order today, how much,',
     title2: 'and from which supplier.',
-    lead: 'StockAI reads your sales and your stock, and every morning tells you which products are about to run out, how many units of each to order and from whom, how much money is sitting in what does not turn, and which orders are on their way.',
+    lead: 'StockAI trains a forecast for every one of your products: several models compete on your own history and the one that holds up best is kept. From that, every morning it tells you what is about to run out, how many units to order and from whom, and how much money is sitting in what does not turn.',
     cta: 'Start free with sample data',
     ctaTrial: 'Try it without signing up',
     trialNote: 'Instant trial account: temporary username and password, 24 hours, no card.',
@@ -638,12 +801,65 @@ const en: LandingCopy = {
   how: {
     tag: 'How it works',
     title: 'From your sales history to the purchase order.',
-    lead: 'You upload what you already have and StockAI hands back the buying list. Nothing statistical to set up, no analyst needed.',
-    steps: [
-      { n: '01', title: 'Upload your sales and your stock', desc: 'A CSV or Excel file, exactly as it comes out of your system. StockAI works out on its own which column is the date, the product and the quantity sold.' },
-      { n: '02', title: 'StockAI learns how each product sells', desc: 'Seasons, paydays, trend and swings, product by product. Nothing for you to configure per code.' },
-      { n: '03', title: 'It tells you what to order today, and how much', desc: 'Every product lands in one state — ORDER NOW, ORDER SOON, OK or OVERSTOCK — with the suggested quantity worked out against its supplier’s lead time.' },
-      { n: '04', title: 'You order, you receive, it learns', desc: 'The order comes out grouped by supplier. When you record the arrival, StockAI notes how long it really took and uses that for the next one.' },
+    lead: 'Eight steps, and you do two of them: upload the file and record what arrives. StockAI runs the rest, product by product, and every step leaves something you can check on screen.',
+  },
+  engine: {
+    flowLabel: 'The StockAI workflow, step by step',
+    flow: [
+      { title: 'Your sales', desc: 'A CSV or Excel file exactly as it comes out of your system. StockAI works out which column is the date, the product and the quantity sold.', detail: 'Date, product and quantity: that is enough' },
+      { title: 'Review and clean-up', desc: 'Before training, every product is checked: missing dates, outliers, too little history. If the file would produce a wrong forecast it does not run until you choose how to fix it, because filling gaps with zero and interpolating them say different things about what happened.', detail: 'With your stock history, days with nothing on the shelf stop counting as days with no demand' },
+      { title: 'A model competition per product', desc: 'Each product is classified by how it sells (steady, seasonal, intermittent or volatile) and the models that handle that pattern best compete, out of nine available: gradient-boosted trees, classical statistical models and a neural network.', detail: 'LightGBM, XGBoost, ARIMA, SARIMAX, Prophet, ETS, Croston, LSTM and a global model' },
+      { title: 'Tested against the past', desc: 'Each model has the last stretch of your history hidden from it and is asked to forecast it, over several cut-offs. The one whose mistakes cost least wins, and it has to beat two naive forecasts.', detail: 'Falling short weighs three times more than overshooting' },
+      { title: 'Forecast with a range', desc: 'The winner is trained again on your whole history, the latest weeks included, and projects demand with a likely range around it.', detail: 'Daily, weekly, monthly or quarterly' },
+      { title: 'Signal and quantity', desc: 'Forecast demand is set against your stock on hand and your supplier’s lead time. Every product lands on ORDER NOW, ORDER SOON, OK or OVERSTOCK, with a suggested quantity.', detail: 'The rule is published and can be done by hand' },
+      { title: 'Purchase order', desc: 'The order comes out grouped by supplier, with the reason for every line. You review it, adjust it and send it by email or WhatsApp.', detail: 'Exportable as CSV or PDF' },
+      { title: 'A reception that teaches the lead time', desc: 'When you record an arrival, StockAI notes how many days it really took. From a supplier’s third delivery it plans with that lead time, not the promised one.', detail: 'And that lead time feeds back into the signal' },
+    ],
+    illus: {
+      caption: 'An illustration of the process for one product. Not real data.',
+      history: 'History',
+      today: 'Today',
+      candidates: 'Candidates',
+      winner: 'Winner',
+      band: 'Likely range',
+      signal: 'ORDER SOON',
+    },
+    tag: 'The models',
+    title: 'A different model for each product, chosen by test.',
+    lead: 'A product that sells every day is not forecast the way one that sits for weeks without moving is. So StockAI does not run one model over the whole catalogue: it puts several in competition on each product’s history and plans with the winner.',
+    routingTitle: 'Who competes, depending on how it sells',
+    routingHead: ['How it sells', 'Models that compete'],
+    routing: [
+      { pattern: 'Steady', when: 'Regular sales, no marked cycle', models: 'LightGBM, XGBoost, ARIMA, SARIMAX, LSTM' },
+      { pattern: 'Seasonal', when: 'A pattern repeats: the week, payday, the season', models: 'Prophet, ETS, LightGBM, SARIMAX, LSTM' },
+      { pattern: 'Intermittent', when: 'Many periods without a single sale', models: 'Croston, ETS' },
+      { pattern: 'Volatile', when: 'Large swings from one period to the next', models: 'LightGBM, XGBoost, Prophet, ARIMA, ETS, SARIMAX' },
+      { pattern: 'Short history', when: 'Fewer than 30 periods', models: 'Every model you have active, unfiltered' },
+    ],
+    routingNote: 'A product can carry two patterns at once, seasonal and volatile for instance, and then the models for both compete. The classification only narrows the models you have active: it never trains one you did not choose.',
+    alwaysTitle: 'In every competition',
+    always: [
+      { title: 'A global model, trained on your whole catalogue', desc: 'It competes on every product. It helps most on those with little history or intermittent sales: it learns from how the rest of your catalogue behaves, which no single-product model can do.' },
+      { title: 'Two naive forecasts as the yardstick', desc: 'Repeat the last value, and repeat last season. They cannot win, but they do measure: if no model beats them on a product, the run tells you instead of hiding it.' },
+    ],
+    ideasTitle: 'What makes the engine different',
+    ideas: [
+      { title: 'The winner is the one whose mistakes cost least', desc: 'Running out loses you sales; overstock ties up cash. They do not cost the same, so the winner is chosen on a cost where falling short weighs three times more than overshooting, measured across the whole horizon you are buying for.' },
+      { title: 'A stockout is not mistaken for no demand', desc: 'If a product ran out, its zero sales do not say nobody wanted it. With your stock history, StockAI marks those days and estimates what would have sold, so it does not learn the stockout as a slump and under-order again.' },
+      { title: 'Tested on dates it never saw, trained on all of them', desc: 'The competition is judged on a stretch the model never saw. Once chosen, the winner is retrained on the full history, so your latest weeks of sales are in the forecast you buy from.' },
+      { title: 'If the file is not enough, no number is invented', desc: 'A product without enough history stays out of the forecast and shows as NO DATA, with no suggested quantity. And a file that would produce a wrong forecast is stopped before training, with the explanation on screen.' },
+    ],
+    assistantTitle: 'And an analyst you can just ask',
+    assistantBody: 'The assistant answers about your own account ("which supplier is running late?", "why did this category go up?") by reading the same signal and the same orders you see on screen. Every answer says where it came from.',
+    assistantPoints: [
+      'It writes and explains; order quantities are computed by the forecasting engine, not the chat.',
+      'It uses an external language model. If that is unavailable, the screen says so before you type.',
+    ],
+    limitsTitle: 'What we will not promise you',
+    limits: [
+      'An accuracy percentage on this page. Each product’s error is measured on your own history and shown on the forecast screen.',
+      'That the range is a guarantee. It is where sales will probably fall, and it tells you how far to trust the suggested quantity.',
+      'Guessing what never happened. A new promotion or a big new customer is tested in the scenario simulator, not in the history.',
     ],
   },
   decide: {
@@ -770,14 +986,14 @@ const en: LandingCopy = {
     freePrice: '$0',
     freeNote: 'Forever, no card. Enough for a small operation to genuinely run on it.',
     paidLabel: 'Full',
-    paidPrice: "Let's talk",
-    paidNote: 'The price is built around your operation: how many products you move, how many warehouses, how often you recalculate. There is no checkout — write to us and we work it out with your numbers.',
+    paidNote: 'A monthly base that includes {skus} products, {users} users and {warehouses} warehouses; anything past that is added in blocks. No checkout: write to us and we settle it with your numbers.',
     limits: [
       ['Products (SKUs)', '100', 'Unlimited'],
       ['Users', '2', 'Unlimited'],
       ['Warehouses', '1', 'Unlimited'],
       ['Saved forecasts', '3', 'Unlimited'],
       ['API keys', '1', 'Unlimited'],
+      ['API calls', '500 a day', 'Unlimited'],
       ['File size', '25 MB', '2 GB'],
     ],
     closing: 'Start free today. When you outgrow it — a catalogue that grew, a second warehouse, a third person on the team — write to us and we lift it. We answer within 24 hours.',
@@ -793,6 +1009,60 @@ const en: LandingCopy = {
     noStrings: ['No card', 'No checkout', 'No locked features'],
     waPrefill: 'Hi, I would like to lift my StockAI limits.',
     mailSubject: 'StockAI — I would like a quote',
+    paidFrom: 'From {price}',
+    perMonth: 'a month',
+    calcLink: 'Work out your estimate',
+  },
+  calc: {
+    tag: 'Calculator',
+    title: 'What the full plan would cost you.',
+    lead: 'Put in your operation’s numbers and we show you a monthly estimate with the breakdown. It is where the conversation starts, not an invoice.',
+    inputs: {
+      skus: { label: 'Products (SKUs)', included: 'The base includes {n}; then {price} per {per} more.' },
+      users: { label: 'Users', included: 'The base includes {n}; then {price} per extra user.' },
+      warehouses: { label: 'Warehouses', included: 'The base includes {n}; then {price} per extra warehouse.' },
+      apiCalls: { label: 'API calls per month', included: 'The base includes {n}; then {price} per {per} more.' },
+    },
+    resultTitle: 'Monthly estimate',
+    base: 'Full plan, base',
+    noExtras: 'Everything fits in the base',
+    lines: {
+      skus: 'Products over the base: {n}',
+      users: 'Users over the base: {n}',
+      warehouses: 'Warehouses over the base: {n}',
+      apiCalls: 'Calls over the base: {n}',
+    },
+    freeFits: 'This fits the free plan',
+    fullWouldBe: 'With these numbers the full plan would be {total} a month. Its breakdown:',
+    freeFitsNote: 'With these numbers you pay nothing, and the free plan does not expire. The free API limit is per day: {n} calls.',
+    note: 'An estimate. We agree the final price with you; there is no checkout and no card.',
+    ctaEmail: 'Email this estimate',
+    ctaWhatsapp: 'Talk it over on WhatsApp',
+    ctaForm: 'I would rather you contact me',
+    mailSubject: 'StockAI — full plan estimate',
+    mailBody: 'Hi, I put this estimate together in the StockAI calculator:\n\n{summary}\n\nI would like to talk it over.',
+    waPrefill: 'Hi, I worked out an estimate of {total} a month in the StockAI calculator and would like to talk it over.',
+    form: {
+      title: 'Leave us your details',
+      lead: 'This builds an email with your estimate, ready to send from your own account.',
+      name: 'Name',
+      company: 'Company',
+      phone: 'Phone',
+      message: 'Anything we should know (optional)',
+      submit: 'Prepare the email',
+      hint: 'Your email app opens with everything written. Nothing is sent until you send it.',
+    },
+  },
+  api: {
+    tag: 'API',
+    title: 'The API is priced per call.',
+    lead: 'Your system can push sales and stock and take the signal back without anyone opening StockAI. On the full plan every month includes {included} calls; past that, {price} per {per} more.',
+    points: [
+      'Reads and writes count the same: a call is a call.',
+      'The free plan includes {free} calls a day, with the same complete API.',
+      'The MCP server for AI assistants uses the same keys and counts against the same limit.',
+    ],
+    devLink: 'Read the developer documentation',
   },
   trust: {
     tag: 'Trust',
@@ -817,6 +1087,7 @@ const en: LandingCopy = {
     trialDesc: 'An instant trial account with sample data. It lasts 24 hours and is then erased.',
     talkTitle: 'Talk to us',
     talkDesc: 'If your operation no longer fits the free plan, or you want to see it with your data and someone beside you. We answer within 24 hours.',
+    reach: 'Sales and contact: {email}. Phone: {phone}.',
     madeIn: 'Made in Costa Rica for distributors across Latin America.',
   },
   benefits: {
@@ -888,11 +1159,11 @@ const en: LandingCopy = {
     tag: 'For your technical team',
     title: 'What is underneath, briefly.',
     lead: 'None of this is needed to buy better. It is here for whoever wants to check it.',
+    devLink: 'API documentation',
     items: [
-      { title: 'Models competing per product', desc: 'Nine models are tried on each product’s history, and the one that is least wrong is kept.' },
-      { title: 'Accuracy and backtesting per model', desc: 'Each model’s error, measured on your own history and visible on the forecast screen.' },
       { title: 'ABC-XYZ classification', desc: 'ABC by weight in sales, XYZ by how steady demand is. It is what places the safety buffer.' },
       { title: 'Public API and MCP server', desc: 'A REST API with per-company keys, and a read-only MCP server for AI assistants. Same keys, same limits.' },
+      { title: 'Your country’s calendar', desc: 'Your country’s public holidays and the day of the month go into the forecast as variables, so the model can tell a long weekend or payday from a change in trend.' },
     ],
   },
   tour: {
@@ -956,7 +1227,7 @@ const en: LandingCopy = {
     cta: 'Write to us →',
     items: [
       { q: 'Do I need statistics or programming knowledge to use StockAI?', a: 'No. StockAI is built for the person who buys: you open the screen and see what to order today, how much and from which supplier. There are no models to configure and no code. You upload your data and the system does the rest.' },
-      { q: 'How do I move from the free plan to the full one?', a: 'By writing to us, on WhatsApp or by email. There is no checkout and no card is asked for: we talk about your operation (how many products, warehouses and people), agree the price and lift the limits on the same account, with your data exactly as it is. Meanwhile the free plan keeps working with every feature; it does not expire.' },
+      { q: 'How do I move from the free plan to the full one?', a: 'By writing to us, on WhatsApp or by email. There is no checkout and no card is asked for. The pricing page has a calculator that gives you an estimate before you write; then we talk about your operation (how many products, warehouses and people), agree the price and lift the limits on the same account, with your data exactly as it is. Meanwhile the free plan keeps working with every feature; it does not expire.' },
       { q: 'What format does my sales data need to be in?', a: 'StockAI accepts Excel (.xlsx) and CSV. The file needs at least a date column, a product identifier column (SKU or name) and a quantity-sold column. The system works out which column is which.' },
       { q: 'What if I have products with very little sales history, or incomplete data?', a: 'StockAI needs at least 20 periods of history per product to train it. Products below that minimum stay out of the forecast: no projection is invented for them. Before anything runs, the file review tells you how many products are under the threshold, and if none of them clears it the file is stopped with the explanation on screen instead of producing an empty result. Those products still appear in your inventory marked NO DATA — no signal and no suggested quantity — so the decision is yours and not an invented number’s.' },
       { q: 'Is my data safe? Who has access to it?', a: 'The data you upload to StockAI is exclusively yours: it is not shared with third parties and it is not used to train models for other companies — every forecast is trained only on your own account’s history. Every query is filtered by company and access is controlled by role: administrator, analyst or read-only. Your integration credentials — the user and password of your database — are stored encrypted. Your sales files and trained models are kept on StockAI’s server, in a folder separated per company; disk encryption is a property of the server it runs on, not something the application does. And deletion is genuinely complete: it removes every table and every file tied to your account, not just the main record.' },

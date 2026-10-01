@@ -10,29 +10,13 @@ import { LANDING, type Titled } from '@/i18n/landing'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { T } from '@/components/landing/theme'
 import { Section, Tag, H2, H3, Lead, Check, Scroller } from '@/components/landing/primitives'
-import { mailHref, waHref } from '@/components/landing/contact'
+import { mailHref, waHref, CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
+import { FULL_PLAN } from '@/components/landing/pricingModel'
+import { fill, fmtMoney, fmtNum } from '@/components/landing/PricingCalculator'
 
 function useCopy() {
   const { lang } = useLanguage()
   return { lang, L: LANDING[lang] }
-}
-
-// ── How it works: the four steps ──────────────────────────────────────────────
-export function HowSteps() {
- const { L } = useCopy()
- return (
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
- {L.how.steps.map(({ n, title, desc }) => (
- <div key={n} data-reveal className="lp-card lp-card-soft" style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
- <div className="lp-step">{n}</div>
- <div>
- <div className="lp-card-title">{title}</div>
- <div className="lp-card-body">{desc}</div>
- </div>
- </div>
- ))}
- </div>
- )
 }
 
 // ── How it decides ────────────────────────────────────────────────────────────
@@ -100,9 +84,17 @@ export function DecideSection({ alt = true }: { alt?: boolean }) {
 // The free tier's ceilings, as advertised in L.pricing.limits. MUST match
 // backend/entitlements/plans.py — a landing page promising 200 SKUs while the
 // product stops at 100 turns the first real import into a broken promise.
-export function PricingSection() {
- const { L } = useCopy()
+// `calcHref` points at the estimate calculator: `#calculadora` on /precios,
+// `/precios#calculadora` anywhere else.
+export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref?: string }) {
+ const { L, lang } = useCopy()
  const FREE_LIMITS = L.pricing.limits
+ const fromPrice = fill(L.pricing.paidFrom, { price: fmtMoney(FULL_PLAN.baseMonthly, lang) })
+ const paidNote = fill(L.pricing.paidNote, {
+  skus: fmtNum(FULL_PLAN.included.skus, lang),
+  users: fmtNum(FULL_PLAN.included.users, lang),
+  warehouses: fmtNum(FULL_PLAN.included.warehouses, lang),
+ })
  return (
  <Section id="precio" alt>
  <Tag>{L.pricing.tag}</Tag>
@@ -135,10 +127,13 @@ export function PricingSection() {
 
  <div data-reveal className="lp-card price-card is-paid">
  <div className="lp-label" style={{ color: T.accent, marginBottom: 10 }}>{L.pricing.paidLabel}</div>
- <div className="price-amount">{L.pricing.paidPrice}</div>
- <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, marginBottom: 20 }}>
- {L.pricing.paidNote}
+ {/* The "from" figure is the proposed base in pricingModel.ts; the link
+     goes to the calculator, which says it is an estimate. */}
+ <div className="price-amount">{fromPrice} <span className="price-per">{L.pricing.perMonth}</span></div>
+ <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, marginBottom: 12 }}>
+ {paidNote}
  </div>
+ <a href={calcHref} className="trust-link" style={{ marginTop: 0, marginBottom: 14 }}>{L.pricing.calcLink}</a>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
  {/* Each row states what the PAID tier actually gets. This used to print one
      blanket "unlimited" for every row, which claimed an uncapped upload size
@@ -298,6 +293,12 @@ export function FinalSection() {
  <a href={waHref(L.pricing.waPrefill)} target="_blank" rel="noopener noreferrer" className="final-btn">{L.pricing.ctaWhatsapp}</a>
  <a href={mailHref(L.pricing.mailSubject)} className="final-btn">{L.pricing.ctaEmail}</a>
  </div>
+ <p className="final-reach">
+ {L.final.reach.split(/(\{email\}|\{phone\})/).map((part, i) =>
+  part === '{email}' ? <a key={i} href={mailHref()}>{CONTACT_EMAIL}</a>
+  : part === '{phone}' ? <a key={i} href={CONTACT_PHONE_HREF}>{CONTACT_PHONE_LABEL}</a>
+  : part)}
+ </p>
  </div>
  </div>
  <p className="final-made">{L.final.madeIn}</p>

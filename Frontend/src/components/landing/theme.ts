@@ -37,10 +37,17 @@ export const DISPLAY = 'var(--font-brand), system-ui, sans-serif'
 // whole page over one quoted word in a comment. As raw HTML it is passed
 // through byte for byte on both sides.
 //
-// Motion budget. One orchestrated moment — the hero assembling on load and a
-// single beam of light crossing the product frame — plus the scroll reveal
-// and hover answers. Everything animates transform and opacity only, and
-// prefers-reduced-motion turns all of it off (content fully visible, static).
+// Motion budget. One orchestrated moment on load — the headline set word by
+// word, then the lead, the buttons and the product frame settling — and, further
+// down, the engine diagram playing once as it scrolls in (engine.tsx), plus the
+// scroll reveal and hover answers. Transform and opacity only (the diagram also
+// draws its lines with stroke-dashoffset), and prefers-reduced-motion turns all
+// of it off (content fully visible, static).
+//
+// Removed 2026-10-01 as decoration, at the owner's team's request (nothing on
+// the page only to fill it): the two drifting glows behind the hero, the light
+// sweep across the screenshot, the glow under it, the pill-and-dot section
+// tags and the radial washes on the dark bands.
 export const LANDING_CSS = `
 :root, [data-theme="light"] {
  --lp-bg: #ffffff;
@@ -193,13 +200,8 @@ section[id], #demo { scroll-margin-top: 88px; }
 }
 .lp-h3 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 20px; font-weight: 600; color: var(--lp-text); margin: 0 0 16px; letter-spacing: -0.02em; line-height: 1.3; }
 .lp-lead { font-size: 16.5px; color: var(--lp-body); line-height: 1.7; margin: 0 0 48px; text-wrap: pretty; }
-.lp-tag {
- display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
- padding: 5px 12px 5px 10px; border-radius: 999px;
- background: var(--lp-accent-bg); border: 1px solid var(--lp-accent-bd);
- font-size: 12.5px; font-weight: 600; color: var(--lp-accent); letter-spacing: 0;
-}
-.lp-tag-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lp-beam); box-shadow: 0 0 0 3px rgba(76,195,181,0.20); }
+.lp-tag { display: block; margin-bottom: 14px; font-size: 13.5px; font-weight: 600; color: var(--lp-accent); letter-spacing: 0; }
+.lp-tag-dot { display: none; }
 .lp-label { font-size: 12px; font-weight: 600; color: var(--lp-dim); letter-spacing: 0.01em; }
 
 /* ── Sections ── */
@@ -238,9 +240,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 
 /* ── Hero ── */
 .hero-sec { position: relative; min-height: 100vh; padding-top: 136px; background: var(--lp-bg); display: flex; flex-direction: column; align-items: center; isolation: isolate; overflow: hidden; }
-/* Backdrop: a dot grid that fades out toward the edges, and two soft glows
-   that drift very slowly. Radial gradients instead of filter:blur, so the
-   drift is a pure compositor transform. */
+/* Backdrop: a dot grid that fades out toward the edges. Static. */
 .hero-bg { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
 .hero-grid {
  position: absolute; inset: 0;
@@ -249,36 +249,18 @@ section[id], #demo { scroll-margin-top: 88px; }
  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 30%, black 30%, transparent 75%);
  mask-image: radial-gradient(ellipse 70% 55% at 50% 30%, black 30%, transparent 75%);
 }
-.hero-glow { position: absolute; border-radius: 50%; will-change: transform; }
-.hero-glow-a { width: 900px; height: 700px; left: 50%; top: 22%; margin-left: -450px; background: radial-gradient(closest-side, var(--lp-glow-a), transparent); animation: lp-drift-a 22s ease-in-out infinite alternate; }
-.hero-glow-b { width: 700px; height: 560px; right: -220px; top: -160px; background: radial-gradient(closest-side, var(--lp-glow-b), transparent); animation: lp-drift-b 26s ease-in-out infinite alternate; }
-@keyframes lp-drift-a { from { transform: translate3d(-6%, 0, 0) scale(1); } to { transform: translate3d(6%, -4%, 0) scale(1.08); } }
-@keyframes lp-drift-b { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-12%, 10%, 0); } }
 
 .hero-inner { max-width: 1120px; width: 100%; margin: 0 auto; padding: 0 48px; }
-.hero-eyebrow {
- display: inline-flex; align-items: center; gap: 9px; margin-bottom: 26px;
- padding: 6px 14px 6px 8px; border-radius: 999px;
- background: var(--lp-glass); border: 1px solid var(--lp-border);
- backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
- font-size: 13px; font-weight: 600; color: var(--lp-body);
-}
-.hero-eyebrow-dot { position: relative; width: 18px; height: 18px; border-radius: 50%; background: var(--lp-accent-bg); display: inline-flex; align-items: center; justify-content: center; }
-.hero-eyebrow-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--lp-green); }
+.hero-eyebrow { margin: 0 0 22px; font-size: 14px; font-weight: 600; color: var(--lp-accent); max-width: 60ch; }
 .hero-lead { font-size: clamp(16px, 1.6vw, 19px); color: var(--lp-body); line-height: 1.65; max-width: 590px; margin: 0 0 36px; text-wrap: pretty; }
 .hero-ctas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hero-note { display: flex; align-items: center; gap: 8px; margin: 16px 0 64px; font-size: 13px; color: var(--lp-muted); line-height: 1.5; }
 
-/* The product frame. A 1px gradient rim, a chrome bar, the real screenshot,
-   a glow underneath, and one sweep of light across it after it lands. */
+/* The product frame: a 1px rim, a chrome bar and the real screenshot. */
 .hero-stage { position: relative; perspective: 1800px; }
-.hero-stage::before {
- content: ''; position: absolute; left: 6%; right: 6%; top: 12%; bottom: -4%; z-index: -1;
- background: radial-gradient(closest-side, var(--lp-glow-a), transparent); border-radius: 50%;
-}
 .lp-frame {
  position: relative; border-radius: 18px; padding: 1px;
- background: linear-gradient(160deg, var(--lp-border-strong), var(--lp-border) 40%, rgba(76,195,181,0.55));
+ background: var(--lp-border-strong);
  box-shadow: 0 40px 90px -30px var(--lp-shadow), 0 12px 30px -18px var(--lp-shadow);
  transform-origin: 50% 0;
 }
@@ -287,32 +269,30 @@ section[id], #demo { scroll-margin-top: 88px; }
 .lp-chrome i { width: 10px; height: 10px; border-radius: 50%; background: var(--lp-border-strong); display: block; }
 .lp-chrome span { margin-left: 10px; font-size: 12px; color: var(--lp-dim); font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .lp-frame img { display: block; width: 100%; height: auto; }
-.lp-sheen { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.lp-sheen::before {
- content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
- background: linear-gradient(100deg, transparent, rgba(255,255,255,0.0) 20%, rgba(255,255,255,0.40) 50%, rgba(255,255,255,0) 80%, transparent);
- transform: translateX(-120%); opacity: 0;
-}
 
 .hero-pills { display: flex; align-items: center; gap: 10px; margin-top: 40px; padding-bottom: 80px; flex-wrap: wrap; }
 .hero-pill { font-size: 12.5px; font-weight: 500; color: var(--lp-muted); padding: 5px 13px; border-radius: 999px; border: 1px solid var(--lp-border); background: var(--lp-glass); }
 
-/* Load sequence. Short, staggered, one time. */
+/* Load sequence, one time. The headline is set word by word: each word rises
+   inside its own clipping box (.lp-w), so the line reads as being typeset
+   rather than fading in. The descender room (padding + negative margin) keeps
+   the clip from shaving the g and the q without moving the line. Then the
+   lead, the buttons and the note follow. Word delays are counted via --i. */
+.lp-h1 .lp-w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.12em; margin-bottom: -0.12em; }
+.lp-h1 .lp-wi { display: inline-block; animation: lp-word 900ms cubic-bezier(0.16,1,0.3,1) both; animation-delay: calc(60ms + var(--i) * 60ms); }
+@keyframes lp-word { from { transform: translate3d(0, 108%, 0); } to { transform: none; } }
 .lp-rise { animation: lp-rise 760ms cubic-bezier(0.16,1,0.3,1) both; }
-.lp-d1 { animation-delay: 60ms; } .lp-d2 { animation-delay: 140ms; } .lp-d3 { animation-delay: 220ms; } .lp-d4 { animation-delay: 300ms; } .lp-d5 { animation-delay: 380ms; }
+.lp-d1 { animation-delay: 0ms; } .lp-d2 { animation-delay: 520ms; } .lp-d3 { animation-delay: 620ms; } .lp-d4 { animation-delay: 700ms; } .lp-d5 { animation-delay: 900ms; }
 @keyframes lp-rise { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
-.lp-frame.lp-land { animation: lp-land 1200ms cubic-bezier(0.16,1,0.3,1) 320ms both; }
-@keyframes lp-land { from { opacity: 0; transform: translate3d(0, 48px, 0) rotateX(14deg) scale(0.96); } to { opacity: 1; transform: none; } }
-.lp-land .lp-sheen::before { animation: lp-sheen 1500ms cubic-bezier(0.4,0,0.2,1) 1350ms 1 both; }
-@keyframes lp-sheen { 0% { opacity: 0; transform: translateX(-120%); } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(260%); } }
+/* The screenshot is the largest thing on the first screen, so it is never
+   hidden: it starts fully opaque and only settles from a slight tilt. An
+   element at opacity 0 does not count as painted, and the old fade-in held
+   back the page's largest paint. */
+.lp-frame.lp-land { animation: lp-land 1300ms cubic-bezier(0.16,1,0.3,1) 120ms both; }
+@keyframes lp-land { from { transform: translate3d(0, 36px, 0) rotateX(10deg) scale(0.97); } to { transform: none; } }
 
 /* ── Stats strip ── */
 .strip-shell { position: relative; background: var(--lp-strip); padding: 48px 48px; overflow: hidden; isolation: isolate; }
-.strip-shell::before {
- content: ''; position: absolute; inset: 0; z-index: -1;
- background: radial-gradient(60% 140% at 15% 0%, rgba(76,195,181,0.22), transparent 60%), radial-gradient(50% 120% at 100% 100%, rgba(15,118,110,0.35), transparent 60%);
-}
-.strip-shell::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(76,195,181,0.7), transparent); }
 .strip-grid { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
 .strip-cell { text-align: center; padding: 0 28px; border-right: 1px solid rgba(255,255,255,0.10); }
 .strip-cell:last-child { border-right: none; }
@@ -357,6 +337,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 /* ── Pricing ── */
 .price-card { padding: 30px 28px; border-radius: 16px; }
 .price-card.is-paid { border-color: var(--lp-accent-bd); background: linear-gradient(180deg, var(--lp-accent-bg), var(--lp-bg) 55%); }
+.price-per { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--lp-muted); }
 .price-amount { font-family: var(--font-brand), system-ui, sans-serif; font-size: 34px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.03em; margin-bottom: 6px; line-height: 1.1; }
 .price-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--lp-body); border-bottom: 1px solid var(--lp-border); padding-bottom: 9px; }
 .price-row:last-child { border-bottom: none; }
@@ -464,7 +445,6 @@ section[id], #demo { scroll-margin-top: 88px; }
  .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; }
  .footer-bottom { flex-direction: column; align-items: flex-start !important; gap: 8px; }
  .lp-lead { font-size: 15.5px; margin-bottom: 36px; }
- .hero-glow-a { width: 560px; height: 520px; margin-left: -280px; }
 
  /* 104px of air above and below every section is a desktop rhythm. Stacked
     into one column on a phone it turned the page into 22,000px — roughly
@@ -519,11 +499,6 @@ section[id], #demo { scroll-margin-top: 88px; }
 
 /* ── Closing band ── */
 .final-sec { position: relative; background: var(--lp-strip); padding: 96px 0 88px; overflow: hidden; isolation: isolate; scroll-margin-top: 88px; }
-.final-sec::before {
- content: ''; position: absolute; inset: 0; z-index: -1;
- background: radial-gradient(55% 120% at 0% 0%, rgba(76,195,181,0.24), transparent 60%), radial-gradient(45% 110% at 100% 100%, rgba(15,118,110,0.40), transparent 60%);
-}
-.final-sec::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(76,195,181,0.7), transparent); }
 .final-inner { max-width: 1120px; margin: 0 auto; padding: 0 48px; }
 .final-title { color: #fff; max-width: 18ch; }
 .final-lead { font-size: 16.5px; color: rgba(231,240,239,0.74); line-height: 1.65; margin: 0 0 44px; max-width: 56ch; }
@@ -544,6 +519,8 @@ section[id], #demo { scroll-margin-top: 88px; }
 .final-btn.is-main:hover { background: #E3F4F1; }
 .lp .final-btn:focus-visible { outline-color: #4CC3B5; }
 .final-made { margin: 40px 0 0; font-size: 13px; color: rgba(231,240,239,0.6); }
+.final-reach { margin: 14px 0 0; font-size: 13.5px; color: rgba(231,240,239,0.74); line-height: 1.6; }
+.final-reach a { color: #fff; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
  .trust-list { grid-template-columns: 1fr; }
@@ -567,8 +544,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 @media (prefers-reduced-motion: reduce) {
  html { scroll-behavior: auto; }
  .reveal-armed, .reveal-in { opacity: 1 !important; transform: none !important; transition: none !important; }
- .lp-rise, .lp-frame.lp-land, .lp-swap, .faq-a, .hero-glow, .nav-sheet, .nav-sheet-inner { animation: none !important; }
- .lp-sheen { display: none; }
+ .lp-rise, .lp-h1 .lp-wi, .lp-frame.lp-land, .lp-swap, .faq-a, .nav-sheet, .nav-sheet-inner { animation: none !important; }
  .lp-card, .lp-card::after, .btn-primary, .btn-ghost, .nav-signup, .tour-shot img, .faq-icon, .final-btn { transition: none !important; }
  .final-btn:hover { transform: none !important; }
  .lp-card:hover, .btn-primary:hover, .btn-ghost:hover, .nav-signup:hover, .tour-row:hover .tour-shot img { transform: none !important; }
