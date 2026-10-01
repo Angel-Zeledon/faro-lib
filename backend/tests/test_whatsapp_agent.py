@@ -1,7 +1,17 @@
-"""Agent: routing + the two-step confirmation gate. LLM is mocked."""
-import json
-from unittest import mock
+"""The WhatsApp agent: the confirmation gate, and fresh questions answered by the
+shared assistant core. The LLM is a scripted fake.
 
+The bot used to route each message through its own JSON prompt to three canned
+query tools or a write proposal. It now answers through `backend/assistant/`
+(read-only by charter), so what is pinned here is what WhatsApp still owns: the
+gate for stored pending actions, the suspension of the two irreversible writes,
+and that a model asking for a write gets nothing executed.
+"""
+import json
+
+import pytest
+
+from backend.ai.local_llm import _ContentBlock, _LLMResponse, _ToolCall
 from backend.db.connection import query_one, execute
 from backend.whatsapp import agent
 from backend.whatsapp import tools as wt
@@ -31,56 +41,29 @@ def _seed_po(tid, *, sku="SKU1", warehouse="bodega norte", qty=200):
 
 
 class _FakeLLM:
-    """Returns a queued JSON string per messages.create call."""
-    def __init__(self, payloads):
-        self._payloads = list(payloads)
+    """Each item is one model call: text, or a list of (tool, args) calls."""
+    def __init__(self, script):
+        self._script = list(script)
+        self.calls = []
         self.messages = self
 
-    def create(self, *a, **k):
-        text = self._payloads.pop(0)
-        block = mock.Mock()
-        block.text = text
-        resp = mock.Mock()
-        resp.content = [block]
-        resp.usage = mock.Mock(input_tokens=1, output_tokens=1)
-        return resp
+    def create(self, **kw):
+        self.calls.append(kw)
+        item = self._script.pop(0)
+        if isinstance(item, list):
+            calls = [_ToolCall(id=f"c{i}", name=n, arguments=json.dumps(a))
+                     for i, (n, a) in enumerate(item)]
+            return _LLMResponse(content=[_ContentBlock(text="")], tool_calls=calls)
+        return _LLMResponse(content=[_ContentBlock(text=item)])
 
 
-class TestRouterParsing:
-    """`_JSON_RE = re.compile(r"\\{.*\\}", re.DOTALL)` was greedy: it took from
-    the first brace in the model's answer to the LAST one. Prose with a brace
-    in it, or two objects, produced a slice that does not parse — and the turn
-    then fell through to the help menu with no log line, so a user who asked
-    to register a reception got a menu and nobody could measure how often."""
-
-    def test_prose_before_the_object_does_not_break_it(self):
-        raw = 'Claro, uso {la herramienta} adecuada:\n{"tool": "semaphore_status", "args": {}}'
-        assert agent._first_json_object(raw) == {"tool": "semaphore_status", "args": {}}
-
-    def test_two_objects_take_the_first(self):
-        raw = '{"tool": "semaphore_status", "args": {}} {"tool": null}'
-        assert agent._first_json_object(raw)["tool"] == "semaphore_status"
-
-    def test_trailing_prose_after_the_object(self):
-        raw = '{"tool": null, "reply": "hola"}\n\nEspero que ayude.'
-        assert agent._first_json_object(raw) == {"tool": None, "reply": "hola"}
-
-    def test_nested_objects_survive(self):
-        raw = '{"tool": "forecast_summary", "args": {"sku": "A-1"}}'
-        assert agent._first_json_object(raw)["args"] == {"sku": "A-1"}
-
-    def test_no_object_at_all_is_none(self):
-        assert agent._first_json_object("lo siento, no entendí") is None
-
-    def test_an_unparseable_answer_is_logged(self, client, registered_user, caplog):
-        """The fallback is fine; the silence was not."""
-        ctx = _ctx(registered_user)
-        fake = _FakeLLM(["no pude, perdón"])
-        with caplog.at_level("WARNING"):
-            with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-                agent.run_turn(ctx, "registra una recepción", {"history": [], "pending_action": None})
-        assert any("carried no JSON object" in r.getMessage() for r in caplog.records), \
-            "the router failed and left no trace"
+@pytest.fixture
+def llm(monkeypatch):
+    def install(script):
+        fake = _FakeLLM(script)
+        monkeypatch.setattr("backend.ai.local_llm.get_local_llm_client", lambda *a, **k: fake)
+        return fake
+    return install
 
 
 def test_is_affirmative():
@@ -92,52 +75,41 @@ def test_is_affirmative():
     assert not agent.is_affirmative("cuánto stock tengo?")
 
 
-def test_query_turn_dispatches_tool(client, registered_user):
+def test_a_question_is_answered_by_the_core_with_its_tools(client, registered_user, llm):
     ctx = _ctx(registered_user)
     _seed_po(ctx.tenant_id, sku="A")
-    state = {"history": [], "pending_action": None}
-    fake = _FakeLLM([json.dumps({"tool": "list_pending_pos", "args": {}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        reply, history, pending = agent.run_turn(ctx, "¿qué órdenes tengo pendientes?", state)
-    assert "OC" in reply or "pendiente" in reply.lower()
+    fake = llm([[("list_purchase_orders", {"status": "open"})],
+                "Tienes una orden pendiente por 200 unidades."])
+    reply, history, pending = agent.run_turn(
+        ctx, "¿qué órdenes tengo pendientes?", {"history": [], "pending_action": None})
+    assert reply == "Tienes una orden pendiente por 200 unidades."
     assert pending is None
-    assert history[-1]["role"] == "assistant"
+    assert history[-1] == {"role": "assistant", "content": reply}
+    # The tool result the model read is the tenant's own order.
+    tool_msg = fake.calls[1]["messages"][-1]
+    assert tool_msg["role"] == "tool" and '"total_units": 200' in tool_msg["content"]
 
 
-_FAKE_WRITE = "fake_reversible_write"
-
-
-def _register_a_reversible_write_tool(monkeypatch):
-    """A stand-in write tool for the tests that are about the CONFIRMATION
-    GATE itself rather than about approving a PO.
-
-    The gate used to be exercised through `approve_po`, which is suspended
-    (see whatsapp/tools.py WRITE_TOOLS). Testing the machinery through the
-    action that is currently switched off would have deleted the coverage of
-    the machinery along with it — and the gate is what makes re-enabling the
-    real tools safe later."""
-    monkeypatch.setitem(wt.WRITE_TOOLS, _FAKE_WRITE,
-                        lambda ctx, args: {"type": _FAKE_WRITE,
-                                           "summary": "Haré algo. ¿Confirmas? (responde SÍ)"})
-    monkeypatch.setattr(wt, "execute_pending_action", lambda ctx, action: "HECHO ✅")
-
-
-def test_write_proposal_turn_does_not_mutate(client, registered_user, monkeypatch):
-    _register_a_reversible_write_tool(monkeypatch)
+def test_the_history_reaches_the_model(client, registered_user, llm):
     ctx = _ctx(registered_user)
-    state = {"history": [], "pending_action": None}
-    fake = _FakeLLM([json.dumps({"tool": _FAKE_WRITE, "args": {}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        reply, history, pending = agent.run_turn(ctx, "hazlo", state)
-    assert pending is not None and pending["type"] == _FAKE_WRITE
-    assert "confirm" in reply.lower()
+    fake = llm(["De nada."])
+    state = {"history": [{"role": "user", "content": "hola"},
+                         {"role": "assistant", "content": "¡Hola!"}], "pending_action": None}
+    agent.run_turn(ctx, "gracias", state)
+    sent = fake.calls[0]["messages"]
+    assert sent[:2] == state["history"] and sent[-1] == {"role": "user", "content": "gracias"}
 
 
 def test_confirmation_turn_executes_without_llm(client, registered_user, monkeypatch):
-    _register_a_reversible_write_tool(monkeypatch)
+    """The gate for a stored, confirmable action: a bare 'sí' runs it without
+    any model call."""
+    monkeypatch.setattr(wt, "execute_pending_action", lambda ctx, action: "HECHO ✅")
     ctx = _ctx(registered_user)
-    state = {"history": [], "pending_action": {"type": _FAKE_WRITE}}
-    # No LLM patch: confirmation must NOT call the LLM. If it does, this errors.
+    state = {"history": [], "pending_action": {"type": "fake_reversible_write"}}
+
+    def _no_llm(*a, **k):
+        raise AssertionError("confirmation must NOT call the LLM")
+    monkeypatch.setattr("backend.ai.local_llm.get_local_llm_client", _no_llm)
     reply, history, pending = agent.run_turn(ctx, "sí, confirmo", state)
     assert pending is None
     assert reply == "HECHO ✅"
@@ -145,36 +117,28 @@ def test_confirmation_turn_executes_without_llm(client, registered_user, monkeyp
 
 class TestSuspendedWrites:
     """`approve_po` and `register_reception` are out of WRITE_TOOLS until
-    receive_po and mark_po_sent have inverses: a WhatsApp turn is the one
-    surface with no confirmation screen, no undo and no visible audit, and
-    both of them move stock, learned lead times and the cash calendar for
-    good. These tests are the lock on that, and they are also the exact tests
-    to delete when the undo work lands."""
+    receive_po and mark_po_sent have inverses — and the assistant core offers
+    no write at all. These pin that a model asking for one executes nothing."""
 
-    def test_an_approval_intent_is_answered_not_executed(self, client, registered_user):
+    def test_a_model_calling_approve_po_executes_nothing(self, client, registered_user, llm):
         ctx = _ctx(registered_user)
         po_id = _seed_po(ctx.tenant_id)
-        state = {"history": [], "pending_action": None}
-        fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
-        with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-            reply, history, pending = agent.run_turn(ctx, f"aprueba la orden {po_id}", state)
-        # No proposal is stored, so no later "sí" can execute it either.
+        fake = llm([[("approve_po", {"po_log_id": po_id})],
+                    "Eso se hace en /pedidos."])
+        reply, history, pending = agent.run_turn(
+            ctx, f"aprueba la orden {po_id}", {"history": [], "pending_action": None})
         assert pending is None
-        assert "app" in reply.lower()
+        assert "Unknown tool" in fake.calls[1]["messages"][-1]["content"]
         row = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))
         assert row["sent_at"] is None
 
-    def test_a_reception_intent_credits_no_stock(self, client, registered_user):
+    def test_a_reception_intent_credits_no_stock(self, client, registered_user, llm):
         ctx = _ctx(registered_user)
         _seed_po(ctx.tenant_id, sku="SKU1", warehouse="bodega norte", qty=200)
-        state = {"history": [], "pending_action": None}
-        fake = _FakeLLM([json.dumps({
-            "tool": "register_reception",
-            "args": {"sku": "SKU1", "warehouse": "bodega norte", "quantity": 200},
-        })])
-        with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-            reply, history, pending = agent.run_turn(
-                ctx, "llegaron 200 de SKU1 a bodega norte", state)
+        llm([[("register_reception", {"sku": "SKU1", "warehouse": "bodega norte", "quantity": 200})],
+             "Regístralo en /pedidos."])
+        reply, history, pending = agent.run_turn(
+            ctx, "llegaron 200 de SKU1 a bodega norte", {"history": [], "pending_action": None})
         assert pending is None
         assert query_one(
             "SELECT current_stock FROM inventory_stock "
@@ -196,81 +160,41 @@ class TestSuspendedWrites:
         assert row["sent_at"] is None, "a stale pending action executed an irreversible write"
 
 
-def test_non_confirming_message_discards_pending(client, registered_user):
+def test_non_confirming_message_discards_pending(client, registered_user, llm):
     ctx = _ctx(registered_user)
     po_id = _seed_po(ctx.tenant_id)
     state = {"history": [], "pending_action": {"type": "approve_po", "po_log_id": po_id}}
-    fake = _FakeLLM([json.dumps({"tool": "semaphore_status", "args": {}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        reply, history, pending = agent.run_turn(ctx, "no, mejor muéstrame el semáforo", state)
-    # Pending discarded, nothing approved.
+    llm(["Tu semáforo está al día."])
+    reply, history, pending = agent.run_turn(ctx, "no, mejor muéstrame el semáforo", state)
     assert pending is None
     row = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))
     assert row["sent_at"] is None
 
 
-def test_two_turn_cycle_proposes_then_executes(client, registered_user, monkeypatch):
-    """The full shape of a write over WhatsApp — propose, then execute on a
-    bare 'sí' with no second LLM call — through the reversible stand-in. Was
-    `test_reception_full_cycle_credits_warehouse`; that receive_po path is
-    still covered directly in test_whatsapp_tools.py, where it belongs: it is
-    the executor that works, not the chat route to it."""
-    executed = []
-    monkeypatch.setitem(wt.WRITE_TOOLS, _FAKE_WRITE,
-                        lambda ctx, args: {"type": _FAKE_WRITE, "n": args.get("n"),
-                                           "summary": "¿Confirmas? (responde SÍ)"})
-    monkeypatch.setattr(wt, "execute_pending_action",
-                        lambda ctx, action: executed.append(action) or "HECHO ✅")
-
-    ctx = _ctx(registered_user)
-    state = {"history": [], "pending_action": None}
-    fake = _FakeLLM([json.dumps({"tool": _FAKE_WRITE, "args": {"n": 200}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        reply, history, pending = agent.run_turn(ctx, "hazlo con 200", state)
-    assert pending["type"] == _FAKE_WRITE
-    assert executed == []  # the proposal turn executes nothing
-
-    state2 = {"history": history, "pending_action": pending}
-    reply2, history2, pending2 = agent.run_turn(ctx, "sí", state2)
-    assert pending2 is None
-    assert [a["n"] for a in executed] == [200]
-
-
-def test_viewer_write_intent_denied(client, registered_user, monkeypatch):
-    """A viewer must not even get a proposal stored. Exercised through the
-    stand-in so it keeps testing the ROLE GATE rather than the suspension."""
-    _register_a_reversible_write_tool(monkeypatch)
-    ctx = _ctx(registered_user, role="viewer")
-    state = {"history": [], "pending_action": None}
-    fake = _FakeLLM([json.dumps({"tool": _FAKE_WRITE, "args": {}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        reply, history, pending = agent.run_turn(ctx, "hazlo", state)
-    assert pending is None
-    assert "lectura" in reply.lower()
-
-
-def test_viewer_write_intent_denied_for_suspended_tools_too(client, registered_user):
+def test_viewer_gets_answers_and_no_write(client, registered_user, llm):
     ctx = _ctx(registered_user, role="viewer")
     po_id = _seed_po(ctx.tenant_id)
-    state = {"history": [], "pending_action": None}
-    fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        reply, history, pending = agent.run_turn(ctx, f"aprueba {po_id}", state)
-    assert pending is None
+    llm([[("approve_po", {"po_log_id": po_id})], "No puedo hacerlo desde aquí."])
+    reply, history, pending = agent.run_turn(ctx, f"aprueba {po_id}", {"history": [], "pending_action": None})
+    assert pending is None and reply
     row = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))
     assert row["sent_at"] is None
 
 
-def test_llm_failure_is_safe(client, registered_user):
+def test_llm_failure_is_safe(client, registered_user, monkeypatch):
+    """The model failing is not an apology: the core answers from the data by
+    rules and says so."""
+    from backend.notifications.locale import render_es
     ctx = _ctx(registered_user)
-    state = {"history": [], "pending_action": None}
 
     class _Boom:
-        messages = None
+        def __init__(self):
+            self.messages = self
+
         def create(self, *a, **k):
             raise RuntimeError("llm down")
-    boom = _Boom(); boom.messages = boom
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=boom):
-        reply, history, pending = agent.run_turn(ctx, "hola", state)
-    assert isinstance(reply, str) and len(reply) > 0
+    monkeypatch.setattr("backend.ai.local_llm.get_local_llm_client", lambda *a, **k: _Boom())
+    reply, history, pending = agent.run_turn(ctx, "hola", {"history": [], "pending_action": None})
+    assert render_es("assistant_intro_failed") in reply
+    assert "llm down" not in reply
     assert pending is None

@@ -87,6 +87,10 @@ _ALLOWED = {
     # ("fecha", "ventas", "proveedor"). These read user input; they are not copy.
     "utils/stock_import.py",
     "datasources/service.py",
+    # Same category: the words people type when asking the assistant about
+    # suppliers, orders or overstock, matched against the user's message to
+    # rank the account context. Never shown to anyone.
+    "assistant/vocabulary.py",
     "dataframes/canonical.py",
     # Canonical COLUMN names, not copy: this module writes a CSV that StockAI's own
     # detector reads back, and the quick-start config names the columns in it.

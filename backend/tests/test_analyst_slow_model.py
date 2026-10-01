@@ -14,10 +14,7 @@ tuning the numbers does not require editing the test — only breaking the
 relationship does.
 """
 
-import pytest
-
 from backend.api.v1 import chats as chats_mod
-from backend.errors import AppError
 
 # Read from the module: the ceiling is a property of the proxy, and the test
 # should track it rather than restate it.
@@ -37,8 +34,19 @@ class TestTheBudgetsFitTheWindow:
 
 
 class TestTheFailureIsReportable:
-    def test_a_slow_model_raises_a_coded_error_not_english_prose(self, monkeypatch):
-        """It used to RETURN an English sentence as the analyst's own answer."""
+    """Since the assistant core (`backend/assistant/`) answers the chat, a slow
+    or failing model no longer ends in an error bubble: the core answers from
+    the account's data by rules, and the reply SAYS it is not an AI answer and
+    why. What must never come back is the old shape — English prose, or a raw
+    exception, presented as the analyst's own answer."""
+
+    def test_a_slow_model_gets_the_rules_answer_inside_the_budget(
+        self, monkeypatch, registered_user,
+    ):
+        import time
+        from backend.assistant import answer
+        from backend.notifications.locale import render
+
         class _Slow:
             class messages:
                 @staticmethod
@@ -46,16 +54,16 @@ class TestTheFailureIsReportable:
                     raise TimeoutError("timed out")
 
         monkeypatch.setattr(
-            "backend.ai.local_llm.get_local_llm_client", lambda timeout=0: _Slow())
+            "backend.ai.local_llm.get_local_llm_client", lambda *a, **k: _Slow())
 
-        with pytest.raises(AppError) as caught:
-            chats_mod._general_answer("¿Cuánto capital tengo inmovilizado?", [])
-
-        err = caught.value
-        assert err.code == "ai_unavailable"
-        assert err.status_code == 503, "a slow dependency is not a 500"
-        # The number the copy quotes has to come from the budget, not a literal.
-        assert err.params["budget_seconds"] == int(chats_mod.LLM_BUDGET_S)
+        started = time.monotonic()
+        reply = answer(registered_user["tenant"]["id"], registered_user["user"]["id"], "web",
+                       "¿Cuánto capital tengo inmovilizado?", [], language="es",
+                       budget_s=chats_mod.LLM_BUDGET_S)
+        assert time.monotonic() - started < chats_mod.LLM_BUDGET_S
+        assert reply.source == "rules" and reply.reason == "timeout"
+        assert render("es", "assistant_intro_failed") in reply.text
+        assert "timed out" not in reply.text, "the exception leaked into the answer"
 
     def test_the_title_falls_back_to_the_question_without_failing(self, monkeypatch):
         """A title is decoration: losing it must not cost the user their answer."""
@@ -71,16 +79,18 @@ class TestTheFailureIsReportable:
         title = chats_mod._auto_title("¿Cuáles son mis productos con mayor riesgo?")
         assert title.startswith("¿Cuáles son mis productos")
 
-    def test_a_working_model_still_answers(self, monkeypatch):
-        class _Block:
-            text = "Tienes ₡14 743 inmovilizados."
+    def test_a_working_model_still_answers(self, monkeypatch, registered_user):
+        from backend.ai.local_llm import _ContentBlock, _LLMResponse
+        from backend.assistant import answer
 
         class _Fast:
             class messages:
                 @staticmethod
                 def create(**_kw):
-                    return type("R", (), {"content": [_Block()]})()
+                    return _LLMResponse(content=[_ContentBlock(text="Todo en orden por hoy.")])
 
         monkeypatch.setattr(
-            "backend.ai.local_llm.get_local_llm_client", lambda timeout=0: _Fast())
-        assert "14 743" in chats_mod._general_answer("¿Y el capital?", [])
+            "backend.ai.local_llm.get_local_llm_client", lambda *a, **k: _Fast())
+        reply = answer(registered_user["tenant"]["id"], registered_user["user"]["id"], "web",
+                       "¿Y el capital?", [], language="es")
+        assert reply.source == "assistant" and reply.text == "Todo en orden por hoy."

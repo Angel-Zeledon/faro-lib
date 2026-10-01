@@ -1,15 +1,18 @@
 """
-The closed set of tools the WhatsApp agent may call. Query tools are
-read-only; write tools NEVER mutate — they return a pending_action that the
-agent stores, and the real mutation happens later in execute_pending_action
-on a confirming turn. Every tool is bound to the sender's tenant and, for
-writes, re-checks analyst-or-above.
+WhatsApp's pending-action machinery: write PROPOSALS (which never mutate) and
+the executor a confirming "sí" runs. Every tool is bound to the sender's tenant
+and, for writes, re-checks analyst-or-above.
+
+Since 2026-10-01 the bot answers questions through the shared assistant core
+(`backend/assistant/`, read-only by charter), so nothing routes to the three
+query tools or the specs below any more: they are kept, with their tests, only
+until this module is pruned, and the agent no longer builds a routing prompt
+from them. The proposal/executor pair stays because it is the confirmation
+gate any future reversible WhatsApp action would go through.
 
 Every string a tool returns is end-user copy on a channel the frontend never
 renders, so its Spanish comes from `backend/notifications/locale.py` keyed in
-English — the same catalog the WhatsApp digest and the PO message use. Nothing
-in this module is a Spanish literal; `TOOL_SPECS` at the bottom is prompt text
-and is therefore English.
+English. `TOOL_SPECS` at the bottom is prompt text and is therefore English.
 """
 
 from __future__ import annotations
@@ -248,21 +251,18 @@ QUERY_TOOLS = {
 # nobody can walk back. Twilio is configured, so this was live the moment the
 # app was deployed.
 #
-# Putting them back is exactly this dict — the proposal functions, the
-# confirmation gate, the executors and their tests are all still here and
-# still work. Do it when receive_po and mark_po_sent have inverses, not before.
+# The proposal functions, the confirmation gate, the executors and their tests
+# are all still here and still work. Re-enabling them now also means giving
+# the assistant core a way to PROPOSE (it only reads), so it is a design
+# decision, not a dict edit — and only once both writes have inverses.
 WRITE_TOOLS: dict = {}
 
-# Names the router may still emit (the model has seen them in old history, and
-# users ask for them by name). Recognised on purpose so the answer is "do it in
-# the app" instead of the generic help menu — and so a pending action stored
-# before the suspension cannot be executed by answering "sí" today.
+# Recognised on purpose so a pending action stored before the suspension
+# cannot be executed by answering "sí" today (agent._handle drops it).
 SUSPENDED_WRITE_TOOLS = {"approve_po", "register_reception"}
 
-# These descriptions are prompt text — the agent pastes them into the routing
-# prompt for the model to choose from — so they are English like every other
-# prompt in the codebase. Nothing here is ever shown to the user; what the bot
-# SAYS comes from the copy catalog above.
+# Prompt-style descriptions (English) of the query tools above. Nothing here is
+# ever shown to the user; what the bot SAYS comes from the copy catalog.
 TOOL_SPECS = [
     {"name": "semaphore_status", "kind": "query",
      "description": "Inventory status: what to order now, what to restock, what is overstocked.",
@@ -275,9 +275,8 @@ TOOL_SPECS = [
      "args": {"sku": "the SKU code"}},
 ]
 
-# Kept out of TOOL_SPECS above so the model is not offered a tool it cannot
-# run — but named in the prompt (see agent._system_prompt) so it answers "that
-# is done in the app" instead of pretending the request was never made.
+# Descriptions of the two suspended writes (no longer pasted into any prompt:
+# the assistant core's persona already sends every action to the app screen).
 SUSPENDED_TOOL_SPECS = [
     {"name": "approve_po", "kind": "write",
      "description": "Approve and send an existing purchase order.",

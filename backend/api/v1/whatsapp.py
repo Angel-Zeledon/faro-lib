@@ -1,8 +1,9 @@
 """
 Inbound Twilio WhatsApp webhook. HTTP + wiring only — no business logic:
 verify the Twilio signature, dedupe by MessageSid, resolve the sender to a
-verified user, rate-limit per number, run the tool-calling agent, persist
-state, and reply via the existing outbound send_whatsapp().
+verified user, rate-limit per number, answer 200, then — in a background
+task — run the agent (the shared assistant core, `backend/assistant/`),
+persist state, and reply via the existing outbound send_whatsapp().
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import hashlib
 import hmac
 import logging
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 
 from backend.config import settings
 from backend.service_config.resolver import effective
@@ -103,7 +104,7 @@ def _rate_limited(phone: str) -> bool:
 
 
 @router.post("/inbound")
-async def inbound(request: Request):
+async def inbound(request: Request, background: BackgroundTasks):
     form = await request.form()
     params = {k: str(v) for k, v in form.items()}
     signature = request.headers.get("X-Twilio-Signature", "")
@@ -135,11 +136,28 @@ async def inbound(request: Request):
         send_whatsapp(phone, _RATE_LIMITED, tenant_id=ctx.tenant_id)
         return Response(status_code=200)
 
-    # 5-7. Load state, run agent, persist.
-    state = cs.load(ctx.tenant_id, ctx.user_id)
-    reply, history, pending = agent.run_turn(ctx, body, state)
-    cs.save(ctx.tenant_id, ctx.user_id, phone, history, pending, message_sid)
-
-    # 8. Reply via the existing outbound path (logged no-op without TWILIO creds).
-    send_whatsapp(phone, reply, tenant_id=ctx.tenant_id)
+    # 5-8. The turn runs AFTER Twilio has its 200, in a worker thread.
+    #
+    # A turn now reads the account and may call the model two or three times
+    # (tools), which takes 5-20 s. Run inline, it outlived Twilio's 15 s webhook
+    # timeout (logged there as error 11200) and, inside this async handler, it
+    # blocked every other request to the API for as long as the model took.
+    # The reply already goes out over REST, so nothing needs the HTTP response
+    # to wait for it.
+    background.add_task(_run_turn_and_reply, ctx, body, phone, message_sid)
     return Response(status_code=200)
+
+
+def _run_turn_and_reply(ctx: ToolContext, body: str, phone: str, message_sid: str) -> None:
+    """Load state, run the agent, persist, reply. A sync function, so Starlette
+    runs it in its threadpool. Any failure still answers the person — silence
+    on WhatsApp reads as "the bot is broken" with no way to tell why."""
+    try:
+        state = cs.load(ctx.tenant_id, ctx.user_id)
+        reply, history, pending = agent.run_turn(ctx, body, state)
+        cs.save(ctx.tenant_id, ctx.user_id, phone, history, pending, message_sid)
+    except Exception:  # noqa: BLE001
+        log.exception("[whatsapp] turn failed for tenant=%s", ctx.tenant_id)
+        reply = render_es("wa_apology")
+    # Reply via the existing outbound path (logged no-op without TWILIO creds).
+    send_whatsapp(phone, reply, tenant_id=ctx.tenant_id)
