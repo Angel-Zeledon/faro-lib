@@ -10,7 +10,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/precios`, changeFrequency: 'monthly', priority: 0.8 },
     { url: `${SITE_URL}/preguntas-frecuentes`, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${SITE_URL}/seguridad`, changeFrequency: 'monthly', priority: 0.6 },
-    { url: `${SITE_URL}/desarrolladores`, changeFrequency: 'monthly', priority: 0.6 },
     { url: `${SITE_URL}/stockai-manual-es.pdf`, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/stockai-manual-en.pdf`, changeFrequency: 'monthly', priority: 0.4 },
   ]
