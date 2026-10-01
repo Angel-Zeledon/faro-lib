@@ -39,7 +39,10 @@ export interface LandingCopy {
   nav: { links: [string, string][]; signIn: string; signUp: string; menu: string }
   heroPills: string[]
   footerLinks: { product: [string, string][]; company: [string, string][] }
-  hero: { eyebrow: string; title1: string; title2: string; lead: string; cta: string; frame: string }
+  // `ctaTrial` leads to /prueba: a throwaway account (temporary username and
+  // password, 24 hours) for a visitor who wants to look before signing up.
+  // `trialNote` is the one line under the buttons that says what that means.
+  hero: { eyebrow: string; title1: string; title2: string; lead: string; cta: string; ctaTrial: string; trialNote: string; frame: string }
   strip: { models: string; deliveries: string; skus: string; csv: string }
   problem: { tag: string; title: string; lead: string; items: Titled[] }
   how: { tag: string; title: string; lead: string; steps: Numbered[] }
@@ -131,6 +134,8 @@ const es: LandingCopy = {
     title2: 'y a qué proveedor.',
     lead: 'StockAI lee tus ventas y tu inventario y cada mañana te dice qué productos se van a quebrar, cuántas unidades pedir de cada uno y a quién, cuánto dinero tienes parado en lo que no rota y qué pedidos vienen en camino.',
     cta: 'Empezar gratis con datos de ejemplo',
+    ctaTrial: 'Probar sin registrarme',
+    trialNote: 'Cuenta de prueba al instante: usuario y contraseña temporales, 24 horas, sin tarjeta.',
     frame: 'StockAI · Panel de compras',
   },
   strip: {
@@ -487,6 +492,8 @@ const en: LandingCopy = {
     title2: 'and from which supplier.',
     lead: 'StockAI reads your sales and your stock, and every morning tells you which products are about to run out, how many units of each to order and from whom, how much money is sitting in what does not turn, and which orders are on their way.',
     cta: 'Start free with sample data',
+    ctaTrial: 'Try it without signing up',
+    trialNote: 'Instant trial account: temporary username and password, 24 hours, no card.',
     frame: 'StockAI · Purchasing dashboard',
   },
   strip: {

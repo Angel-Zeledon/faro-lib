@@ -11,26 +11,33 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { Wordmark } from '@/components/brand/Wordmark'
 
+// Every colour on the page is a CSS variable, defined once in LANDING_CSS for
+// the light theme and again for `[data-theme="dark"]`. The landing follows the
+// same switch as the app (the `theme` key in localStorage, applied before
+// first paint by app/layout.tsx), so a visitor who uses the app in dark sees
+// the landing in dark too. Light stays the default — the Petróleo identity.
 const T = {
- bg: '#ffffff',
- bg2: '#f8fafc',
- surface: '#f1f5f9',
- border: '#e2e8f0',
- text: '#0f172a',
- body: '#334155',
- muted: '#64748b',
- dim: '#94a3b8',
- accent: '#1d4ed8',
- accentBg: '#eff6ff',
- accentBd: '#bfdbfe',
- green: '#059669',
- greenBg: '#f0fdf4',
- greenBd: '#a7f3d0',
- red: '#dc2626',
- amber: '#d97706',
- amberBg: '#fffbeb',
- amberBd: '#fde68a',
+ bg: 'var(--lp-bg)',
+ bg2: 'var(--lp-bg2)',
+ surface: 'var(--lp-surface)',
+ border: 'var(--lp-border)',
+ text: 'var(--lp-text)',
+ body: 'var(--lp-body)',
+ muted: 'var(--lp-muted)',
+ dim: 'var(--lp-dim)',
+ accent: 'var(--lp-accent)',
+ accentBg: 'var(--lp-accent-bg)',
+ accentBd: 'var(--lp-accent-bd)',
+ // Semáforo: data colours, not decoration. Same values the landing always
+ // used in light; the dark set is the app's own dark semáforo.
+ green: 'var(--lp-green)',
+ greenBg: 'var(--lp-green-bg)',
+ greenBd: 'var(--lp-green-bd)',
+ red: 'var(--lp-red)',
+ amber: 'var(--lp-amber)',
 }
+
+const DISPLAY = 'var(--font-brand), system-ui, sans-serif'
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 // Two letters, not a dropdown with flags. A flag is a country and this is a
@@ -39,19 +46,14 @@ const T = {
 // into the app after they sign in.
 function LangToggle({ lang, setLang }: { lang: 'es' | 'en'; setLang: (l: 'es' | 'en') => void }) {
  return (
-  <div role="group" aria-label="Language" style={{ display: 'flex', alignItems: 'center', gap: 2, border: `1px solid ${T.border}`, borderRadius: 7, padding: 2 }}>
+  <div role="group" aria-label="Language" className="lp-lang">
    {(['es', 'en'] as const).map(code => (
     <button
      key={code}
      type="button"
      onClick={() => setLang(code)}
      aria-pressed={lang === code}
-     style={{
-      border: 'none', cursor: 'pointer', borderRadius: 5,
-      padding: '4px 9px', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.03em',
-      background: lang === code ? T.text : 'transparent',
-      color: lang === code ? '#fff' : T.muted,
-     }}
+     className={lang === code ? 'is-on' : undefined}
     >{code.toUpperCase()}</button>
    ))}
   </div>
@@ -69,6 +71,17 @@ function Nav() {
  // of it. The button and sheet below only ever exist at that width.
  const [menuOpen, setMenuOpen] = useState(false)
 
+ // The bar is transparent over the hero and turns to glass once the page
+ // moves, so the first screen reads as one composition instead of a strip of
+ // chrome on top of it.
+ const [scrolled, setScrolled] = useState(false)
+ useEffect(() => {
+  const onScroll = () => setScrolled(window.scrollY > 8)
+  onScroll()
+  window.addEventListener('scroll', onScroll, { passive: true })
+  return () => window.removeEventListener('scroll', onScroll)
+ }, [])
+
  // A fixed sheet over a scrolling page: freeze the page while it is open, or
  // the content slides behind it under a thumb that meant to scroll the menu.
  useEffect(() => {
@@ -85,30 +98,21 @@ function Nav() {
 
  return (
  <>
- <nav className="nav-shell" style={{
- position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
- background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)',
- borderBottom: `1px solid ${T.border}`,
- display: 'flex', alignItems: 'center', justifyContent: 'space-between',
- padding: '0 48px', height: 60,
- }}>
- <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+ <nav className={`nav-shell${scrolled || menuOpen ? ' is-scrolled' : ''}`}>
+ <a href="#top" aria-label="StockAI" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
  <Wordmark size={22} color={T.text} accent={T.accent} />
- </div>
- <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+ </a>
+ <div className="nav-links">
  {NAV_LINKS.map(([href, label]) => (
- <a key={href} href={href} style={{ fontSize: 13, color: T.muted, textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
- onMouseEnter={e => (e.currentTarget.style.color = T.text)}
- onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
- >{label}</a>
+ <a key={href} href={href} className="nav-link">{label}</a>
  ))}
  </div>
- <div className="nav-cta" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+ <div className="nav-cta">
  <LangToggle lang={lang} setLang={setLang} />
- <Link href={appHref('/login')} className="nav-tap" style={{ fontSize: 13, fontWeight: 600, color: T.muted, textDecoration: 'none' }}>
+ <Link href={appHref('/login')} className="nav-tap">
  {L.nav.signIn}
  </Link>
- <Link href={appHref('/signup')} className="nav-signup" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'none', padding: '8px 18px', borderRadius: 7, background: T.text }}>
+ <Link href={appHref('/signup')} className="nav-signup">
  {L.nav.signUp}
  </Link>
  </div>
@@ -132,6 +136,9 @@ function Nav() {
  <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>
  ))}
  <div className="nav-sheet-sep" />
+ {/* On the narrowest phones the bar has no room for the language toggle,
+     so it lives here too — switching language must never be lost. */}
+ <div className="nav-sheet-lang"><LangToggle lang={lang} setLang={setLang} /></div>
  <Link href={appHref('/login')} onClick={() => setMenuOpen(false)}>{L.nav.signIn}</Link>
  <Link
  href={appHref('/signup')}
@@ -148,35 +155,33 @@ function Nav() {
 }
 
 // ── Shared layout helpers ─────────────────────────────────────────────────────
-function Section({ id, children, alt, style }: { id?: string; children: React.ReactNode; alt?: boolean; style?: React.CSSProperties }) {
+function Section({ id, children, alt, className, style }: { id?: string; children: React.ReactNode; alt?: boolean; className?: string; style?: React.CSSProperties }) {
  return (
- <section id={id} className="sec" style={{ background: alt ? T.bg2 : T.bg, padding: '88px 0', ...style }}>
- <div className="sec-inner" data-reveal style={{ maxWidth: 1100, margin: '0 auto', padding: '0 48px' }}>{children}</div>
+ <section id={id} className={`sec${alt ? ' sec-alt' : ''}${className ? ` ${className}` : ''}`} style={style}>
+ <div className="sec-inner" data-reveal>{children}</div>
  </section>
  )
 }
 
+// Section label. Sentence case with a small beam dot — the section names are
+// navigation (they match the menu), so they stay, but quietly.
 function Tag({ children }: { children: React.ReactNode }) {
- return (
- <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, marginBottom: 18, background: T.accentBg, border: `1px solid ${T.accentBd}`, fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
- {children}
- </div>
- )
+ return <div className="lp-tag"><span aria-hidden className="lp-tag-dot" />{children}</div>
 }
 
 function H2({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
- return <h2 style={{ fontSize: 34, fontWeight: 800, color: T.text, margin: '0 0 14px', letterSpacing: '-0.035em', lineHeight: 1.2, ...style }}>{children}</h2>
+ return <h2 className="lp-h2" style={style}>{children}</h2>
 }
 
 function Lead({ children, maxWidth = 600 }: { children: React.ReactNode; maxWidth?: number }) {
- return <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, margin: '0 0 44px', maxWidth }}>{children}</p>
+ return <p className="lp-lead" style={{ maxWidth }}>{children}</p>
 }
 
 function Check() {
  return (
- <svg width={14} height={14} viewBox="0 0 14 14" style={{ flexShrink: 0 }}>
- <circle cx={7} cy={7} r={7} fill={T.greenBg} />
- <path d="M3.5 7 L6 9.5 L10.5 5" stroke={T.green} strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+ <svg width={16} height={16} viewBox="0 0 14 14" style={{ flexShrink: 0 }} aria-hidden>
+ <circle cx={7} cy={7} r={7} style={{ fill: T.greenBg }} />
+ <path d="M3.5 7 L6 9.5 L10.5 5" style={{ stroke: T.green }} strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
  </svg>
  )
 }
@@ -184,22 +189,22 @@ function Check() {
 // Counterpart to Check() for "you do not need this" lists — same size, neutral.
 function Dash() {
  return (
- <svg width={14} height={14} viewBox="0 0 14 14" style={{ flexShrink: 0 }}>
- <circle cx={7} cy={7} r={7} fill={T.surface} />
- <path d="M4 7 L10 7" stroke={T.muted} strokeWidth={1.5} fill="none" strokeLinecap="round" />
+ <svg width={16} height={16} viewBox="0 0 14 14" style={{ flexShrink: 0 }} aria-hidden>
+ <circle cx={7} cy={7} r={7} style={{ fill: T.surface }} />
+ <path d="M4 7 L10 7" style={{ stroke: T.muted }} strokeWidth={1.5} fill="none" strokeLinecap="round" />
  </svg>
  )
 }
 
 // Sub-heading inside the long-form sections — one step below H2, same type scale.
 function H3({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
- return <h3 style={{ fontSize: 19, fontWeight: 800, color: T.text, margin: '0 0 16px', letterSpacing: '-0.02em', lineHeight: 1.3, ...style }}>{children}</h3>
+ return <h3 className="lp-h3" style={style}>{children}</h3>
 }
 
 // Wide tables scroll inside their own box so the page body never scrolls sideways.
 function Scroller({ minWidth, children }: { minWidth: number; children: React.ReactNode }) {
  return (
- <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+ <div className="lp-scroller">
  <div style={{ minWidth }}>{children}</div>
  </div>
  )
@@ -228,7 +233,7 @@ function useScrollReveal() {
  const parent = el.parentElement
  const index = parent ? seenPerParent.get(parent) ?? 0 : 0
  if (parent) seenPerParent.set(parent, index + 1)
- el.style.transitionDelay = `${Math.min(index, 3) * 70}ms`
+ el.style.transitionDelay = `${Math.min(index, 3) * 80}ms`
  el.classList.add('reveal-armed')
  armed.push(el)
  })
@@ -358,22 +363,490 @@ const CONTACT_WHATSAPP = '50671862820'
 // for whoever retakes them: the tenant must have DATA on every screen. An empty
 // state on a landing page reads as an unfinished product. And no modal or
 // tutorial overlay — two of the first batch caught one and had to be redone.
-interface TourScreen {
-  img:   string
-  name:  string
-  does:  string
-  finds: string[]
-  alt:   string
+
+// ── Stylesheet ────────────────────────────────────────────────────────────────
+// Injected with dangerouslySetInnerHTML rather than as text children: React
+// escapes quotes and ampersands in a text child on the server but not on the
+// client, so the two copies stopped matching and hydration failed for the
+// whole page over one quoted word in a comment. As raw HTML it is passed
+// through byte for byte on both sides.
+//
+// Motion budget. One orchestrated moment — the hero assembling on load and a
+// single beam of light crossing the product frame — plus the scroll reveal
+// and hover answers. Everything animates transform and opacity only, and
+// prefers-reduced-motion turns all of it off (content fully visible, static).
+const LANDING_CSS = `
+:root, [data-theme="light"] {
+ --lp-bg: #ffffff;
+ --lp-bg2: #F5F7F6;
+ --lp-surface: #EEF2F1;
+ --lp-border: #DFE6E4;
+ --lp-border-strong: #C2CFCC;
+ --lp-text: #16262A;
+ --lp-body: #3A4D50;
+ --lp-muted: #566A6D;
+ --lp-dim: #6F8285;
+ --lp-accent: #0F766E;
+ --lp-accent-bg: rgba(15,118,110,0.08);
+ --lp-accent-bd: rgba(15,118,110,0.24);
+ --lp-beam: #4CC3B5;
+ --lp-cta-bg: #0C3A40;
+ --lp-cta-fg: #ffffff;
+ --lp-cta-hover: #0F4C53;
+ --lp-nav: rgba(255,255,255,0.74);
+ --lp-glass: rgba(255,255,255,0.66);
+ --lp-shadow: rgba(12,58,64,0.16);
+ --lp-strip: #0C3A40;
+ --lp-grid: rgba(12,58,64,0.10);
+ --lp-glow-a: rgba(76,195,181,0.30);
+ --lp-glow-b: rgba(15,118,110,0.16);
+ --lp-red: #dc2626;
+ --lp-amber: #d97706;
+ --lp-green: #059669;
+ --lp-green-bg: #f0fdf4;
+ --lp-green-bd: #a7f3d0;
 }
+[data-theme="dark"] {
+ --lp-bg: #0A1517;
+ --lp-bg2: #0D1B1E;
+ --lp-surface: #152528;
+ --lp-border: #1E3236;
+ --lp-border-strong: #2C464B;
+ --lp-text: #E3EBEA;
+ --lp-body: #B2C3C1;
+ --lp-muted: #93A8A6;
+ --lp-dim: #7D9395;
+ --lp-accent: #2BA79A;
+ --lp-accent-bg: rgba(43,167,154,0.12);
+ --lp-accent-bd: rgba(43,167,154,0.34);
+ --lp-beam: #4CC3B5;
+ --lp-cta-bg: #2BA79A;
+ --lp-cta-fg: #04201D;
+ --lp-cta-hover: #35BAAC;
+ --lp-nav: rgba(10,21,23,0.72);
+ --lp-glass: rgba(16,29,32,0.66);
+ --lp-shadow: rgba(0,0,0,0.45);
+ --lp-strip: #0B2E33;
+ --lp-grid: rgba(227,235,234,0.07);
+ --lp-glow-a: rgba(43,167,154,0.22);
+ --lp-glow-b: rgba(76,195,181,0.10);
+ --lp-red: #ef4444;
+ --lp-amber: #f59e0b;
+ --lp-green: #22c55e;
+ --lp-green-bg: rgba(34,197,94,0.12);
+ --lp-green-bd: rgba(34,197,94,0.32);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--lp-bg); color: var(--lp-text); font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+html { scroll-behavior: smooth; }
+.lp { overflow-x: clip; background: var(--lp-bg); color: var(--lp-text); -webkit-font-smoothing: antialiased; }
+.lp ::selection { background: rgba(76,195,181,0.30); }
+.lp a:focus-visible, .lp button:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 3px; border-radius: 8px; }
+
+/* The nav is fixed, so an anchor jump parks the target under it: click Precio
+   in the menu and the eyebrow and half the headline are behind the bar. The
+   offset is the bar height plus a little air, and it belongs on the TARGET,
+   not on the scroll — scroll-margin is the one mechanism that also fixes the
+   keyboard focus jump and the browser restoring a #hash on reload. */
+section[id], #demo { scroll-margin-top: 88px; }
+@media (max-width: 900px) { section[id], #demo { scroll-margin-top: 76px; } }
+
+/* ── Nav ── */
+.nav-shell {
+ position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+ display: flex; align-items: center; justify-content: space-between;
+ padding: 0 48px; height: 64px;
+ background: transparent; border-bottom: 1px solid transparent;
+ transition: background-color 240ms ease, border-color 240ms ease, backdrop-filter 240ms ease;
+}
+.nav-shell.is-scrolled {
+ background: var(--lp-nav);
+ backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
+ border-bottom-color: var(--lp-border);
+}
+.nav-links { display: flex; align-items: center; gap: 4px; }
+.nav-link {
+ font-size: 13.5px; color: var(--lp-muted); text-decoration: none; font-weight: 500;
+ padding: 8px 12px; border-radius: 8px; transition: color 160ms ease, background-color 160ms ease;
+}
+.nav-link:hover { color: var(--lp-text); background: var(--lp-accent-bg); }
+.nav-cta { display: flex; align-items: center; gap: 14px; }
+.nav-tap { font-size: 13.5px; font-weight: 600; color: var(--lp-muted); text-decoration: none; transition: color 160ms ease; }
+.nav-tap:hover { color: var(--lp-text); }
+.nav-signup {
+ display: inline-flex; align-items: center; font-size: 13.5px; font-weight: 600;
+ color: var(--lp-cta-fg); text-decoration: none; padding: 9px 18px; border-radius: 10px;
+ background: var(--lp-cta-bg); transition: background-color 160ms ease, transform 160ms ease;
+}
+.nav-signup:hover { background: var(--lp-cta-hover); transform: translateY(-1px); }
+.lp-lang { display: flex; align-items: center; gap: 2px; border: 1px solid var(--lp-border); border-radius: 9px; padding: 2px; background: var(--lp-glass); }
+.lp-lang button {
+ border: none; cursor: pointer; border-radius: 6px; padding: 4px 9px;
+ font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em;
+ background: transparent; color: var(--lp-muted); transition: background-color 160ms ease, color 160ms ease;
+}
+.lp-lang button.is-on { background: var(--lp-text); color: var(--lp-bg); }
+
+/* The mobile menu button. Hidden above 900px, where the inline link row is
+   the navigation; below it, it is the only navigation there is. */
+.nav-burger { display: none; }
+
+/* ── Buttons ── */
+.btn-primary, .btn-ghost {
+ position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+ padding: 13px 24px; border-radius: 12px; cursor: pointer; text-decoration: none;
+ font-size: 14.5px; font-weight: 700; letter-spacing: -0.005em; white-space: nowrap;
+ transition: transform 200ms cubic-bezier(0.16,1,0.3,1), background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 200ms ease;
+}
+.btn-primary {
+ border: none; color: var(--lp-cta-fg); background: var(--lp-cta-bg);
+ box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 8px 24px -10px var(--lp-shadow);
+}
+.btn-primary:hover { background: var(--lp-cta-hover); transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 14px 30px -12px var(--lp-shadow); }
+.btn-ghost {
+ color: var(--lp-text); border: 1px solid var(--lp-border-strong); background: var(--lp-glass);
+ backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.btn-ghost:hover { border-color: var(--lp-accent); color: var(--lp-accent); transform: translateY(-1px); }
+.btn-primary:active, .btn-ghost:active { transform: translateY(0); }
+.btn-sm { padding: 11px 20px; font-size: 13.5px; border-radius: 10px; }
+
+/* ── Type ── */
+.lp-h1 {
+ font-family: var(--font-brand), system-ui, sans-serif;
+ font-size: clamp(38px, 6.2vw, 72px); font-weight: 600; line-height: 1.02;
+ letter-spacing: -0.045em; color: var(--lp-text); margin: 0 0 22px; max-width: 920px;
+}
+.lp-h2 {
+ font-family: var(--font-brand), system-ui, sans-serif;
+ font-size: clamp(28px, 3.6vw, 42px); font-weight: 600; line-height: 1.1;
+ letter-spacing: -0.035em; color: var(--lp-text); margin: 0 0 16px; text-wrap: balance;
+}
+.lp-h3 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 20px; font-weight: 600; color: var(--lp-text); margin: 0 0 16px; letter-spacing: -0.02em; line-height: 1.3; }
+.lp-lead { font-size: 16.5px; color: var(--lp-body); line-height: 1.7; margin: 0 0 48px; text-wrap: pretty; }
+.lp-tag {
+ display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
+ padding: 5px 12px 5px 10px; border-radius: 999px;
+ background: var(--lp-accent-bg); border: 1px solid var(--lp-accent-bd);
+ font-size: 12.5px; font-weight: 600; color: var(--lp-accent); letter-spacing: 0;
+}
+.lp-tag-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lp-beam); box-shadow: 0 0 0 3px rgba(76,195,181,0.20); }
+.lp-label { font-size: 12px; font-weight: 600; color: var(--lp-dim); letter-spacing: 0.01em; }
+
+/* ── Sections ── */
+.sec { position: relative; background: var(--lp-bg); padding: 104px 0; }
+.sec-alt { background: var(--lp-bg2); }
+.sec-alt::before {
+ content: ''; position: absolute; inset: 0 0 auto; height: 1px;
+ background: linear-gradient(90deg, transparent, var(--lp-border) 20%, var(--lp-border) 80%, transparent);
+}
+.sec-inner { position: relative; max-width: 1120px; margin: 0 auto; padding: 0 48px; }
+
+/* Cards. Hover lifts by a pixel or two and warms the border; the shadow
+   lives on a pseudo-element so only its opacity animates. */
+.lp-card {
+ position: relative; background: var(--lp-bg); border: 1px solid var(--lp-border);
+ border-radius: 14px; padding: 24px 26px;
+ transition: transform 260ms cubic-bezier(0.16,1,0.3,1), border-color 200ms ease;
+}
+.lp-card::after {
+ content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+ box-shadow: 0 18px 40px -22px var(--lp-shadow); opacity: 0; transition: opacity 260ms ease;
+}
+.lp-card:hover { transform: translateY(-2px); border-color: var(--lp-border-strong); }
+.lp-card:hover::after { opacity: 1; }
+.lp-card-soft { background: var(--lp-bg2); }
+.sec-alt .lp-card { background: var(--lp-bg); }
+.lp-card-title { font-size: 15px; font-weight: 700; color: var(--lp-text); margin-bottom: 8px; line-height: 1.4; letter-spacing: -0.01em; }
+.lp-card-body { font-size: 13.5px; color: var(--lp-body); line-height: 1.68; }
+.lp-bar { width: 28px; height: 3px; border-radius: 2px; margin-bottom: 18px; background: linear-gradient(90deg, var(--lp-accent), var(--lp-beam)); }
+.lp-step {
+ width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+ display: flex; align-items: center; justify-content: center;
+ font-family: var(--font-brand), system-ui, sans-serif; font-size: 14px; font-weight: 700;
+ color: var(--lp-accent); background: var(--lp-accent-bg); border: 1px solid var(--lp-accent-bd);
+}
+
+/* ── Hero ── */
+.hero-sec { position: relative; min-height: 100vh; padding-top: 136px; background: var(--lp-bg); display: flex; flex-direction: column; align-items: center; isolation: isolate; overflow: hidden; }
+/* Backdrop: a dot grid that fades out toward the edges, and two soft glows
+   that drift very slowly. Radial gradients instead of filter:blur, so the
+   drift is a pure compositor transform. */
+.hero-bg { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.hero-grid {
+ position: absolute; inset: 0;
+ background-image: radial-gradient(var(--lp-grid) 1px, transparent 1px);
+ background-size: 22px 22px;
+ -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 30%, black 30%, transparent 75%);
+ mask-image: radial-gradient(ellipse 70% 55% at 50% 30%, black 30%, transparent 75%);
+}
+.hero-glow { position: absolute; border-radius: 50%; will-change: transform; }
+.hero-glow-a { width: 900px; height: 700px; left: 50%; top: 22%; margin-left: -450px; background: radial-gradient(closest-side, var(--lp-glow-a), transparent); animation: lp-drift-a 22s ease-in-out infinite alternate; }
+.hero-glow-b { width: 700px; height: 560px; right: -220px; top: -160px; background: radial-gradient(closest-side, var(--lp-glow-b), transparent); animation: lp-drift-b 26s ease-in-out infinite alternate; }
+@keyframes lp-drift-a { from { transform: translate3d(-6%, 0, 0) scale(1); } to { transform: translate3d(6%, -4%, 0) scale(1.08); } }
+@keyframes lp-drift-b { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-12%, 10%, 0); } }
+
+.hero-inner { max-width: 1120px; width: 100%; margin: 0 auto; padding: 0 48px; }
+.hero-eyebrow {
+ display: inline-flex; align-items: center; gap: 9px; margin-bottom: 26px;
+ padding: 6px 14px 6px 8px; border-radius: 999px;
+ background: var(--lp-glass); border: 1px solid var(--lp-border);
+ backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+ font-size: 13px; font-weight: 600; color: var(--lp-body);
+}
+.hero-eyebrow-dot { position: relative; width: 18px; height: 18px; border-radius: 50%; background: var(--lp-accent-bg); display: inline-flex; align-items: center; justify-content: center; }
+.hero-eyebrow-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--lp-green); }
+.hero-lead { font-size: clamp(16px, 1.6vw, 19px); color: var(--lp-body); line-height: 1.65; max-width: 590px; margin: 0 0 36px; text-wrap: pretty; }
+.hero-ctas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hero-note { display: flex; align-items: center; gap: 8px; margin: 16px 0 64px; font-size: 13px; color: var(--lp-muted); line-height: 1.5; }
+
+/* The product frame. A 1px gradient rim, a chrome bar, the real screenshot,
+   a glow underneath, and one sweep of light across it after it lands. */
+.hero-stage { position: relative; perspective: 1800px; }
+.hero-stage::before {
+ content: ''; position: absolute; left: 6%; right: 6%; top: 12%; bottom: -4%; z-index: -1;
+ background: radial-gradient(closest-side, var(--lp-glow-a), transparent); border-radius: 50%;
+}
+.lp-frame {
+ position: relative; border-radius: 18px; padding: 1px;
+ background: linear-gradient(160deg, var(--lp-border-strong), var(--lp-border) 40%, rgba(76,195,181,0.55));
+ box-shadow: 0 40px 90px -30px var(--lp-shadow), 0 12px 30px -18px var(--lp-shadow);
+ transform-origin: 50% 0;
+}
+.lp-frame-in { border-radius: 17px; overflow: hidden; background: var(--lp-bg2); position: relative; }
+.lp-chrome { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--lp-border); background: var(--lp-glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.lp-chrome i { width: 10px; height: 10px; border-radius: 50%; background: var(--lp-border-strong); display: block; }
+.lp-chrome span { margin-left: 10px; font-size: 12px; color: var(--lp-dim); font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lp-frame img { display: block; width: 100%; height: auto; }
+.lp-sheen { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lp-sheen::before {
+ content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
+ background: linear-gradient(100deg, transparent, rgba(255,255,255,0.0) 20%, rgba(255,255,255,0.40) 50%, rgba(255,255,255,0) 80%, transparent);
+ transform: translateX(-120%); opacity: 0;
+}
+
+.hero-pills { display: flex; align-items: center; gap: 10px; margin-top: 40px; padding-bottom: 80px; flex-wrap: wrap; }
+.hero-pill { font-size: 12.5px; font-weight: 500; color: var(--lp-muted); padding: 5px 13px; border-radius: 999px; border: 1px solid var(--lp-border); background: var(--lp-glass); }
+
+/* Load sequence. Short, staggered, one time. */
+.lp-rise { animation: lp-rise 760ms cubic-bezier(0.16,1,0.3,1) both; }
+.lp-d1 { animation-delay: 60ms; } .lp-d2 { animation-delay: 140ms; } .lp-d3 { animation-delay: 220ms; } .lp-d4 { animation-delay: 300ms; } .lp-d5 { animation-delay: 380ms; }
+@keyframes lp-rise { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
+.lp-frame.lp-land { animation: lp-land 1200ms cubic-bezier(0.16,1,0.3,1) 320ms both; }
+@keyframes lp-land { from { opacity: 0; transform: translate3d(0, 48px, 0) rotateX(14deg) scale(0.96); } to { opacity: 1; transform: none; } }
+.lp-land .lp-sheen::before { animation: lp-sheen 1500ms cubic-bezier(0.4,0,0.2,1) 1350ms 1 both; }
+@keyframes lp-sheen { 0% { opacity: 0; transform: translateX(-120%); } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(260%); } }
+
+/* ── Stats strip ── */
+.strip-shell { position: relative; background: var(--lp-strip); padding: 48px 48px; overflow: hidden; isolation: isolate; }
+.strip-shell::before {
+ content: ''; position: absolute; inset: 0; z-index: -1;
+ background: radial-gradient(60% 140% at 15% 0%, rgba(76,195,181,0.22), transparent 60%), radial-gradient(50% 120% at 100% 100%, rgba(15,118,110,0.35), transparent 60%);
+}
+.strip-shell::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(76,195,181,0.7), transparent); }
+.strip-grid { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+.strip-cell { text-align: center; padding: 0 28px; border-right: 1px solid rgba(255,255,255,0.10); }
+.strip-cell:last-child { border-right: none; }
+.strip-value { font-family: var(--font-brand), system-ui, sans-serif; font-size: 44px; font-weight: 600; color: #fff; letter-spacing: -0.04em; margin-bottom: 8px; line-height: 1; }
+.strip-label { font-size: 13px; color: rgba(231,240,239,0.66); line-height: 1.45; max-width: 26ch; margin: 0 auto; }
+
+/* ── Tour ── */
+.tour-chapter { border-top: 1px solid var(--lp-border); padding-top: 18px; margin-bottom: 44px; max-width: 640px; position: relative; }
+.tour-chapter::before { content: ''; position: absolute; top: -1px; left: 0; width: 64px; height: 2px; background: linear-gradient(90deg, var(--lp-accent), var(--lp-beam)); }
+.tour-shot {
+ direction: ltr; position: relative; border-radius: 14px; padding: 1px; overflow: hidden;
+ background: linear-gradient(160deg, var(--lp-border-strong), var(--lp-border) 50%, var(--lp-accent-bd));
+ box-shadow: 0 24px 50px -30px var(--lp-shadow);
+}
+.tour-shot-in { border-radius: 13px; overflow: hidden; background: var(--lp-bg2); }
+.tour-shot img { display: block; width: 100%; height: auto; transition: transform 700ms cubic-bezier(0.16,1,0.3,1); transform-origin: 50% 30%; }
+.tour-row:hover .tour-shot img { transform: scale(1.015); }
+.tour-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--lp-accent); margin-top: 8px; }
+
+/* ── Tables ── */
+.lp-scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.lp-table { border-radius: 14px; overflow: hidden; border: 1px solid var(--lp-border); background: var(--lp-bg); }
+.lp-table-head { background: var(--lp-surface); padding: 13px 24px; border-bottom: 1px solid var(--lp-border); }
+.lp-table-row { padding: 16px 24px; align-items: center; border-bottom: 1px solid var(--lp-border); transition: background-color 160ms ease; }
+.lp-table-row:last-child { border-bottom: none; }
+.lp-table-row:hover { background: var(--lp-bg2); }
+.lp-signal { display: inline-flex; align-items: center; gap: 9px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.02em; }
+.lp-signal i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 16%, transparent); display: block; }
+
+/* ── Industries tabs ── */
+.case-tabs { display: inline-flex; gap: 4px; margin-bottom: 28px; flex-wrap: wrap; padding: 4px; border-radius: 12px; background: var(--lp-surface); border: 1px solid var(--lp-border); max-width: 100%; }
+.case-tab {
+ all: unset; cursor: pointer; display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 9px;
+ font-size: 13px; font-weight: 600; color: var(--lp-muted); transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+.case-tab:hover { color: var(--lp-text); }
+.case-tab.is-on { background: var(--lp-bg); color: var(--lp-accent); box-shadow: 0 1px 2px rgba(12,58,64,0.10), 0 0 0 1px var(--lp-border); }
+.case-tab:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 2px; }
+.lp-swap { animation: lp-swap 420ms cubic-bezier(0.16,1,0.3,1) both; }
+@keyframes lp-swap { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
+
+/* ── Pricing ── */
+.price-card { padding: 30px 28px; border-radius: 16px; }
+.price-card.is-paid { border-color: var(--lp-accent-bd); background: linear-gradient(180deg, var(--lp-accent-bg), var(--lp-bg) 55%); }
+.price-amount { font-family: var(--font-brand), system-ui, sans-serif; font-size: 34px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.03em; margin-bottom: 6px; line-height: 1.1; }
+.price-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--lp-body); border-bottom: 1px solid var(--lp-border); padding-bottom: 9px; }
+.price-row:last-child { border-bottom: none; }
+
+/* ── FAQ ── */
+.faq-q {
+ all: unset; cursor: pointer; width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center;
+ padding: 22px 0; gap: 16px; min-height: 44px;
+}
+.faq-q:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 2px; border-radius: 6px; }
+.faq-q-text { font-size: 15px; font-weight: 600; color: var(--lp-text); line-height: 1.45; text-align: left; transition: color 160ms ease; }
+.faq-q:hover .faq-q-text { color: var(--lp-accent); }
+.faq-icon {
+ flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--lp-surface); border: 1px solid var(--lp-border);
+ display: flex; align-items: center; justify-content: center; font-size: 17px; color: var(--lp-muted); line-height: 1;
+ transition: transform 320ms cubic-bezier(0.16,1,0.3,1), background-color 200ms ease, color 200ms ease;
+}
+.faq-icon.is-open { transform: rotate(45deg); background: var(--lp-accent-bg); color: var(--lp-accent); }
+.faq-a { font-size: 14.5px; color: var(--lp-body); line-height: 1.72; padding-bottom: 22px; max-width: 64ch; animation: lp-swap 360ms cubic-bezier(0.16,1,0.3,1) both; }
+
+/* ── Footer ── */
+.foot-head { font-size: 13px; font-weight: 700; color: var(--lp-text); margin-bottom: 14px; }
+.foot-link { display: block; font-size: 13.5px; color: var(--lp-muted); text-decoration: none; margin-bottom: 10px; transition: color 160ms ease; width: fit-content; max-width: 100%; }
+.foot-link:hover { color: var(--lp-accent); }
+
+/* Scroll reveal. The resting state is visible; useScrollReveal adds
+   .reveal-armed only after it confirms it can also remove it. */
+.reveal-armed { opacity: 0; transform: translate3d(0, 22px, 0); }
+.reveal-in {
+ opacity: 1; transform: none;
+ transition: opacity 720ms cubic-bezier(0.16, 1, 0.3, 1), transform 820ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Narrow viewports: collapse the fixed grid columns instead of overflowing.
+   Nothing here changes colour, type or shadow — only how many columns fit. */
+@media (max-width: 1024px) {
+ .nav-shell { padding: 0 28px; }
+ .nav-links { gap: 0; margin: 0 12px; }
+ .nav-link { padding: 8px 8px; font-size: 13px; }
+ .nav-cta { gap: 10px; }
+}
+@media (max-width: 900px) {
+ .nav-links { display: none; }
+ .nav-shell { padding: 0 20px; height: 60px; }
+ .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
+ .split { grid-template-columns: 1fr !important; gap: 32px !important; }
+ .faq-side { position: static !important; }
+
+ .nav-burger {
+ display: flex; align-items: center; justify-content: center;
+ width: 44px; height: 44px; margin-right: -10px;
+ background: none; border: none; padding: 0; cursor: pointer;
+ color: var(--lp-text); border-radius: 8px;
+ }
+ .nav-burger:focus-visible { outline: 2px solid var(--lp-text); outline-offset: 2px; }
+
+ /* Both auth actions in a 20px gutter is tight, and the sheet carries both
+    anyway, so only the primary one stays up here — signing up should not
+    require opening a menu first.
+    With the link row hidden, space-between is left with three children and
+    strands the button in the middle of the bar, which reads as a mistake.
+    Pushing it right parks it beside the menu button, where it belongs. */
+ .nav-cta .nav-tap { display: none; }
+ .nav-cta { margin-left: auto; margin-right: 10px; gap: 10px; }
+
+ .nav-sheet {
+ position: fixed; inset: 60px 0 0; z-index: 99;
+ background: rgba(10, 21, 23, 0.35);
+ backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+ animation: nav-sheet-in 180ms ease-out both;
+ }
+ .nav-sheet-inner {
+ background: var(--lp-bg); border-bottom: 1px solid var(--lp-border);
+ padding: 8px 20px 20px;
+ display: flex; flex-direction: column;
+ box-shadow: 0 18px 40px -24px rgba(10,21,23,0.45);
+ animation: nav-sheet-slide 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+ }
+ .nav-sheet-inner a {
+ display: flex; align-items: center; min-height: 48px;
+ font-size: 15px; font-weight: 500; color: var(--lp-body); text-decoration: none;
+ border-bottom: 1px solid var(--lp-border);
+ }
+ .nav-sheet-inner a:last-child { border-bottom: none; }
+ .nav-sheet-sep { height: 12px; }
+ .nav-sheet-lang { display: flex; align-items: center; min-height: 48px; border-bottom: 1px solid var(--lp-border); }
+ .nav-sheet-lang .lp-lang button { min-height: 44px; min-width: 52px; }
+ .nav-sheet-inner a.nav-sheet-cta {
+ justify-content: center; margin-top: 12px; border-bottom: none;
+ background: var(--lp-cta-bg); color: var(--lp-cta-fg); font-weight: 700; border-radius: 12px;
+ }
+ .tour-row { grid-template-columns: 1fr !important; direction: ltr !important; gap: 22px !important; margin-bottom: 48px !important; }
+ .strip-grid { grid-template-columns: repeat(2, 1fr); row-gap: 32px; }
+ .strip-cell { border-right: none; padding: 0 12px; }
+}
+@keyframes nav-sheet-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes nav-sheet-slide { from { transform: translate3d(0, -10px, 0); opacity: 0.6 } to { transform: none; opacity: 1 } }
+
+@media (max-width: 760px) {
+ .sec-inner, .hero-inner { padding: 0 20px; }
+ .strip-shell { padding: 40px 20px; }
+ .strip-value { font-size: 36px; }
+ .card-pad, .lp-card { padding: 22px 20px !important; }
+ .footer-shell { padding: 44px 20px !important; }
+ .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; }
+ .footer-bottom { flex-direction: column; align-items: flex-start !important; gap: 8px; }
+ .lp-lead { font-size: 15.5px; margin-bottom: 36px; }
+ .hero-glow-a { width: 560px; height: 520px; margin-left: -280px; }
+
+ /* 104px of air above and below every section is a desktop rhythm. Stacked
+    into one column on a phone it turned the page into 22,000px — roughly
+    29 screens — and the gaps read as the page having ended. */
+ .sec { padding: 60px 0; }
+
+ /* The hero reserves a full viewport plus a nav offset, which on a short
+    phone screen pushes the first real section below two swipes of mostly
+    empty space. */
+ .hero-sec { min-height: 0; padding-top: 100px; }
+ .hero-note { margin-bottom: 44px; align-items: flex-start; }
+ .hero-pills { padding-bottom: 56px; margin-top: 28px; }
+ .lp-frame, .lp-frame-in { border-radius: 12px; }
+
+ /* Anything tappable clears 44px. These are 36px chips and 17-20px inline
+    links today — fine with a cursor, a coin toss with a thumb. */
+ .btn-primary, .btn-ghost { min-height: 50px; padding: 14px 20px; width: 100%; white-space: normal; text-align: center; }
+ .hero-ctas { flex-direction: column; align-items: stretch; }
+ .case-tabs { display: flex; }
+ .case-tab { min-height: 44px; box-sizing: border-box; }
+ .lp-lang button { min-height: 40px; min-width: 42px; }
+ .nav-signup { min-height: 44px; padding: 0 14px; }
+ .foot-link { display: flex; align-items: center; min-height: 44px; margin-bottom: 0; }
+ .cta-link { min-height: 44px; display: inline-flex; align-items: center; }
+ /* Links that sit inside flowing paragraph text are left alone on purpose:
+    padding them to 44px would tear holes in the line spacing around them,
+    and the paragraph itself is the target the reader is already aiming at. */
+}
+@media (max-width: 380px) {
+ .nav-cta .lp-lang { display: none; }
+}
+
+/* Reduced motion: everything visible and still. */
+@media (prefers-reduced-motion: reduce) {
+ html { scroll-behavior: auto; }
+ .reveal-armed, .reveal-in { opacity: 1 !important; transform: none !important; transition: none !important; }
+ .lp-rise, .lp-frame.lp-land, .lp-swap, .faq-a, .hero-glow, .nav-sheet, .nav-sheet-inner { animation: none !important; }
+ .lp-sheen { display: none; }
+ .lp-card, .lp-card::after, .btn-primary, .btn-ghost, .nav-signup, .tour-shot img, .faq-icon { transition: none !important; }
+ .lp-card:hover, .btn-primary:hover, .btn-ghost:hover, .nav-signup:hover, .tour-row:hover .tour-shot img { transform: none !important; }
+}
+`
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const { lang, setLang } = useLanguage()
+  const { lang } = useLanguage()
   const L = LANDING[lang]
 
   // Same names the render code already used, now sourced from the active
   // language. Nothing below this line had to change.
-  const NAV_LINKS  = L.nav.links
   const FREE_LIMITS = L.pricing.limits
   const PROBLEMS   = L.problem.items
   const STEPS      = L.how.steps
@@ -412,200 +885,73 @@ export default function LandingPage() {
  // customer, the period and the baseline named. A percentage with no source
  // does not go back in.
 
- // ── Content for the long-form sections ───────────────────────────────────────
- // Every number here is checkable against code: signal thresholds and the
- // 3-reception rule from backend/inventory/service.py.
-
  return (
- <>
- <style>{`
- * { box-sizing: border-box; }
- body { margin: 0; background: ${T.bg}; color: ${T.text}; font-family: system-ui, -apple-system, sans-serif; }
- html { scroll-behavior: smooth; }
-
- /* The nav is fixed, so an anchor jump parks the target under it: click Precio
-    in the menu and the eyebrow and half the headline are behind the bar. The
-    offset is the bar height plus a little air, and it belongs on the TARGET,
-    not on the scroll — scroll-margin is the one mechanism that also fixes the
-    keyboard focus jump and the browser restoring a #hash on reload. */
- section[id], #demo { scroll-margin-top: 88px; }
- @media (max-width: 900px) { section[id], #demo { scroll-margin-top: 76px; } }
- .btn-primary {
- display: inline-flex; align-items: center; gap: 7px;
- padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer;
- font-size: 14px; font-weight: 700; color: #fff; text-decoration: none;
- background: ${T.text}; transition: background 0.15s;
- }
- .btn-primary:hover { background: #1e293b; }
- .btn-ghost {
- display: inline-flex; align-items: center; gap: 7px;
- padding: 12px 24px; border-radius: 8px; cursor: pointer;
- font-size: 14px; font-weight: 600; color: ${T.body}; text-decoration: none;
- border: 1px solid ${T.border}; background: transparent; transition: border-color 0.15s, color 0.15s;
- }
- .btn-ghost:hover { border-color: ${T.muted}; color: ${T.text}; }
- input:focus, textarea:focus, select:focus { border-color: ${T.accent} !important; box-shadow: 0 0 0 3px ${T.accentBg} !important; }
-
- /* Scroll reveal. The resting state is visible; useScrollReveal adds
-    .reveal-armed only after it confirms it can also remove it. */
- .reveal-armed { opacity: 0; transform: translateY(12px); }
- .reveal-in {
- opacity: 1; transform: none;
- transition: opacity 380ms cubic-bezier(0.16, 1, 0.3, 1), transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
- }
- @media (prefers-reduced-motion: reduce) {
- .reveal-armed, .reveal-in { opacity: 1 !important; transform: none !important; transition: none !important; }
- }
-
- /* The mobile menu button. Hidden above 900px, where the inline link row is
-    the navigation; below it, it is the only navigation there is. */
- .nav-burger { display: none; }
-
- /* Narrow viewports: collapse the fixed grid columns instead of overflowing.
-    Nothing here changes colour, type or shadow — only how many columns fit. */
- @media (max-width: 900px) {
- /* These two override inline styles on the nav, hence !important. */
- .nav-links { display: none !important; }
- .nav-shell { padding: 0 20px !important; }
- .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
- .split { grid-template-columns: 1fr !important; gap: 32px !important; }
- .faq-side { position: static !important; }
-
- .nav-burger {
- display: flex; align-items: center; justify-content: center;
- width: 44px; height: 44px; margin-right: -10px;
- background: none; border: none; padding: 0; cursor: pointer;
- color: ${T.text}; border-radius: 8px;
- }
- .nav-burger:focus-visible { outline: 2px solid ${T.text}; outline-offset: 2px; }
-
- /* Both auth actions in a 20px gutter is tight, and the sheet carries both
-    anyway, so only the primary one stays up here — signing up should not
-    require opening a menu first.
-    With the link row hidden, space-between is left with three children and
-    strands the button in the middle of the bar, which reads as a mistake.
-    Pushing it right parks it beside the menu button, where it belongs.
-
-    NOTE: no double quotes and no ampersands anywhere inside this style
-    block, comments included. The server escapes them into HTML entities and
-    the client renders them raw, so the two copies of this stylesheet stop
-    matching and hydration fails for the whole page. One quoted word in a CSS
-    comment was enough to do it. */
- .nav-cta .nav-tap { display: none !important; }
- .nav-cta { margin-left: auto; margin-right: 10px; }
-
- .nav-sheet {
- position: fixed; inset: 60px 0 0; z-index: 99;
- background: rgba(15, 23, 42, 0.35);
- backdrop-filter: blur(2px);
- animation: nav-sheet-in 160ms ease-out both;
- }
- .nav-sheet-inner {
- background: #fff; border-bottom: 1px solid ${T.border};
- padding: 8px 20px 20px;
- display: flex; flex-direction: column;
- box-shadow: 0 18px 40px -24px rgba(15,23,42,0.35);
- animation: nav-sheet-slide 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
- }
- .nav-sheet-inner a {
- display: flex; align-items: center; min-height: 48px;
- font-size: 15px; font-weight: 500; color: ${T.body}; text-decoration: none;
- border-bottom: 1px solid ${T.border};
- }
- .nav-sheet-inner a:last-child { border-bottom: none; }
- .nav-sheet-sep { height: 12px; }
- .nav-sheet-inner a.nav-sheet-cta {
- justify-content: center; margin-top: 12px; border-bottom: none;
- background: ${T.text}; color: #fff; font-weight: 700; border-radius: 9px;
- }
- }
- @keyframes nav-sheet-in { from { opacity: 0 } to { opacity: 1 } }
- @keyframes nav-sheet-slide { from { transform: translateY(-8px) } to { transform: none } }
- @media (prefers-reduced-motion: reduce) {
- .nav-sheet, .nav-sheet-inner { animation: none !important; }
- }
- @media (max-width: 760px) {
- .sec-inner, .hero-inner { padding: 0 20px !important; }
- .strip-shell { padding: 32px 20px !important; }
- .strip-grid { grid-template-columns: repeat(2, 1fr) !important; row-gap: 28px; }
- .strip-cell { border-right: none !important; padding: 0 12px !important; }
- .hero-h1 { font-size: 34px !important; }
- .card-pad { padding: 24px 20px !important; }
- .footer-shell { padding: 40px 20px !important; }
- .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; }
- .footer-bottom { flex-direction: column; align-items: flex-start !important; gap: 8px; }
-
- /* 88px of air above and below every section is a desktop rhythm. Stacked
-    into one column on a phone it turned the page into 22,000px — roughly
-    29 screens — and the gaps read as the page having ended. */
- .sec { padding: 52px 0 !important; }
-
- /* The hero reserves a full viewport plus a 120px nav offset, which on a
-    short phone screen pushes the first real section below two swipes of
-    mostly empty space. */
- .hero-sec { min-height: 0 !important; padding-top: 96px !important; }
-
- /* Anything tappable clears 44px. These are 36px chips and 17-20px inline
-    links today — fine with a cursor, a coin toss with a thumb. */
- .btn-primary, .btn-ghost { min-height: 48px; padding: 14px 22px; width: 100%; justify-content: center; }
- .case-tab { min-height: 44px !important; }
- /* These carry an inline display:block, so the override has to say so. */
- .foot-link { display: flex !important; align-items: center; min-height: 44px; margin-bottom: 0 !important; }
- .nav-signup, .cta-link { min-height: 44px; }
- .cta-link { display: inline-flex; align-items: center; }
- /* Links that sit inside flowing paragraph text are left alone on purpose:
-    padding them to 44px would tear holes in the line spacing around them,
-    and the paragraph itself is the target the reader is already aiming at. */
- }
- `}</style>
+ <div className="lp" id="top">
+ <style dangerouslySetInnerHTML={{ __html: LANDING_CSS }} />
 
  <Nav />
 
  {/* ── HERO ─────────────────────────────────────────────────────────── */}
- <section className="hero-sec" style={{ minHeight: '100vh', paddingTop: 120, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', borderBottom: `1px solid ${T.border}` }}>
- <div className="hero-inner" style={{ maxWidth: 1100, width: '100%', margin: '0 auto', padding: '0 48px' }}>
+ <section className="hero-sec">
+ <div className="hero-bg" aria-hidden>
+ <div className="hero-glow hero-glow-a" />
+ <div className="hero-glow hero-glow-b" />
+ <div className="hero-grid" />
+ </div>
+ <div className="hero-inner">
 
- <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, marginBottom: 24, background: T.greenBg, border: `1px solid ${T.greenBd}`, fontSize: 11, fontWeight: 700, color: T.green, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+ <div className="hero-eyebrow lp-rise">
+ <span className="hero-eyebrow-dot" aria-hidden />
  {L.hero.eyebrow}
  </div>
 
- <h1 className="hero-h1" style={{ fontSize: 56, fontWeight: 900, color: T.text, margin: '0 0 18px', letterSpacing: '-0.05em', lineHeight: 1.1, maxWidth: 720 }}>
+ <h1 className="lp-h1 lp-rise lp-d1">
  {L.hero.title1}
  <br />
  {L.hero.title2}
  </h1>
 
- <p style={{ fontSize: 18, color: T.body, lineHeight: 1.65, maxWidth: 560, margin: '0 0 36px' }}>
+ <p className="hero-lead lp-rise lp-d2">
  {L.hero.lead}
  </p>
 
- <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 60 }}>
+ <div className="hero-ctas lp-rise lp-d3">
  <Link href={appHref('/signup?demo=1')} className="btn-primary">{L.hero.cta}</Link>
+ {/* A temporary account for a visitor who wants to look before giving
+     an email. The page itself (/prueba) belongs to the trial workstream. */}
+ <Link href={appHref('/prueba')} className="btn-ghost">{L.hero.ctaTrial}</Link>
  </div>
+ <p className="hero-note lp-rise lp-d4">
+ <Check />
+ <span>{L.hero.trialNote}</span>
+ </p>
 
  {/* Framed real product screenshot */}
- <div id="demo" style={{ borderRadius: 14, border: `1px solid ${T.border}`, background: T.bg2, boxShadow: '0 24px 60px rgba(15,23,42,0.14)', overflow: 'hidden' }}>
- <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 16px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
- <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#f87171' }} />
- <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#fbbf24' }} />
- <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#34d399' }} />
- <span style={{ marginLeft: 12, fontSize: 11.5, color: T.dim, fontWeight: 500 }}>{L.hero.frame}</span>
+ <div className="hero-stage">
+ <div id="demo" className="lp-frame lp-land">
+ <div className="lp-frame-in">
+ <div className="lp-chrome" aria-hidden>
+ <i /><i /><i />
+ <span>{L.hero.frame}</span>
  </div>
- <img src={HERO_SHOT.img} alt={HERO_SHOT.alt} style={{ display: 'block', width: '100%', height: 'auto' }} />
+ <img src={HERO_SHOT.img} alt={HERO_SHOT.alt} fetchPriority="high" width={3200} height={2000} style={{ height: 'auto' }} />
+ <div className="lp-sheen" aria-hidden />
+ </div>
+ </div>
  </div>
 
- <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginTop: 36, paddingBottom: 72, flexWrap: 'wrap' }}>
- <div style={{ fontSize: 12, color: T.dim }}>{L.misc.industriesLabel}</div>
+ <div className="hero-pills lp-rise lp-d5">
+ <div className="lp-label" style={{ marginRight: 4 }}>{L.misc.industriesLabel}</div>
  {L.heroPills.map(s => (
- <span key={s} style={{ fontSize: 12, fontWeight: 500, color: T.muted, padding: '4px 12px', borderRadius: 20, border: `1px solid ${T.border}` }}>{s}</span>
+ <span key={s} className="hero-pill">{s}</span>
  ))}
  </div>
  </div>
  </section>
 
  {/* ── STATS STRIP ──────────────────────────────────────────────────── */}
- <div className="strip-shell" style={{ background: T.text, padding: '40px 48px' }}>
- <div className="strip-grid" data-reveal style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
+ <div className="strip-shell">
+ <div className="strip-grid" data-reveal>
  {/* Every figure here has to be one the product can back, because the buyer
      who believes it lands two clicks later on /pronosticos and checks.
      This strip used to lead with "94% Precisión promedio de pronóstico" and
@@ -624,10 +970,10 @@ export default function LandingPage() {
  { value: '3', label: L.strip.deliveries },
  { value: '5K+', label: L.strip.skus },
  { value: 'CSV', label: L.strip.csv },
- ].map(({ value, label }, i) => (
- <div key={label} className="strip-cell" style={{ textAlign: 'center', padding: '0 32px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
- <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', letterSpacing: '-0.04em', marginBottom: 6 }}>{value}</div>
- <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>{label}</div>
+ ].map(({ value, label }) => (
+ <div key={label} className="strip-cell">
+ <div className="strip-value">{value}</div>
+ <div className="strip-label">{label}</div>
  </div>
  ))}
  </div>
@@ -640,12 +986,12 @@ export default function LandingPage() {
  <Lead>
  {L.problem.lead}
  </Lead>
- <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
+ <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(310px, 100%), 1fr))', gap: 16 }}>
  {PROBLEMS.map(({ title, desc }) => (
- <div key={title} data-reveal className="card-pad" style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
- <div style={{ width: 32, height: 3, background: T.accent, borderRadius: 2, marginBottom: 16 }} />
- <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 8, lineHeight: 1.4 }}>{title}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.65 }}>{desc}</div>
+ <div key={title} data-reveal className="lp-card">
+ <div className="lp-bar" />
+ <div className="lp-card-title">{title}</div>
+ <div className="lp-card-body">{desc}</div>
  </div>
  ))}
  </div>
@@ -658,13 +1004,13 @@ export default function LandingPage() {
  <Lead>
  {L.how.lead}
  </Lead>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
  {STEPS.map(({ n, title, desc }) => (
- <div key={n} data-reveal className="card-pad" style={{ display: 'flex', gap: 18, alignItems: 'flex-start', background: T.bg2, borderRadius: 10, padding: '22px 24px', border: `1px solid ${T.border}` }}>
- <div style={{ width: 36, height: 36, borderRadius: 8, flexShrink: 0, background: T.accentBg, border: `1px solid ${T.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: T.accent, fontFamily: 'monospace' }}>{n}</div>
+ <div key={n} data-reveal className="lp-card lp-card-soft" style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+ <div className="lp-step">{n}</div>
  <div>
- <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>{title}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.65 }}>{desc}</div>
+ <div className="lp-card-title">{title}</div>
+ <div className="lp-card-body">{desc}</div>
  </div>
  </div>
  ))}
@@ -672,23 +1018,23 @@ export default function LandingPage() {
 
  {/* The guided tour: its own heading, so the reader knows a long stretch of
      screens is starting and is not still inside "how it works". */}
- <div style={{ marginTop: 88, maxWidth: 720 }}>
-  <h3 style={{ fontSize: 30, fontWeight: 800, color: T.text, letterSpacing: '-0.025em', margin: '0 0 12px', lineHeight: 1.2 }}>
+ <div style={{ marginTop: 104, maxWidth: 720 }}>
+  <h3 className="lp-h2" style={{ fontSize: 'clamp(26px, 3vw, 34px)' }}>
    {L.tour.title}
   </h3>
-  <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.tour.lead}</p>
+  <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.tour.lead}</p>
  </div>
 
  {/* One row per screen: the capture on one side, what it does on the other.
      Sides alternate for rhythm and collapse to one column on narrow viewports
-     (`tour-row`, in globals.css). */}
+     (`tour-row`, in the stylesheet above). */}
  {TOUR.map(({ chapter, when, screens }) => (
-  <div key={chapter} style={{ marginTop: 64 }}>
-   <div style={{ borderTop: `2px solid ${T.text}`, paddingTop: 14, marginBottom: 40, maxWidth: 620 }}>
-    <h3 style={{ fontSize: 22, fontWeight: 800, color: T.text, letterSpacing: '-0.02em', margin: '0 0 6px' }}>
+  <div key={chapter} style={{ marginTop: 72 }}>
+   <div className="tour-chapter">
+    <h3 className="lp-h3" style={{ fontSize: 23, margin: '0 0 6px' }}>
      {chapter}
     </h3>
-    <p style={{ fontSize: 14, color: T.muted, margin: 0, lineHeight: 1.6 }}>{when}</p>
+    <p style={{ fontSize: 14.5, color: T.muted, margin: 0, lineHeight: 1.6 }}>{when}</p>
    </div>
 
    {screens.map(({ img, name, does, finds, alt }, i) => (
@@ -698,25 +1044,27 @@ export default function LandingPage() {
      className="tour-row"
      style={{
       display: 'grid',
-      gridTemplateColumns: '1.25fr 1fr',
-      gap: 44,
+      gridTemplateColumns: '1.3fr 1fr',
+      gap: 48,
       alignItems: 'center',
-      marginBottom: 56,
+      marginBottom: 64,
       direction: i % 2 === 1 ? 'rtl' : 'ltr',
      }}
     >
-     <div style={{ direction: 'ltr', borderRadius: 12, border: `1px solid ${T.border}`, overflow: 'hidden', boxShadow: '0 14px 40px rgba(15,23,42,0.11)' }}>
-      <img src={img} alt={alt} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+     <div className="tour-shot">
+      <div className="tour-shot-in">
+       <img src={img} alt={alt} loading="lazy" decoding="async" />
+      </div>
      </div>
      <div style={{ direction: 'ltr' }}>
-      <h4 style={{ fontSize: 19, fontWeight: 700, color: T.text, letterSpacing: '-0.01em', margin: '0 0 10px' }}>
+      <h4 style={{ fontFamily: DISPLAY, fontSize: 21, fontWeight: 600, color: T.text, letterSpacing: '-0.02em', margin: '0 0 10px' }}>
        {name}
       </h4>
-      <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.7, margin: '0 0 16px' }}>{does}</p>
+      <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 16px' }}>{does}</p>
       <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 9 }}>
        {finds.map((f) => (
-        <li key={f} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13.5, color: T.body, lineHeight: 1.6 }}>
-         <span aria-hidden style={{ flexShrink: 0, width: 5, height: 5, borderRadius: 999, background: T.accent, marginTop: 8 }} />
+        <li key={f} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, color: T.body, lineHeight: 1.6 }}>
+         <span aria-hidden className="tour-dot" />
          {f}
         </li>
        ))}
@@ -731,17 +1079,13 @@ export default function LandingPage() {
      screens, and this is where wanting the whole thing on paper happens.
      The file follows the language — `stockai-manual-es.pdf` / `-en.pdf`, both
      built by `backend/scripts/build_manual.py` from `docs/manual/`. */}
- <div data-reveal style={{ marginTop: 80, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '34px 36px', display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+ <div data-reveal className="lp-card lp-card-soft" style={{ marginTop: 80, padding: '34px 36px', display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
   <div style={{ flex: '1 1 380px', minWidth: 0 }}>
-   <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 8, letterSpacing: '-0.015em' }}>{L.manual.title}</div>
-   <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.manual.body}</p>
+   <div style={{ fontFamily: DISPLAY, fontSize: 22, fontWeight: 600, color: T.text, marginBottom: 8, letterSpacing: '-0.02em' }}>{L.manual.title}</div>
+   <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.manual.body}</p>
   </div>
-  <div style={{ flexShrink: 0 }}>
-   <a
-    href={`/stockai-manual-${lang}.pdf`}
-    download
-    style={{ display: 'inline-block', background: T.accent, color: '#fff', fontSize: 14, fontWeight: 700, padding: '13px 24px', borderRadius: 9, textDecoration: 'none' }}
-   >
+  <div style={{ flexShrink: 0, minWidth: 0 }}>
+   <a href={`/stockai-manual-${lang}.pdf`} download className="btn-primary btn-sm">
     {L.manual.cta}
    </a>
    <div style={{ fontSize: 12, color: T.muted, marginTop: 9 }}>{L.manual.note}</div>
@@ -760,42 +1104,42 @@ export default function LandingPage() {
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start', marginBottom: 32 }}>
  <div>
  <H3>{L.decide.formulaTitle}</H3>
- <p style={{ fontSize: 14, color: T.body, lineHeight: 1.75, margin: '0 0 14px' }}>
+ <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: '0 0 14px' }}>
  {L.decide.formulaBody}
  </p>
- <p style={{ fontSize: 14, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: 0 }}>
  {L.decide.formulaBody2}
  </p>
  </div>
- <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>{L.misc.exampleTitle}</div>
- <p style={{ fontSize: 14, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ <div className="lp-card" style={{ borderLeft: `3px solid ${T.accent}` }}>
+ <div className="lp-label" style={{ color: T.accent, marginBottom: 10 }}>{L.misc.exampleTitle}</div>
+ <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: 0 }}>
  {L.misc.exampleBody}
  </p>
  </div>
  </div>
 
  <Scroller minWidth={660}>
- <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
- <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 250px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.misc.signalHead[0]}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.misc.signalHead[1]}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.misc.signalHead[2]}</div>
+ <div className="lp-table">
+ <div className="lp-table-head" style={{ display: 'grid', gridTemplateColumns: '170px 1fr 250px' }}>
+ <div className="lp-label">{L.misc.signalHead[0]}</div>
+ <div className="lp-label">{L.misc.signalHead[1]}</div>
+ <div className="lp-label">{L.misc.signalHead[2]}</div>
  </div>
- {SIGNALS.map(({ signal, rule, example, color }, i) => (
- <div key={signal} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 250px', padding: '15px 24px', alignItems: 'center', background: i % 2 === 0 ? T.bg : T.bg2, borderBottom: i < SIGNALS.length - 1 ? `1px solid ${T.border}` : 'none' }}>
- <span style={{ fontSize: 12, fontWeight: 800, color, letterSpacing: '0.02em' }}>{signal}</span>
- <span style={{ fontSize: 13, color: T.body, lineHeight: 1.5, paddingRight: 16 }}>{rule}</span>
- <span style={{ fontSize: 13, color: T.muted }}>{example}</span>
+ {SIGNALS.map(({ signal, rule, example, color }) => (
+ <div key={signal} className="lp-table-row" style={{ display: 'grid', gridTemplateColumns: '170px 1fr 250px' }}>
+ <span className="lp-signal" style={{ color }}><i aria-hidden />{signal}</span>
+ <span style={{ fontSize: 13.5, color: T.body, lineHeight: 1.5, paddingRight: 16 }}>{rule}</span>
+ <span style={{ fontSize: 13.5, color: T.muted }}>{example}</span>
  </div>
  ))}
  </div>
  </Scroller>
 
- <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px', marginTop: 20 }}>
- <div style={{ width: 32, height: 3, background: T.accent, borderRadius: 2, marginBottom: 16 }} />
- <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 8 }}>{L.misc.leadTimeNote}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7 }}>
+ <div className="lp-card" style={{ marginTop: 20 }}>
+ <div className="lp-bar" />
+ <div className="lp-card-title">{L.misc.leadTimeNote}</div>
+ <div className="lp-card-body">
  {L.decide.leadTimeBody}
  </div>
  </div>
@@ -803,14 +1147,14 @@ export default function LandingPage() {
 
  {/* ── ABOUT US ─────────────────────────────────────────────────────── */}
  <Section id="nosotros">
- {/* TODO: el dueño puede personalizar la historia/equipo real aquí */}
+ {/* The owner can replace this with the real story / team. */}
  <div style={{ maxWidth: 760 }}>
  <Tag>{L.about.tag}</Tag>
  <H2>{L.about.title}</H2>
- <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
+ <p style={{ fontSize: 17, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
  {L.about.body1}
  </p>
- <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ <p style={{ fontSize: 17, color: T.body, lineHeight: 1.75, margin: 0 }}>
  {L.about.body2}
  </p>
  </div>
@@ -823,28 +1167,28 @@ export default function LandingPage() {
  <Lead>
  {L.cases.lead}
  </Lead>
- <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
+ <div className="case-tabs" role="tablist">
  {CASES.map(({ label }, i) => (
- <button key={label} className="case-tab" onClick={() => setActiveCase(i)} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600, background: activeCase === i ? T.accentBg : T.bg, border: `1px solid ${activeCase === i ? T.accentBd : T.border}`, color: activeCase === i ? T.accent : T.muted, transition: 'all 0.15s' }}>
+ <button key={label} type="button" role="tab" aria-selected={activeCase === i} className={`case-tab${activeCase === i ? ' is-on' : ''}`} onClick={() => setActiveCase(i)}>
  {label}
  </button>
  ))}
  </div>
- <div className="split card-pad" style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: '36px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
- <div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>{CASES[activeCase].label}</div>
- <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
- <div style={{ fontSize: 14, color: T.body, lineHeight: 1.75 }}>{CASES[activeCase].desc}</div>
+ <div className="split lp-card" style={{ padding: '38px 40px', borderRadius: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
+ <div key={`a-${activeCase}`} className="lp-swap">
+ <div className="lp-label" style={{ color: T.accent, marginBottom: 12 }}>{CASES[activeCase].label}</div>
+ <div style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
+ <div style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75 }}>{CASES[activeCase].desc}</div>
  </div>
- <div>
+ <div key={`b-${activeCase}`} className="lp-swap" style={{ animationDelay: '60ms' }}>
  {/* Was "Impacto típico en …" over a column of green percentages. The
      heading promised a measured outcome, so the numbers under it read as
      measurements; none of them were. It now says what the product does. */}
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>{L.cases.doesLabel}  {CASES[activeCase].label.toLowerCase()}</div>
+ <div className="lp-label" style={{ marginBottom: 10 }}>{L.cases.doesLabel}  {CASES[activeCase].label.toLowerCase()}</div>
  {CASES[activeCase].does.map(item => (
  <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '14px 0', borderBottom: `1px solid ${T.border}` }}>
- <span style={{ flexShrink: 0, width: 6, height: 6, marginTop: 7, borderRadius: '50%', background: T.green }} />
- <span style={{ fontSize: 13, color: T.body, lineHeight: 1.65 }}>{item}</span>
+ <span style={{ flexShrink: 0, width: 6, height: 6, marginTop: 8, borderRadius: '50%', background: T.green }} />
+ <span style={{ fontSize: 14, color: T.body, lineHeight: 1.65 }}>{item}</span>
  </div>
  ))}
  </div>
@@ -861,11 +1205,11 @@ export default function LandingPage() {
  {L.benefits.lead}
  </Lead>
  </div>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px' }}>
  {BENEFITS.map(b => (
- <div key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 0' }}>
- <Check />
- <span style={{ fontSize: 13, color: T.body, lineHeight: 1.5 }}>{b}</span>
+ <div key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', borderBottom: `1px solid ${T.border}` }}>
+ <div style={{ marginTop: 1 }}><Check /></div>
+ <span style={{ fontSize: 14, color: T.body, lineHeight: 1.5 }}>{b}</span>
  </div>
  ))}
  </div>
@@ -880,17 +1224,17 @@ export default function LandingPage() {
  {L.compare.lead}
  </Lead>
  <Scroller minWidth={620}>
- <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.border}` }}>
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', background: T.surface, padding: '12px 24px', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{L.compare.head[0]}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{L.compare.head[1]}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{L.compare.head[2]}</div>
+ <div className="lp-table">
+ <div className="lp-table-head" style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px' }}>
+ <div className="lp-label">{L.compare.head[0]}</div>
+ <div className="lp-label" style={{ textAlign: 'center' }}>{L.compare.head[1]}</div>
+ <div className="lp-label" style={{ textAlign: 'center', color: T.accent }}>{L.compare.head[2]}</div>
  </div>
- {COMPARE.map(({ feature, excel, stockai }, i) => (
- <div key={feature} style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', padding: '15px 24px', alignItems: 'center', background: i % 2 === 0 ? T.bg : T.bg2, borderBottom: i < COMPARE.length - 1 ? `1px solid ${T.border}` : 'none' }}>
- <span style={{ fontSize: 13, color: T.body }}>{feature}</span>
- <span style={{ fontSize: 13, color: T.red, textAlign: 'center', fontWeight: 500 }}>{excel}</span>
- <span style={{ fontSize: 13, color: T.green, textAlign: 'center', fontWeight: 700 }}>{stockai}</span>
+ {COMPARE.map(({ feature, excel, stockai }) => (
+ <div key={feature} className="lp-table-row" style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px' }}>
+ <span style={{ fontSize: 14, color: T.body }}>{feature}</span>
+ <span style={{ fontSize: 13.5, color: T.red, textAlign: 'center', fontWeight: 500 }}>{excel}</span>
+ <span style={{ fontSize: 13.5, color: T.green, textAlign: 'center', fontWeight: 700 }}>{stockai}</span>
  </div>
  ))}
  </div>
@@ -904,22 +1248,22 @@ export default function LandingPage() {
  <Lead maxWidth={680}>
  {L.start.lead}
  </Lead>
- <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
- <div>
+ <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'stretch' }}>
+ <div className="lp-card lp-card-soft">
  <H3>{L.start.needTitle}</H3>
  {NEED.map(n => (
- <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 0' }}>
+ <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 0' }}>
  <div style={{ marginTop: 3 }}><Check /></div>
- <span style={{ fontSize: 13.5, color: T.body, lineHeight: 1.6 }}>{n}</span>
+ <span style={{ fontSize: 14, color: T.body, lineHeight: 1.6 }}>{n}</span>
  </div>
  ))}
  </div>
- <div>
+ <div className="lp-card">
  <H3>{L.start.notNeedTitle}</H3>
  {NOT_NEED.map(n => (
- <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 0' }}>
+ <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 0' }}>
  <div style={{ marginTop: 3 }}><Dash /></div>
- <span style={{ fontSize: 13.5, color: T.body, lineHeight: 1.6 }}>{n}</span>
+ <span style={{ fontSize: 14, color: T.body, lineHeight: 1.6 }}>{n}</span>
  </div>
  ))}
  </div>
@@ -927,23 +1271,23 @@ export default function LandingPage() {
  </Section>
 
  {/* ── PRICE ────────────────────────────────────────────────────────── */}
- <Section id="precio">
+ <Section id="precio" alt>
  <Tag>{L.pricing.tag}</Tag>
  <H2>{L.pricing.title}</H2>
  <Lead maxWidth={720}>
  {L.pricing.lead}
  </Lead>
 
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, maxWidth: 860, marginBottom: 28 }}>
- <div data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '28px 26px' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>{L.pricing.freeLabel}</div>
- <div style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: '-0.02em', marginBottom: 4 }}>{L.pricing.freePrice}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7, marginBottom: 18 }}>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, maxWidth: 880, marginBottom: 20 }}>
+ <div data-reveal className="lp-card price-card">
+ <div className="lp-label" style={{ marginBottom: 10 }}>{L.pricing.freeLabel}</div>
+ <div className="price-amount">{L.pricing.freePrice}</div>
+ <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, marginBottom: 20 }}>
  {L.pricing.freeNote}
  </div>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
  {FREE_LIMITS.map(([label, value]) => (
- <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: T.body, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+ <div key={label} className="price-row">
  <span>{label}</span>
  <span style={{ fontWeight: 700, color: T.text, whiteSpace: 'nowrap' }}>{value}</span>
  </div>
@@ -951,10 +1295,10 @@ export default function LandingPage() {
  </div>
  </div>
 
- <div data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.accentBd}`, borderRadius: 12, padding: '28px 26px' }}>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>{L.pricing.paidLabel}</div>
- <div style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: '-0.02em', marginBottom: 4 }}>{L.pricing.paidPrice}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7, marginBottom: 18 }}>
+ <div data-reveal className="lp-card price-card is-paid">
+ <div className="lp-label" style={{ color: T.accent, marginBottom: 10 }}>{L.pricing.paidLabel}</div>
+ <div className="price-amount">{L.pricing.paidPrice}</div>
+ <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, marginBottom: 20 }}>
  {L.pricing.paidNote}
  </div>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -962,7 +1306,7 @@ export default function LandingPage() {
      blanket "unlimited" for every row, which claimed an uncapped upload size
      on a tier that entitlements/plans.py bounds at 2000 MB. */}
  {FREE_LIMITS.map(([label, , paid]) => (
- <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: T.body, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+ <div key={label} className="price-row">
  <span>{label}</span>
  <span style={{ fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{paid}</span>
  </div>
@@ -971,26 +1315,21 @@ export default function LandingPage() {
  </div>
  </div>
 
- <div data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '28px 32px', maxWidth: 860 }}>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.75, marginBottom: 20 }}>
+ {/* The closing call to action of the page: sign up, try without an
+     account, or talk to us. */}
+ <div data-reveal className="lp-card" style={{ padding: '30px 32px', maxWidth: 880, borderRadius: 16 }}>
+ <div style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, marginBottom: 20 }}>
  {L.pricing.closing}
  </div>
- <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
- <Link href={appHref('/signup')} style={{
- display: 'inline-block', padding: '11px 20px', borderRadius: 8,
- fontSize: 13, fontWeight: 700, textDecoration: 'none',
- background: T.text, color: '#fff',
- }}>{L.pricing.ctaSignup}</Link>
- <a href={`https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent('Hola, quiero ampliar los limites de StockAI.')}`} target="_blank" rel="noopener noreferrer" style={{
- display: 'inline-block', padding: '11px 20px', borderRadius: 8,
- fontSize: 13, fontWeight: 700, textDecoration: 'none',
- background: T.bg, color: T.text, border: `1px solid ${T.border}`,
- }}>{L.pricing.ctaWhatsapp}</a>
- <a href="mailto:hola@usefaro.io?subject=StockAI%20%E2%80%94%20quiero%20una%20cotizaci%C3%B3n" style={{
- display: 'inline-block', padding: '11px 20px', borderRadius: 8,
- fontSize: 13, fontWeight: 700, textDecoration: 'none',
- background: T.bg, color: T.text, border: `1px solid ${T.border}`,
- }}>{L.pricing.ctaEmail}</a>
+ <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+ <Link href={appHref('/signup')} className="btn-primary btn-sm">{L.pricing.ctaSignup}</Link>
+ <Link href={appHref('/prueba')} className="btn-ghost btn-sm">{L.hero.ctaTrial}</Link>
+ <a href={`https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent('Hola, quiero ampliar los limites de StockAI.')}`} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">{L.pricing.ctaWhatsapp}</a>
+ <a href="mailto:hola@usefaro.io?subject=StockAI%20%E2%80%94%20quiero%20una%20cotizaci%C3%B3n" className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
+ </div>
+ <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 16, fontSize: 12.5, color: T.muted, lineHeight: 1.5 }}>
+ <Check />
+ <span>{L.hero.trialNote}</span>
  </div>
  </div>
  </Section>
@@ -1004,14 +1343,14 @@ export default function LandingPage() {
  </Lead>
 
  <H3>{L.includes.rolesTitle}</H3>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 48 }}>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 56 }}>
  {ROLES.map(({ role, pain, gain }) => (
- <div key={role} data-reveal className="card-pad" style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
- <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>{role}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.dim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{L.misc.roleToday}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.65, marginBottom: 14 }}>{pain}</div>
- <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{L.misc.roleWith}</div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.65 }}>{gain}</div>
+ <div key={role} data-reveal className="lp-card lp-card-soft">
+ <div className="lp-card-title" style={{ marginBottom: 16 }}>{role}</div>
+ <div className="lp-label" style={{ marginBottom: 6 }}>{L.misc.roleToday}</div>
+ <div className="lp-card-body" style={{ marginBottom: 16 }}>{pain}</div>
+ <div className="lp-label" style={{ color: T.accent, marginBottom: 6 }}>{L.misc.roleWith}</div>
+ <div className="lp-card-body">{gain}</div>
  </div>
  ))}
  </div>
@@ -1019,19 +1358,19 @@ export default function LandingPage() {
  <H3>{L.includes.itemsTitle}</H3>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
  {INCLUDES.map(({ title, desc, isNew }) => (
- <div key={title} data-reveal className="card-pad" style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '22px 24px' }}>
+ <div key={title} data-reveal className="lp-card">
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
- <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{title}</span>
+ <span className="lp-card-title" style={{ marginBottom: 0 }}>{title}</span>
  {isNew && (
- <span style={{ fontSize: 10, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{L.includes.isNew}</span>
+ <span style={{ fontSize: 11, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px' }}>{L.includes.isNew}</span>
  )}
  </div>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.7 }}>{desc}</div>
+ <div className="lp-card-body">{desc}</div>
  </div>
  ))}
  </div>
 
- <p style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, margin: '28px 0 0', maxWidth: 760 }}>
+ <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '28px 0 0', maxWidth: 760 }}>
  {L.includes.tail}
  </p>
  </Section>
@@ -1040,48 +1379,44 @@ export default function LandingPage() {
  {/* The only place the page names the machinery (model competition,
      backtesting, ABC-XYZ, API/MCP). Kept compact and below the fold on
      purpose: the landing speaks to the buyer (owner's call, 2026-09-30). */}
- <Section id="tecnico" style={{ padding: '56px 0', borderTop: `1px solid ${T.border}` }}>
+ <Section id="tecnico" alt style={{ padding: '64px 0' }}>
  <Tag>{L.tech.tag}</Tag>
  <H3>{L.tech.title}</H3>
- <p style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, margin: '0 0 20px', maxWidth: 640 }}>
+ <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '0 0 22px', maxWidth: 640 }}>
  {L.tech.lead}
  </p>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
  {L.tech.items.map(({ title, desc }) => (
- <div key={title} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 18px' }}>
- <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>{title}</div>
- <div style={{ fontSize: 12.5, color: T.body, lineHeight: 1.6 }}>{desc}</div>
+ <div key={title} className="lp-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
+ <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, marginBottom: 4 }}>{title}</div>
+ <div style={{ fontSize: 13, color: T.body, lineHeight: 1.6 }}>{desc}</div>
  </div>
  ))}
  </div>
  </Section>
 
  {/* ── FAQ ──────────────────────────────────────────────────────────── */}
- <Section alt>
+ <Section>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 72, alignItems: 'start' }}>
- <div className="faq-side" style={{ position: 'sticky', top: 80 }}>
+ <div className="faq-side" style={{ position: 'sticky', top: 96 }}>
  <Tag>{L.faq.tag}</Tag>
  <H2>{L.faq.title}</H2>
- <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 24px' }}>
+ <p style={{ fontSize: 15.5, color: T.body, lineHeight: 1.7, margin: '0 0 24px' }}>
  {L.faq.lead}
  </p>
- <a href="mailto:hola@usefaro.io" className="cta-link" style={{ fontSize: 13, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
+ <a href="mailto:hola@usefaro.io" className="cta-link" style={{ fontSize: 14, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
  {L.faq.cta}
  </a>
  </div>
- <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderTop: `1px solid ${T.border}` }}>
  {FAQS.map(({ q, a }, i) => (
  <div key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
- <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{
- all: 'unset', cursor: 'pointer', width: '100%', display: 'flex',
- justifyContent: 'space-between', alignItems: 'center',
- padding: '20px 0', gap: 16,
- }}>
- <span style={{ fontSize: 14, fontWeight: 600, color: T.text, lineHeight: 1.4, textAlign: 'left' }}>{q}</span>
- <span style={{ flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: T.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.muted, fontWeight: 400, lineHeight: 1, transition: 'transform 0.2s', transform: openFaq === i ? 'rotate(45deg)' : 'none' }}>+</span>
+ <button type="button" className="faq-q" aria-expanded={openFaq === i} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+ <span className="faq-q-text">{q}</span>
+ <span aria-hidden className={`faq-icon${openFaq === i ? ' is-open' : ''}`}>+</span>
  </button>
  {openFaq === i && (
- <div style={{ fontSize: 14, color: T.body, lineHeight: 1.7, paddingBottom: 20 }}>{a}</div>
+ <div className="faq-a">{a}</div>
  )}
  </div>
  ))}
@@ -1090,53 +1425,41 @@ export default function LandingPage() {
  </Section>
 
  {/* ── FOOTER ───────────────────────────────────────────────────────── */}
- <footer className="footer-shell" style={{ background: T.bg2, borderTop: `1px solid ${T.border}`, padding: '40px 48px' }}>
- <div style={{ maxWidth: 1100, margin: '0 auto' }}>
- <div className="footer-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 40, marginBottom: 40 }}>
+ <footer className="footer-shell" style={{ background: T.bg2, borderTop: `1px solid ${T.border}`, padding: '56px 48px 40px' }}>
+ <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+ <div className="footer-grid" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 40, marginBottom: 40 }}>
  <div>
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
- <Wordmark size={19} color={T.text} accent={T.accent} />
+ <Wordmark size={20} color={T.text} accent={T.accent} />
  </div>
- <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, margin: 0 }}>
+ <p style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.6, margin: 0, maxWidth: 34 + 'ch' }}>
  {L.footer.tagline}
  </p>
  </div>
  <div>
- <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>{L.footer.product}</div>
+ <div className="foot-head">{L.footer.product}</div>
  {L.footerLinks.product.map(([href, label]) => (
- <a key={href} href={href} className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
- onMouseEnter={e => (e.currentTarget.style.color = T.text)}
- onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
- >{label}</a>
+ <a key={href} href={href} className="foot-link">{label}</a>
  ))}
  </div>
  <div>
- <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>{L.footer.company}</div>
+ <div className="foot-head">{L.footer.company}</div>
  {L.footerLinks.company.map(([href, label]) => (
- <a key={label} href={href} className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 10 }}
- onMouseEnter={e => (e.currentTarget.style.color = T.text)}
- onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
- >{label}</a>
+ <a key={label} href={href} className="foot-link">{label}</a>
  ))}
  </div>
- <div>
- <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>{L.footer.contact}</div>
- <a href="mailto:angel.zeledon.fernandez@gmail.com" className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none', marginBottom: 8, wordBreak: 'break-word' }}
- onMouseEnter={e => (e.currentTarget.style.color = T.accent)}
- onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
- >angel.zeledon.fernandez@gmail.com</a>
- <a href="tel:+50671862820" className="foot-link" style={{ display: 'block', fontSize: 13, color: T.muted, textDecoration: 'none' }}
- onMouseEnter={e => (e.currentTarget.style.color = T.accent)}
- onMouseLeave={e => (e.currentTarget.style.color = T.muted)}
- >+506 7186 2820</a>
+ <div style={{ minWidth: 0 }}>
+ <div className="foot-head">{L.footer.contact}</div>
+ <a href="mailto:angel.zeledon.fernandez@gmail.com" className="foot-link" style={{ wordBreak: 'break-word' }}>angel.zeledon.fernandez@gmail.com</a>
+ <a href="tel:+50671862820" className="foot-link">+506 7186 2820</a>
  </div>
  </div>
  <div className="footer-bottom" style={{ borderTop: `1px solid ${T.border}`, paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
- <div style={{ fontSize: 12, color: T.dim }}>{L.footer.rights}</div>
- <div style={{ fontSize: 12, color: T.dim }}>{L.footer.madeIn}</div>
+ <div style={{ fontSize: 12.5, color: T.dim }}>{L.footer.rights}</div>
+ <div style={{ fontSize: 12.5, color: T.dim }}>{L.footer.madeIn}</div>
  </div>
  </div>
  </footer>
- </>
+ </div>
  )
 }
