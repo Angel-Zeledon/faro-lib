@@ -15,7 +15,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: [
-        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$',
+        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$', '/desarrolladores$',
         '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
       disallow: ['/'],
     },
