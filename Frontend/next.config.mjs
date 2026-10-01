@@ -77,9 +77,15 @@ const nextConfig = {
       ['/config',                       '/mi-cuenta'],
       ['/settings',                     '/automatizacion'],
     ]
-    return MOVED.map(([source, destination]) => ({
-      source, destination, permanent: true,
-    }))
+    return [
+      ...MOVED.map(([source, destination]) => ({
+        source, destination, permanent: true,
+      })),
+      // TEMPORARY (2026-10-01): the landing links to the developer docs before
+      // they ship. Until app/desarrolladores exists, send those links to the
+      // API section of /precios instead of a 404. Remove when the page lands.
+      { source: '/desarrolladores', destination: '/precios#api', permanent: false },
+    ]
   },
   async headers() {
     return [

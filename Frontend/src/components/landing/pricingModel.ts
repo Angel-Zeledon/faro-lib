@@ -1,4 +1,6 @@
-// PROPOSED PRICES — pending owner confirmation
+// PRICES — confirmed by the owner on 2026-10-01 (the agent's proposal, with
+// 50,000 API calls a month included so the full plan never includes fewer
+// than the free plan's 500 a day).
 //
 // Every number the pricing calculator shows lives in this file, and nowhere
 // else. The landing renders an ESTIMATE from it: there is still no checkout,
@@ -27,7 +29,7 @@ export const FULL_PLAN = {
     skus: 1_000,
     users: 5,
     warehouses: 3,
-    apiCallsPerMonth: 10_000,
+    apiCallsPerMonth: 50_000,
   },
   // Each add-on is priced per block: `price` for every started `per` units
   // above what the base includes.
