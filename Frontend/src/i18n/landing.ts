@@ -36,7 +36,8 @@ export interface TourScreen { img: string; name: string; does: string; finds: st
 export interface TourChapter { chapter: string; when: string; screens: TourScreen[] }
 
 export interface LandingCopy {
-  nav: { links: [string, string][]; signIn: string; signUp: string; menu: string }
+  // ariaLabel names the <nav> landmark for screen readers.
+  nav: { links: [string, string][]; signIn: string; signUp: string; menu: string; ariaLabel: string }
   heroPills: string[]
   footerLinks: { product: [string, string][]; company: [string, string][] }
   // `ctaTrial` leads to /prueba: a throwaway account (temporary username and
@@ -64,6 +65,27 @@ export interface LandingCopy {
     // say what each tier actually gets.
     limits: [string, string, string][]
     closing: string; ctaSignup: string; ctaWhatsapp: string; ctaEmail: string
+    // How a free tenant becomes a paid one: a conversation, never a checkout
+    // (backend/entitlements/plans.py — `tenants.tier` is set by hand). The
+    // steps are a real sequence, so they are numbered.
+    upgradeTitle: string; upgradeSteps: Titled[]
+    // Short, checkable promises shown as ticks. Each must stay true: no card
+    // is ever asked for, there is no checkout, and no feature is gated.
+    noStrings: string[]
+    // Prefilled text of the WhatsApp message and the email subject line.
+    waPrefill: string; mailSubject: string
+  }
+  // Trust block. Every item is a property of the code, not a promise of
+  // service — see the comment beside the block in app/page.tsx for the file
+  // that backs each one. No figures, logos, testimonials or certifications.
+  trust: { tag: string; title: string; lead: string; items: Titled[]; decideLink: string }
+  // The closing band: the three ways forward, side by side.
+  final: {
+    title: string; lead: string
+    signupTitle: string; signupDesc: string
+    trialTitle: string; trialDesc: string
+    talkTitle: string; talkDesc: string
+    madeIn: string
   }
   benefits: { tag: string; title: string; lead: string; items: string[] }
   includes:{ tag: string; title: string; lead: string; rolesTitle: string; roles: Role[]; itemsTitle: string; items: Include[]; isNew: string; tail: string; tailLink: string }
@@ -71,7 +93,15 @@ export interface LandingCopy {
   // fold and compact: the page speaks to the buyer (owner's call, 2026-09-30);
   // this block exists for whoever the buyer forwards the link to.
   tech: { tag: string; title: string; lead: string; items: Titled[] }
-  tour: { title: string; lead: string; chapters: TourChapter[] }
+  // The screen guide is an opt-in deep dive, not part of the main read: the
+  // page shows a teaser (`teaser*`) and the chapters open in a dialog.
+  // `count` takes {n} screens and {c} chapters, both computed from `chapters`.
+  tour: {
+    title: string; lead: string
+    teaserTitle: string; teaserLead: string; count: string
+    open: string; close: string; chaptersNav: string
+    chapters: TourChapter[]
+  }
   manual: { title: string; body: string; cta: string; note: string }
   faq: { tag: string; title: string; lead: string; cta: string; items: Faq[] }
   misc: {
@@ -117,16 +147,17 @@ const es: LandingCopy = {
       ['#casos', 'Industrias'],
       ['#incluye', 'Qué incluye'],
       ['#precio', 'Precio'],
-      ['#empezar', 'Contacto'],
+      ['#contacto', 'Contacto'],
     ],
     signIn: 'Iniciar sesión',
     signUp: 'Crear cuenta',
     menu: 'Menú',
+    ariaLabel: 'Navegación principal',
   },
   heroPills: ['Distribución', 'Retail', 'Manufactura', 'Mayoristas', 'E-commerce'],
   footerLinks: {
     product: [['#solucion', 'Cómo funciona'], ['#casos', 'Industrias'], ['#incluye', 'Qué incluye'], ['#precio', 'Precio'], ['#comparacion', 'vs Excel']],
-    company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['mailto:hola@usefaro.io', 'Contacto']],
+    company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['#contacto', 'Contacto']],
   },
   hero: {
     eyebrow: 'Para quien decide las compras',
@@ -305,6 +336,40 @@ const es: LandingCopy = {
     ctaSignup: 'Crear mi cuenta gratis',
     ctaWhatsapp: 'Escríbenos por WhatsApp',
     ctaEmail: 'Escríbenos por correo',
+    upgradeTitle: 'Cómo se amplía',
+    upgradeSteps: [
+      { title: 'Crea tu cuenta gratis', desc: 'Con todas las funciones y sin tarjeta. El plan gratis no vence.' },
+      { title: 'Escríbenos cuando te quede corto', desc: 'Por WhatsApp o por correo, cuando el catálogo, las bodegas o el equipo ya no caben. Te respondemos en menos de 24 horas.' },
+      { title: 'Lo ampliamos con tus números', desc: 'Acordamos el precio sobre tu operación y ampliamos tu misma cuenta: sin migrar datos ni empezar de cero.' },
+    ],
+    noStrings: ['Sin tarjeta', 'Sin checkout', 'Sin funciones bloqueadas'],
+    waPrefill: 'Hola, quiero ampliar los límites de StockAI.',
+    mailSubject: 'StockAI — quiero una cotización',
+  },
+  trust: {
+    tag: 'Confianza',
+    title: 'Tus datos son tuyos. Y las reglas, a la vista.',
+    lead: 'Lo que conviene saber antes de subir tu primer archivo.',
+    items: [
+      { title: 'Cada empresa ve solo lo suyo', desc: 'Cada consulta va filtrada por empresa. Tus ventas, tu inventario y tus proveedores no se cruzan con los de nadie, y tus pronósticos se entrenan solo con tu propio historial.' },
+      { title: 'Cada quien con su permiso', desc: 'Administrador, analista o solo lectura. Quien solo mira, solo mira: no puede crear pedidos ni cambiar datos.' },
+      { title: 'Credenciales cifradas', desc: 'Lo que conectas — como el acceso a tu base de datos — se guarda cifrado. Las contraseñas de tu equipo se guardan con hash bcrypt: nadie puede leerlas, tampoco nosotros.' },
+      { title: 'Te llevas tus datos, o los borramos del todo', desc: 'Si un día te vas, te entregamos todos tus datos en un archivo ZIP y borramos la cuenta completa: cada tabla y cada archivo, no solo el registro principal.' },
+      { title: 'Nada bloqueado detrás de un pago', desc: 'El plan gratis trae todas las funciones. Pagar solo amplía cuánto cabe: productos, usuarios, bodegas.' },
+      { title: 'No es una caja negra', desc: 'La regla que pone un producto en rojo está publicada en esta página, y la puedes hacer a mano para comprobar que da lo mismo.' },
+    ],
+    decideLink: 'Ver la regla',
+  },
+  final: {
+    title: 'Empieza hoy, con tus propios datos.',
+    lead: 'Tres formas de seguir, según cuánto quieras comprometer ahora.',
+    signupTitle: 'Crea tu cuenta gratis',
+    signupDesc: 'Para siempre y con todas las funciones. Sube tu archivo de ventas y ve tu primera lista de qué pedir.',
+    trialTitle: 'Mira antes de dar tu correo',
+    trialDesc: 'Una cuenta de prueba al instante, con datos de ejemplo. Dura 24 horas y después se borra.',
+    talkTitle: 'Habla con nosotros',
+    talkDesc: 'Si tu operación ya no cabe en el plan gratis, o quieres verlo con tus datos y acompañado. Respondemos en menos de 24 horas.',
+    madeIn: 'Hecho en Costa Rica para distribuidores de Latinoamérica.',
   },
   benefits: {
     tag: 'Cada mañana',
@@ -385,6 +450,12 @@ const es: LandingCopy = {
   tour: {
     title: 'Pantalla por pantalla.',
     lead: 'Capturas reales de la aplicación con datos dentro. Los capítulos son los mismos grupos del menú de StockAI, en el mismo orden: es el mapa que vas a tener cinco minutos después de entrar.',
+    teaserTitle: '¿Quieres ver cada pantalla por dentro?',
+    teaserLead: 'Una guía aparte, para cuando quieras profundizar: capturas reales de la aplicación con datos, ordenadas igual que su menú, con lo que hace cada pantalla y lo que vas a encontrar en ella.',
+    count: '{n} pantallas en {c} capítulos',
+    open: 'Ver la guía de pantallas',
+    close: 'Cerrar la guía',
+    chaptersNav: 'Capítulos de la guía',
     chapters: [
       {
         chapter: 'Operación diaria',
@@ -437,6 +508,7 @@ const es: LandingCopy = {
     cta: 'Escríbenos →',
     items: [
       { q: '¿Necesito conocimientos estadísticos o de programación para usar StockAI?', a: 'No. StockAI está hecho para quien compra: abres la pantalla y ves qué pedir hoy, cuánto y a qué proveedor. No hay modelos que configurar ni código. Subes tus datos y el resto lo hace el sistema.' },
+      { q: '¿Cómo paso del plan gratis al completo?', a: 'Escribiéndonos, por WhatsApp o por correo. No hay checkout ni se pide tarjeta: conversamos sobre tu operación — cuántos productos, bodegas y personas —, acordamos el precio y ampliamos los límites en tu misma cuenta, con tus datos tal como están. Mientras tanto el plan gratis sigue funcionando con todas las funciones; no vence.' },
       { q: '¿En qué formato debo tener mis datos de ventas?', a: 'StockAI acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.' },
       { q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?', a: 'StockAI necesita al menos 20 períodos de historial por producto para entrenarlo. Los que no llegan a ese mínimo quedan fuera del pronóstico: no se les inventa una proyección. Antes de correr nada, la revisión del archivo te dice cuántos productos están por debajo del umbral, y si ninguno lo alcanza el archivo se detiene con la explicación en pantalla en vez de producir un resultado vacío. Esos productos siguen apareciendo en tu inventario marcados SIN DATOS — sin señal ni cantidad sugerida — para que la decisión sea tuya y no de un número inventado.' },
       { q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?', a: 'Los datos que subes a StockAI son exclusivamente tuyos: no se comparten con terceros ni se usan para entrenar modelos de otras empresas — cada pronóstico se entrena únicamente con el historial de tu propia cuenta. Cada consulta va filtrada por empresa y el acceso se controla por rol: administrador, analista o solo lectura. Las credenciales de tus integraciones — el usuario y la contraseña de tu base de datos — se guardan cifradas. Tus archivos de ventas y los modelos entrenados se guardan en el servidor de StockAI, en una carpeta separada por empresa; el cifrado del disco depende del servidor donde corre, no lo hace la aplicación. Y la eliminación es completa de verdad: borra cada tabla y cada archivo asociado a tu cuenta, no solo el registro principal.' },
@@ -475,16 +547,17 @@ const en: LandingCopy = {
       ['#casos', 'Industries'],
       ['#incluye', "What's included"],
       ['#precio', 'Pricing'],
-      ['#empezar', 'Contact'],
+      ['#contacto', 'Contact'],
     ],
     signIn: 'Sign in',
     signUp: 'Create account',
     menu: 'Menu',
+    ariaLabel: 'Main navigation',
   },
   heroPills: ['Distribution', 'Retail', 'Manufacturing', 'Wholesale', 'E-commerce'],
   footerLinks: {
     product: [['#solucion', 'How it works'], ['#casos', 'Industries'], ['#incluye', "What's included"], ['#precio', 'Pricing'], ['#comparacion', 'vs Excel']],
-    company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['mailto:hola@usefaro.io', 'Contact']],
+    company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['#contacto', 'Contact']],
   },
   hero: {
     eyebrow: 'For the person who decides the buying',
@@ -663,6 +736,40 @@ const en: LandingCopy = {
     ctaSignup: 'Create my free account',
     ctaWhatsapp: 'Message us on WhatsApp',
     ctaEmail: 'Email us',
+    upgradeTitle: 'How it grows',
+    upgradeSteps: [
+      { title: 'Create your free account', desc: 'Every feature, no card. The free plan does not expire.' },
+      { title: 'Write to us when you outgrow it', desc: 'On WhatsApp or by email, when the catalogue, the warehouses or the team no longer fit. We answer within 24 hours.' },
+      { title: 'We lift it, with your numbers', desc: 'We agree the price around your operation and lift the limits on the same account: no data to migrate, no starting over.' },
+    ],
+    noStrings: ['No card', 'No checkout', 'No locked features'],
+    waPrefill: 'Hi, I would like to lift my StockAI limits.',
+    mailSubject: 'StockAI — I would like a quote',
+  },
+  trust: {
+    tag: 'Trust',
+    title: 'Your data is yours. And the rules are in plain sight.',
+    lead: 'What is worth knowing before you upload your first file.',
+    items: [
+      { title: 'Each company sees only its own', desc: 'Every query is filtered by company. Your sales, stock and suppliers never mix with anyone else’s, and your forecasts are trained only on your own history.' },
+      { title: 'Everyone with their own permission', desc: 'Administrator, analyst or read-only. Whoever only looks, only looks: they cannot create orders or change data.' },
+      { title: 'Encrypted credentials', desc: 'What you connect — such as access to your database — is stored encrypted. Your team’s passwords are stored as bcrypt hashes: nobody can read them, us included.' },
+      { title: 'Take your data with you, or have it fully erased', desc: 'If you ever leave, we hand you all your data in a ZIP file and erase the whole account: every table and every file, not just the main record.' },
+      { title: 'Nothing locked behind a payment', desc: 'The free plan has every feature. Paying only changes how much fits: products, users, warehouses.' },
+      { title: 'Not a black box', desc: 'The rule that puts a product in the red is published on this page, and you can do it by hand to check it gives the same answer.' },
+    ],
+    decideLink: 'See the rule',
+  },
+  final: {
+    title: 'Start today, with your own data.',
+    lead: 'Three ways forward, depending on how much you want to commit right now.',
+    signupTitle: 'Create your free account',
+    signupDesc: 'Forever, with every feature. Upload your sales file and see your first list of what to order.',
+    trialTitle: 'Look before giving your email',
+    trialDesc: 'An instant trial account with sample data. It lasts 24 hours and is then erased.',
+    talkTitle: 'Talk to us',
+    talkDesc: 'If your operation no longer fits the free plan, or you want to see it with your data and someone beside you. We answer within 24 hours.',
+    madeIn: 'Made in Costa Rica for distributors across Latin America.',
   },
   benefits: {
     tag: 'Every morning',
@@ -743,6 +850,12 @@ const en: LandingCopy = {
   tour: {
     title: 'Screen by screen.',
     lead: 'Real captures of the running app, with data in them. The chapters are the same groups as StockAI’s own menu, in the same order: it is the map you will have five minutes after signing in.',
+    teaserTitle: 'Want to see every screen from the inside?',
+    teaserLead: 'A separate guide, for when you want to go deeper: real captures of the app with data in it, ordered like its own menu, with what each screen does and what you will find there.',
+    count: '{n} screens in {c} chapters',
+    open: 'Open the screen guide',
+    close: 'Close the guide',
+    chaptersNav: 'Guide chapters',
     chapters: [
       {
         chapter: 'Daily operation',
@@ -795,6 +908,7 @@ const en: LandingCopy = {
     cta: 'Write to us →',
     items: [
       { q: 'Do I need statistics or programming knowledge to use StockAI?', a: 'No. StockAI is built for the person who buys: you open the screen and see what to order today, how much and from which supplier. There are no models to configure and no code. You upload your data and the system does the rest.' },
+      { q: 'How do I move from the free plan to the full one?', a: 'By writing to us, on WhatsApp or by email. There is no checkout and no card is asked for: we talk about your operation (how many products, warehouses and people), agree the price and lift the limits on the same account, with your data exactly as it is. Meanwhile the free plan keeps working with every feature; it does not expire.' },
       { q: 'What format does my sales data need to be in?', a: 'StockAI accepts Excel (.xlsx) and CSV. The file needs at least a date column, a product identifier column (SKU or name) and a quantity-sold column. The system works out which column is which.' },
       { q: 'What if I have products with very little sales history, or incomplete data?', a: 'StockAI needs at least 20 periods of history per product to train it. Products below that minimum stay out of the forecast: no projection is invented for them. Before anything runs, the file review tells you how many products are under the threshold, and if none of them clears it the file is stopped with the explanation on screen instead of producing an empty result. Those products still appear in your inventory marked NO DATA — no signal and no suggested quantity — so the decision is yours and not an invented number’s.' },
       { q: 'Is my data safe? Who has access to it?', a: 'The data you upload to StockAI is exclusively yours: it is not shared with third parties and it is not used to train models for other companies — every forecast is trained only on your own account’s history. Every query is filtered by company and access is controlled by role: administrator, analyst or read-only. Your integration credentials — the user and password of your database — are stored encrypted. Your sales files and trained models are kept on StockAI’s server, in a folder separated per company; disk encryption is a property of the server it runs on, not something the application does. And deletion is genuinely complete: it removes every table and every file tied to your account, not just the main record.' },
