@@ -10,6 +10,7 @@ import { Menu, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { Wordmark } from '@/components/brand/Wordmark'
+import { ScreenGuide } from '@/components/landing/ScreenGuide'
 
 // Every colour on the page is a CSS variable, defined once in LANDING_CSS for
 // the light theme and again for `[data-theme="dark"]`. The landing follows the
@@ -97,8 +98,8 @@ function Nav() {
  }, [menuOpen])
 
  return (
- <>
- <nav className={`nav-shell${scrolled || menuOpen ? ' is-scrolled' : ''}`}>
+ <header>
+ <nav aria-label={L.nav.ariaLabel} className={`nav-shell${scrolled || menuOpen ? ' is-scrolled' : ''}`}>
  <a href="#top" aria-label="StockAI" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
  <Wordmark size={22} color={T.text} accent={T.accent} />
  </a>
@@ -150,7 +151,7 @@ function Nav() {
  </div>
  </div>
  )}
- </>
+ </header>
  )
 }
 
@@ -351,8 +352,16 @@ function useScrollReveal() {
 // product stops at 100 turns the first real import into a broken promise.
 // E.164 without the '+', which is what wa.me expects.
 const CONTACT_WHATSAPP = '50671862820'
+// The one address every "email us" link on this page uses.
+// TODO(owner): confirm contact email — usefaro.io is the old brand
+const CONTACT_EMAIL = 'hola@usefaro.io'
 
-// A guided tour of the product, chapter by chapter.
+const waHref = (text: string) => `https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent(text)}`
+const mailHref = (subject?: string) =>
+  `mailto:${CONTACT_EMAIL}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`
+
+// A guided tour of the product, chapter by chapter — rendered by
+// components/landing/ScreenGuide as an opt-in dialog, not in the main flow.
 //
 // The chapters are the app's OWN sidebar groups, in the app's own order: it is
 // the map this reader will have five minutes after signing up, so the structure
@@ -829,13 +838,80 @@ section[id], #demo { scroll-margin-top: 88px; }
  .nav-cta .lp-lang { display: none; }
 }
 
+/* ── Pricing: promises and how it grows ── */
+.no-strings { list-style: none; margin: -24px 0 36px; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.no-strings li { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--lp-text); }
+.upg-card { max-width: 880px; padding: 30px 32px; border-radius: 16px; }
+.upg-steps { list-style: none; margin: 0 0 26px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; position: relative; }
+/* The thread between the three numbers: it is a sequence, so it reads as one. */
+.upg-steps::before { content: ''; position: absolute; top: 19px; left: 38px; right: 12%; height: 1px; background: linear-gradient(90deg, var(--lp-accent-bd), var(--lp-border)); }
+.upg-step { display: flex; flex-direction: column; gap: 14px; position: relative; }
+.upg-step .lp-step { background: var(--lp-bg); position: relative; }
+.sec-alt .upg-step .lp-step { background: var(--lp-bg); }
+.upg-foot { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 22px; border-top: 1px solid var(--lp-border); }
+
+/* ── Trust ── */
+.trust-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; }
+.trust-item { padding: 22px 0 24px; border-top: 1px solid var(--lp-border); position: relative; }
+.trust-item::before { content: ''; position: absolute; top: -1px; left: 0; width: 28px; height: 2px; background: linear-gradient(90deg, var(--lp-accent), var(--lp-beam)); }
+.trust-title { font-family: var(--font-brand), system-ui, sans-serif; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; color: var(--lp-text); margin: 0 0 8px; line-height: 1.35; }
+.trust-desc { font-size: 14px; color: var(--lp-body); line-height: 1.68; margin: 0; }
+.trust-link { display: inline-flex; align-items: center; min-height: 32px; margin-top: 8px; font-size: 13.5px; font-weight: 600; color: var(--lp-accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+
+/* ── Closing band ── */
+.final-sec { position: relative; background: var(--lp-strip); padding: 96px 0 88px; overflow: hidden; isolation: isolate; scroll-margin-top: 88px; }
+.final-sec::before {
+ content: ''; position: absolute; inset: 0; z-index: -1;
+ background: radial-gradient(55% 120% at 0% 0%, rgba(76,195,181,0.24), transparent 60%), radial-gradient(45% 110% at 100% 100%, rgba(15,118,110,0.40), transparent 60%);
+}
+.final-sec::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(76,195,181,0.7), transparent); }
+.final-inner { max-width: 1120px; margin: 0 auto; padding: 0 48px; }
+.final-title { color: #fff; max-width: 18ch; }
+.final-lead { font-size: 16.5px; color: rgba(231,240,239,0.74); line-height: 1.65; margin: 0 0 44px; max-width: 56ch; }
+.final-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid rgba(255,255,255,0.14); }
+.final-path { padding: 28px 28px 8px 0; display: flex; flex-direction: column; align-items: flex-start; }
+.final-path + .final-path { padding-left: 28px; border-left: 1px solid rgba(255,255,255,0.10); }
+.final-path h3 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: #fff; margin: 0 0 10px; }
+.final-path p { font-size: 14px; color: rgba(231,240,239,0.72); line-height: 1.68; margin: 0 0 22px; flex: 1; }
+.final-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.final-btn {
+ display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border-radius: 11px;
+ font-size: 13.5px; font-weight: 700; text-decoration: none; color: #fff;
+ border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.04);
+ transition: background-color 160ms ease, border-color 160ms ease, transform 200ms cubic-bezier(0.16,1,0.3,1);
+}
+.final-btn:hover { border-color: #4CC3B5; background: rgba(76,195,181,0.12); transform: translateY(-1px); }
+.final-btn.is-main { background: #fff; color: #0C3A40; border-color: #fff; }
+.final-btn.is-main:hover { background: #E3F4F1; }
+.lp .final-btn:focus-visible { outline-color: #4CC3B5; }
+.final-made { margin: 40px 0 0; font-size: 13px; color: rgba(231,240,239,0.6); }
+
+@media (max-width: 900px) {
+ .trust-list { grid-template-columns: 1fr; }
+ .upg-steps { grid-template-columns: 1fr; gap: 18px; }
+ .upg-steps::before { top: 19px; bottom: 19px; left: 19px; right: auto; width: 1px; height: auto; background: linear-gradient(180deg, var(--lp-accent-bd), var(--lp-border)); }
+ .upg-step { flex-direction: row; }
+ .final-grid { grid-template-columns: 1fr; }
+ .final-path, .final-path + .final-path { padding: 24px 0 8px; border-left: none; }
+ .final-path + .final-path { border-top: 1px solid rgba(255,255,255,0.10); }
+}
+@media (max-width: 760px) {
+ .final-sec { padding: 64px 0 56px; }
+ .final-inner { padding: 0 20px; }
+ .upg-card { padding: 22px 20px !important; }
+ .upg-foot .btn-primary, .upg-foot .btn-ghost { width: 100%; }
+ .final-btn, .final-btns { width: 100%; }
+ .no-strings { margin-top: -16px; }
+}
+
 /* Reduced motion: everything visible and still. */
 @media (prefers-reduced-motion: reduce) {
  html { scroll-behavior: auto; }
  .reveal-armed, .reveal-in { opacity: 1 !important; transform: none !important; transition: none !important; }
  .lp-rise, .lp-frame.lp-land, .lp-swap, .faq-a, .hero-glow, .nav-sheet, .nav-sheet-inner { animation: none !important; }
  .lp-sheen { display: none; }
- .lp-card, .lp-card::after, .btn-primary, .btn-ghost, .nav-signup, .tour-shot img, .faq-icon { transition: none !important; }
+ .lp-card, .lp-card::after, .btn-primary, .btn-ghost, .nav-signup, .tour-shot img, .faq-icon, .final-btn { transition: none !important; }
+ .final-btn:hover { transform: none !important; }
  .lp-card:hover, .btn-primary:hover, .btn-ghost:hover, .nav-signup:hover, .tour-row:hover .tour-shot img { transform: none !important; }
 }
 `
@@ -858,7 +934,6 @@ export default function LandingPage() {
   const NEED       = L.start.need
   const NOT_NEED   = L.start.notNeed
   const FAQS       = L.faq.items
-  const TOUR       = L.tour.chapters
   // The hero frame IS the first screen of the tour, so it follows the
   // language with everything else instead of pointing at a fixed file.
   const HERO_SHOT  = L.tour.chapters[0].screens[0]
@@ -891,6 +966,8 @@ export default function LandingPage() {
 
  <Nav />
 
+ <main>
+
  {/* ── HERO ─────────────────────────────────────────────────────────── */}
  <section className="hero-sec">
  <div className="hero-bg" aria-hidden>
@@ -906,7 +983,7 @@ export default function LandingPage() {
  </div>
 
  <h1 className="lp-h1 lp-rise lp-d1">
- {L.hero.title1}
+ {L.hero.title1}{' '}
  <br />
  {L.hero.title2}
  </h1>
@@ -1016,81 +1093,9 @@ export default function LandingPage() {
  ))}
  </div>
 
- {/* The guided tour: its own heading, so the reader knows a long stretch of
-     screens is starting and is not still inside "how it works". */}
- <div style={{ marginTop: 104, maxWidth: 720 }}>
-  <h3 className="lp-h2" style={{ fontSize: 'clamp(26px, 3vw, 34px)' }}>
-   {L.tour.title}
-  </h3>
-  <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.tour.lead}</p>
- </div>
-
- {/* One row per screen: the capture on one side, what it does on the other.
-     Sides alternate for rhythm and collapse to one column on narrow viewports
-     (`tour-row`, in the stylesheet above). */}
- {TOUR.map(({ chapter, when, screens }) => (
-  <div key={chapter} style={{ marginTop: 72 }}>
-   <div className="tour-chapter">
-    <h3 className="lp-h3" style={{ fontSize: 23, margin: '0 0 6px' }}>
-     {chapter}
-    </h3>
-    <p style={{ fontSize: 14.5, color: T.muted, margin: 0, lineHeight: 1.6 }}>{when}</p>
-   </div>
-
-   {screens.map(({ img, name, does, finds, alt }, i) => (
-    <div
-     key={img}
-     data-reveal
-     className="tour-row"
-     style={{
-      display: 'grid',
-      gridTemplateColumns: '1.3fr 1fr',
-      gap: 48,
-      alignItems: 'center',
-      marginBottom: 64,
-      direction: i % 2 === 1 ? 'rtl' : 'ltr',
-     }}
-    >
-     <div className="tour-shot">
-      <div className="tour-shot-in">
-       <img src={img} alt={alt} loading="lazy" decoding="async" />
-      </div>
-     </div>
-     <div style={{ direction: 'ltr' }}>
-      <h4 style={{ fontFamily: DISPLAY, fontSize: 21, fontWeight: 600, color: T.text, letterSpacing: '-0.02em', margin: '0 0 10px' }}>
-       {name}
-      </h4>
-      <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 16px' }}>{does}</p>
-      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 9 }}>
-       {finds.map((f) => (
-        <li key={f} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, color: T.body, lineHeight: 1.6 }}>
-         <span aria-hidden className="tour-dot" />
-         {f}
-        </li>
-       ))}
-      </ul>
-     </div>
-    </div>
-   ))}
-  </div>
- ))}
-
- {/* The manual closes the tour: the visitor has just scrolled nineteen
-     screens, and this is where wanting the whole thing on paper happens.
-     The file follows the language — `stockai-manual-es.pdf` / `-en.pdf`, both
-     built by `backend/scripts/build_manual.py` from `docs/manual/`. */}
- <div data-reveal className="lp-card lp-card-soft" style={{ marginTop: 80, padding: '34px 36px', display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
-  <div style={{ flex: '1 1 380px', minWidth: 0 }}>
-   <div style={{ fontFamily: DISPLAY, fontSize: 22, fontWeight: 600, color: T.text, marginBottom: 8, letterSpacing: '-0.02em' }}>{L.manual.title}</div>
-   <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.7, margin: 0 }}>{L.manual.body}</p>
-  </div>
-  <div style={{ flexShrink: 0, minWidth: 0 }}>
-   <a href={`/stockai-manual-${lang}.pdf`} download className="btn-primary btn-sm">
-    {L.manual.cta}
-   </a>
-   <div style={{ fontSize: 12, color: T.muted, marginTop: 9 }}>{L.manual.note}</div>
-  </div>
- </div>
+ {/* The screen guide is an opt-in deep dive (owner, 2026-10-01): a teaser
+     here, the chapters in a dialog. See components/landing/ScreenGuide. */}
+ <ScreenGuide tour={L.tour} manual={L.manual} lang={lang} primaryClass="btn-primary" />
  </Section>
 
  {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
@@ -1277,6 +1282,11 @@ export default function LandingPage() {
  <Lead maxWidth={720}>
  {L.pricing.lead}
  </Lead>
+ <ul className="no-strings">
+ {L.pricing.noStrings.map(t => (
+ <li key={t}><Check />{t}</li>
+ ))}
+ </ul>
 
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, maxWidth: 880, marginBottom: 20 }}>
  <div data-reveal className="lp-card price-card">
@@ -1315,22 +1325,66 @@ export default function LandingPage() {
  </div>
  </div>
 
- {/* The closing call to action of the page: sign up, try without an
-     account, or talk to us. */}
- <div data-reveal className="lp-card" style={{ padding: '30px 32px', maxWidth: 880, borderRadius: 16 }}>
- <div style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, marginBottom: 20 }}>
- {L.pricing.closing}
+ {/* How a free account grows: a conversation, never a checkout. The steps
+     are a real sequence, hence the numbers. Every CTA here leads to a person
+     (WhatsApp / email) or to the free sign-up — there is no payment flow to
+     link to, on purpose (CLAUDE.md: no Stripe, no checkout). */}
+ <div data-reveal className="lp-card upg-card">
+ <h3 className="lp-h3" style={{ marginBottom: 22 }}>{L.pricing.upgradeTitle}</h3>
+ <ol className="upg-steps">
+ {L.pricing.upgradeSteps.map(({ title, desc }, i) => (
+ <li key={title} className="upg-step">
+ <span className="lp-step" aria-hidden>{i + 1}</span>
+ <div>
+ <div className="lp-card-title">{title}</div>
+ <div className="lp-card-body">{desc}</div>
  </div>
- <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+ </li>
+ ))}
+ </ol>
+ <div className="upg-foot">
  <Link href={appHref('/signup')} className="btn-primary btn-sm">{L.pricing.ctaSignup}</Link>
- <Link href={appHref('/prueba')} className="btn-ghost btn-sm">{L.hero.ctaTrial}</Link>
- <a href={`https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent('Hola, quiero ampliar los limites de StockAI.')}`} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">{L.pricing.ctaWhatsapp}</a>
- <a href="mailto:hola@usefaro.io?subject=StockAI%20%E2%80%94%20quiero%20una%20cotizaci%C3%B3n" className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
+ <a href={waHref(L.pricing.waPrefill)} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">{L.pricing.ctaWhatsapp}</a>
+ <a href={mailHref(L.pricing.mailSubject)} className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
  </div>
- <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 16, fontSize: 12.5, color: T.muted, lineHeight: 1.5 }}>
- <Check />
- <span>{L.hero.trialNote}</span>
  </div>
+ </Section>
+
+ {/* ── TRUST ──────────────────────────────────────────────────────────── */}
+ {/* Only claims the code backs (docs/stability.md §4.5: no unsourced figure,
+     logo, testimonial or certification goes on this page). In order:
+      1. per-company isolation — every query scoped by tenant_id; forecasts
+         trained per session on the tenant's own dataset.
+      2. roles — admin / analyst / viewer; every mutating endpoint requires
+         require_analyst_or_above (backend/auth/guards.py).
+      3. encryption — SQL source passwords Fernet-encrypted
+         (backend/datasources/service.py), stored service credentials via
+         backend/service_config/crypto.py; user passwords bcrypt-hashed
+         (backend/auth/password.py).
+      4. export + erasure — GET /tenant/export (ZIP of every tenant table) and
+         DELETE /tenant (every table and file), backend/api/v1/tenant_data.py
+         and backend/tenants/data_export.py. Admin-only API, no screen yet,
+         hence "we hand you" rather than "download it yourself".
+      5. no feature gates — backend/entitlements/plans.py.
+      6. not a black box — the #como-decide section on this page. */}
+ <Section id="confianza">
+ <div className="split" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 64, alignItems: 'start' }}>
+ <div>
+ <Tag>{L.trust.tag}</Tag>
+ <H2>{L.trust.title}</H2>
+ <p className="lp-lead" style={{ marginBottom: 0 }}>{L.trust.lead}</p>
+ </div>
+ <ul className="trust-list">
+ {L.trust.items.map(({ title, desc }, i) => (
+ <li key={title} className="trust-item">
+ <h3 className="trust-title">{title}</h3>
+ <p className="trust-desc">{desc}</p>
+ {i === L.trust.items.length - 1 && (
+ <a href="#como-decide" className="trust-link">{L.trust.decideLink}</a>
+ )}
+ </li>
+ ))}
+ </ul>
  </div>
  </Section>
 
@@ -1381,14 +1435,14 @@ export default function LandingPage() {
      purpose: the landing speaks to the buyer (owner's call, 2026-09-30). */}
  <Section id="tecnico" alt style={{ padding: '64px 0' }}>
  <Tag>{L.tech.tag}</Tag>
- <H3>{L.tech.title}</H3>
+ <h2 className="lp-h3">{L.tech.title}</h2>
  <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '0 0 22px', maxWidth: 640 }}>
  {L.tech.lead}
  </p>
  <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
  {L.tech.items.map(({ title, desc }) => (
  <div key={title} className="lp-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
- <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, marginBottom: 4 }}>{title}</div>
+ <h3 style={{ fontSize: 13.5, fontWeight: 700, color: T.text, margin: '0 0 4px' }}>{title}</h3>
  <div style={{ fontSize: 13, color: T.body, lineHeight: 1.6 }}>{desc}</div>
  </div>
  ))}
@@ -1404,25 +1458,57 @@ export default function LandingPage() {
  <p style={{ fontSize: 15.5, color: T.body, lineHeight: 1.7, margin: '0 0 24px' }}>
  {L.faq.lead}
  </p>
- <a href="mailto:hola@usefaro.io" className="cta-link" style={{ fontSize: 14, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
+ <a href={mailHref()} className="cta-link" style={{ fontSize: 14, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
  {L.faq.cta}
  </a>
  </div>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderTop: `1px solid ${T.border}` }}>
  {FAQS.map(({ q, a }, i) => (
  <div key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
- <button type="button" className="faq-q" aria-expanded={openFaq === i} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+ <h3 style={{ margin: 0, font: 'inherit' }}>
+ <button type="button" className="faq-q" aria-expanded={openFaq === i} aria-controls={`faq-a-${i}`} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
  <span className="faq-q-text">{q}</span>
  <span aria-hidden className={`faq-icon${openFaq === i ? ' is-open' : ''}`}>+</span>
  </button>
- {openFaq === i && (
- <div className="faq-a">{a}</div>
- )}
+ </h3>
+ {/* The answer stays in the document when closed (hidden, not unmounted),
+     so the FAQ text is part of the page for search engines too. */}
+ <div id={`faq-a-${i}`} className="faq-a" hidden={openFaq !== i}>{a}</div>
  </div>
  ))}
  </div>
  </div>
  </Section>
+
+ {/* ── CLOSING BAND: the three ways forward ─────────────────────────── */}
+ <section id="contacto" className="final-sec" aria-labelledby="final-title">
+ <div className="final-inner" data-reveal>
+ <h2 id="final-title" className="lp-h2 final-title">{L.final.title}</h2>
+ <p className="final-lead">{L.final.lead}</p>
+ <div className="final-grid">
+ <div className="final-path">
+ <h3>{L.final.signupTitle}</h3>
+ <p>{L.final.signupDesc}</p>
+ <Link href={appHref('/signup')} className="final-btn is-main">{L.pricing.ctaSignup}</Link>
+ </div>
+ <div className="final-path">
+ <h3>{L.final.trialTitle}</h3>
+ <p>{L.final.trialDesc}</p>
+ <Link href={appHref('/prueba')} className="final-btn">{L.hero.ctaTrial}</Link>
+ </div>
+ <div className="final-path">
+ <h3>{L.final.talkTitle}</h3>
+ <p>{L.final.talkDesc}</p>
+ <div className="final-btns">
+ <a href={waHref(L.pricing.waPrefill)} target="_blank" rel="noopener noreferrer" className="final-btn">{L.pricing.ctaWhatsapp}</a>
+ <a href={mailHref(L.pricing.mailSubject)} className="final-btn">{L.pricing.ctaEmail}</a>
+ </div>
+ </div>
+ </div>
+ <p className="final-made">{L.final.madeIn}</p>
+ </div>
+ </section>
+ </main>
 
  {/* ── FOOTER ───────────────────────────────────────────────────────── */}
  <footer className="footer-shell" style={{ background: T.bg2, borderTop: `1px solid ${T.border}`, padding: '56px 48px 40px' }}>
