@@ -18,7 +18,9 @@ import { LANDING, type LandingCopy } from '@/i18n/landing'
 import { T } from '@/components/landing/theme'
 import { LandingStyles, Section, Tag, H2, Lead, useScrollReveal } from '@/components/landing/primitives'
 import { Nav, Footer, type ChromeProps } from '@/components/landing/chrome'
-import { HowSteps, DecideSection, PricingSection, TrustSection, FinalSection } from '@/components/landing/sections'
+import { DecideSection, PricingSection, TrustSection, FinalSection } from '@/components/landing/sections'
+import { EngineFlow, ModelsSection, ENGINE_CSS } from '@/components/landing/engine'
+import { PricingCalculator, ApiPricing, CALC_CSS } from '@/components/landing/PricingCalculator'
 import { GUIDE_CSS, TourChapters } from '@/components/landing/ScreenGuide'
 import { mailHref } from '@/components/landing/contact'
 import { SUBPAGE_PATHS, SUBPAGE_ORDER, type SubpageKey as PageKey } from '@/components/landing/subpagePaths'
@@ -100,7 +102,6 @@ function SubpageShell({ page, chrome, toc, children }: {
       <main>
         <header className="sub-hero">
           <div className="hero-bg" aria-hidden>
-            <div className="hero-glow hero-glow-b" />
             <div className="hero-grid" />
           </div>
           <div className="sub-inner">
@@ -153,7 +154,10 @@ function RelatedPages({ current, L }: { current: PageKey; L: LandingCopy }) {
 export function PricingPage() {
   return (
     <SubpageShell page="pricing" chrome={{ onHome: false, localAnchors: ['precio', 'contacto'] }}>
-      <PricingSection />
+      <style dangerouslySetInnerHTML={{ __html: CALC_CSS }} />
+      <PricingSection calcHref="#calculadora" />
+      <PricingCalculator />
+      <ApiPricing />
     </SubpageShell>
   )
 }
@@ -165,20 +169,24 @@ export function HowItWorksPage() {
   const { L, lang } = useCopy()
   const toc: [string, string][] = [
     ['#pasos', L.how.tag],
+    ['#motor', L.engine.tag],
     ['#como-decide', L.decide.tag],
     ...L.tour.chapters.map((c, i) => [`#guia-capitulo-${i + 1}`, c.chapter] as [string, string]),
   ]
   const pdfHref = `/stockai-manual-${lang}.pdf`
   return (
-    <SubpageShell page="how" chrome={{ onHome: false, localAnchors: ['como-decide', 'contacto'] }} toc={toc}>
+    <SubpageShell page="how" chrome={{ onHome: false, localAnchors: ['como-decide', 'motor', 'contacto'] }} toc={toc}>
+      <style dangerouslySetInnerHTML={{ __html: ENGINE_CSS }} />
       <Section id="pasos">
         <Tag>{L.how.tag}</Tag>
         <H2>{L.how.title}</H2>
-        <Lead>{L.how.lead}</Lead>
-        <HowSteps />
+        <Lead maxWidth={660}>{L.how.lead}</Lead>
+        <EngineFlow />
       </Section>
 
-      <DecideSection />
+      <ModelsSection />
+
+      <DecideSection alt={false} />
 
       <Section id="guia">
         <style dangerouslySetInnerHTML={{ __html: GUIDE_CSS }} />
