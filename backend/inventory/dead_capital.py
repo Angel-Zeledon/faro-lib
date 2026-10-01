@@ -71,33 +71,33 @@ def _snapshot_series(tenant_id: str) -> dict[str, list[tuple[datetime, float]]]:
     Legacy rows written before the `warehouse` column existed (2026-09-16)
     were already tenant-wide totals and join the series unchanged.
     """
+    # Per-warehouse rows are carried forward per warehouse and summed per day
+    # by the same helper `get_stock_history` uses — summing only the
+    # warehouses written THAT day turned two locations written on different
+    # days into a phantom fall (math audit 2026-10-01).
     rows = query(
-        """WITH last_per_day AS (
-               SELECT DISTINCT ON (sku, warehouse, date_trunc('day', recorded_at))
-                      sku, warehouse, date_trunc('day', recorded_at) AS day,
-                      current_stock, recorded_at
-               FROM inventory_snapshots
-               WHERE tenant_id = %s AND warehouse IS NOT NULL
-               ORDER BY sku, warehouse, date_trunc('day', recorded_at), recorded_at DESC
-           ),
-           per_day_total AS (
-               SELECT sku, day, SUM(current_stock) AS current_stock, MAX(recorded_at) AS recorded_at
-               FROM last_per_day GROUP BY sku, day
-           ),
-           legacy AS (
-               SELECT sku, current_stock, recorded_at
-               FROM inventory_snapshots
-               WHERE tenant_id = %s AND warehouse IS NULL
-           )
-           SELECT sku, current_stock, recorded_at FROM per_day_total
-           UNION ALL
-           SELECT sku, current_stock, recorded_at FROM legacy
+        """SELECT sku, warehouse, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND warehouse IS NOT NULL
            ORDER BY sku, recorded_at ASC""",
-        (tenant_id, tenant_id),
+        (tenant_id,),
     )
-    series: dict[str, list[tuple[datetime, float]]] = {}
+    legacy = query(
+        """SELECT sku, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND warehouse IS NULL""",
+        (tenant_id,),
+    )
+    by_sku: dict[str, list[dict]] = {}
     for r in rows:
+        by_sku.setdefault(r["sku"], []).append(r)
+    series: dict[str, list[tuple[datetime, float]]] = {
+        sku: svc.tenant_wide_daily_levels(sku_rows) for sku, sku_rows in by_sku.items()
+    }
+    for r in legacy:
         series.setdefault(r["sku"], []).append((r["recorded_at"], float(r["current_stock"])))
+    for points in series.values():
+        points.sort(key=lambda p: p[0])
     return series
 
 
@@ -164,7 +164,13 @@ def get_dead_capital(
     signal_by_sku: dict[str, str] = {}
     if session_id:
         try:
-            for row in svc.get_inventory_status(tenant_id, session_id):
+            # At the tenant's planning grain, like every other caller (stability
+            # 3.1). Without it a weekly tenant's per-WEEK demand was read as
+            # per-DAY, coverage came out 7x short, and this screen painted
+            # PEDIR_YA on a SKU /hoy showed as OK (math audit 2026-10-01).
+            from backend.sessions import planning_service
+            period = planning_service.get_planning(tenant_id).get("period", "daily")
+            for row in svc.get_inventory_status(tenant_id, session_id, period=period):
                 signal_by_sku[row["sku"]] = row["signal"]
         except Exception as e:
             log.debug(

@@ -23,14 +23,23 @@ lower unit price is only half the trade. We compare, in money, both halves:
       buy now   : q1*p1                          (ALL-UNITS discount)
       gross_saving = q1 * (p0 - p1)
 
-  HOLDING COST. The extra units sit in the warehouse until demand drains them.
-  They add (q1-q0)/d days of coverage, and because they are consumed gradually
-  the AVERAGE unit sits for half of that. So the extra unit-days are
-      (q1-q0) * ((q1-q0)/d) / 2
-  priced at the daily holding rate p1 * holding_cost_pct / 365. This is the
-  standard inventory-carrying rate and already includes the cost of capital,
-  which is what "immobilizing cash" means in money terms.
-      holding_cost = ((q1-q0)^2 / (2*d)) * p1 * holding_cost_pct / 365
+  HOLDING COST. Against the same "buy them later" alternative, done the way
+  the buyer already buys: in the q0-sized orders they would otherwise keep
+  placing. Stock falls linearly at d, so a batch landing on S units left holds
+  (S + q)^2 / 2d unit-days until it is gone.
+      buy now   : (S + q1)^2 / 2d
+      buy later : (S + q0)^2 / 2d  +  ((q1-q0)/q0) batches of q0^2 / 2d
+      extra unit-days = (q1-q0) * (2S + q1) / 2d
+  S is the stock left when the order lands — current stock minus lead-time
+  demand, never below 0. Priced at the daily holding rate
+  p1 * holding_cost_pct / 365, the standard carrying rate, which already
+  includes the cost of capital ("immobilizing cash" in money terms).
+      holding_cost = (q1-q0) * (2S + q1) / (2d) * p1 * holding_cost_pct / 365
+
+  This used to be (q1-q0)^2 / 2d — the special case S = 0 AND q0 = 0. It
+  ignored that the extra units cannot start selling until the shelf and the
+  order already being placed are gone, so it understated the cost of stepping
+  up exactly when the shelf was full (math audit 2026-10-01).
 
   net_saving = gross_saving - holding_cost
 
@@ -63,6 +72,7 @@ import logging
 from typing import Optional
 
 from backend.db.connection import query, query_one, execute
+from backend.inventory.service import _days_per_period
 
 log = logging.getLogger(__name__)
 
@@ -213,12 +223,13 @@ def evaluate_step_up(
         if demand > 0:
             extra_coverage_days = extra_units / demand
             total_coverage_days = (current_stock + step_quantity) / demand
-            # Units drain gradually, so the average unit is held half the time
-            # the batch adds.
-            holding_cost = (
-                (extra_units * extra_coverage_days / 2.0)
-                * step_price * holding_cost_pct / 365.0
+            # Unit-days the step-up adds over buying the same units later in
+            # q0-sized orders — see the module docstring for the derivation.
+            stock_at_arrival = max(0.0, float(current_stock) - demand * float(lead_time_days))
+            extra_unit_days = (
+                extra_units * (2.0 * stock_at_arrival + step_quantity) / (2.0 * demand)
             )
+            holding_cost = extra_unit_days * step_price * holding_cost_pct / 365.0
         else:
             extra_coverage_days = None
             total_coverage_days = None
@@ -327,9 +338,17 @@ def evaluate_cart(
     cart_items: list[dict],
     status_items: list[dict],
     holding_cost_pct: float = DEFAULT_HOLDING_COST_PCT,
+    period: str = "daily",
 ) -> list[dict]:
     """
     Runs evaluate_step_up over a cart the browser sends in.
+
+    `period` is the tenant's planning grain. `status["daily_demand"]` is the
+    forecast PER BUCKET of that grain (per week on a weekly tenant), while every
+    figure in evaluate_step_up is in days — lead time, the coverage limit, the
+    /365 holding rate. It is converted here; without it a weekly tenant's
+    coverage came out 7x short and its holding cost 7x low, so step-ups past
+    the overstock line were recommended (math audit 2026-10-01).
 
     `cart_items` are {sku, quantity} as the buyer currently has them (which may
     differ from what StockAI recommended — the buyer can edit quantities); the
@@ -383,7 +402,10 @@ def evaluate_cart(
                 current_quantity=quantity,
                 base_cost=status.get("unit_cost"),
                 breaks=ladder["breaks"],
-                daily_demand=status.get("daily_demand"),
+                daily_demand=(
+                    float(status["daily_demand"]) / _days_per_period(period)
+                    if status.get("daily_demand") is not None else None
+                ),
                 current_stock=float(status.get("current_stock") or 0),
                 lead_time_days=int(status.get("lead_time_days") or 15),
                 holding_cost_pct=holding_cost_pct,

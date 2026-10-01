@@ -2037,7 +2037,7 @@ def evaluate_price_breaks(
     holding_cost_pct = float(business_cfg.get("holding_cost_pct", pb_svc.DEFAULT_HOLDING_COST_PCT))
 
     opportunities = pb_svc.evaluate_cart(
-        user.tenant_id, cart, status_items, holding_cost_pct,
+        user.tenant_id, cart, status_items, holding_cost_pct, period=period,
     )
     return ok({
         "opportunities": opportunities,

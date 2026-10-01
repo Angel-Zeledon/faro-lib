@@ -38,20 +38,35 @@ class TestMeasuredSafetyStock:
         risk = _risk({"7": {"0.95": 40.0}, "14": {"0.95": 90.0}})
         assert _measured_safety_stock(risk, lead_time=14, service_level=0.95) == 90.0
 
-    def test_picks_the_quantile_nearest_the_service_level(self):
+    def test_uses_the_measured_quantile_when_it_matches_the_service_level(self):
         risk = _risk({"7": {"0.5": 0.0, "0.9": 30.0, "0.95": 40.0}})
         assert _measured_safety_stock(risk, 7, 0.9) == 30.0
         assert _measured_safety_stock(risk, 7, 0.5) == 0.0
+
+    def test_a_level_above_the_measured_ones_is_not_served_the_95_cushion(self):
+        """A buyer who raised a critical SKU to 99% used to get the 0.95 band
+        verbatim — nearest measured level, same number. Rescaled by the z ratio
+        it is strictly larger, and monotone in the service level."""
+        risk = _risk({"7": {"0.5": 0.0, "0.9": 30.0, "0.95": 40.0}})
+        at_95 = _measured_safety_stock(risk, 7, 0.95)
+        at_97 = _measured_safety_stock(risk, 7, 0.97)
+        at_99 = _measured_safety_stock(risk, 7, 0.99)
+        assert at_95 < at_97 < at_99
+        assert at_99 == pytest.approx(40.0 * 2.326 / 1.645, rel=1e-3)
 
     def test_a_fractional_lead_time_rounds_up_to_a_whole_bucket(self):
         """2.14 weeks of lead time must be covered by 3 buckets, not 2."""
         risk = _risk({"2": {"0.95": 20.0}, "3": {"0.95": 33.0}})
         assert _measured_safety_stock(risk, 2.14, 0.95) == 33.0
 
-    def test_lead_time_beyond_the_backtest_falls_back_to_the_longest_measured(self):
-        """Extrapolating a band nobody verified would be a confident invention."""
+    def test_lead_time_beyond_the_backtest_extends_the_longest_measured(self):
+        """Reusing the 14-bucket offset unchanged for a 60-bucket exposure was
+        itself an extrapolation — one that assumed no error accumulates after
+        bucket 14. Cumulative error grows at least like sqrt(L), so that is the
+        conservative extension (math audit 2026-10-01)."""
         risk = _risk({"7": {"0.95": 40.0}, "14": {"0.95": 90.0}})
-        assert _measured_safety_stock(risk, 60, 0.95) == 90.0
+        assert _measured_safety_stock(risk, 60, 0.95) == pytest.approx(
+            90.0 * math.sqrt(60 / 14))
 
     def test_absent_evidence_returns_none_rather_than_zero(self):
         """None means 'fall back'; 0.0 would mean 'no cushion needed'."""

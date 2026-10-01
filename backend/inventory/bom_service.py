@@ -145,7 +145,14 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
         if sku not in bom_map:
             continue
 
-        forecast_demand = round((item.get('daily_demand') or 0) * horizon_days, 1)
+        # `daily_demand` is per bucket of `period` (per WEEK on a weekly
+        # tenant) and the horizon is in days. Passing `period` to the status
+        # call above was half the fix the docstring describes; without this
+        # conversion every requirement was still 7x (weekly) or 30x (monthly)
+        # too high (math audit 2026-10-01).
+        from backend.inventory.service import _days_per_period
+        per_day = (item.get('daily_demand') or 0) / _days_per_period(period)
+        forecast_demand = round(per_day * horizon_days, 1)
         current_stock   = item.get('current_stock') or 0
         to_produce      = max(0.0, forecast_demand - current_stock)
 
