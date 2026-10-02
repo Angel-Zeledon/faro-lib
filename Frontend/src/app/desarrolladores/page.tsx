@@ -1,3 +1,4 @@
+import { JetBrains_Mono } from 'next/font/google'
 import DevelopersPage from './DevelopersPage'
 import { JsonLd } from '@/components/landing/StructuredData'
 import { subpageMetadata } from '@/components/landing/subpageMetadata'
@@ -8,6 +9,15 @@ import { SITE_URL } from '@/lib/siteUrls'
 // visitor's language and theme), so its search metadata and structured data
 // live here, in Spanish like the other public subpages.
 const PATH = '/desarrolladores'
+
+/** The code face for every sample on the page — self-hosted by Next at build
+ *  time like the brand face in app/layout.tsx, loaded only on this route. */
+const codeFont = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '700'],
+  variable: '--font-code',
+  display: 'swap',
+})
 const D = DEVELOPERS.es
 
 export const metadata = subpageMetadata(
@@ -41,7 +51,9 @@ export default function Page() {
           },
         ]}
       />
-      <DevelopersPage />
+      <div className={codeFont.variable}>
+        <DevelopersPage />
+      </div>
     </>
   )
 }

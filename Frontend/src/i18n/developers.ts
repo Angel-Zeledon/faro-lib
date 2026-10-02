@@ -55,6 +55,29 @@ export interface DevelopersCopy {
     tags: Record<string, string>
   }
   mcp: { title: string; body: string }
+  /** The interactive reference (sidebar, request bar, code panel). */
+  workspace: {
+    browse: string
+    search: string
+    noResults: string
+    close: string
+    count: (n: number) => string
+    tabs: { params: string; body: string; headers: string; response: string }
+    noBody: string
+    headersLead: string
+    authValue: string
+    optional: string
+    responseLead: string
+    responseNote: string
+    noContent: string
+    request: string
+    response: string
+    languages: string
+    copy: string
+    copied: string
+    copyUrl: string
+    stats: { read: (n: number) => string; write: (n: number) => string }
+  }
 }
 
 export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
@@ -179,6 +202,28 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       title: 'Para clientes de IA (MCP)',
       body: 'La misma clave abre un servidor MCP en /mcp con cinco herramientas de solo lectura, para que un asistente de IA consulte tu semáforo. Por diseño no escribe nada.',
     },
+    workspace: {
+      browse: 'Explorar endpoints',
+      search: 'Buscar por ruta o acción',
+      noResults: 'Ningún endpoint coincide con esa búsqueda.',
+      close: 'Cerrar',
+      count: n => `${n} endpoints`,
+      tabs: { params: 'Parámetros', body: 'Cuerpo', headers: 'Cabeceras', response: 'Respuesta' },
+      noBody: 'Este endpoint no lleva cuerpo.',
+      headersLead: 'Cabeceras que lleva esta llamada.',
+      authValue: 'Tu API key. Siempre obligatoria.',
+      optional: 'opcional',
+      responseLead: 'Si todo sale bien:',
+      responseNote: 'Toda respuesta JSON viene en este sobre; lo que trae data depende de cada endpoint. Si algo falla, recibes un error_code estable (ver Errores).',
+      noContent: 'Responde sin cuerpo.',
+      request: 'Petición',
+      response: 'Respuesta',
+      languages: 'Lenguaje del ejemplo',
+      copy: 'Copiar',
+      copied: 'Copiado',
+      copyUrl: 'Copiar URL',
+      stats: { read: n => `${n} de lectura`, write: n => `${n} de escritura` },
+    },
   },
   en: {
     breadcrumb: 'Breadcrumb',
@@ -300,6 +345,28 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     mcp: {
       title: 'For AI clients (MCP)',
       body: 'The same key opens an MCP server at /mcp with five read-only tools, so an AI assistant can query your traffic light. By design it writes nothing.',
+    },
+    workspace: {
+      browse: 'Browse endpoints',
+      search: 'Search by path or action',
+      noResults: 'No endpoint matches that search.',
+      close: 'Close',
+      count: n => `${n} endpoints`,
+      tabs: { params: 'Parameters', body: 'Body', headers: 'Headers', response: 'Response' },
+      noBody: 'This endpoint takes no body.',
+      headersLead: 'Headers this call carries.',
+      authValue: 'Your API key. Always required.',
+      optional: 'optional',
+      responseLead: 'When it succeeds:',
+      responseNote: 'Every JSON answer comes in this envelope; what data holds depends on the endpoint. When something fails you get a stable error_code (see Errors).',
+      noContent: 'Answers with no body.',
+      request: 'Request',
+      response: 'Response',
+      languages: 'Example language',
+      copy: 'Copy',
+      copied: 'Copied',
+      copyUrl: 'Copy URL',
+      stats: { read: n => `${n} read`, write: n => `${n} write` },
     },
   },
 }
