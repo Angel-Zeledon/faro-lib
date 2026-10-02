@@ -60,6 +60,9 @@ _PERSISTED_VOCABULARY = {
 
 # Files whose Spanish is the product, not a leak.
 _ALLOWED = {
+    # App routes the assistant deep-links to: routes are deliberately Spanish
+    # (CLAUDE.md, "Language"), and these are paths, not copy.
+    "assistant/channels.py",
     # THE catalogue. Every Spanish string for a backend-only channel lives here.
     "notifications/locale.py",
     # LatAm commercial calendar: event names and descriptions are reference DATA

@@ -430,10 +430,12 @@ class TestOptimizerLeadTimeBuckets:
         _put_stock(client, auth_headers, "OPTL", current_stock=5, lead_time_days=30,
                    moq=1, warehouse="principal")
         session_store.set_forecasts(tid, sid, {"OPTL": _forecast(10.0, 0.0)})
-        inp = opt.build_optimization_input(tid, sid, horizon_days=4, period="monthly")
+        # Horizons past the 30-day lead time: a shorter one is Panel-sized now
+        # (lead time >= horizon), so the SKU never reaches the optimizer.
+        inp = opt.build_optimization_input(tid, sid, horizon_days=120, period="monthly")
         assert inp is not None
         assert inp.lead_time_buckets["OPTL"] == 1
-        inp_d = opt.build_optimization_input(tid, sid, horizon_days=30)
+        inp_d = opt.build_optimization_input(tid, sid, horizon_days=60)
         assert inp_d.lead_time_buckets["OPTL"] == 30
 
 
