@@ -43,7 +43,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { fmtNum } from '@/lib/numberLocale'
 import {
   C, AllClear, AssumptionsBanner, SourceBadge, provenanceText, summarizeAssumptions,
-  tOr, type ActionItem,
+  tOr, type ActionItem, IncomingNote, OrderedNote,
 } from './shared'
 
 // Thumb-sized: 44px is the smallest control a finger hits reliably. Every
@@ -67,6 +67,9 @@ interface HoyMobileProps {
   onChangeQty: (sku: string, qty: number) => void
   onClearCart: () => void
   onGenerate:  () => void
+  /** True while the order is being saved: the generate button is disabled so
+   *  a second tap cannot start a second order. */
+  generating?: boolean
   /** False for a viewer. The narrow layout has to make the same promises as
    *  the desktop one, so the decision surface disappears here too — the
    *  quantity stepper included, since a change flips the line to `modified`
@@ -87,7 +90,7 @@ export default function HoyMobile(props: HoyMobileProps) {
     loading, error, onRetry, briefing, firstName, freshness, semaphoreStale,
     cart, approved, onApprove, onRemove, onChangeQty, onClearCart, onGenerate,
     generatedPO, onDismissGenerated, pendingReceptions, overduePOs, noInventory,
-    canDecide,
+    canDecide, generating = false,
   } = props
 
   const urgent = cart.filter(i => i.signal === 'PEDIR_YA' && i.status !== 'rejected')
@@ -299,6 +302,7 @@ export default function HoyMobile(props: HoyMobileProps) {
           approved={approved}
           onClear={onClearCart}
           onGenerate={onGenerate}
+          generating={generating}
         />
       )}
     </div>
@@ -321,6 +325,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
   const isUrgent   = item.signal === 'PEDIR_YA'
   const accent     = isUrgent ? 'var(--signal-order-now-fg)' : 'var(--signal-order-soon-fg)'
   const inCart     = item.status === 'approved' || item.status === 'modified'
+  const isOrdered  = item.status === 'ordered'
   const value      = item.qty * (item.unit_cost ?? 0)
   const canOrder   = item.qty > 0
   const coverage   = item.days != null ? Math.round(item.days) : null
@@ -387,11 +392,13 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
           </strong>
         </div>
       )}
+      <IncomingNote item={item} />
+      <OrderedNote item={item} />
 
       {/* Quantity stepper — read-only for a viewer, who still gets the number
           and its value, just not the controls that would shape an order they
           cannot place. */}
-      {!canDecide ? (
+      {isOrdered ? null : !canDecide ? (
         <div style={{ marginTop: 12, textAlign: 'center' }}>
           <div style={{ color: accent, fontSize: 22, fontWeight: 800 }}>
             {fmtNum(item.qty)}
@@ -449,8 +456,10 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
       </div>
       )}
 
-      {/* Primary action — full width, thumb height */}
-      {canDecide && (
+      {/* Primary action — full width, thumb height. Gone once the line is on
+          a PO: "En el pedido" after the order was saved is what let a second
+          tap order the same units again. */}
+      {canDecide && !isOrdered && (
       <button
         onClick={inCart ? onRemove : onApprove}
         disabled={!canOrder && !inCart}
@@ -468,7 +477,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
           ? <><Check size={16} /> {tOr(t, 'mobile.in_cart', 'In the order — tap to remove')}</>
           : canOrder
             ? tOr(t, 'mobile.add_to_cart', 'Add to the order')
-            : t('hoy.enough_stock')}
+            : (item.incoming_qty ?? 0) > 0 ? t('hoy.covered_by_incoming') : t('hoy.enough_stock')}
       </button>
       )}
 
@@ -673,10 +682,11 @@ function MobileNudge({ tone, icon, text, href, cta }: {
 // Fixed to the bottom of the viewport, not `position: sticky` inside the list:
 // on a phone the list is long enough that a sticky element scrolls away, and
 // the total the buyer is about to commit must stay in sight.
-function MobileCartBar({ approved, onClear, onGenerate }: {
+function MobileCartBar({ approved, onClear, onGenerate, generating }: {
   approved: ActionItem[]
   onClear:  () => void
   onGenerate: () => void
+  generating: boolean
 }) {
   const { t } = useLanguage()
   const total = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
@@ -741,6 +751,7 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
         </div>
         <button
           onClick={onClear}
+          disabled={generating}
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
             minHeight: 36, padding: '0 12px', borderRadius: 8,
@@ -753,14 +764,16 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
       </div>
       <button
         onClick={onGenerate}
+        disabled={generating}
+        aria-busy={generating}
         style={{
-          all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: '100%',
+          all: 'unset', boxSizing: 'border-box', cursor: generating ? 'wait' : 'pointer', width: '100%',
           minHeight: TAP, borderRadius: 10, background: '#22c55e', color: '#fff',
-          fontSize: 15, fontWeight: 700,
+          fontSize: 15, fontWeight: 700, opacity: generating ? 0.6 : 1,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
-        {t('hoy.btn_download_po')}
+        {generating ? t('hoy.btn_download_po_busy') : t('hoy.btn_download_po')}
       </button>
     </div>
   )

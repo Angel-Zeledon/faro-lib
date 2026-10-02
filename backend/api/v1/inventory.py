@@ -17,7 +17,7 @@ import re
 from datetime import date
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from psycopg2.pool import PoolError
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -1434,10 +1434,32 @@ class POLogRequest(BaseModel):
     destination_warehouse: Optional[str] = None
 
 
+_IDEMPOTENCY_KEY_DOC = (
+    "Optional. One unique value (a UUID) per order you mean to place. Repeating "
+    "the request with the same key returns the order the first request created "
+    "(200, replayed=true) instead of creating a second one; the same key with "
+    "different lines is refused with 409 po_idempotency_key_reused."
+)
+
+
+def _po_response(record: dict, response: Response) -> dict:
+    """A created order answers 201; a replay of an idempotency key answers 200
+    with `replayed: true` and the FIRST order's body, so a client that retried
+    a request it never saw answered gets the order it already placed."""
+    out = {k: v for k, v in record.items() if k != "idempotency_fingerprint"}
+    out["replayed"] = bool(record.get("replayed"))
+    if out["replayed"]:
+        response.status_code = 200
+    return out
+
+
 @router.post("/log-po", status_code=201)
 def log_po(
+    response: Response,
     session_id: str = Query(...),
     body: Optional[POLogRequest] = None,
+    idempotency_key: Optional[str] = Header(
+        default=None, alias="Idempotency-Key", description=_IDEMPOTENCY_KEY_DOC),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
@@ -1450,10 +1472,28 @@ def log_po(
     Fallback (no body): the server re-derives the actionable PEDIR_YA /
     PEDIR_PRONTO items — used by the legacy server-side CSV export, which has no
     per-line decisions to send.
-    """
-    from backend.inventory.roi_service import log_po_generation
 
+    `Idempotency-Key` (header, optional): one value per cart submission. A
+    second request with the same key — a double tap, a client retry after a
+    dropped connection, two tabs racing — returns the order the first one
+    created instead of writing an identical second order (which then counted
+    as stock on its way twice). A key reused for a DIFFERENT order is a 409.
+    """
+    from backend.inventory.roi_service import (
+        find_by_idempotency_key, log_po_generation, validate_idempotency_key,
+    )
+
+    idempotency_key = validate_idempotency_key(idempotency_key)
     decisions_recorded = bool(body and body.items)
+    if idempotency_key and not decisions_recorded:
+        # The no-body path re-derives the lines from the CURRENT semaforo,
+        # which the first order has already changed (its units now count as
+        # on their way). Re-deriving would produce a different list and a
+        # false "key reused" conflict, so a replay is resolved before that.
+        existing = find_by_idempotency_key(user.tenant_id, idempotency_key)
+        if existing:
+            return ok(_po_response({**existing, "replayed": True}, response))
+
     if decisions_recorded:
         po_items = [i.model_dump() for i in body.items]
     else:
@@ -1485,7 +1525,12 @@ def log_po(
         # re-derived the list — so counting all of it as "followed" was the
         # product marking its own homework. See log_po_generation.
         decisions_recorded=decisions_recorded,
+        idempotency_key=idempotency_key,
     )
+    if record.get("replayed"):
+        # Nothing was written, so nothing is recorded: the activity log must
+        # not show the same order generated twice.
+        return ok(_po_response(record, response))
     # The order exists from here on: the buyer will act on the file they just
     # downloaded, and /pedidos will show it. Recorded so the history answers
     # "who ordered what, and when" without anybody having to remember.
@@ -1502,7 +1547,7 @@ def log_po(
                               for i in po_items if (i.get("supplier") or "").strip()}),
         },
     )
-    return ok(record)
+    return ok(_po_response(record, response))
 
 
 class ManualPOLine(BaseModel):
@@ -1521,14 +1566,22 @@ class ManualPORequest(BaseModel):
 @router.post("/po", status_code=201)
 def create_manual_po(
     body: ManualPORequest,
+    response: Response,
+    idempotency_key: Optional[str] = Header(
+        default=None, alias="Idempotency-Key", description=_IDEMPOTENCY_KEY_DOC),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
     A purchase order the buyer writes from scratch — supplier chosen
     explicitly, lines typed in, no forecast session behind it. Persisted with
-    source='manual' so adoption metrics stay clean.
+    source='manual' so adoption metrics stay clean. `Idempotency-Key`: same
+    contract as /log-po.
     """
-    from backend.inventory.roi_service import create_manual_po as create_po_svc
+    from backend.inventory.roi_service import (
+        create_manual_po as create_po_svc, validate_idempotency_key,
+    )
+
+    idempotency_key = validate_idempotency_key(idempotency_key)
 
     supplier = sup_svc.get_supplier(user.tenant_id, body.supplier_id)
     if not supplier:
@@ -1538,8 +1591,9 @@ def create_manual_po(
         user.tenant_id, supplier,
         [l.model_dump() for l in body.lines],
         destination_warehouse=body.destination_warehouse,
+        idempotency_key=idempotency_key,
     )
-    return ok(record)
+    return ok(_po_response(record, response))
 
 
 @router.get("/roi")
