@@ -4,11 +4,13 @@
 // the scroll reveal. Moved verbatim from LandingPage.tsx.
 import { useEffect } from 'react'
 import { T, LANDING_CSS } from '@/components/landing/theme'
+import { COLORWAY_CSS } from '@/components/landing/colorway'
 
 // The stylesheet, injected with dangerouslySetInnerHTML (see the note above
 // LANDING_CSS for why it is not a text child).
 export function LandingStyles() {
- return <style dangerouslySetInnerHTML={{ __html: LANDING_CSS }} />
+ // The colour layer (colorway.ts) paints over the base, so it comes second.
+ return <style dangerouslySetInnerHTML={{ __html: LANDING_CSS + COLORWAY_CSS }} />
 }
 
 // ── Shared layout helpers ─────────────────────────────────────────────────────
