@@ -36,8 +36,10 @@ export function receptionStatus(entry: POLogEntry): string {
   return entry.reception_status ?? 'pending'
 }
 
+// A cancelled order is not waiting for anything — the same rule the server's
+// "on the way" (`get_incoming_detail`) and overdue list apply.
 export function isAwaitingReception(entry: POLogEntry): boolean {
-  return OPEN_RECEPTION_STATUSES.includes(receptionStatus(entry))
+  return !entry.cancelled_at && OPEN_RECEPTION_STATUSES.includes(receptionStatus(entry))
 }
 
 export function countAwaitingReception(entries: POLogEntry[]): number {

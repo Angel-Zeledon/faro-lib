@@ -2120,10 +2120,9 @@ export default function HoyPage() {
             }}>
              <span style={{ fontSize: 13 }}>
               {order.sku} — {order.warehouse}: <strong>{order.qty}</strong>
-              {order.horizon_extended && order.effective_horizon_days != null && (
+              {order.sized_like_panel && order.effective_horizon_days != null && (
                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--dim)', marginTop: 2 }}>
                 {t('hoy.optimizer_line_extended', { days: order.effective_horizon_days })}
-                {order.demand_extrapolated && <> · {t('hoy.optimizer_line_extrapolated')}</>}
                </span>
               )}
              </span>

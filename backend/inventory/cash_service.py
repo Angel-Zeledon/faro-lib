@@ -164,7 +164,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
     A PO can span several suppliers, so payables are grouped by (PO, supplier):
     each supplier invoices its own lines under its own terms.
 
-    **Paid orders are not payables** (math audit 2026-10-01, O3). Before
+    **Paid and cancelled orders are not payables** (math audit 2026-10-01,
+    O3). Before
     `paid_at` existed nothing ever left this calendar, so `overdue_total`
     only grew and every cart eventually "did not fit".
 
@@ -191,6 +192,7 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
             WHERE l.tenant_id = %s
               AND l.sent_at IS NOT NULL
               AND l.paid_at IS NULL
+              AND l.cancelled_at IS NULL
               AND i.status IN ('approved', 'modified')
               AND i.final_qty > 0
             GROUP BY l.id, l.sent_at, i.supplier

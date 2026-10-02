@@ -125,6 +125,12 @@ def receive_po(
     po = get_po(tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    if po.get("cancelled_at") is not None:
+        raise AppError(
+            "po_cancelled",
+            "This order was cancelled; reopen it before recording a reception",
+            status_code=409,
+        )
     if po.get("reception_status") not in RECEIVABLE_STATES:
         status = po.get("reception_status")
         raise AppError(
@@ -1042,6 +1048,7 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
     pos = query(
         """SELECT id, generated_at FROM inventory_po_log
            WHERE tenant_id = %s AND reception_status IN %s
+             AND cancelled_at IS NULL
            ORDER BY generated_at""",
         (tenant_id, RECEIVABLE_STATES),
     )

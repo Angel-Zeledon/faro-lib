@@ -141,6 +141,17 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=WARNING,
         detail_keys=("reference",),
     ),
+    # The order is abandoned: its units stop counting as on the way, so the
+    # semáforo may ask for them again. Warning, because every recommendation
+    # for its SKUs moves on the strength of it.
+    "purchase.order_cancelled": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference", "cancel_reason"),
+    ),
+    "purchase.order_uncancelled": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference",),
+    ),
 
     # ── Data the tenant put in ───────────────────────────────────────────────
     "data.stock_imported": EventSpec(
@@ -221,6 +232,8 @@ REASONS: tuple[str, ...] = (
     # reversals — the WHY of an un-receive or un-send is that a person decided
     # the original action was a mistake and corrected it themselves.
     "reversed_by_user",
+    # a person cancelled the order themselves
+    "cancelled_by_user",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

@@ -1097,6 +1097,20 @@ export const markPOPaid = (poLogId: string) =>
 export const markPOUnpaid = (poLogId: string) =>
   request<POPaymentResult>('POST', `/inventory/po/${poLogId}/mark-unpaid`)
 
+// Cancel an order nothing was received against (409 `po_cancel_after_reception`
+// / `po_cancel_after_payment` otherwise), and reopen it. Both idempotent.
+export interface POCancelResult {
+  po_log_id:     string
+  cancelled_at:  string | null
+  cancel_reason: string | null
+  changed:       boolean
+}
+export const cancelPO = (poLogId: string, reason?: string) =>
+  request<POCancelResult>('POST', `/inventory/po/${poLogId}/cancel`, reason ? { reason } : {})
+
+export const uncancelPO = (poLogId: string) =>
+  request<POCancelResult>('POST', `/inventory/po/${poLogId}/uncancel`)
+
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
 

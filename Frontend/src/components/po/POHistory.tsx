@@ -12,6 +12,7 @@ import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
 import { PaidPOActions } from '@/components/po/PaidPOActions'
+import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
@@ -438,6 +439,19 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                   const status = entry.reception_status || 'pending'
                   const badge = RECEPTION_LABEL[status] || RECEPTION_LABEL.pending
                   const receivable = status === 'pending' || status === 'partial'
+                  // A cancelled order offers only its badge and "reopen": it
+                  // cannot be received, sent, paid or un-sent until reopened
+                  // (the server refuses each of those too).
+                  if (entry.cancelled_at) {
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <CancelledBadge cancelledAt={entry.cancelled_at} />
+                        <CancelPOActions poLogId={entry.id} receptionStatus={status}
+                                         paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                                         onChanged={onUndone} />
+                      </span>
+                    )
+                  }
                   return (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
@@ -474,6 +488,13 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                         poLogId={entry.id}
                         sent={Boolean(entry.sent_at)}
                         paidAt={entry.paid_at}
+                        onChanged={onUndone}
+                      />
+                      <CancelPOActions
+                        poLogId={entry.id}
+                        receptionStatus={status}
+                        paidAt={entry.paid_at}
+                        cancelledAt={entry.cancelled_at}
                         onChanged={onUndone}
                       />
                     </span>

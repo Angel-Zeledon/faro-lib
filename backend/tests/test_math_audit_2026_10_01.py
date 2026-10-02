@@ -228,7 +228,7 @@ class TestOptimizerNetsWhatIsAlreadyOnItsWay:
             for i in range(20)]}}})
         monkeypatch.setattr(inv_svc, "get_incoming_qty",
                             lambda tid: {(sku, "principal"): 200.0})
-        inp = opt_svc.build_optimization_input(tid, sid, horizon_days=14)
+        inp = opt_svc.build_optimization_input(tid, sid, horizon_days=30)
         assert inp.stock0[(sku, "principal")] == pytest.approx(240.0)
 
 

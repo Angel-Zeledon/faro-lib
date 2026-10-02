@@ -8,6 +8,10 @@ def _sku():
 
 
 class TestBuildOptimizationInput:
+    # These build the MILP's input, so they use a 30-day horizon: a SKU whose
+    # next order lands past the horizon (the default 15-day lead time against
+    # 7 or 14) is sized like the Panel and never reaches the MILP (math audit
+    # O1) — see test_optimizer_horizon_covers_lead_time.py.
     def test_returns_none_when_no_forecasts(self, test_tenant, test_session):
         from backend.inventory.optimizer_service import build_optimization_input
 
@@ -39,7 +43,7 @@ class TestBuildOptimizationInput:
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 40.0}] * 7}},
         })
 
-        inp = build_optimization_input(tid, sid, horizon_days=7)
+        inp = build_optimization_input(tid, sid, horizon_days=30)
 
         assert inp is not None
         assert sku in inp.skus
@@ -83,7 +87,7 @@ class TestBuildOptimizationInput:
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
         })
 
-        inp = build_optimization_input(tid, sid, horizon_days=7)
+        inp = build_optimization_input(tid, sid, horizon_days=30)
 
         # This used to assert 5.0 / 5.0 — an even split invented because the
         # stock-share denominator was zero. Splitting evenly is not a neutral
@@ -119,7 +123,7 @@ class TestBuildOptimizationInput:
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
         })
 
-        inp = build_optimization_input(tid, sid, horizon_days=7)
+        inp = build_optimization_input(tid, sid, horizon_days=30)
 
         assert inp.demand[(sku, "Norte")][0] == pytest.approx(8.0)
         assert inp.demand[(sku, "Sur")][0] == pytest.approx(2.0)
@@ -149,7 +153,7 @@ class TestBuildOptimizationInput:
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 10.0}] * 7}},
         })
 
-        inp = build_optimization_input(tid, sid, horizon_days=7)
+        inp = build_optimization_input(tid, sid, horizon_days=30)
 
         assert "Bodega Vacia" not in inp.warehouses
         # Renormalized over the two planned warehouses: 50/50 of the whole
@@ -187,7 +191,7 @@ class TestBuildOptimizationInput:
             },
         })
 
-        inp = build_optimization_input(tid, sid, horizon_days=7)
+        inp = build_optimization_input(tid, sid, horizon_days=30)
 
         assert inp.demand[(sku, "Norte")][0] == pytest.approx(3.0)
         assert inp.demand[(sku, "Sur")][0] == pytest.approx(7.0)
@@ -284,7 +288,7 @@ class TestBuildOptimizationInput:
             "lead_time_days": 4, "unit_cost": 7.0,
         }]
         inp = opt_svc.build_optimization_input(
-            tid, sid, horizon_days=7, stock_rows=provided,
+            tid, sid, horizon_days=30, stock_rows=provided,
         )
 
         assert inp is not None
@@ -306,7 +310,7 @@ class TestBuildOptimizationInput:
             sku: {"lightgbm": {"forecast": [{"date": "2026-01-01", "value": 5.0}] * 7}},
         })
 
-        inp = build_optimization_input(tid, sid, horizon_days=7)
+        inp = build_optimization_input(tid, sid, horizon_days=30)
 
         assert inp.order_cost[sku] == 1.0
         assert inp.holding_cost[sku] == 1.0 * 0.20 / 365
@@ -349,10 +353,8 @@ class TestSerializeOptimizationResult:
         assert out["orders"] == [
             {"sku": "SKU1", "warehouse": "Norte", "qty": 3.0, "unit_cost": 2.0,
              "supplier": "ACME", "assumed_unit_cost": False,
-             # What the line covers (math audit O1): the horizon it was
-             # planned on, not extended, no extrapolated demand.
-             "effective_horizon_days": 2, "horizon_extended": False,
-             "demand_extrapolated": False},
+             # Solved by the MILP, not sized like the Panel (math audit O1).
+             "sized_like_panel": False, "horizon_extended": False},
         ]
         assert out["extended_lines"] == 0
         assert out["transfers"] == [

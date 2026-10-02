@@ -4625,53 +4625,48 @@ Notes on the fixes:
 | O9 | MEDIUM | narrative / RAG fallback / WhatsApp bot | Per-period coverage and demand labelled as days (`narrative_service.py:272,335,354`). `rag_service.py:753` reads `r.get("recommended")`, a key that does not exist (always null). `holding_cost` 0.00 (§16 l) still live. | AI-assistant area (another agent); the WhatsApp bot is out of scope (§3.3). |
 | O10 | MEDIUM | `export-po` CSV | Coverage in periods under "Días cobertura". "Demanda (lead time)" is lead time **plus review period**. Every non-learned source is labelled "Configurado", including the assumed 15. | API file shared with the public-API workstream. Copy plus a param. |
 | O11 | LOW | various | Coverage rounded to whole periods (0.4 weeks → "0 semanas" on a PEDIR_YA card); /escenarios "Demanda diaria" (per period); `SkuSearchOverlay` "{n}d"; "cost of ignoring" date defaults use the UTC date (one day late after 18:00 CR); `parseInt` truncates a typed 12.5; PDF/WhatsApp/email quantities `:.0f` (unreachable from the UI, which takes integers); "₡X inmovilizados en sobrestock" quotes the full value of overstocked SKUs; `forecast_money` reports steps as `horizon_days`; the optimizer's per-bucket orders are dated as one PO sent today in the cash fit. | Cosmetic, or each needs copy. |
-| O12 | HIGH | purchase orders have no "cancelled" state | Since M26 every open PO counts as on its way. A PO the buyer generated and then abandoned keeps lowering the recommendation until somebody records a reception; `not_received` deliberately still counts ("nothing arrived yet"). The overdue list surfaces it, but there is no action that closes it. | A cancel action (endpoint + state + /pedidos button) is new capability — the owner's call. |
+| O12 | HIGH | purchase orders have no "cancelled" state — **FIXED 2026-10-01** (see *PO cancellation* below) | Since M26 every open PO counts as on its way. A PO the buyer generated and then abandoned keeps lowering the recommendation until somebody records a reception; `not_received` deliberately still counts ("nothing arrived yet"). The overdue list surfaces it, but there is no action that closes it. | A cancel action (endpoint + state + /pedidos button) is new capability — the owner's call. |
 
 ## O1 and O3, fixed (2026-10-01)
 
-**O1 — the plan reaches the next order's arrival.** Owner's decision: each
-SKU is planned over max(configured horizon, lead time + review period). With
-no declared review period (`suppliers.review_period_days = 0`, the default) the
-next order can go out one bucket later, so the reach is lead time + 1 bucket:
-otherwise a horizon ending exactly on the lead time still admits no arrival
-(the engine gates arrivals at t ≤ L).
+**O1 — a SKU whose next order lands past the horizon gets the Panel's
+quantity.** Owner's decisions: first, the plan must reach the next order's
+arrival, max(horizon, lead time + review period), a missing review period
+counting as one bucket (the engine gates arrivals at t ≤ L); then, for the SKUs
+that rule extends, "igual que el Panel": the optimizer reports exactly what
+/hoy and /compras recommend, so two screens never show two numbers for one
+SKU.
 
-- Engine (`ForecastingCore business/optimizer.py`): new
-  `OptimizationInput.horizon_by_sku`. Past a SKU's own horizon its buckets are
-  inert — order, transfer and shortage fixed at 0, demand ignored, holding at 0
-  — so a SKU that is not extended gets exactly the decisions it got alone
-  (pinned against a neighbour with a 30-bucket horizon). The size gate counts
-  only the free variables (`live_var_count`), equal to `n_vars` when nothing
-  is extended, so one 45-day supplier does not push a whole tenant into the
-  greedy fallback. The fallback honours the same horizons.
-- API (`optimizer_service`): `effective_horizon_buckets`; the review period is
-  resolved by the semáforo's own `_resolve_review_period_days`. Where the
-  extension runs past the forecast's end it is filled with the forecast's mean
-  (the semáforo's own flat-rate assumption) and the line says so
-  (`demand_extrapolated`). Each order line carries `effective_horizon_days`
-  and `horizon_extended`; the response carries `extended_lines`.
-- /compras: per line "cubre hasta que llegue el próximo pedido: N días", a
-  note with the count, and the old "these answer cover the next {horizon}
-  days, which is why they are larger" sentence rewritten — it was false
-  (often smaller) and stays false for any lost-sales plan.
-- **What the quantity means.** The MILP is a lost-sales model. For an
-  extended SKU it plans the demand from the order's ARRIVAL until the next
-  order can arrive, net of whatever stock and on-order units are left at
-  arrival. Demand during the lead time is served by what is on hand or not at
-  all. The audit's reproduction (10/day, lead 15, horizon 14, nothing on hand,
-  no review period) now plans **10**, not 0 and not the semáforo's
-  d·(L+R) − position. With a weekly review it plans 70; with 100 on hand +
-  80 on order, 40. This is the same meaning the panel already had for
-  horizon > lead (lead 10 → 40 = days 11–14, unchanged and pinned). Whether
-  this panel should instead size orders like the semáforo (backorder
-  semantics) is a modelling decision for the owner, not made here.
-- Measured on the demo tenant through the dev proxy: `/inventory/optimize`
-  returns 3 lines (SKU-001 22, SKU-003 136, SKU-005 31), all
-  `horizon_extended` to 16 days — the unconfigured 15-day lead time.
-- Tests: `ForecastingCore/tests/test_optimizer_sku_horizon.py` (10),
-  `backend/tests/test_optimizer_horizon_covers_lead_time.py` (15, including
-  weekly buckets and the two-warehouse transfer path: 150 units move from the
-  sister warehouse, nothing is bought). Breaking the rule turns them red.
+- `optimizer_service.build_optimization_input` splits the SKUs with
+  `effective_horizon_buckets`. Those whose reach exceeds the horizon leave the
+  MILP; `_panel_lines` asks `service._compute_inventory_status` — the function
+  behind `get_inventory_status` and the morning briefing — on the same
+  preloaded forecasts, stock and on-order units, and takes its
+  `recommended_qty` (demand × (L + R) + safety stock − (on hand + on order),
+  its MOQ floor, its signal gate). The line goes to the default warehouse, the
+  Panel's own anchor; transfers for these SKUs stay with the per-warehouse
+  semáforo on /inventario. Every other SKU is solved exactly as before
+  (pinned: lead 10, horizon 14 still orders 40, beside a Panel-sized SKU too).
+- `optimizer_service.solve` skips the engine when no SKU is left for it — an
+  empty problem would have reported the greedy "fallback" and the plan warning.
+- The engine (`ForecastingCore`) is unchanged: an intermediate per-SKU-horizon
+  version was written and then reverted when the owner chose Panel sizing.
+- Lines carry `sized_like_panel` and `effective_horizon_days` (the lead time +
+  review period the Panel's quantity protects); the response carries
+  `extended_lines`. /compras prints "igual que el Panel: cubre N días, hasta
+  que pueda llegar el siguiente pedido" and a note with the count; the old
+  "cover the next {horizon} days, which is why they are larger" sentence is
+  rewritten (it was false).
+- The cash check (`/cash-calendar/fit` with a session) prices the same lines.
+- Tests: `backend/tests/test_optimizer_horizon_covers_lead_time.py` (14) — each
+  "equals the Panel" test calls both paths: the audit case (10/day, lead 15,
+  horizon 14, nothing on hand: Panel ≥ 150 and the optimizer equal to it, not
+  0), stock + on order + a weekly review period (and both move by exactly the
+  on-order 40 when it is removed), a SKU the Panel says not to order, a weekly
+  tenant, the cash check, and the endpoint. Seven `TestBuildOptimizationInput`
+  cases and the M18 netting test now build on a 30-day horizon, because at 7
+  or 14 days their default-15 SKUs are Panel-sized and never reach the MILP
+  input they inspect.
 
 **O3 — purchase orders have a paid state; the calendar says what it does not
 know.**
@@ -4710,13 +4705,50 @@ know.**
   read-back, idempotency, trail, calendar exclusion and undo, incompleteness,
   the verdict, export.
 
+**PO cancellation (O12, owner's decision 2026-10-01).**
+
+- Migration: `inventory_po_log.cancelled_at`, `cancelled_by`, `cancel_reason`,
+  all NULL; nothing backfilled.
+- `POST /inventory/po/{id}/cancel` (optional `{reason}`, ≤ 500 chars) and
+  `/uncancel`, analyst or above, router `api/v1/po_cancellation.py`, tag
+  `inventory-cancellation` classified INTERNAL: cancelling moves every
+  recommendation for the order's SKUs, and whether a machine may do that
+  unattended is the owner's call. Both idempotent (`changed: false`, no second
+  event). Refused with 409: anything received (`po_cancel_after_reception` —
+  record what arrived instead), marked paid (`po_cancel_after_payment`).
+  Events `purchase.order_cancelled` (warning, reason `cancelled_by_user`,
+  detail `cancel_reason`) and `purchase.order_uncancelled` (warning,
+  `reversed_by_user`); uncancel is the undo.
+- Every reader filters `cancelled_at IS NULL` at query time:
+  `service.get_incoming_detail` (so the semáforo, /compras, /inventario, the
+  optimizer, the daily alerts and the exports all follow), the overdue list
+  (`get_overdue_receptions`), open orders per supplier
+  (`supplier_health_service`) and the payables calendar. A cancelled order
+  cannot be received, sent to suppliers or marked paid (409 `po_cancelled`).
+  Not changed: the WhatsApp bot's own PO query (`whatsapp/tools.py`, out of
+  scope) and the adoption / managed-value history, which still counts the
+  order as generated.
+- /pedidos: "Cancelar orden" / "Reabrir orden" with a confirm that says what
+  moves (and that StockAI does not tell the supplier), a "Cancelada" badge, a
+  Canceladas filter, the phone cards too; a cancelled order is no longer
+  "awaiting arrival" there. The UI sends no reason (the API takes one).
+- Tests: `backend/tests/test_po_cancel.py` (14) — permission pairs with DB
+  read-back, both refusals, idempotency, the trail, the Panel's quantity
+  before / with the order / after cancel / after reopen (−60, back, −60), the
+  overdue list, the calendar, the receive/send/mark-paid guards, history.
+
 **Not walked in a browser.** The Chrome extension was not connected in this
 session. The pages compile and serve (`/pedidos`, `/compras` 200 on a worktree
 dev server), `tsc` and i18n parity pass, and the API was walked through the
 dev proxy as demo@faro.app. The demo tenant has no sent order, and sending one
 would message its suppliers, so mark-paid was exercised by the test suite only.
-These screens still owe a walk: /pedidos (button, badge, filter, phone cards),
-the /compras cash panel with an uncosted line, the /compras optimizer lines.
+These screens still owe a walk: /pedidos (paid and cancel buttons, both
+badges, the filter, phone cards), the /compras cash panel with an uncosted
+line, the /compras optimizer lines marked "igual que el Panel". The Panel
+sizing and the cancellation were verified by tests only: no dev server was
+started for them, because a server's startup migrations (`ALTER TABLE … IF NOT
+EXISTS` takes an exclusive lock) had just deadlocked against the full suite's
+open transaction on the shared database.
 
 ## What was checked and found correct (with the check)
 

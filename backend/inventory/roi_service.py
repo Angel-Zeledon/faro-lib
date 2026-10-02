@@ -481,7 +481,7 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
         """SELECT id, session_id, source, generated_at, sku_count, total_units,
                   total_value, skus_order_now, skus_order_soon,
                   reception_status, received_at, po_number, sent_at,
-                  paid_at
+                  paid_at, cancelled_at, cancel_reason
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC
@@ -492,7 +492,7 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     for row in rows:
         r = dict(row)
         # Serialize datetimes to ISO strings for JSON
-        for k in ("generated_at", "received_at", "paid_at"):
+        for k in ("generated_at", "received_at", "paid_at", "cancelled_at"):
             if isinstance(r.get(k), datetime):
                 r[k] = r[k].isoformat()
         result.append(r)

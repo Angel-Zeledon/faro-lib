@@ -35,7 +35,7 @@ def _iso(value) -> Optional[str]:
 
 def _get_po(tenant_id: str, po_log_id: str) -> dict:
     po = query_one(
-        "SELECT id, po_number, sent_at, paid_at, paid_by "
+        "SELECT id, po_number, sent_at, paid_at, paid_by, cancelled_at "
         "FROM inventory_po_log WHERE id = %s AND tenant_id = %s",
         (po_log_id, tenant_id),
     )
@@ -59,6 +59,12 @@ def mark_paid(tenant_id: str, po_log_id: str, user_id: str) -> dict:
     replacing the first.
     """
     po = _get_po(tenant_id, po_log_id)
+    if po.get("cancelled_at") is not None:
+        raise AppError(
+            "po_cancelled",
+            "This order was cancelled; reopen it before marking it as paid",
+            status_code=409,
+        )
     if po.get("sent_at") is None:
         raise AppError(
             "po_paid_requires_sent",

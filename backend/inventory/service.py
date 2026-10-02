@@ -412,9 +412,8 @@ def get_incoming_detail(tenant_id: str) -> list[dict]:
     `not_received` stays included: it means "nothing had arrived when I
     looked", not "this will never arrive".
 
-    Known gap (docs/stability.md): there is no "cancelled" state for a PO, so an
-    order the buyer abandons keeps counting until it is received. A cancel
-    action is a new capability and was left to the owner.
+    A CANCELLED PO (`cancelled_at` set, `po_cancel_service`) is not on its way
+    and never counts, whatever its reception status says.
 
     Rows: {sku, warehouse, qty, kind: 'po'|'transfer', reference, source_id}.
     `reference` is the human order number (OC-000123) for a PO and the origin
@@ -434,6 +433,7 @@ def get_incoming_detail(tenant_id: str) -> list[dict]:
             WHERE poi.tenant_id = %s
               AND pol.tenant_id = %s
               AND pol.reception_status IN %s
+              AND pol.cancelled_at IS NULL
               AND poi.status IN ('approved', 'modified')
             GROUP BY poi.sku, poi.warehouse, pol.id, pol.po_number
             ORDER BY pol.po_number NULLS LAST, pol.id""",

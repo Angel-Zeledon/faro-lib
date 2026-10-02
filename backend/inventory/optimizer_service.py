@@ -98,6 +98,22 @@ class OptimizerBusy(Exception):
     """Raised when all concurrent-solve slots are taken; caller should 503."""
 
 
+def solve(inp: OptimizationInput):
+    """Run the MILP on `inp`, or skip it when every SKU was sized like the
+    Panel (O1) and nothing is left for the solver.
+
+    The engine handed an empty problem fails the solve and reports the greedy
+    "fallback" — and /compras then warns the buyer that the plan is an
+    approximation, about a plan that never needed the optimizer at all.
+    Callers still hold `solve_slot()` around this.
+    """
+    from forecasting_core.business.optimizer import OptimizationResult, optimize
+    if not inp.skus:
+        return OptimizationResult(orders={}, transfers={}, inventory={},
+                                  shortages={}, total_cost=0.0, status="optimal")
+    return optimize(inp)
+
+
 @contextmanager
 def solve_slot():
     """Non-blocking concurrency gate around a MILP solve. Raises OptimizerBusy
@@ -314,25 +330,21 @@ def resolve_planning_inputs(
 def effective_horizon_buckets(
     horizon_buckets: int, lead_time_buckets: int, review_period_buckets: int,
 ) -> int:
-    """How many buckets one SKU's plan must span: the configured horizon, or
-    long enough to reach the next order's arrival, whichever is longer.
+    """How far one SKU's plan has to reach: the configured horizon, or the
+    arrival of the order after today's, whichever is later.
 
-    Owner's decision for math audit O1 (2026-10-01). In the model an order
-    arrives at bucket t only for t > lead time, so a SKU whose lead time is at
-    least the horizon had every arrival bucket gated and was planned at 0 —
-    with the default 15-day lead time and 14-day horizon, that was every SKU
-    nobody had configured, on a screen that said the plan covers the next 14
-    days.
+    Math audit O1 (2026-10-01). In the MILP an order arrives at bucket t only
+    for t > lead time, so a SKU whose lead time reached the horizon had every
+    arrival gated and was planned at 0 — with the default 15-day lead time and
+    14-day horizon, every SKU nobody had configured. A review period of 0 means
+    no cadence was declared and the next chance to order is the next bucket, so
+    it counts as 1.
 
-    The order placed today arrives after `lead_time_buckets`; the one after it
-    can be placed at the next review and arrives `review_period_buckets`
-    later. So the plan has to reach `lead + review`. A review period of 0
-    means no cadence was declared, and the next chance to order is then the
-    next bucket — so it counts as 1, otherwise the horizon would end exactly
-    on the lead time and still admit no arrival.
-
-    `horizon > lead` with no declared cadence gives back the configured
-    horizon unchanged, which is the case every existing plan was solved on.
+    A SKU whose reach exceeds the configured horizon is NOT solved by the MILP:
+    the owner's decision ("igual que el Panel") is that it gets exactly the
+    quantity the semáforo recommends — see `build_optimization_input`. With
+    `horizon > lead` and no declared cadence this returns the configured
+    horizon, and the SKU is optimized exactly as before.
     """
     reach = int(lead_time_buckets) + max(1, int(review_period_buckets))
     return max(int(horizon_buckets), reach)
@@ -475,12 +487,8 @@ def build_optimization_input(
     stockout_cost: dict[str, float] = {}
     order_cost: dict[str, float] = {}
 
-    # Each SKU's own horizon (O1): at least the configured one, and long enough
-    # to reach the arrival of the order after today's. Resolved before the
-    # demand is laid out because the curve has to reach that far.
-    #
-    # The lead time is the one this SKU is planned on, resolved ONCE for the
-    # whole product (see resolve_planning_inputs). It used to be
+    # The lead time this SKU is planned on, resolved ONCE for the whole
+    # product (see resolve_planning_inputs). It used to be
     # `max(raw lead_time_days across the SKU's rows)`, which answered a
     # different question from every other screen: it ignored supplier and
     # category rules, ignored what the supplier's real receptions have taught
@@ -488,53 +496,45 @@ def build_optimization_input(
     # untouched 15. In the model's own buckets: for daily it is the day count;
     # for weekly/monthly the lead time rounded up to whole periods —
     # commensurable with `horizon_buckets`, both counts of the same bucket.
-    own_horizon: dict[str, int] = {}
+    #
+    # A SKU whose next-order arrival lies past the horizon (O1) leaves the MILP
+    # here and is sized like the Panel below.
+    like_panel: list[str] = []
     for sku in skus:
         sku_planning = planning.get(sku) or {}
         raw_lead = int(sku_planning.get("lead_time_days") or _DEFAULT_LEAD_TIME_DAYS)
         lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / days_per_period))
         review_days = float(sku_planning.get("review_period_days") or 0.0)
         review_buckets = _math.ceil(review_days / days_per_period) if review_days > 0 else 0
-        own_horizon[sku] = effective_horizon_buckets(
-            horizon_buckets, lead_time_buckets[sku], review_buckets)
-    model_horizon = max(own_horizon.values()) if own_horizon else horizon_buckets
+        if effective_horizon_buckets(
+                horizon_buckets, lead_time_buckets[sku], review_buckets) > horizon_buckets:
+            like_panel.append(sku)
+    milp_skus = [sku for sku in skus if sku not in set(like_panel)]
+    for sku in like_panel:
+        del lead_time_buckets[sku]
 
-    def _bucketed(model_forecasts: dict, sku_horizon: int) -> tuple[list[float], bool]:
-        """One forecast curve laid into the model's buckets.
+    panel_lines = _panel_lines(
+        tenant_id, session_id, like_panel, raw_forecasts, stock_rows, incoming,
+        period, warehouses)
+
+    if not milp_skus and not panel_lines:
+        return None
+
+    def _bucketed(model_forecasts: dict) -> list[float]:
+        """One forecast curve laid into the horizon's buckets, padded with 0.
 
         The curve's points are one per bucket of the active period already —
         a monthly session's step 0 is next month's units — so no rescaling
         happens here; step index IS bucket index.
-
-        Inside the configured horizon a missing step stays 0, as it always
-        has. In the EXTENSION (configured horizon .. the SKU's own horizon) a
-        step the forecast does not reach is filled with the mean of the steps
-        it does: a 45-day supplier on a 30-day forecast would otherwise be
-        extended into zeros and planned at 0 again — the very defect the
-        extension exists to remove. That is the same flat-rate assumption the
-        semáforo makes for the whole protection interval (d * (L + R)), and the
-        second return value says it was made so the line can say so.
         """
-        series = [0.0] * model_horizon
-        curve = _avg_forecast_curve(model_forecasts, max_steps=model_horizon)
-        seen: set[int] = set()
-        for point in curve:
+        series = [0.0] * horizon_buckets
+        for point in _avg_forecast_curve(model_forecasts, max_steps=horizon_buckets):
             step = point["step"]
-            if step < model_horizon:
+            if step < horizon_buckets:
                 series[step] = point["value"]
-                seen.add(step)
-        extrapolated = False
-        if curve and sku_horizon > horizon_buckets:
-            mean = sum(p["value"] for p in curve) / len(curve)
-            for step in range(horizon_buckets, sku_horizon):
-                if step not in seen:
-                    series[step] = mean
-                    extrapolated = True
-        return series, extrapolated
+        return series
 
-    demand_extrapolated: set[str] = set()
-
-    for sku in skus:
+    for sku in milp_skus:
         sku_rows = rows_by_sku.get(sku, {})
 
         # The MILP needs an opening balance for every (sku, warehouse) pair it
@@ -558,20 +558,14 @@ def build_optimization_input(
 
         if per_wh_forecasts:
             for w in warehouses:
-                series, extrapolated = _bucketed(
-                    per_wh_forecasts.get(w, {}).get(sku, {}), own_horizon[sku])
-                demand[(sku, w)] = series
-                if extrapolated:
-                    demand_extrapolated.add(sku)
+                demand[(sku, w)] = _bucketed(per_wh_forecasts.get(w, {}).get(sku, {}))
         else:
-            total_curve, extrapolated = _bucketed(forecasts.get(sku, {}), own_horizon[sku])
-            if extrapolated:
-                demand_extrapolated.add(sku)
+            total_curve = _bucketed(forecasts.get(sku, {}))
             for w in warehouses:
                 share = shares.get(w, 0.0)
                 demand[(sku, w)] = [v * share for v in total_curve]
 
-        costs =[c for c in (_usable_unit_cost(row.get("unit_cost"))
+        costs = [c for c in (_usable_unit_cost(row.get("unit_cost"))
                              for row in sku_rows.values()) if c is not None]
         unit_cost = max(costs) if costs else _DEFAULT_UNIT_COST
 
@@ -627,9 +621,9 @@ def build_optimization_input(
             transfer_fixed_cost_by_lane[(a, b)] = float(lane["fixed_cost"])
 
     inp = OptimizationInput(
-        skus=skus,
+        skus=milp_skus,
         warehouses=warehouses,
-        horizon=model_horizon,
+        horizon=horizon_buckets,
         demand=demand,
         stock0=stock0,
         lead_time_buckets=lead_time_buckets,
@@ -641,18 +635,66 @@ def build_optimization_input(
         transfer_cost_by_lane=transfer_cost_by_lane,
         transfer_lead_buckets=transfer_lead_buckets,
         transfer_fixed_cost_by_lane=transfer_fixed_cost_by_lane,
-        # Only the SKUs whose horizon is shorter than the model's. An empty
-        # dict is the engine's pre-feature path, bit for bit, and that is what
-        # every plan in which no SKU needed extending gets.
-        horizon_by_sku={s: h for s, h in own_horizon.items() if h != model_horizon},
     )
-    # Carried for serialize_optimization_result, which reports what each line
-    # covers. Not engine input: the engine stays a pure function of the
-    # dataclass fields.
-    inp.configured_horizon_buckets = horizon_buckets
+    # The lines sized like the Panel ride along to serialize_optimization_result.
+    # Not engine input: the engine never sees these SKUs.
+    inp.panel_lines = panel_lines
     inp.days_per_period = days_per_period
-    inp.demand_extrapolated = demand_extrapolated
     return inp
+
+
+def _panel_lines(
+    tenant_id: str, session_id: str, skus: list[str], raw_forecasts: dict,
+    stock_rows: list[dict], incoming: dict, period: str, warehouses: list[str],
+) -> list[dict]:
+    """The Panel's own quantity for SKUs the MILP cannot plan (O1, "igual que
+    el Panel").
+
+    A SKU whose next-order arrival lies past the horizon used to be planned at
+    0 here while /compras showed a real number for it. Rather than derive a
+    second answer, this asks the SAME function the Panel reads
+    (`service._compute_inventory_status`, behind `get_inventory_status` and the
+    morning briefing) on the same preloaded data: demand × (lead time + review
+    period) + safety stock − (on hand + on order), with its MOQ floor and its
+    signal gate. The two screens then cannot show two numbers for one SKU.
+
+    That function is the tenant-wide view, so the line goes to the default
+    warehouse (the one the Panel's representative row is anchored on); moving
+    stock between warehouses for these SKUs is left to the per-warehouse
+    semáforo on /inventario, which is where it already lives.
+    """
+    if not skus:
+        return []
+    from backend.inventory.service import _compute_inventory_status
+    rows = _compute_inventory_status(
+        tenant_id, session_id, 0.95,
+        forecasts=raw_forecasts, stock_rows=stock_rows, incoming_qty=incoming,
+        period=period,
+    )
+    wanted = set(skus)
+    default = wh_svc.get_default_warehouse_name(tenant_id)
+    if default not in warehouses:
+        default = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+    lines: list[dict] = []
+    for row in rows:
+        if row.get("sku") not in wanted:
+            continue
+        calc = row.get("calc_explanation") or {}
+        protection = calc.get("protection_interval_days")
+        if protection is None:
+            protection = float(row.get("lead_time_days") or 0) + float(
+                calc.get("review_period_days") or 0)
+        lines.append({
+            "sku": row["sku"],
+            "warehouse": default,
+            "qty": int(_math.ceil(float(row.get("recommended_qty") or 0))),
+            "unit_cost": row.get("unit_cost"),
+            "supplier": row.get("supplier"),
+            "signal": row.get("signal"),
+            # Calendar days the Panel's quantity protects: lead time + review.
+            "protection_days": int(_math.ceil(float(protection))),
+        })
+    return lines
 
 
 def serialize_optimization_result(inp, result, stock_rows: list[dict],
@@ -756,42 +798,36 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict],
             # here reported those lines as priced on a real cost — the screen
             # printed a total and no warning, over a plan built on 1.0.
             "assumed_unit_cost": _usable_unit_cost(row.get("unit_cost")) is None,
-            **_line_coverage(inp, sku),
+            "sized_like_panel": False,
+            "horizon_extended": False,
+        })
+
+    # SKUs whose next order lands past the horizon carry the Panel's own
+    # quantity (see _panel_lines). A 0 there means the Panel says "no pedir",
+    # and a line of 0 is not an order.
+    for line in getattr(inp, "panel_lines", None) or []:
+        if line["qty"] <= 0:
+            continue
+        orders.append({
+            "sku": line["sku"], "warehouse": line["warehouse"], "qty": line["qty"],
+            "unit_cost": line.get("unit_cost"),
+            "supplier": line.get("supplier"),
+            "assumed_unit_cost": _usable_unit_cost(line.get("unit_cost")) is None,
+            "sized_like_panel": True,
+            "horizon_extended": True,
+            "effective_horizon_days": line["protection_days"],
         })
 
     transfers = _net_transfer_moves(transfer_totals)
 
-    configured = getattr(inp, "configured_horizon_buckets", inp.horizon)
     return {
         "status": result.status,
         "total_cost": round(result.total_cost, 2),
-        "horizon_days": horizon_days if horizon_days is not None else configured,
-        # How many lines reach past the configured horizon, so the screen can
-        # say once, above the list, that some lines cover more than it.
-        "extended_lines": sum(1 for o in orders if o["horizon_extended"]),
+        "horizon_days": horizon_days if horizon_days is not None else inp.horizon,
+        # How many lines carry the Panel's quantity because their supplier's
+        # next order lands past the horizon — said once, above the list.
+        "extended_lines": sum(1 for o in orders if o["sized_like_panel"]),
         "orders": orders,
         "transfers": transfers,
     }
 
-
-def _line_coverage(inp, sku: str) -> dict:
-    """What one order line covers, said truthfully (O1).
-
-    The screen used to print "cubre los próximos {horizon} días" over every
-    line. For a SKU whose lead time reaches the horizon that was false twice
-    over: the plan covered nothing, and when it did order, the units only
-    start covering once they arrive. `effective_horizon_days` is how far this
-    line's plan reaches (calendar days); `horizon_extended` says it was
-    stretched past the configured horizon to reach the next order's arrival;
-    `demand_extrapolated` says part of that stretch had no forecast and was
-    planned at the forecast's average rate.
-    """
-    from forecasting_core.business.optimizer import sku_horizon
-    dpp = getattr(inp, "days_per_period", 1)
-    configured = getattr(inp, "configured_horizon_buckets", inp.horizon)
-    own = sku_horizon(inp, sku)
-    return {
-        "effective_horizon_days": int(own * dpp),
-        "horizon_extended": own > configured,
-        "demand_extrapolated": sku in getattr(inp, "demand_extrapolated", set()),
-    }

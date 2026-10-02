@@ -1821,6 +1821,11 @@ def send_po_to_suppliers(
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    # A cancelled order must not reach a supplier: they would ship it.
+    if po.get("cancelled_at") is not None:
+        raise AppError("po_cancelled",
+                       "This order was cancelled; reopen it before sending it",
+                       status_code=409)
 
     items = rec_svc.get_po_items(user.tenant_id, po_log_id)
     ordered = [i for i in items if i["status"] in ("approved", "modified")]
@@ -2160,8 +2165,6 @@ def cash_calendar_fit(
             for i in body.items
         ]
     elif session_id:
-        from forecasting_core.business.optimizer import optimize
-
         # The caller's own horizon and the tenant's planning period — not a
         # hardcoded 30 days at the default daily grain. This path answers "does
         # the recommended purchase fit in the cash I have?", so it has to price
@@ -2189,7 +2192,7 @@ def cash_calendar_fit(
             # refreshing while a third opens the cash calendar is enough.
             try:
                 with opt_svc.solve_slot():
-                    result = optimize(inp)
+                    result = opt_svc.solve(inp)
             except opt_svc.OptimizerBusy:
                 raise AppError(
                     "optimizer_busy",
@@ -3085,8 +3088,6 @@ def optimize_inventory(
     recommended inter-warehouse transfers, collapsed to one total per
     line over the full horizon.
     """
-    from forecasting_core.business.optimizer import optimize
-
     plan = planning_service.get_planning(user.tenant_id)
     period = plan.get("period", "daily")
     if not session_id:
@@ -3150,7 +3151,7 @@ def optimize_inventory(
     # thread-pool worker and wedge the server — excess requests get a fast 503.
     try:
         with opt_svc.solve_slot():
-            result = optimize(inp)
+            result = opt_svc.solve(inp)
     except opt_svc.OptimizerBusy:
         raise AppError(
             "optimizer_busy",

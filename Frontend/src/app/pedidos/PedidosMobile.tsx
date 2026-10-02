@@ -39,6 +39,7 @@ import { formatMoney } from '@/lib/currency'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { PaidPOActions } from '@/components/po/PaidPOActions'
+import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
@@ -255,12 +256,15 @@ function OrderCard({ entry, onReceive, onPaidChanged }: {
 
       {/* Paid / mark as paid — the same component the desktop table uses, so
           the two cannot disagree about which orders still count as owed. */}
-      {(entry.sent_at || entry.paid_at) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+        {(entry.sent_at || entry.paid_at) && (
           <PaidPOActions poLogId={entry.id} sent={Boolean(entry.sent_at)}
                          paidAt={entry.paid_at} onChanged={onPaidChanged} />
-        </div>
-      )}
+        )}
+        <CancelPOActions poLogId={entry.id} receptionStatus={status}
+                         paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                         onChanged={onPaidChanged} />
+      </div>
 
       {/* The one thing this screen exists for, one tap away */}
       <button
@@ -326,7 +330,14 @@ function ClosedRow({ entry, onPaidChanged }: { entry: POLogEntry; onPaidChanged?
         <div style={{ fontSize: 11, color: C.dim, marginTop: 2, overflowWrap: 'anywhere' }}>
           {fmtShortDateTime(entry.generated_at, lang)} · {unitCountText(t, entry.total_units)}
         </div>
-        {(entry.sent_at || entry.paid_at) && (
+        {entry.cancelled_at ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            <CancelledBadge cancelledAt={entry.cancelled_at} />
+            <CancelPOActions poLogId={entry.id} receptionStatus={receptionStatus(entry)}
+                             paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                             onChanged={onPaidChanged} />
+          </div>
+        ) : (entry.sent_at || entry.paid_at) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
             <PaidPOActions poLogId={entry.id} sent={Boolean(entry.sent_at)}
                            paidAt={entry.paid_at} onChanged={onPaidChanged} />

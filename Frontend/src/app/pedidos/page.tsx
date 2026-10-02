@@ -41,10 +41,10 @@ export default function OrdersPage() {
   // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
   const { multi: multiWarehouse } = useWarehouses()
   const [tab, setTab] = useState<'orders' | 'transfers'>('orders')
-  // Paid / unpaid filter (math audit O3). Applied to the table only: the
-  // pending-arrival counter in the header answers a different question and
-  // must not change with it.
-  const [paidFilter, setPaidFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
+  // Paid / unpaid / cancelled filter (math audit O3, PO cancellation).
+  // Applied to the table only: the pending-arrival counter in the header
+  // answers a different question and must not change with it.
+  const [paidFilter, setPaidFilter] = useState<'all' | 'unpaid' | 'paid' | 'cancelled'>('all')
   // Phone or desktop. Declared with the other hooks so the hook order is stable
   // whichever tree ends up rendering (see the fork below).
   const isNarrow = useIsNarrow()
@@ -78,11 +78,12 @@ export default function OrdersPage() {
   }, [])
 
   const pendingCount = countAwaitingReception(history)
-  // "Unpaid" means an order that is owed: sent and not marked paid. A draft
-  // was never invoiced, so it is neither.
+  // "Unpaid" means an order that is owed: sent, not marked paid and not
+  // cancelled. A draft was never invoiced, so it is neither.
   const visibleHistory = paidFilter === 'all' ? history
     : paidFilter === 'paid' ? history.filter(e => Boolean(e.paid_at))
-    : history.filter(e => Boolean(e.sent_at) && !e.paid_at)
+    : paidFilter === 'cancelled' ? history.filter(e => Boolean(e.cancelled_at))
+    : history.filter(e => Boolean(e.sent_at) && !e.paid_at && !e.cancelled_at)
 
   // On this screen there is no cart, so relevance is exactly "named on an
   // order that is still open" — those are the orders that still need to
@@ -218,7 +219,7 @@ export default function OrdersPage() {
         <div role="group" aria-label={t('po.paid_filter_label')}
              style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11.5, color: C.dim, marginRight: 4 }}>{t('po.paid_filter_label')}:</span>
-          {(['all', 'unpaid', 'paid'] as const).map(f => (
+          {(['all', 'unpaid', 'paid', 'cancelled'] as const).map(f => (
             <button key={f} aria-pressed={paidFilter === f} onClick={() => setPaidFilter(f)}
                     style={tabStyle(paidFilter === f)}>
               {t(`po.paid_filter_${f}`)}

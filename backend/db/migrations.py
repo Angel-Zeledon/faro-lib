@@ -777,6 +777,17 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ"),
     ("add_po_log_paid_by",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS paid_by TEXT"),
+    # A purchase order the buyer abandoned (2026-10-01, owner's decision).
+    # Without it an order that was never going to arrive kept counting as
+    # "on the way" until somebody received it, holding the recommendation down
+    # by exactly its units. NULL = not cancelled, which is what every existing
+    # order is; nothing is backfilled.
+    ("add_po_log_cancelled_at",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ"),
+    ("add_po_log_cancelled_by",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS cancelled_by TEXT"),
+    ("add_po_log_cancel_reason",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS cancel_reason TEXT"),
 
     # One row per tenant per month once the monthly recap email has been sent.
     # The unique constraint is the dedup mechanism: the worker re-runs on every

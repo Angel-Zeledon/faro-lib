@@ -66,6 +66,10 @@ INTERNAL_TAGS: dict[str, str] = {
     # Not decided for keys: exposing it would widen the public API, which is
     # the owner's call. Kept internal until somebody asks for it.
     "inventory-payments": "marking a PO's invoice paid/unpaid from the /pedidos screen",
+    # Cancelling moves every recommendation for the order's SKUs (its units
+    # stop counting as on the way). Internal until the owner decides a machine
+    # should be able to do that unattended.
+    "inventory-cancellation": "cancelling / reopening a PO from the /pedidos screen",
     "trial": "unauthenticated trial signup",
     "whatsapp": "Twilio's inbound webhook, authenticated by signature, not by key",
     "models": "unauthenticated catalogue of model names",

@@ -1259,15 +1259,13 @@ export interface OptimizationOrder {
   // `total_cost` means nothing. Optional: a response from before this existed
   // has no flag. See backend/inventory/optimizer_service.py.
   assumed_unit_cost?:  boolean
-  // How far this line's plan reaches, in calendar days (math audit O1). Past
-  // the configured horizon when the supplier's lead time (plus its review
-  // period) reaches it — `horizon_extended` — so the line can say it covers
-  // "until the next order arrives" instead of the generic horizon.
-  effective_horizon_days?: number
+  // Math audit O1, owner's decision "igual que el Panel": a SKU whose next
+  // order lands past the horizon is not solved by the MILP; it carries the
+  // Panel's own quantity, and `effective_horizon_days` is the lead time +
+  // review period that quantity protects.
+  sized_like_panel?:       boolean
   horizon_extended?:       boolean
-  // Part of the extension is past the forecast's end and was planned at its
-  // average rate.
-  demand_extrapolated?:    boolean
+  effective_horizon_days?: number
 }
 
 export interface OptimizationTransfer {
@@ -1410,6 +1408,10 @@ export interface POLogEntry {
   /** When the buyer marked the supplier's invoice as paid; null while owed.
    *  A paid order leaves the payments calendar. */
   paid_at?:          string | null
+  /** When the order was cancelled; null while it stands. A cancelled order
+   *  is not on its way, not overdue and not owed. */
+  cancelled_at?:     string | null
+  cancel_reason?:    string | null
   /** True when the server answered an `Idempotency-Key` it had already seen:
    *  this is the order the FIRST request created, nothing new was written. */
   replayed?: boolean
