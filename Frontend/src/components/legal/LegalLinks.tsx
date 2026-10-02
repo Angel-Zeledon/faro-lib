@@ -1,9 +1,9 @@
 'use client'
 import Link from 'next/link'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { LEGAL_ORDER, LEGAL_PATHS, type LegalKey } from '@/components/landing/legalPaths'
+import { LEGAL_HUB_PATH, LEGAL_ORDER, LEGAL_PATHS, type MainLegalKey } from '@/components/landing/legalPaths'
 
-const LABEL: Record<LegalKey, string> = {
+const LABEL: Record<MainLegalKey, string> = {
   terms: 'legal.terms',
   privacy: 'legal.privacy',
   cookies: 'legal.cookies',
@@ -11,7 +11,8 @@ const LABEL: Record<LegalKey, string> = {
 }
 
 /**
- * The four legal documents as links, for the app's own chrome.
+ * The four main legal documents as links, plus one to the /legal hub that
+ * lists the rest, for the app's own chrome.
  *
  * `compact` is the desktop sidebar footer: one quiet line of small text,
  * sized for a cursor. The default is for a phone (the "Más" sheet), where
@@ -30,6 +31,12 @@ export default function LegalLinks({ compact, onNavigate }: { compact?: boolean;
             {t(LABEL[k])}
           </Link>
         ))}
+        <Link
+          href={LEGAL_HUB_PATH} onClick={onNavigate}
+          style={{ fontSize: 11, color: 'var(--sidebar-dim)', textDecoration: 'none' }}
+        >
+          {t('legal.all')}
+        </Link>
       </nav>
     )
   }
@@ -47,6 +54,16 @@ export default function LegalLinks({ compact, onNavigate }: { compact?: boolean;
           {t(LABEL[k])}
         </Link>
       ))}
+      <Link
+        href={LEGAL_HUB_PATH} onClick={onNavigate}
+        className="tap-feedback"
+        style={{
+          display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px',
+          borderRadius: 8, fontSize: 14, color: 'var(--muted)', textDecoration: 'none',
+        }}
+      >
+        {t('legal.all')}
+      </Link>
     </nav>
   )
 }

@@ -8,7 +8,7 @@ import {
   FileText, ShieldCheck, Cookie, Scale,
 } from 'lucide-react'
 import Link from 'next/link'
-import { LEGAL_PATHS, type LegalKey } from '@/components/landing/legalPaths'
+import { LEGAL_HUB_PATH, LEGAL_PATHS } from '@/components/landing/legalPaths'
 import { MobileList, MobileCard, MobileSection, useMobileHeader } from '@/components/mobile'
 import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -1514,11 +1514,13 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
 // Links only: the documents are public pages (/terminos, /privacidad, …), the
 // same ones the landing and the signup form point to.
 
-const LEGAL_ROWS: { key: LegalKey; label: string; Icon: React.ElementType }[] = [
-  { key: 'terms',   label: 'legal.terms_full',   Icon: FileText },
-  { key: 'privacy', label: 'legal.privacy_full', Icon: ShieldCheck },
-  { key: 'cookies', label: 'legal.cookies_full', Icon: Cookie },
-  { key: 'notice',  label: 'legal.notice',       Icon: Scale },
+// The four main documents, then the /legal hub that lists every other one.
+const LEGAL_ROWS: { key: string; href: string; label: string; Icon: React.ElementType }[] = [
+  { key: 'terms',   href: LEGAL_PATHS.terms,   label: 'legal.terms_full',   Icon: FileText },
+  { key: 'privacy', href: LEGAL_PATHS.privacy, label: 'legal.privacy_full', Icon: ShieldCheck },
+  { key: 'cookies', href: LEGAL_PATHS.cookies, label: 'legal.cookies_full', Icon: Cookie },
+  { key: 'notice',  href: LEGAL_PATHS.notice,  label: 'legal.notice',       Icon: Scale },
+  { key: 'all',     href: LEGAL_HUB_PATH,      label: 'legal.all',          Icon: FileText },
 ]
 
 function LegalSection({ t }: { t: (k: string) => string }) {
@@ -1526,9 +1528,9 @@ function LegalSection({ t }: { t: (k: string) => string }) {
     <Card>
       <SectionTitle icon={Scale} color="var(--muted)" title={t('legal.group')} subtitle={t('legal.account_subtitle')} />
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {LEGAL_ROWS.map(({ key, label, Icon }) => (
+        {LEGAL_ROWS.map(({ key, href, label, Icon }) => (
           <li key={key}>
-            <Link href={LEGAL_PATHS[key]} style={{
+            <Link href={href} style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderRadius: 8,
               fontSize: 13, color: 'var(--text)', textDecoration: 'none',
             }}>
@@ -1853,9 +1855,9 @@ function MobileSettings() {
 
       <MobileSection title={t('legal.group')}>
         <MobileList>
-          {LEGAL_ROWS.map(({ key, label, Icon }) => (
+          {LEGAL_ROWS.map(({ key, href, label, Icon }) => (
             <MobileCard key={key} leading={<Tile Icon={Icon} color="var(--muted)" />}
-                        title={t(label)} href={LEGAL_PATHS[key]} />
+                        title={t(label)} href={href} />
           ))}
         </MobileList>
       </MobileSection>

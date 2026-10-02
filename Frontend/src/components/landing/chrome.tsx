@@ -16,7 +16,7 @@ import { appHref } from '@/lib/siteUrls'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { LEGAL } from '@/i18n/legal'
-import { LEGAL_ORDER, LEGAL_PATHS } from '@/components/landing/legalPaths'
+import { LEGAL_HUB_PATH, LEGAL_ORDER, LEGAL_PATHS } from '@/components/landing/legalPaths'
 import { Wordmark } from '@/components/brand/Wordmark'
 import { T } from '@/components/landing/theme'
 import { CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
@@ -195,6 +195,7 @@ export function Footer(props: ChromeProps) {
  {LEGAL_ORDER.map(k => (
  <LandingLink key={k} href={LEGAL_PATHS[k]} className="foot-link">{LEGAL[lang].docs[k].label}</LandingLink>
  ))}
+ <LandingLink href={LEGAL_HUB_PATH} className="foot-link">{LEGAL[lang].hub.allLink}</LandingLink>
  </div>
  <div style={{ minWidth: 0 }}>
  <div className="foot-head">{L.footer.contact}</div>

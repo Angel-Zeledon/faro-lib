@@ -1,7 +1,10 @@
 /**
  * StockAI's legal documents, in both languages: Terms of Service, Privacy
  * Policy, Cookies and local storage, and the Legal Notice (/terminos,
- * /privacidad, /cookies, /aviso-legal).
+ * /privacidad, /cookies, /aviso-legal). The six added later (acceptable use,
+ * DPA, AI, vulnerability disclosure, accessibility, commercial conditions)
+ * live in ./legalExtra.ts under the same rules, and the /legal hub's copy is
+ * `hub` below.
  *
  * DRAFT — TO BE REVIEWED BY A LAWYER BEFORE IT IS RELIED ON. Written by the
  * product team on 2026-10-02 from what the code does today. It is not legal
@@ -26,7 +29,8 @@
  *   **text**       emphasis
  */
 import type { Lang } from './translations'
-import type { LegalKey } from '@/components/landing/legalPaths'
+import type { LegalGroup, LegalKey } from '@/components/landing/legalPaths'
+import { LEGAL_EXTRA_EN, LEGAL_EXTRA_ES } from './legalExtra'
 
 export type LegalBlock =
   | string
@@ -55,6 +59,15 @@ export interface LegalCopy {
   // Footer column heading on the landing.
   footerHead: string
   questions: string
+  // The /legal page that lists every document.
+  hub: {
+    label: string
+    title: string
+    intro: string
+    // Footer and app link to the hub.
+    allLink: string
+    groups: Record<LegalGroup, string>
+  }
   docs: Record<LegalKey, LegalDoc>
 }
 
@@ -71,7 +84,20 @@ const es: LegalCopy = {
   otherDocs: 'Otros documentos legales',
   footerHead: 'Legal',
   questions: `¿Dudas sobre este documento? Escríbenos a ${MAIL}.`,
+  hub: {
+    label: 'Legal',
+    title: 'Documentos legales',
+    intro: 'Todo lo que rige el uso de StockAI en un solo lugar: términos, privacidad, uso aceptable, inteligencia artificial, condiciones para empresas y seguridad.',
+    allLink: 'Todos los documentos',
+    groups: {
+      core: 'Lo básico',
+      use: 'Cómo se usa StockAI',
+      business: 'Para empresas clientes',
+      security: 'Seguridad',
+    },
+  },
   docs: {
+    ...LEGAL_EXTRA_ES,
     // ── Términos ────────────────────────────────────────────────────────────
     terms: {
       label: 'Términos del servicio',
@@ -589,7 +615,20 @@ const en: LegalCopy = {
   otherDocs: 'Other legal documents',
   footerHead: 'Legal',
   questions: `Questions about this document? Write to us at ${MAIL}.`,
+  hub: {
+    label: 'Legal',
+    title: 'Legal documents',
+    intro: 'Everything that governs the use of StockAI in one place: terms, privacy, acceptable use, artificial intelligence, business conditions and security.',
+    allLink: 'All documents',
+    groups: {
+      core: 'The basics',
+      use: 'How StockAI is used',
+      business: 'For business customers',
+      security: 'Security',
+    },
+  },
   docs: {
+    ...LEGAL_EXTRA_EN,
     terms: {
       label: 'Terms of Service',
       title: 'Terms of Service',
