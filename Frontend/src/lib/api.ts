@@ -14,6 +14,8 @@ import type {
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer, TransferLane,
   PlanningState, PlanningPeriod, MeUser,
+  SignalThresholdFactors, SignalThresholdScope, SignalThresholdRule,
+  SignalThresholdsState, SignalThresholdsPreview,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 
@@ -870,7 +872,34 @@ export const deleteInventoryStock = (sku: string) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
 
-export const getInventoryStatus = (sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
+// ── Semáforo multipliers ──────────────────────────────────────────────────────
+// Tenant rule ('global') plus per-supplier / per-category overrides. Reading is
+// open to every role; saving and resetting need analyst or admin (403 else).
+export const getSignalThresholds = (opts?: RequestOpts) =>
+  request<SignalThresholdsState>('GET', '/inventory/signal-thresholds', undefined, opts)
+
+export const saveSignalThresholds = (
+  body: SignalThresholdFactors & { scope_type?: SignalThresholdScope; scope_value?: string | null },
+) => request<SignalThresholdsState & { saved: SignalThresholdRule }>(
+  'PUT', '/inventory/signal-thresholds', body)
+
+export const resetSignalThresholds = (scopeType: SignalThresholdScope = 'global', scopeValue?: string | null) => {
+  const qs = new URLSearchParams({ scope_type: scopeType })
+  if (scopeValue) qs.set('scope_value', scopeValue)
+  return request<SignalThresholdsState & { cleared: boolean }>(
+    'DELETE', `/inventory/signal-thresholds?${qs.toString()}`)
+}
+
+/** Read-only: runs the real semáforo with the candidate values (or a reset)
+ *  and reports how many products would change signal. Nothing is saved. */
+export const previewSignalThresholds = (
+  body: Partial<SignalThresholdFactors> & {
+    scope_type?: SignalThresholdScope; scope_value?: string | null; reset?: boolean
+  },
+  opts?: RequestOpts,
+) => request<SignalThresholdsPreview>('POST', '/inventory/signal-thresholds/preview', body, opts)
+
+export const getInventoryStatus =(sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<InventoryStatusResponse>(
     'GET',
     `/inventory/status?session_id=${sessionId}&service_level=${serviceLevel}`,

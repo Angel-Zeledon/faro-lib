@@ -21,6 +21,7 @@ from backend.inventory.defaults import (
     SOURCE_LEARNED,
     SOURCE_USER,
 )
+from backend.inventory import signal_thresholds as _sig_th
 
 log = logging.getLogger(__name__)
 
@@ -457,7 +458,7 @@ _DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DAT
 # path that parses a numeric column straight out of a user's sales-history
 # file with no Pydantic validation in front of it — without this floor, a
 # stray 0 in a "lead_time_days" column would collapse every _calc_signal
-# threshold to 0 (lead_time * 0.5/1.2/3 are all 0), permanently misreporting
+# threshold to 0 (every lead-time multiple is 0), permanently misreporting
 # the SKU as SOBRESTOCK regardless of real coverage and silently hiding a
 # stockout risk. A stray negative current_stock/moq would similarly corrupt
 # the reorder-point math. Columns not listed here (e.g. service_level) have
@@ -1102,7 +1103,8 @@ def _steps_for_lead_time(lead_time_days: float, period: str) -> int:
     return max(1, math.ceil(float(lead_time_days) / _days_per_period(period)))
 
 
-def _calc_signal(coverage_days: float, lead_time: float, reorder_point_days: float) -> str:
+def _calc_signal(coverage_days: float, lead_time: float, reorder_point_days: float,
+                 thresholds: Optional[dict] = None) -> str:
     """Classifies days-of-stock-cover into the four persisted signals.
 
     stability.md 17c: the ordering boundary is now the reorder point itself,
@@ -1137,14 +1139,27 @@ def _calc_signal(coverage_days: float, lead_time: float, reorder_point_days: flo
       `2 * reorder_point_days` (so a genuinely volatile SKU, whose own reorder
       point can already sit past 3 lead times, still gets a real, non-empty OK
       band instead of an inverted one).
+
+    The two lead-time multiples above (0.5 and 3) are the DEFAULTS of
+    `signal_thresholds`; the buyer can configure them per tenant, supplier or
+    category. `thresholds` is what `signal_thresholds.resolve_signal_thresholds`
+    returned for this SKU — every production caller passes it. The middle
+    boundary stays the reorder point whatever is configured, so no setting can
+    bring back the 17c defect of an OK below the reorder point, and the bounds
+    in `signal_thresholds.FACTOR_BOUNDS` (order-now < 1) keep PEDIR_YA inside
+    the ordering band.
     """
+    th = thresholds or _sig_th.DEFAULT_THRESHOLDS
     if coverage_days >= 9990:
         return "SOBRESTOCK"
-    if coverage_days < lead_time * 0.5:
+    if coverage_days < lead_time * th["order_now_factor"]:
         return "PEDIR_YA"
     if coverage_days <= reorder_point_days:
         return "PEDIR_PRONTO"
-    sobrestock_at = max(lead_time * 3, reorder_point_days * 2)
+    sobrestock_at = max(
+        lead_time * th["overstock_factor"],
+        reorder_point_days * _sig_th.OVERSTOCK_REORDER_POINT_MULTIPLE,
+    )
     if coverage_days < sobrestock_at:
         return "OK"
     return "SOBRESTOCK"
@@ -1814,6 +1829,7 @@ def _compute_inventory_status(
     learned_lead_times: Optional[dict] = None,
     incoming_qty: Optional[dict] = None,
     period: str = "daily",
+    signal_threshold_patch: Optional[tuple] = None,
 ) -> list[dict]:
     """
     Implementation of get_inventory_status. The keyword-only args accept
@@ -1822,6 +1838,12 @@ def _compute_inventory_status(
     ONCE per tenant and share them with get_inventory_status_by_warehouse
     instead of double-fetching; None means fetch here as always. Inputs are
     never mutated (rollup_by_sku copies).
+
+    `signal_threshold_patch` = (scope_type, scope_value, triple-or-None) is the
+    settings preview asking "what would the semáforo say if these multipliers
+    were saved". It is applied to the rule index the SAME resolver reads, and a
+    patched pass is never written to the recommendation log — it describes a
+    hypothetical, not what the tenant was told.
     """
     from backend.db import session_store
     from backend.inventory.series import rollup_by_sku
@@ -1935,6 +1957,8 @@ def _compute_inventory_status(
     # A distributor configures 12 suppliers, not 2.000 SKUs — this is where that
     # configuration enters the recommendation.
     rule_index = _sd_svc.build_rule_index(tenant_id)
+    if signal_threshold_patch is not None:
+        rule_index = _sig_th.patch_rule_index(rule_index, *signal_threshold_patch)
 
     # Declared events (stability.md 19.5): a saved "Semana Santa, x1.8,
     # 24th-31st" must reach the decision itself, not just the what-if
@@ -1995,6 +2019,11 @@ def _compute_inventory_status(
         sku_service_level = (
             float(service_level) if service_level_source == SOURCE_DEFAULT
             else float(_sl_val)
+        )
+        # The semáforo's lead-time multipliers for this SKU: supplier >
+        # category > tenant > defaults, resolved as one triple.
+        sku_thresholds = _sig_th.resolve_signal_thresholds(
+            rule_index, supplier=supplier, category=category,
         )
 
         # Company-wide for this SKU: the aggregated row sums every warehouse's
@@ -2075,7 +2104,8 @@ def _compute_inventory_status(
             # that invariant (reorder_point_days >= lead_time > 0.5*lead_time)
             # only strengthens once the reorder point also carries the review
             # period — see `_calc_signal`'s docstring.
-            signal = _calc_signal(coverage_days, lt_periods, reorder_point_days)
+            signal = _calc_signal(coverage_days, lt_periods, reorder_point_days,
+                                  sku_thresholds)
             recommended = _calc_recommended(
                 current_stock, avg_daily_eff, avg_std, lt_periods, moq,
                 sku_service_level, risk=sku_risk, incoming=sku_incoming,
@@ -2261,6 +2291,10 @@ def _compute_inventory_status(
             "lead_time_demand":  _demand_lt if avg_daily is not None else None,
             "coverage_days":     round(coverage_days, 1) if coverage_days is not None and coverage_days < 9990 else None,
             "signal":             signal,
+            # The multipliers this signal was judged by, and which rule they
+            # came from (default | global | supplier | category). Shipped with
+            # the row so no screen restates a threshold it could get wrong.
+            "signal_thresholds":  sku_thresholds,
             "recommended_qty": recommended,
             # Already on its way: sent POs + transfers in transit. Exposed so the
             # UI can say "N units arriving" instead of leaving the buyer to
@@ -2297,6 +2331,9 @@ def _compute_inventory_status(
     #
     # It can never break the read: the recommendation is the product, the log
     # is a record of it.
+    if signal_threshold_patch is not None:
+        # A preview of unsaved multipliers: nobody was told this.
+        return items
     try:
         from backend.inventory import recommendation_log
         if not recommendation_log.already_recorded(tenant_id):
@@ -2505,6 +2542,10 @@ def get_inventory_status_by_warehouse(
             _moq_val, _, _ = _sd_svc.resolve_field(
                 "moq", stock, rule_index, supplier=supplier, category=category)
             moq = float(_moq_val if _moq_val is not None else DEFAULT_MOQ)
+            # Same resolver as the aggregated view — one source of truth for
+            # the semáforo's multipliers (stability.md 3.5's lesson).
+            sku_thresholds = _sig_th.resolve_signal_thresholds(
+                rule_index, supplier=supplier, category=category)
             # Hoisted above the branch: a row with no demand of its own still
             # has units on the way, and the buyer needs to see them before they
             # order more into a warehouse that already has a truck coming.
@@ -2595,7 +2636,8 @@ def get_inventory_status_by_warehouse(
                 reorder_point_days = reorder_point / avg_daily_eff if avg_daily_eff > 0 else 9999.0
                 # `lt_periods` (plain lead time), not the protection interval —
                 # see the identical comment at the aggregated call site.
-                signal = _calc_signal(coverage_days, lt_periods, reorder_point_days)
+                signal = _calc_signal(coverage_days, lt_periods, reorder_point_days,
+                                      sku_thresholds)
                 recommended = _calc_recommended(
                     current_stock, avg_daily_eff, avg_std, lt_periods, moq,
                     sku_service_level, risk=sku_risk, risk_scale=share,
@@ -2626,6 +2668,7 @@ def get_inventory_status_by_warehouse(
                                   else None),
                 "reorder_point": reorder_point,
                 "signal": signal,
+                "signal_thresholds": sku_thresholds,
                 # Why this row has no signal, when the reason is something the
                 # buyer can fix. A code, not a sentence: the frontend renders it
                 # (inventory.no_stock_record_here) in the reader's language.
@@ -4057,11 +4100,16 @@ def generate_recommendations(items: list[dict], period: str = "daily",
 
         if signal == 'SOBRESTOCK' and abc in ('A', 'B') and days is not None and value:
             # `days` is coverage in the active period's unit; the "óptimo" ceiling
-            # is 3× the lead time expressed in that SAME unit, so the excess is a
+            # is the SKU's configured overstock factor (3 by default) times the
+            # lead time expressed in that SAME unit, so the excess is a
             # coherent period figure (mixing weeks against day-count lead was the
             # weekly-mode bug that produced "-12 días más de lo óptimo").
             lead_periods = lead / days_per_period
-            excess = days - lead_periods * 3
+            overstock_factor = (
+                (item.get("signal_thresholds") or {}).get("overstock_factor")
+                or _sig_th.DEFAULT_OVERSTOCK_FACTOR
+            )
+            excess = days - lead_periods * overstock_factor
             # What pausing can free is the capital in the units ABOVE the
             # ceiling, not the whole shelf. This quoted `value` — every unit
             # on hand — so a SKU one day past its ceiling "would free" 100% of

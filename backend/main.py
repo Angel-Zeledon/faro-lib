@@ -350,6 +350,8 @@ app.include_router(schedule.router,        prefix=_PREFIX)
 app.include_router(inventory_router.router, prefix=_PREFIX)
 from backend.api.v1 import inventory_recommendation_log as recommendation_log_router  # noqa: E402
 app.include_router(recommendation_log_router.router, prefix=_PREFIX)
+from backend.api.v1 import signal_thresholds as signal_thresholds_router  # noqa: E402
+app.include_router(signal_thresholds_router.router, prefix=_PREFIX)
 from backend.api.v1 import reception_reversals as reception_reversals_router  # noqa: E402
 app.include_router(reception_reversals_router.router, prefix=_PREFIX)
 app.include_router(scenarios_router.router, prefix=_PREFIX)

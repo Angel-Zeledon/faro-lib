@@ -20,7 +20,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Días de cobertura",
-                "where": "backend/inventory/service.py:1926 · coverage_days",
+                "where": "backend/inventory/service.py:1987 · coverage_days",
                 "what": (
                     "Cuánto dura el stock que hay hoy al ritmo de venta pronosticado. "
                     "Es el número del que cuelga todo lo demás."
@@ -38,15 +38,15 @@ CHAPTER = {
             },
             {
                 "name": "El semáforo",
-                "where": "backend/inventory/service.py:1065 · _calc_signal",
-                "what": "Toda la regla, literal, son cuatro líneas.",
+                "where": "backend/inventory/service.py:1066 · _calc_signal",
+                "what": "Toda la regla son cuatro comparaciones; dos de sus multiplicadores son configurables.",
                 "formulas": [
                     ("Señal",
-                     "cobertura < lead_time·0.5 → PEDIR_YA\ncobertura < lead_time·1.2 → PEDIR_PRONTO\ncobertura < lead_time·3   → OK\nsi no                     → SOBRESTOCK",
-                     "Los multiplicadores 0.5 / 1.2 / 3 son literales en el código."),
+                     "cobertura < lead_time·a                       → PEDIR_YA\ncobertura ≤ punto de reorden (en días)         → PEDIR_PRONTO\ncobertura < max(lead_time·b, 2·punto reorden)  → OK\nsi no                                          → SOBRESTOCK",
+                     "a = order_now_factor (0.5 de fábrica), b = overstock_factor (3 de fábrica). Los resuelve signal_thresholds.resolve_signal_thresholds: proveedor > categoría > empresa > fábrica."),
                 ],
                 "caveats": [
-                    "NO hay configuración de umbrales por tenant ni por SKU. Lo único que varía por producto es el lead time.",
+                    "Los umbrales se configuran por empresa, proveedor o categoría (tabla stock_defaults, columnas order_now_factor / overstock_factor; GET/PUT/DELETE /inventory/signal-thresholds). No por SKU. PEDIR_PRONTO no es un múltiplo: es el punto de reorden, y su perilla es el nivel de servicio.",
                     "SIN_DATOS no sale de esta función: es la rama cuando falta el pronóstico o falta la fila de stock. En la vista por bodega también aparece cuando la participación de demanda de esa bodega es 0.",
                     "La importación fuerza lead_time_days >= 1: un 0 colapsa los tres umbrales y pinta todo SOBRESTOCK.",
                     "`min_stock` se guarda, se importa y se devuelve, pero NO lo lee ni la señal ni la recomendación. Es peso muerto en esta capa.",
@@ -54,7 +54,7 @@ CHAPTER = {
             },
             {
                 "name": "Cantidad recomendada",
-                "where": "backend/inventory/service.py:1163 · _calc_recommended",
+                "where": "backend/inventory/service.py:1208 · _calc_recommended",
                 "what": (
                     "Demanda del lead time más stock de seguridad, menos lo que ya "
                     "tienes y lo que viene en camino. Con un piso de MOQ y una "
@@ -83,7 +83,7 @@ CHAPTER = {
             },
             {
                 "name": "Lead time aprendido",
-                "where": "backend/inventory/service.py:1314 · get_learned_lead_times",
+                "where": "backend/inventory/service.py:1359 · get_learned_lead_times",
                 "what": (
                     "Cada recepción completa de una orden deja una observación del "
                     "plazo real del proveedor. Con tres observaciones, el promedio "
@@ -101,7 +101,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-bodega y traslados",
-                "where": "backend/inventory/service.py:2193 · get_inventory_status_by_warehouse",
+                "where": "backend/inventory/service.py:2265 · get_inventory_status_by_warehouse",
                 "what": (
                     "La demanda se reparte entre bodegas de dos formas, y cuando una "
                     "bodega necesita lo que a otra le sobra, se propone un traslado en "
@@ -168,7 +168,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Coverage days",
-                "where": "backend/inventory/service.py:1926 · coverage_days",
+                "where": "backend/inventory/service.py:1987 · coverage_days",
                 "what": (
                     "How long today's stock lasts at the forecast sales rate. Every "
                     "other number hangs off this one."
@@ -186,15 +186,15 @@ CHAPTER = {
             },
             {
                 "name": "The stock signal",
-                "where": "backend/inventory/service.py:1065 · _calc_signal",
-                "what": "The whole rule, verbatim, is four lines.",
+                "where": "backend/inventory/service.py:1066 · _calc_signal",
+                "what": "The whole rule is four comparisons; two of its multipliers are configurable.",
                 "formulas": [
                     ("Signal",
-                     "coverage < lead_time·0.5 → PEDIR_YA\ncoverage < lead_time·1.2 → PEDIR_PRONTO\ncoverage < lead_time·3   → OK\notherwise                → SOBRESTOCK",
-                     "The 0.5 / 1.2 / 3 multipliers are literals in that function."),
+                     "coverage < lead_time·a                        → PEDIR_YA\ncoverage ≤ reorder point (in days)            → PEDIR_PRONTO\ncoverage < max(lead_time·b, 2·reorder point)  → OK\notherwise                                     → SOBRESTOCK",
+                     "a = order_now_factor (0.5 by default), b = overstock_factor (3 by default). Resolved by signal_thresholds.resolve_signal_thresholds: supplier > category > company > factory."),
                 ],
                 "caveats": [
-                    "There is NO per-tenant and NO per-SKU threshold configuration. The only thing that varies per product is the lead time.",
+                    "Thresholds are configurable per company, supplier or category (stock_defaults table, order_now_factor / overstock_factor columns; GET/PUT/DELETE /inventory/signal-thresholds). Not per SKU. PEDIR_PRONTO is not a multiple: it is the reorder point, and its knob is the service level.",
                     "SIN_DATOS does not come out of this function: it is the branch taken when the forecast is missing or the stock row is. In the per-warehouse view it also fires when that warehouse's demand share is 0.",
                     "Import forces lead_time_days >= 1: a stray 0 collapses all three thresholds and paints everything SOBRESTOCK.",
                     "`min_stock` is stored, imported and returned, but is read by NEITHER the signal NOR the recommendation. It is dead weight in this layer.",
@@ -202,7 +202,7 @@ CHAPTER = {
             },
             {
                 "name": "Recommended quantity",
-                "where": "backend/inventory/service.py:1163 · _calc_recommended",
+                "where": "backend/inventory/service.py:1208 · _calc_recommended",
                 "what": (
                     "Lead-time demand plus safety stock, minus what you have and what "
                     "is already coming. With an MOQ floor and a gate on the signal."
@@ -230,7 +230,7 @@ CHAPTER = {
             },
             {
                 "name": "Learned lead time",
-                "where": "backend/inventory/service.py:1314 · get_learned_lead_times",
+                "where": "backend/inventory/service.py:1359 · get_learned_lead_times",
                 "what": (
                     "Every completed reception leaves an observation of the supplier's "
                     "real lead time. At three observations, the learned average "
@@ -248,7 +248,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-warehouse and transfers",
-                "where": "backend/inventory/service.py:2193 · get_inventory_status_by_warehouse",
+                "where": "backend/inventory/service.py:2265 · get_inventory_status_by_warehouse",
                 "what": (
                     "Demand is split across warehouses in one of two ways, and when one "
                     "warehouse needs what another has spare, a transfer is proposed "
