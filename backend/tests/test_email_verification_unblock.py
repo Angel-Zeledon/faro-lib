@@ -355,6 +355,7 @@ class TestSignupShowsTheLinkWhenMailFails:
             "password": PASSWORD,
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         }
 
     @pytest.fixture(autouse=True)

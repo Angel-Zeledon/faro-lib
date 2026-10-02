@@ -328,6 +328,7 @@ def main() -> None:
         "password": password,
         "tenant_name": tenant_name,
         "full_name": "E2E Tester",
+        "accept_terms": True,
     }, label="POST /auth/signup")
     tenant_id: str = data["tenant"]["id"]
     user_id: str = data["user"]["id"]

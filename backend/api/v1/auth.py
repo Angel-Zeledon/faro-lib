@@ -33,6 +33,7 @@ from backend.schemas.auth import (
 from backend.schemas.common import ok
 from backend.tenants.service import create_tenant, delete_empty_tenant
 from backend.users import service as user_svc
+from backend.users.terms import TERMS_VERSION
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
@@ -134,6 +135,15 @@ def _issue_reset_otp(user_id: str, tenant_id: str) -> str:
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(body: SignupRequest):
+    # First, before anything is created: an account nobody agreed to the terms
+    # of is not one we should hold data for.
+    if body.accept_terms is not True:
+        raise AppError(
+            "terms_not_accepted",
+            "You must accept the Terms of Service and the Privacy Policy to create an account.",
+            status_code=400,
+        )
+
     _reject_weak_password(body.password)
 
     if _lookup_email(body.email):
@@ -174,6 +184,7 @@ async def signup(body: SignupRequest):
             role="admin",
             full_name=body.full_name,
             whatsapp_number=phone,
+            terms_version=TERMS_VERSION,
         )
     except Exception as exc:
         delete_empty_tenant(tenant["id"])

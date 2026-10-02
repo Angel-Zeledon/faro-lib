@@ -5,7 +5,10 @@ import {
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Lock, Eye, EyeOff, Mail,
   MessageCircle, Unlink, CalendarClock, MessageSquare, Coins, Gauge,
+  FileText, ShieldCheck, Cookie, Scale,
 } from 'lucide-react'
+import Link from 'next/link'
+import { LEGAL_PATHS, type LegalKey } from '@/components/landing/legalPaths'
 import { MobileList, MobileCard, MobileSection, useMobileHeader } from '@/components/mobile'
 import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -1401,6 +1404,38 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
   )
 }
 
+// ── Legal documents ───────────────────────────────────────────────────────────
+// Links only: the documents are public pages (/terminos, /privacidad, …), the
+// same ones the landing and the signup form point to.
+
+const LEGAL_ROWS: { key: LegalKey; label: string; Icon: React.ElementType }[] = [
+  { key: 'terms',   label: 'legal.terms_full',   Icon: FileText },
+  { key: 'privacy', label: 'legal.privacy_full', Icon: ShieldCheck },
+  { key: 'cookies', label: 'legal.cookies_full', Icon: Cookie },
+  { key: 'notice',  label: 'legal.notice',       Icon: Scale },
+]
+
+function LegalSection({ t }: { t: (k: string) => string }) {
+  return (
+    <Card>
+      <SectionTitle icon={Scale} color="var(--muted)" title={t('legal.group')} subtitle={t('legal.account_subtitle')} />
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {LEGAL_ROWS.map(({ key, label, Icon }) => (
+          <li key={key}>
+            <Link href={LEGAL_PATHS[key]} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderRadius: 8,
+              fontSize: 13, color: 'var(--text)', textDecoration: 'none',
+            }}>
+              <Icon size={14} color="var(--muted)" aria-hidden="true" />
+              {t(label)}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
@@ -1464,6 +1499,7 @@ export default function ConfigPage() {
           <SecuritySection t={t} />
           <WhatsAppSection t={t} />
           <DmSmsSection t={t} />
+          <LegalSection t={t} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           {/* How much room is left. First in this column on purpose: a
@@ -1706,6 +1742,15 @@ function MobileSettings() {
                       onClick={() => open('appearance')} />
           <MobileCard leading={<Tile Icon={Activity} color="#0ea5e9" />} title={t('activity_logs')}
                       onClick={() => open('activity')} />
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('legal.group')}>
+        <MobileList>
+          {LEGAL_ROWS.map(({ key, label, Icon }) => (
+            <MobileCard key={key} leading={<Tile Icon={Icon} color="var(--muted)" />}
+                        title={t(label)} href={LEGAL_PATHS[key]} />
+          ))}
         </MobileList>
       </MobileSection>
 

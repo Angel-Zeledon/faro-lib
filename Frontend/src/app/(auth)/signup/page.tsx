@@ -6,6 +6,7 @@ import { authSignup } from '@/lib/api'
 import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
+import TermsSentence from '@/components/legal/TermsSentence'
 
 // Composition, deliberately NOT a mirror of /login: this screen carries more
 // fields, so the heading is lifted OUT of the card and set as an editorial
@@ -65,6 +66,10 @@ function SignupPageContent() {
   const [form, setForm] = useState({
     email: '', password: '', full_name: '', tenant_name: '', whatsapp_number: '',
   })
+  // Unticked by default, and never ticked for the person: acceptance only
+  // counts if they gave it. The backend refuses a signup without it.
+  const [accepted, setAccepted] = useState(false)
+  const [termsMissing, setTermsMissing] = useState(false)
   const [showPw,  setShowPw]  = useState(false)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -87,6 +92,13 @@ function SignupPageContent() {
       setError(t('auth.whatsapp_invalid'))
       return
     }
+    if (!accepted) {
+      // Said next to the box, not in the banner at the top of the form: on a
+      // phone that banner is a screen away from the button just tapped.
+      setTermsMissing(true)
+      document.getElementById('signup-terms')?.focus()
+      return
+    }
     setLoading(true)
     try {
       const res = await authSignup({
@@ -95,6 +107,7 @@ function SignupPageContent() {
         full_name:       form.full_name || undefined,
         tenant_name:     form.tenant_name,
         whatsapp_number: phone,
+        accept_terms:    accepted,
       })
       setVerifyUrl(res.email_sent ? null : (res.verify_url ?? null))
       setDone(true)
@@ -278,6 +291,40 @@ function SignupPageContent() {
                   </div>
                   <PasswordStrength password={form.password} />
                 </div>
+
+                <label
+                  htmlFor="signup-terms"
+                  style={{
+                    display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                    fontSize: 13, color: 'var(--a-muted)', lineHeight: 1.5, minHeight: 44,
+                    animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.265s both',
+                  }}
+                >
+                  <input
+                    id="signup-terms" name="accept_terms" type="checkbox"
+                    checked={accepted}
+                    onChange={e => { setAccepted(e.target.checked); if (e.target.checked) setTermsMissing(false) }}
+                    aria-required="true"
+                    aria-invalid={termsMissing || undefined}
+                    aria-describedby={termsMissing ? 'signup-terms-error' : undefined}
+                    style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: '#0F766E', cursor: 'pointer' }}
+                  />
+                  <span>
+                    <TermsSentence
+                      templateKey="auth.terms_accept"
+                      linkStyle={{ color: 'var(--a-ink)', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                    />
+                  </span>
+                </label>
+                {termsMissing && (
+                  <p id="signup-terms-error" role="alert" style={{
+                    display: 'flex', gap: 6, alignItems: 'flex-start', margin: '-8px 0 0',
+                    fontSize: 12.5, color: '#dc2626', lineHeight: 1.45,
+                  }}>
+                    <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+                    {t('errors.terms_not_accepted')}
+                  </p>
+                )}
 
                 <button
                   type="submit" disabled={loading} className="auth-submit"

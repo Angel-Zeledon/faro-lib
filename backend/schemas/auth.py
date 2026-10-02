@@ -13,6 +13,11 @@ class SignupRequest(BaseModel):
     # Required since PENDIENTES #1: purchase orders are delivered to the
     # buyer's own WhatsApp for them to forward to their supplier.
     whatsapp_number: str = Field(pattern=E164_PATTERN)
+    # The "I accept the Terms and the Privacy Policy" box. Optional rather than
+    # required so that a missing, null or false box is the endpoint's own 400
+    # `terms_not_accepted`, which the form can name, instead of a generic 422
+    # field error. Only `true` creates an account.
+    accept_terms: Optional[bool] = None
 
 
 class LoginRequest(BaseModel):

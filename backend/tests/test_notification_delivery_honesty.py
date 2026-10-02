@@ -116,6 +116,7 @@ class TestSignupDoesNotClaimAnUnsentVerificationLink:
             "email": email, "password": "TestPass123!",
             "full_name": "Nadie", "tenant_name": f"pytest-{uuid4().hex[:8]}",
             "whatsapp_number": f"+5730{uuid4().int % 10_000_000:07d}",
+            "accept_terms": True,
         })
         assert resp.status_code == 201, resp.text
         data = resp.json()["data"]

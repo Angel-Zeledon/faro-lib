@@ -17,18 +17,28 @@ def create_user(
     full_name: Optional[str] = None,
     status: str = "active",
     whatsapp_number: Optional[str] = None,
+    terms_version: Optional[str] = None,
 ) -> dict:
     """`whatsapp_number` is stored UNVERIFIED (whatsapp_verified_at stays NULL):
     signup collects it so purchase orders can be sent to the buyer, while the
-    inbound bot still requires an explicit verification step."""
+    inbound bot still requires an explicit verification step.
+
+    `terms_version` is passed only by the paths where the person themselves
+    accepted the Terms and the Privacy Policy (signup, trial account). It
+    stamps `terms_accepted_at` with the creation time. A user an admin invites
+    is created without it: the admin's acceptance is not theirs."""
     user_id = generate_id("usr")
     execute(
         """INSERT INTO users
            (id, tenant_id, email, full_name, role, hashed_password,
-            email_verified, status, whatsapp_number, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s, NOW(), NOW())""",
+            email_verified, status, whatsapp_number,
+            terms_accepted_at, terms_version, created_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s,
+                   CASE WHEN %s::text IS NULL THEN NULL ELSE NOW() END, %s,
+                   NOW(), NOW())""",
         (user_id, tenant_id, email.lower().strip(), full_name, role,
-         hash_password(password), status, (whatsapp_number or "").strip() or None),
+         hash_password(password), status, (whatsapp_number or "").strip() or None,
+         terms_version, terms_version),
     )
     return _public(get_user(tenant_id, user_id))
 

@@ -354,6 +354,8 @@ export const authSignup = (body: {
   email: string; password: string; full_name?: string; tenant_name: string
   /** E.164, required — purchase orders are delivered here for forwarding. */
   whatsapp_number: string
+  /** The Terms + Privacy box. Anything but `true` is refused with `terms_not_accepted`. */
+  accept_terms: boolean
 }) =>
   request<{
     user: Record<string, unknown>; tenant: Record<string, unknown>

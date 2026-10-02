@@ -13,6 +13,7 @@ import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { Wordmark } from '@/components/brand/Wordmark'
 import { GROUPS, visibleNavFor } from './navItems'
+import LegalLinks from '@/components/legal/LegalLinks'
 
 // The nav definition lives in ./navItems so the mobile "Más" sheet lists
 // exactly the same screens, in the same groups, with the same role rules.
@@ -278,8 +279,11 @@ export default function Sidebar() {
           </div>
         )}
         {!collapsedNow && (
-          <div style={{ padding: '4px 16px 12px', fontSize: 11, color: 'var(--sidebar-dim)', opacity: 0.6 }}>
-            v{process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
+          <div style={{ padding: '4px 16px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <LegalLinks compact />
+            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', opacity: 0.6 }}>
+              v{process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
+            </div>
           </div>
         )}
       </div>
