@@ -695,10 +695,12 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
   // slides up from its own edge to connect the two. Enter only.
   return (
     <div className="cart-bar-enter" style={{
-      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40,
+      // Sits on top of the mobile tab bar, whose height already includes the
+      // home-indicator inset (--mobile-nav-h, globals.css).
+      position: 'fixed', left: 0, right: 0, bottom: 'var(--mobile-nav-h, 0px)', zIndex: 40,
       background: 'var(--surface)', borderTop: '1px solid rgba(34,197,94,0.45)',
       boxShadow: '0 -6px 24px rgba(0,0,0,0.25)',
-      padding: '10px 12px calc(10px + env(safe-area-inset-bottom))',
+      padding: '10px 12px',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

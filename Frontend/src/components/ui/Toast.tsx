@@ -62,7 +62,8 @@ export default function ToastContainer() {
   const { toasts } = useToast()
   if (!toasts.length) return null
   return (
-    <div role="status" aria-live="polite" style={{
+    // `.toast-stack` lifts it above the mobile tab bar (globals.css).
+    <div role="status" aria-live="polite" className="toast-stack" style={{
       position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
       display: 'flex', flexDirection: 'column', gap: 8,
       pointerEvents: 'none',

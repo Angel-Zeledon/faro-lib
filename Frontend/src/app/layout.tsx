@@ -40,6 +40,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   // The installed app's title bar and the phone's status bar (manifest.ts).
   themeColor: '#0C3A40',
+  // Lets the page reach the screen edges on notched phones so the mobile tab
+  // bar and header can pad themselves with env(safe-area-inset-*) instead of
+  // leaving browser-painted bands (components/mobile/MobileTabBar.tsx).
+  viewportFit: 'cover',
 }
 
 /**
