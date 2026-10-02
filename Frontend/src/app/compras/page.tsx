@@ -1815,7 +1815,7 @@ export default function HoyPage() {
            urgency={narrative?.urgency ?? 'ok'}
            loading={loadingNarrative}
            fallback={narrative?.fallback ?? false}
-           analytistLink="/analyst"
+           analytistLink="/asistente"
            onRefresh={refreshNarrative}
           />
          </div>
