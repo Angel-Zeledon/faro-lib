@@ -15,6 +15,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/terminos`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/cookies`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/aviso-legal`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/legal`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/uso-aceptable`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/procesamiento-de-datos`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/ia`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/divulgacion-responsable`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/accesibilidad`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/condiciones-comerciales`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/stockai-manual-es.pdf`, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/stockai-manual-en.pdf`, changeFrequency: 'monthly', priority: 0.4 },
   ]

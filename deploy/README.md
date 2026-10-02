@@ -45,7 +45,8 @@ The stack is pre-wired for the three ways it will need to grow, in order:
 The bundled Postgres needs an external backup. On the host's crontab:
 
 ```sh
-# Nightly dump, 30-day retention, e.g. synced to B2/R2 with rclone afterwards
+# Nightly dump. Production (stockai.es) runs /opt/stockai-ops/backup.sh with a
+# 14-day retention — the figure the privacy policy and DPA state; keep them in step.
 0 3 * * * docker exec faro-db-1 pg_dump -U faro faro | gzip > /var/backups/faro-$(date +\%F).sql.gz
 ```
 
