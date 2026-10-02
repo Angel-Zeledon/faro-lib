@@ -12,6 +12,8 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
 import { renderSupplierAlert } from '@/lib/supplierAlertCopy'
 import { BarChart3, ArrowLeft, AlertTriangle, Truck, TrendingUp } from 'lucide-react'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { StatusBadge, useMobileHeader } from '@/components/mobile'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -179,9 +181,89 @@ function ScorecardTable({ rows, alerts }: {
   )
 }
 
+// ── Phone: one card per supplier ──────────────────────────────────────────────
+// The nine columns as a two-column grid of facts under the supplier's name.
+// The hints the table carries in `title` (invisible to a finger) are printed
+// as a line wherever a figure is provisional or unknown.
+function ScorecardCards({ rows, alerts }: {
+  rows: SupplierScorecardRow[]
+  alerts: Map<string, SupplierLeadTimeAlert>
+}) {
+  const { t, lang } = useLanguage()
+  const label: React.CSSProperties = { fontSize: 12, color: C.dim }
+  const value: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: C.text, marginTop: 2, overflowWrap: 'anywhere' }
+  return (
+    <ul aria-label={t('scorecard.title')} style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {rows.map(row => {
+        const alert = alerts.get(row.supplier.toLowerCase())
+        const onTimeColor = row.on_time_rate == null
+          ? C.dim
+          : row.on_time_rate >= 0.7 ? C.green : row.on_time_rate >= 0.4 ? C.amber : C.red
+        const notes: string[] = []
+        if (row.lead_time_unusable) notes.push(t('scorecard.lead_time_says_nothing_hint'))
+        if (row.on_time_measurable === false || row.fill_rate_measurable === false) notes.push(t('scorecard.rate_needs_more_hint'))
+        if (row.purchased_value === null) notes.push(t('scorecard.purchased_value_unknown_hint'))
+        else if (!row.purchased_value_complete) notes.push(t('scorecard.purchased_value_partial_hint'))
+        return (
+          <li key={row.supplier} style={{ padding: '14px', borderRadius: 14, background: C.surface, border: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, marginBottom: 12 }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.supplier}</span>
+              {alert ? (
+                <StatusBadge tone={alert.severity === 'high' ? 'danger' : 'warning'} label={<><TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d</>} />
+              ) : (
+                <StatusBadge tone="neutral" label={row.trend_measurable ? t('scorecard.stable') : t('scorecard.trend_not_measurable')} />
+              )}
+            </div>
+            {alert && (
+              <div style={{ fontSize: 13, color: alert.severity === 'high' ? C.red : C.amber, marginBottom: 10, lineHeight: 1.45 }}>
+                {renderSupplierAlert(t, alert)}
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 12px' }}>
+              <div><div style={label}>{t('scorecard.col_on_time')}</div>
+                <div style={{ ...value, color: row.on_time_measurable === false ? C.dim : onTimeColor }}>
+                  {fmtPct(row.on_time_rate)}{row.on_time_measurable === false ? ` ${t('scorecard.rate_provisional')}` : ''}
+                </div></div>
+              <div><div style={label}>{t('scorecard.col_fill_rate')}</div>
+                <div style={{ ...value, color: row.fill_rate_measurable === false ? C.dim : C.text }}>
+                  {row.fill_rate === null && (row.orders_in_transit ?? 0) > 0
+                    ? t('scorecard.fill_rate_in_transit', { n: row.orders_in_transit })
+                    : `${fmtPct(row.fill_rate)}${row.fill_rate_measurable === false ? ` ${t('scorecard.rate_provisional')}` : ''}`}
+                </div></div>
+              <div><div style={label}>{t('scorecard.col_real_lead_time')}</div>
+                <div style={{ ...value, color: row.lead_time_unusable ? C.dim : C.text }}>
+                  {row.lead_time_unusable ? t('scorecard.lead_time_says_nothing') : fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
+                </div></div>
+              <div><div style={label}>{t('scorecard.col_declared')}</div>
+                <div style={{ ...value, color: C.muted }}>{row.lead_time_declarado != null ? `${row.lead_time_declarado}d` : '—'}</div></div>
+              <div><div style={label}>{t('scorecard.col_receptions')}</div>
+                <div style={value}>{row.n_receptions}</div></div>
+              <div><div style={label}>{t('scorecard.col_purchased_value')}</div>
+                <div style={{ ...value, color: row.purchased_value === null ? C.dim : C.green }}>
+                  {row.purchased_value === null ? '—' : `${row.purchased_value_complete ? '' : '≥ '}${formatMoney(row.purchased_value)}`}
+                </div></div>
+              <div style={{ gridColumn: '1 / -1' }}><div style={label}>{t('scorecard.col_last_reception')}</div>
+                <div style={{ ...value, fontWeight: 500, color: C.muted }}>{fmtDate(row.last_reception, lang)}</div></div>
+            </div>
+            {notes.length > 0 && (
+              <div style={{ marginTop: 10, fontSize: 12, color: C.dim, lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {notes.map(n => <span key={n}>{n}</span>)}
+              </div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function SupplierScorecardPage() {
   const { t } = useLanguage()
+  // Phone: cards instead of the nine-column table; the compact header carries
+  // the title and the back button.
+  const narrow = useIsNarrow()
+  useMobileHeader({ title: t('scorecard.title') })
   const [rows,    setRows]    = useState<SupplierScorecardRow[]>([])
   const [alerts,  setAlerts]  = useState<SupplierLeadTimeAlert[]>([])
   const [loading, setLoading] = useState(true)
@@ -222,7 +304,7 @@ export default function SupplierScorecardPage() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 9,
             background: 'linear-gradient(135deg, var(--accent), var(--accent))',
@@ -240,7 +322,7 @@ export default function SupplierScorecardPage() {
           </div>
         </div>
         <Link href="/proveedores" style={{
-          display: 'flex', alignItems: 'center', gap: 6,
+          display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 6,
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
         }}>
@@ -293,9 +375,13 @@ export default function SupplierScorecardPage() {
               </div>
             </div>
           )}
+          {narrow ? (
+            <ScorecardCards rows={rows} alerts={alertsBySupplier} />
+          ) : (
           <Card padding={0} overflow="hidden">
             <ScorecardTable rows={rows} alerts={alertsBySupplier} />
           </Card>
+          )}
         </>
       ) : (
         <Card tone="inset" radius={12} padding="40px 24px" style={{ textAlign: 'center' }}>
@@ -311,6 +397,7 @@ export default function SupplierScorecardPage() {
             padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
             background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
             color: C.indigo, textDecoration: 'none',
+            ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14 } : {}),
           }}>
             <Truck size={13} aria-hidden="true" /> {t('scorecard.empty_cta')}
           </Link>

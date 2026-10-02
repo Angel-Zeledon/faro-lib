@@ -155,6 +155,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => close(false)}
+                className="confirm-btn"
                 style={{
                   padding: '9px 16px', borderRadius: 9, cursor: 'pointer',
                   background: 'transparent', border: '1px solid var(--border)',
@@ -165,6 +166,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 autoFocus
+                className="confirm-btn"
                 onClick={() => close(true)}
                 style={{
                   padding: '9px 16px', borderRadius: 9, cursor: 'pointer', border: 'none',

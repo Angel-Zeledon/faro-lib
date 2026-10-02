@@ -1169,6 +1169,12 @@
    wins without touching desktop. */
 @media (max-width: 768px) {
   .btn { min-height: 44px; box-sizing: border-box; justify-content: center; }
+  /* Same for the shared <Input>/<Select>/<Textarea> (`.form-input`): 44px,
+     and 16px text — below 16px iOS zooms the whole page on focus. The
+     font-size is set inline by controlStyle(), hence !important. */
+  .form-input { min-height: 44px; box-sizing: border-box; font-size: 16px !important; }
+  /* ConfirmDialog's two answers share the row at thumb height. */
+  .confirm-btn { min-height: 44px; flex: 1; }
 }
 
 /* Dividers between cards in a MobileList. */
