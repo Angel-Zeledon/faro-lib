@@ -122,7 +122,13 @@ function notify(err: ApiError, silent: boolean) {
  * toast — used by callers that render the failure themselves (a full-screen
  * `ErrorState`) so the user isn't told the same thing twice.
  */
-export interface RequestOpts { silent?: boolean }
+export interface RequestOpts {
+  silent?: boolean
+  /** Extra request headers — e.g. `Idempotency-Key` on PO creation, so a
+   *  double tap or a retry after a dropped connection returns the order
+   *  already written instead of creating a second one. */
+  headers?: Record<string, string>
+}
 
 // FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
 // instead of a string. Without this, `new Error(detail)` stringifies the array
@@ -180,11 +186,14 @@ function extractErrorParams(err: unknown): Record<string, unknown> {
   return params && typeof params === 'object' ? (params as Record<string, unknown>) : {}
 }
 
-function _doFetch(method: string, path: string, body?: unknown): Promise<Response> {
+function _doFetch(
+  method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>,
+): Promise<Response> {
   const isForm = body instanceof FormData
   const token  = getToken()
 
   const headers: Record<string, string> = isForm ? {} : { 'Content-Type': 'application/json' }
+  if (extraHeaders) Object.assign(headers, extraHeaders)
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   return fetch(`${BASE}${path}`, {
@@ -210,7 +219,7 @@ async function request<T = unknown>(
 
   let res: Response
   try {
-    res = await _doFetch(method, path, body)
+    res = await _doFetch(method, path, body, opts.headers)
   } catch {
     // fetch() only rejects when the request never completed: offline, DNS
     // failure, or the backend not listening. Any HTTP status resolves.
@@ -237,7 +246,7 @@ async function request<T = unknown>(
     // once, so a 15-minute token never kicks the user back to /login mid-task.
     // `_sessionLost()` never returns — it clears auth and redirects.
     if (await tryRefresh()) {
-      res = await _doFetch(method, path, body)
+      res = await _doFetch(method, path, body, opts.headers)
       if (res.status === 401) _sessionLost()
     } else {
       _sessionLost()
@@ -1373,8 +1382,8 @@ export const createManualPO = (body: {
   supplier_id: string
   lines: { sku: string; qty: number; unit_cost?: number; display_name?: string }[]
   destination_warehouse?: string
-}) =>
-  request<POLogEntry>('POST', '/inventory/po', body)
+}, opts?: RequestOpts) =>
+  request<POLogEntry>('POST', '/inventory/po', body, opts)
 
 export const getSkuSuppliers  = (sku: string) =>
   request<SkuSupplier[]>('GET', `/inventory/stock/${encodeURIComponent(sku)}/suppliers`)

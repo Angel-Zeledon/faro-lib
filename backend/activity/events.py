@@ -122,8 +122,9 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("reference", "sku_count", "units", "warehouse"),
     ),
     # Reverses `sent_at`. Same reasoning as reception_undone: it un-anchors the
-    # cash calendar and changes what counts as incoming stock, so it belongs on
-    # the bell, not only in the quiet feed.
+    # cash calendar, so it belongs on the bell, not only in the quiet feed.
+    # (It no longer changes incoming stock: every open PO counts as on its way,
+    # sent or not — see service.get_incoming_detail.)
     "purchase.order_unsent": EventSpec(
         kind="purchase", severity=WARNING,
         detail_keys=("reference",),

@@ -4352,6 +4352,14 @@
        "type": "string",
        "description": "",
        "example": "<session_id>"
+      },
+      {
+       "name": "Idempotency-Key",
+       "in": "header",
+       "required": false,
+       "type": "string",
+       "description": "Optional. One unique value (a UUID) per order you mean to place. Repeating the request with the same key returns the order the first request created (200, replayed=true) instead of creating a second one; the same key with different lines is refused with 409 po_idempotency_key_reused.",
+       "example": "Idempotency-Key"
       }
      ],
      "request_body": {
@@ -4488,8 +4496,17 @@
      "tag": "inventory",
      "scope": "write",
      "summary": "Create Manual Po",
-     "description": "A purchase order the buyer writes from scratch — supplier chosen explicitly, lines typed in, no forecast session behind it. Persisted with source='manual' so adoption metrics stay clean.",
-     "parameters": [],
+     "description": "A purchase order the buyer writes from scratch — supplier chosen explicitly, lines typed in, no forecast session behind it. Persisted with source='manual' so adoption metrics stay clean. `Idempotency-Key`: same contract as /log-po.",
+     "parameters": [
+      {
+       "name": "Idempotency-Key",
+       "in": "header",
+       "required": false,
+       "type": "string",
+       "description": "Optional. One unique value (a UUID) per order you mean to place. Repeating the request with the same key returns the order the first request created (200, replayed=true) instead of creating a second one; the same key with different lines is refused with 409 po_idempotency_key_reused.",
+       "example": "Idempotency-Key"
+      }
+     ],
      "request_body": {
       "content_type": "application/json",
       "required": true,
