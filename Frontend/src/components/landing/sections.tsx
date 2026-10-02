@@ -260,8 +260,9 @@ export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref
 //     DELETE /tenant (every table and file), backend/api/v1/tenant_data.py
 //     and backend/tenants/data_export.py. Admin-only API, no screen yet,
 //     hence "we hand you" rather than "download it yourself".
-//  5. no feature gates — backend/entitlements/plans.py.
-//  6. not a black box — the #como-decide section (home and /como-funciona).
+//  5. not a black box — the #como-decide section (home and /como-funciona).
+// ("Nothing locked behind a payment" was item 5 until 2026-10-02: the pricing
+// section just above it opens with the same promise, so it said it twice.)
 // /seguridad adds one item, the 24-hour trial erasure, which restates the
 // claim the closing band already makes (L.final.trialDesc).
 export function TrustSection({ decideHref, ruleDesc, extra = [], moreHref }: {

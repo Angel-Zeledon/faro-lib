@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { getInventoryROI, getROIMonthly, getROIMonthReport } from '@/lib/api'
 import type { InventoryROISummary, ROIMonthlyRow, ROIMonthReport } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
-import { TrendingUp, ArrowLeft, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
+import { TrendingUp, Package, ShoppingCart, Calendar, AlertTriangle } from 'lucide-react'
 import Card, { CardHeader } from '@/components/ui/Card'
 import Table, { Th, Td } from '@/components/ui/Table'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -474,9 +474,8 @@ function WhyItMattersCard() {
       <p style={{ margin: 0, fontSize: 13, color: C.muted, lineHeight: 1.75 }}>
         {t('roi.why_matters_body')}
       </p>
-      <p style={{ margin: '12px 0 0', fontSize: 12, color: C.dim, lineHeight: 1.65 }}>
-        {t('roi.why_matters_footnote')}
-      </p>
+      {/* The footnote on how adoption is counted lived here too; the adoption
+          card already says it, right under the percentage. */}
     </div>
   )
 }
@@ -534,14 +533,8 @@ export default function ROIPage() {
             </p>
           </div>
         </div>
-        <Link href="/inventario" data-tour="roi.back" style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          fontSize: 12, color: C.dim, textDecoration: 'none',
-          padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
-          ...(narrow ? { minHeight: 44, boxSizing: 'border-box' as const, fontSize: 14 } : {}),
-        }}>
-          <ArrowLeft size={12} /> {t('roi.back_to_inventory')}
-        </Link>
+        {/* No "Volver a Inventario" button: the sidebar (and the phone's tab
+            bar) already has Inventario one click away. */}
       </div>
 
       {/* Error */}

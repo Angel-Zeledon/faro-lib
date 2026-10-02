@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useEntitlements, LIMIT_KEYS } from '@/lib/entitlements'
-import { useUpgradePrompt, ContactButtons } from './UpgradeDialog'
+import { useUpgradePrompt } from './UpgradeDialog'
 import Button from '@/components/ui/Button'
 
 /**
@@ -58,15 +58,13 @@ export default function LimitsSection() {
         ))}
       </div>
 
+      {/* One button. The WhatsApp and email buttons used to sit beside it as
+          well, and the dialog it opens shows those same two first — three
+          ways in to one conversation, two of them twice on screen. */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
         <Button variant="primary" onClick={() => openUpgrade(null)}>
           {t('limits.section.cta')}
         </Button>
-        <ContactButtons
-          whatsapp={ent.contact?.whatsapp || ''}
-          email={ent.contact?.email || ''}
-          t={t}
-        />
       </div>
     </div>
   )
