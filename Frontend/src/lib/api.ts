@@ -1073,6 +1073,21 @@ export const unreceivePO = (poLogId: string) =>
 export const unsendPO = (poLogId: string) =>
   request<{ ok: boolean }>('POST', `/inventory/po/${poLogId}/unsend`)
 
+// The supplier's invoice for this order is settled (or, undone, owed again).
+// Idempotent: `changed: false` means it already was. Analyst-or-above; only a
+// sent order can be marked paid (409 `po_paid_requires_sent`).
+export interface POPaymentResult {
+  po_log_id: string
+  paid_at:   string | null
+  paid_by:   string | null
+  changed:   boolean
+}
+export const markPOPaid = (poLogId: string) =>
+  request<POPaymentResult>('POST', `/inventory/po/${poLogId}/mark-paid`)
+
+export const markPOUnpaid = (poLogId: string) =>
+  request<POPaymentResult>('POST', `/inventory/po/${poLogId}/mark-unpaid`)
+
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
 

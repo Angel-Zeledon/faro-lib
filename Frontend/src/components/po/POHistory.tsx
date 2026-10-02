@@ -11,6 +11,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
+import { PaidPOActions } from '@/components/po/PaidPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
@@ -351,7 +352,8 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
 export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [] }: {
   entries: POLogEntry[]
   onReceive: (id: string) => void
-  /** Reload after an undo rewrote stock or the sent flag. */
+  /** Reload after an undo rewrote stock or the sent flag, or the order was
+   *  marked paid / unpaid. */
   onUndone?: () => void
   suppliersWithoutContact?: string[]
 }) {
@@ -459,11 +461,20 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                       )}
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
                       <ForwardPOActions poLogId={entry.id} />
+                      {/* A paid order cannot be un-sent (the server refuses:
+                          the invoice is evidence it reached the supplier), so
+                          the undo is not offered until the payment is unmarked. */}
                       <UndoPOActions
                         poLogId={entry.id}
                         receptionStatus={status}
-                        sent={Boolean(entry.sent_at)}
+                        sent={Boolean(entry.sent_at) && !entry.paid_at}
                         onDone={onUndone}
+                      />
+                      <PaidPOActions
+                        poLogId={entry.id}
+                        sent={Boolean(entry.sent_at)}
+                        paidAt={entry.paid_at}
+                        onChanged={onUndone}
                       />
                     </span>
                   )

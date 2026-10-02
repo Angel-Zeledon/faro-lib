@@ -128,6 +128,18 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=WARNING,
         detail_keys=("reference",),
     ),
+    # The buyer said the order's invoice is settled: it leaves the cash
+    # calendar. Info — a routine bookkeeping step, like a reception.
+    "purchase.order_paid": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference",),
+    ),
+    # Puts money back on the cash calendar, so it reaches the bell like every
+    # other reversal.
+    "purchase.order_unpaid": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference",),
+    ),
 
     # ── Data the tenant put in ───────────────────────────────────────────────
     "data.stock_imported": EventSpec(

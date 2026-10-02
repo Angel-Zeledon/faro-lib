@@ -32,9 +32,16 @@ export function CashFitPanel({
 
   if (!calendar) return null
 
+  // Lines on sent, unpaid orders with no unit cost (math audit O3). They used
+  // to count as 0 — and an order with no costed line at all vanished — so a
+  // calendar of nothing but uncosted orders hid this panel entirely.
+  const uncosted = calendar.uncosted_lines ?? 0
   const hasCommitments =
     calendar.this_week_total > 0 || calendar.overdue_total > 0 || calendar.horizon_total > 0
+    || calendar.unknown_terms_total > 0 || uncosted > 0
   if (!hasCommitments && !fit) return null
+
+  const missingCostsVerdict = fit?.fits == null && fit?.fits_unknown_reason === 'missing_costs'
 
   const verdictColor = fit?.fits == null ? 'var(--border)' : fit.fits ? GREEN : RED
 
@@ -69,6 +76,15 @@ export function CashFitPanel({
           </span>
         )}
       </div>
+
+      {uncosted > 0 && (
+        <div style={{ fontSize: 11, color: AMBER, marginTop: 4 }}>
+          <AlertTriangle size={10} style={{ verticalAlign: -1, marginRight: 4 }} />
+          {uncosted === 1
+            ? t('cash.uncosted_incomplete_one')
+            : t('cash.uncosted_incomplete', { count: uncosted })}
+        </div>
+      )}
 
       {calendar.unknown_terms_total > 0 && (
         <div style={{ fontSize: 11, color: AMBER, marginTop: 4 }}>
@@ -119,6 +135,31 @@ export function CashFitPanel({
                 <strong style={{ color: RED }}>
                   {' · '}{t('cash.shortfall_label')}: {currency(fit.shortfall)}
                 </strong>
+              )}
+            </span>
+          </span>
+        </div>
+      )}
+
+      {/* Under budget, but part of the money is unpriced: no verdict, said
+          out loud. (Over budget stays a "does not fit" — a missing cost can
+          only add to what is required.) */}
+      {fit && missingCostsVerdict && (
+        <div style={{
+          marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)',
+          fontSize: 12, color: AMBER, fontWeight: 600,
+          display: 'flex', alignItems: 'flex-start', gap: 6,
+        }}>
+          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            {t('cash.fits_unknown_missing_costs')}
+            {' — '}
+            <span style={{ color: 'var(--dim)', fontWeight: 400 }}>
+              {t('cash.committed_label')}: {currency(fit.committed_total)}
+              {' + '}{t('cash.purchase_label')}: {currency(fit.purchase_in_horizon)}
+              {' = '}{currency(fit.required_total)}
+              {(fit.uncosted_purchase_skus?.length ?? 0) > 0 && (
+                <>{' · '}{t('cash.uncosted_purchase')}: {fit.uncosted_purchase_skus!.join(', ')}</>
               )}
             </span>
           </span>

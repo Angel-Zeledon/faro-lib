@@ -1973,6 +1973,17 @@ export default function HoyPage() {
          <p style={{ fontSize: 11.5, color: 'var(--dim)', marginBottom: 14, lineHeight: 1.6 }}>
           {t('hoy.optimizer_vs_semaforo').replace('{horizon}', String(optimization.horizon_days))}
          </p>
+         {/* Math audit O1: a SKU whose supplier takes as long as the horizon
+             used to be planned at 0 under a heading promising {horizon} days.
+             Its plan now reaches the next order's arrival, and the panel says
+             how many lines that is before the buyer reads them. */}
+         {(optimization.extended_lines ?? 0) > 0 && (
+          <p style={{ fontSize: 11.5, color: 'var(--text)', marginBottom: 14, lineHeight: 1.6 }}>
+           {t('hoy.optimizer_extended_note', {
+            count: optimization.extended_lines, horizon: optimization.horizon_days,
+           })}
+          </p>
+         )}
 
          {/* The cost optimiser could not finish, so these lines come from the
              greedy fallback — which ignores transfers entirely and buys each
@@ -2007,6 +2018,12 @@ export default function HoyPage() {
             }}>
              <span style={{ fontSize: 13 }}>
               {order.sku} — {order.warehouse}: <strong>{order.qty}</strong>
+              {order.horizon_extended && order.effective_horizon_days != null && (
+               <span style={{ display: 'block', fontSize: 11.5, color: 'var(--dim)', marginTop: 2 }}>
+                {t('hoy.optimizer_line_extended', { days: order.effective_horizon_days })}
+                {order.demand_extrapolated && <> · {t('hoy.optimizer_line_extrapolated')}</>}
+               </span>
+              )}
              </span>
              {/* Writes a PO in one click, so it is refused for a viewer — and
                  it has no catch of its own: the failure surfaced only as the

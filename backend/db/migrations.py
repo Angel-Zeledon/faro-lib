@@ -766,6 +766,17 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # time, so without this there is no due date to compute.
     ("add_po_log_sent_at",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ"),
+    # When the supplier's invoice for this PO was paid, and who said so (math
+    # audit 2026-10-01, O3). Without it every PO ever sent stayed a payable
+    # forever, so `overdue_total` only grew and the affordability check
+    # eventually answered "does not fit" to every cart. Nullable, no default,
+    # no backfill: an existing order is "not marked as paid", which is exactly
+    # what is known about it — inventing a payment date for old rows would be
+    # the opposite lie.
+    ("add_po_log_paid_at",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ"),
+    ("add_po_log_paid_by",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS paid_by TEXT"),
 
     # One row per tenant per month once the monthly recap email has been sent.
     # The unique constraint is the dedup mechanism: the worker re-runs on every

@@ -4612,9 +4612,9 @@ Notes on the fixes:
 
 | # | Sev. | Where | Proof | Why it is open |
 |---|---|---|---|---|
-| O1 | HIGH | optimizer horizon (`ForecastingCore business/optimizer.py:275` gate + `planning_service` default horizon 14) | Engine probe, demand 10/bucket, horizon 14: lead time 15 → **0 orders**, 120 short; lead time 10 → orders 40 (covers buckets 11–14 only). Default lead time is 15, so every unconfigured SKU on a daily plan is planned at 0. The /compras copy says these quantities "cover the next 14 days, which is why they are larger" — for these SKUs the plan is empty or smaller. | A finite-horizon end effect. The fix is a product choice: extend the horizon to lead time + coverage, or report SKUs whose lead time exceeds the horizon. Either changes problem size or adds a field. |
+| O1 | HIGH | optimizer horizon | **FIXED 2026-10-01** (owner's decision, commit COMMIT) — see *O1 and O3, fixed* below. | — |
 | O2 | HIGH | semáforo thresholds — **owned by the threshold workstream, code not touched** | (a) `test_math_audit_open_thresholds.py` (red): 0 on hand and a forecast of 0 → `coverage = 0/0` → 9999 sentinel → **SOBRESTOCK on an empty shelf**. `_calc_signal`'s docstring says the sentinel applies to a SKU "with any stock at all"; the caller never checks. (b) The landing (`i18n/landing.ts` signals table, both languages) still promises PEDIR PRONTO below 1.2× lead time and OK from 1.2× to 3×. Since §17c the boundary is the reorder point (L + SS/d), and SOBRESTOCK starts at max(3L, 2·reorder-point days). "You can do it by hand to check it gives the same answer" is no longer true for any SKU with a safety stock. The "landing's checkable mechanics hold up" line in *What was tested and is solid* is stale. | Another agent owns the threshold multipliers and the landing. |
-| O3 | HIGH | `cash_service` | No "paid" state exists, so every PO ever sent stays a payable and `overdue_total` grows forever (affordability → permanently "does not fit"). `SUM(final_qty * COALESCE(unit_cost,0))` prices uncosted lines at 0. A PO with no costs at all is dropped (`amount <= 0`), even from `unknown_terms`, and `evaluate_purchase_fit` says "fits". | Needs a paid/closed state and an "amount unknown" surface. Both are new capability. |
+| O3 | HIGH | `cash_service` | **FIXED 2026-10-01** (owner's decision, commit COMMIT) — see *O1 and O3, fixed* below. | — |
 | O4 | HIGH | /impacto hero "compras gestionadas"; /pedidos PO `total_value` | Both sum only the costed lines (`roi_service.py:297`, `:54`) and print the result as the total, with no "≥". §2.6 fixed this on the monthly report only. | Needs a completeness field on two responses, like `managed_purchase_value_complete`. |
 | O5 | HIGH | /inventario bulk update + edit form | `current_stock: parseFloat('') \|\| 0`. Changing only the supplier of an uncounted SKU creates its row with stock **0** → PEDIR_YA at full quantity. | The §1.2 class: the DB cannot hold a row without a count (`current_stock NOT NULL DEFAULT 0`). The fix is the pending `current_stock_set_by` decision, or refusing the save with new copy. |
 | O6 | MEDIUM | /compras supplier switch | Re-pointing a line at another supplier keeps the SKU's `unit_cost`, which goes into the PO, its PDF, cash and /impacto. | Known §4.7: `sku_suppliers.unit_cost` reaches no planning path. |
@@ -4623,6 +4623,97 @@ Notes on the fixes:
 | O9 | MEDIUM | narrative / RAG fallback / WhatsApp bot | Per-period coverage and demand labelled as days (`narrative_service.py:272,335,354`). `rag_service.py:753` reads `r.get("recommended")`, a key that does not exist (always null). `holding_cost` 0.00 (§16 l) still live. | AI-assistant area (another agent); the WhatsApp bot is out of scope (§3.3). |
 | O10 | MEDIUM | `export-po` CSV | Coverage in periods under "Días cobertura". "Demanda (lead time)" is lead time **plus review period**. Every non-learned source is labelled "Configurado", including the assumed 15. | API file shared with the public-API workstream. Copy plus a param. |
 | O11 | LOW | various | Coverage rounded to whole periods (0.4 weeks → "0 semanas" on a PEDIR_YA card); /escenarios "Demanda diaria" (per period); `SkuSearchOverlay` "{n}d"; "cost of ignoring" date defaults use the UTC date (one day late after 18:00 CR); `parseInt` truncates a typed 12.5; PDF/WhatsApp/email quantities `:.0f` (unreachable from the UI, which takes integers); "₡X inmovilizados en sobrestock" quotes the full value of overstocked SKUs; `forecast_money` reports steps as `horizon_days`; the optimizer's per-bucket orders are dated as one PO sent today in the cash fit. | Cosmetic, or each needs copy. |
+
+## O1 and O3, fixed (2026-10-01)
+
+**O1 — the plan reaches the next order's arrival.** Owner's decision: each
+SKU is planned over max(configured horizon, lead time + review period). With
+no declared review period (`suppliers.review_period_days = 0`, the default) the
+next order can go out one bucket later, so the reach is lead time + 1 bucket:
+otherwise a horizon ending exactly on the lead time still admits no arrival
+(the engine gates arrivals at t ≤ L).
+
+- Engine (`ForecastingCore business/optimizer.py`): new
+  `OptimizationInput.horizon_by_sku`. Past a SKU's own horizon its buckets are
+  inert — order, transfer and shortage fixed at 0, demand ignored, holding at 0
+  — so a SKU that is not extended gets exactly the decisions it got alone
+  (pinned against a neighbour with a 30-bucket horizon). The size gate counts
+  only the free variables (`live_var_count`), equal to `n_vars` when nothing
+  is extended, so one 45-day supplier does not push a whole tenant into the
+  greedy fallback. The fallback honours the same horizons.
+- API (`optimizer_service`): `effective_horizon_buckets`; the review period is
+  resolved by the semáforo's own `_resolve_review_period_days`. Where the
+  extension runs past the forecast's end it is filled with the forecast's mean
+  (the semáforo's own flat-rate assumption) and the line says so
+  (`demand_extrapolated`). Each order line carries `effective_horizon_days`
+  and `horizon_extended`; the response carries `extended_lines`.
+- /compras: per line "cubre hasta que llegue el próximo pedido: N días", a
+  note with the count, and the old "these answer cover the next {horizon}
+  days, which is why they are larger" sentence rewritten — it was false
+  (often smaller) and stays false for any lost-sales plan.
+- **What the quantity means.** The MILP is a lost-sales model. For an
+  extended SKU it plans the demand from the order's ARRIVAL until the next
+  order can arrive, net of whatever stock and on-order units are left at
+  arrival. Demand during the lead time is served by what is on hand or not at
+  all. The audit's reproduction (10/day, lead 15, horizon 14, nothing on hand,
+  no review period) now plans **10**, not 0 and not the semáforo's
+  d·(L+R) − position. With a weekly review it plans 70; with 100 on hand +
+  80 on order, 40. This is the same meaning the panel already had for
+  horizon > lead (lead 10 → 40 = days 11–14, unchanged and pinned). Whether
+  this panel should instead size orders like the semáforo (backorder
+  semantics) is a modelling decision for the owner, not made here.
+- Measured on the demo tenant through the dev proxy: `/inventory/optimize`
+  returns 3 lines (SKU-001 22, SKU-003 136, SKU-005 31), all
+  `horizon_extended` to 16 days — the unconfigured 15-day lead time.
+- Tests: `ForecastingCore/tests/test_optimizer_sku_horizon.py` (10),
+  `backend/tests/test_optimizer_horizon_covers_lead_time.py` (15, including
+  weekly buckets and the two-warehouse transfer path: 150 units move from the
+  sister warehouse, nothing is bought). Breaking the rule turns them red.
+
+**O3 — purchase orders have a paid state; the calendar says what it does not
+know.**
+
+- Migration: `inventory_po_log.paid_at TIMESTAMPTZ NULL`, `paid_by TEXT NULL`.
+  No default, no backfill — an old order is "not marked as paid".
+- `POST /inventory/po/{id}/mark-paid` and `/mark-unpaid` (analyst or above;
+  new router `api/v1/po_payments.py`, tag `inventory-payments`, classified
+  INTERNAL — not exposed to API keys until the owner decides). Only a sent
+  order can be paid (409 `po_paid_requires_sent`). Both idempotent: a repeat
+  keeps the first date and author and answers `changed: false`, with no
+  second activity row. Events `purchase.order_paid` (info) and
+  `purchase.order_unpaid` (warning, `reversed_by_user`) — the undo is
+  mark-unpaid, the same inverse-endpoint pattern as unsend/unreceive.
+  `unsend` now refuses a paid order (409 `po_unsend_after_payment`).
+- `cash_service.get_payables`: paid orders leave due/overdue. Lines with no
+  unit cost (NULL or ≤ 0, the optimizer's rule) are counted, not priced at 0;
+  a group with only uncosted lines stays on the calendar with amount 0 and
+  `amount_complete: false` (it used to vanish, even from `unknown_terms`).
+  New totals `uncosted_lines`, `uncosted_lines_committed`,
+  `uncosted_po_count`, `totals_complete`.
+- `evaluate_purchase_fit`: over budget stays `fits: false` (a missing cost can
+  only add); under budget with any missing cost is `fits: null`,
+  `fits_unknown_reason: "missing_costs"`, never "fits". Uncosted cart lines
+  are listed (`uncosted_purchase_skus`).
+- Frontend: /pedidos "Marcar como pagada" / "Desmarcar pago" + "Pagada" badge
+  on every row (desktop table and phone cards), a Todas / Sin pagar / Pagadas
+  filter; the table now reloads after an undo (`onUndone` was never passed, so
+  an un-send left the row stale). The cash panel shows "N líneas sin costo —
+  total incompleto" and an amber "no podemos decir si cabe" verdict, and no
+  longer hides itself when the only commitments are uncosted or have unknown
+  terms.
+- Tenant export selects `*`, so the columns ride along (pinned); delete is by
+  tenant cascade, unchanged.
+- Tests: `backend/tests/test_po_paid_state.py` (22) — permission pairs with DB
+  read-back, idempotency, trail, calendar exclusion and undo, incompleteness,
+  the verdict, export.
+
+**Not walked in a browser.** The Chrome extension was not connected in this
+session. The pages compile and serve (`/pedidos`, `/compras` 200 on a worktree
+dev server), `tsc` and i18n parity pass, and the API was walked through the
+dev proxy as demo@faro.app. The demo tenant has no sent order, and sending one
+would message its suppliers, so mark-paid was exercised by the test suite only.
+These screens still owe a walk: /pedidos (button, badge, filter, phone cards),
+the /compras cash panel with an uncosted line, the /compras optimizer lines.
 
 ## What was checked and found correct (with the check)
 

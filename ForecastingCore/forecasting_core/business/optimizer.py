@@ -34,6 +34,11 @@ Objective (minimize):
     + transfer_fixed_cost[a,b]*ship
   (transfer_cost[a,b] is the lane's cost per unit, falling back to the global
    transfer_cost for pairs the caller left unconfigured.)
+
+Per-SKU horizon (horizon_by_sku[i] = H_i <= H): for t > H_i the SKU is inert —
+  order, transfer and short are fixed at 0, its demand is taken as 0 and
+  holding_cost is 0, so inv just carries forward and SKU i's decisions in
+  1..H_i are those of a solve on H_i alone.
 """
 
 from __future__ import annotations
@@ -73,6 +78,48 @@ class OptimizationInput:
     # A pair absent here (or set to 0) costs nothing to dispatch, which is the
     # pre-feature behavior; see _lanes_with_fixed_cost for why that matters.
     transfer_fixed_cost_by_lane: Dict[Tuple[str, str], float] = field(default_factory=dict)
+    # Per-SKU planning horizon in buckets, each <= `horizon`. A SKU absent here
+    # is planned over the whole `horizon` (the pre-feature behaviour).
+    #
+    # Why per SKU: an order cannot arrive before the SKU's lead time, so a SKU
+    # whose lead time reaches past the horizon got NO order at all — every
+    # arrival bucket was gated — and the plan printed nothing for it while its
+    # shelf ran out (math audit 2026-10-01, O1). The caller extends such a SKU's
+    # horizon to cover until its next order can arrive. Making that the WHOLE
+    # problem's horizon would also stretch every other SKU's plan, so instead
+    # buckets past a SKU's own horizon are inert for it: no demand, no order,
+    # no transfer, no shortage, and inventory carried through them at no cost.
+    # Its decisions inside its own horizon are then exactly the ones a solve on
+    # that horizon alone would make.
+    horizon_by_sku: Dict[str, int] = field(default_factory=dict)
+
+
+def sku_horizon(inp: "OptimizationInput", sku: str) -> int:
+    """The buckets SKU `sku` is planned over: its own horizon, never past the
+    problem's."""
+    own = (inp.horizon_by_sku or {}).get(sku)
+    if own is None:
+        return inp.horizon
+    return max(0, min(int(own), inp.horizon))
+
+
+def live_var_count(inp: "OptimizationInput", idx: "VariableIndex") -> int:
+    """Decision variables the per-SKU horizons leave free.
+
+    The size gate (`max_vars_before_fallback`) used to read `idx.n_vars`, and
+    the matrix is rectangular: one SKU with a 45-day lead time would size every
+    SKU's block to 45 buckets and push the tenant into the transfer-blind
+    greedy fallback for variables that are all pinned to zero. Equal to
+    `idx.n_vars` when no SKU has a horizon of its own, so the gate is unchanged
+    for every problem that does not use the feature.
+    """
+    if not inp.horizon_by_sku:
+        return idx.n_vars
+    n_wh = len(idx.warehouses)
+    n_pairs = len(idx.transfer_pairs())
+    per_bucket = 3 * n_wh + n_pairs   # order + inv + short per warehouse, transfers per pair
+    live = sum(per_bucket * sku_horizon(inp, i) for i in idx.skus)
+    return live + len(idx.fixed_cost_lanes()) * idx.horizon
 
 
 @dataclass
@@ -264,6 +311,7 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
     integrality = np.zeros(n, dtype=int)
 
     for i in inp.skus:
+        own_horizon = sku_horizon(inp, i)
         for w in inp.warehouses:
             for t in range(1, inp.horizon + 1):
                 c[idx.order_idx(i, w, t)] = inp.order_cost[i]
@@ -274,6 +322,11 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                 # has elapsed from the start of the planning horizon.
                 if t <= inp.lead_time_buckets.get(i, 0):
                     ub[idx.order_idx(i, w, t)] = 0
+                if t > own_horizon:
+                    # Past this SKU's own horizon (see horizon_by_sku): inert.
+                    ub[idx.order_idx(i, w, t)] = 0
+                    ub[idx.short_idx(i, w, t)] = 0
+                    c[idx.inv_idx(i, w, t)] = 0.0
         for a, b in idx.transfer_pairs():
             lane_cost = inp.transfer_cost_by_lane.get((a, b), inp.transfer_cost)
             lane_lead = inp.transfer_lead_buckets.get((a, b), 0)
@@ -283,7 +336,7 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                 # A lane that takes N buckets cannot deliver into buckets
                 # 1..N — same gate as an order's lead time, so a slow lane
                 # stops being a free instant teleport.
-                if t <= lane_lead:
+                if t <= lane_lead or t > own_horizon:
                     ub[idx.transfer_idx(i, a, b, t)] = 0
 
     # One binary PER (lane, bucket), not per lane: the fixed cost is what a
@@ -308,6 +361,7 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
     b_eq = np.zeros(n_rows)
     row = 0
     for i in inp.skus:
+        own_horizon = sku_horizon(inp, i)
         for w in inp.warehouses:
             for t in range(1, inp.horizon + 1):
                 A_eq[row, idx.inv_idx(i, w, t)] = 1.0
@@ -319,7 +373,10 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
                     A_eq[row, idx.transfer_idx(i, a, w, t)] = -1.0  # inbound
                     A_eq[row, idx.transfer_idx(i, w, a, t)] = 1.0   # outbound
 
-                demand_t = inp.demand[(i, w)][t - 1]
+                # No demand past the SKU's own horizon: with ordering and
+                # shortage both pinned to 0 there, any demand would make the
+                # row infeasible rather than merely unplanned.
+                demand_t = inp.demand[(i, w)][t - 1] if t <= own_horizon else 0.0
                 if t == 1:
                     # inv[i,w,0] is the constant stock0[i,w], not a variable,
                     # so it folds into this row's RHS instead of a column.
@@ -438,7 +495,11 @@ def optimize(
         # (e.g. non-list skus/warehouses) — fall back with an empty index.
         idx = VariableIndex([], [], 0)
 
-    if idx.n_vars > max_vars_before_fallback:
+    try:
+        size = live_var_count(inp, idx)
+    except Exception:
+        size = idx.n_vars
+    if size > max_vars_before_fallback:
         return _fallback_recommend(inp, idx)
 
     try:
@@ -509,6 +570,10 @@ def _fallback_recommend(inp: OptimizationInput, idx: VariableIndex) -> Optimizat
     total_cost = 0.0
     for i in inp.skus:
         lead = inp.lead_time_buckets.get(i, 0)
+        try:
+            own_horizon = sku_horizon(inp, i)
+        except Exception:
+            own_horizon = inp.horizon
         order_cost_i = inp.order_cost.get(i, 0.0)
         holding_cost_i = inp.holding_cost.get(i, 0.0)
         stockout_cost_i = inp.stockout_cost.get(i, 0.0)
@@ -516,6 +581,13 @@ def _fallback_recommend(inp: OptimizationInput, idx: VariableIndex) -> Optimizat
             running = inp.stock0.get((i, w), 0.0)
             demand_list = inp.demand.get((i, w), [])
             for t in range(1, inp.horizon + 1):
+                if t > own_horizon:
+                    # Same inert tail as build_problem: nothing is planned for
+                    # this SKU past its own horizon, and carrying stock costs 0.
+                    orders[(i, w, t)] = 0.0
+                    inventory[(i, w, t)] = running
+                    shortages[(i, w, t)] = 0.0
+                    continue
                 demand_t = demand_list[t - 1] if t - 1 < len(demand_list) else 0.0
                 if t > lead:
                     # naive: order exactly the shortfall against this bucket's

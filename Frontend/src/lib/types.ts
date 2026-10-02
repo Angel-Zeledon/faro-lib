@@ -1255,6 +1255,15 @@ export interface OptimizationOrder {
   // `total_cost` means nothing. Optional: a response from before this existed
   // has no flag. See backend/inventory/optimizer_service.py.
   assumed_unit_cost?:  boolean
+  // How far this line's plan reaches, in calendar days (math audit O1). Past
+  // the configured horizon when the supplier's lead time (plus its review
+  // period) reaches it — `horizon_extended` — so the line can say it covers
+  // "until the next order arrives" instead of the generic horizon.
+  effective_horizon_days?: number
+  horizon_extended?:       boolean
+  // Part of the extension is past the forecast's end and was planned at its
+  // average rate.
+  demand_extrapolated?:    boolean
 }
 
 export interface OptimizationTransfer {
@@ -1270,6 +1279,8 @@ export interface OptimizationResponse {
   horizon_days:  number
   orders:        OptimizationOrder[]
   transfers:     OptimizationTransfer[]
+  // Lines whose plan reaches past `horizon_days` (see OptimizationOrder).
+  extended_lines?: number
   // SKUs left out of the optimization because nobody has told us what is on the
   // shelf. How much to buy depends on how much is left, so there is no honest
   // quantity to show — the screen names them instead of printing a number.
@@ -1385,6 +1396,9 @@ export interface POLogEntry {
    *  why undoing a send is a real action and not a cosmetic flag. */
   sent_at?: string | null
   received_at?:      string | null
+  /** When the buyer marked the supplier's invoice as paid; null while owed.
+   *  A paid order leaves the payments calendar. */
+  paid_at?:          string | null
 }
 
 // A line of a PO as stored server-side, with reception progress.
@@ -1640,6 +1654,9 @@ export interface PayableItem {
   days_until_due: number
   overdue:        boolean
   within_horizon: boolean
+  // Lines of this (PO, supplier) with no unit cost: `amount` leaves them out.
+  uncosted_lines?:  number
+  amount_complete?: boolean
 }
 
 export interface PayableUnknownTerms {
@@ -1647,6 +1664,8 @@ export interface PayableUnknownTerms {
   supplier_name: string | null
   amount:        number
   payment_terms: string | null
+  uncosted_lines?:  number
+  amount_complete?: boolean
 }
 
 export interface CashWeek {
@@ -1665,6 +1684,12 @@ export interface CashCalendar {
   horizon_total:       number
   unknown_terms:       PayableUnknownTerms[]
   unknown_terms_total: number
+  // Lines on sent, unpaid orders that carry no unit cost — the totals above
+  // are missing them (math audit O3). Optional for older responses.
+  uncosted_lines?:           number
+  uncosted_lines_committed?: number
+  uncosted_po_count?:        number
+  totals_complete?:          boolean
 }
 
 export interface CashFitLine {
@@ -1689,7 +1714,15 @@ export interface CashFitResult {
   purchase_in_horizon:         number
   required_total:              number
   fits:                        boolean | null
+  // Why `fits` is null: no budget typed, or costs missing so a "fits" would
+  // be a guess. Over budget is still `false` either way — a missing cost can
+  // only add to what is required.
+  fits_unknown_reason?:        'no_budget' | 'missing_costs' | null
   shortfall:                   number | null
+  total_complete?:             boolean
+  uncosted_committed_lines?:   number
+  uncosted_purchase_lines?:    number
+  uncosted_purchase_skus?:     string[]
   lines:                       CashFitLine[]
   suppliers_assumed_immediate: string[]
   unknown_terms_total:         number

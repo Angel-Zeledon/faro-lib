@@ -348,8 +348,13 @@ class TestSerializeOptimizationResult:
         # False here because the stock row carries one.
         assert out["orders"] == [
             {"sku": "SKU1", "warehouse": "Norte", "qty": 3.0, "unit_cost": 2.0,
-             "supplier": "ACME", "assumed_unit_cost": False},
+             "supplier": "ACME", "assumed_unit_cost": False,
+             # What the line covers (math audit O1): the horizon it was
+             # planned on, not extended, no extrapolated demand.
+             "effective_horizon_days": 2, "horizon_extended": False,
+             "demand_extrapolated": False},
         ]
+        assert out["extended_lines"] == 0
         assert out["transfers"] == [
             {"sku": "SKU1", "from_warehouse": "Sur", "to_warehouse": "Norte", "qty": 4.0},
         ]

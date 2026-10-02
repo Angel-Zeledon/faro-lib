@@ -41,6 +41,10 @@ export default function OrdersPage() {
   // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
   const { multi: multiWarehouse } = useWarehouses()
   const [tab, setTab] = useState<'orders' | 'transfers'>('orders')
+  // Paid / unpaid filter (math audit O3). Applied to the table only: the
+  // pending-arrival counter in the header answers a different question and
+  // must not change with it.
+  const [paidFilter, setPaidFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
   // Phone or desktop. Declared with the other hooks so the hook order is stable
   // whichever tree ends up rendering (see the fork below).
   const isNarrow = useIsNarrow()
@@ -74,6 +78,11 @@ export default function OrdersPage() {
   }, [])
 
   const pendingCount = countAwaitingReception(history)
+  // "Unpaid" means an order that is owed: sent and not marked paid. A draft
+  // was never invoiced, so it is neither.
+  const visibleHistory = paidFilter === 'all' ? history
+    : paidFilter === 'paid' ? history.filter(e => Boolean(e.paid_at))
+    : history.filter(e => Boolean(e.sent_at) && !e.paid_at)
 
   // On this screen there is no cart, so relevance is exactly "named on an
   // order that is still open" — those are the orders that still need to
@@ -103,6 +112,7 @@ export default function OrdersPage() {
           tab={tab}
           onTab={setTab}
           transfers={<TransfersPanel />}
+          onPaidChanged={() => load()}
         />
         {/* The same modal the desktop table opens. Reception writes stock and
             teaches the supplier's real lead time — one implementation of that
@@ -204,15 +214,37 @@ export default function OrdersPage() {
           actions={[{ label: t('orders.go_to_hoy'), href: '/compras', icon: <ShoppingCart size={14} /> }]}
         />
       ) : (
+        <>
+        <div role="group" aria-label={t('po.paid_filter_label')}
+             style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11.5, color: C.dim, marginRight: 4 }}>{t('po.paid_filter_label')}:</span>
+          {(['all', 'unpaid', 'paid'] as const).map(f => (
+            <button key={f} aria-pressed={paidFilter === f} onClick={() => setPaidFilter(f)}
+                    style={tabStyle(paidFilter === f)}>
+              {t(`po.paid_filter_${f}`)}
+            </button>
+          ))}
+        </div>
+        {visibleHistory.length === 0 ? (
+          <Card padding={16}>
+            <p style={{ margin: 0, fontSize: 12.5, color: C.dim }}>{t('po.paid_filter_empty')}</p>
+          </Card>
+        ) : (
         // The skeleton above already has the shape of this table, so fading the
         // rows in reads as the placeholder becoming the data, not as a blink.
         <Card data-tour="pedidos.table" className="page-enter" padding={0} overflow="hidden">
           <POHistoryTable
-            entries={history}
+            entries={visibleHistory}
             onReceive={setReceivingPO}
+            // Reloads after an undo or a payment change. It was never passed,
+            // so an un-send or un-receive left the row showing the old state
+            // until the page was reloaded by hand.
+            onUndone={() => load()}
             suppliersWithoutContact={contactHealth.map(r => r.supplier)}
           />
         </Card>
+        )}
+        </>
       )}
 
       {receivingPO && (

@@ -629,6 +629,15 @@ def unsend_po(tenant_id: str, po_log_id: str, user_id: str) -> dict:
             status_code=409,
             params={"reception_status": po.get("reception_status")},
         )
+    # A paid invoice is evidence the supplier invoiced it, i.e. that the order
+    # reached them. Un-sending would also strand `paid_at` on a draft the cash
+    # calendar no longer shows. Undo the payment first (mark-unpaid).
+    if po.get("paid_at") is not None:
+        raise AppError(
+            "po_unsend_after_payment",
+            "This order is marked as paid; mark it as unpaid before un-sending",
+            status_code=409,
+        )
 
     execute(
         """UPDATE inventory_po_log
