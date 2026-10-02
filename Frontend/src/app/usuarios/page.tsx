@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Users, Plus, Search, RefreshCw, Trash2, Edit2, ShieldCheck,
+  Users, Plus, Search, RefreshCw, Trash2, Edit2,
   CheckCircle2, XCircle, AlertTriangle, Clock, ChevronDown,
   X, Eye, EyeOff, Mail,
 } from 'lucide-react'
@@ -9,7 +9,6 @@ import { getUser } from '@/lib/auth'
 import {
   listAdminUsers, createAdminUser, updateAdminUser,
   deleteAdminUser, setUserStatus,
-  getUserPermissions, setUserPermissions,
   resendVerification,
   type AdminUser,
 } from '@/lib/api'
@@ -25,29 +24,9 @@ import UsersMobile from './UsersMobile'
 
 const ROLES = ['admin', 'analyst', 'viewer']
 
-/**
- * The per-user permission checkboxes are hidden, because they grant nothing.
- *
- * `user_permissions` rows are written by `set_user_permissions` and read back
- * by `get_user_permissions`, and that is the whole story: no endpoint and no
- * frontend gate ever consults them. Authorisation is decided entirely by role
- * — `require_analyst_or_above` / `require_admin`. So an admin could untick
- * "manage inventory" for someone and that person would keep managing
- * inventory, which is the worst kind of security control: one that reports
- * success and does nothing.
- *
- * The modal and its API calls are left intact underneath. Flip this to true
- * once the backend actually enforces the rows.
- */
-const PER_USER_PERMISSIONS_ENABLED = false
-
-const PERMISSION_GROUPS: { labelKey: string; perms: string[] }[] = [
-  { labelKey: 'users.group_forecasting', perms: ['view_forecasts', 'run_training', 'manage_sessions', 'export_data'] },
-  { labelKey: 'users.group_inventory',   perms: ['view_inventory', 'manage_inventory'] },
-  { labelKey: 'users.group_ai_analyst',  perms: ['view_analysts', 'run_analysts'] },
-  { labelKey: 'users.group_data',        perms: ['view_data_sources', 'manage_data_sources'] },
-  { labelKey: 'users.group_admin',       perms: ['view_users', 'manage_users'] },
-]
+// Authorisation is by role only (admin / analyst / viewer). Per-user
+// permission checkboxes existed here once and were removed (2026-10-02,
+// owner's decision): they were saved but nothing enforced them.
 
 const PERM_LABEL_KEY: Record<string, string> = {
   view_forecasts:      'users.perm_view_forecasts',
@@ -370,120 +349,6 @@ function DeleteModal({
   )
 }
 
-// ── Permissions Modal ─────────────────────────────────────────────────────────
-
-function PermissionsModal({
-  user: target,
-  onClose,
-}: {
-  user: AdminUser
-  onClose: () => void
-}) {
-  const { t } = useLanguage()
-  const [perms,   setPerms]   = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
-
-  useEffect(() => {
-    getUserPermissions(target.id)
-      .then(res => { setPerms(res.permissions); setLoading(false) })
-      .catch(() => { setError(t('users.perms_load_failed')); setLoading(false) })
-  }, [target.id, t])
-
-  function toggle(perm: string) {
-    setPerms(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm])
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    setError(null)
-    try {
-      await setUserPermissions(target.id, perms)
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('users.perms_save_failed'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Modal onClose={onClose}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px' }}>
-            {t('users.permissions')}
-          </h2>
-          <p style={{ fontSize: 11, color: 'var(--dim)', margin: 0 }}>
-            {target.full_name || target.email} · <span>{roleLabel(t, target.role)}</span>
-          </p>
-        </div>
-        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
-          <X size={16} aria-hidden="true" />
-        </button>
-      </div>
-
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 24, color: 'var(--dim)', fontSize: 13 }}>{t('users.loading_generic')}</div>
-      ) : (
-        <>
-          {error && (
-            <div style={{
-              padding: '9px 12px', borderRadius: 8, marginBottom: 12,
-              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-              fontSize: 12, color: '#ef4444',
-            }}>
-              {error}
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {PERMISSION_GROUPS.map(group => (
-              <div key={group.labelKey}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-                  {t(group.labelKey)}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {group.perms.map(perm => (
-                    <label key={perm} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        name={`perm-${perm}`}
-                        checked={perms.includes(perm)}
-                        onChange={() => toggle(perm)}
-                        style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
-                      />
-                      <span style={{ fontSize: 13, color: 'var(--text)' }}>{t(PERM_LABEL_KEY[perm] ?? perm)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-            <button onClick={onClose} style={{
-              padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
-              background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
-            }}>
-              {t('common.cancel')}
-            </button>
-            <button onClick={handleSave} disabled={saving} style={{
-              padding: '8px 20px', borderRadius: 7, border: 'none',
-              background: saving ? 'color-mix(in srgb, var(--accent) 70%, black)' : 'var(--accent)', color: '#fff',
-              fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              {saving && <Spinner />}
-              {saving ? t('users.saving') : t('users.save_permissions')}
-            </button>
-          </div>
-        </>
-      )}
-    </Modal>
-  )
-}
-
 // ── Resend verification button ───────────────────────────────────────────────
 
 function ResendButton({ userId, email }: { userId: string; email: string }) {
@@ -633,7 +498,6 @@ export default function UsersPage() {
   const [showCreate, setShowCreate]     = useState(false)
   const [editUser,   setEditUser]       = useState<AdminUser | null>(null)
   const [deleteUser, setDeleteUser]     = useState<AdminUser | null>(null)
-  const [permsUser,  setPermsUser]      = useState<AdminUser | null>(null)
   const [loadError,  setLoadError]      = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -834,17 +698,6 @@ export default function UsersPage() {
               {u.status === 'pending_confirmation' && (
                 <ResendButton userId={u.id} email={u.email} />
               )}
-              {PER_USER_PERMISSIONS_ENABLED && (
-                <button
-                  onClick={() => setPermsUser(u)}
-                  data-tour={idx === 0 ? 'users.permissions' : undefined}
-                  title={t('users.permissions_title')}
-                  aria-label={t('users.permissions_title')}
-                  style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
-                >
-                  <ShieldCheck size={14} aria-hidden="true" />
-                </button>
-              )}
               <button
                 onClick={() => setEditUser(u)}
                 title={t('users.edit_title')}
@@ -902,9 +755,6 @@ export default function UsersPage() {
       )}
       {deleteUser && (
         <DeleteModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={load} />
-      )}
-      {PER_USER_PERMISSIONS_ENABLED && permsUser && (
-        <PermissionsModal user={permsUser} onClose={() => setPermsUser(null)} />
       )}
     </div>
   )
