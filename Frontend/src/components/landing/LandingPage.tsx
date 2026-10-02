@@ -63,9 +63,6 @@ export default function LandingPage() {
   const COMPARE    = L.compare.rows
   const NEED       = L.start.need
   const NOT_NEED   = L.start.notNeed
-  // The hero frame IS the first screen of the tour, so it follows the
-  // language with everything else instead of pointing at a fixed file.
-  const HERO_SHOT  = L.tour.chapters[0].screens[0]
 
  const [activeCase, setActiveCase] = useState(0)
  useScrollReveal()
@@ -118,19 +115,6 @@ export default function LandingPage() {
  <Check />
  <span>{L.hero.trialNote}</span>
  </p>
-
- {/* Framed real product screenshot */}
- <div className="hero-stage">
- <div id="demo" className="lp-frame lp-land">
- <div className="lp-frame-in">
- <div className="lp-chrome" aria-hidden>
- <i /><i /><i />
- <span>{L.hero.frame}</span>
- </div>
- <img src={HERO_SHOT.img} alt={HERO_SHOT.alt} fetchPriority="high" width={3200} height={2000} style={{ height: 'auto' }} />
- </div>
- </div>
- </div>
 
  <div className="hero-pills lp-rise lp-d5">
  <div className="lp-label" style={{ marginRight: 4 }}>{L.misc.industriesLabel}</div>
