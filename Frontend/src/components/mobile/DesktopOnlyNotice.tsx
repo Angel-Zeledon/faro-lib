@@ -48,6 +48,11 @@ export const MOBILE_READY = [
   '/historial',     // runs as cards; rename/delete/open in a sheet
   '/actividad',     // full-width filters, thumb-sized "show more"
   '/escenarios',    // rules as cards, stepped rule sheet, sticky "Simular"
+  '/usuarios',
+  '/mi-cuenta',
+  '/automatizacion',
+  '/api',
+  '/instalacion',
 ]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen

@@ -34,6 +34,7 @@ import { getApiKeyUsage } from '@/lib/api'
 import { getUser } from '@/lib/auth'
 import type { ApiKeyUsage } from '@/lib/types'
 import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
+import '@/components/mobile/mobileForms.css'
 
 const MONO = "ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, 'Liberation Mono', monospace"
 
@@ -186,6 +187,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 
 function CodeBlock({ text, label = 'curl' }: { text: string; label?: string }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const [copied, setCopied] = useState(false)
   return (
     <div style={{ border: '1px solid var(--border-strong)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface-3)' }}>
@@ -205,7 +207,12 @@ function CodeBlock({ text, label = 'curl' }: { text: string; label?: string }) {
           {copied ? t('settings.copied') : t('settings.copy')}
         </Button>
       </div>
-      <pre style={{ margin: 0, padding: '14px 16px', fontFamily: MONO, fontSize: 12.5, lineHeight: 1.75, color: 'var(--text)', overflowX: 'auto', whiteSpace: 'pre' }}>
+      {/* On a phone the command wraps rather than scrolling sideways inside
+          the card: a curl you have to pan to read is one you mis-copy. */}
+      <pre style={{
+        margin: 0, padding: narrow ? '12px 14px' : '14px 16px', fontFamily: MONO, fontSize: 12.5, lineHeight: 1.75, color: 'var(--text)',
+        ...(narrow ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } : { overflowX: 'auto', whiteSpace: 'pre' }),
+      }}>
         {text}
       </pre>
     </div>
@@ -584,10 +591,10 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
         borderRadius: 12, overflow: 'hidden', scrollMarginTop: 92,
       }}
     >
-      <header style={{ padding: '20px 24px 18px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+      <header style={{ padding: narrow ? '16px' : '20px 24px 18px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <MethodChip method={endpoint.method} />
-          <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text)' }}>
+          <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text)', overflowWrap: 'anywhere', minWidth: 0 }}>
             {endpoint.path}
           </span>
           {endpoint.write && (
@@ -607,7 +614,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
 
       <div style={{ display: 'grid', gridTemplateColumns: split ? 'minmax(0,1fr) minmax(0,1fr)' : '1fr' }}>
         <div style={{
-          padding: '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 12,
+          padding: narrow ? '16px' : '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 12,
           borderRight: split ? '1px solid var(--border)' : 'none',
           borderBottom: split ? 'none' : '1px solid var(--border)',
         }}>
@@ -716,14 +723,14 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
           )}
         </div>
 
-        <div style={{ padding: '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+        <div style={{ padding: narrow ? '16px' : '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
           <Eyebrow>{t('apidocs.section_example')}</Eyebrow>
           <CodeBlock text={endpoint.curl} />
         </div>
       </div>
 
       {result && (
-        <div style={{ borderTop: '1px solid var(--border)', padding: '16px 24px 20px', background: 'var(--surface-2)' }}>
+        <div style={{ borderTop: '1px solid var(--border)', padding: narrow ? '14px 16px 16px' : '16px 24px 20px', background: 'var(--surface-2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <Eyebrow>{t('apidocs.try_response')}</Eyebrow>
             <span style={{
@@ -735,6 +742,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
           </div>
           <pre style={{
             margin: 0, padding: '14px 16px', maxHeight: 420, overflow: 'auto',
+            ...(narrow ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: '12px' } : {}),
             background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
             fontFamily: MONO, fontSize: 12, lineHeight: 1.7, color: 'var(--text)',
           }}>
@@ -770,12 +778,37 @@ export default function ApiDocsPage() {
     { label: t('apidocs.spec_rate'), value: t('apidocs.spec_rate_value'), mono: false },
   ]
 
+  // How to get a key and where the full reference lives. Inside the sticky
+  // bar on desktop; on a phone they sit under it, so what stays pinned while
+  // scrolling is one input high rather than a third of the screen.
+  const keyLinks = (
+    <>
+      <Link href="/automatizacion" style={{ textDecoration: 'none', ...(narrow ? { flex: 1, minWidth: 0 } : {}) }}>
+        <Button variant="secondary" size="sm" icon={<KeyRound size={12} />}
+                style={narrow ? { width: '100%', justifyContent: 'center' } : undefined}>
+          {t('apidocs.get_your_key')}
+        </Button>
+      </Link>
+      {/* A plain anchor: /desarrolladores is a landing page with its own
+          chrome, not a screen of the app shell. */}
+      <a href="/desarrolladores" style={{ textDecoration: 'none', ...(narrow ? { flex: 1, minWidth: 0 } : {}) }}>
+        <Button variant="ghost" size="sm" icon={<BookOpen size={12} />}
+                style={narrow ? { width: '100%', justifyContent: 'center' } : undefined}>
+          {t('apidocs.full_reference')}
+        </Button>
+      </a>
+    </>
+  )
+
   return (
     // `-24px` cancels `.page-content`'s own padding so the header band reaches
     // the edges. Full bleed is the point: a reference that starts with a
     // floating card reads as one more screen, and this one is a contract with
     // somebody else's engineering team.
-    <div style={{ margin: narrow ? 0 : -24 }}>
+    // On a phone it bleeds over the shell's 12px gutter instead; `m-form` and
+    // `m-tap-min` give every field 16px text (no iOS zoom) and every button a
+    // 44px height there (components/mobile/mobileForms.css).
+    <div className={narrow ? 'm-form m-tap-min' : undefined} style={{ margin: narrow ? '-12px -12px 0' : -24 }}>
       <header style={{ background: 'var(--sidebar-bg)', color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
         <div style={{ maxWidth: 1440, margin: '0 auto', padding: narrow ? '28px 20px 24px' : '44px 48px 34px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -821,7 +854,7 @@ export default function ApiDocsPage() {
               <code style={{
                 display: 'inline-block', fontFamily: MONO, fontSize: 13.5, color: '#fff',
                 background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.16)',
-                borderRadius: 7, padding: '7px 12px',
+                borderRadius: 7, padding: '7px 12px', overflowWrap: 'anywhere',
               }}>
                 {baseUrl || '…'}
               </code>
@@ -856,15 +889,22 @@ export default function ApiDocsPage() {
           screen, and a console whose credential scrolls out of reach makes you
           hunt for it before every call. */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 6,
+        // -12px on a phone: the scroll container's 12px top padding would
+        // otherwise leave a strip of scrolling content showing above the bar.
+        position: 'sticky', top: narrow ? -12 : 0, zIndex: 6,
         background: 'var(--surface)', borderBottom: '1px solid var(--border)',
       }}>
         <div style={{
-          maxWidth: 1440, margin: '0 auto', padding: narrow ? '12px 20px' : '14px 48px',
-          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+          maxWidth: 1440, margin: '0 auto', padding: narrow ? '10px 16px' : '14px 48px',
+          display: 'flex', alignItems: 'center', gap: narrow ? 8 : 14, flexWrap: 'wrap',
         }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260 }}>
-            <span style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
+          <label style={narrow
+            ? { display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 100%', minWidth: 0 }
+            : { display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260 }}>
+            {narrow && <KeyRound size={16} color="var(--dim)" aria-hidden="true" style={{ flexShrink: 0 }} />}
+            <span style={narrow
+              ? { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }
+              : { fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
               {t('apidocs.try_token_label')}
             </span>
             <Input
@@ -885,27 +925,19 @@ export default function ApiDocsPage() {
               placeholder={t('apidocs.try_token_ph')}
               value={token}
               onChange={e => setToken(e.target.value)}
-              style={{ flex: 1, minWidth: 0, fontFamily: MONO, fontSize: 12 }}
+              style={{ flex: 1, minWidth: 0, fontFamily: MONO, fontSize: 12, ...(narrow ? { width: '100%' } : {}) }}
             />
           </label>
-          <Link href="/automatizacion" style={{ textDecoration: 'none' }}>
-            <Button variant="secondary" size="sm" icon={<KeyRound size={12} />}>
-              {t('apidocs.get_your_key')}
-            </Button>
-          </Link>
-          {/* A plain anchor: /desarrolladores is a landing page with its own
-              chrome, not a screen of the app shell. */}
-          <a href="/desarrolladores" style={{ textDecoration: 'none' }}>
-            <Button variant="ghost" size="sm" icon={<BookOpen size={12} />}>
-              {t('apidocs.full_reference')}
-            </Button>
-          </a>
+          {!narrow && keyLinks}
         </div>
       </div>
+      {narrow && (
+        <div style={{ display: 'flex', gap: 8, padding: '12px 12px 0' }}>{keyLinks}</div>
+      )}
 
       <div style={{
         maxWidth: 1440, margin: '0 auto',
-        padding: narrow ? '20px' : '32px 48px 64px',
+        padding: narrow ? '16px 12px 8px' : '32px 48px 64px',
         display: 'grid',
         gridTemplateColumns: narrow ? '1fr' : '218px minmax(0,1fr)',
         gap: narrow ? 20 : 44,
@@ -997,7 +1029,10 @@ export default function ApiDocsPage() {
           <McpSection baseUrl={baseUrl} narrow={narrow} />
           <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7 }}>
             {t('apidocs.footer_promise')}{' '}
-            <a href="/desarrolladores" style={{ color: 'var(--accent)', fontWeight: 600 }}>
+            <a href="/desarrolladores" style={{
+              color: 'var(--accent)', fontWeight: 600,
+              ...(narrow ? { display: 'inline-flex', alignItems: 'center', minHeight: 44 } : {}),
+            }}>
               {t('apidocs.full_reference')}
             </a>
           </div>

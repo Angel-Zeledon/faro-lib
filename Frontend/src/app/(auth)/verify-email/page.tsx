@@ -89,7 +89,7 @@ function VerifyEmailContent() {
                 <label htmlFor="resend-email" style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 7 }}>
                   {t('auth.resend_verification_prompt')}
                 </label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="auth-resend-row" style={{ display: 'flex', gap: 8 }}>
                   <input
                     id="resend-email" name="email" type="email" required
                     value={resendEmail} onChange={e => setResendEmail(e.target.value)}
@@ -115,7 +115,7 @@ function VerifyEmailContent() {
               </form>
             )}
 
-            <Link href="/signup" style={{
+            <Link href="/signup" className="auth-back-btn" style={{
               display: 'inline-block', padding: '10px 28px',
               background: 'var(--surface)', color: 'var(--text)', borderRadius: 8,
               fontSize: 13, fontWeight: 600, textDecoration: 'none',

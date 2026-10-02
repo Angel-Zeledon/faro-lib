@@ -17,6 +17,12 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { webhookEventLabel, timezoneLabel } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import {
+  MobileList, MobileCard, MobileSection, MobileTabs, StickyActionBar,
+} from '@/components/mobile'
+import MobileFormScope from '@/components/mobile/MobileFormScope'
+import ApiKeysMobile from './ApiKeysMobile'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
@@ -38,6 +44,7 @@ const CRON_OPTIONS = [
 function ApiKeysTab() {
   const { t } = useLanguage()
   const confirm = useConfirm()
+  const narrow = useIsNarrow()
   const [keys,    setKeys]    = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
@@ -76,6 +83,13 @@ function ApiKeysTab() {
 
   const handleRevoke = async (id: string) => {
     if (!(await confirm({ title: t('settings.revoke_title'), message: t('settings.revoke_confirm'), danger: true }))) return
+    await revokeNow(id)
+  }
+
+  // The revoke itself, without the question. The phone asks inside the key's
+  // own sheet (a dialog stacked on a sheet is two modals deep), so it calls
+  // this directly; desktop asks first through `handleRevoke`.
+  const revokeNow = async (id: string): Promise<boolean> => {
     setRevoking(id)
     try {
       await revokeApiKey(id)
@@ -87,13 +101,28 @@ function ApiKeysTab() {
       // just died.
       setNewKey(null)
       load()
+      return true
     }
-    catch (e: any) { setError(e.message) }
+    catch (e: any) { setError(e.message); return false }
     finally { setRevoking(null) }
   }
 
   const copyKey = () => {
     if (newKey) { navigator.clipboard.writeText(newKey); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+  }
+
+  if (narrow) {
+    return (
+      <ApiKeysMobile
+        keys={keys} loading={loading} error={error}
+        newName={newName} setNewName={setNewName}
+        newScope={newScope} setNewScope={setNewScope}
+        creating={creating} handleCreate={handleCreate}
+        newKey={newKey} clearNewKey={() => setNewKey(null)}
+        copied={copied} copyKey={copyKey}
+        revoking={revoking} revoke={revokeNow}
+      />
+    )
   }
 
   return (
@@ -362,6 +391,7 @@ function WebhooksTab() {
 function SchedulesTab() {
   const { t, lang } = useLanguage()
   const confirm = useConfirm()
+  const narrow = useIsNarrow()
   const [sessions,   setSessions]  = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId] = useState<string>('')
   const [schedule,   setSchedule]  = useState<JobSchedule | null>(null)
@@ -439,6 +469,131 @@ function SchedulesTab() {
     try { await deleteSchedule(sessionId); setSchedule(null); reloadAll() }
     catch (e: any) { setError(e.message) }
     finally { setDeleting(false) }
+  }
+
+  // Phone: what is armed and what ran as card lists, the form as full-width
+  // native pickers, and Save pinned above the tab bar.
+  if (narrow) {
+    const cronLabel = (expr: string) => {
+      const o = CRON_OPTIONS.find(x => x.value === expr)
+      return o ? t(o.labelKey) : expr
+    }
+    const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <p style={{ margin: '0 4px 14px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+          {t('settings.schedules_desc')}
+        </p>
+
+        {allSchedules.length > 0 && (
+          <MobileSection title={t('settings.schedules_active_title')}>
+            <MobileList>
+              {allSchedules.map(sc => (
+                <MobileCard
+                  key={sc.id}
+                  title={sc.session_name}
+                  subtitle={sc.last_error
+                    ? `${t('settings.schedule_last_error')} ${sc.last_error.slice(0, 90)}`
+                    : sc.next_run && sc.enabled
+                      ? `${cronLabel(sc.cron_expr)} · ${t('settings.next_run')} ${inTenantZone(sc.next_run)}`
+                      : cronLabel(sc.cron_expr)}
+                  status={sc.last_error
+                    ? { label: t('common.error'), tone: 'danger' }
+                    : !sc.enabled ? { label: t('settings.schedule_paused'), tone: 'neutral' } : undefined}
+                  selected={sc.session_id === sessionId}
+                  onClick={() => setSessionId(sc.session_id)}
+                />
+              ))}
+            </MobileList>
+          </MobileSection>
+        )}
+
+        <MobileSection>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
+            padding: 14, display: 'flex', flexDirection: 'column', gap: 14,
+          }}>
+            <label data-tour="settings.session">
+              <span style={labelStyle}>{t('settings.session_label')}</span>
+              <Select chevron value={sessionId} onChange={e => setSessionId(e.target.value)} style={{ width: '100%' }}>
+                {sessions.length === 0 && <option value="">{t('settings.no_completed_sessions')}</option>}
+                {sessions.map(s => <option key={s.session_id} value={s.session_id}>{s.name}</option>)}
+              </Select>
+            </label>
+
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 20 }}><Spinner /></div>
+            ) : sessionId ? (
+              <>
+                <label data-tour="settings.frequency">
+                  <span style={labelStyle}>{t('settings.frequency')}</span>
+                  <Select chevron value={cronExpr} onChange={e => setCron(e.target.value)} style={{ width: '100%' }}>
+                    {CRON_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(o.labelKey)}</option>)}
+                  </Select>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--dim)', marginTop: 4, fontFamily: 'monospace' }}>{cronExpr}</span>
+                </label>
+                <label data-tour="settings.enabled" style={{
+                  display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, cursor: 'pointer', fontSize: 15, color: 'var(--text)',
+                }}>
+                  <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}
+                         style={{ accentColor: 'var(--accent)', margin: 0 }} />
+                  {t('settings.schedule_enabled')}
+                </label>
+                {schedule?.next_run && (
+                  <div style={{ fontSize: 13, color: 'var(--dim)', lineHeight: 1.6 }}>
+                    {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{inTenantZone(schedule.next_run)}</strong>
+                    {tz && <div>{t('settings.schedule_timezone_note', { zone: timezoneLabel(t, tz.timezone, tz.label) })}</div>}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 16, color: 'var(--dim)', fontSize: 14 }}>
+                {t('settings.no_sessions_available')}
+              </div>
+            )}
+            {error && (
+              <div role="alert" style={{ fontSize: 13, color: '#ef4444', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />{error}
+              </div>
+            )}
+          </div>
+        </MobileSection>
+
+        {history.length > 0 && (
+          <MobileSection title={t('settings.schedule_history_title')}>
+            <MobileList>
+              {history.map(run => (
+                <MobileCard
+                  key={run.id}
+                  title={run.session_name}
+                  subtitle={run.error ? `${inTenantZone(run.created_at)} · ${run.error.slice(0, 120)}` : inTenantZone(run.created_at)}
+                  status={{
+                    label: t(`settings.schedule_run_${run.status.toLowerCase()}`),
+                    tone: run.status === 'FAILED' ? 'danger' : run.status === 'COMPLETED' ? 'success' : 'neutral',
+                  }}
+                />
+              ))}
+            </MobileList>
+          </MobileSection>
+        )}
+
+        {sessionId && !loading && (
+          <StickyActionBar>
+            {schedule && (
+              <button type="button" className="mobile-btn mobile-btn-secondary" style={{ color: 'var(--danger)', flex: '0 1 40%' }}
+                      disabled={deleting} onClick={handleDelete}>
+                {deleting ? <Spinner size={16} /> : <Trash2 size={16} aria-hidden="true" />}{t('settings.remove')}
+              </button>
+            )}
+            <button type="button" className="mobile-btn mobile-btn-primary" data-tour="settings.save"
+                    disabled={saving} onClick={handleSave}>
+              {saving ? <Spinner size={16} /> : saved ? <Check size={18} aria-hidden="true" /> : null}
+              {saved ? t('settings.saved') : schedule ? t('settings.update_schedule') : t('settings.save_schedule')}
+            </button>
+          </StickyActionBar>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -648,6 +803,30 @@ const TABS = ALL_TABS.filter(tab => ENABLED[tab.id])
 export default function SettingsPage() {
   const { t } = useLanguage()
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? 'schedules')
+  const narrow = useIsNarrow()
+
+  if (narrow) {
+    return (
+      <MobileFormScope>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: '0 4px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{t('settings.subtitle')}</p>
+          {TABS.length > 1 && (
+            <MobileTabs
+              ariaLabel={t('settings.title')}
+              value={tab}
+              onChange={id => setTab(id as Tab)}
+              tabs={TABS.map(({ id, labelKey, Icon }) => ({ id, label: t(labelKey), icon: <Icon size={14} /> }))}
+            />
+          )}
+          <div key={tab} className="page-enter" data-tour={`settings.${tab}`}>
+            {ENABLED['api-keys']  && tab === 'api-keys'  && <ApiKeysTab />}
+            {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
+            {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
+          </div>
+        </div>
+      </MobileFormScope>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>

@@ -96,7 +96,8 @@ function ResetPasswordForm() {
                     onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
                     onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                   />
-                  <button type="button" onClick={() => setShowPw(v => !v)} style={{
+                  <button type="button" className="auth-eye" onClick={() => setShowPw(v => !v)}
+                    aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')} style={{
                     all: 'unset', position: 'absolute', right: 10, top: '50%',
                     transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--dim)',
                   }}>
