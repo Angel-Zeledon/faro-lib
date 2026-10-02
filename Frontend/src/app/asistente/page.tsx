@@ -5,26 +5,31 @@ import {
 } from 'react'
 import {
   listChats, createChat, updateChat, deleteChat,
-  getChatMessages, sendChatMessage, getDataSourceTypes, getSessions,
-  getSuggestedQuestions,
+  getChatMessages, sendChatMessage, getAssistantWelcome,
 } from '@/lib/api'
-import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion } from '@/lib/types'
+import type { AssistantWelcome, Chat, ChatMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useCapabilities } from '@/lib/capabilities'
 import { useToast } from '@/contexts/ToastContext'
-import { chatSourceLabel, chatDataSourceLabel } from '@/lib/enumLabels'
+import { chatSourceLabel } from '@/lib/enumLabels'
 import {
   Plus, Search, Star, Trash2, Bot, User, Send,
-  Sparkles, MessageSquare, ChevronDown, X, Filter,
-  CheckSquare, Square, AlertTriangle,
+  Sparkles, MessageSquare, X, AlertTriangle,
 } from 'lucide-react'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 // Colour only — the badge text comes from `chatSourceLabel`, so the copy the
 // user reads lives in the i18n catalog and not in this map.
 const SOURCE_COLOR: Record<string, string> = {
+  // The assistant core (backend/assistant/): a model answer whose figures were
+  // all verified, one that carries the guard's warning, and the rule-based
+  // summary written when no model answered.
+  assistant:            '#22c55e',
+  assistant_unverified: '#f59e0b',
+  rules:                '#94a3b8',
+  // Messages stored before the assistant core existed.
   rag:           'var(--accent)',
   rag_retrieved: 'var(--accent)',
   fallback:      '#f59e0b',
@@ -181,102 +186,77 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
-// ── Sources filter popover ─────────────────────────────────────────────────────
-function SourcesFilter({
-  sources, allTypes, onChange, dataTour,
+// ── The personal opening ───────────────────────────────────────────────────────
+// Greets the user by name, sums up today from THEIR account and offers questions
+// built from their own top risks (GET /analyst/welcome). A suggestion is sent as
+// soon as it is clicked — it is already a complete question about their data.
+function Welcome({
+  welcome, onAsk, disabled,
 }: {
-  sources: string[]
-  allTypes: ChatSourceType[]
-  onChange: (v: string[]) => void
-  /** `data-tour` anchor. Only the header copy carries it, so it resolves once. */
-  dataTour?: string
+  welcome: AssistantWelcome | null
+  onAsk: (question: string) => void
+  disabled: boolean
 }) {
   const { t } = useLanguage()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function outside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', outside)
-    return () => document.removeEventListener('mousedown', outside)
-  }, [])
-
-  const toggle = (id: string) => {
-    const next = sources.includes(id) ? sources.filter(s => s !== id) : [...sources, id]
-    onChange(next)
+  if (!welcome) return null
+  const s = welcome.summary
+  const parts: string[] = []
+  if (s) {
+    if (s.order_now) parts.push(t('analyst.summary_order_now', { n: s.order_now }))
+    if (s.order_soon) parts.push(t('analyst.summary_order_soon', { n: s.order_soon }))
+    if (s.overdue_orders) parts.push(t('analyst.summary_overdue', { n: s.overdue_orders }))
+    if (s.overstock) parts.push(t('analyst.summary_overstock', { n: s.overstock }))
+    if (s.no_stock_data) parts.push(t('analyst.summary_no_stock_data', { n: s.no_stock_data }))
   }
-
-  const active = sources.length > 0
-
   return (
-    <div ref={ref} data-tour={dataTour} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        title={t('analyst.filter_data_sources_title')}
-        style={{
-          all: 'unset', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: 5,
-          padding: '6px 10px', borderRadius: 7,
-          background: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--surface-2)',
-          border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--border)'}`,
-          fontSize: 11, color: active ? 'var(--accent)' : 'var(--muted)',
-          transition: 'all 0.15s',
-        }}
-      >
-        <Filter size={11} />
-        {active ? `${sources.length} ${sources.length > 1 ? t('analyst.sources_plural') : t('analyst.sources_singular')}` : t('analyst.all_sources')}
-        <ChevronDown size={10} />
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', bottom: '110%', left: 0,
-          width: 220, background: 'var(--surface)',
-          border: '1px solid var(--border-strong)', borderRadius: 10,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)', overflow: 'hidden', zIndex: 100,
-        }}>
+    <div data-testid="assistant-welcome" style={{ width: '100%', maxWidth: 520, textAlign: 'center' }}>
+      <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+        {welcome.first_name
+          ? t('analyst.greeting', { name: welcome.first_name })
+          : t('analyst.greeting_anonymous')}
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+        {!welcome.has_forecast
+          ? t('analyst.summary_no_forecast')
+          : <>
+              {welcome.company
+                ? t('analyst.greeting_company', { company: welcome.company })
+                : t('analyst.greeting_today')}{' '}
+              {parts.length ? parts.join(' · ') : t('analyst.summary_all_clear')}
+            </>}
+      </div>
+      {welcome.suggestions.length > 0 && (
+        <div style={{ marginTop: 18 }}>
           <div style={{
-            padding: '8px 12px 6px', fontSize: 10, fontWeight: 700,
-            color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.07em',
-            borderBottom: '1px solid var(--border)',
+            fontSize: 11, fontWeight: 700, color: 'var(--dim)',
+            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10,
           }}>
-            {t('analyst.data_sources_header')}
+            {t('analyst.suggestions_header')}
           </div>
-          {allTypes.map(st => {
-            const selected = sources.includes(st.id)
-            return (
-              <div
-                key={st.id}
-                onClick={() => toggle(st.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '7px 12px', cursor: 'pointer', fontSize: 12,
-                  color: selected ? 'var(--text)' : 'var(--muted)',
-                  background: selected ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
-                  transition: 'all 0.1s',
-                }}
-              >
-                {selected
-                  ? <CheckSquare size={13} color="var(--accent)" />
-                  : <Square size={13} color="var(--dim)" />}
-                {chatDataSourceLabel(t, st.id, st.label)}
-              </div>
-            )
-          })}
-          {sources.length > 0 && (
-            <div
-              onClick={() => { onChange([]); setOpen(false) }}
-              style={{
-                padding: '6px 12px', fontSize: 11, color: 'var(--dim)',
-                borderTop: '1px solid var(--border)', cursor: 'pointer',
-                textAlign: 'center',
-              }}
-            >
-              {t('analyst.clear_filter')}
-            </div>
-          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+            {welcome.suggestions.map(sg => {
+              const text = t(`analyst.suggest.${sg.code}`, sg.params)
+              return (
+                <button
+                  key={sg.code}
+                  data-testid="assistant-suggestion"
+                  disabled={disabled}
+                  onClick={() => onAsk(text)}
+                  style={{
+                    all: 'unset', cursor: disabled ? 'default' : 'pointer',
+                    padding: '7px 13px', borderRadius: 20, fontSize: 12,
+                    border: '1px solid var(--border)', color: 'var(--text)',
+                    background: 'var(--surface-2)', opacity: disabled ? 0.5 : 1,
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { if (!disabled) e.currentTarget.style.borderColor = 'var(--accent)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
+                >
+                  {text}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -338,12 +318,6 @@ function ChatItem({
         paddingLeft: 17, marginTop: 3,
       }}>
         <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtRelative(chat.last_message_at, t)}</span>
-        {chat.session_id && (
-          <span style={{
-            fontSize: 9, padding: '1px 5px', borderRadius: 3,
-            background: 'rgba(34,197,94,0.1)', color: '#22c55e',
-          }}>RAG</span>
-        )}
       </div>
 
       {/* Action buttons on hover */}
@@ -396,29 +370,40 @@ function ChatItem({
 }
 
 // ── Empty state ────────────────────────────────────────────────────────────────
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({
+  onCreate, welcome, onAsk, disabled,
+}: {
+  onCreate: () => void
+  welcome: AssistantWelcome | null
+  onAsk: (question: string) => void
+  disabled: boolean
+}) {
   const { t } = useLanguage()
   return (
     <div data-tour="an.start" style={{
       flex: 1, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      gap: 16, padding: '40px 32px', textAlign: 'center',
+      gap: 16, padding: '40px 32px', textAlign: 'center', overflowY: 'auto',
     }}>
       <div style={{
-        width: 64, height: 64, borderRadius: '50%',
+        width: 64, height: 64, borderRadius: '50%', flexShrink: 0,
         background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
         border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <Sparkles size={28} color="var(--accent)" strokeWidth={1.5} />
       </div>
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('analyst.title')}</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300 }}>
-          {t('analyst.empty_state_description')}
+      {welcome ? (
+        <Welcome welcome={welcome} onAsk={onAsk} disabled={disabled} />
+      ) : (
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('analyst.title')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300 }}>
+            {t('analyst.empty_state_description')}
+          </div>
         </div>
-      </div>
-      <Button variant="primary" icon={<Plus size={14} />} onClick={onCreate}>
+      )}
+      <Button variant="secondary" icon={<Plus size={14} />} onClick={onCreate}>
         {t('analyst.new_chat')}
       </Button>
     </div>
@@ -427,7 +412,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AnalystPage() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { undoable, addToast } = useToast()
   // Whether this deployment HAS a language model at all. Without it the answer
   // is always the same and always late: the user writes a question, waits out
@@ -447,13 +432,12 @@ export default function AnalystPage() {
   const [creatingChat, setCreatingChat] = useState(false)
   const [input,       setInput]       = useState('')
   const [search,      setSearch]      = useState('')
-  const [sessions,    setSessions]    = useState<SessionInfo[]>([])
-  const [sourceTypes, setSourceTypes] = useState<ChatSourceType[]>([])
-  const [suggestedQs, setSuggestedQs] = useState<SuggestedQuestion[]>([])
+  const [welcome,     setWelcome]     = useState<AssistantWelcome | null>(null)
   const msgsRef    = useRef<HTMLDivElement>(null)
   const inputRef   = useRef<HTMLTextAreaElement>(null)
   const bottomRef  = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
+  const justCreatedRef = useRef<string | null>(null)
 
   const activeChat = chats.find(c => c.id === activeChatId) ?? null
 
@@ -462,13 +446,9 @@ export default function AnalystPage() {
     listChats().then(setChats).catch((e: unknown) => {
       setChatsError(e instanceof Error ? e.message : t('analyst.err_load_chats'))
     })
-    getSessions().then(setSessions).catch(console.error)
-    getDataSourceTypes().then(setSourceTypes).catch(console.error)
-
-    const bp = (typeof window !== 'undefined' ? localStorage.getItem('bp') : null) || 'distributor'
-    getSuggestedQuestions(bp, true, false)
-      .then(setSuggestedQs)
-      .catch(() => {})
+    // The greeting is decoration over a working screen: if it fails, the chat
+    // still works and the screen falls back to its generic description.
+    getAssistantWelcome().then(setWelcome).catch(console.error)
   }, [])
 
   // ── Load messages when chat changes ───────────────────────────────────────
@@ -488,6 +468,15 @@ export default function AnalystPage() {
   }, [t])
 
   useEffect(() => {
+    // A chat handleSend just created to carry a question: it is empty on the
+    // server and already shows the optimistic question here. Resetting would
+    // wipe that question, and loading would race the POST that stores it —
+    // the GET can land after the question is saved and before the answer,
+    // and the thread then shows the question twice.
+    if (activeChatId && justCreatedRef.current === activeChatId) {
+      justCreatedRef.current = null
+      return
+    }
     setMessages([]); setHasMore(false); setMsgsError(null)
     if (!activeChatId) return
     loadMessages(activeChatId)
@@ -541,6 +530,7 @@ export default function AnalystPage() {
       setCreatingChat(true)
       try {
         const chat = await createChat()
+        justCreatedRef.current = chat.id
         setChats(prev => [chat, ...prev])
         setActive(chat.id)
         targetId = chat.id
@@ -564,10 +554,7 @@ export default function AnalystPage() {
       setMessages(prev => [...prev, optimistic])
       setTimeout(() => scrollToBottom(), 30)
 
-      const res = await sendChatMessage(
-        targetId, q,
-        chats.find(c => c.id === targetId)?.session_id,
-      )
+      const res = await sendChatMessage(targetId, q, lang)
 
       // Replace optimistic with real messages
       setMessages(prev => [
@@ -628,7 +615,7 @@ export default function AnalystPage() {
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [activeChatId, chats, sending, scrollToBottom, t])
+  }, [activeChatId, chats, sending, creatingChat, scrollToBottom, t, lang])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -680,20 +667,14 @@ export default function AnalystPage() {
     })
   }
 
-  // ── Update sources for active chat ───────────────────────────────────────
-  const handleSourcesChange = async (sources: string[]) => {
-    if (!activeChatId) return
-    setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, data_sources: sources } : c))
-    await updateChat(activeChatId, { data_sources: sources })
-  }
-
   // ── Separate favorites / recent ───────────────────────────────────────────
   const filtered  = chats.filter(c => !search || c.title.toLowerCase().includes(search.toLowerCase()))
   const favorites = filtered.filter(c => c.is_favorite)
   const recent    = filtered.filter(c => !c.is_favorite)
 
-  // ── Attach session to active chat ─────────────────────────────────────────
-  const completedSessions = sessions.filter(s => s.status === 'COMPLETED')
+  // A suggestion is a complete question about the user's own data: send it.
+  // With no chat open, handleSend creates one first.
+  const askNow = (question: string) => { if (!assistantOff) handleSend(question) }
 
   return (
     <>
@@ -858,7 +839,12 @@ export default function AnalystPage() {
             </div>
           )}
           {!activeChatId ? (
-            <EmptyState onCreate={() => handleNewChat()} />
+            <EmptyState
+              onCreate={() => handleNewChat()}
+              welcome={welcome}
+              onAsk={askNow}
+              disabled={assistantOff || sending || creatingChat}
+            />
           ) : (
             <>
               {/* Chat header */}
@@ -872,52 +858,6 @@ export default function AnalystPage() {
                   {activeChat?.title ?? t('analyst.chat_fallback_title')}
                 </span>
 
-                {/* Session picker */}
-                {completedSessions.length > 0 && (
-                  <div data-tour="an.session" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('analyst.session_label')}</span>
-                    <select
-                      name="chat_session"
-                      aria-label={t('analyst.session_label')}
-                      value={activeChat?.session_id ?? ''}
-                      onChange={async e => {
-                        const sid = e.target.value || null
-                        setChats(prev => prev.map(c =>
-                          c.id === activeChatId ? { ...c, session_id: sid } : c,
-                        ))
-                        if (activeChatId) await updateChat(activeChatId, { session_id: sid })
-                      }}
-                      style={{
-                        background: 'var(--surface-2)', border: '1px solid var(--border)',
-                        borderRadius: 6, padding: '4px 8px', fontSize: 11,
-                        color: 'var(--text)', cursor: 'pointer', maxWidth: 160,
-                      }}
-                    >
-                      <option value="">{t('analyst.session_general_option')}</option>
-                      {completedSessions.map(s => (
-                        <option key={s.session_id} value={s.session_id}>{s.name}</option>
-                      ))}
-                    </select>
-                    {activeChat?.session_id && (
-                      <span style={{
-                        fontSize: 9, padding: '2px 6px', borderRadius: 4,
-                        background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontWeight: 600,
-                      }}>
-                        RAG
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Sources filter */}
-                {sourceTypes.length > 0 && activeChat?.session_id && (
-                  <SourcesFilter
-                    dataTour="an.sources"
-                    sources={activeChat?.data_sources ?? []}
-                    allTypes={sourceTypes}
-                    onChange={handleSourcesChange}
-                  />
-                )}
               </div>
 
               {/* Messages area */}
@@ -968,73 +908,14 @@ export default function AnalystPage() {
                     alignItems: 'center', justifyContent: 'center',
                     gap: 10, color: 'var(--dim)', textAlign: 'center',
                   }}>
-                    <Bot size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
-                    <div style={{ fontSize: 13 }}>
-                      {activeChat?.session_id
-                        ? t('analyst.empty_messages_with_session')
-                        : t('analyst.empty_messages_general')}
-                    </div>
-                    {/* Suggestion chips */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 8 }}>
-                      {(activeChat?.session_id
-                        ? ['analyst.chip_model_accuracy', 'analyst.chip_skus_attention', 'analyst.chip_inventory_risks']
-                        : ['analyst.chip_what_is_wape', 'analyst.chip_how_platform_works', 'analyst.chip_available_models']
-                      ).map(chipKey => (
-                        <button
-                          key={chipKey}
-                          onClick={() => { setInput(t(chipKey)); inputRef.current?.focus() }}
-                          style={{
-                            all: 'unset', cursor: 'pointer',
-                            padding: '6px 12px', borderRadius: 20,
-                            background: 'var(--surface-2)', border: '1px solid var(--border)',
-                            fontSize: 12, color: 'var(--muted)', transition: 'all 0.15s',
-                          }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)' }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
-                        >
-                          {t(chipKey)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* AI-generated suggested questions */}
-                    {suggestedQs.length > 0 && (
-                      <div style={{ marginTop: 20, width: '100%', maxWidth: 480, textAlign: 'left' }}>
-                        <div style={{
-                          fontSize: 11, fontWeight: 700, color: 'var(--dim)',
-                          textTransform: 'uppercase' as const, letterSpacing: '0.07em', marginBottom: 10,
-                          textAlign: 'center',
-                        }}>
-                          {t('analyst.suggested_questions_header')}
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, justifyContent: 'center' }}>
-                          {suggestedQs.map(q => {
-                            // The backend ships a code plus an English sentence;
-                            // the catalogue owns the wording. Clicking one SENDS
-                            // it, so it has to be the reader's language — these
-                            // used to be Spanish whatever the UI was set to.
-                            const label = q.code ? t(`analyst.q.${q.code}`) : q.text
-                            const text = label === `analyst.q.${q.code}` ? q.text : label
-                            return (
-                            <button
-                              key={q.code || q.text}
-                              onClick={() => { setInput(text); inputRef.current?.focus() }}
-                              style={{
-                                all: 'unset', cursor: 'pointer',
-                                padding: '6px 12px', borderRadius: 20, fontSize: 12,
-                                border: '1px solid var(--border)', color: 'var(--muted)',
-                                background: 'var(--surface-2)',
-                                transition: 'all 0.15s',
-                              }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
-                            >
-                              {text}
-                            </button>
-                            )
-                          })}
-                        </div>
-                      </div>
+                    {welcome ? (
+                      <Welcome welcome={welcome} onAsk={askNow}
+                               disabled={assistantOff || sending || creatingChat} />
+                    ) : (
+                      <>
+                        <Bot size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
+                        <div style={{ fontSize: 13 }}>{t('analyst.empty_messages_account')}</div>
+                      </>
                     )}
                   </div>
                 ) : (
@@ -1058,17 +939,6 @@ export default function AnalystPage() {
                 background: 'var(--surface)', flexShrink: 0,
               }}>
                 <div data-tour="an.input" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                  {/* Sources filter (mobile-friendly placement) */}
-                  {sourceTypes.length > 0 && activeChat?.session_id && (
-                    <div style={{ flexShrink: 0 }}>
-                      <SourcesFilter
-                        sources={activeChat?.data_sources ?? []}
-                        allTypes={sourceTypes}
-                        onChange={handleSourcesChange}
-                      />
-                    </div>
-                  )}
-
                   <textarea
                     ref={inputRef}
                     name="analyst_message"

@@ -28,6 +28,11 @@ The surface every consumer already uses is unchanged:
 `model` is accepted and ignored — call sites pass whatever string they were
 written against, and the configured `DEEPSEEK_MODEL` is what runs.
 
+Function calling (used by `backend/assistant/`): pass `tools=[...]` in the
+OpenAI shape and read `resp.tool_calls` (name + raw JSON arguments) and
+`resp.message` (the assistant turn to send back before the tool results).
+Callers that pass no `tools` get the payload and response they always got.
+
 Configuration is read through `backend/service_config/resolver.effective()`
 rather than straight off `settings`, so a key entered in the configuration
 screen takes effect on the next call instead of at the next restart. With no
@@ -79,9 +84,27 @@ class _ContentBlock:
 
 
 @dataclass
+class _ToolCall:
+    """One function call the model asked for. `arguments` is the RAW JSON
+    string the provider sent — parsing it (and refusing what does not parse)
+    is the caller's job, because only the caller knows the tool's schema."""
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass
 class _LLMResponse:
     content: list = field(default_factory=list)
     usage: _Usage = field(default_factory=_Usage)
+    # Empty unless the request offered `tools` and the model chose to call one.
+    # Consumers that never pass `tools` never see anything here, so the
+    # interface every existing caller reads is unchanged.
+    tool_calls: list = field(default_factory=list)
+    # The assistant message exactly as the provider returned it. A tool-calling
+    # loop must send it back verbatim (with its `tool_calls`) before the tool
+    # results, or the provider rejects the follow-up request.
+    message: dict = field(default_factory=dict)
 
 
 class _DeepSeekMessages:
@@ -97,6 +120,8 @@ class _DeepSeekMessages:
         max_tokens: int = 1024,
         system: str | None = None,
         messages: list | None = None,
+        tools: list | None = None,
+        tool_choice: str | None = None,
         **_ignored,
     ) -> _LLMResponse:
         payload_messages = []
@@ -104,23 +129,42 @@ class _DeepSeekMessages:
             payload_messages.append({"role": "system", "content": system})
         payload_messages.extend(messages or [])
 
+        payload = {
+            "model": self._model,
+            "messages": payload_messages,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        # OpenAI-shaped function calling. Only sent when a caller offers tools:
+        # every existing consumer keeps sending exactly the payload it sent.
+        if tools:
+            payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
+
         resp = httpx.post(
             f"{self._base_url}/chat/completions",
             headers={"Authorization": f"Bearer {self._api_key}"},
-            json={
-                "model": self._model,
-                "messages": payload_messages,
-                "max_tokens": max_tokens,
-                "stream": False,
-            },
+            json=payload,
             timeout=self._timeout,
         )
         resp.raise_for_status()
         data = resp.json()
 
         choices = data.get("choices") or []
-        raw_text = ((choices[0] if choices else {}).get("message") or {}).get("content") or ""
+        message = (choices[0] if choices else {}).get("message") or {}
+        raw_text = message.get("content") or ""
         text = _strip_thinking(raw_text)
+
+        tool_calls = []
+        for call in message.get("tool_calls") or []:
+            fn = (call or {}).get("function") or {}
+            if fn.get("name"):
+                tool_calls.append(_ToolCall(
+                    id=str(call.get("id") or ""),
+                    name=str(fn["name"]),
+                    arguments=fn.get("arguments") or "{}",
+                ))
 
         # DeepSeek reports OpenAI's names for the two counts every caller in this
         # codebase reads as Anthropic's. Translated here, once, so no consumer
@@ -130,7 +174,10 @@ class _DeepSeekMessages:
             input_tokens=usage_in.get("prompt_tokens", 0),
             output_tokens=usage_in.get("completion_tokens", 0),
         )
-        return _LLMResponse(content=[_ContentBlock(text=text)], usage=usage)
+        return _LLMResponse(
+            content=[_ContentBlock(text=text)], usage=usage,
+            tool_calls=tool_calls, message=message,
+        )
 
 
 class DeepSeekClient:

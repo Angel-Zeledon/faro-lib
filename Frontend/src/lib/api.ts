@@ -649,16 +649,25 @@ export const deleteChat  = (chatId: string) =>
 export const getChatMessages = (chatId: string, limit = 30, before?: string) =>
   request<MessagesPage>('GET', `/analyst/chats/${chatId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`)
 
+/**
+ * Ask the assistant. `language` is the UI language the answer is written in;
+ * the backend answers from the account's live data (backend/assistant/).
+ */
 export const sendChatMessage = (
   chatId: string,
   question: string,
-  sessionId?: string | null,
+  language: 'es' | 'en',
   sku?: string | null,
 ) =>
   request<{ user_message: ChatMessage; ai_message: ChatMessage }>(
     'POST', `/analyst/chats/${chatId}/messages`,
-    { question, session_id: sessionId, sku },
+    { question, language, sku },
   )
+
+/** First name, today's counts and suggested questions built from the
+ *  account's own top risks (codes + params, rendered via `analyst.suggest.*`). */
+export const getAssistantWelcome = () =>
+  request<import('./types').AssistantWelcome>('GET', '/analyst/welcome')
 
 export const getDataSourceTypes = () =>
   request<ChatSourceType[]>('GET', '/analyst/data-source-types')
