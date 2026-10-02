@@ -1163,6 +1163,14 @@
   }
 }
 
+/* The shared <Button> (components/ui/Button, class `.btn`) is 30px tall at
+   size "sm" — fine for a mouse, under the 44px a thumb needs. On phones every
+   one of them grows to 44px; the inline styles set no min-height, so this
+   wins without touching desktop. */
+@media (max-width: 768px) {
+  .btn { min-height: 44px; box-sizing: border-box; justify-content: center; }
+}
+
 /* Dividers between cards in a MobileList. */
 .mobile-list-item + .mobile-list-item { border-top: 1px solid var(--border); }
 

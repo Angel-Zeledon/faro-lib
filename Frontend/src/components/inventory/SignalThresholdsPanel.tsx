@@ -31,6 +31,8 @@ import {
 } from '@/lib/api'
 import { getUser } from '@/lib/auth'
 import { localeFor } from '@/lib/numberLocale'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import StickyActionBar from '@/components/mobile/StickyActionBar'
 import type {
   InventorySignal, SignalThresholdFactors, SignalThresholdScope,
   SignalThresholdsPreview, SignalThresholdsState, Supplier,
@@ -63,6 +65,9 @@ const parse = (s: string): number => Number(s.trim().replace(',', '.'))
 
 export default function SignalThresholdsPanel() {
   const { t, lang } = useLanguage()
+  // Phone: full-width 44px fields, and the save pinned above the tab bar
+  // while there is something to save.
+  const narrow = useIsNarrow()
   const errorDetail = useErrorDetail()
   const confirm = useConfirm()
   const { addToast } = useToast()
@@ -247,7 +252,7 @@ export default function SignalThresholdsPanel() {
   const isDefault = state.source === 'default'
 
   return (
-    <section style={sectionStyle} id="reglas-semaforo">
+    <section style={narrow ? { ...sectionStyle, padding: '16px 14px' } : sectionStyle} id="reglas-semaforo">
       <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
         {t('inventory.thresholds_title')}
       </h2>
@@ -277,7 +282,7 @@ export default function SignalThresholdsPanel() {
               setTarget({ scope: scope as SignalThresholdScope, name: rest.join(':') || null })
             }
           }}
-          style={selectStyle}
+          style={narrow ? { ...selectStyle, ...NARROW_FIELD, minWidth: 0, width: '100%' } : selectStyle}
         >
           <option value="__global__">{t('inventory.thresholds_scope_company')}</option>
           {state.overrides.filter(o => o.scope_type === 'category').map(o => (
@@ -301,7 +306,7 @@ export default function SignalThresholdsPanel() {
         </p>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 12 }}>
         <FactorField
           color={SIGNAL_COLOR.PEDIR_YA}
           label={t('inventory.thresholds_order_now_label')}
@@ -350,7 +355,7 @@ export default function SignalThresholdsPanel() {
             value={exampleLead}
             onChange={e => setExampleLead(e.target.value)}
             inputMode="numeric"
-            style={{ ...inputStyle, width: 52 }}
+            style={{ ...inputStyle, width: narrow ? 72 : 52, ...(narrow ? NARROW_FIELD : {}) }}
           />
           <span>{t('inventory.thresholds_example_days_unit')}:</span>
         </div>
@@ -395,11 +400,13 @@ export default function SignalThresholdsPanel() {
 
       {canEdit ? (
         <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+          {!narrow && (
           <Button variant="primary" size="sm" icon={<Save size={12} />} loading={saving}
                   disabled={!dirty || !!localProblem || needsName || saving}
                   onClick={() => void save()} data-testid="threshold-save">
             {target.scope === 'global' ? t('inventory.thresholds_save') : t('inventory.thresholds_save_override')}
           </Button>
+          )}
           {target.scope === 'global' && !isDefault && (
             <Button variant="ghost" size="sm" icon={<RotateCcw size={12} />}
                     onClick={() => void reset('global', null)} data-testid="threshold-reset">
@@ -446,6 +453,16 @@ export default function SignalThresholdsPanel() {
           </div>
         )}
       </div>
+      {canEdit && narrow && (
+        <StickyActionBar hidden={!dirty}>
+          <button type="button" className="mobile-btn mobile-btn-primary"
+                  disabled={!!localProblem || needsName || saving}
+                  onClick={() => void save()} data-testid="threshold-save-mobile">
+            {saving ? <Spinner size={14} /> : <Save size={16} aria-hidden="true" />}
+            {target.scope === 'global' ? t('inventory.thresholds_save') : t('inventory.thresholds_save_override')}
+          </button>
+        </StickyActionBar>
+      )}
     </section>
   )
 
@@ -497,6 +514,7 @@ function FactorField({ color, label, suffix, value, onChange, disabled, hint, te
   color: string; label: string; suffix: string; value: string
   onChange: (v: string) => void; disabled: boolean; hint: string; testId: string
 }) {
+  const narrow = useIsNarrow()
   return (
     <div style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', borderLeft: `3px solid ${color}` }}>
       <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 600, marginBottom: 6 }}>{label}</div>
@@ -508,7 +526,7 @@ function FactorField({ color, label, suffix, value, onChange, disabled, hint, te
           onChange={e => onChange(e.target.value)}
           disabled={disabled}
           inputMode="decimal"
-          style={{ ...inputStyle, width: 64 }}
+          style={{ ...inputStyle, width: narrow ? 88 : 64, ...(narrow ? NARROW_FIELD : {}) }}
         />
         <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{suffix}</span>
       </div>
@@ -526,3 +544,5 @@ const inputStyle: React.CSSProperties = {
   background: 'var(--surface)', color: 'var(--text)', fontSize: 13,
 }
 const selectStyle: React.CSSProperties = { ...inputStyle, minWidth: 220 }
+/** 44px tall and 16px text on a phone (16px stops iOS zooming on focus). */
+const NARROW_FIELD: React.CSSProperties = { minHeight: 44, fontSize: 16, borderRadius: 10, boxSizing: 'border-box', padding: '8px 10px' }
