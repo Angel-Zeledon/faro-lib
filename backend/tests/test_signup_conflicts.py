@@ -20,6 +20,7 @@ def _payload(**over):
         "password": "FaroQA2026!",
         "full_name": "Owner Test",
         "whatsapp_number": f"+5068{uuid.uuid4().int % 10**7:07d}",
+        "accept_terms": True,
     }
     body.update(over)
     return body

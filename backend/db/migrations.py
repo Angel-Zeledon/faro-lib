@@ -1663,6 +1663,14 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE stock_defaults ADD CONSTRAINT stock_defaults_signal_factors_check "
      "CHECK (order_now_factor IS NULL OR overstock_factor IS NULL OR "
      "(order_now_factor > 0 AND order_now_factor < overstock_factor))"),
+    # ── Acceptance of the Terms and the Privacy Policy (2026-10-02) ──────────
+    # When the person accepted, and which version (backend/users/terms.py).
+    # Set at signup and on trial accounts. NULL on every user that predates the
+    # record and on users an admin invited — nobody accepted on their behalf.
+    ("add_users_terms_accepted_at",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ"),
+    ("add_users_terms_version",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version TEXT"),
 ]
 
 

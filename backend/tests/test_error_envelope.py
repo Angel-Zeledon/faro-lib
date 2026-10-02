@@ -134,6 +134,7 @@ class TestHotPathErrorCodes:
             "password": "TestPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 409, resp.text
         assert resp.json()["error_code"] == "email_already_registered"
@@ -151,6 +152,7 @@ class TestHotPathErrorCodes:
             "password": "abc",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 400, resp.text
         assert resp.json()["error_code"] == "password_invalid"

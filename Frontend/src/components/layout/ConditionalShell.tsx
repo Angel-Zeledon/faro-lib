@@ -2,17 +2,35 @@
 import { usePathname } from 'next/navigation'
 import AppShell from './AppShell'
 import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
+import { LEGAL_PATHS } from '@/components/landing/legalPaths'
+import StorageNotice from '@/components/legal/StorageNotice'
 
 const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba']
 // The landing and its public subpages: no app shell, no sign-in.
 // /desarrolladores: the API reference, a landing page with its own chrome.
-const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), '/desarrolladores']
+// The legal documents are public too: they must open for somebody who has no
+// account yet, and from inside the app without leaving it for a sign-in wall.
+const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), ...Object.values(LEGAL_PATHS), '/desarrolladores']
 
 export default function ConditionalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAuth    = AUTH_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
   const isLanding = LANDING_PATHS.includes(pathname)
 
+  // The one-time notice about browser storage rides on the landing and the
+  // app shells; the sign-in screens keep it off their submit buttons (see
+  // StorageNotice).
+  return (
+    <>
+      <Shell isAuth={isAuth} isLanding={isLanding}>{children}</Shell>
+      <StorageNotice suppress={isAuth} />
+    </>
+  )
+}
+
+function Shell({ isAuth, isLanding, children }: {
+  isAuth: boolean; isLanding: boolean; children: React.ReactNode
+}) {
   if (isLanding) return <>{children}</>
 
   if (isAuth) {

@@ -82,6 +82,7 @@ class TestSignup:
             "tenant_name": tenant_name,
             "full_name": "Test User",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 201
         tenant_id = resp.json()["data"]["tenant"]["id"]
@@ -126,6 +127,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": tenant_name,
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "email_already_registered"
@@ -164,6 +166,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": tenant_name,
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
             **payload_patch,
         }
         resp = client.post("/api/v1/auth/signup", json=body)
@@ -189,6 +192,7 @@ class TestSignupWhatsapp:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": phone,
+            "accept_terms": True,
         })
         assert resp.status_code == 201, resp.text
         row = query_one(
@@ -230,6 +234,7 @@ class TestSignupWhatsapp:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": phone,
+            "accept_terms": True,
         })
         assert resp.status_code == 409, resp.text
         assert resp.json().get("error_code") == "whatsapp_number_taken"

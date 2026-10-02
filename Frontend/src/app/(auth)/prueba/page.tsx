@@ -8,6 +8,7 @@ import { setAuth } from '@/lib/auth'
 import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
+import TermsSentence from '@/components/legal/TermsSentence'
 
 // The landing's "try it without signing up". Arriving here creates a throwaway
 // account (backend/trial/) and shows its user and password, which the visitor
@@ -254,6 +255,14 @@ export default function TrialPage() {
               >
                 {entering ? t('auth.signing_in') : t('trial.enter')}
               </button>
+              {/* backend/trial/service.py records acceptance (date + version)
+                  when the account is created; this is where it is stated. */}
+              <p style={{ margin: '-6px 0 0', fontSize: 12.5, color: 'var(--a-muted)', lineHeight: 1.5 }}>
+                <TermsSentence
+                  templateKey="trial.terms_note"
+                  linkStyle={{ color: 'var(--a-ink)', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                />
+              </p>
             </div>
           )}
         </div>

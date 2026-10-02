@@ -101,6 +101,7 @@ def create_trial_account() -> dict:
     from backend.tenants.data_export import delete_tenant
     from backend.tenants.service import create_tenant
     from backend.users import service as user_svc
+    from backend.users.terms import TERMS_VERSION
 
     _enforce_capacity()
 
@@ -122,6 +123,9 @@ def create_trial_account() -> dict:
                 user = user_svc.create_user(
                     tenant_id=tenant_id, email=email, password=password,
                     role="admin", full_name="Demo",
+                    # /prueba states that entering means accepting the Terms
+                    # and the Privacy Policy, with links to both.
+                    terms_version=TERMS_VERSION,
                 )
                 break
             except Exception as exc:

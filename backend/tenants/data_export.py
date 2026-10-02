@@ -46,7 +46,8 @@ log = logging.getLogger(__name__)
 _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("users", "users",
      "id, tenant_id, email, full_name, role, email_verified, status, "
-     "last_login_at, pending_email, whatsapp_number, created_at, updated_at"),
+     "last_login_at, pending_email, whatsapp_number, terms_accepted_at, "
+     "terms_version, created_at, updated_at"),
     ("datasets", "datasets", "*"),
     ("sessions", "sessions", "*"),
     ("session_configs", "session_configs", "*"),
