@@ -12,6 +12,7 @@ import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import BottomSheet from '@/components/mobile/BottomSheet'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
 const C = {
@@ -108,6 +109,97 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
     }
   }, [items, poId, qty, onSaved])
 
+  // On a phone the form is a bottom sheet: the quantity boxes scroll inside it
+  // and the two decisions stay pinned under the thumb instead of at the end of
+  // a list that may be longer than the screen.
+  if (narrow) {
+    return (
+      <BottomSheet
+        open
+        onClose={onClose}
+        maxHeight="94dvh"
+        title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <Truck size={17} color={C.indigo} aria-hidden="true" /> {t('po.reception_title')}
+        </span>}
+        footer={items ? (
+          <>
+            <button className="mobile-btn mobile-btn-secondary" onClick={() => save(false)} disabled={saving}>
+              {t('po.reception_btn_save_quantities')}
+            </button>
+            <button
+              className="mobile-btn"
+              onClick={() => save(true)}
+              disabled={saving}
+              aria-busy={saving}
+              style={{ background: C.green, color: '#fff' }}
+            >
+              {saving ? t('common.saving') : t('po.reception_btn_all_arrived')}
+            </button>
+          </>
+        ) : undefined}
+      >
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>
+          {t('po.reception_subtitle')}
+        </p>
+        {!items && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={18} /></div>}
+        {items && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {items.map(i => {
+              const pending = Math.max(0, (i.final_qty || 0) - (i.received_qty || 0))
+              return (
+                <div key={i.sku} style={{
+                  border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px',
+                  background: C.card,
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 15, color: C.text, overflowWrap: 'anywhere' }}>
+                    {i.display_name || i.sku}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.dim, fontFamily: 'monospace', marginTop: 2, overflowWrap: 'anywhere' }}>
+                    {i.sku}{i.supplier ? ` · ${i.supplier}` : ''}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginTop: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>
+                      {t('po.reception_col_ordered')}:{' '}
+                      <strong style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{i.final_qty.toLocaleString()}</strong>
+                      {(i.received_qty || 0) > 0 && (
+                        <><br />{t('po.reception_col_received_before')}:{' '}
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{(i.received_qty || 0).toLocaleString()}</span>
+                        </>
+                      )}
+                    </div>
+                    <label style={{ width: 120, flexShrink: 0, fontSize: 11.5, color: C.dim }}>
+                      {t('po.reception_col_arriving')}
+                      <input
+                        type="number" min={0} inputMode="numeric" enterKeyHint="done"
+                        name={`reception-qty-${i.sku}`}
+                        aria-label={`${t('po.reception_col_arriving')} — ${i.display_name || i.sku}`}
+                        value={qty[i.sku] ?? ''}
+                        placeholder={String(pending)}
+                        onFocus={e => e.currentTarget.select()}
+                        onChange={e => setQty(prev => ({ ...prev, [i.sku]: e.target.value }))}
+                        style={{
+                          display: 'block', boxSizing: 'border-box', width: '100%', marginTop: 4,
+                          minHeight: 48, padding: '0 12px', borderRadius: 10, textAlign: 'right',
+                          border: `1px solid ${C.border}`, background: C.surface,
+                          color: C.text, fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {error && (
+          <div role="alert" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>
+            {error}
+          </div>
+        )}
+      </BottomSheet>
+    )
+  }
+
   return (
     <div
       onClick={onClose}
@@ -139,14 +231,9 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
             aria-label={t('common.close')}
             style={{
               all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim,
-              // 16x16 was not a target a thumb can hit; 44px on a phone.
-              ...(narrow ? {
-                width: 44, height: 44, margin: '-12px -12px -12px auto',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              } : {}),
             }}
           >
-            <X size={narrow ? 20 : 16} aria-hidden="true" />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
         <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>
@@ -155,59 +242,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
 
         {!items && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
 
-        {/* Recording a delivery is warehouse work: the person doing it is at a
-            pallet with a phone. A five-column table cannot shrink into that —
-            it just scrolls sideways inside the modal, hiding the quantity box
-            that is the entire point. On a narrow viewport each line becomes a
-            stacked card with a full-width input instead. */}
-        {items && narrow && (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items.map(i => (
-                <div key={i.sku} style={{
-                  border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px',
-                  background: C.card,
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: C.text }}>
-                    {i.display_name || i.sku}
-                  </div>
-                  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace', marginBottom: 6 }}>
-                    {i.sku}{i.supplier ? ` · ${i.supplier}` : ''}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-                    {t('po.reception_col_ordered')}:{' '}
-                    <strong style={{ color: C.text, fontFamily: 'monospace' }}>
-                      {i.final_qty.toLocaleString()}
-                    </strong>
-                    {(i.received_qty || 0) > 0 && (
-                      <> · {t('po.reception_col_received_before')}:{' '}
-                        <span style={{ fontFamily: 'monospace' }}>
-                          {(i.received_qty || 0).toLocaleString()}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <label style={{ display: 'block', fontSize: 11, color: C.dim, marginBottom: 4 }}>
-                    {t('po.reception_col_arriving')}
-                  </label>
-                  <input
-                    type="number" min={0} inputMode="numeric"
-                    name={`reception-qty-${i.sku}`} aria-label={`${t('po.reception_col_arriving')} — ${i.display_name || i.sku}`}
-                    value={qty[i.sku] ?? ''}
-                    onChange={e => setQty(prev => ({ ...prev, [i.sku]: e.target.value }))}
-                    style={{
-                      width: '100%', padding: '10px 12px', borderRadius: 8,
-                      border: `1px solid ${C.border}`, background: C.surface,
-                      color: C.text, fontSize: 15, fontFamily: 'monospace',
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {items && !narrow && (
+        {items && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
@@ -261,13 +296,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
               </div>
             )}
 
-            {/* On a phone the two actions stack full-width: side-by-side at
-                375px leaves each below the 44px touch target. */}
-            <div style={{
-              display: 'flex', gap: 10, marginTop: 18,
-              flexDirection: narrow ? 'column-reverse' : 'row',
-              justifyContent: 'flex-end',
-            }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => save(false)}
                 disabled={saving}
@@ -303,11 +332,16 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   )
 }
 
-function SendPOButton({ poLogId, suppliersWithoutContact }: {
+export function SendPOButton({ poLogId, suppliersWithoutContact, onSent }: {
   poLogId: string
   suppliersWithoutContact: string[]
+  /** Called after a send that reached at least one supplier (the phone detail
+   *  sheet reloads the order so its "sent" state is current). */
+  onSent?: () => void
 }) {
   const { t } = useLanguage()
+  // 25px tall on desktop; a 48px full-width button on a phone.
+  const narrow = useIsNarrow()
   const confirm = useConfirm()
   const errorDetail = useErrorDetail()
   const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle')
@@ -349,6 +383,7 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
         : anySkipped ? t('roi.send_po_partial') : t('roi.send_po_success')
       setResult({ ok: anySent, message })
       setState('done')
+      if (anySent) onSent?.()
     } catch (e: unknown) {
       setResult({ ok: false, message: errorDetail(e) || t('roi.send_po_error') })
       setState('done')
@@ -357,9 +392,24 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
 
   if (state === 'done' && result) {
     return (
-      <span style={{ fontSize: 11, color: result.ok ? C.green : C.red, fontWeight: 600 }}>
+      <span role="status" style={{ fontSize: narrow ? 13 : 11, color: result.ok ? C.green : C.red, fontWeight: 600 }}>
         {result.message}
       </span>
+    )
+  }
+
+  if (narrow) {
+    return (
+      <button
+        className="mobile-btn mobile-btn-secondary"
+        onClick={handleClick}
+        disabled={state === 'sending'}
+        aria-busy={state === 'sending'}
+        style={{ width: '100%' }}
+      >
+        <Send size={16} aria-hidden="true" />
+        {state === 'sending' ? t('roi.send_po_sending') : t('roi.send_po')}
+      </button>
     )
   }
 

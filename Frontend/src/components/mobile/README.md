@@ -126,6 +126,20 @@ keeps the active tab in view, ←/→/Home/End, 44px tall. Live on `/inventario`
 </MobileSection>
 ```
 
+### `ComposerDock` — chat composer above the tab bar / keyboard
+
+```tsx
+<ComposerDock ariaLabel={t('messages.placeholder')} onHeightChange={() => scrollPageToBottom()}>
+  <textarea … style={{ fontSize: 16 }} /> <button aria-label={t('messages.send')}>…</button>
+</ComposerDock>
+```
+
+Pinned at `bottom: var(--mobile-nav-h)`, and right above the on-screen keyboard
+while it is up (`useKeyboardInset()` reads `visualViewport`). Renders its own
+spacer. Chat screens let the page scroll (`.page-content`) and call
+`scrollPageToBottom()` when the thread grows. Live on `/mensajes` and
+`/asistente`.
+
 ### `useMobileHeader` — title/back for in-page detail views
 
 ```tsx

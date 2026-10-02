@@ -22,6 +22,7 @@ import { useErrorDetail } from '@/components/ui/States'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const C = {
   border: 'var(--border)', text: 'var(--text)',
@@ -49,6 +50,12 @@ export function UndoPOActions({ poLogId, receptionStatus, sent, onDone }: {
   const errorDetail = useErrorDetail()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 25px tall on desktop; on a phone they are 48px rows of their own.
+  const narrow = useIsNarrow()
+  const btnStyle: React.CSSProperties = narrow
+    ? { ...BTN, boxSizing: 'border-box', width: '100%', minHeight: 48, justifyContent: 'center',
+        padding: '0 16px', borderRadius: 12, fontSize: 14, gap: 8 }
+    : BTN
 
   // A viewer may read the order history but not rewrite it. The server
   // enforces this too; hiding the button keeps the screen honest about what
@@ -98,9 +105,9 @@ export function UndoPOActions({ poLogId, receptionStatus, sent, onDone }: {
             'po.unreceive_confirm_message',
             'po.unreceive_confirm_action',
           )}
-          style={{ ...BTN, cursor: busy ? 'not-allowed' : 'pointer' }}
+          style={{ ...btnStyle, cursor: busy ? 'not-allowed' : 'pointer' }}
         >
-          <Undo2 size={11} aria-hidden="true" /> {t('po.unreceive_btn')}
+          <Undo2 size={narrow ? 15 : 11} aria-hidden="true" /> {t('po.unreceive_btn')}
         </button>
       )}
       {canUnsend && (
@@ -112,13 +119,13 @@ export function UndoPOActions({ poLogId, receptionStatus, sent, onDone }: {
             'po.unsend_confirm_message',
             'po.unsend_confirm_action',
           )}
-          style={{ ...BTN, cursor: busy ? 'not-allowed' : 'pointer' }}
+          style={{ ...btnStyle, cursor: busy ? 'not-allowed' : 'pointer' }}
         >
-          <Undo2 size={11} aria-hidden="true" /> {t('po.unsend_btn')}
+          <Undo2 size={narrow ? 15 : 11} aria-hidden="true" /> {t('po.unsend_btn')}
         </button>
       )}
       {error && (
-        <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>{error}</span>
+        <span role="alert" style={{ fontSize: narrow ? 13 : 11, color: C.red, fontWeight: 600 }}>{error}</span>
       )}
     </>
   )

@@ -97,21 +97,30 @@ export default function OrdersPage() {
           onRetry={() => load(true)}
           entries={history}
           contactHealth={relevantContactHealth}
+          suppliersWithoutContact={contactHealth.map(r => r.supplier)}
           leadTimeAlerts={leadTimeAlerts}
           onReceive={setReceivingPO}
+          onChanged={() => load()}
+          canEdit={canCreate}
+          onCreate={() => setCreatingPO(true)}
           multiWarehouse={multiWarehouse}
-          tab={tab}
-          onTab={setTab}
           transfers={<TransfersPanel />}
         />
-        {/* The same modal the desktop table opens. Reception writes stock and
-            teaches the supplier's real lead time — one implementation of that
-            mutation, or the two screens could record different things. */}
+        {/* The same reception form the desktop table opens (a bottom sheet on
+            a phone). Reception writes stock and teaches the supplier's real
+            lead time — one implementation of that mutation, or the two screens
+            could record different things. */}
         {receivingPO && (
           <ReceptionModal
             poId={receivingPO}
             onClose={() => setReceivingPO(null)}
             onSaved={() => { setReceivingPO(null); load() }}
+          />
+        )}
+        {creatingPO && (
+          <ManualPOModal
+            onClose={() => setCreatingPO(false)}
+            onSaved={() => { setCreatingPO(false); load() }}
           />
         )}
       </>

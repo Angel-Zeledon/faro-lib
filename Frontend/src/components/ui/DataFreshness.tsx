@@ -4,6 +4,7 @@ import { Clock, Package, Upload } from 'lucide-react'
 import type { SessionInfo } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useDataFreshness } from '@/hooks/useDataFreshness'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const STALE_DAYS = 14
 
@@ -27,6 +28,8 @@ export default function DataFreshness({ currentSession, loading }: {
 }) {
   const { t, lang } = useLanguage()
   const { freshness } = useDataFreshness()
+  // The upload link is 18px tall on desktop; a 44px target on a phone.
+  const narrow = useIsNarrow()
 
   if (loading) {
     return (
@@ -81,6 +84,7 @@ export default function DataFreshness({ currentSession, loading }: {
         <span style={{ color: 'var(--border)' }}>|</span>
         <Link href="/ventas" style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
+          ...(narrow ? { minHeight: 44 } : {}),
           color: 'var(--accent)', fontWeight: 600, textDecoration: 'none',
         }}>
           <Upload size={11} /> {t('freshness.upload_new')}
