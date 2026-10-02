@@ -1,7 +1,8 @@
 import {
   ShoppingCart, ClipboardList, Package, Boxes, Truck, TrendingUp, Database,
-  History, MessagesSquare, FlaskConical, Plug, Settings, Users, KeyRound,
-  Upload, Plus, SunMoon, Languages, type LucideIcon,
+  History, MessagesSquare, FlaskConical, Settings, Users,
+  Upload, Plus, SunMoon, Languages, MessageSquare, ListChecks, ScrollText,
+  Clock, Code2, ServerCog, User, type LucideIcon,
 } from 'lucide-react'
 import type { InventoryStatusItem } from '@/lib/types'
 
@@ -55,13 +56,20 @@ export const COMMANDS: Command[] = [
   { id: 'go.sessions',     group: 'navigate', href: '/historial',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
   { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: MessagesSquare },
   { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical },
-  // A command palette must not navigate anywhere the sidebar deliberately
-  // hides — that is a back door, not a shortcut. Nothing is hidden today; the
-  // rule stays written down because the next hidden screen will be added by
-  // somebody who only edits the sidebar.
-  { id: 'go.config',       group: 'navigate', href: '/mi-cuenta',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
-  { id: 'go.users',        group: 'navigate', href: '/usuarios',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
-  { id: 'go.api',          group: 'navigate', href: '/automatizacion',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true },
+  // The palette lists EVERY screen, including the ones the sidebar now
+  // reaches through Pronósticos, Inventario or Configuración: it is the power
+  // user's shortcut past the hubs. It must still hide what role hides
+  // (adminOnly, same rule as components/layout/navItems.ts) — a palette entry
+  // to a screen the nav withholds is a back door, not a shortcut.
+  { id: 'go.messages',     group: 'navigate', href: '/mensajes',             labelKey: 'nav.messages',      aliasKey: 'cmd.alias.messages',   Icon: MessageSquare },
+  { id: 'go.inventory_setup', group: 'navigate', href: '/configurar-inventario', labelKey: 'nav.inventory_setup', aliasKey: 'cmd.alias.inventory_setup', Icon: ListChecks },
+  { id: 'go.activity',     group: 'navigate', href: '/actividad',            labelKey: 'nav.activity',      aliasKey: 'cmd.alias.activity',   Icon: ScrollText },
+  { id: 'go.config',       group: 'navigate', href: '/configuracion',        labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
+  { id: 'go.account',      group: 'navigate', href: '/mi-cuenta',            labelKey: 'nav.account',       aliasKey: 'cmd.alias.account',    Icon: User },
+  { id: 'go.users',        group: 'navigate', href: '/usuarios',             labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
+  { id: 'go.automation',   group: 'navigate', href: '/automatizacion',       labelKey: 'nav.automation',    aliasKey: 'cmd.alias.automation', Icon: Clock,        adminOnly: true },
+  { id: 'go.api',          group: 'navigate', href: '/api',                  labelKey: 'nav.api',                                             Icon: Code2 },
+  { id: 'go.installation', group: 'navigate', href: '/instalacion',          labelKey: 'nav.installation',                                    Icon: ServerCog,    adminOnly: true },
 
   // ── Do ─────────────────────────────────────────────────────────────────────
   { id: 'act.upload',    group: 'action', href: '/ventas',   labelKey: 'cmd.upload_sales',    aliasKey: 'cmd.alias.upload',       Icon: Upload,    writerOnly: true },

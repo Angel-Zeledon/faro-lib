@@ -48,6 +48,7 @@ export const MOBILE_READY = [
   '/historial',     // runs as cards; rename/delete/open in a sheet
   '/actividad',     // full-width filters, thumb-sized "show more"
   '/escenarios',    // rules as cards, stepped rule sheet, sticky "Simular"
+  '/configuracion', // the settings hub is a grouped list on a phone
   '/usuarios',
   '/mi-cuenta',
   '/automatizacion',

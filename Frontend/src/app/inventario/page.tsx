@@ -2640,6 +2640,21 @@ export default function InventoryPage() {
    ] : []),
   ]}
  />
+
+ {/* Configurar inventario is no longer a sidebar entry; it lives under
+     this screen (the sidebar keeps Inventario lit while it is open). */}
+ <Link
+  href="/configurar-inventario"
+  style={{
+   display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none',
+   padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+   border: `1px solid ${C.border}`, color: 'var(--muted)',
+   ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14, borderRadius: 10 } : {}),
+  }}
+ >
+  <Sliders size={narrow ? 14 : 12} aria-hidden="true" />
+  {t('nav.inventory_setup')}
+ </Link>
  </div>
  </div>
 

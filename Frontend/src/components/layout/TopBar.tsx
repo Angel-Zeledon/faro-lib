@@ -11,7 +11,7 @@ import TourLauncher from '@/components/tour/TourLauncher'
 import TopBarOverflowMenu from './TopBarOverflowMenu'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useMobileHeaderOverride } from '@/components/mobile/MobileHeaderContext'
-import { NAV, navItemMatches } from './navItems'
+import { SCREENS, ANALYSIS_TABS, screenFor } from './navItems'
 import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
@@ -24,9 +24,18 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/archivos':      'topbar.title_data',
   '/ventas':        'topbar.title_data',
   '/asistente':     'topbar.title_analyst',
-  '/mi-cuenta':     'topbar.title_config',
-  '/usuarios':      'topbar.title_users',
-  '/automatizacion': 'topbar.title_settings',
+  '/configuracion': 'nav.config',
+  // Same words as the Configuración hub card that leads here, so the bar
+  // confirms where the click went ("Configuración › Usuarios").
+  '/mi-cuenta':     'nav.account',
+  '/usuarios':      'nav.users',
+  '/automatizacion': 'nav.automation',
+  '/api':           'nav.api',
+  '/instalacion':   'nav.installation',
+  '/actividad':     'nav.activity',
+  '/configurar-inventario': 'nav.inventory_setup',
+  '/escenarios':    'nav.scenarios',
+  '/impacto':       'nav.roi',
   '/pronosticos':   'skus.page_title',
   '/pedidos':       'orders.page_title',
   '/mensajes':      'messages.page_title',
@@ -50,6 +59,13 @@ export default function TopBar() {
   const router  = useRouter()
   const headerOverride = useMobileHeaderOverride()
   const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'StockAI'
+  // A secondary screen names the sidebar entry it lives under: a breadcrumb
+  // on desktop, a back arrow on a phone. Only on the screen's own route — a
+  // deeper sub-route already has its own way back.
+  const screen  = screenFor(path)
+  const parent  = screen?.parent && screen.href === path
+    ? SCREENS.find(s => s.href === screen.parent) ?? null
+    : null
   const { addToast } = useToast()
   // Active-session badge source of truth.
   //
@@ -161,14 +177,18 @@ export default function TopBar() {
     // Title: a screen's own override, then the desktop title map, then the
     // nav label for the route (so /inventario reads "Inventario", not the
     // brand), then the brand.
-    const navItem = NAV.find(item => navItemMatches(item, path))
     const mobileTitle = headerOverride?.title
-      ?? (PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : navItem ? t(navItem.labelKey) : 'StockAI')
-    // Back: a screen's in-page detail view, or a nested route
-    // (/proveedores/scorecard → /proveedores). Top-level screens have the tab
-    // bar instead.
+      ?? (PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : screen ? t(screen.labelKey) : 'StockAI')
+    // Back: a screen's in-page detail view, a nested route
+    // (/proveedores/scorecard → /proveedores), or a screen that lives under
+    // a hub (/usuarios → /configuracion, like a phone's own settings). The
+    // analysis screens are tabs of Pronósticos and switch with the tab strip
+    // instead. Top-level screens have the tab bar.
     const segments = path.split('/').filter(Boolean)
-    const parentHref = segments.length > 1 ? `/${segments.slice(0, -1).join('/')}` : null
+    const isAnalysisTab = ANALYSIS_TABS.some(tab => tab.href === path)
+    const parentHref = segments.length > 1
+      ? `/${segments.slice(0, -1).join('/')}`
+      : parent && !isAnalysisTab ? parent.href : null
     const onBack = headerOverride?.onBack
       ?? (headerOverride?.backHref ? () => router.push(headerOverride.backHref!) : null)
       ?? (parentHref ? () => router.push(parentHref) : null)
@@ -227,8 +247,19 @@ export default function TopBar() {
 
       {/* Title + breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {parent && (
+          <>
+            <Link
+              href={parent.href}
+              style={{ fontSize: 14, fontWeight: 500, color: 'var(--muted)', textDecoration: 'none', letterSpacing: '-0.01em' }}
+            >
+              {t(parent.labelKey)}
+            </Link>
+            <ChevronRight size={13} color="var(--border-strong)" aria-hidden="true" />
+          </>
+        )}
         <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
-          {title}
+          {parent && !PAGE_TITLE_KEYS[path] && screen ? t(screen.labelKey) : title}
         </h1>
         {activeSession && (
           <>

@@ -12,11 +12,12 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { Wordmark } from '@/components/brand/Wordmark'
-import { GROUPS, visibleNavFor } from './navItems'
+import { NAV, SETTINGS_ITEM, canSee, navItemMatches, type Screen } from './navItems'
 import LegalLinks from '@/components/legal/LegalLinks'
 
-// The nav definition lives in ./navItems so the mobile "Más" sheet lists
-// exactly the same screens, in the same groups, with the same role rules.
+// The nav definition lives in ./navItems: six daily screens, then
+// Configuración pinned at the foot. Every other screen is reached from the one
+// it belongs to, and lights up that entry while it is open.
 
 export default function Sidebar() {
   const path    = usePathname()
@@ -59,10 +60,47 @@ export default function Sidebar() {
     router.replace('/login')
   }
 
-  // Four of the fourteen entries used to be plan locks — hidden, not padlocked,
-  // because a nav full of padlocks teaches a new user what they do NOT have.
-  // There are no locks left: role is the only thing that hides an entry now.
-  const visibleNav = visibleNavFor(user?.role)
+  // Six daily screens and Configuración. Role still hides an entry, never a
+  // plan: there are no locks.
+  const visibleNav = NAV.filter(item => canSee(item, user?.role))
+  const order = [...visibleNav, SETTINGS_ITEM]
+
+  function renderItem(item: Screen) {
+    const { href, labelKey, Icon } = item
+    const active = navItemMatches(item, path)
+    const label = t(labelKey)
+    return (
+      <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
+            aria-current={active ? 'page' : undefined}
+            style={{ textDecoration: 'none' }} title={collapsedNow ? label : undefined}>
+        <div
+          className={clsx('nav-item', 'sb-unfold', active ? 'nav-item-active' : 'nav-item-idle')}
+          style={{
+            // The menu unfolds top to bottom when the app opens
+            // (globals.css "Sidebar unfold"). The sidebar stays
+            // mounted across navigations, so it plays once per load.
+            animationDelay: `${0.15 + order.indexOf(item) * 0.035}s`,
+            display: 'flex', alignItems: 'center',
+            // A finger, not a mouse pointer: 44px minimum in the
+            // drawer, a roomier 9px row on desktop now that there are
+            // seven entries instead of eighteen.
+            minHeight: isDrawer ? 44 : undefined,
+            justifyContent: collapsedNow ? 'center' : 'flex-start',
+            gap: collapsedNow ? 0 : 10,
+            padding: collapsedNow ? '9px 0' : isDrawer ? '8px 12px' : '9px 10px',
+            borderRadius: 7, marginBottom: 2,
+            background: active ? 'var(--sidebar-active-bg)' : 'transparent',
+            color: active ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
+            fontWeight: active ? 600 : 400, fontSize: 13,
+            transition: 'all 0.15s', cursor: 'pointer',
+          }}
+        >
+          <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
+          {!collapsedNow && label}
+        </div>
+      </Link>
+    )
+  }
 
   // Off-canvas on a phone: taken out of the flex row entirely (so the page gets
   // the full width) and slid in over it. On desktop this object is empty and
@@ -144,60 +182,19 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: collapsedNow ? '12px 6px' : '12px 10px' }}>
-        {GROUPS.map(group => {
-          const items = visibleNav.filter(n => n.group === group)
-          if (!items.length) return null
-          return (
-            <div key={group} style={{ marginBottom: collapsedNow ? 12 : 20 }}>
-              {!collapsedNow && (
-                <div className="sb-unfold" style={{
-                  animationDelay: `${0.12 + visibleNav.indexOf(items[0]) * 0.035}s`,
-                  fontSize: 10, fontWeight: 700, color: 'var(--sidebar-dim)',
-                  textTransform: 'uppercase', letterSpacing: '0.08em',
-                  padding: '0 10px', marginBottom: 4,
-                }}>
-                  {t(`group.${group}`)}
-                </div>
-              )}
-              {items.map(({ href, labelKey, Icon, alsoActive }) => {
-                const matches = (p: string) => path === p || path.startsWith(`${p}/`)
-                const active = matches(href) || (alsoActive?.some(matches) ?? false)
-                const label = t(labelKey)
+      <nav aria-label={t('mobile.tabbar_label')} style={{
+        flex: 1, overflowY: 'auto', overflowX: 'hidden',
+        padding: collapsedNow ? '12px 6px' : '14px 10px',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {visibleNav.map(renderItem)}
 
-                return (
-                  <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
-                        style={{ textDecoration: 'none' }} title={collapsedNow ? label : undefined}>
-                    <div
-                      className={clsx('nav-item', 'sb-unfold', active ? 'nav-item-active' : 'nav-item-idle')}
-                      style={{
-                        // The menu unfolds top to bottom when the app opens
-                        // (globals.css "Sidebar unfold"). The sidebar stays
-                        // mounted across navigations, so it plays once per load.
-                        animationDelay: `${0.15 + visibleNav.indexOf(visibleNav.find(n => n.href === href)!) * 0.035}s`,
-                        display: 'flex', alignItems: 'center',
-                        // A finger, not a mouse pointer: 44px minimum in the
-                        // drawer, unchanged 8px padding on desktop.
-                        minHeight: isDrawer ? 44 : undefined,
-                        justifyContent: collapsedNow ? 'center' : 'flex-start',
-                        gap: collapsedNow ? 0 : 10,
-                        padding: collapsedNow ? '8px 0' : isDrawer ? '8px 12px' : '8px 10px',
-                        borderRadius: 7, marginBottom: 1,
-                        background: active ? 'var(--sidebar-active-bg)' : 'transparent',
-                        color: active ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
-                        fontWeight: active ? 600 : 400, fontSize: 13,
-                        transition: 'all 0.15s', cursor: 'pointer',
-                      }}
-                    >
-                      <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
-                      {!collapsedNow && label}
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          )
-        })}
+        {/* Configuración sits apart from the daily screens: it is where the
+            rest of the product lives (account, team, data, automation). */}
+        <div style={{ flex: 1, minHeight: 16 }} />
+        <div style={{ borderTop: '1px solid var(--sidebar-border)', paddingTop: 10, marginBottom: 2 }}>
+          {renderItem(SETTINGS_ITEM)}
+        </div>
 
         <InstallAppButton collapsed={collapsedNow} />
 
@@ -261,12 +258,14 @@ export default function Sidebar() {
             </div>
             {!collapsedNow && (
               <>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                {/* The name opens your own account: profile and security
+                    are one click away without a sidebar entry of their own. */}
+                <Link href="/mi-cuenta" title={t('nav.account')} style={{ flex: 1, minWidth: 0, textDecoration: 'none' }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--sidebar-text-active)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.full_name || user.email.split('@')[0]}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--sidebar-dim)' }}>{roleLabel(t, user.role)}</div>
-                </div>
+                </Link>
                 <button
                   onClick={handleLogout}
                   title={t('sidebar.logout')}

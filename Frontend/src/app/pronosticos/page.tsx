@@ -440,7 +440,7 @@ export default function SkusPage() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px - var(--section-tabs-h, 0px))' }}>
 
       {/* Top toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between', paddingBottom: 16 }}>
