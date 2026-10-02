@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/faro-core)](https://pypi.org/project/faro-core/)
 [![Python](https://img.shields.io/pypi/pyversions/faro-core)](https://pypi.org/project/faro-core/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](LICENSE)
 
 Enterprise-grade time-series forecasting and preprocessing library.
 
@@ -851,4 +851,4 @@ engine.save("models/engine.joblib")
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+Proprietary — see [LICENSE](LICENSE). Versions distributed earlier under the MIT License stay under it for those recipients.

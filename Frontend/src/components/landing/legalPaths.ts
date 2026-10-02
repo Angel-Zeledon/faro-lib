@@ -8,7 +8,7 @@
 // slug in LEGAL_PUBLIC_PATHS for the landing domain to serve and index them.
 export type LegalKey =
   | 'privacy' | 'terms' | 'cookies' | 'notice'
-  | 'acceptableUse' | 'dpa' | 'ai' | 'disclosure' | 'accessibility' | 'commercial'
+  | 'acceptableUse' | 'dpa' | 'ai' | 'disclosure' | 'accessibility' | 'commercial' | 'license'
 
 export const LEGAL_PATHS: Record<LegalKey, string> = {
   privacy: '/privacidad',
@@ -21,6 +21,7 @@ export const LEGAL_PATHS: Record<LegalKey, string> = {
   disclosure: '/divulgacion-responsable',
   accessibility: '/accesibilidad',
   commercial: '/condiciones-comerciales',
+  license: '/licencia',
 }
 
 // The page that lists every document above, grouped.
@@ -39,6 +40,6 @@ export type LegalGroup = 'core' | 'use' | 'business' | 'security'
 export const LEGAL_GROUPS: { id: LegalGroup; keys: LegalKey[] }[] = [
   { id: 'core', keys: ['terms', 'privacy', 'cookies', 'notice'] },
   { id: 'use', keys: ['acceptableUse', 'ai', 'accessibility'] },
-  { id: 'business', keys: ['commercial', 'dpa'] },
+  { id: 'business', keys: ['commercial', 'dpa', 'license'] },
   { id: 'security', keys: ['disclosure'] },
 ]

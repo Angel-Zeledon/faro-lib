@@ -1,0 +1,147 @@
+"""Regenerate THIRD_PARTY_NOTICES.md from the installed packages' own metadata.
+
+Usage (from the repo root, with Frontend/node_modules and backend/.venv present):
+
+    python scripts/gen_third_party_notices.py [--node-modules PATH] [--site-packages PATH]
+
+Lists the DIRECT dependencies only — Frontend/package.json, backend/requirements.txt
+and ForecastingCore/pyproject.toml — with the licence each package declares in
+its installed metadata (package.json "license"; dist-info METADATA
+License-Expression, License, or the "License ::" classifiers). Nothing is
+guessed: a package that is not installed or declares nothing is listed as
+"not determined", for a human to check. Transitive dependencies keep their own
+licences too; this file does not enumerate them.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import tomllib
+from email.parser import Parser
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+UNKNOWN = "not determined (check the package)"
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def node_license(nm: Path, name: str) -> tuple[str, str]:
+    pj = nm / name / "package.json"
+    if not pj.exists():
+        return "", UNKNOWN
+    data = json.loads(pj.read_text(encoding="utf-8"))
+    lic = data.get("license")
+    if isinstance(lic, dict):
+        lic = lic.get("type")
+    if not lic and isinstance(data.get("licenses"), list):
+        lic = " OR ".join(x.get("type", "") for x in data["licenses"] if isinstance(x, dict))
+    return data.get("version", ""), lic or UNKNOWN
+
+
+def _dist_index(sp: Path) -> dict[str, Path]:
+    out = {}
+    for d in sp.glob("*.dist-info"):
+        name = d.name[: -len(".dist-info")].rsplit("-", 1)[0]
+        out[_norm(name)] = d
+    return out
+
+
+def py_license(index: dict[str, Path], name: str) -> tuple[str, str]:
+    d = index.get(_norm(name))
+    if d is None or not (d / "METADATA").exists():
+        return "", UNKNOWN
+    msg = Parser().parsestr((d / "METADATA").read_text(encoding="utf-8", errors="replace"))
+    version = msg.get("Version", "")
+    expr = msg.get("License-Expression")
+    if expr:
+        return version, expr.strip()
+    classifiers = [c.split("::")[-1].strip() for c in msg.get_all("Classifier") or []
+                   if c.startswith("License ::")]
+    classifiers = [c for c in classifiers if c not in ("OSI Approved",)]
+    if classifiers:
+        return version, " / ".join(dict.fromkeys(classifiers))
+    lic = (msg.get("License") or "").strip()
+    # Some packages paste the whole licence text into this field: keep its first line.
+    if lic and lic.upper() != "UNKNOWN":
+        first = lic.splitlines()[0].strip()
+        return version, first[:80]
+    return version, UNKNOWN
+
+
+def _req_names(lines: list[str]) -> list[str]:
+    names = []
+    for line in lines:
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        m = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", line)
+        if m:
+            names.append(m.group(0))
+    return names
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--node-modules", default=str(ROOT / "Frontend" / "node_modules"))
+    ap.add_argument("--site-packages", default=str(ROOT / "backend" / ".venv" / "Lib" / "site-packages"))
+    args = ap.parse_args()
+    nm, sp = Path(args.node_modules), Path(args.site_packages)
+    index = _dist_index(sp)
+
+    pkg = json.loads((ROOT / "Frontend" / "package.json").read_text(encoding="utf-8"))
+    backend = _req_names((ROOT / "backend" / "requirements.txt").read_text(encoding="utf-8").splitlines())
+    fc = tomllib.loads((ROOT / "ForecastingCore" / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    fc_runtime = _req_names(fc.get("dependencies", []))
+    fc_optional = _req_names([r for k, v in fc.get("optional-dependencies", {}).items()
+                              if k != "dev" for r in v])
+
+    out = [
+        "# Third-party notices",
+        "",
+        "StockAI is proprietary software (see [`LICENSE`](LICENSE)). It is built on",
+        "the open-source components below, which are **not** covered by the StockAI",
+        "licence: each remains under its own licence, whose terms you must follow",
+        "when you use, modify or redistribute it. Those terms prevail over the StockAI",
+        "licence for the component concerned.",
+        "",
+        "This list covers the **direct** dependencies declared in `Frontend/package.json`,",
+        "`backend/requirements.txt` and `ForecastingCore/pyproject.toml`, with the",
+        "licence each package declares in its installed metadata. Their own",
+        "dependencies (installed transitively) also keep their licences; the full",
+        "texts ship inside each package (`node_modules/<name>/`, the Python",
+        "`*.dist-info/` folders). \"not determined\" means the installed metadata does",
+        "not state it and it must be checked by hand.",
+        "",
+        "Generated by `python scripts/gen_third_party_notices.py`. Do not edit by hand.",
+        "",
+    ]
+
+    def node_table(title: str, names: list[str]) -> None:
+        out.extend([f"## {title}", "", "| Component | Version | Licence |", "|---|---|---|"])
+        for n in sorted(names, key=str.lower):
+            v, lic = node_license(nm, n)
+            out.append(f"| {n} | {v} | {lic} |")
+        out.append("")
+
+    def py_table(title: str, names: list[str]) -> None:
+        out.extend([f"## {title}", "", "| Component | Version | Licence |", "|---|---|---|"])
+        for n in sorted(dict.fromkeys(names), key=str.lower):
+            v, lic = py_license(index, n)
+            out.append(f"| {n} | {v} | {lic} |")
+        out.append("")
+
+    node_table("Frontend (runtime, shipped to the browser)", list(pkg.get("dependencies", {})))
+    node_table("Frontend (build and development tools)", list(pkg.get("devDependencies", {})))
+    py_table("Backend (Python)", backend)
+    py_table("Forecasting engine (Python)", fc_runtime + fc_optional)
+
+    (ROOT / "THIRD_PARTY_NOTICES.md").write_text("\n".join(out), encoding="utf-8", newline="\n")
+    print("wrote THIRD_PARTY_NOTICES.md")
+
+
+if __name__ == "__main__":
+    main()
