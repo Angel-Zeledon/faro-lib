@@ -289,7 +289,10 @@ class TestOverstockSentenceCarriesTheTenantsCurrency:
     def test_the_sentence_uses_the_tenants_symbol(self):
         """Break to check: drop `currency=currency` from the OVERSTOCK text."""
         rec = self._overstock(USD)
-        assert "$12,500.00" in rec["text"], rec["text"]
+        # 120 days of cover against a 3 x 10-day ceiling: 90/120 of the
+        # 12,500 on the shelf is the excess pausing can free (math audit
+        # 2026-10-01 — it used to quote the whole 12,500).
+        assert "$9,375.00" in rec["text"], rec["text"]
         assert "₡" not in rec["text"]
 
     def test_the_param_the_frontend_renders_carries_it_too(self):
@@ -297,12 +300,12 @@ class TestOverstockSentenceCarriesTheTenantsCurrency:
         `currency=currency` from `text_params['amount']` and this is the only
         test that notices."""
         rec = self._overstock(USD)
-        assert rec["text_params"]["amount"] == "$12,500.00", rec["text_params"]
+        assert rec["text_params"]["amount"] == "$9,375.00", rec["text_params"]
 
     def test_the_anchor_market_sentence_is_unchanged(self):
         rec = self._overstock(None)
-        assert "would free ₡12,500 of working capital" in rec["text"], rec["text"]
-        assert rec["text_params"]["amount"] == "₡12,500"
+        assert "would free ₡9,375 of working capital" in rec["text"], rec["text"]
+        assert rec["text_params"]["amount"] == "₡9,375"
 
 
 class TestBriefingAndNarrativeThreadTheSetting:
@@ -352,8 +355,10 @@ class TestBriefingAndNarrativeThreadTheSetting:
         data = r.json()["data"]
         over = [x for x in data["recommendations"] if x["rec_type"] == "OVERSTOCK"]
         assert over, f"no overstock recommendation to check: {data['recommendations']}"
-        # 500 units x 100.0 = 50,000 of trapped capital, relabelled not converted.
-        assert "$50,000.00" in over[0]["text"], over[0]["text"]
+        # 500 days of cover against a 3 x 10-day ceiling: 470/500 of the
+        # 50,000 on the shelf is what pausing can free — 47,000, relabelled
+        # not converted (math audit 2026-10-01).
+        assert "$47,000.00" in over[0]["text"], over[0]["text"]
         assert "₡" not in over[0]["text"]
 
     def test_narrative_key_points_follow_the_tenants_currency(
@@ -453,7 +458,7 @@ class TestBriefingAndNarrativeThreadTheSetting:
                        headers=auth_headers)
         over = [x for x in r.json()["data"]["recommendations"]
                 if x["rec_type"] == "OVERSTOCK"]
-        assert over and "₡50,000" in over[0]["text"], over
+        assert over and "₡47,000" in over[0]["text"], over
         assert "$" not in over[0]["text"]
 
 

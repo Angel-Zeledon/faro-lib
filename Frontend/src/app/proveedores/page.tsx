@@ -481,7 +481,11 @@ function SuppliersPageInner() {
       // backend stamp it as the supplier's own declaration (11.32).
       lead_time_days: form.lead_time_days.trim() === ''
         ? null : (parseInt(form.lead_time_days) || DEFAULT_LEAD_TIME_DAYS),
-      lead_time_std:  parseInt(form.lead_time_std) || 3,
+      // `|| 3` turned a typed 0 — a supplier who always delivers on the day —
+      // into 3 days of spread, and the safety stock grew by z * demand * 3 for
+      // a variability the buyer had just said does not exist (math audit
+      // 2026-10-01). Only a blank or unreadable box falls back.
+      lead_time_std:  Number.isNaN(parseInt(form.lead_time_std)) ? 3 : parseInt(form.lead_time_std),
       // 0 means "no declared cadence" and reproduces the old arithmetic
       // exactly, so an empty box must send 0 rather than nothing.
       review_period_days: parseInt(form.review_period_days) || 0,

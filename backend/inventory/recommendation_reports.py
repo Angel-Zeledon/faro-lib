@@ -106,13 +106,19 @@ def _first_acted_on_po(
 
 
 def _stock_snapshots(tenant_id: str, sku: str, since: date) -> list[dict]:
-    rows = query(
-        """SELECT recorded_at, current_stock FROM inventory_snapshots
-           WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
-           ORDER BY recorded_at ASC""",
-        (tenant_id, sku, _day_start(since)),
-    )
-    return [dict(r) for r in rows]
+    """The SKU's TENANT-WIDE level since `since`, one point per day.
+
+    This read every snapshot row raw. Since 2026-09-16 rows are per
+    warehouse, so one empty branch (Norte at 0 while principal held 500) was
+    read as a company-wide stockout and charged as lost sales at the whole
+    SKU's demand rate (math audit 2026-10-01). It now reads the same
+    carried-forward total `get_stock_history` does.
+    """
+    from backend.inventory.service import tenant_wide_history
+    return [
+        {"recorded_at": at, "current_stock": level}
+        for at, level in tenant_wide_history(tenant_id, sku, _day_start(since))
+    ]
 
 
 def _demand_rate_as_of(sku_rows: list[dict], as_of: date) -> Optional[float]:

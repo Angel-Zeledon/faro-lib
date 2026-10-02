@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
 from backend.errors import AppError
-from backend.formatting import money, format_days as _format_days, format_coverage_en
+from backend.formatting import money, format_days as _format_days, format_coverage, format_coverage_en
 from backend.inventory.defaults import (
     DEFAULT_LEAD_TIME_DAYS,
     DEFAULT_MOQ,
@@ -821,39 +821,79 @@ def get_stock_history(
         return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()}
                 for r in rows]
 
+    return [{"stock": level, "date": at.isoformat()}
+            for at, level in tenant_wide_history(tenant_id, sku, since)]
+
+
+def tenant_wide_history(
+    tenant_id: str, sku: str, since: datetime,
+) -> list[tuple[datetime, float]]:
+    """The tenant-wide stock level of one SKU since `since`, oldest first, one
+    point per day — see `tenant_wide_daily_levels`. The single reader every
+    "how did this SKU's total stock move" question should go through."""
+    # Every per-warehouse write in the window, plus each warehouse's last level
+    # BEFORE the window — the level it still held when the window opened.
     rows = query(
-        """WITH last_per_day AS (
-               -- One value per (warehouse, day): the level that location ended
-               -- the day at. Several writes in a day are not several levels.
-               SELECT DISTINCT ON (warehouse, date_trunc('day', recorded_at))
-                      warehouse,
-                      date_trunc('day', recorded_at) AS day,
-                      current_stock,
-                      recorded_at
-               FROM inventory_snapshots
-               WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
-                 AND warehouse IS NOT NULL
-               ORDER BY warehouse, date_trunc('day', recorded_at), recorded_at DESC
-           ),
-           per_day_total AS (
-               SELECT day, SUM(current_stock) AS current_stock,
-                      MAX(recorded_at) AS recorded_at
-               FROM last_per_day GROUP BY day
-           ),
-           legacy AS (
-               -- Written before the column existed: already tenant-wide.
-               SELECT current_stock, recorded_at
-               FROM inventory_snapshots
-               WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
-                 AND warehouse IS NULL
-           )
-           SELECT current_stock, recorded_at FROM per_day_total
-           UNION ALL
-           SELECT current_stock, recorded_at FROM legacy
+        """SELECT warehouse, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+             AND warehouse IS NOT NULL
            ORDER BY recorded_at ASC""",
-        (tenant_id, sku, since, tenant_id, sku, since),
+        (tenant_id, sku, since),
     )
-    return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()} for r in rows]
+    opening = query(
+        """SELECT DISTINCT ON (warehouse) warehouse, current_stock
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = %s AND recorded_at < %s
+             AND warehouse IS NOT NULL
+           ORDER BY warehouse, recorded_at DESC""",
+        (tenant_id, sku, since),
+    )
+    # Written before the column existed: already tenant-wide.
+    legacy = query(
+        """SELECT current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+             AND warehouse IS NULL""",
+        (tenant_id, sku, since),
+    )
+    points = tenant_wide_daily_levels(
+        rows, {r["warehouse"]: float(r["current_stock"]) for r in opening},
+    ) + [(r["recorded_at"], float(r["current_stock"])) for r in legacy]
+    points.sort(key=lambda p: p[0])
+    return points
+
+
+def tenant_wide_daily_levels(
+    rows: list[dict], opening: Optional[dict] = None,
+) -> list[tuple[datetime, float]]:
+    """One tenant-wide stock level per day, from per-warehouse snapshot rows.
+
+    `rows` are `{warehouse, current_stock, recorded_at}` ordered by time;
+    `opening` is each warehouse's level before the first row.
+
+    A day's total is the sum of EVERY warehouse's latest known level as of the
+    end of that day — not only of the warehouses that happened to be written
+    that day. The SQL this replaced summed the latter, so principal written on
+    Monday (500) and Norte on Wednesday (20) came out as the series 500, 20: a
+    480-unit "fall" in a tenant whose stock never moved, read by the demand
+    trend as consumption and by dead capital as movement — the very artefact
+    stability 11.15 set out to remove (math audit 2026-10-01).
+    """
+    levels: dict[str, float] = dict(opening or {})
+    out: list[tuple[datetime, float]] = []
+    current_day = None
+    last_at = None
+    for r in rows:
+        day = r["recorded_at"].date()
+        if current_day is not None and day != current_day:
+            out.append((last_at, sum(levels.values())))
+        current_day = day
+        last_at = r["recorded_at"]
+        levels[r["warehouse"]] = float(r["current_stock"])
+    if current_day is not None:
+        out.append((last_at, sum(levels.values())))
+    return out
 
 
 # ── ABC-XYZ classification ────────────────────────────────────────────────────
@@ -1173,8 +1213,6 @@ def _measured_safety_stock(
     if not horizons:
         return None
     wanted = max(1, int(math.ceil(float(lead_time))))
-    # A lead time longer than the backtest covers falls back to the longest
-    # horizon that WAS measured, instead of extrapolating a band nobody checked.
     key = wanted if wanted in horizons else max(
         [h for h in horizons if h <= wanted] or [horizons[0]]
     )
@@ -1184,10 +1222,38 @@ def _measured_safety_stock(
 
     try:
         target = float(service_level)
-        nearest = min(band, key=lambda q: abs(float(q) - target))
-        return max(0.0, float(band[nearest]))
+        levels = {float(q): float(v) for q, v in band.items()}
     except (TypeError, ValueError):
         return None
+
+    # The quantile the buyer asked for. The engine measures a handful of levels
+    # (0.5 / 0.9 / 0.95 by default) and the API accepts any level in
+    # [0.5, 0.999]; this used to return the NEAREST measured level verbatim, so
+    # a SKU raised to 99% got exactly the 95% cushion — the same defect the
+    # `_z_for` docstring records fixing for the classical path (stability
+    # 2026-09-14), re-opened on the measured one (math audit 2026-10-01).
+    # An exactly measured level is used as is; otherwise the nearest measured
+    # level ABOVE the median is rescaled by z(target) / z(measured), which
+    # keeps the measured spread and only assumes the tail keeps its shape.
+    exact = [q for q in levels if abs(q - target) < 1e-6]
+    if exact:
+        offset = levels[exact[0]]
+    else:
+        upper = [q for q in levels if q > 0.5]
+        if not upper:
+            return None
+        nearest = min(upper, key=lambda q: abs(q - target))
+        offset = levels[nearest] * (_z_for(target) / _z_for(nearest))
+
+    # A lead time the backtest did not reach. This used to reuse the longest
+    # measured horizon's offset unchanged — as if no uncertainty accumulated
+    # after it, which no demand process does: a 60-day importer was cushioned
+    # for 30 days of error. Cumulative error grows at LEAST like sqrt(L)
+    # (exactly so for independent errors, faster for persistent ones), so
+    # sqrt(wanted / key) is the conservative extension, never an inflation.
+    if key != wanted:
+        offset *= math.sqrt(wanted / key)
+    return max(0.0, offset)
 
 
 def _calc_recommended(
@@ -1550,6 +1616,7 @@ def build_explanation(
     signal: str,
     lead_time_rule_scope: Optional[str] = None,
     review_period_days: float = 0.0,
+    period: str = "daily",
 ) -> dict:
     """
     The reasoning behind a recommendation, as a STRUCTURED value:
@@ -1587,6 +1654,16 @@ def build_explanation(
     rendering nothing.
     """
     scope = lead_time_rule_scope or "supplier"
+
+    # The sentence says "you sell X a day, so it lasts you N days". On a weekly
+    # or monthly tenant `daily_demand` is per WEEK/MONTH and `coverage_days` is
+    # in weeks/months, so a weekly buyer read "you sell 70 a day, it lasts you
+    # 3 days" about 10 a day and 3 weeks (math audit 2026-10-01). Converted to
+    # calendar days here, the unit the sentence names and the lead time is in.
+    dpp = _days_per_period(period)
+    daily_demand = float(daily_demand) / dpp
+    if coverage_days is not None:
+        coverage_days = float(coverage_days) * dpp
 
     if daily_demand <= 0:
         # No projected sales at all: coverage is effectively unlimited, saying
@@ -2009,9 +2086,20 @@ def _compute_inventory_status(
                 round(current_stock * float(stock["unit_cost"]), 2)
                 if stock.get("unit_cost") is not None else None
             )
-            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
+            # The breakdown is a sum the buyer can redo by hand:
+            #   daily demand x protection days = LT demand; + safety - stock
+            #   - incoming = before rounding. Three things kept it from adding
+            #   up (math audit 2026-10-01): `daily_demand` was per PERIOD on a
+            #   weekly tenant (70/"day" x 14 days = "140"); it was the plain
+            #   forecast while LT demand used the event-adjusted rate; and the
+            #   units already on their way were subtracted from `final_qty`
+            #   but missing from the steps, so "before rounding 150" was
+            #   followed by an order of 50.
+            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock
+                                     - max(0.0, sku_incoming)), 2)
             calc_explanation = {
-                "daily_demand":    round(avg_daily, 2),
+                "daily_demand":    round(avg_daily_eff / _days_per_period(period), 2),
+                "incoming":        round(max(0.0, float(sku_incoming)), 2),
                 "lead_time_days":    lead_time,
                 # Where the lead time came from, so the breakdown labels it the
                 # same way /hoy does — now across all five real sources, not the
@@ -2066,6 +2154,7 @@ def _compute_inventory_status(
                 signal=signal,
                 lead_time_rule_scope=lead_time_rule_scope,
                 review_period_days=review_period_days,
+                period=period,
             )
         else:
             avg_daily = avg_std = None
@@ -2211,7 +2300,8 @@ def _compute_inventory_status(
     try:
         from backend.inventory import recommendation_log
         if not recommendation_log.already_recorded(tenant_id):
-            recommendation_log.record_recommendations(tenant_id, session_id, items)
+            recommendation_log.record_recommendations(
+                tenant_id, session_id, items, period=period)
     except Exception:
         log.exception("recommendation log: not recorded for tenant=%s", tenant_id)
 
@@ -2734,7 +2824,17 @@ def _network_transfer_pass(
                 # 132.95" — and nobody moves 0.95 of a bottle. FLOOR, never
                 # ceil: the donor cannot lend more than it can spare. A SKU sold
                 # by weight keeps its fractions through its own moq.
-                step = float(r.get("moq") or 0) or 1.0
+                #
+                # The step is ONE unit. It was the SKU's `moq`, from when MOQ was
+                # read as a pack multiple; since 2026-08-12 it is the SUPPLIER'S
+                # minimum order, which says nothing about moving goods between
+                # two of the buyer's own warehouses. With a minimum of 500, a
+                # sister warehouse able to spare 450 lent 0 and the buyer was
+                # told to purchase all 520 — and a spare of 900 against a need
+                # of 520 moved only 500 (math audit 2026-10-01). A fractional
+                # MOQ (a SKU sold by weight) still sets a finer step.
+                moq_val = float(r.get("moq") or 0)
+                step = moq_val if 0 < moq_val < 1 else 1.0
                 donatable = math.floor(donatable / step) * step
                 if donatable <= 0:
                     continue
@@ -3487,7 +3587,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     }
     # This document is downloaded and forwarded, so the frontend never renders
     # it: its Spanish comes from the backend copy catalog, keyed in English.
-    from backend.notifications.locale import render_es, render_date
+    from backend.notifications.locale import render_es, render_date, coverage_short
     SIGNAL_LABELS = {
         "PEDIR_YA":     render_es("inventory_pdf_signal_order_now"),
         "PEDIR_PRONTO": render_es("inventory_pdf_signal_order_soon"),
@@ -3588,7 +3688,10 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(sig_label, ParagraphStyle("sig", fontSize=8,
                           fontName="Helvetica-Bold", textColor=sig_color)),
                 Paragraph(f"{item['current_stock']:,.0f}" if item.get("current_stock") is not None else "—", CELL),
-                Paragraph(_format_days(item["coverage_days"]) if item.get("coverage_days") is not None else "—", CELL),
+                # In the planning period's unit: the figure is in weeks on a
+                # weekly tenant, and this printed "4 días" for 4 weeks (math
+                # audit 2026-10-01). The email already said "4 semanas".
+                Paragraph(format_coverage(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(f"<b>{item['recommended_qty']:,.0f}</b>" if item.get("recommended_qty") else "—",
                           ParagraphStyle("qty", fontSize=8, fontName="Helvetica-Bold", textColor=GREEN)),
                 Paragraph(item.get("supplier") or "—", CELL),
@@ -3629,7 +3732,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(item.get("display_name") or "—", CELL),
                 Paragraph(SIGNAL_LABELS.get(item["signal"], "—"),
                           ParagraphStyle("s2", fontSize=8, textColor=SIGNAL_COLORS.get(item["signal"], colors.grey))),
-                Paragraph(f"{item['coverage_days']:.0f}d" if item.get("coverage_days") is not None else "—", CELL),
+                Paragraph(coverage_short(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(item.get("abc_xyz") or "—", CELL),
             ])
         st = Table(small_data, colWidths=[3*cm, 5*cm, 3.2*cm, 3*cm, 2*cm])
@@ -3658,13 +3761,30 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
 
 # ── Decision Centre helpers ───────────────────────────────────────────────────
 
-def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 14) -> Optional[float]:
+def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 14,
+                       period: str = "daily") -> Optional[float]:
     """
     Returns % change in actual demand vs forecast.
     Positive = demand is running above forecast (risk of stockout).
     Negative = demand is below forecast (risk of overstock).
     Uses stock snapshot history to estimate actual consumption.
     Returns None if insufficient data or change is not significant (< 15%).
+
+    `avg_daily` is the forecast per bucket of `period` (per WEEK on a weekly
+    tenant), so it is converted to a per-day rate before being compared with
+    a consumption measured over calendar days.
+
+    Three things this used to get wrong (math audit 2026-10-01):
+
+    * The expected consumption was `avg_daily * len(history)` — the number of
+      SNAPSHOTS, not the days they span. Snapshots are written on every stock
+      write, not once a day: four writes spread over 14 days expected 4 days
+      of sales against 14 days of real consumption and reported "+250%".
+    * The forecast was per period and the window in days, so every weekly
+      tenant read "-86% below forecast" on every SKU.
+    * Consumption was `first - last`, so a reception inside the window
+      cancelled the sales against it. It is now the sum of the FALLS between
+      consecutive levels; a rise is a reception or an adjustment, not demand.
     """
     if avg_daily <= 0:
         return None
@@ -3673,16 +3793,24 @@ def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 1
     if len(history) < 4:
         return None
 
-    # Actual depletion (stock went down)
-    first_stock = history[0]['stock']
-    last_stock  = history[-1]['stock']
-    actual_depletion = first_stock - last_stock
+    try:
+        first_at = datetime.fromisoformat(history[0]['date'])
+        last_at = datetime.fromisoformat(history[-1]['date'])
+    except (TypeError, ValueError):
+        return None
+    elapsed_days = (last_at - first_at).total_seconds() / 86400.0
+    if elapsed_days < 1.0:
+        return None
 
-    # Expected depletion based on forecast
-    period_days      = min(len(history), days)
-    expected_depletion = avg_daily * period_days
+    levels = [float(h['stock']) for h in history]
+    actual_depletion = sum(
+        max(0.0, prev - cur) for prev, cur in zip(levels, levels[1:])
+    )
 
-    if expected_depletion <= 0 or actual_depletion < 0:
+    per_day = avg_daily / _days_per_period(period)
+    expected_depletion = per_day * elapsed_days
+
+    if expected_depletion <= 0:
         return None
 
     trend_pct = ((actual_depletion - expected_depletion) / expected_depletion) * 100
@@ -3934,17 +4062,24 @@ def generate_recommendations(items: list[dict], period: str = "daily",
             # weekly-mode bug that produced "-12 días más de lo óptimo").
             lead_periods = lead / days_per_period
             excess = days - lead_periods * 3
+            # What pausing can free is the capital in the units ABOVE the
+            # ceiling, not the whole shelf. This quoted `value` — every unit
+            # on hand — so a SKU one day past its ceiling "would free" 100% of
+            # its stock value; the excess is `excess / days` of it, the same
+            # coverage arithmetic the sentence itself prints (math audit
+            # 2026-10-01).
+            freed = value * max(0.0, excess) / days if days > 0 else 0.0
             recs.append({
                 'priority': 5, 'sku': sku, 'name': name,
                 'rec_type': 'OVERSTOCK',
                 'text': (
                     f"{name} has {format_coverage_en(days, period)} of coverage "
                     f"({format_coverage_en(excess, period)} more than optimal). Pausing the next order "
-                    f"would free {money(value, currency=currency)} of working capital."
+                    f"would free {money(freed, currency=currency)} of working capital."
                 ),
                 'text_params': {
                     'name': name, 'days': round(days), 'excess': round(excess),
-                    'amount': money(value, currency=currency),
+                    'amount': money(freed, currency=currency),
                 },
                 'action': "Pause the next order",
                 'action_code': 'pause_next_order',
@@ -4016,6 +4151,12 @@ def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
     return {sku: model for sku, (_s, model) in best.items()}
 
 
+# A WAPE at or above this is the engine's `sum|e| / (0 + 1e-8)` — a validation
+# window with no demand at all — not an error rate: a real one would need errors
+# a million times the units actually sold.
+_WAPE_UNDEFINED = 1e6
+
+
 def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[float]:
     """Session-level accuracy: 1 - WAPE of the model each SKU is bought from.
 
@@ -4049,6 +4190,14 @@ def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[fl
         if wape is None:
             continue
         if float(wape) == 0.0 and float(r.get('mae') or 0.0) == 0.0:
+            continue
+        # The other face of the same 0/0: no demand in the window but a
+        # forecast that was not exactly zero. The engine divides by
+        # `sum|y| + 1e-8`, so 30 days of 0.3 against 30 zeros scores a WAPE of
+        # 900,000,000 — and one such dead SKU, at any weight, took the session's
+        # "Precisión promedio" from 89% to 0% (math audit 2026-10-01). A WAPE
+        # that large only exists as that epsilon; it measures nothing.
+        if not math.isfinite(float(wape)) or float(wape) >= _WAPE_UNDEFINED:
             continue
         sku = str(r.get('sku'))
         if champions.get(sku) == r.get('model'):
@@ -4100,7 +4249,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         avg = item.get('daily_demand')
         if avg and avg > 0 and item.get('has_stock') and item.get('has_forecast'):
             item['demand_trend_pct'] = _calc_demand_trend(
-                tenant_id, item['sku'], avg, days=14
+                tenant_id, item['sku'], avg, days=14, period=period,
             )
         else:
             item['demand_trend_pct'] = None
@@ -4203,7 +4352,12 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
             'order_now':             len(risks),
             'order_soon':         len(warnings),
             'ok':                   sum(1 for i in items if i['signal'] == 'OK'),
-            'overstock':           len(overstocked),
+            # Every SKU in SOBRESTOCK, as /status, the dashboard summary and
+            # scenarios count it. `overstocked` keeps only the ones with a cost
+            # (it feeds the capital figure), so counting it read "0 in
+            # overstock" on the demo tenant beside a SOBRESTOCK row with no
+            # cost on file (math audit 2026-10-01).
+            'overstock':           sum(1 for i in items if i['signal'] == 'SOBRESTOCK'),
             'sin_datos':            sum(1 for i in items if i['signal'] == 'SIN_DATOS'),
             'avg_accuracy':         avg_accuracy,
             'total_inventory_value': round(total_value, 2),

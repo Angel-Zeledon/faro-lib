@@ -29,6 +29,10 @@ from backend.db.connection import execute, query, query_one
 
 log = logging.getLogger(__name__)
 
+# Mirrors service._DAYS_PER_PERIOD; kept local because service imports this
+# module from inside the status call.
+_DAYS_PER_PERIOD = {"daily": 1, "weekly": 7, "monthly": 30}
+
 
 def _as_of(as_of: Optional[date]) -> date:
     """The day to file today's rows under, UTC — matches the convention
@@ -43,6 +47,7 @@ def record_recommendations(
     items: list[dict],
     *,
     as_of: Optional[date] = None,
+    period: str = "daily",
 ) -> int:
     """
     Persist today's recommendation for every SKU in `items` (the list
@@ -81,7 +86,13 @@ def record_recommendations(
             item.get("current_stock"),
             item.get("reorder_point"),
             calc.get("safety_stock"),
-            item.get("daily_demand"),
+            # The column is a DAILY rate and its readers multiply it by day
+            # counts (`recommendation_reports.cost_of_ignoring`: lost units =
+            # rate x days out). The status row's `daily_demand` is per bucket
+            # of the planning grain, so a weekly tenant's lost units came out
+            # 7x too high (math audit 2026-10-01). Stored per day from here on.
+            (float(item["daily_demand"]) / _DAYS_PER_PERIOD.get(period or "daily", 1)
+             if item.get("daily_demand") is not None else None),
             item.get("lead_time_days"),
             session_id,
         ))

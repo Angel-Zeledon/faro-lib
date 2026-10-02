@@ -924,8 +924,12 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str,
 
     managed = report.get("managed_purchase_value")
     if managed is not None:
+        # When some ordered lines carry no cost the figure covers only the
+        # costed ones. /impacto prints it as "≥ ₡X" (stability 2.6); this tile
+        # printed the partial sum as the month's total (math audit 2026-10-01).
+        partial = report.get("managed_purchase_value_complete") is False
         tiles.append(_recap_metric_block(
-            _fmt_money(managed, currency),
+            ("≥ " if partial else "") + _fmt_money(managed, currency),
             render_es("roi_email_metric_purchases_label"),
             render_es("roi_email_metric_purchases_note"),
             _TEXT,

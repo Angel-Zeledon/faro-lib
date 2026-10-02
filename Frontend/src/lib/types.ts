@@ -882,8 +882,13 @@ export interface InventoryCalcExplanation {
   safety_stock?:      number
   current_stock?:      number
   antes_moq?:         number
+  // Units already on their way (sent POs + transfers in transit), subtracted
+  // before `antes_moq`.
+  incoming?:          number
   moq?:               number
   final_qty?:    number
+  // Days the order has to cover: lead time + the supplier's review period.
+  protection_interval_days?: number
   // A declared event (stability.md 19.5) that overlaps THIS sku's lead-time
   // window and moved the recommendation — never a simulation, a standing
   // fact the semáforo already applied. Empty when no event touches the

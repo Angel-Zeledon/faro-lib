@@ -291,12 +291,16 @@ export default function SkusPage() {
   // model the user is not looking at, and the two differ whenever being short
   // costs more than being long.
   const skuAccuracy  = useMemo(() => {
-    // The metric is chosen over ALL of this SKU's rows, then the ranking runs
-    // over the subset that can report a WAPE — narrowing the set first would
-    // let a session pick a different metric here than the table beside it.
+    // The metric is chosen over ALL of this SKU's rows — narrowing the set
+    // first would let a session pick a different metric here than the table
+    // beside it.
     const accuracyRank = makeChampionRank(skuMetrics)
+    // The champion is picked BEFORE asking whether it has a WAPE. Filtering on
+    // WAPE first quoted the runner-up's accuracy whenever the model the orders
+    // come from had none; the server's compute_session_accuracy leaves such a
+    // SKU out instead, and so does this (math audit 2026-10-01).
     const best = skuMetrics
-      .filter(r => r.type !== 'baseline' && r.wape !== null)
+      .filter(r => r.type !== 'baseline')
       .sort((a, b) => (accuracyRank(a) ?? Infinity) - (accuracyRank(b) ?? Infinity))[0]
     if (best?.wape == null) return null
     // WAPE divides by total real demand, so a SKU that never sold scores a
@@ -304,7 +308,13 @@ export default function SkusPage() {
     // zeros. Both errors landing on exactly 0 means there was no signal to be
     // accurate about — show nothing rather than false confidence.
     if (best.wape === 0 && (best.mae ?? 0) === 0) return null
-    return Math.round((1 - best.wape) * 100)
+    // The other face of that 0/0: no demand in the window and a forecast that
+    // was not exactly zero gives the engine's sum|e| / 1e-8 — a WAPE in the
+    // hundreds of millions that measures nothing (backend _WAPE_UNDEFINED).
+    if (!Number.isFinite(best.wape) || best.wape >= 1e6) return null
+    // Clamped at 0 like the server's compute_session_accuracy: WAPE can exceed
+    // 1, and a WAPE of 1.4 printed "Precisión -40%" (math audit 2026-10-01).
+    return Math.max(0, Math.round((1 - best.wape) * 100))
   }, [skuMetrics])
 
   // Load compare session metrics
