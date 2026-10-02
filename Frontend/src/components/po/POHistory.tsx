@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
 import type { POLogEntry, POItemLine } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
@@ -52,6 +52,25 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   const [qty,     setQty]     = useState<Record<string, string>>({})
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Read through a ref so a parent that passes a fresh arrow each render does
+  // not re-run the open/close effect (which would steal focus mid-typing).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  // A modal that says it is one: Esc closes it, and focus moves into it on
+  // open and back to whatever opened it on close, so a screen-reader or
+  // keyboard user is not left behind on the page underneath.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    dialogRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current() }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      opener?.focus?.()
+    }
+  }, [])
 
   useEffect(() => {
     getPOItems(poId)
@@ -99,8 +118,14 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="po-reception-title"
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
         style={{
+          outline: 'none',
           width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto',
           background: C.surface, border: `1px solid ${C.border}`,
           borderRadius: 14, padding: 24,
@@ -108,13 +133,20 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Truck size={16} color={C.indigo} />
-          <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('po.reception_title')}</span>
+          <span id="po-reception-title" style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('po.reception_title')}</span>
           <button
             onClick={onClose}
             aria-label={t('common.close')}
-            style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}
+            style={{
+              all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim,
+              // 16x16 was not a target a thumb can hit; 44px on a phone.
+              ...(narrow ? {
+                width: 44, height: 44, margin: '-12px -12px -12px auto',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              } : {}),
+            }}
           >
-            <X size={16} aria-hidden="true" />
+            <X size={narrow ? 20 : 16} aria-hidden="true" />
           </button>
         </div>
         <p style={{ margin: '0 0 16px', fontSize: 12, color: C.dim, lineHeight: 1.5 }}>

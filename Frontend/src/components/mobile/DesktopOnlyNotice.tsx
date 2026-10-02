@@ -27,7 +27,15 @@ import { useLanguage } from '@/contexts/LanguageContext'
  *  `/mensajes` switches between a conversation list and a single thread with
  *  a back button on a narrow screen — see the `narrow` branch in
  *  app/mensajes/page.tsx — rather than laying out a two-pane table. */
-const MOBILE_READY = ['/compras', '/pedidos', '/mensajes']
+export const MOBILE_READY = ['/compras', '/pedidos', '/mensajes']
+
+/** Does `path` have a real phone layout? Links that lead from a phone screen
+ *  into one that does not use this to say so BEFORE the tap (see
+ *  AssumptionsBanner on /compras), and stop saying it the day a screen is
+ *  added above — no second list to keep in step. */
+export function isMobileReady(path: string): boolean {
+  return MOBILE_READY.some(p => path === p || path.startsWith(`${p}/`))
+}
 
 const DISMISS_KEY = 'fp_mobile_notice_dismissed'
 
@@ -44,7 +52,7 @@ export default function DesktopOnlyNotice() {
   }, [])
 
   if (!narrow || dismissed) return null
-  if (MOBILE_READY.some(p => path === p || path.startsWith(`${p}/`))) return null
+  if (isMobileReady(path)) return null
 
   function dismiss() {
     sessionStorage.setItem(DISMISS_KEY, '1')

@@ -431,7 +431,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
               width: '100%', textAlign: 'center', background: 'transparent',
               border: 'none', borderBottom: `2px dashed ${accent}60`,
               color: accent, fontSize: 22, fontWeight: 800, outline: 'none',
-              padding: '2px 0', minHeight: 34,
+              padding: '2px 0', minHeight: TAP, boxSizing: 'border-box',
             }}
           />
           <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>
@@ -743,7 +743,7 @@ function MobileCartBar({ approved, onClear, onGenerate }: {
           onClick={onClear}
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
-            minHeight: 36, padding: '0 12px', borderRadius: 8,
+            minHeight: TAP, padding: '0 14px', borderRadius: 8,
             border: `1px solid ${C.border}`, color: C.dim, fontSize: 12,
             display: 'flex', alignItems: 'center',
           }}

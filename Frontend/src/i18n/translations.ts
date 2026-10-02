@@ -1449,6 +1449,22 @@ export const translations = {
     'mobile.pedidos_chip_soon':       '{n} próximos',
     'mobile.pedidos_share_toggle':   'Reenviar este pedido',
     'mobile.pedidos_desktop_hint':   'Esta es la versión para tu celular: registrar llegadas y reenviar pedidos. Crear una orden a mano y enviarla a tus proveedores están en la pantalla de computadora.',
+    // Mobile shell: bottom tab bar, "Más" sheet and the compact header.
+    'mobile.tabbar_label':         'Navegación principal',
+    'mobile.tab_panel':            'Panel',
+    'mobile.tab_assistant':        'Asistente',
+    'mobile.tab_more':             'Más',
+    'mobile.more_title':           'Todas las pantallas',
+    'mobile.more_actions':         'Más acciones',
+    'mobile.more_preferences':     'Preferencias',
+    'mobile.language':             'Idioma',
+    'mobile.theme':                'Tema',
+    'mobile.theme_light':          'Claro',
+    'mobile.theme_dark':           'Oscuro',
+    'mobile.back':                 'Volver',
+    'mobile.unread_count':         '{n} sin leer',
+    'mobile.sheet_drag_hint':      'Desliza hacia abajo para cerrar',
+    'mobile.opens_desktop_screen': 'Abre una pantalla pensada para computadora.',
     'sidebar.open_menu':           'Abrir el menú',
 
     // Paginación y accesibilidad de tablas. Con 2.000 SKUs la tabla ponía
@@ -1816,6 +1832,7 @@ export const translations = {
     // contado nada, así que no hay evidencia de calma — no hay evidencia.
     'hoy.no_pending_actions_unmeasured': 'No podemos decirte si hay algo urgente',
     'hoy.inventory_unmeasured':          'Ninguno de tus productos tiene stock registrado. Sin saber cuánto te queda no podemos avisarte de nada: regístralo y el semáforo empieza a funcionar.',
+    'hoy.inventory_unmeasured_cta':      'Registrar mi stock',
 
     // Salidas para quien no puede verificar su correo (spam, enlace vencido).
     'auth.resend_verification':          'Reenviar correo',
@@ -3033,6 +3050,7 @@ export const translations = {
     'inventory.err_deleting_event': 'Error eliminando evento',
     'inventory.title': 'Inventario',
     'inventory.subtitle': 'Semáforo de stock · Recomendaciones de compra',
+    'inventory.views_aria': 'Vistas del inventario',
     'inventory.view_table': 'Tabla',
     'inventory.view_simple': 'Simple',
     'inventory.view_provider': 'Proveedor',
@@ -5221,6 +5239,22 @@ export const translations = {
     'mobile.pedidos_chip_soon':       '{n} upcoming',
     'mobile.pedidos_share_toggle':   'Forward this order',
     'mobile.pedidos_desktop_hint':   'This is the phone version: record arrivals and forward orders. Creating an order by hand and sending it to your suppliers are on the desktop screen.',
+    // Mobile shell: bottom tab bar, "More" sheet and the compact header.
+    'mobile.tabbar_label':         'Main navigation',
+    'mobile.tab_panel':            'Panel',
+    'mobile.tab_assistant':        'Assistant',
+    'mobile.tab_more':             'More',
+    'mobile.more_title':           'All screens',
+    'mobile.more_actions':         'More actions',
+    'mobile.more_preferences':     'Preferences',
+    'mobile.language':             'Language',
+    'mobile.theme':                'Theme',
+    'mobile.theme_light':          'Light',
+    'mobile.theme_dark':           'Dark',
+    'mobile.back':                 'Back',
+    'mobile.unread_count':         '{n} unread',
+    'mobile.sheet_drag_hint':      'Swipe down to close',
+    'mobile.opens_desktop_screen': 'Opens a screen designed for a computer.',
     'sidebar.open_menu':           'Open menu',
 
     // In-app alert history. The backend sends machine values (kind, status,
@@ -5541,6 +5575,7 @@ export const translations = {
     'hoy.inventory_unverified':          'Your data is out of date, so the absence of alerts does not mean everything is fine.',
     'hoy.no_pending_actions_unmeasured': 'We cannot tell you whether anything is urgent',
     'hoy.inventory_unmeasured':          'None of your products has stock on file. Without knowing how much is left we cannot warn you about anything: record it and the traffic light starts working.',
+    'hoy.inventory_unmeasured_cta':      'Record my stock',
 
     // Ways out for someone who cannot verify their email (spam, expired link).
     'auth.resend_verification':          'Resend email',
@@ -6705,6 +6740,7 @@ export const translations = {
     'inventory.err_deleting_event': 'Error deleting event',
     'inventory.title': 'Inventory',
     'inventory.subtitle': 'Stock signal · Purchase recommendations',
+    'inventory.views_aria': 'Inventory views',
     'inventory.view_table': 'Table',
     'inventory.view_simple': 'Simple',
     'inventory.view_provider': 'Provider',

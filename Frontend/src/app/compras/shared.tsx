@@ -11,7 +11,8 @@
  * screen where a confident green over month-old stock does the most damage.
  */
 import Link from 'next/link'
-import { Info, ArrowRight } from 'lucide-react'
+import { Info, ArrowRight, Monitor } from 'lucide-react'
+import { isMobileReady } from '@/components/mobile/DesktopOnlyNotice'
 import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
 import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit } from '@/lib/types'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
@@ -181,6 +182,8 @@ const ASSUMPTION_FIELD_FALLBACK_EN: Record<string, string> = {
  moq:           'the minimum order',
 }
 
+const SETUP_PATH = '/configurar-inventario'
+
 export function AssumptionsBanner({ summary, stacked = false }: {
  summary: AssumptionSummary
  /** Narrow screens put the CTA under the text instead of beside it; at 390px
@@ -201,7 +204,7 @@ export function AssumptionsBanner({ summary, stacked = false }: {
 
  return (
   <Link
-   href="/configurar-inventario"
+   href={SETUP_PATH}
    style={{
     display: 'flex',
     flexDirection: stacked ? 'column' : 'row',
@@ -236,6 +239,17 @@ export function AssumptionsBanner({ summary, stacked = false }: {
     {tOr(t, 'hoy.assumptions_cta', 'See what to configure first')}
     <ArrowRight size={12} aria-hidden="true" />
    </span>
+   {/* On a phone this leads into a screen built for a computer. Say so before
+       the tap, not after it (DesktopOnlyNotice decides which screens are). */}
+   {stacked && !isMobileReady(SETUP_PATH) && (
+    <span style={{
+     display: 'inline-flex', alignItems: 'center', gap: 5,
+     marginLeft: 25, marginTop: -4, fontSize: 11, color: C.dim,
+    }}>
+     <Monitor size={11} aria-hidden="true" />
+     {t('mobile.opens_desktop_screen')}
+    </span>
+   )}
   </Link>
  )
 }
@@ -291,6 +305,22 @@ export function AllClear({ stale, unmeasured = false }: {
       : doubtful ? 'hoy.inventory_unverified'
       : 'hoy.inventory_under_control')}
    </div>
+   {/* "Regístralo" used to be the whole call to action, with nothing to tap.
+       Stock is recorded on /inventario. */}
+   {unmeasured && (
+    <Link
+     href="/inventario"
+     style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+      marginTop: 14, minHeight: 44, padding: '0 18px', borderRadius: 10, boxSizing: 'border-box',
+      background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 700,
+      textDecoration: 'none',
+     }}
+    >
+     {t('hoy.inventory_unmeasured_cta')}
+     <ArrowRight size={14} aria-hidden="true" />
+    </Link>
+   )}
   </div>
  )
 }

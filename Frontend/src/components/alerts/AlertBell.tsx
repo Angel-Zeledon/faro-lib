@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
   AlertTriangle, Bell, CalendarClock, CheckCircle2, Clock, Database, Gauge,
   KeyRound, LineChart, PackageX, RefreshCw, ShoppingCart, TrendingUp, Truck, X,
@@ -314,6 +315,8 @@ export interface AlertBellProps {
 
 export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: AlertBellProps) {
   const { t } = useLanguage()
+  // A thumb, not a pointer: 44px on a phone (it was 28x28). Desktop unchanged.
+  const narrow = useIsNarrow()
   const [open, setOpen] = useState(false)
   const [alerts, setAlerts] = useState<AlertEntry[]>([])
   const [serverUnread, setServerUnread] = useState(0)
@@ -369,19 +372,20 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
         title={t('topbar.notifications')}
         aria-label={t('topbar.notifications')}
         style={{
-          position: 'relative', padding: 6, borderRadius: 7,
+          position: 'relative', padding: 6, borderRadius: narrow ? 10 : 7,
           background: 'transparent',
-          border: `1px solid ${unread > 0 ? 'var(--accent)' : 'var(--border)'}`,
+          border: narrow ? 'none' : `1px solid ${unread > 0 ? 'var(--accent)' : 'var(--border)'}`,
           cursor: 'pointer',
           color: unread > 0 ? 'var(--accent)' : 'var(--muted)',
           display: 'flex', alignItems: 'center',
+          ...(narrow ? { width: 44, height: 44, justifyContent: 'center', boxSizing: 'border-box' } : {}),
           transition: 'all 0.15s',
         }}
       >
-        <Bell size={14} />
+        <Bell size={narrow ? 20 : 14} />
         {unread > 0 && (
           <span style={{
-            position: 'absolute', top: -5, right: -5,
+            position: 'absolute', top: narrow ? 5 : -5, right: narrow ? 4 : -5,
             minWidth: 16, height: 16, borderRadius: 8,
             background: '#ef4444', color: '#fff',
             fontSize: 9, fontWeight: 700,
@@ -400,7 +404,8 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
               bell, rather than being a new surface that just appeared. */}
           <div className="popover-enter" style={{
             position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-            width: 340, zIndex: 99,
+            // Never wider than the phone it opens on.
+            width: 'min(340px, calc(100vw - 16px))', zIndex: 99,
             background: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: 10,
@@ -414,9 +419,13 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
               <span style={{ fontSize: 13, fontWeight: 600 }}>{t('topbar.notifications')}</span>
               <button
                 onClick={() => setOpen(false)}
-                style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex' }}
+                aria-label={t('common.close')}
+                style={{
+                  all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'flex',
+                  ...(narrow ? { width: 44, height: 44, margin: '-12px -14px -12px 0', alignItems: 'center', justifyContent: 'center' } : {}),
+                }}
               >
-                <X size={13} />
+                <X size={narrow ? 18 : 13} />
               </button>
             </div>
 

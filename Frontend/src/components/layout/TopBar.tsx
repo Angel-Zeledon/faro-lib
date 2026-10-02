@@ -9,6 +9,8 @@ import AlertBell from '@/components/alerts/AlertBell'
 import MessagesBadge from '@/components/messages/MessagesBadge'
 import TourLauncher from '@/components/tour/TourLauncher'
 import ReportProblemButton from './ReportProblemButton'
+import TopBarOverflowMenu from './TopBarOverflowMenu'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
@@ -43,6 +45,7 @@ const PATHS_WITH_OWN_SESSION_PICKER = ['/pronosticos']
 export default function TopBar() {
   const path    = usePathname()
   const { t }   = useLanguage()
+  const narrow  = useIsNarrow()
   const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'StockAI'
   const { addToast } = useToast()
   // Active-session badge source of truth.
@@ -144,6 +147,39 @@ export default function TopBar() {
   const sessionLabel = activeSession && grainLabel && suffix && activeSession.name.endsWith(suffix)
     ? activeSession.name.slice(0, -suffix.length)
     : activeSession?.name ?? ''
+
+  // Narrow screens: the desktop bar measured 409–461px on a 360px phone, so
+  // the bell and "report a problem" sat past the right edge and the clock
+  // wrapped onto two lines. Here it is title + "⋯" + bell, every control
+  // 44px: the clock goes (the phone shows the time already), the active-session
+  // crumb goes (it only links to /historial, reachable from the nav), and the
+  // secondary actions move into the overflow menu — none of them removed.
+  if (narrow) {
+    return (
+      <header style={{
+        height: 52,
+        display: 'flex', alignItems: 'center', gap: 2,
+        padding: '0 4px 0 12px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)',
+        flexShrink: 0, position: 'relative', zIndex: 20, minWidth: 0,
+      }}>
+        <h1 style={{
+          flex: 1, minWidth: 0, margin: 0,
+          fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {title}
+        </h1>
+        <TopBarOverflowMenu />
+        <AlertBell
+          localNotices={notifs}
+          onLocalRead={markLocalRead}
+          onClearLocal={clearLocal}
+        />
+      </header>
+    )
+  }
 
   return (
     <header style={{

@@ -43,6 +43,8 @@ import {
   isAssumed, sourceLabelKey, type ValueSource,
 } from '@/lib/inventoryDefaults'
 import { fmtNum } from '@/lib/numberLocale'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import MobileTabs from '@/components/mobile/MobileTabs'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
@@ -1870,6 +1872,7 @@ function ExpandedCalcRow({ item, background }: {
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
  const { t, lang } = useLanguage()
+ const narrow = useIsNarrow()
  const { addToast } = useToast()
  // A viewer was offered the whole write toolbar — stock editor, shrinkage,
  // "add warehouse" — could type a value, and only met the refusal at save
@@ -2435,13 +2438,16 @@ export default function InventoryPage() {
  </div>
  </div>
 
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...(narrow ? { width: '100%', minWidth: 0 } : {}) }}>
  {/* Session freshness */}
  <DataFreshness currentSession={currentSession} />
 
- {/* View toggle */}
- <div data-tour="inv.views" style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
- {([
+ {/* View toggle. On a phone the nine views measured 719px inside a
+     clipping 336px box, so five of them could not be reached at all: there
+     it is a strip that scrolls with a finger and keeps the active view in
+     sight (components/mobile/MobileTabs). Desktop is unchanged. */}
+ {(() => {
+ const views = ([
  ['table', <List size={13} />, t('inventory.view_table')],
  ['simple', <Package size={13} />, t('inventory.view_simple')],
  ['provider', <Layers size={13} />, t('inventory.view_provider')],
@@ -2453,12 +2459,28 @@ export default function InventoryPage() {
  ['erosion', <TrendingDown size={13} />, t('inventory.view_margin_erosion')],
  ['money', <DollarSign size={13} />, t('inventory.view_forecast_money')],
  ['ignored', <AlertTriangle size={13} />, t('inventory.view_cost_of_ignoring')],
- ] as [string, React.ReactNode, string][]).map(([mode, icon, label]) => (
- <button key={mode} onClick={() => setViewMode(mode as 'table' | 'simple' | 'provider' | 'update' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored')} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
+ ] as [string, React.ReactNode, string][])
+ type ViewMode = typeof viewMode
+ if (narrow) return (
+ <div data-tour="inv.views" style={{ width: '100%', minWidth: 0 }}>
+ <MobileTabs
+  ariaLabel={t('inventory.views_aria')}
+  value={viewMode}
+  onChange={mode => setViewMode(mode as ViewMode)}
+  tabs={views.map(([mode, icon, label]) => ({ id: mode as ViewMode, label, icon }))}
+ />
+ </div>
+ )
+ return (
+ <div data-tour="inv.views" style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+ {views.map(([mode, icon, label]) => (
+ <button key={mode} onClick={() => setViewMode(mode as ViewMode)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', fontSize: 11, fontWeight: 500, background: viewMode === mode ? 'var(--accent-dim)' : 'transparent', color: viewMode === mode ? 'var(--accent)' : C.dim }}>
  {icon}{label}
  </button>
  ))}
  </div>
+ )
+ })()}
 
  {/* Getting data in and out used to be eleven loose controls in this bar:
      five of them exports, two of them links to screens already sitting in the
@@ -2729,7 +2751,7 @@ export default function InventoryPage() {
  }
  }}
  disabled={updatedSkus.size === 0}
- style={{ all: 'unset', cursor: updatedSkus.size === 0 ? 'default' : 'pointer', padding: '6px 14px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 12, color: C.dim, opacity: updatedSkus.size === 0 ? 0.4 : 1 }}
+ style={{ all: 'unset', cursor: updatedSkus.size === 0 ? 'default' : 'pointer', padding: '6px 14px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 12, color: C.dim, opacity: updatedSkus.size === 0 ? 0.4 : 1, ...(narrow ? { minHeight: 44, boxSizing: 'border-box', display: 'flex', alignItems: 'center' } : {}) }}
  >
  {t('inventory.btn_discard')}
  </button>
@@ -2737,7 +2759,7 @@ export default function InventoryPage() {
  data-tour="inv.save"
  onClick={handleSaveAll}
  disabled={updatedSkus.size === 0 || updateSaving}
- style={{ all: 'unset', cursor: updatedSkus.size === 0 || updateSaving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, background: updatedSkus.size > 0 ? C.green : 'rgba(34,197,94,0.2)', color: '#fff', opacity: updatedSkus.size === 0 || updateSaving ? 0.5 : 1 }}
+ style={{ all: 'unset', cursor: updatedSkus.size === 0 || updateSaving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, background: updatedSkus.size > 0 ? C.green : 'rgba(34,197,94,0.2)', color: '#fff', opacity: updatedSkus.size === 0 || updateSaving ? 0.5 : 1, ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14 } : {}) }}
  >
  {updateSaving ? <Spinner size={11} /> : <Save size={11} />}
  {updateSaving ? t('inventory.saving_ellipsis') : `${t('inventory.btn_save_prefix')} ${updatedSkus.size > 0 ? updatedSkus.size : ''} ${updatedSkus.size !== 1 ? t('inventory.changes_plural') : t('inventory.changes_singular')}`}
@@ -2798,6 +2820,9 @@ export default function InventoryPage() {
  padding: '5px 8px', width: '100%', boxSizing: 'border-box' as const,
  transition: 'border-color 0.15s',
  opacity: isSavingThis ? 0.6 : 1,
+ // A thumb on a warehouse floor, not a mouse: 44px tall and 16px text on a
+ // phone (16px also stops iOS zooming the page on focus). Desktop unchanged.
+ ...(narrow ? { minHeight: 44, fontSize: 16, padding: '8px 10px' } : {}),
  }
  // Every cell in the row names its SKU: 100 identically-labelled
  // "Stock actual" fields tell a screen-reader user nothing about
