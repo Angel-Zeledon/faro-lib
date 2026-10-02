@@ -1,6 +1,7 @@
 'use client'
 import type { QualityReport } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { pct } from './shared'
 
@@ -104,6 +105,7 @@ export function QualityTab({ q, showStats, onToggleStats }: {
   onToggleStats: () => void
 }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const warnings = useQualityWarnings()(q)
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -140,6 +142,7 @@ export function QualityTab({ q, showStats, onToggleStats }: {
             display: 'flex', alignItems: 'center', gap: 6,
             fontSize: 12, color: 'var(--dim)', padding: '8px 0',
             borderTop: '1px solid var(--border)', width: '100%',
+            ...(narrow ? { minHeight: 44, fontSize: 14, boxSizing: 'border-box' as const } : {}),
           }}
         >
           <span style={{ fontSize: 10 }}>{showStats ? '▲' : '▼'}</span>

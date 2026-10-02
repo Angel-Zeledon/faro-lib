@@ -11,6 +11,15 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { localeFor } from '@/lib/numberLocale'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import {
+  BottomSheet, MobileList, MobileCard, type StatusTone,
+} from '@/components/mobile'
+
+/** Run status on the phone cards — the same reading as the desktop badge. */
+const STATUS_TONE: Record<string, StatusTone> = {
+  COMPLETED: 'success', FAILED: 'danger', CANCELLED: 'danger', RUNNING: 'warning', QUEUED: 'warning',
+}
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -59,6 +68,10 @@ export default function SessionsHistoryPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName,  setEditName]  = useState('')
   const [saving,    setSaving]    = useState(false)
+  // Phones: the run whose detail sheet is open. Kept as an id so a rename
+  // shows up in the open sheet without re-opening it.
+  const narrow = useIsNarrow()
+  const [detailId,  setDetailId]  = useState<string | null>(null)
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true)
@@ -109,6 +122,7 @@ export default function SessionsHistoryPage() {
     })
     if (!okToDelete) return
     await deleteSession(s.session_id)
+    setDetailId(null)
     load()
   }
 
@@ -153,7 +167,7 @@ export default function SessionsHistoryPage() {
       {loading ? (
         <Card padding={8}>
           <LoadingState label={t('common.loading')}>
-            <SkeletonTable rows={6} columns={7} />
+            <SkeletonTable rows={6} columns={narrow ? 1 : 7} />
           </LoadingState>
         </Card>
       ) : error ? (
@@ -163,6 +177,25 @@ export default function SessionsHistoryPage() {
           icon={<History size={22} />}
           title={t('sessions.empty_title')}
           body={t('sessions.empty_hint')}
+        />
+      ) : narrow ? (
+        <HistoryCards
+          items={items}
+          detailId={detailId}
+          onOpen={id => { cancelRename(); setDetailId(id) }}
+          onClose={() => { cancelRename(); setDetailId(null) }}
+          canEdit={canEdit}
+          fmtDate={fmtDate}
+          granularityLabel={granularityLabel}
+          onOpenResults={openResults}
+          editingId={editingId}
+          editName={editName}
+          saving={saving}
+          onStartRename={startRename}
+          onEditName={setEditName}
+          onSaveRename={saveRename}
+          onCancelRename={cancelRename}
+          onDelete={removeSession}
         />
       ) : (
         <Card padding={0} overflow="hidden">
@@ -296,5 +329,143 @@ export default function SessionsHistoryPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+// ── Phone layout ─────────────────────────────────────────────────────────────
+// Eight columns do not fit 360px, and the rename/delete icons were 24px
+// targets at the far right of a sideways-scrolling row. On a phone each run is
+// a card (name, dataset and date, status, SKU count); tapping it opens a sheet
+// with every column, the failure reason, and the three things a run can be
+// asked to do — open its results, rename it, delete it — as full-width buttons.
+function HistoryCards({
+  items, detailId, onOpen, onClose, canEdit, fmtDate, granularityLabel, onOpenResults,
+  editingId, editName, saving, onStartRename, onEditName, onSaveRename, onCancelRename, onDelete,
+}: {
+  items: SessionSummary[]
+  detailId: string | null
+  onOpen: (id: string) => void
+  onClose: () => void
+  canEdit: boolean
+  fmtDate: (iso: string) => string
+  granularityLabel: (g: string | null) => string
+  onOpenResults: (s: SessionSummary) => void
+  editingId: string | null
+  editName: string
+  saving: boolean
+  onStartRename: (s: SessionSummary) => void
+  onEditName: (v: string) => void
+  onSaveRename: () => void
+  onCancelRename: () => void
+  onDelete: (s: SessionSummary) => void
+}) {
+  const { t } = useLanguage()
+  const detail = items.find(i => i.session_id === detailId) ?? null
+  const renaming = !!detail && editingId === detail.session_id
+
+  const row = (label: string, value: React.ReactNode) => (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0',
+      borderBottom: `1px solid ${C.border}`, fontSize: 14,
+    }}>
+      <span style={{ color: C.dim, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: C.text, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{value}</span>
+    </div>
+  )
+
+  return (
+    <>
+      <MobileList ariaLabel={t('sessions.page_title')}>
+        {items.map(s => (
+          <MobileCard
+            key={s.session_id}
+            title={s.name}
+            subtitle={`${s.dataset_filename ?? s.dataset_name ?? '—'} · ${fmtDate(s.created_at)}`}
+            status={{ label: t(`sessions.status_${s.status}`), tone: STATUS_TONE[s.status] ?? 'neutral' }}
+            value={s.sku_count ?? '—'}
+            valueCaption={t('sessions.col_skus')}
+            onClick={() => onOpen(s.session_id)}
+          />
+        ))}
+      </MobileList>
+
+      <BottomSheet
+        open={!!detail}
+        onClose={onClose}
+        title={detail?.name ?? ''}
+        footer={detail && !renaming ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {detail.status === 'COMPLETED' && (
+              <button className="mobile-btn mobile-btn-primary" style={{ flex: 'none', width: '100%' }}
+                      onClick={() => onOpenResults(detail)}>
+                {t('sessions.view_results')}
+              </button>
+            )}
+            {canEdit && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="mobile-btn mobile-btn-secondary" onClick={() => onStartRename(detail)}>
+                  <Pencil size={16} aria-hidden="true" /> {t('sessions.rename_action')}
+                </button>
+                <button
+                  className="mobile-btn mobile-btn-secondary"
+                  style={{ color: detail.status === 'RUNNING' ? undefined : 'var(--signal-order-now-fg)' }}
+                  disabled={detail.status === 'RUNNING'}
+                  onClick={() => onDelete(detail)}
+                >
+                  <Trash2 size={16} aria-hidden="true" /> {t('sessions.delete_action')}
+                </button>
+              </div>
+            )}
+            {canEdit && detail.status === 'RUNNING' && (
+              <div style={{ fontSize: 12.5, color: C.dim }}>{t('sessions.delete_running_hint')}</div>
+            )}
+          </div>
+        ) : detail && renaming ? (
+          <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+            <button className="mobile-btn mobile-btn-secondary" onClick={onCancelRename} disabled={saving}>
+              {t('sessions.rename_cancel')}
+            </button>
+            <button className="mobile-btn mobile-btn-primary" onClick={onSaveRename} disabled={saving || !editName.trim()}>
+              <Check size={16} aria-hidden="true" /> {t('sessions.rename_save')}
+            </button>
+          </div>
+        ) : undefined}
+      >
+        {detail && (
+          <div>
+            {renaming && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, fontSize: 13, color: C.muted }}>
+                {t('sessions.rename_action')}
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={e => onEditName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') onSaveRename() }}
+                  enterKeyHint="done"
+                  disabled={saving}
+                  className="form-input"
+                  style={{ fontSize: 16, minHeight: 44, boxSizing: 'border-box', width: '100%' }}
+                />
+              </label>
+            )}
+            {row(t('sessions.col_status'), <StatusBadge status={detail.status} />)}
+            {detail.status === 'FAILED' && detail.failure_reason && (
+              <div style={{
+                padding: '10px 0', borderBottom: `1px solid ${C.border}`, fontSize: 13,
+                color: C.dim, lineHeight: 1.45, overflowWrap: 'anywhere',
+              }}>
+                <span style={{ color: C.muted }}>{t('sessions.failure_detail_label')} </span>
+                {detail.failure_reason}
+              </div>
+            )}
+            {row(t('sessions.col_dataset'), detail.dataset_filename ?? detail.dataset_name ?? '—')}
+            {row(t('sessions.col_created'), fmtDate(detail.created_at))}
+            {row(t('sessions.col_horizon'), detail.horizon ?? '—')}
+            {row(t('sessions.col_granularity'), granularityLabel(detail.granularity))}
+            {row(t('sessions.col_skus'), detail.sku_count ?? '—')}
+          </div>
+        )}
+      </BottomSheet>
+    </>
   )
 }

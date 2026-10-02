@@ -43,6 +43,11 @@ export const MOBILE_READY = [
   '/ventas',
   // Source list ⇄ full-screen source detail; result sets as record cards.
   '/archivos',
+  '/pronosticos',   // app/pronosticos/PronosticosMobile.tsx — list, then one SKU
+  '/impacto',       // cards for the monthly table, month detail in a sheet
+  '/historial',     // runs as cards; rename/delete/open in a sheet
+  '/actividad',     // full-width filters, thumb-sized "show more"
+  '/escenarios',    // rules as cards, stepped rule sheet, sticky "Simular"
 ]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen

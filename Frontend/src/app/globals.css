@@ -1198,6 +1198,17 @@
   to   { opacity: 1; transform: none; }
 }
 
+/* In-route navigation on a phone (a list opening one item, and back): the new
+   view slides in from the side it came from, like a pushed/popped native
+   screen. Panels switched by tabs only fade. Transform/opacity only; the global
+   reduced-motion rule turns all three off. */
+.mobile-push-enter { animation: mobilePushEnter var(--dur-3) var(--ease-out); }
+.mobile-pop-enter  { animation: mobilePopEnter  var(--dur-3) var(--ease-out); }
+.mobile-fade-enter { animation: mobileFadeEnter var(--dur-2) var(--ease-out); }
+@keyframes mobilePushEnter { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes mobilePopEnter  { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes mobileFadeEnter { from { opacity: 0; } to { opacity: 1; } }
+
 /* Buttons for phone screens (StickyActionBar, sheets): 48px, sharing the row,
    one primary. */
 .mobile-btn {
