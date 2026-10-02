@@ -18,6 +18,18 @@ export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:5000'
 ).replace(/\/+$/, '')
 
+// The landing's origin as configured, with no local fallback: unlike SITE_URL
+// (which must always be absolute for crawlers), a link from the app to the
+// landing stays relative when no landing origin was baked in — one domain, or
+// local dev on whatever port the server happens to run.
+const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, '')
+
+/** A landing path (the help center, the legal pages…) as the app should link
+ *  it: absolute when the landing has its own origin. */
+export function siteHref(path: string): string {
+  return `${SITE_ORIGIN}${path}`
+}
+
 /** An app path, absolute when the app has its own origin. */
 export function appHref(path: string): string {
   return `${APP_URL}${path}`

@@ -16,6 +16,7 @@ import { appHref } from '@/lib/siteUrls'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { LEGAL } from '@/i18n/legal'
+import { DOCS_CHROME } from '@/i18n/docs/chrome'
 import { LEGAL_ORDER, LEGAL_PATHS } from '@/components/landing/legalPaths'
 import { Wordmark } from '@/components/brand/Wordmark'
 import { T } from '@/components/landing/theme'
@@ -169,7 +170,7 @@ export function Footer(props: ChromeProps) {
  return (
  <footer className="footer-shell" style={{ background: T.bg2, borderTop: `1px solid ${T.border}`, padding: '56px 48px 40px' }}>
  <div style={{ maxWidth: 1120, margin: '0 auto' }}>
- <div className="footer-grid" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr', gap: 40, marginBottom: 40 }}>
+ <div className="footer-grid" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr 1fr', gap: 40, marginBottom: 40 }}>
  <div>
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
  <Wordmark size={20} color={T.text} accent={T.accent} />
@@ -188,6 +189,12 @@ export function Footer(props: ChromeProps) {
  <div className="foot-head">{L.footer.company}</div>
  {L.footerLinks.company.map(([href, label]) => (
  <LandingLink key={label} href={landingHref(href, props)} className="foot-link">{label}</LandingLink>
+ ))}
+ </div>
+ <div>
+ <div className="foot-head">{DOCS_CHROME[lang].footerHead}</div>
+ {DOCS_CHROME[lang].footerLinks.map(([href, label]) => (
+ <LandingLink key={href} href={href} className="foot-link">{label}</LandingLink>
  ))}
  </div>
  <div>

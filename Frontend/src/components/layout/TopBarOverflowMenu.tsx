@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { MoreHorizontal, MessageSquare, HelpCircle } from 'lucide-react'
+import { MoreHorizontal, MessageSquare, HelpCircle, LifeBuoy } from 'lucide-react'
+import { siteHref } from '@/lib/siteUrls'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTour } from '@/contexts/TourContext'
 import { useDmUnread } from '@/lib/dmUnread'
@@ -116,6 +117,10 @@ export default function TopBarOverflowMenu() {
                 </span>
               )}
             </Link>
+            <a href={siteHref('/docs')} target="_blank" rel="noopener" role="menuitem" onClick={() => setOpen(false)} style={itemStyle}>
+              <LifeBuoy size={18} color="var(--muted)" aria-hidden="true" />
+              <span style={{ flex: 1 }}>{t('help.center')}</span>
+            </a>
             {/* Only on screens that have a tour — never a dead control. */}
             {available && (
               <button

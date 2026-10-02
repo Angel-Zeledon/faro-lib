@@ -3,7 +3,7 @@ import { InstallAppButton } from './InstallAppButton'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut, User, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { LogOut, User, ChevronLeft, ChevronRight, X, LifeBuoy } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
@@ -14,6 +14,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { Wordmark } from '@/components/brand/Wordmark'
 import { GROUPS, visibleNavFor } from './navItems'
 import LegalLinks from '@/components/legal/LegalLinks'
+import { siteHref } from '@/lib/siteUrls'
 
 // The nav definition lives in ./navItems so the mobile "Más" sheet lists
 // exactly the same screens, in the same groups, with the same role rules.
@@ -200,6 +201,25 @@ export default function Sidebar() {
         })}
 
         <InstallAppButton collapsed={collapsedNow} />
+
+        {/* The help center lives on the landing, which may be another origin,
+            so it opens in its own tab and the screen behind keeps its state. */}
+        <a
+          href={siteHref('/docs')}
+          target="_blank"
+          rel="noopener"
+          title={collapsedNow ? t('help.center') : t('help.center_hint')}
+          style={{
+            all: 'unset', cursor: 'pointer', boxSizing: 'border-box', marginTop: 4,
+            display: 'flex', alignItems: 'center', justifyContent: collapsedNow ? 'center' : 'flex-start',
+            gap: collapsedNow ? 0 : 8, width: '100%',
+            padding: collapsedNow ? '8px 0' : '8px 10px', borderRadius: 7,
+            color: 'var(--sidebar-text)', fontSize: 12.5,
+          }}
+        >
+          <LifeBuoy size={14} aria-hidden="true" />
+          {!collapsedNow && <span>{t('help.center')}</span>}
+        </a>
 
         {/* Collapse toggle — desktop only. In the drawer there is nothing to
             collapse to: the panel is either open over the page or gone. */}
