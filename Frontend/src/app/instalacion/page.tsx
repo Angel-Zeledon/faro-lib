@@ -21,7 +21,7 @@
  * therefore always empty on load; typing in it replaces, and clearing it
  * (with Save) returns the field to the environment.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getServices, saveService, resetService, probeService,
   getTenantServices, saveTenantService, resetTenantService, probeTenantService,
@@ -38,6 +38,10 @@ import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Spinner from '@/components/ui/Spinner'
+import {
+  MobileTabs, MobileList, MobileCard, StickyActionBar, useMobileHeader, type StatusTone,
+} from '@/components/mobile'
+import MobileFormScope from '@/components/mobile/MobileFormScope'
 import {
   AlertTriangle, CheckCircle2, CircleSlash, Lock, PlugZap, ServerCog, XCircle,
 } from 'lucide-react'
@@ -217,6 +221,7 @@ function ServiceCard({
   const ui = copy.ui
   const { addToast } = useToast()
   const confirm = useConfirm()
+  const narrow = useIsNarrow()
 
   const text = copy.services[service.key as ServiceKey]
   const [draft, setDraft] = useState<Record<string, string>>({})
@@ -278,7 +283,7 @@ function ServiceCard({
   }
 
   return (
-    <Card padding="18px 20px" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <Card padding={narrow ? '16px' : '18px 20px'} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>{text?.name ?? service.key}</div>
         <StatePill state={service.state} />
@@ -356,7 +361,18 @@ function ServiceCard({
         ))}
       </div>
 
-      {editable ? (
+      {editable && narrow ? (
+        // Phone (only ever rendered as the open service): Save pinned above
+        // the tab bar, so it is reachable from any of the fields below.
+        <StickyActionBar>
+          <button type="button" className="mobile-btn mobile-btn-secondary" onClick={reset} disabled={saving}>
+            {ui.reset}
+          </button>
+          <button type="button" className="mobile-btn mobile-btn-primary" onClick={save} disabled={!dirty || saving}>
+            {saving ? <Spinner size={16} /> : null}{saving ? ui.saving : ui.save}
+          </button>
+        </StickyActionBar>
+      ) : editable ? (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button variant="ghost" size="sm" onClick={reset} disabled={saving}>
             {ui.reset}
@@ -377,6 +393,7 @@ function ServiceCard({
 
 export default function InstallationPage() {
   const { lang } = useLanguage()
+  const narrow = useIsNarrow()
   const user = getUser()
   const copy = SERVICE_CONFIG[lang]
   const ui = copy.ui
@@ -438,6 +455,34 @@ export default function InstallationPage() {
     { id: 'tenant' as Tab, label: ui.tabTenant, Icon: PlugZap },
   ]), [ui])
 
+  // Phone drill-in: which service is open. Kept in `?svc=scope:key` so the
+  // system back gesture closes it rather than leaving the screen.
+  const [openSvc, setOpenSvc] = useState<{ scope: Tab; key: string } | null>(null)
+  const pushedSvc = useRef(false)
+  useEffect(() => {
+    const read = () => {
+      const v = new URLSearchParams(window.location.search).get('svc')
+      const [scope, key] = (v ?? '').split(':')
+      setOpenSvc((scope === 'instance' || scope === 'tenant') && key ? { scope, key } : null)
+      if (!v) pushedSvc.current = false
+    }
+    read()
+    window.addEventListener('popstate', read)
+    return () => window.removeEventListener('popstate', read)
+  }, [])
+  const openService = (scope: Tab, key: string) => {
+    window.history.pushState(null, '', `?svc=${scope}:${encodeURIComponent(key)}`)
+    pushedSvc.current = true
+    setOpenSvc({ scope, key })
+    document.querySelector('.page-content')?.scrollTo({ top: 0 })
+  }
+  const closeService = useCallback(() => {
+    if (pushedSvc.current) window.history.back()
+    else { window.history.replaceState(null, '', window.location.pathname); setOpenSvc(null) }
+  }, [])
+  const openedName = openSvc ? (copy.services[openSvc.key as ServiceKey]?.name ?? openSvc.key) : ''
+  useMobileHeader(narrow && openSvc ? { title: openedName, onBack: closeService } : null)
+
   if (!isAdmin) {
     return (
       <Card padding="24px">
@@ -449,13 +494,26 @@ export default function InstallationPage() {
     )
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+  const body = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: narrow ? 14 : 20 }}>
+      {narrow ? (
+        // The compact header already says "Instalación"; the lead is enough.
+        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5, padding: '0 4px' }}>{ui.lead}</div>
+      ) : (
       <div>
         <div style={{ fontSize: 20, fontWeight: 700 }}>{ui.title}</div>
         <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{ui.lead}</div>
       </div>
+      )}
 
+      {narrow ? (
+        <MobileTabs
+          ariaLabel={ui.title}
+          value={effectiveTab ?? ''}
+          onChange={id => setTab(id as Tab)}
+          tabs={tabs.map(({ id, label, Icon }) => ({ id, label, icon: <Icon size={14} aria-hidden="true" /> }))}
+        />
+      ) : (
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
         {tabs.map(({ id, label, Icon }) => {
           const active = effectiveTab === id
@@ -477,13 +535,14 @@ export default function InstallationPage() {
           )
         })}
       </div>
+      )}
 
       {/* Why the reader was put on the other tab. Landing them there silently
           answers "what can I do" and leaves "why can't I do the other thing"
           hanging — and an unexplained missing screen reads as a broken one.
           The tab stays clickable: the full explanation is behind it. */}
       {!loading && denied && effectiveTab === 'tenant' && (
-        <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: -8 }}>
+        <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: narrow ? 0 : -8 }}>
           {denied === 'disabled' ? ui.operatorDisabledBody : ui.notOperatorBody}
         </div>
       )}
@@ -524,7 +583,9 @@ export default function InstallationPage() {
                 text={`${ui.undocumented}: ${instance.undocumented_settings.join(', ')}`}
               />
             )}
-            {instance.services.map(s => (
+            {narrow ? (
+              <ServiceList services={instance.services} onOpen={k => openService('instance', k)} />
+            ) : instance.services.map(s => (
               <ServiceCard key={s.key} service={s} scope="instance" onChanged={load} />
             ))}
           </div>
@@ -536,6 +597,8 @@ export default function InstallationPage() {
             <Card padding="24px">
               <div style={{ fontSize: 12, color: 'var(--dim)' }}>{ui.tenantEmpty}</div>
             </Card>
+          ) : narrow ? (
+            <ServiceList services={tenantServices} onOpen={k => openService('tenant', k)} />
           ) : (
             tenantServices.map(s => (
               <ServiceCard key={s.key} service={s} scope="tenant" onChanged={load} />
@@ -544,6 +607,61 @@ export default function InstallationPage() {
         </div>
       )}
     </div>
+  )
+
+  // Phone, one service open: just that service, full screen, with the
+  // header's back button. Looked up in the freshly loaded report so a save
+  // (which reloads) shows the new state.
+  const opened = narrow && openSvc
+    ? (openSvc.scope === 'instance' ? instance?.services : tenantServices)?.find(s => s.key === openSvc.key)
+    : undefined
+  if (narrow && openSvc && opened) {
+    return (
+      <MobileFormScope>
+        <div key={`${openSvc.scope}:${opened.key}`} className="m-tap-min m-drill-enter">
+          <ServiceCard service={opened} scope={openSvc.scope} onChanged={load} />
+        </div>
+      </MobileFormScope>
+    )
+  }
+
+  // Phone: 16px fields (no iOS zoom) and 44px buttons for everything inside.
+  return narrow
+    ? <MobileFormScope><div className="m-tap-min">{body}</div></MobileFormScope>
+    : body
+}
+
+// ── Phone: services as a list ────────────────────────────────────────────────
+// Forty-odd fields in one scroll is a desktop audit, not a phone screen. On a
+// phone each service is a row stating its state; tapping it opens that one.
+
+const STATE_TONE: Record<string, StatusTone> = {
+  ready: 'success', on: 'success', degraded: 'danger', not_configured: 'neutral', off: 'neutral',
+}
+
+function ServiceList({ services, onOpen }: { services: ServiceView[]; onOpen: (key: string) => void }) {
+  const { lang } = useLanguage()
+  const copy = SERVICE_CONFIG[lang]
+  const ui = copy.ui
+  const label: Record<string, string> = {
+    ready: ui.stateReady, on: ui.stateOn, not_configured: ui.stateNotConfigured,
+    off: ui.stateOff, degraded: ui.stateDegraded,
+  }
+  return (
+    <MobileList ariaLabel={ui.title}>
+      {services.map(s => {
+        const text = copy.services[s.key as ServiceKey]
+        return (
+          <MobileCard
+            key={s.key}
+            title={text?.name ?? s.key}
+            subtitle={text?.summary ?? s.summary}
+            status={{ label: label[s.state] ?? s.state, tone: STATE_TONE[s.state] ?? 'neutral' }}
+            onClick={() => onOpen(s.key)}
+          />
+        )
+      })}
+    </MobileList>
   )
 }
 
