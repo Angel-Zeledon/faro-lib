@@ -5,6 +5,7 @@ import { getTenantCurrency } from '@/lib/api'
 import { setActiveCurrency } from '@/lib/currency'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
+import SectionTabs, { SECTION_TABS_HEIGHT, hasSectionTabs } from './SectionTabs'
 import AuthGuard from './AuthGuard'
 import SkuSearchOverlay from './SkuSearchOverlay'
 import { SidebarProvider } from '@/contexts/SidebarContext'
@@ -115,12 +116,20 @@ function Shell({ children }: { children: React.ReactNode }) {
       <AppIntro />
       <PwaRegister />
       {!narrow && <Sidebar />}
-      <div className="main-content" style={narrow ? { minWidth: 0 } : undefined}>
+      <div
+        className="main-content"
+        style={{
+          ...(narrow ? { minWidth: 0 } : {}),
+          // A screen sized to the viewport subtracts the analysis tab strip.
+          ['--section-tabs-h' as string]: hasSectionTabs(pathname) ? `${SECTION_TABS_HEIGHT}px` : '0px',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, minWidth: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <TopBar />
           </div>
         </div>
+        <SectionTabs />
         <div
           className="page-content"
           style={narrow ? { overflowX: 'hidden', padding: '12px 12px calc(var(--mobile-nav-h, 0px) + 16px)' } : undefined}

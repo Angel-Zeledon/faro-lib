@@ -318,6 +318,20 @@
     color: var(--sidebar-text-active) !important;
   }
 
+  /* /configuracion: the hub's rows and account band. Hover only shades the
+     row it is on; the band lifts its own petrol a step. */
+  .hub-row { transition: background var(--dur-2) var(--ease-out); }
+  .hub-row:hover { background: var(--surface-2); }
+  .hub-row:focus-visible, .hub-account:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .hub-account { transition: filter var(--dur-2) var(--ease-out); }
+  .hub-account:hover { filter: brightness(1.12); }
+
+  /* The analysis tab strip scrolls sideways on a very narrow phone; its
+     scrollbar would only add a second line under the tabs. */
+  .section-tabs::-webkit-scrollbar { display: none; }
+
   .form-select {
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");

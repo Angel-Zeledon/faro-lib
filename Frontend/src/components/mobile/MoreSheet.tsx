@@ -9,18 +9,20 @@ import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { roleLabel } from '@/lib/enumLabels'
 import { useInstall } from '@/lib/pwa'
-import { GROUPS, visibleNavFor, navItemMatches } from '@/components/layout/navItems'
+import { SCREENS, ANALYSIS_TABS, SETTINGS_HREF, navItemMatches, type Screen } from '@/components/layout/navItems'
 import BottomSheet from './BottomSheet'
 import LegalLinks from '@/components/legal/LegalLinks'
 import { siteHref } from '@/lib/siteUrls'
 
 /**
- * "Más": every screen that is not a bottom tab, grouped exactly like the
- * desktop sidebar (same NAV list, same role rule — components/layout/
- * navItems.ts), plus what the sidebar footer held: language, theme, install
- * the app, report a problem, the signed-in user and log out.
+ * "Más": the desktop sidebar entries that are not bottom tabs — Proveedores,
+ * Pronósticos (with its three analysis screens one tap away), Mensajes and
+ * Configuración, which holds everything else exactly as on desktop — plus
+ * what the sidebar footer held: language, theme, install the app, the
+ * signed-in user and log out.
  */
-const TAB_ROUTES = ['/compras', '/pedidos', '/inventario', '/asistente']
+const MORE_ROUTES = ['/proveedores', '/pronosticos', '/mensajes', SETTINGS_HREF]
+const MORE: Screen[] = MORE_ROUTES.map(href => SCREENS.find(s => s.href === href)!)
 
 export default function MoreSheet({ open, onClose, unread }: {
   open: boolean
@@ -34,8 +36,6 @@ export default function MoreSheet({ open, onClose, unread }: {
   const { mode: installMode, install } = useInstall()
   const [iosHelp, setIosHelp] = useState(false)
   const user = getUser()
-
-  const items = visibleNavFor(user?.role).filter(i => !TAB_ROUTES.includes(i.href))
 
   function logout() {
     authLogout().catch(() => {})
@@ -55,43 +55,62 @@ export default function MoreSheet({ open, onClose, unread }: {
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={t('mobile.more_title')}>
-      <nav aria-label={t('mobile.more_title')}>
-        {GROUPS.map(group => {
-          const g = items.filter(i => i.group === group)
-          if (!g.length) return null
+    <BottomSheet open={open} onClose={onClose} title={t('mobile.tab_more')}>
+      <nav aria-label={t('mobile.tab_more')}>
+        {MORE.map(item => {
+          const active = navItemMatches(item, path)
+          const Icon = item.Icon
           return (
-            <div key={group}>
-              <h3 style={groupTitle}>{t(`group.${group}`)}</h3>
-              {g.map(item => {
-                const active = navItemMatches(item, path)
-                const Icon = item.Icon
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onClose}
-                    aria-current={active ? 'page' : undefined}
-                    className="tap-feedback"
-                    style={{
-                      ...row,
-                      background: active ? 'var(--accent-dim)' : 'transparent',
-                      color: active ? 'var(--accent)' : 'var(--text)',
-                      fontWeight: active ? 600 : 400,
-                    }}
-                  >
-                    <Icon size={20} aria-hidden="true" color={active ? 'var(--accent)' : 'var(--muted)'} />
-                    <span style={{ flex: 1 }}>{t(item.labelKey)}</span>
-                    {item.href === '/mensajes' && unread > 0 && (
-                      <span aria-label={t('mobile.unread_count', { n: unread })} style={{
-                        minWidth: 22, height: 22, borderRadius: 11, padding: '0 7px', boxSizing: 'border-box',
-                        background: 'var(--accent)', color: '#fff', fontSize: 11.5, fontWeight: 700,
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      }}>{unread > 99 ? '99+' : unread}</span>
-                    )}
-                  </Link>
-                )
-              })}
+            <div key={item.href}>
+              <Link
+                href={item.href}
+                onClick={onClose}
+                aria-current={active && path === item.href ? 'page' : undefined}
+                className="tap-feedback"
+                style={{
+                  ...row,
+                  background: active ? 'var(--accent-dim)' : 'transparent',
+                  color: active ? 'var(--accent)' : 'var(--text)',
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                <Icon size={20} aria-hidden="true" color={active ? 'var(--accent)' : 'var(--muted)'} />
+                <span style={{ flex: 1 }}>{t(item.labelKey)}</span>
+                {item.href === '/mensajes' && unread > 0 && (
+                  <span aria-label={t('mobile.unread_count', { n: unread })} style={{
+                    minWidth: 22, height: 22, borderRadius: 11, padding: '0 7px', boxSizing: 'border-box',
+                    background: 'var(--accent)', color: '#fff', fontSize: 11.5, fontWeight: 700,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{unread > 99 ? '99+' : unread}</span>
+                )}
+              </Link>
+              {/* The analysis screens straight from the sheet, so none of them
+                  is three taps away on a phone. Same set as the tab strip at
+                  the top of Pronósticos. */}
+              {item.href === '/pronosticos' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 12px 8px 46px' }}>
+                  {ANALYSIS_TABS.slice(1).map(sub => {
+                    const on = path === sub.href || path.startsWith(`${sub.href}/`)
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        onClick={onClose}
+                        aria-current={on ? 'page' : undefined}
+                        className="tap-feedback"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', minHeight: 40, padding: '0 14px',
+                          borderRadius: 20, fontSize: 13, textDecoration: 'none',
+                          border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                          color: on ? 'var(--accent)' : 'var(--muted)', fontWeight: on ? 600 : 500,
+                        }}
+                      >
+                        {t(sub.labelKey)}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}

@@ -5,16 +5,16 @@ import { usePathname } from 'next/navigation'
 import { ShoppingCart, ClipboardList, Package, MessagesSquare, Menu } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useDmUnread } from '@/lib/dmUnread'
-import { getUser } from '@/lib/auth'
-import { visibleNavFor, navItemMatches } from '@/components/layout/navItems'
+import { screenFor } from '@/components/layout/navItems'
 import MoreSheet from './MoreSheet'
 
 /**
  * The phone's primary navigation: a fixed bottom tab bar, like a native app.
  *
  * Four destinations a buyer uses daily on the warehouse floor, plus "Más",
- * which opens a sheet with every other screen (grouped like the desktop
- * sidebar) and the account / preference actions. It replaces the hamburger
+ * which opens a short sheet with the rest of the desktop sidebar (Proveedores,
+ * Pronósticos and its analysis, Mensajes, Configuración) and the account /
+ * preference actions. It replaces the hamburger
  * drawer on narrow screens — everything the sidebar offered is still one or
  * two taps away.
  *
@@ -41,12 +41,13 @@ export default function MobileTabBar() {
   // Navigating from the sheet closes it.
   useEffect(() => { setMoreOpen(false) }, [path])
 
-  const isTab = (href: string) => path === href || path.startsWith(`${href}/`)
-  // "Más" reads as active on any screen that is not one of the four tabs, so
-  // the bar always tells you where you are.
-  const role = getUser()?.role
-  const onOtherScreen = !TABS.some(tab => isTab(tab.href))
-    && visibleNavFor(role).some(item => navItemMatches(item, path))
+  // A tab also stands for the secondary screens that live under it
+  // (/configurar-inventario lights up Inventario), same rule as the sidebar.
+  const screen = screenFor(path)
+  const isTab = (href: string) => path === href || path.startsWith(`${href}/`) || screen?.parent === href
+  // "Más" reads as active on any other app screen, so the bar always tells
+  // you where you are.
+  const onOtherScreen = !TABS.some(tab => isTab(tab.href)) && !!screen
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     all: 'unset', boxSizing: 'border-box', cursor: 'pointer',
