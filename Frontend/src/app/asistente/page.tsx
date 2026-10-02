@@ -17,8 +17,8 @@ import { MessageBubble, TypingBubble, Welcome } from './parts'
 import AssistantMobile from './AssistantMobile'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
-  Plus, Search, Star, Trash2, Bot, Send,
-  Sparkles, MessageSquare, X, AlertTriangle,
+  Plus, Search, Star, Trash2, Send,
+  Lightbulb, MessageSquare, X, AlertTriangle,
 } from 'lucide-react'
 
 // ── Shell geometry ─────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ function EmptyState({
         border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Sparkles size={28} color="var(--accent)" strokeWidth={1.5} />
+        <Lightbulb size={28} color="var(--accent)" strokeWidth={1.5} />
       </div>
       {welcome ? (
         <Welcome welcome={welcome} onAsk={onAsk} disabled={disabled} />
@@ -517,7 +517,7 @@ export default function AnalystPage() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Sparkles size={14} color="var(--accent)" />
+                <Lightbulb size={14} color="var(--accent)" />
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.title')}</span>
               </div>
               <button
@@ -723,7 +723,7 @@ export default function AnalystPage() {
                                disabled={assistantOff || sending || creatingChat} />
                     ) : (
                       <>
-                        <Bot size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
+                        <MessageSquare size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
                         <div style={{ fontSize: 13 }}>{t('analyst.empty_messages_account')}</div>
                       </>
                     )}

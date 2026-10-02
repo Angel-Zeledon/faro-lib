@@ -1,10 +1,9 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { MoreHorizontal, MessageSquare, HelpCircle, Bug } from 'lucide-react'
+import { MoreHorizontal, MessageSquare, HelpCircle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTour } from '@/contexts/TourContext'
-import { useBugReport } from '@/lib/bugReport'
 import { useDmUnread } from '@/lib/dmUnread'
 
 /**
@@ -23,7 +22,6 @@ import { useDmUnread } from '@/lib/dmUnread'
 export default function TopBarOverflowMenu() {
   const { t, lang } = useLanguage()
   const { available, active, start, stop } = useTour()
-  const reportBug = useBugReport()
   const unread = useDmUnread()
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -133,14 +131,6 @@ export default function TopBarOverflowMenu() {
                 </span>
               </button>
             )}
-            <button
-              role="menuitem"
-              onClick={() => { setOpen(false); reportBug() }}
-              style={itemStyle}
-            >
-              <Bug size={18} color="var(--muted)" aria-hidden="true" />
-              <span style={{ flex: 1 }}>{t('bugreport.topbar')}</span>
-            </button>
           </div>
         </>
       )}

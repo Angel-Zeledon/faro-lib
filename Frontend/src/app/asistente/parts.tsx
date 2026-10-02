@@ -9,7 +9,8 @@
 import { useLanguage } from '@/contexts/LanguageContext'
 import { chatSourceLabel } from '@/lib/enumLabels'
 import type { AssistantWelcome, ChatMessage } from '@/lib/types'
-import { Bot, User } from 'lucide-react'
+import { User } from 'lucide-react'
+import { AssistantMark } from '@/components/brand/AssistantMark'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 // Colour only — the badge text comes from `chatSourceLabel`, so the copy the
@@ -83,7 +84,7 @@ export function TypingBubble() {
         background: 'rgba(34,197,94,0.12)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Bot size={14} color="#22c55e" />
+        <AssistantMark size={14} />
       </div>
       <div style={{
         background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -126,7 +127,7 @@ export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?
         background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'rgba(34,197,94,0.12)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {isUser ? <User size={13} color="var(--accent)" /> : <Bot size={13} color="#22c55e" />}
+        {isUser ? <User size={13} color="var(--accent)" /> : <AssistantMark size={13} />}
       </div>
 
       </>)}

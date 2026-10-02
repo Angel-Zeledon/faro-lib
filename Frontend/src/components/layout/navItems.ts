@@ -1,7 +1,7 @@
 'use client'
 import type { ElementType } from 'react'
 import {
-  TrendingUp, Package, BrainCircuit, Users, User,
+  TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
   ScrollText,
@@ -48,7 +48,7 @@ export const NAV: NavItem[] = [
   // it answers a buyer's question ("did the order go out?"), not an
   // administrator's.
   { href: '/actividad',           labelKey: 'nav.activity',    Icon: ScrollText,      group: 'analysis' },
-  { href: '/asistente',           labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis' },
+  { href: '/asistente',           labelKey: 'nav.analyst',     Icon: MessagesSquare,    group: 'analysis' },
   { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis' },
 
   { href: '/usuarios',            labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },

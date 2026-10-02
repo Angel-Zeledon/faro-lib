@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, Check, Copy, Clock, Sparkles, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Clock, Database, ShieldAlert } from 'lucide-react'
 import { authLogin, createTrialAccount, type TrialAccount } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
 import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
@@ -201,7 +201,7 @@ export default function TrialPage() {
                   <span>{t('trial.expires_note', { when: expires })}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <Sparkles size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <Database size={14} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span>{t('trial.data_note')}</span>
                 </div>
               </div>

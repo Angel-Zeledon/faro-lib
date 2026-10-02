@@ -1,6 +1,6 @@
 import {
   ShoppingCart, ClipboardList, Package, Boxes, Truck, TrendingUp, Database,
-  History, BrainCircuit, FlaskConical, Plug, Settings, Users, KeyRound,
+  History, MessagesSquare, FlaskConical, Plug, Settings, Users, KeyRound,
   Upload, Plus, SunMoon, Languages, type LucideIcon,
 } from 'lucide-react'
 import type { InventoryStatusItem } from '@/lib/types'
@@ -53,7 +53,7 @@ export const COMMANDS: Command[] = [
   { id: 'go.roi',          group: 'navigate', href: '/impacto',       labelKey: 'nav.roi',           aliasKey: 'cmd.alias.roi',        Icon: TrendingUp },
   { id: 'go.data',         group: 'navigate', href: '/archivos',                labelKey: 'nav.data',          aliasKey: 'cmd.alias.data',       Icon: Database },
   { id: 'go.sessions',     group: 'navigate', href: '/historial',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
-  { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: BrainCircuit },
+  { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: MessagesSquare },
   { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical },
   // A command palette must not navigate anywhere the sidebar deliberately
   // hides — that is a back door, not a shortcut. Nothing is hidden today; the

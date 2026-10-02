@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useContext, createContext, useRef } f
 import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
-  ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
+  ChevronDown, Clock, Shield, Lock, Eye, EyeOff, Mail,
   MessageCircle, Unlink, CalendarClock, MessageSquare, Coins, Gauge,
 } from 'lucide-react'
 import { MobileList, MobileCard, MobileSection, useMobileHeader } from '@/components/mobile'
@@ -1443,7 +1443,7 @@ export default function ConfigPage() {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
         }}>
-          <Sparkles size={16} color="#fff" strokeWidth={2} />
+          <Settings2 size={16} color="#fff" strokeWidth={2} />
         </div>
         <div>
           <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
@@ -1453,12 +1453,19 @@ export default function ConfigPage() {
       </div>
 
       {/* Sections */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
-        <ProfileSection t={t} lang={lang} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* What the customer's own figures are worth — their choice, and
-              nothing to do with what StockAI costs, which is a conversation with
-              us and not a setting on this screen. */}
+      {/* Two balanced columns, grouped like the phone's settings list: the
+          person on the left, the company on the right. The left column used to
+          hold the profile card alone while nine cards stacked on the right,
+          leaving most of the screen empty. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+          <ProfileSection t={t} lang={lang} />
+          <AppConfigSection t={t} />
+          <SecuritySection t={t} />
+          <WhatsAppSection t={t} />
+          <DmSmsSection t={t} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           {/* How much room is left. First in this column on purpose: a
               ceiling nobody can see is a trap, and this is the screen where
               somebody goes looking before they go looking for us. */}
@@ -1470,6 +1477,10 @@ export default function ConfigPage() {
             />
             <LimitsSection />
           </Card>
+          <PlanningSection t={t} />
+          {/* What the customer's own figures are worth — their choice, and
+              nothing to do with what StockAI costs, which is a conversation with
+              us and not a setting on this screen. */}
           <Card>
             <SectionTitle
               icon={Coins} color="var(--accent)"
@@ -1489,11 +1500,6 @@ export default function ConfigPage() {
             />
             <TimezoneSection />
           </Card>
-          <AppConfigSection t={t} />
-          <PlanningSection t={t} />
-          <WhatsAppSection t={t} />
-          <DmSmsSection t={t} />
-          <SecuritySection t={t} />
         </div>
       </div>
 

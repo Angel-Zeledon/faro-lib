@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ShoppingCart, ClipboardList, Package, BrainCircuit, Menu } from 'lucide-react'
+import { ShoppingCart, ClipboardList, Package, MessagesSquare, Menu } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useDmUnread } from '@/lib/dmUnread'
 import { getUser } from '@/lib/auth'
@@ -28,7 +28,7 @@ const TABS = [
   { href: '/compras',    labelKey: 'mobile.tab_panel',     Icon: ShoppingCart },
   { href: '/pedidos',    labelKey: 'nav.orders',           Icon: ClipboardList },
   { href: '/inventario', labelKey: 'nav.inventory',        Icon: Package },
-  { href: '/asistente',  labelKey: 'mobile.tab_assistant', Icon: BrainCircuit },
+  { href: '/asistente',  labelKey: 'mobile.tab_assistant', Icon: MessagesSquare },
 ] as const
 
 export default function MobileTabBar() {

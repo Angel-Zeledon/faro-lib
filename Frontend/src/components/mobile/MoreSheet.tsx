@@ -2,13 +2,12 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bug, Download, LogOut, Share, User } from 'lucide-react'
+import { Download, LogOut, Share, User } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { roleLabel } from '@/lib/enumLabels'
-import { useBugReport } from '@/lib/bugReport'
 import { useInstall } from '@/lib/pwa'
 import { GROUPS, visibleNavFor, navItemMatches } from '@/components/layout/navItems'
 import BottomSheet from './BottomSheet'
@@ -30,7 +29,6 @@ export default function MoreSheet({ open, onClose, unread }: {
   const router = useRouter()
   const { t, lang, setLang } = useLanguage()
   const { theme, setTheme } = useTheme()
-  const reportBug = useBugReport()
   const { mode: installMode, install } = useInstall()
   const [iosHelp, setIosHelp] = useState(false)
   const user = getUser()
@@ -134,10 +132,6 @@ export default function MoreSheet({ open, onClose, unread }: {
           )}
         </>
       )}
-      <button type="button" className="tap-feedback" onClick={() => { onClose(); reportBug() }} style={row}>
-        <Bug size={20} color="var(--muted)" aria-hidden="true" />
-        <span style={{ flex: 1 }}>{t('bugreport.topbar')}</span>
-      </button>
 
       {user && (
         <div style={{ ...row, cursor: 'default', marginTop: 6, gap: 12 }}>

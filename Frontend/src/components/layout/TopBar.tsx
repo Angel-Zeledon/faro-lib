@@ -8,7 +8,6 @@ import type { SessionInfo } from '@/lib/types'
 import AlertBell from '@/components/alerts/AlertBell'
 import MessagesBadge from '@/components/messages/MessagesBadge'
 import TourLauncher from '@/components/tour/TourLauncher'
-import ReportProblemButton from './ReportProblemButton'
 import TopBarOverflowMenu from './TopBarOverflowMenu'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useMobileHeaderOverride } from '@/components/mobile/MobileHeaderContext'
@@ -285,7 +284,6 @@ export default function TopBar() {
             tour on their first visit gets it back. */}
         <TourLauncher />
 
-        <ReportProblemButton />
 
         {/* Notification bell — durable alert history + this session's notices */}
         <AlertBell
