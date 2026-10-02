@@ -113,12 +113,41 @@ function CodeWindow({ title, code, lang, W, tabs }: {
   )
 }
 
+// Real, trimmed example answers for the read endpoints, captured from a demo
+// account by backend/scripts/capture_api_examples.py and served as a static
+// file. Fetched once, the first time an endpoint is shown, so the page itself
+// stays light; until it arrives (or for endpoints without one) the generic
+// envelope is shown.
+type ResponseExample = { example: unknown; fields: { name: string; type: string }[] }
+let examplesCache: Record<string, ResponseExample> | null = null
+let examplesPromise: Promise<Record<string, ResponseExample>> | null = null
+
+function useResponseExample(id: string): ResponseExample | null {
+  const [all, setAll] = useState<Record<string, ResponseExample> | null>(examplesCache)
+  useEffect(() => {
+    if (examplesCache) return
+    examplesPromise ??= fetch('/api-response-examples.json')
+      .then(r => (r.ok ? r.json() : {}))
+      .catch(() => ({}))
+      .then(d => (examplesCache = d as Record<string, ResponseExample>))
+    let alive = true
+    examplesPromise.then(d => { if (alive) setAll(d) })
+    return () => { alive = false }
+  }, [])
+  return all?.[id] ?? null
+}
+
 /** Request samples in three languages, then the response envelope. */
 function CodePanel({ ep, base, codeLang, setCodeLang, W, idPrefix }: {
   ep: Endpoint; base: string; codeLang: CodeLang; setCodeLang: (l: CodeLang) => void
   W: DevelopersCopy['workspace']; idPrefix: string
 }) {
   const code = useMemo(() => sampleFor(codeLang, ep, base), [codeLang, ep, base])
+  const example = useResponseExample(ep.id)
+  const responseCode = useMemo(
+    () => (example ? JSON.stringify(example.example, null, 2) : ENVELOPE_SAMPLE),
+    [example],
+  )
   const tabs = (
     <div className="dv-langs" role="tablist" aria-label={W.languages}>
       {CODE_LANGS.map(l => (
@@ -150,7 +179,7 @@ function CodePanel({ ep, base, codeLang, setCodeLang, W, idPrefix }: {
         </div>
       ) : (
         <CodeWindow
-          code={ENVELOPE_SAMPLE}
+          code={responseCode}
           lang="json"
           W={W}
           title={<><span className="dv-status">{ep.success_status}</span> {STATUS_TEXT[ep.success_status] ?? ''} <span className="dv-win-dim">{ep.response_content_types.join(', ')}</span></>}
@@ -319,9 +348,32 @@ function EndpointView({ ep, D, base, active, tab, setTab, groupLabel }: {
         <p className="dv-field-desc" style={{ marginTop: 10 }}>
           {ep.success_status === 204 ? W.noContent : W.responseNote}
         </p>
+        <ResponseFields id={ep.id} W={W} />
         <a href="#errores" className="dv-link">{D.errors.title}</a>
       </div>
     </article>
+  )
+}
+
+/** The fields observed in the real example answer, with their types. */
+function ResponseFields({ id, W }: { id: string; W: DevelopersCopy['workspace'] }) {
+  const ex = useResponseExample(id)
+  if (!ex || ex.fields.length === 0) return null
+  return (
+    <div style={{ marginTop: 14 }}>
+      <p className="dv-field-desc" style={{ fontWeight: 600, marginBottom: 6 }}>{W.fieldsTitle}</p>
+      <ul className="dv-fields">
+        {ex.fields.map(f => (
+          <li key={f.name} className="dv-field">
+            <div className="dv-field-head">
+              <code className="dv-field-name">{f.name}</code>
+              <span className="dv-field-type">{f.type}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="dv-field-desc" style={{ marginTop: 8 }}>{W.exampleNote}</p>
+    </div>
   )
 }
 

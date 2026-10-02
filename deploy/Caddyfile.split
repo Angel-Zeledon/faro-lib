@@ -16,7 +16,7 @@
 
 	# The landing's own pages (Frontend/src/app/{precios,como-funciona,...}) are
 	# listed by name: anything not named here is an app route.
-	@landing path / /precios /como-funciona /preguntas-frecuentes /seguridad /desarrolladores /privacidad /terminos /cookies /aviso-legal /legal /uso-aceptable /procesamiento-de-datos /ia /divulgacion-responsable /accesibilidad /condiciones-comerciales /licencia /.well-known/* /docs /docs/* /icon.svg /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest
+	@landing path / /precios /como-funciona /preguntas-frecuentes /seguridad /desarrolladores /privacidad /terminos /cookies /aviso-legal /legal /uso-aceptable /procesamiento-de-datos /ia /divulgacion-responsable /accesibilidad /condiciones-comerciales /licencia /.well-known/* /docs /docs/* /api-response-examples.json /icon.svg /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest
 	handle @landing {
 		reverse_proxy frontend:5000
 	}

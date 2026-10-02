@@ -69,6 +69,8 @@ export interface DevelopersCopy {
     optional: string
     responseLead: string
     responseNote: string
+    exampleNote: string
+    fieldsTitle: string
     noContent: string
     request: string
     response: string
@@ -215,6 +217,8 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       optional: 'opcional',
       responseLead: 'Si todo sale bien:',
       responseNote: 'Toda respuesta JSON viene en este sobre; lo que trae data depende de cada endpoint. Si algo falla, recibes un error_code estable (ver Errores).',
+      exampleNote: 'Respuesta real de una cuenta de demostración, recortada: las listas muestran un elemento y los textos largos se acortan.',
+      fieldsTitle: 'Campos de la respuesta',
       noContent: 'Responde sin cuerpo.',
       request: 'Petición',
       response: 'Respuesta',
@@ -359,6 +363,8 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       optional: 'optional',
       responseLead: 'When it succeeds:',
       responseNote: 'Every JSON answer comes in this envelope; what data holds depends on the endpoint. When something fails you get a stable error_code (see Errors).',
+      exampleNote: 'A real answer from a demo account, trimmed: lists show one item and long texts are shortened.',
+      fieldsTitle: 'Response fields',
       noContent: 'Answers with no body.',
       request: 'Request',
       response: 'Response',
