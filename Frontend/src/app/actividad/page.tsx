@@ -24,6 +24,7 @@ import { AlertRow } from '@/components/alerts/AlertBell'
 import Card from '@/components/ui/Card'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const PAGE = 50
 
@@ -41,6 +42,12 @@ const selectStyle: React.CSSProperties = {
 
 export default function ActivityPage() {
   const { t } = useLanguage()
+  // Phones: the two filters share the full width at a thumb's height, and
+  // "show more" is a full-width button instead of a 12px link.
+  const narrow = useIsNarrow()
+  const pickerStyle: React.CSSProperties = narrow
+    ? { ...selectStyle, fontSize: 16, minHeight: 44, flex: 1, minWidth: 0, width: '100%' }
+    : selectStyle
 
   const [items,    setItems]    = useState<AlertEntry[]>([])
   const [total,    setTotal]    = useState(0)
@@ -113,12 +120,12 @@ export default function ActivityPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...(narrow ? { width: '100%' } : {}) }}>
           <select
             value={kind}
             onChange={e => setKind(e.target.value)}
             aria-label={t('activity.filter_kind')}
-            style={selectStyle}
+            style={pickerStyle}
           >
             <option value="">{t('activity.all_kinds')}</option>
             {kinds.map(k => (
@@ -129,7 +136,7 @@ export default function ActivityPage() {
             value={severity}
             onChange={e => setSeverity(e.target.value)}
             aria-label={t('activity.filter_severity')}
-            style={selectStyle}
+            style={pickerStyle}
           >
             <option value="">{t('activity.all_severities')}</option>
             {SEVERITIES.map(s => (
@@ -160,11 +167,22 @@ export default function ActivityPage() {
           <div style={{
             padding: '10px 16px', display: 'flex', alignItems: 'center',
             justifyContent: 'space-between', gap: 12,
+            ...(narrow ? { flexDirection: 'column' as const, alignItems: 'stretch', padding: 12 } : {}),
           }}>
-            <span style={{ fontSize: 11, color: C.dim }}>
+            <span style={{ fontSize: narrow ? 13 : 11, color: C.dim, textAlign: narrow ? 'center' : undefined }}>
               {t('activity.showing', { shown: items.length, total })}
             </span>
-            {items.length < total && (
+            {items.length < total && narrow && (
+              <button
+                onClick={() => load(items.length)}
+                disabled={more}
+                className="mobile-btn mobile-btn-secondary"
+                style={{ flex: 'none', width: '100%' }}
+              >
+                {more ? t('common.loading') : t('activity.load_more')}
+              </button>
+            )}
+            {items.length < total && !narrow && (
               <button
                 onClick={() => load(items.length)}
                 disabled={more}

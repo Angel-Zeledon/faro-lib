@@ -1,6 +1,7 @@
 'use client'
 import type { ForecastPoint, SkuIntelligenceData } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { ArrowRight } from 'lucide-react'
 import { fmtK } from './shared'
 
@@ -35,6 +36,7 @@ export function BuyerOutlook({ data, formatDate, onSeeOrder }: {
   onSeeOrder?: () => void
 }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const next = data.forecast.slice(0, OUTLOOK_PERIODS)
   if (next.length === 0) return null
 
@@ -58,6 +60,7 @@ export function BuyerOutlook({ data, formatDate, onSeeOrder }: {
               all: 'unset', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 4,
               fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+              ...(narrow ? { minHeight: 44, fontSize: 14, boxSizing: 'border-box' as const } : {}),
             }}
           >
             {t('skus.outlook_see_order')} <ArrowRight size={11} />
