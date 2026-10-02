@@ -2,33 +2,20 @@
 /**
  * Unread direct-messages indicator for the top bar.
  *
- * Polls GET /messages/unread-count (silent — a failed poll must not toast).
+ * Reads GET /messages/unread-count through the one shared poller in
+ * lib/dmUnread (silent — a failed poll must not toast), so the desktop badge
+ * and the mobile tab bar never show two different numbers.
  * It used to render nothing at all for plans without team_messaging; there is
  * one plan now, and every tenant has the screen this points at.
  */
-import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
-import { getDmUnreadCount } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
-
-const POLL_MS = 30000
+import { useDmUnread } from '@/lib/dmUnread'
 
 export default function MessagesBadge() {
   const { t } = useLanguage()
-  const [unread, setUnread] = useState(0)
-
-  useEffect(() => {
-    let cancelled = false
-    const poll = () =>
-      getDmUnreadCount()
-        .then(d => { if (!cancelled) setUnread(d.unread) })
-        .catch(() => {})
-    poll()
-    const id = setInterval(poll, POLL_MS)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [])
-
+  const unread = useDmUnread()
 
   return (
     <Link

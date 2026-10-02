@@ -23,6 +23,8 @@ import type {
 import HelpTip from '@/components/ui/HelpTip'
 import { useErrorDetail } from '@/components/ui/States'
 import DataTabs from '@/components/layout/DataTabs'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import StickyActionBar from '@/components/mobile/StickyActionBar'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 
@@ -38,9 +40,9 @@ function trainingErrorText(raw: string | null | undefined, t: (k: string) => str
 }
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
-function StepBubble({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
+function StepBubble({ n, label, active, done, narrow }: { n: number; label: string; active: boolean; done: boolean; narrow?: boolean }) {
  return (
- <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+ <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, ...(narrow ? { flexShrink: 0, maxWidth: 92 } : {}) }}>
  <div style={{
  width: 36, height: 36, borderRadius: '50%',
  display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -55,7 +57,8 @@ function StepBubble({ n, label, active, done }: { n: number; label: string; acti
  <span style={{
  fontSize: 12, fontWeight: active ? 600 : 400,
  color: active ? 'var(--accent)' : done ? '#22c55e' : 'var(--dim)',
- whiteSpace: 'nowrap',
+ whiteSpace: narrow ? 'normal' : 'nowrap',
+ ...(narrow ? { textAlign: 'center', lineHeight: 1.25 } : {}),
  }}>
  {label}
  </span>
@@ -65,19 +68,22 @@ function StepBubble({ n, label, active, done }: { n: number; label: string; acti
 
 function StepBar({ step }: { step: number }) {
  const { t } = useLanguage()
+ // Phone: the connectors flex instead of a fixed 80px, and the labels wrap —
+ // three bubbles with nowrap labels measured 420px at 360.
+ const narrow = useIsNarrow()
  const steps = [
  { n: 1, label: t('qs.step1') },
  { n: 2, label: t('qs.step2') },
  { n: 3, label: t('qs.step3') },
  ]
  return (
- <div data-tour="qs.steps" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: 40 }}>
+ <div data-tour="qs.steps" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: narrow ? 20 : 40 }}>
  {steps.map((s, i) => (
- <div key={s.n} style={{ display: 'flex', alignItems: 'center' }}>
- <StepBubble n={s.n} label={s.label} active={step === s.n} done={step > s.n} />
+ <div key={s.n} style={{ display: 'flex', alignItems: 'center', ...(narrow && i < steps.length - 1 ? { flex: 1, minWidth: 0 } : {}) }}>
+ <StepBubble n={s.n} label={s.label} active={step === s.n} done={step > s.n} narrow={narrow} />
  {i < steps.length - 1 && (
  <div style={{
- width: 80, height: 2, margin: '0 8px', marginBottom: 24,
+ width: narrow ? 'auto' : 80, flex: narrow ? 1 : undefined, minWidth: narrow ? 12 : undefined, height: 2, margin: narrow ? '0 4px' : '0 8px', marginBottom: 24,
  background: step > s.n ? '#22c55e44' : 'var(--border)',
  transition: 'all 0.25s',
  }} />
@@ -137,6 +143,7 @@ function CsvExample() {
 // ── Drop zone ──────────────────────────────────────────────────────────────────
 function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
  const [dragging, setDragging] = useState(false)
  const inputRef = useRef<HTMLInputElement>(null)
 
@@ -162,7 +169,7 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
  style={{
  border: `2px dashed ${dragging ? 'var(--accent)' : 'var(--border)'}`,
  borderRadius: 12,
- padding: '48px 32px',
+ padding: narrow ? '28px 16px' : '48px 32px',
  textAlign: 'center',
  cursor: busy ? 'not-allowed' : 'pointer',
  background: dragging ? 'var(--accent-dim, #eef2ff)' : 'var(--surface-2, #f8fafc)',
@@ -203,6 +210,7 @@ function SessionClonePicker({ sessions, onPick, busy }: {
  sessions: SessionSummary[]; onPick: (s: SessionSummary) => void; busy: boolean
 }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
  if (sessions.length === 0) {
  return <p style={{ fontSize: 13, color: 'var(--dim)', margin: 0 }}>{t('qs.clone_empty')}</p>
  }
@@ -241,6 +249,7 @@ function SessionClonePicker({ sessions, onPick, busy }: {
   color: 'var(--accent)', flexShrink: 0,
   cursor: busy ? 'not-allowed' : 'pointer',
   opacity: busy ? 0.6 : 1,
+  ...(narrow ? { minHeight: 44, padding: '0 16px' } : {}),
  }}
  >
  {t('qs.clone_use_btn')}
@@ -257,6 +266,7 @@ function DatasetPicker({ datasets, onPick, busy }: {
  datasets: DatasetMeta[]; onPick: (id: string) => void; busy: boolean
 }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
  if (datasets.length === 0) {
  return <p style={{ fontSize: 13, color: 'var(--dim)', margin: 0 }}>{t('qs.reuse_empty')}</p>
  }
@@ -295,6 +305,7 @@ function DatasetPicker({ datasets, onPick, busy }: {
   color: 'var(--accent)', flexShrink: 0,
   cursor: busy ? 'not-allowed' : 'pointer',
   opacity: busy ? 0.6 : 1,
+  ...(narrow ? { minHeight: 44, padding: '0 16px' } : {}),
  }}
  >
  {t('qs.reuse_use_btn')}
@@ -433,6 +444,7 @@ const HOLIDAY_COUNTRIES = [
 function Chip({ label, selected, disabled, onClick }: {
  label: string; selected: boolean; disabled: boolean; onClick: () => void
 }) {
+ const narrow = useIsNarrow()
  return (
  <button
  type="button"
@@ -448,6 +460,7 @@ function Chip({ label, selected, disabled, onClick }: {
  cursor: disabled ? 'not-allowed' : 'pointer',
  opacity: disabled ? 0.6 : 1,
  transition: 'all 0.15s',
+ ...(narrow ? { minHeight: 44, fontSize: 14, padding: '0 16px' } : {}),
  }}
  >
  {label}
@@ -464,6 +477,8 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  busy: boolean
 }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
+ const fieldN: React.CSSProperties = narrow ? { fontSize: 16, minHeight: 44, boxSizing: 'border-box', borderRadius: 10 } : {}
  const labelStyle: React.CSSProperties = {
  fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6,
  }
@@ -485,6 +500,7 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  width: '100%', padding: '9px 12px', borderRadius: 8,
  border: '1px solid var(--border)', background: 'var(--surface)',
  color: 'var(--text)', fontSize: 13,
+ ...fieldN,
  }}
  />
  </div>
@@ -529,6 +545,7 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  padding: '9px 12px', borderRadius: 8,
  border: '1px solid var(--border)', background: 'var(--surface)',
  color: 'var(--text)', fontSize: 13, minWidth: 220,
+ ...(narrow ? { ...fieldN, minWidth: 0, width: '100%' } : {}),
  }}
  >
  {HOLIDAY_COUNTRIES.map(c => (
@@ -548,6 +565,9 @@ function QuickStartPageContent() {
  const router = useRouter()
  const searchParams = useSearchParams()
  const { t } = useLanguage()
+ // Phone: no second gutter inside the shell's, a 16px card, the mapping as
+ // stacked label/select pairs, and the confirm pinned above the tab bar.
+ const narrow = useIsNarrow()
  // Backend failures arrive with a stable `error_code`; without this the wizard
  // printed the English `detail` instead — a viewer who picked a file read
  // "Role 'viewer' not permitted. Required: ['admin', 'analyst']".
@@ -1193,6 +1213,26 @@ function QuickStartPageContent() {
  const profile = inspection.profile
  const cols = profile.columns.slice(0, 5)
  const maxRows = 3
+ if (narrow) return (
+ <div style={{ marginTop: 16 }}>
+ <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 8 }}>{t('qs.preview')}</p>
+ <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+ {cols.map((c, i) => (
+  <li key={c.name} style={{ padding: '8px 12px', borderTop: i ? '1px solid var(--border)' : 'none', minWidth: 0 }}>
+  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dim)' }}>{c.name}</div>
+  <div style={{ fontSize: 13.5, color: 'var(--text)', overflowWrap: 'anywhere' }}>
+   {Array.from({ length: maxRows }).map((_, k) => String(c.sample?.[k] ?? '—')).join(' · ')}
+  </div>
+  </li>
+ ))}
+ </ul>
+ {profile.columns.length > 5 && (
+ <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6 }}>
+ + {profile.columns.length - 5} {t('qs.more_columns')}
+ </p>
+ )}
+ </div>
+ )
  return (
  <div style={{ marginTop: 16, overflowX: 'auto' }}>
  <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>
@@ -1276,17 +1316,17 @@ function QuickStartPageContent() {
  display: 'flex',
  flexDirection: 'column',
  alignItems: 'center',
- padding: '20px 20px 48px',
+ padding: narrow ? '0 0 24px' : '20px 20px 48px',
  }}>
  <div style={{ width: '100%', maxWidth: 580 }}>
 
  {/* Same nav entry as /data — the two routes are tabs of each other. */}
- <DataTabs style={{ marginBottom: 32 }} />
+ <DataTabs style={{ marginBottom: narrow ? 18 : 32 }} />
 
  {/* Header */}
- <div style={{ textAlign: 'center', marginBottom: 40 }}>
+ <div style={{ textAlign: 'center', marginBottom: narrow ? 20 : 40 }}>
  <h1 style={{
- fontSize: 26, fontWeight: 700,
+ fontSize: narrow ? 21 : 26, fontWeight: 700,
  color: 'var(--text)', margin: 0, marginBottom: 8,
  letterSpacing: '-0.02em',
  }}>
@@ -1305,7 +1345,7 @@ function QuickStartPageContent() {
  background: 'var(--surface)',
  border: '1px solid var(--border)',
  borderRadius: 16,
- padding: 32,
+ padding: narrow ? 16 : 32,
  }}>
 
  {/* ── Step 1 ──────────────────────────────────────────────────────── */}
@@ -1348,6 +1388,7 @@ function QuickStartPageContent() {
   aria-pressed={source === tab.value}
   style={{
   flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 13,
+  ...(narrow ? { minHeight: 44, fontSize: 14, padding: '0 6px' } : {}),
   fontWeight: source === tab.value ? 700 : 400,
   border: `1px solid ${source === tab.value ? 'var(--accent)' : 'var(--border)'}`,
   background: source === tab.value ? 'var(--accent-dim, #eef2ff)' : 'var(--surface)',
@@ -1442,6 +1483,7 @@ function QuickStartPageContent() {
  borderRadius: 10, fontSize: 14, fontWeight: 700,
  cursor: busy ? 'not-allowed' : 'pointer',
  opacity: busy ? 0.6 : 1,
+ ...(narrow ? { minHeight: 48, width: '100%' } : {}),
  }}
  >
  {t('qs.demo_btn')}
@@ -1507,8 +1549,8 @@ function QuickStartPageContent() {
 
   return (
   <div key={field.name} style={{
-   display: 'grid', gridTemplateColumns: '1fr 1fr',
-   alignItems: 'center', gap: 12,
+   display: 'grid', gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : '1fr 1fr',
+   alignItems: 'center', gap: narrow ? 6 : 12,
    padding: '10px 0',
    borderBottom: '1px solid var(--border)',
   }}>
@@ -1537,6 +1579,7 @@ function QuickStartPageContent() {
     border: `1px solid ${field.required && !val ? '#ef4444' : 'var(--border)'}`,
     background: 'var(--surface)', color: 'var(--text)', fontSize: 13,
     cursor: 'pointer',
+    ...(narrow ? { fontSize: 16, minHeight: 44, width: '100%', minWidth: 0, boxSizing: 'border-box', borderRadius: 10 } : {}),
    }}
    >
    {!field.required && (
@@ -1621,6 +1664,20 @@ function QuickStartPageContent() {
   {t('qs.blocked_remap_hint')}
   </p>
  </>
+ ) : narrow ? (
+ <>
+ {unansweredFixable > 0 && !busy && (
+ <p style={{ marginTop: 16, fontSize: 13, color: 'var(--dim)', textAlign: 'center', lineHeight: 1.5 }}>
+  {t('gate.answer_first').replace('{count}', String(unansweredFixable))}
+ </p>
+ )}
+ <StickyActionBar>
+ <button type="button" className="mobile-btn mobile-btn-primary" onClick={handleConfirm}
+  disabled={busy || missingRequired || unansweredFixable > 0}>
+  {busy ? t('qs.processing') : t('qs.looks_good')}
+ </button>
+ </StickyActionBar>
+ </>
  ) : (
  <>
  <button
@@ -1686,6 +1743,7 @@ function QuickStartPageContent() {
  border: 'none', borderRadius: 10,
  fontSize: 14, fontWeight: 700,
  cursor: 'pointer',
+ ...(narrow ? { minHeight: 48, width: '100%' } : {}),
  }}
  >
  {t('qs.try_again')}

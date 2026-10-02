@@ -5,6 +5,7 @@ import { getSkuIntelligence, getSkuDecomposition, ApiError } from '@/lib/api'
 import type { SkuIntelligenceData, DecompositionData, DecompositionPoint } from '@/lib/types'
 import { ErrorState } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { ChipGroup } from './ChipGroup'
 import { PanelPlaceholder } from './PanelChrome'
 import { type Translate, fmtK, useCssToken, chartChrome } from './shared'
@@ -336,10 +337,17 @@ export function PatternNote({ children }: { children: React.ReactNode }) {
 
 export type PatternView = 'weekday' | 'month'
 
+/** Phones: the tooltip stays inside the chart (a 360px screen has no room
+ *  beside it) and opens on a tap as well as on a drag. */
+function touchTooltip<T extends { tooltip?: object }>(option: T, narrow: boolean): T {
+  return narrow ? { ...option, tooltip: { ...(option.tooltip ?? {}), confine: true, triggerOn: 'mousemove|click' } } : option
+}
+
 export function SalesPatternPanel({ sessionId, sku, isDark }: {
   sessionId: string; sku: string; isDark: boolean
 }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const [data,    setData]    = useState<SkuIntelligenceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<unknown>(null)
@@ -449,7 +457,7 @@ export function SalesPatternPanel({ sessionId, sku, isDark }: {
   const viewOk = view === 'month' ? monthOk : weekdayOk
 
   return (
-    <div style={{ padding: '18px 20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+    <div style={{ padding: narrow ? '14px 12px 18px' : '18px 20px 24px', display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 }}>
 
       {/* ── Is it really growing, or is it just December again? ── */}
       {(decomp || decompShort) && (
@@ -466,10 +474,10 @@ export function SalesPatternPanel({ sessionId, sku, isDark }: {
             ) : decomp ? (
               <>
                 <ReactECharts
-                  option={buildTrendOption(decomp.series, accent, isDark, {
+                  option={touchTooltip(buildTrendOption(decomp.series, accent, isDark, {
                     observed: t('skus.trend_observed'),
                     trend:    t('skus.trend_line'),
-                  })}
+                  }), narrow)}
                   style={{ height: 200, width: '100%' }}
                   theme={isDark ? 'dark' : undefined}
                   opts={{ renderer: 'canvas' }}
@@ -505,6 +513,7 @@ export function SalesPatternPanel({ sessionId, sku, isDark }: {
           <ChipGroup
             value={view ?? 'weekday'}
             onChange={(v: PatternView) => setView(v)}
+            touch={narrow}
             options={[
               { value: 'weekday' as PatternView, label: t('skus.pattern_by_weekday') },
               { value: 'month'   as PatternView, label: t('skus.pattern_by_month') },
@@ -528,7 +537,7 @@ export function SalesPatternPanel({ sessionId, sku, isDark }: {
         ) : (
           <>
             <ReactECharts
-              option={buildProfileOption(profile, accent, isDark, countLabel)}
+              option={touchTooltip(buildProfileOption(profile, accent, isDark, countLabel), narrow)}
               style={{ height: 200, width: '100%' }}
               theme={isDark ? 'dark' : undefined}
               opts={{ renderer: 'canvas' }}
@@ -555,7 +564,7 @@ export function SalesPatternPanel({ sessionId, sku, isDark }: {
           <PatternNote>{t('skus.spread_too_short')}</PatternNote>
         ) : (
           <ReactECharts
-            option={buildSpreadOption(spread, accent, isDark, t('skus.spread_average_marker'), periodsLabel)}
+            option={touchTooltip(buildSpreadOption(spread, accent, isDark, t('skus.spread_average_marker'), periodsLabel), narrow)}
             style={{ height: 200, width: '100%' }}
             theme={isDark ? 'dark' : undefined}
             opts={{ renderer: 'canvas' }}

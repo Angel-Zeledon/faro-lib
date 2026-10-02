@@ -1384,6 +1384,39 @@ export default function HoyPage() {
    : prev)
  }
 
+ // Shared by the desktop card and the phone one.
+ function refreshNarrative() {
+  if (!sessionId) return
+  setLoadingNarrative(true)
+  // The initial load has an 11s ceiling; this had none. `.finally`
+  // cannot fire on a promise that never settles, so a DeepSeek that
+  // hangs left the spinner turning with no way out — and this is a
+  // button someone presses precisely when the answer looks stale.
+  //
+  // Same ceiling, different landing: the initial load has nothing on
+  // screen and falls back to the rule-based sentence, while a
+  // refresh already shows a good narrative. Replacing that with a
+  // weaker one is a downgrade nobody asked for, so this stops the
+  // spinner and keeps what is there.
+  let timedOut = false
+  const timeout = setTimeout(() => {
+   timedOut = true
+   setLoadingNarrative(false)
+  }, 11000)
+  getMorningNarrative(sessionId, 'distributor', lang)
+   // Same rule as the initial load: the backend's rule-based sentence
+   // is written for an API client, not for this screen, so "Refresh"
+   // must not swap the local one back out for it.
+   .then(data => {
+    // A late answer after the ceiling must not repaint the card
+    // under the reader — they have moved on by then.
+    if (timedOut) return
+    setNarrative(data.fallback && briefing ? buildFallbackNarrative(briefing) : data)
+   })
+   .catch(() => {})
+   .finally(() => { clearTimeout(timeout); if (!timedOut) setLoadingNarrative(false) })
+ }
+
  const kpis = briefing?.kpis
 
  // What today's advice rests on that nobody gave us. Computed here so the
@@ -1433,34 +1466,119 @@ export default function HoyPage() {
  // `isNarrow` is false on the first render (SSR has no viewport), so the
  // desktop tree is what hydrates and the swap happens one paint later.
  if (isNarrow) {
+  const narrativeNode = (narrative || loadingNarrative) ? (
+   <div style={{ marginBottom: 14 }}>
+    <NarrativeCard
+     title={t('hoy.narrative_card_title')}
+     narrative={narrative?.narrative ?? null}
+     keyPoints={(narrative?.key_points ?? []).map(p => keyPointText(p, t))}
+     urgency={narrative?.urgency ?? 'ok'}
+     loading={loadingNarrative}
+     fallback={narrative?.fallback ?? false}
+     analytistLink="/asistente"
+     onRefresh={refreshNarrative}
+    />
+   </div>
+  ) : null
   return (
-   <HoyMobile
-    loading={loading}
-    error={error}
-    onRetry={() => load(sessionId)}
-    briefing={briefing}
-    firstName={user?.full_name ? user.full_name.split(' ')[0] : null}
-    freshness={freshness ?? null}
-    semaphoreStale={semaphoreStale}
-    cart={cart}
-    approved={approved}
-    onApprove={approveItem}
-    onRemove={unapproveItem}
-    onChangeQty={changeQty}
-    onClearCart={() => setCart(prev => prev.map(i =>
-     i.status === 'approved' || i.status === 'modified'
-      ? { ...i, status: 'pending' as ActionStatus }
-      : i,
-    ))}
-    onGenerate={downloadOC}
-    generating={submitting}
-    canDecide={canEdit}
-    generatedPO={generatedPO}
-    onDismissGenerated={dismissGeneratedPO}
-    pendingReceptions={pendingPOs.length}
-    overduePOs={overduePOs}
-    noInventory={<HoyEmptyState variant="no_inventory" />}
-   />
+   <>
+    <HoyMobile
+     loading={loading}
+     error={error}
+     onRetry={() => load(sessionId)}
+     briefing={briefing}
+     firstName={user?.full_name ? user.full_name.split(' ')[0] : null}
+     freshness={freshness ?? null}
+     freshnessChip={<DataFreshness currentSession={currentSession} loading={sessionsLoading} />}
+     semaphoreStale={semaphoreStale}
+     cart={cart}
+     approved={approved}
+     onApprove={approveItem}
+     onRemove={unapproveItem}
+     onReject={rejectItem}
+     onChangeQty={changeQty}
+     suppliers={suppliers}
+     onChangeSupplier={changeSupplier}
+     onClearCart={() => setCart(prev => prev.map(i =>
+      i.status === 'approved' || i.status === 'modified'
+       ? { ...i, status: 'pending' as ActionStatus }
+       : i,
+     ))}
+     onGenerate={downloadOC}
+     generating={submitting}
+     canDecide={canEdit}
+     multiWarehouse={multi}
+     warehouses={warehouses}
+     destWarehouse={destWarehouse}
+     onDestWarehouse={setDestWarehouse}
+     generatedPO={generatedPO}
+     generatedLines={generatedLines}
+     sendState={sendState}
+     sendResult={sendResult}
+     sendError={sendError}
+     onSendNow={sendGeneratedPONow}
+     sendReason={r => sendReason(r, t)}
+     onDismissGenerated={dismissGeneratedPO}
+     pendingReceptions={pendingPOs.length}
+     overduePOs={overduePOs}
+     onReceive={canEdit ? setReceivingPO : null}
+     leadTimeAlerts={leadTimeAlerts}
+     contactHealth={relevantContactHealth}
+     noInventory={<HoyEmptyState variant="no_inventory" />}
+     loadedAtText={loadedAt ? timeSince(loadedAt, t) : null}
+     intro={<>
+      {narrativeNode}
+      {(briefing?.transfer_suggestions?.length ?? 0) > 0 && (
+       <div style={{ marginBottom: 14, minWidth: 0 }}>
+        <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} canApprove={canEdit} />
+       </div>
+      )}
+     </>}
+     cartPanels={<>
+      {priceBreaks && (
+       <PriceBreakPanel
+        opportunities={priceBreaks.opportunities}
+        totalNetSaving={priceBreaks.total_net_saving}
+        currency={fmtMoney}
+        onApplyStepUp={applyStepUp}
+       />
+      )}
+      <CashFitPanel
+       calendar={cashCalendar}
+       fit={cashFit}
+       currency={fmtMoney}
+       onBudgetChange={setCashBudget}
+       busy={cashFitBusy}
+      />
+     </>}
+     extras={briefing ? (
+      <HoyMobileExtras
+       briefing={briefing}
+       optimization={optimization}
+       optimizationLoading={optimizationLoading}
+       canEdit={canEdit}
+       onConvert={convertOrderToPO}
+      />
+     ) : null}
+    />
+    {/* The same reception form as /pedidos (a bottom sheet on a phone),
+        opened from the overdue-arrival rows. */}
+    {receivingPO && (
+     <ReceptionModal
+      poId={receivingPO}
+      onClose={() => setReceivingPO(null)}
+      onSaved={() => {
+       setReceivingPO(null)
+       loadOverdue()
+       getPOHistory(20)
+        .then(list => setPendingPOs(list.filter(p =>
+         ['pending', 'partial'].includes(p.reception_status ?? 'pending'),
+        )))
+        .catch(() => {})
+      }}
+     />
+    )}
+   </>
   )
  }
 
@@ -1675,37 +1793,7 @@ export default function HoyPage() {
            loading={loadingNarrative}
            fallback={narrative?.fallback ?? false}
            analytistLink="/analyst"
-           onRefresh={() => {
-            if (!sessionId) return
-            setLoadingNarrative(true)
-            // The initial load has an 11s ceiling; this had none. `.finally`
-            // cannot fire on a promise that never settles, so a DeepSeek that
-            // hangs left the spinner turning with no way out — and this is a
-            // button someone presses precisely when the answer looks stale.
-            //
-            // Same ceiling, different landing: the initial load has nothing on
-            // screen and falls back to the rule-based sentence, while a
-            // refresh already shows a good narrative. Replacing that with a
-            // weaker one is a downgrade nobody asked for, so this stops the
-            // spinner and keeps what is there.
-            let timedOut = false
-            const timeout = setTimeout(() => {
-             timedOut = true
-             setLoadingNarrative(false)
-            }, 11000)
-            getMorningNarrative(sessionId, 'distributor', lang)
-             // Same rule as the initial load: the backend's rule-based sentence
-             // is written for an API client, not for this screen, so "Refresh"
-             // must not swap the local one back out for it.
-             .then(data => {
-              // A late answer after the ceiling must not repaint the card
-              // under the reader — they have moved on by then.
-              if (timedOut) return
-              setNarrative(data.fallback && briefing ? buildFallbackNarrative(briefing) : data)
-             })
-             .catch(() => {})
-             .finally(() => { clearTimeout(timeout); if (!timedOut) setLoadingNarrative(false) })
-           }}
+           onRefresh={refreshNarrative}
           />
          </div>
         )}
@@ -2361,6 +2449,199 @@ export default function HoyPage() {
        .catch(() => {})
      }}
     />
+   )}
+  </div>
+ )
+}
+
+// ── The rest of the briefing, phone-sized ────────────────────────────────────
+// Everything the desktop shows below the work queue, as stacked sections a
+// thumb can scroll: the optimizer plan (with "convert to PO"), the products the
+// optimizer refused to decide for, demand peaks, demand changes, the system's
+// recommendations and the capital tied up in overstock. Same data, same copy
+// and the same guards as the desktop sections — only the layout differs.
+function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit, onConvert }: {
+ briefing: MorningBriefing
+ optimization: OptimizationResponse | null
+ optimizationLoading: boolean
+ canEdit: boolean
+ onConvert: (order: OptimizationOrder) => void
+}) {
+ const { t } = useLanguage()
+ const kpis = briefing.kpis
+ const sectionTitle: React.CSSProperties = { fontSize: 16, fontWeight: 700, color: C.text, margin: '0 0 4px' }
+ const sectionDesc: React.CSSProperties = { fontSize: 12.5, color: C.dim, margin: '0 0 10px', lineHeight: 1.5 }
+ const row: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', minHeight: 52,
+  boxSizing: 'border-box', borderTop: `1px solid ${C.border}`,
+ }
+ const first = (idx: number): React.CSSProperties => (idx === 0 ? { ...row, borderTop: 'none' } : row)
+ const group: React.CSSProperties = {
+  listStyle: 'none', margin: 0, padding: 0, background: C.surface,
+  border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden',
+ }
+ const showPlan = optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0
+  || optimization.status === 'fallback')
+ return (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 10, minWidth: 0 }}>
+   {optimizationLoading && !optimization && (
+    <p style={{ fontSize: 12.5, color: C.dim, margin: 0 }}>{t('hoy.optimizer_loading')}</p>
+   )}
+
+   {optimization && (optimization.needs_stock?.length ?? 0) > 0 && (
+    <section style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, borderLeft: '4px solid #f59e0b', background: C.surface }}>
+     <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: C.text }}>
+      {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
+     </h3>
+     <p style={{ ...sectionDesc, margin: '0 0 6px' }}>{t('hoy.needs_stock_body')}</p>
+     <p style={{ fontSize: 13, color: C.text, margin: '0 0 6px', overflowWrap: 'anywhere' }}>
+      {optimization.needs_stock!.slice(0, 12).join(', ')}
+      {optimization.needs_stock!.length > 12 && ` … +${optimization.needs_stock!.length - 12}`}
+     </p>
+     <Link href="/inventario" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44, fontSize: 13.5, fontWeight: 600, color: 'var(--accent)' }}>
+      {t('hoy.needs_stock_cta')} <ArrowRight size={14} />
+     </Link>
+    </section>
+   )}
+
+   {showPlan && optimization && (
+    <section>
+     <h2 style={sectionTitle}>{t('hoy.optimizer_title')}</h2>
+     <p style={sectionDesc}>{t('hoy.optimizer_subtitle').replace('{horizon}', String(optimization.horizon_days))}</p>
+     <p style={{ ...sectionDesc, fontSize: 12 }}>{t('hoy.optimizer_vs_semaforo').replace('{horizon}', String(optimization.horizon_days))}</p>
+     {optimization.status === 'fallback' && (
+      <p style={{ fontSize: 12.5, lineHeight: 1.5, margin: '0 0 10px', padding: '8px 10px', borderRadius: 8, color: 'var(--text)',
+             background: 'color-mix(in srgb, var(--signal-order-soon-fg) 12%, transparent)',
+             border: '1px solid color-mix(in srgb, var(--signal-order-soon-fg) 35%, transparent)' }}>
+       {optimization.orders.length === 0 && optimization.transfers.length === 0
+        ? t('hoy.optimizer_fallback_empty')
+        : t('hoy.optimizer_fallback_notice')}
+      </p>
+     )}
+     {optimization.orders.length > 0 && (
+      <>
+       <h3 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px', color: C.text }}>{t('hoy.optimizer_orders_title')}</h3>
+       <ul style={{ ...group, marginBottom: 12 }}>
+        {optimization.orders.map((order, idx) => (
+         <li key={`${order.sku}-${order.warehouse}`} style={first(idx)}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, overflowWrap: 'anywhere' }}>
+           <span style={{ fontFamily: 'monospace' }}>{order.sku}</span> — {order.warehouse}
+          </span>
+          <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: C.text }}>{fmtNum(order.qty)}</strong>
+          {canEdit && (
+           <button onClick={() => onConvert(order)} style={{
+            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0, minHeight: 44,
+            padding: '0 10px', borderRadius: 10, fontSize: 13, fontWeight: 700, color: 'var(--accent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', display: 'flex', alignItems: 'center',
+           }}>
+            {t('hoy.optimizer_convert_to_po')}
+           </button>
+          )}
+         </li>
+        ))}
+       </ul>
+      </>
+     )}
+     {optimization.transfers.length > 0 && (
+      <>
+       <h3 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px', color: C.text }}>{t('hoy.optimizer_transfers_title')}</h3>
+       <ul style={group}>
+        {optimization.transfers.map((tr, idx) => (
+         <li key={`${tr.sku}-${tr.from_warehouse}-${tr.to_warehouse}`} style={{ ...first(idx), fontSize: 13.5, color: C.text }}>
+          {t('hoy.optimizer_transfer_line')
+           .replace('{qty}', String(tr.qty))
+           .replace('{sku}', tr.sku)
+           .replace('{from}', tr.from_warehouse)
+           .replace('{to}', tr.to_warehouse)}
+         </li>
+        ))}
+       </ul>
+      </>
+     )}
+    </section>
+   )}
+
+   {(briefing.demand_spikes?.length ?? 0) > 0 && (
+    <section>
+     <h2 style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <Zap size={16} color={C.amber} aria-hidden="true" /> {t('hoy.section_anticipate_title')}
+     </h2>
+     <p style={sectionDesc}>{t('hoy.section_anticipate_desc')}</p>
+     {(briefing.demand_spikes ?? []).map(sp => <SpikeCard key={sp.sku} s={sp} />)}
+    </section>
+   )}
+
+   {briefing.demand_changes.length > 0 && (
+    <section>
+     <h2 style={{ ...sectionTitle, marginBottom: 10 }}>{t('hoy.section_demand_changes')}</h2>
+     <ul style={group}>
+      {briefing.demand_changes.map((item, idx) => {
+       const pct = item.demand_trend_pct
+       const up = pct > 0
+       return (
+        <li key={item.sku} style={first(idx)}>
+         {up ? <TrendingUp size={17} color={C.green} aria-hidden="true" /> : <TrendingDown size={17} color={C.red} aria-hidden="true" />}
+         <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+           {item.display_name || item.sku}
+          </span>
+          <span style={{ display: 'block', fontSize: 12, color: C.dim }}>
+           {up ? t('hoy.demand_running_above_forecast') : t('hoy.demand_running_below_forecast')}
+          </span>
+         </span>
+         <strong style={{ fontSize: 14, color: up ? C.green : C.red, flexShrink: 0 }}>{up ? '+' : ''}{pct.toFixed(0)}%</strong>
+        </li>
+       )
+      })}
+     </ul>
+    </section>
+   )}
+
+   {briefing.recommendations.length > 0 && (
+    <section>
+     <h2 style={{ ...sectionTitle, marginBottom: 10 }}>{t('hoy.section_system_recommendations')}</h2>
+     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {briefing.recommendations.slice(0, 8).map((rec, idx) => (
+       <div key={idx} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+         <div style={{ flexShrink: 0, marginTop: 2 }}><RecIcon rec_type={rec.rec_type} /></div>
+         <span style={{ fontSize: 13.5, color: C.text, lineHeight: 1.5, minWidth: 0 }}>{recText(rec, briefing.coverage_unit, t)}</span>
+        </div>
+        <p style={{ fontSize: 12.5, color: C.muted, margin: '6px 0 0', paddingLeft: 26, lineHeight: 1.5 }}>
+         {t('hoy.suggested_action_label')}: {recAction(rec, t)}
+        </p>
+       </div>
+      ))}
+     </div>
+    </section>
+   )}
+
+   {briefing.overstocked.length > 0 && kpis.capital_in_overstock > 0 && (
+    <section>
+     <h2 style={{ ...sectionTitle, marginBottom: 6 }}>{t('hoy.section_capital_opportunities')}</h2>
+     <p style={{ fontSize: 13.5, color: C.text, margin: '0 0 10px', lineHeight: 1.5 }}>
+      {t('hoy.capital_overstock_prefix')} {fmtM(kpis.capital_in_overstock)} {t('hoy.capital_overstock_suffix')}
+     </p>
+     <ul style={group}>
+      {briefing.overstocked.slice(0, 3).map((item, idx) => (
+       <li key={item.sku} style={first(idx)}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+         <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {item.display_name || item.sku}
+         </span>
+         {item.coverage_days != null && (
+          <span style={{ display: 'block', fontSize: 12, color: C.dim }}>
+           {Math.round(item.coverage_days)} {coverageUnitLabel(briefing.coverage_unit, Math.round(item.coverage_days), t)} {t('hoy.reason_coverage_suffix')}
+          </span>
+         )}
+        </span>
+        {item.inventory_value != null && (
+         <strong style={{ fontSize: 14, color: C.blue, flexShrink: 0 }}>{fmtM(item.inventory_value)}</strong>
+        )}
+       </li>
+      ))}
+     </ul>
+    </section>
    )}
   </div>
  )

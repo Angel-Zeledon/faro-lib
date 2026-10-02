@@ -8,6 +8,8 @@ import type {
 import { downloadWorkbook } from '@/lib/excel'
 import Spinner from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/States'
+import BottomSheet from '@/components/mobile/BottomSheet'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { granularityLabel } from '@/lib/enumLabels'
 import { modelLabel } from '@/lib/modelLabel'
@@ -152,6 +154,7 @@ export function StatsStrip({ data, quality, showTechnical }: {
   showTechnical: boolean
 }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const { stats, metrics, historical, forecast } = data
   // The model this SKU's orders are actually computed from — see makeChampionRank.
   // Baselines are excluded for the same reason the engine excludes them: they
@@ -197,11 +200,15 @@ export function StatsStrip({ data, quality, showTechnical }: {
       display: 'flex', gap: 0,
       borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
       background: 'var(--surface-2)',
+      // Phones: five technical tiles cannot share 336px, so they wrap into
+      // rows of three instead of squeezing their labels to nothing.
+      ...(narrow ? { flexWrap: 'wrap' as const } : {}),
     }}>
       {items.map((item, i) => (
         <div key={item.label} style={{
-          flex: 1, padding: '7px 10px', textAlign: 'center',
+          flex: narrow ? '1 1 33%' : 1, padding: '7px 10px', textAlign: 'center',
           borderRight: i < items.length - 1 ? '1px solid var(--border)' : undefined,
+          ...(narrow ? { minWidth: 0, boxSizing: 'border-box' as const, overflowWrap: 'anywhere' as const } : {}),
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: item.color ?? 'var(--fg)', lineHeight: 1.2 }}>{item.value}</div>
           <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 1 }}>{item.label}</div>
@@ -220,12 +227,14 @@ export function StatsStrip({ data, quality, showTechnical }: {
 
 // ── Confidence band toggle ────────────────────────────────────────────────────
 
-export function BandToggle({ active, onToggle, hasQuantiles, tourAnchor }: {
+export function BandToggle({ active, onToggle, hasQuantiles, tourAnchor, touch = false }: {
   active: boolean
   onToggle: () => void
   hasQuantiles: boolean
   /** Set on the single-session panel only — a tour anchor has to be unique. */
   tourAnchor?: string
+  /** Phone layout: a 44px target. */
+  touch?: boolean
 }) {
   const { t } = useLanguage()
   const on = active && hasQuantiles
@@ -237,7 +246,9 @@ export function BandToggle({ active, onToggle, hasQuantiles, tourAnchor }: {
         style={{
           all: 'unset', cursor: hasQuantiles ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', gap: 4,
-          padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+          padding: touch ? '0 12px' : '3px 8px', borderRadius: 6,
+          fontSize: touch ? 13 : 11, fontWeight: 500,
+          ...(touch ? { minHeight: 44, boxSizing: 'border-box' as const } : {}),
           border: `1px solid ${on ? FAN_COLOR : 'var(--border)'}`,
           background: on ? FAN_COLOR + '22' : 'transparent',
           color: on ? FAN_COLOR : 'var(--dim)',
@@ -299,6 +310,10 @@ export function buildChartOption(
   t: Translate = (k) => k,
   overlays: ModelOverlay[] = [],
   accent = '#0F766E',
+  /** Phone layout: the legend scrolls instead of wrapping over the plot, the
+   *  tooltip stays inside the chart, and a one-finger drag scrubs the tooltip
+   *  instead of panning (pinch still zooms) — so the page keeps scrolling. */
+  compact = false,
 ) {
   const { historical, forecast } = data
 
@@ -492,7 +507,9 @@ export function buildChartOption(
         show: true, position: 'insideEndTop', color: dim, fontSize: 10,
         // ECharts rotates a markLine label to follow the line, which on a
         // vertical divider means the caption reads bottom-to-top. Force it flat.
-        rotate: 0, align: 'left', padding: [0, 0, 4, 6],
+        // Phones: the divider sits near the right edge, so the caption reads
+        // leftwards from it instead of running off the canvas.
+        rotate: 0, align: compact ? 'right' : 'left', padding: compact ? [0, 6, 4, 0] : [0, 0, 4, 6],
         formatter: t('skus.forecast_starts_here'),
       },
       data: [{ xAxis: historical[historical.length - 1].date }],
@@ -592,7 +609,7 @@ export function buildChartOption(
       }
     }
 
-    return `<div style="font-size:11px;min-width:170px">
+    return `<div style="font-size:11px;min-width:${compact ? 140 : 170}px">
       <div style="margin-bottom:5px;opacity:0.45;font-size:10px">${date}</div>
       ${lines.join('')}
     </div>`
@@ -617,18 +634,29 @@ export function buildChartOption(
       textStyle:    { color: tooltipText, fontSize: 11 },
       extraCssText: 'padding:10px 12px;border-radius:8px;',
       formatter:    tooltipFormatter,
+      ...(compact ? { confine: true, triggerOn: 'mousemove|click' } : {}),
     },
-    legend: {
-      data:      legendData,
-      textStyle: { color: dim, fontSize: 11 },
-      top:       6,
-      right:     16,
-      itemWidth: 16,
-      itemHeight: 8,
-    },
+    legend: compact
+      ? {
+          data: legendData, type: 'scroll',
+          textStyle: { color: dim, fontSize: 10 },
+          top: 4, left: 8, right: 8,
+          itemWidth: 12, itemHeight: 6, itemGap: 8,
+          pageIconSize: 10, pageTextStyle: { color: dim, fontSize: 10 },
+        }
+      : {
+          data:      legendData,
+          textStyle: { color: dim, fontSize: 11 },
+          top:       6,
+          right:     16,
+          itemWidth: 16,
+          itemHeight: 8,
+        },
     // containLabel keeps y-axis labels from clipping; bottom leaves room for
     // the x-axis labels (zoom/pan is gesture-only via the inside dataZoom).
-    grid: { top: 40, bottom: 28, left: 12, right: 20, containLabel: true },
+    grid: compact
+      ? { top: 50, bottom: 22, left: 4, right: 12, containLabel: true }
+      : { top: 40, bottom: 28, left: 12, right: 20, containLabel: true },
     xAxis: {
       type:      'category',
       data:      allDates,
@@ -656,7 +684,9 @@ export function buildChartOption(
     // gestures while eating ~30px of chart height (worst on mobile, where it
     // competed with pinch-zoom).
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0, start: 0, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true },
+      compact
+        ? { type: 'inside', xAxisIndex: 0, start: 0, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: false, preventDefaultMouseMove: false }
+        : { type: 'inside', xAxisIndex: 0, start: 0, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true },
     ],
     series,
   }
@@ -680,6 +710,9 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
   onSeeOrder?: () => void
 }) {
   const { t } = useLanguage()
+  // Phones get the same panel with thumb-sized controls, the export menu as a
+  // bottom sheet and a compact chart option — see buildChartOption(compact).
+  const narrow = useIsNarrow()
   const [data,        setData]        = useState<SkuIntelligenceData | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [fetching,    setFetching]    = useState(false)
@@ -974,15 +1007,15 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
 
   const option = useMemo(() => {
     if (!data) return {}
-    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList, accent)
-  }, [data, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent])
+    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow)
+  }, [data, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow])
 
   if (loading && !data) return (
     <div style={{ flex: 1, padding: '16px', minHeight: 360 }} role="status" aria-busy="true">
       <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 10 }}>{t('skus.loading_label')}</div>
       <div className="skeleton" style={{ height: 36, width: '60%', marginBottom: 14, borderRadius: 8 }} />
       <div className="skeleton" style={{ height: 280, borderRadius: 10, marginBottom: 14 }} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
         {[1, 2, 3, 4].map(i => (
           <div key={i} className="skeleton" style={{ height: 56, borderRadius: 8 }} />
         ))}
@@ -1007,8 +1040,9 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
       : { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
       <div data-tour={tourAnchor} style={{
-        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+        display: 'flex', alignItems: 'center', gap: narrow ? 8 : 10, padding: narrow ? '10px 12px' : '10px 16px',
         flexWrap: 'wrap', borderBottom: '1px solid var(--border)', background: 'var(--surface)',
+        ...(fullscreen && narrow ? { paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))' } : {}),
       }}>
         {/* Granularity */}
         <ChipGroup
@@ -1016,6 +1050,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           label={t('skus.chip_granularity')}
           value={granularity ?? data.applied_granularity}
           onChange={g => setGranularity(g)}
+          touch={narrow}
           options={validGranularities.map(g => ({
             value: g,
             label: GRANULARITY_LABELS[g] ?? g,
@@ -1023,20 +1058,21 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           }))}
         />
 
-        <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
+        {!narrow && <div style={{ width: 1, height: 18, background: 'var(--border)' }} />}
 
         {/* Chart type */}
         <ChipGroup
           label={t('skus.chip_chart')}
           value={chartType}
           onChange={setChartType}
+          touch={narrow}
           options={[
             { value: 'line', label: t('skus.chart_type_line'), icon: <LineChartIcon size={10} /> },
             { value: 'bar',  label: t('skus.chart_type_bar'),  icon: <BarChart2 size={10} /> },
           ]}
         />
 
-        <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
+        {!narrow && <div style={{ width: 1, height: 18, background: 'var(--border)' }} />}
 
         {/* Model selection — multi-select chips; each selected model renders
             its own colored series on the same axis. Behind the technical
@@ -1055,8 +1091,10 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
                     onClick={() => toggleModel(m)}
                     style={{
                       all: 'unset', cursor: 'pointer',
-                      padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                      padding: narrow ? '0 10px' : '3px 9px', borderRadius: 6,
+                      fontSize: narrow ? 13 : 11, fontWeight: 500,
                       display: 'flex', alignItems: 'center', gap: 5,
+                      ...(narrow ? { minHeight: 44, boxSizing: 'border-box' as const } : {}),
                       background: sel ? 'var(--surface)' : 'transparent',
                       border: `1px solid ${sel ? color : 'transparent'}`,
                       color: sel ? 'var(--fg)' : 'var(--dim)',
@@ -1077,6 +1115,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           <BandToggle
             tourAnchor={tourAnchor ? 'skus.band' : undefined}
             active={showBand} onToggle={() => setShowBand(v => !v)} hasQuantiles={hasQuantiles}
+            touch={narrow}
           />
         )}
 
@@ -1091,16 +1130,17 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
               style={{
                 all: 'unset', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 11, color: 'var(--dim)',
-                padding: '3px 8px', borderRadius: 6,
+                fontSize: narrow ? 13 : 11, color: 'var(--dim)',
+                padding: narrow ? '0 12px' : '3px 8px', borderRadius: 6,
                 border: '1px solid var(--border)',
+                ...(narrow ? { minHeight: 44, boxSizing: 'border-box' as const } : {}),
               }}
             >
               <Download size={11} />
               {t('skus.btn_export')}
               <ChevronDown size={9} />
             </button>
-            {showExportMenu && (
+            {showExportMenu && !narrow && (
               <>
                 <div
                   onClick={() => setShowExportMenu(false)}
@@ -1144,6 +1184,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           {/* Fullscreen toggle (Escape also exits) */}
           <button
             title={fullscreen ? t('skus.exit_fullscreen_title') : t('skus.fullscreen_title')}
+            aria-label={fullscreen ? t('skus.exit_fullscreen_title') : t('skus.fullscreen_title')}
             onClick={() => setFullscreen(v => !v)}
             style={{
               all: 'unset', cursor: 'pointer',
@@ -1151,18 +1192,47 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
               fontSize: 11, color: 'var(--dim)',
               padding: '3px 8px', borderRadius: 6,
               border: '1px solid var(--border)',
+              ...(narrow ? { width: 44, height: 44, padding: 0, justifyContent: 'center', boxSizing: 'border-box' as const } : {}),
             }}
           >
-            {fullscreen ? <X size={11} /> : <Maximize2 size={11} />}
+            {fullscreen ? <X size={narrow ? 16 : 11} /> : <Maximize2 size={narrow ? 16 : 11} />}
           </button>
         </div>
       </div>
+
+      {/* Phones: the export menu is a bottom sheet with full-width rows
+          instead of a 160px dropdown anchored to a small button. */}
+      {narrow && (
+        <BottomSheet open={showExportMenu} onClose={() => setShowExportMenu(false)} title={t('skus.btn_export')}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8 }}>
+            {[
+              { label: t('skus.export_csv_chart_data'),  action: () => { exportChartCSV(sku, data); setShowExportMenu(false) } },
+              { label: t('skus.export_png_chart_image'), action: exportPNG },
+              { label: t('skus.export_pdf_full_report'), action: exportPDF },
+              { label: t('skus.export_excel_xlsx'),      action: exportExcel },
+            ].map(item => (
+              <button
+                key={item.label}
+                onClick={item.action}
+                className="mobile-btn mobile-btn-secondary"
+                style={{ justifyContent: 'flex-start', flex: 'none', width: '100%', fontWeight: 600 }}
+              >
+                <Download size={16} aria-hidden="true" /> {item.label}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* Stats strip */}
       <StatsStrip data={data} quality={quality} showTechnical={showTechnical} />
 
       {/* Chart */}
-      <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={{ flex: 1, minHeight: 300, padding: '8px 0 0' }}>
+      <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={narrow && !fullscreen
+        // Phones: a fixed height. The page scrolls; the chart does not compete
+        // with it for the whole viewport.
+        ? { height: 280, padding: '6px 0 0', minWidth: 0 }
+        : { flex: 1, minHeight: 300, padding: '8px 0 0' }}>
         {data.historical.length === 0 && data.forecast.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--dim)', fontSize: 13 }}>
             {t('skus.no_series_data')}
@@ -1170,7 +1240,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
         ) : (
           <ReactECharts
             option={option}
-            style={{ height: '100%', minHeight: 300, width: '100%' }}
+            style={{ height: '100%', minHeight: narrow && !fullscreen ? 0 : 300, width: '100%' }}
             theme={isDark ? 'dark' : undefined}
             opts={{ renderer: 'canvas' }}
             onChartReady={(inst: any) => { echartsRef.current = inst }}
@@ -1190,7 +1260,11 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
       {/* Footer info. The run details are the technical view's; the gap and
           outlier notices stay in both, because they change how far the curve
           can be trusted. */}
-      <div style={{ padding: '4px 16px 8px', display: 'flex', gap: 12, fontSize: 10, color: 'var(--dim)' }}>
+      <div style={{
+        padding: narrow ? '4px 12px 8px' : '4px 16px 8px', display: 'flex', gap: 12,
+        fontSize: narrow ? 11 : 10, color: 'var(--dim)',
+        ...(narrow ? { flexWrap: 'wrap' as const, rowGap: 4 } : {}),
+      }}>
         {showTechnical && (
           <>
             <span>{t('skus.footer_freq')}: <strong>{data.original_freq}</strong></span>

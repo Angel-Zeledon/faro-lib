@@ -43,6 +43,8 @@ import { InventoryPanel } from '@/components/forecast/InventoryPanel'
 import { PolicyBacktestPanel } from '@/components/forecast/PolicyBacktestPanel'
 import { PanelPlaceholder, TabBar } from '@/components/forecast/PanelChrome'
 import { ViewToggle, useForecastView } from '@/components/forecast/ViewToggle'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import PronosticosMobile from './PronosticosMobile'
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 //
@@ -112,6 +114,13 @@ export default function SkusPage() {
   useEffect(() => {
     if (!showTechnical && compareMode) { setCompareMode(false); setCmpSessionId(null) }
   }, [showTechnical, compareMode])
+  // Phones show the SKU list and one SKU at a time (PronosticosMobile); this
+  // is whether that one SKU is open. Desktop shows both panes and ignores it.
+  const narrow = useIsNarrow()
+  const [mobileDetail,   setMobileDetail]   = useState(false)
+  // A different session is a different catalogue: go back to its list rather
+  // than opening whichever SKU the load auto-selects.
+  useEffect(() => { setMobileDetail(false) }, [sessionId])
   // Bulk export
   const [bulkExporting,  setBulkExporting]  = useState(false)
   const [bulkProgress,   setBulkProgress]   = useState(0)
@@ -369,6 +378,66 @@ export default function SkusPage() {
       setBulkExporting(false)
     }
   }, [sessionId, skus])
+
+  if (narrow) {
+    return (
+      <PronosticosMobile
+        view={view}
+        onView={setView}
+        showTechnical={showTechnical}
+        sessions={sessions}
+        sessLoading={sessLoading}
+        sessionId={sessionId}
+        onSelectSession={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false) }}
+        onRefresh={() => { const id = sessionId; setSessionId(null); setTimeout(() => setSessionId(id), 10) }}
+        sessError={sessError}
+        onRetrySessions={reloadSessions}
+        onDismissSessError={() => setSessError(null)}
+        loadError={loadError}
+        onDismissLoadError={() => setLoadError(null)}
+        loading={loading}
+        search={search}
+        onSearch={setSearch}
+        skuCount={skus.length}
+        page={skuPage}
+        onPage={setSkuListPage}
+        quality={quality}
+        signalForSku={signalForSku}
+        selectedSku={selectedSku}
+        detailOpen={mobileDetail}
+        onOpenSku={sku => { setSelectedSku(sku); setTab('Forecast'); setMobileDetail(true) }}
+        onCloseDetail={() => setMobileDetail(false)}
+        tab={tab}
+        onTab={setTab}
+        isDark={isDark}
+        skuMetrics={skuMetrics}
+        skuInventory={skuInventory}
+        skuStatus={skuStatus}
+        coverageUnit={coverageUnit}
+        skuPolicy={skuPolicy}
+        skuRisk={skuRisk}
+        skuAccuracy={skuAccuracy}
+        skuWarnings={skuWarnings}
+        showSkuStats={showSkuStats}
+        onToggleSkuStats={() => setShowSkuStats(v => !v)}
+        compareMode={compareMode}
+        onToggleCompare={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionId(null) }}
+        cmpSessionId={cmpSessionId}
+        onCmpSession={id => { setCmpSessionId(id); setCmpSku(null) }}
+        cmpSkus={cmpSkus}
+        cmpSku={cmpSku}
+        onCmpSku={setCmpSku}
+        cmpLoading={cmpLoading}
+        cmpError={cmpError}
+        bulkExporting={bulkExporting}
+        bulkProgress={bulkProgress}
+        bulkFailed={bulkFailed}
+        onBulkExport={handleBulkExport}
+        policyBacktest={policyBacktest}
+        catalogueSize={metricsBySku.size}
+      />
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>

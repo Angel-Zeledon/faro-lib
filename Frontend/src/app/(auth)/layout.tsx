@@ -6,6 +6,7 @@ import { AuthPanel } from '@/components/auth/AuthPanel'
 import { TipsPanel } from '@/components/auth/TipsPanel'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import '@/components/mobile/mobileForms.css'
 
 // Persistent stage for /login, /signup and /prueba (the trial account): the form on the left, the product's
 // own morning list on the right. Because this layout wraps both routes, the
@@ -25,7 +26,20 @@ import { useLanguage } from '@/contexts/LanguageContext'
 // reset-password keep their own full-screen treatment.
 const SCENE_ROUTES = ['/login', '/signup', '/prueba']
 
+// Phones: every auth form gets 16px fields (iOS Safari otherwise zooms the
+// page into a 13–14px input on focus and never zooms back) and 44px tap
+// targets — rules in components/mobile/mobileForms.css, phone width only.
+// `display: contents` so the wrapper adds no box: the routes below lay
+// themselves out exactly as before.
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="m-form m-auth" style={{ display: 'contents' }}>
+      <AuthStage>{children}</AuthStage>
+    </div>
+  )
+}
+
+function AuthStage({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { theme, toggle } = useTheme()
   const { lang, setLang, t } = useLanguage()

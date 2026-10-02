@@ -9,6 +9,8 @@ import Card, { CardHeader } from '@/components/ui/Card'
 import Table, { Th, Td } from '@/components/ui/Table'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { BottomSheet, MobileList, MobileCard } from '@/components/mobile'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -44,10 +46,11 @@ function fmtUnits(n: number): string {
 
 function HeroCard({ roi }: { roi: InventoryROISummary }) {
   const { t, lang } = useLanguage()
+  const narrow = useIsNarrow()
   const hasValue = roi.estimated_value_protected > 0
 
   return (
-    <Card radius={14} padding="28px 32px" data-tour="roi.hero" style={{ borderTop: `4px solid ${C.indigo}` }}>
+    <Card radius={14} padding={narrow ? '20px 18px' : '28px 32px'} data-tour="roi.hero" style={{ borderTop: `4px solid ${C.indigo}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.indigo, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 20 }}>
         {t('roi.hero_eyebrow')}
       </div>
@@ -90,7 +93,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
         <div data-tour="roi.hero_value">
           {hasValue ? (
             <>
-              <div style={{ fontSize: 42, fontWeight: 900, color: C.green, lineHeight: 1 }}>
+              <div style={{ fontSize: narrow ? 34 : 42, fontWeight: 900, color: C.green, lineHeight: 1, overflowWrap: 'anywhere' }}>
                 {formatMoney(roi.estimated_value_protected)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
@@ -121,6 +124,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
 
 function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   // Only meaningful once we have decision data (cart-based POs).
   if (roi.adoption_rate == null || roi.total_suggested === 0) return null
 
@@ -128,7 +132,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
   const color = pct >= 70 ? C.green : pct >= 40 ? C.amber : C.red
 
   return (
-    <Card radius={14} padding="24px 28px" data-tour="roi.adoption" style={{ borderTop: `4px solid ${color}` }}>
+    <Card radius={14} padding={narrow ? '20px 18px' : '24px 28px'} data-tour="roi.adoption" style={{ borderTop: `4px solid ${color}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
         {t('roi.adoption_eyebrow')}
       </div>
@@ -139,7 +143,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
             {t('roi.adoption_rate_label')}
           </div>
         </div>
-        <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ flex: 1, minWidth: narrow ? 0 : 220, ...(narrow ? { flexBasis: '100%' } : {}) }}>
           <p style={{ margin: 0, fontSize: 14, color: C.muted, lineHeight: 1.6 }}>
             {t('roi.adoption_followed_prefix')} <strong style={{ color: C.text }}>{fmtUnits(roi.total_approved)}</strong> {t('roi.adoption_followed_of')}{' '}
             <strong style={{ color: C.text }}>{fmtUnits(roi.total_suggested)}</strong> {t('roi.adoption_followed_suffix')}
@@ -174,6 +178,9 @@ function capitalizeFirst(s: string): string {
 
 function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   const { t, lang } = useLanguage()
+  const narrow = useIsNarrow()
+
+  if (narrow) return <MonthlyEvolutionCards rows={rows} />
 
   return (
     <Card padding={0} overflow="hidden" data-tour="roi.monthly">
@@ -232,6 +239,64 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
   )
 }
 
+// Phones: six columns do not fit 360px. Each month is a card (the month, how
+// many orders and stockouts, the value managed); tapping it opens a sheet with
+// all six figures, in the table's column order.
+function MonthlyEvolutionCards({ rows }: { rows: ROIMonthlyRow[] }) {
+  const { t, lang } = useLanguage()
+  const [open, setOpen] = useState<string | null>(null)
+  const row = rows.find(r => r.month === open) ?? null
+  const capitalFreed = (r: ROIMonthlyRow) => r.capital_freed != null
+    ? formatMoney(r.capital_freed)
+    : r.capital_freed_status === 'grew' ? t('roi.capital_freed_grew') : t('roi.capital_freed_pending')
+  const line = (label: string, value: React.ReactNode, color?: string) => (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0',
+      borderBottom: `1px solid ${C.border}`, fontSize: 14,
+    }}>
+      <span style={{ color: C.dim }}>{label}</span>
+      <span style={{ color: color ?? C.text, fontWeight: 600, textAlign: 'right', minWidth: 0 }}>{value}</span>
+    </div>
+  )
+
+  return (
+    <section data-tour="roi.monthly" aria-labelledby="roi-monthly-title">
+      <h2 id="roi-monthly-title" style={{
+        display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px',
+        fontSize: 15, fontWeight: 700, color: C.text,
+      }}>
+        <TrendingUp size={15} color={C.indigo} aria-hidden="true" /> {t('roi.monthly_evolution_title')}
+      </h2>
+      <MobileList ariaLabel={t('roi.monthly_evolution_title')}>
+        {rows.map(r => (
+          <MobileCard
+            key={r.month}
+            title={capitalizeFirst(fmtMonthLabel(r.month, lang))}
+            subtitle={t('roi.mobile_month_subtitle', { orders: r.pos_count, risks: r.skus_order_now })}
+            value={formatMoney(r.total_value)}
+            onClick={() => setOpen(r.month)}
+          />
+        ))}
+      </MobileList>
+      <BottomSheet
+        open={!!row}
+        onClose={() => setOpen(null)}
+        title={row ? capitalizeFirst(fmtMonthLabel(row.month, lang)) : ''}
+      >
+        {row && (
+          <div style={{ paddingBottom: 8 }}>
+            {line(t('roi.col_orders'), row.pos_count)}
+            {line(t('roi.col_stockouts_handled'), row.skus_order_now, row.skus_order_now > 0 ? C.red : C.dim)}
+            {line(t('roi.col_value_managed'), formatMoney(row.total_value), C.green)}
+            {line(t('roi.col_adoption'), row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—')}
+            {line(t('roi.col_capital_freed'), capitalFreed(row), row.capital_freed != null ? C.green : C.dim)}
+          </div>
+        )}
+      </BottomSheet>
+    </section>
+  )
+}
+
 // ── Monthly recap (feature 3.2) ───────────────────────────────────────────────
 // Mirrors the monthly email exactly. A null metric is rendered as explicitly
 // unavailable with the reason, never as a zero that could read as an outcome.
@@ -241,10 +306,11 @@ function RecapTile({ value, label, note, color, muted, dataTour }: {
   /** `data-tour` anchor, so a guided-tour step can point at one tile. */
   dataTour?: string
 }) {
+  const narrow = useIsNarrow()
   return (
-    <div data-tour={dataTour} style={{ padding: '16px 18px', background: C.card, borderRadius: 10, minWidth: 0 }}>
+    <div data-tour={dataTour} style={{ padding: narrow ? '12px' : '16px 18px', background: C.card, borderRadius: 10, minWidth: 0 }}>
       <div style={{
-        fontSize: muted ? 15 : 30, fontWeight: muted ? 600 : 800,
+        fontSize: muted ? 15 : narrow ? 22 : 30, fontWeight: muted ? 600 : 800,
         color, lineHeight: 1.15, wordBreak: 'break-word',
       }}>
         {value}
@@ -257,6 +323,7 @@ function RecapTile({ value, label, note, color, muted, dataTour }: {
 
 function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
   const { t, lang } = useLanguage()
+  const narrow = useIsNarrow()
   const monthLabel = fmtMonthLabel(report.month, lang)
 
   const header = (
@@ -300,12 +367,14 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
   return (
     <Card padding={0} overflow="hidden" data-tour="roi.recap">
       {header}
-      <div style={{ padding: '20px 22px' }}>
+      <div style={{ padding: narrow ? '16px 14px' : '20px 22px' }}>
         <p style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 600, color: C.text }}>
           {headline}
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        {/* Phones: two tiles a row (one would make the recap five screens
+            tall); the 220px floor would not fit two in 336px. */}
+        <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: narrow ? 8 : 12 }}>
           <RecapTile
             dataTour="roi.recap_orders"
             value={`${report.orders_generated}`}
@@ -392,11 +461,12 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
 
 function WhyItMattersCard() {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   return (
     <div data-tour="roi.why" style={{
       background: 'color-mix(in srgb, var(--accent) 4%, transparent)',
       border: `1px solid color-mix(in srgb, var(--accent) 18%, transparent)`,
-      borderRadius: 12, padding: '22px 26px',
+      borderRadius: 12, padding: narrow ? '18px 16px' : '22px 26px',
     }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: C.indigo, marginBottom: 12 }}>
         {t('roi.why_matters_title')}
@@ -414,6 +484,7 @@ function WhyItMattersCard() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ROIPage() {
   const { t, lang } = useLanguage()
+  const narrow = useIsNarrow()
   const [roi,     setRoi]     = useState<InventoryROISummary | null>(null)
   const [monthly, setMonthly] = useState<ROIMonthlyRow[]>([])
   const [recap,   setRecap]   = useState<ROIMonthReport | null>(null)
@@ -467,6 +538,7 @@ export default function ROIPage() {
           display: 'flex', alignItems: 'center', gap: 6,
           fontSize: 12, color: C.dim, textDecoration: 'none',
           padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
+          ...(narrow ? { minHeight: 44, boxSizing: 'border-box' as const, fontSize: 14 } : {}),
         }}>
           <ArrowLeft size={12} /> {t('roi.back_to_inventory')}
         </Link>
@@ -503,9 +575,10 @@ export default function ROIPage() {
           <MonthlyEvolutionTable rows={monthly} />
 
           {/* Orders now live in /orders */}
-          <Link href="/pedidos" data-tour="roi.orders" style={{
+          <Link href="/pedidos" data-tour="roi.orders" className="tap-feedback" style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '14px 18px', borderRadius: 12, textDecoration: 'none',
+            ...(narrow ? { minHeight: 52, boxSizing: 'border-box' as const, fontSize: 15 } : {}),
             background: C.surface, border: `1px solid ${C.border}`,
             fontSize: 13, fontWeight: 600, color: C.indigo,
           }}>
@@ -531,6 +604,7 @@ export default function ROIPage() {
               <Link href="/inventario" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                ...(narrow ? { minHeight: 44, boxSizing: 'border-box' as const, fontSize: 14 } : {}),
                 background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
                 color: C.indigo, textDecoration: 'none',
               }}>

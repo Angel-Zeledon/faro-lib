@@ -1,11 +1,14 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useContext, createContext, useRef } from 'react'
 import {
   User, Settings2, Cpu, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
   MessageCircle, Unlink, CalendarClock, MessageSquare, Coins, Gauge,
 } from 'lucide-react'
+import { MobileList, MobileCard, MobileSection, useMobileHeader } from '@/components/mobile'
+import MobileFormScope from '@/components/mobile/MobileFormScope'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import CurrencySection from '@/components/billing/CurrencySection'
 import LimitsSection from '@/components/limits/LimitsSection'
 import TimezoneSection from '@/components/billing/TimezoneSection'
@@ -38,11 +41,32 @@ function formatDate(iso: string, lang: 'es' | 'en') {
   })
 }
 
+// ── Phone drill-in ────────────────────────────────────────────────────────────
+//
+// On a phone this screen is a grouped settings list (MobileSettings, bottom of
+// the file); tapping a row opens ONE section full-screen. The sections are the
+// same components desktop renders, told by this context that they are drilled
+// into: the header already names the section, so they drop their title row,
+// and their controls grow to a 44px tap target.
+
+const DrillIn = createContext(false)
+
+/** Style for a control that must be a 44px tap target in a phone drill-in. */
+function tap(drill: boolean): React.CSSProperties {
+  return drill
+    ? { minHeight: 44, minWidth: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+    : {}
+}
+
 // ── Section header ────────────────────────────────────────────────────────────
 
 function SectionTitle({ icon: Icon, color, title, subtitle }: {
   icon: React.ElementType; color: string; title: string; subtitle: string
 }) {
+  const drill = useContext(DrillIn)
+  if (drill) {
+    return <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{subtitle}</p>
+  }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
       <div style={{
@@ -66,7 +90,8 @@ function SectionTitle({ icon: Icon, color, title, subtitle }: {
 // its cards are one step rounder and roomier than the list screens' default.
 // The shape itself still comes from the shared primitive.
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <BaseCard radius={14} padding="24px" style={style}>{children}</BaseCard>
+  const drill = useContext(DrillIn)
+  return <BaseCard radius={14} padding={drill ? '16px' : '24px'} style={style}>{children}</BaseCard>
 }
 
 // /config labels its fields with a slightly larger, wider-tracked eyebrow than
@@ -123,6 +148,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
   // Renders `errors.<code>` in the user's language instead of the backend's
   // English sentence — the helper this screen already had and did not use.
   const errorDetail = useErrorDetail()
+  const drill = useContext(DrillIn)
 
   async function handleSave() {
     if (!name.trim()) return
@@ -152,8 +178,8 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
 
   return (
     <Card>
-      <SectionTitle icon={User} color="var(--accent)" title={t('user_profile')} subtitle={t('email')} />
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      {!drill && <SectionTitle icon={User} color="var(--accent)" title={t('user_profile')} subtitle={t('email')} />}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexDirection: drill ? 'column' : undefined }}>
         {/* Avatar */}
         <div style={{
           width: 64, height: 64, borderRadius: 16, flexShrink: 0,
@@ -165,7 +191,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
         </div>
 
         {/* Fields */}
-        <div data-tour="config.profile" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div data-tour="config.profile" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, ...(drill ? { width: '100%', minWidth: 0 } : {}) }}>
 
           {/* Full name */}
           <div>
@@ -173,13 +199,15 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               {t('full_name')}
             </FieldLabel>
             {editing ? (
-              <div style={{ display: 'flex', gap: 8, marginTop: 5 }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: drill ? 'wrap' : undefined }}>
                 <Input
                   value={name}
                   onChange={e => setName(e.target.value)}
                   autoFocus
+                  autoComplete="name"
+                  enterKeyHint="done"
                   onKeyDown={e => e.key === 'Enter' && handleSave()}
-                  style={{ fontSize: 13 }}
+                  style={{ fontSize: 13, ...(drill ? { flex: '1 1 100%', width: '100%' } : {}) }}
                 />
                 <button
                   onClick={handleSave}
@@ -189,6 +217,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                     padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
                     background: 'var(--accent)', color: '#fff',
                     opacity: saving ? 0.6 : 1,
+                    ...tap(drill), ...(drill ? { flex: 1, fontSize: 15, borderRadius: 12 } : {}),
                   }}
                 >
                   {saving ? t('saving') : t('save_changes')}
@@ -200,6 +229,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                     all: 'unset', cursor: 'pointer', padding: '7px 10px',
                     borderRadius: 7, color: 'var(--dim)',
                     border: '1px solid var(--border)',
+                    ...tap(drill), ...(drill ? { borderRadius: 12 } : {}),
                   }}
                 >
                   <X size={13} aria-hidden="true" />
@@ -227,9 +257,10 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                   style={{
                     all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5,
                     color: 'var(--dim)', display: 'flex', alignItems: 'center',
+                    ...tap(drill), ...(drill ? { marginLeft: 'auto' } : {}),
                   }}
                 >
-                  <Edit2 size={12} aria-hidden="true" />
+                  <Edit2 size={drill ? 16 : 12} aria-hidden="true" />
                 </button>
               </div>
             )}
@@ -282,6 +313,7 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
   const { theme, setTheme }  = useTheme()
   const { lang, setLang }    = useLanguage()
   const [saving, setSaving]  = useState<'lang' | 'theme' | null>(null)
+  const drill = useContext(DrillIn)
 
   async function handleTheme(val: 'dark' | 'light') {
     setTheme(val)
@@ -332,7 +364,9 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
                   color: lang === l ? 'var(--accent)' : 'var(--muted)',
                   transition: 'all 0.15s',
                   opacity: saving === 'lang' ? 0.6 : 1,
+                  ...tap(drill),
                 }}
+                aria-pressed={lang === l}
               >
                 {l === 'es' ? 'Español' : 'English'}
               </button>
@@ -371,7 +405,9 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
                   color: theme === th ? 'var(--accent)' : 'var(--muted)',
                   transition: 'all 0.15s',
                   opacity: saving === 'theme' ? 0.6 : 1,
+                  ...tap(drill),
                 }}
+                aria-pressed={theme === th}
               >
                 {th === 'dark' ? t('dark') : t('light')}
               </button>
@@ -396,6 +432,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
   const [state, setState] = useState<PlanningState | null>(null)
   const [busy, setBusy]   = useState(false)
   const isAdmin = getUser()?.role === 'admin'
+  const drill = useContext(DrillIn)
 
   useEffect(() => {
     getPlanning().then(setState).catch(() => setState(null))
@@ -455,6 +492,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
               background: p === state.period ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
               color: p === state.period ? 'var(--accent)' : 'var(--muted)',
               opacity: !isAdmin && p !== state.period ? 0.45 : 1,
+              ...tap(drill),
             }}
           >
             {t(`planning.${p}`)}
@@ -542,6 +580,66 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
   }
 
   const hasMore = logs.length < total
+  const drill = useContext(DrillIn)
+
+  // Phone: a native picker for the filter and one row per entry. The desktop
+  // grid has three fixed columns (140 + 80 + 150px) and ran 240px off a phone.
+  if (drill) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)', padding: '0 4px', visibility: loading ? 'hidden' : undefined }}>
+          {`${total} ${t('records_count')}`}
+        </div>
+        <select
+          name="activity_action"
+          aria-label={t('all_actions')}
+          value={actionFilter}
+          onChange={e => setActionFilter(e.target.value)}
+          style={{
+            width: '100%', padding: '0 12px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
+          }}
+        >
+          {['', ...actionTypes].map(a => (
+            <option key={a || '__all__'} value={a}>{a ? activityActionLabel(t, a) : t('all_actions')}</option>
+          ))}
+        </select>
+        {actionTypesErr && (
+          <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('config.action_types_load_error')}</div>
+        )}
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner size={20} /></div>
+        ) : logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--dim)', fontSize: 14 }}>
+            <Clock size={28} style={{ marginBottom: 8, opacity: 0.4 }} aria-hidden="true" />
+            <div>{t('no_activity')}</div>
+          </div>
+        ) : (
+          <>
+            <MobileList ariaLabel={t('activity_logs')}>
+              {logs.map(log => (
+                <MobileCard
+                  key={log.id}
+                  title={activityActionLabel(t, log.action)}
+                  subtitle={`${log.resource || '—'} · ${formatDate(log.created_at, lang)}`}
+                  status={{
+                    label: log.status === 'success' ? t('success') : t('error'),
+                    tone: log.status === 'success' ? 'success' : 'danger',
+                  }}
+                />
+              ))}
+            </MobileList>
+            {hasMore && (
+              <button type="button" className="mobile-btn mobile-btn-secondary" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <Spinner size={14} /> : null}
+                {t('load_more')} ({total - logs.length} {t('config.remaining')})
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
 
   return (
     <Card>
@@ -708,6 +806,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
   // `error_code` + `params` against the catalogue first — the WhatsApp section
   // right below already maps its failures to catalogue copy; this one did not.
   const errorDetail = useErrorDetail()
+  const drill = useContext(DrillIn)
 
   function reset() {
     setStep('idle'); setNewPw(''); setCode(''); setError(null); setShowPw(false)
@@ -761,6 +860,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
               border: '1px solid var(--border)',
               color: 'var(--muted)', background: 'var(--surface-2)',
               transition: 'all 0.15s',
+              ...tap(drill),
             }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
@@ -793,13 +893,14 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 all: 'unset', position: 'absolute', right: 10, top: '50%',
                 transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--dim)',
                 display: 'flex',
+                ...tap(drill),
               }}
             >
               {showPw ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
             </button>
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleRequestCode}
               disabled={loading || !newPw.trim()}
@@ -809,6 +910,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || !newPw.trim() ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <Mail size={12} />}
@@ -820,6 +922,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 all: 'unset', cursor: 'pointer',
                 padding: '8px 14px', borderRadius: 8, fontSize: 12,
                 border: '1px solid var(--border)', color: 'var(--dim)',
+                ...tap(drill),
               }}
             >
               {t('cancel')}
@@ -857,7 +960,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
             />
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleConfirm}
               disabled={loading || code.length !== 6}
@@ -867,6 +970,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || code.length !== 6 ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <CheckCircle2 size={12} />}
@@ -878,6 +982,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 all: 'unset', cursor: 'pointer',
                 padding: '8px 14px', borderRadius: 8, fontSize: 12,
                 border: '1px solid var(--border)', color: 'var(--dim)',
+                ...tap(drill),
               }}
             >
               {t('go_back')}
@@ -920,6 +1025,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
   const [error,          setError]          = useState<string | null>(null)
   // Seconds until the resend button re-enables (mirrors the backend cooldown).
   const [resendIn,       setResendIn]       = useState(0)
+  const drill = useContext(DrillIn)
 
   useEffect(() => {
     if (resendIn <= 0) return
@@ -1038,6 +1144,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || !number.trim() ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <MessageCircle size={12} />}
@@ -1082,7 +1189,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             />
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleConfirm}
               disabled={loading || code.length !== 6}
@@ -1092,6 +1199,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || code.length !== 6 ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <CheckCircle2 size={12} />}
@@ -1106,6 +1214,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 border: '1px solid var(--border)',
                 color: resendIn > 0 ? 'var(--dim)' : 'var(--muted)',
                 opacity: loading || resendIn > 0 ? 0.6 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {resendIn > 0
@@ -1118,6 +1227,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 all: 'unset', cursor: 'pointer',
                 padding: '8px 14px', borderRadius: 8, fontSize: 12,
                 border: '1px solid var(--border)', color: 'var(--dim)',
+                ...tap(drill),
               }}
             >
               {t('go_back')}
@@ -1152,7 +1262,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             </span>
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleChangeNumber}
               style={{
@@ -1160,6 +1270,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 border: '1px solid var(--border)', color: 'var(--muted)', background: 'var(--surface-2)',
+                ...tap(drill),
               }}
             >
               <Edit2 size={12} /> {t('config.wa_change')}
@@ -1173,6 +1284,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 border: '1px solid var(--border)', color: 'var(--danger)',
                 opacity: unlinking ? 0.6 : 1,
+                ...tap(drill),
               }}
             >
               {unlinking ? <Spinner size={12} /> : <Unlink size={12} />}
@@ -1195,6 +1307,7 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [hasNumber, setHasNumber] = useState(false)
   const [saving, setSaving] = useState(false)
+  const drill = useContext(DrillIn)
 
   useEffect(() => {
     getPreferences().then(p => setEnabled(p.dm_sms_enabled)).catch(() => setEnabled(false))
@@ -1233,6 +1346,34 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
             {blocked ? t('config.dm_sms_needs_number') : t('config.dm_sms_hint')}
           </div>
         </div>
+        {drill ? (
+          // Phone: an iOS-sized switch inside a 44px-tall hit area.
+          <button
+            role="switch"
+            aria-checked={on}
+            aria-label={t('config.dm_sms_toggle_label')}
+            onClick={handleToggle}
+            disabled={enabled === null || saving || blocked}
+            style={{
+              all: 'unset', boxSizing: 'border-box', position: 'relative', flexShrink: 0,
+              width: 52, height: 44,
+              cursor: enabled === null || saving || blocked ? 'default' : 'pointer',
+              opacity: blocked ? 0.5 : 1,
+            }}
+          >
+            <span aria-hidden="true" style={{
+              position: 'absolute', left: 0, top: 6, width: 52, height: 32, borderRadius: 16,
+              background: on ? 'var(--accent)' : 'var(--border-strong)',
+              transition: 'background var(--dur-2) var(--ease-out)',
+            }} />
+            <span aria-hidden="true" style={{
+              position: 'absolute', top: 8, left: 2, width: 28, height: 28, borderRadius: '50%',
+              background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              transform: on ? 'translateX(20px)' : 'none',
+              transition: 'transform var(--dur-2) var(--ease-out)',
+            }} />
+          </button>
+        ) : (
         <button
           role="switch"
           aria-checked={on}
@@ -1254,6 +1395,7 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
             background: '#fff', transition: 'left 0.15s',
           }} />
         </button>
+        )}
       </div>
     </Card>
   )
@@ -1274,6 +1416,9 @@ export default function ConfigPage() {
       })
       .catch(() => {})
   }, [setTheme, setLang])
+
+  const narrow = useIsNarrow()
+  if (narrow) return <MobileSettings />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1343,6 +1488,213 @@ export default function ConfigPage() {
       <ModelsSection t={t} />
 
       <ActivitySection t={t} lang={lang} />
+    </div>
+  )
+}
+
+// ── Phone: grouped settings list with drill-in sections ───────────────────────
+//
+// The desktop page is a two-column grid of ten cards; at 360px it measured
+// 601px wide. A phone gets what a phone's own Settings app looks like: one
+// list, grouped, each row naming its current value, and a tap opening that one
+// section full-screen with a back button. The open section lives in `?s=` so
+// the system back gesture closes it instead of leaving the screen.
+
+type DrillKey =
+  | 'profile' | 'security' | 'whatsapp' | 'sms'
+  | 'limits' | 'currency' | 'timezone' | 'planning'
+  | 'appearance' | 'activity'
+
+const DRILL_KEYS: DrillKey[] = [
+  'profile', 'security', 'whatsapp', 'sms',
+  'limits', 'currency', 'timezone', 'planning',
+  'appearance', 'activity',
+]
+
+function Tile({ Icon, color }: { Icon: React.ElementType; color: string }) {
+  return (
+    <span aria-hidden="true" style={{
+      width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+      background: `color-mix(in srgb, ${color} 16%, transparent)`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Icon size={16} color={color} strokeWidth={2} />
+    </span>
+  )
+}
+
+function MobileSettings() {
+  const { t, lang } = useLanguage()
+  const { theme } = useTheme()
+  const [key, setKey] = useState<DrillKey | null>(null)
+  // Whether WE pushed the history entry for the open section. Opened from a
+  // shared `?s=` link there is nothing of ours to pop, and history.back()
+  // would leave the app.
+  const pushed = useRef(false)
+  const [waNumber, setWaNumber] = useState<string | null>(null)
+  const [planning, setPlanningState] = useState<PlanningState | null>(null)
+  // Re-read on every return to the list: the profile section may have just
+  // renamed the person.
+  const [me, setMe] = useState(() => getUser())
+
+  useEffect(() => {
+    const read = () => {
+      const s = new URLSearchParams(window.location.search).get('s') as DrillKey | null
+      setKey(s && DRILL_KEYS.includes(s) ? s : null)
+      if (!s) pushed.current = false
+    }
+    read()
+    window.addEventListener('popstate', read)
+    return () => window.removeEventListener('popstate', read)
+  }, [])
+
+  useEffect(() => {
+    if (key !== null) return
+    setMe(getUser())
+    getMe()
+      .then(u => setWaNumber(u.whatsapp_verified_at ? (u.whatsapp_number || '') : ''))
+      .catch(() => setWaNumber(null))
+    getPlanning().then(setPlanningState).catch(() => setPlanningState(null))
+  }, [key])
+
+  function open(k: DrillKey) {
+    window.history.pushState(null, '', `?s=${k}`)
+    pushed.current = true
+    setKey(k)
+    document.querySelector('.page-content')?.scrollTo({ top: 0 })
+  }
+
+  const back = useCallback(() => {
+    if (pushed.current) {
+      window.history.back()
+    } else {
+      window.history.replaceState(null, '', window.location.pathname)
+      setKey(null)
+    }
+  }, [])
+
+  const titles: Record<DrillKey, string> = {
+    profile: t('user_profile'),
+    security: t('security'),
+    whatsapp: t('config.wa_title'),
+    sms: t('config.dm_sms_title'),
+    limits: t('limits.section.title'),
+    currency: t('currency.section_title'),
+    timezone: t('timezone.section_title'),
+    planning: t('planning.section_title'),
+    appearance: t('app_settings'),
+    activity: t('activity_logs'),
+  }
+
+  useMobileHeader(key ? { title: titles[key], onBack: back } : null)
+
+  if (key) {
+    let body: React.ReactNode
+    switch (key) {
+      case 'profile':    body = <ProfileSection t={t} lang={lang} />; break
+      case 'security':   body = <SecuritySection t={t} />; break
+      case 'whatsapp':   body = <WhatsAppSection t={t} />; break
+      case 'sms':        body = <DmSmsSection t={t} />; break
+      case 'appearance': body = <AppConfigSection t={t} />; break
+      case 'planning':   body = <PlanningSection t={t} />; break
+      case 'activity':   body = <ActivitySection t={t} lang={lang} />; break
+      case 'limits':
+        body = (
+          <Card>
+            <SectionTitle icon={Gauge} color="var(--accent)" title={t('limits.section.title')} subtitle={t('limits.section.header_subtitle')} />
+            <div className="m-tap44"><LimitsSection /></div>
+          </Card>
+        )
+        break
+      case 'currency':
+        body = (
+          <Card>
+            <SectionTitle icon={Coins} color="var(--accent)" title={t('currency.section_title')} subtitle={t('currency.section_subtitle')} />
+            <CurrencySection />
+          </Card>
+        )
+        break
+      case 'timezone':
+        body = (
+          <Card>
+            <SectionTitle icon={Clock} color="var(--accent)" title={t('timezone.section_title')} subtitle={t('timezone.section_subtitle')} />
+            <TimezoneSection />
+          </Card>
+        )
+        break
+    }
+    return (
+      <DrillIn.Provider value={true}>
+        <MobileFormScope>
+          <div key={key} className="m-drill-enter">{body}</div>
+        </MobileFormScope>
+      </DrillIn.Provider>
+    )
+  }
+
+  const initials = (me?.full_name || me?.email || 'U')
+    .split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+  const hasPlanningChoice = !!planning && planning.available_periods.length > 1
+
+  return (
+    <div className="m-drill-enter">
+      <MobileSection>
+        <MobileList ariaLabel={t('user_profile')}>
+          <MobileCard
+            leading={
+              <span aria-hidden="true" style={{
+                width: 52, height: 52, borderRadius: 14, background: 'var(--accent)', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, fontWeight: 700,
+              }}>{initials}</span>
+            }
+            title={me?.full_name || me?.email || '—'}
+            subtitle={`${me?.email ?? ''}${me?.role ? ` · ${roleLabel(t, me.role)}` : ''}`}
+            onClick={() => open('profile')}
+          />
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('config.m_group_account')}>
+        <MobileList>
+          <MobileCard leading={<Tile Icon={Lock} color="#f59e0b" />} title={t('security')}
+                      subtitle={t('change_password')} onClick={() => open('security')} />
+          <MobileCard leading={<Tile Icon={MessageCircle} color="#22c55e" />} title={t('config.wa_title')}
+                      subtitle={waNumber ? waNumber : waNumber === '' ? t('config.m_wa_not_linked') : t('config.wa_subtitle')}
+                      onClick={() => open('whatsapp')} />
+          <MobileCard leading={<Tile Icon={MessageSquare} color="var(--accent)" />} title={t('config.dm_sms_title')}
+                      subtitle={t('config.dm_sms_subtitle')} onClick={() => open('sms')} />
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('config.m_group_company')}>
+        <MobileList>
+          <MobileCard leading={<Tile Icon={Gauge} color="var(--accent)" />} title={t('limits.section.title')}
+                      subtitle={t('limits.section.header_subtitle')} onClick={() => open('limits')} />
+          <MobileCard leading={<Tile Icon={Coins} color="var(--accent)" />} title={t('currency.section_title')}
+                      subtitle={t('currency.section_subtitle')} onClick={() => open('currency')} />
+          <MobileCard leading={<Tile Icon={Clock} color="var(--accent)" />} title={t('timezone.section_title')}
+                      subtitle={t('timezone.section_subtitle')} onClick={() => open('timezone')} />
+          {hasPlanningChoice && (
+            <MobileCard leading={<Tile Icon={CalendarClock} color="var(--accent)" />} title={t('planning.section_title')}
+                        subtitle={t(`planning.${planning!.period}`)} onClick={() => open('planning')} />
+          )}
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('config.m_group_app')}>
+        <MobileList>
+          <MobileCard leading={<Tile Icon={Settings2} color="#22c55e" />} title={t('app_settings')}
+                      subtitle={`${lang === 'es' ? t('spanish') : t('english')} · ${theme === 'dark' ? t('dark') : t('light')}`}
+                      onClick={() => open('appearance')} />
+          <MobileCard leading={<Tile Icon={Activity} color="#0ea5e9" />} title={t('activity_logs')}
+                      onClick={() => open('activity')} />
+        </MobileList>
+      </MobileSection>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '0 4px 8px' }}>
+        <Cpu size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+        <span style={{ fontSize: 13, color: 'var(--dim)', lineHeight: 1.5 }}>{t('config.how_stockai_calculates')}</span>
+      </div>
     </div>
   )
 }

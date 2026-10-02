@@ -113,6 +113,8 @@ export default function StructuredData() {
       operatingSystem: 'Web',
       url: `${SITE_URL}/`,
       description: L.hero.lead,
+      // The visible "Funciones" section of the home page, item for item.
+      featureList: L.features.groups.flatMap(g => g.items),
       image: `${SITE_URL}/og-image.png`,
       publisher: { '@id': `${SITE_URL}/#organization` },
       offers: {

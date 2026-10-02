@@ -40,8 +40,11 @@ export function DecideSection({ alt = true }: { alt?: boolean }) {
  <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: '0 0 14px' }}>
  {L.decide.formulaBody}
  </p>
- <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: '0 0 14px' }}>
  {L.decide.formulaBody2}
+ </p>
+ <p style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ {L.decide.configBody}
  </p>
  </div>
  <div className="lp-card" style={{ borderLeft: `3px solid ${T.accent}` }}>
@@ -54,13 +57,13 @@ export function DecideSection({ alt = true }: { alt?: boolean }) {
 
  <Scroller minWidth={660}>
  <div className="lp-table">
- <div className="lp-table-head" style={{ display: 'grid', gridTemplateColumns: '170px 1fr 250px' }}>
+ <div className="lp-table-head" style={{ display: 'grid', gridTemplateColumns: '170px 1fr 260px' }}>
  <div className="lp-label">{L.misc.signalHead[0]}</div>
  <div className="lp-label">{L.misc.signalHead[1]}</div>
  <div className="lp-label">{L.misc.signalHead[2]}</div>
  </div>
  {SIGNALS.map(({ signal, rule, example, color }) => (
- <div key={signal} className="lp-table-row" style={{ display: 'grid', gridTemplateColumns: '170px 1fr 250px' }}>
+ <div key={signal} className="lp-table-row" style={{ display: 'grid', gridTemplateColumns: '170px 1fr 260px' }}>
  <span className="lp-signal" style={{ color }}><i aria-hidden />{signal}</span>
  <span style={{ fontSize: 13.5, color: T.body, lineHeight: 1.5, paddingRight: 16 }}>{rule}</span>
  <span style={{ fontSize: 13.5, color: T.muted }}>{example}</span>
@@ -75,6 +78,58 @@ export function DecideSection({ alt = true }: { alt?: boolean }) {
  <div className="lp-card-body">
  {L.decide.leadTimeBody}
  </div>
+ </div>
+ </Section>
+ )
+}
+
+// ── Your morning with StockAI ─────────────────────────────────────────────────
+// The day in order — a real sequence, so the steps are numbered. Each step's
+// backing is noted beside it in i18n/landing.ts.
+export function MorningSection({ alt = false }: { alt?: boolean }) {
+ const { L } = useCopy()
+ const M = L.morning
+ return (
+ <Section id="tu-manana" alt={alt}>
+ <Tag>{M.tag}</Tag>
+ <H2>{M.title}</H2>
+ <Lead maxWidth={680}>{M.lead}</Lead>
+ <ol className="day-list">
+ {M.steps.map(({ when, title, desc }, i) => (
+ <li key={title} className="day-step">
+ <span className="day-num" aria-hidden>{i + 1}</span>
+ <div>
+ <p className="day-when">{when}</p>
+ <h3 className="day-title">{title}</h3>
+ <p className="day-desc">{desc}</p>
+ </div>
+ </li>
+ ))}
+ </ol>
+ </Section>
+ )
+}
+
+// ── Every feature, grouped ────────────────────────────────────────────────────
+export function FeaturesSection({ alt = false }: { alt?: boolean }) {
+ const { L } = useCopy()
+ const F = L.features
+ return (
+ <Section id="funciones" alt={alt}>
+ <Tag>{F.tag}</Tag>
+ <H2>{F.title}</H2>
+ <Lead maxWidth={700}>{F.lead}</Lead>
+ <div className="feat-grid">
+ {F.groups.map(({ name, items }) => (
+ <section key={name} className="feat-group" aria-label={name}>
+ <h3 className="feat-name">{name}</h3>
+ <ul className="feat-items">
+ {items.map(item => (
+ <li key={item}><Check /><span>{item}</span></li>
+ ))}
+ </ul>
+ </section>
+ ))}
  </div>
  </Section>
  )
@@ -108,7 +163,19 @@ export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref
  ))}
  </ul>
 
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, maxWidth: 880, marginBottom: 20 }}>
+ {/* What the price is weighed against — qualitative on purpose: no cost of
+     a stockout and no saving is ever put in figures here (stability.md §4.5). */}
+ <h3 className="lp-h3">{L.pricing.valueTitle}</h3>
+ <ul className="value-list">
+ {L.pricing.value.map(({ title, desc }) => (
+ <li key={title} className="trust-item">
+ <h4 className="trust-title">{title}</h4>
+ <p className="trust-desc">{desc}</p>
+ </li>
+ ))}
+ </ul>
+
+ <div className="grid-2 price-grid">
  <div data-reveal className="lp-card price-card">
  <div className="lp-label" style={{ marginBottom: 10 }}>{L.pricing.freeLabel}</div>
  <div className="price-amount">{L.pricing.freePrice}</div>
@@ -125,15 +192,18 @@ export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref
  </div>
  </div>
 
+ {/* The premium card: the one dark surface in the pricing section, in the
+     brand's petroleum. Colours come from .is-paid in theme.ts, not inline,
+     so the accent never lands teal-on-petroleum. */}
  <div data-reveal className="lp-card price-card is-paid">
- <div className="lp-label" style={{ color: T.accent, marginBottom: 10 }}>{L.pricing.paidLabel}</div>
+ <div className="price-paid-label">{L.pricing.paidLabel}</div>
  {/* The "from" figure is the proposed base in pricingModel.ts; the link
      goes to the calculator, which says it is an estimate. */}
  <div className="price-amount">{fromPrice} <span className="price-per">{L.pricing.perMonth}</span></div>
- <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, marginBottom: 12 }}>
+ <div className="price-paid-note">
  {paidNote}
  </div>
- <a href={calcHref} className="trust-link" style={{ marginTop: 0, marginBottom: 14 }}>{L.pricing.calcLink}</a>
+ <a href={calcHref} className="price-paid-link">{L.pricing.calcLink}</a>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
  {/* Each row states what the PAID tier actually gets. This used to print one
      blanket "unlimited" for every row, which claimed an uncapped upload size
@@ -141,7 +211,7 @@ export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref
  {FREE_LIMITS.map(([label, , paid]) => (
  <div key={label} className="price-row">
  <span>{label}</span>
- <span style={{ fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{paid}</span>
+ <span className="price-paid-val">{paid}</span>
  </div>
  ))}
  </div>
@@ -194,11 +264,13 @@ export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref
 //  6. not a black box — the #como-decide section (home and /como-funciona).
 // /seguridad adds one item, the 24-hour trial erasure, which restates the
 // claim the closing band already makes (L.final.trialDesc).
-export function TrustSection({ decideHref, ruleDesc, extra = [] }: {
+export function TrustSection({ decideHref, ruleDesc, extra = [], moreHref }: {
   decideHref: string
   // Replaces the last item's text where the rule is not on the same page.
   ruleDesc?: string
   extra?: Titled[]
+  // On the home page: the link to /seguridad, the long version.
+  moreHref?: string
 }) {
  const { L } = useCopy()
  const last = L.trust.items.length - 1
@@ -213,6 +285,7 @@ export function TrustSection({ decideHref, ruleDesc, extra = [] }: {
  <Tag>{L.trust.tag}</Tag>
  <H2>{L.trust.title}</H2>
  <p className="lp-lead" style={{ marginBottom: 0 }}>{L.trust.lead}</p>
+ {moreHref && <Link href={moreHref} className="trust-link" style={{ marginTop: 16 }}>{L.trust.more}</Link>}
  </div>
  <ul className="trust-list">
  {items.map(({ title, desc }, i) => (
@@ -231,11 +304,11 @@ export function TrustSection({ decideHref, ruleDesc, extra = [] }: {
 }
 
 // ── FAQ, home version: an accordion beside a sticky intro ─────────────────────
-export function FaqAccordion() {
+export function FaqAccordion({ alt = false }: { alt?: boolean }) {
  const { L } = useCopy()
  const [openFaq, setOpenFaq] = useState<number | null>(null)
  return (
- <Section>
+ <Section id="preguntas" alt={alt}>
  <div className="split" style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 72, alignItems: 'start' }}>
  <div className="faq-side" style={{ position: 'sticky', top: 96 }}>
  <Tag>{L.faq.tag}</Tag>
@@ -246,6 +319,9 @@ export function FaqAccordion() {
  <a href={mailHref()} className="cta-link" style={{ fontSize: 14, fontWeight: 600, color: T.accent, textDecoration: 'none' }}>
  {L.faq.cta}
  </a>
+ <div>
+ <Link href="/preguntas-frecuentes" className="trust-link" style={{ marginTop: 14 }}>{L.faq.all}</Link>
+ </div>
  </div>
  <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderTop: `1px solid ${T.border}` }}>
  {L.faq.items.map(({ q, a }, i) => (

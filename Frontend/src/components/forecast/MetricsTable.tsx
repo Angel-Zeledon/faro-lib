@@ -4,6 +4,7 @@ import type { MetricRow } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { modelLabel } from '@/lib/modelLabel'
 import { Download, TableProperties, Grid3x3 } from 'lucide-react'
 import { type Translate, makeChampionRank, tOr, pct, fmt, downloadCSV } from './shared'
@@ -53,6 +54,7 @@ export function heatCell(val: number | null, min: number, max: number, lowerIsBe
 
 export function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const [viewMode, setViewMode] = useState<MetricViewMode>('table')
 
   if (!rows.length) return (
@@ -92,6 +94,61 @@ export function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) 
       min: Math.min(...sorted.map(costOf).filter((v): v is number => v !== null)),
       max: Math.max(...sorted.map(costOf).filter((v): v is number => v !== null)),
     },
+  }
+
+  // Phones: one card per model instead of an eight-column table that scrolled
+  // sideways and hid WAPE and bias. Same order, same badge, and the heat
+  // colours are always on — a card has room for them without a second view.
+  if (narrow) {
+    const tile = (label: string, value: string, bg?: string, color?: string) => (
+      <div style={{ minWidth: 0, padding: '6px 8px', borderRadius: 8, background: bg ?? 'var(--surface-2)' }}>
+        <div style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: color ?? 'var(--text)' }}>{value}</div>
+      </div>
+    )
+    const biasMax = Math.max(...numVals('bias').map(Math.abs))
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <p className="sr-only">{caption}</p>
+        <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 13, color: 'var(--dim)', flex: '1 1 100%' }}>
+            {rows.length} {rows.length !== 1 ? t('skus.models_evaluated_plural') : t('skus.models_evaluated_singular')}
+          </span>
+          <button className="mobile-btn mobile-btn-secondary" onClick={() => exportMetricsCSV(t, sku, sorted)}>
+            <Download size={16} aria-hidden="true" /> {t('skus.export_csv_short')}
+          </button>
+          <button className="mobile-btn mobile-btn-secondary" onClick={() => exportMetricsExcel(t, sku, sorted)}>
+            <Download size={16} aria-hidden="true" /> {t('skus.export_excel_short')}
+          </button>
+        </div>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label={caption}>
+          {sorted.map((r, i) => (
+            <li key={i} style={{
+              padding: '12px', borderBottom: i < sorted.length - 1 ? '1px solid var(--border)' : undefined,
+              background: r === best ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, minWidth: 0 }}>
+                <span style={{ fontSize: 15, fontWeight: r === best ? 700 : 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {modelLabel(t, r.model)}
+                </span>
+                {r === best && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>{t('skus.badge_best')}</span>}
+                <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--dim)', flexShrink: 0 }}>{r.type}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                {hasCost && tile(t('skus.col_cost'), fmt(costOf(r)), heatCell(costOf(r), stats.cost.min, stats.cost.max))}
+                {tile(t('skus.col_mae'), fmt(r.mae), heatCell(r.mae, stats.mae.min, stats.mae.max))}
+                {tile(t('skus.col_rmse'), fmt(r.rmse), heatCell(r.rmse, stats.rmse.min, stats.rmse.max))}
+                {tile(t('skus.col_wape'), r.wape !== null ? pct(r.wape) : '—', heatCell(r.wape, stats.wape.min, stats.wape.max))}
+                {tile(t('skus.col_bias'), fmt(r.bias),
+                  heatCell(r.bias != null ? Math.abs(r.bias) : null, 0, biasMax),
+                  r.bias !== null && r.bias > 0 ? '#f59e0b' : '#22c55e')}
+                {tile(t('skus.col_folds'), String(r.n_folds ?? '—'))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
   }
 
   return (

@@ -10,7 +10,7 @@
  * that mapping before anything is written. Excel goes straight to the preview,
  * since only the server can read it.
  */
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { AlertTriangle, Check, FileSpreadsheet, Upload } from 'lucide-react'
 
 import Button from '@/components/ui/Button'
@@ -21,6 +21,7 @@ import { validateStockCsv, type StockCsvCheckResult } from '@/lib/csvCheck'
 import type {
   StockImportMapping, StockImportPreview, StockImportResult,
 } from '@/lib/stockSetupTypes'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const RED   = '#ef4444'
 const AMBER = '#f59e0b'
@@ -30,6 +31,8 @@ const EXCEL_RE = /\.(xlsx|xlsm|xls)$/i
 
 export default function StockImportWizard({ onImported }: { onImported?: () => void }) {
   const c = useSetupCopy()
+  // Phone: 44px controls, 16px selects (no iOS zoom), the preview as cards.
+  const narrow = useIsNarrow()
   const fileInput = useRef<HTMLInputElement>(null)
 
   const [file, setFile]         = useState<File | null>(null)
@@ -112,7 +115,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
   return (
     <section style={{
       border: '1px solid var(--border)', borderRadius: 12,
-      background: 'var(--surface)', padding: '18px 20px',
+      background: 'var(--surface)', padding: narrow ? '16px 14px' : '18px 20px',
     }}>
       <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
         {c('setupStock.import.title')}
@@ -132,7 +135,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
           {file ? c('setupStock.import.change') : c('setupStock.import.pick')}
         </Button>
         {file && (
-          <span style={{ fontSize: 12.5, color: 'var(--text)', display: 'inline-flex', gap: 6 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--text)', display: 'inline-flex', gap: 6, minWidth: 0, overflowWrap: 'anywhere' }}>
             <FileSpreadsheet size={14} color="var(--dim)" />
             {c('setupStock.import.rows_found', {
               count: preview?.total_rows ?? localCheck?.rowCount ?? 0, name: file.name,
@@ -188,7 +191,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
 
           <div style={{
             display: 'grid', gap: 8,
-            gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(230px, 100%), 1fr))',
           }}>
             {preview.fields.map(field => (
               <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -211,6 +214,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
                     padding: '5px 8px', fontSize: 12, borderRadius: 6,
                     border: `1px solid ${field === 'sku' && missingSku ? RED : 'var(--border)'}`,
                     background: 'var(--surface-2)', color: 'var(--text)',
+                    ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, width: '100%', minWidth: 0 } : {}),
                   }}
                 >
                   <option value="">{c('setupStock.import.ignore')}</option>
@@ -289,6 +293,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
                       border: `1px solid ${thousandsDot === isThousands ? 'var(--accent)' : 'var(--border)'}`,
                       color: thousandsDot === isThousands ? 'var(--accent)' : 'var(--text)',
                       fontWeight: thousandsDot === isThousands ? 700 : 400,
+                      ...(narrow ? { minHeight: 44, minWidth: 88, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, borderRadius: 10 } : {}),
                     }}
                   >
                     {String(isThousands
@@ -303,7 +308,27 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
           {/* What we would write, in the file's own rows. `sample_rows` came
               back from the preview all along and nothing rendered it, so there
               was nowhere to catch a 1.25 before committing. */}
-          {preview.sample_rows.length > 0 && (
+          {preview.sample_rows.length > 0 && narrow && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--dim)', marginBottom: 6 }}>
+                {c('setupStock.import.preview_title')}
+              </div>
+              <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {preview.sample_rows.slice(0, 5).map((row, idx) => (
+                  <li key={idx} style={{ padding: '8px 10px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)',
+                                         display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: '2px 10px', fontSize: 12.5 }}>
+                    {Object.keys(preview.sample_rows[0]).map(k => (
+                      <Fragment key={k}>
+                        <span style={{ color: 'var(--dim)' }}>{c(`setupStock.import.field.${k}`)}</span>
+                        <span style={{ color: 'var(--text)', overflowWrap: 'anywhere' }}>{String(row[k] ?? '')}</span>
+                      </Fragment>
+                    ))}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {preview.sample_rows.length > 0 && !narrow && (
             <div style={{ marginTop: 12, overflowX: 'auto' }}>
               <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 4 }}>
                 {c('setupStock.import.preview_title')}
@@ -347,11 +372,12 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
           <label style={{
             marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 8,
             fontSize: 12.5, color: 'var(--text)', cursor: 'pointer',
+            ...(narrow ? { fontSize: 14, gap: 12, minHeight: 44 } : {}),
           }}>
             <input
               type="checkbox" checked={onlyFillMissing}
               onChange={e => setOnlyFill(e.target.checked)}
-              style={{ marginTop: 2 }}
+              style={{ marginTop: 2, ...(narrow ? { width: 22, height: 22, flexShrink: 0 } : {}) }}
             />
             <span>
               {c('setupStock.import.only_fill_missing')}
@@ -362,7 +388,7 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
           </label>
 
           <Button
-            variant="primary" style={{ marginTop: 14 }} loading={busy}
+            variant="primary" style={{ marginTop: 14, ...(narrow ? { width: '100%' } : {}) }} loading={busy}
             disabled={missingSku || preview.importable_rows === 0
                       || (numberQuestion != null && thousandsDot === undefined)}
             onClick={() => void commit()}

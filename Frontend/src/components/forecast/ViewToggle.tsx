@@ -67,9 +67,11 @@ export function useForecastView(): [ForecastView, (v: ForecastView) => void] {
   return [view, setView]
 }
 
-export function ViewToggle({ value, onChange }: {
+export function ViewToggle({ value, onChange, touch = false }: {
   value: ForecastView
   onChange: (v: ForecastView) => void
+  /** Phone layout: full width, 44px segments. Desktop never sets it. */
+  touch?: boolean
 }) {
   const { t } = useLanguage()
   const options: { value: ForecastView; label: string }[] = [
@@ -84,6 +86,7 @@ export function ViewToggle({ value, onChange }: {
       style={{
         display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 8,
         padding: 3, border: '1px solid var(--border)',
+        ...(touch ? { width: '100%', boxSizing: 'border-box' as const } : {}),
       }}
     >
       {options.map(o => {
@@ -97,6 +100,11 @@ export function ViewToggle({ value, onChange }: {
             style={{
               all: 'unset', cursor: 'pointer',
               padding: '4px 11px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+              ...(touch ? {
+                flex: 1, minHeight: 44, fontSize: 14, textAlign: 'center' as const,
+                boxSizing: 'border-box' as const, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+              } : {}),
               background: on ? 'var(--accent)' : 'transparent',
               color: on ? '#fff' : 'var(--dim)',
               transition: 'all 0.12s',

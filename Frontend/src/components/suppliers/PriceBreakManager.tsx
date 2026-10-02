@@ -7,6 +7,7 @@ import { InlineError } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 import { Plus, Trash2, Tag } from 'lucide-react'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const C = {
   card: 'var(--surface-2)', border: 'var(--border)',
@@ -23,6 +24,11 @@ const inputS: React.CSSProperties = {
 // tiers ("from min_qty units on, each unit costs unit_price").
 export default function PriceBreakManager({ supplier }: { supplier: Supplier }) {
   const { t } = useLanguage()
+  // Phone: tiers as a list, the add form one field per row, 44px controls.
+  const narrow = useIsNarrow()
+  const fieldS: React.CSSProperties = narrow
+    ? { ...inputS, minHeight: 44, fontSize: 16, borderRadius: 10, padding: '8px 10px', boxSizing: 'border-box', width: '100%' }
+    : inputS
   const { undoable } = useToast()
 
   const [breaks,  setBreaks]  = useState<PriceBreak[]>([])
@@ -141,6 +147,28 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
         <p style={{ margin: 0, fontSize: 11, color: C.dim, fontStyle: 'italic' }}>
           {t('suppliers.pb_empty')}
         </p>
+      ) : narrow ? (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {breaks.map(pb => (
+            <li key={pb.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${C.border}` }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontFamily: 'monospace', fontSize: 13, color: C.text }}>{pb.sku}</span>
+                <span style={{ display: 'block', fontSize: 12.5, color: C.dim }}>
+                  {t('suppliers.pb_col_min_qty')} {pb.min_qty} · {t('suppliers.pb_col_unit_price')} {pb.unit_price}
+                  {pb.notes ? ` · ${pb.notes}` : ''}
+                </span>
+              </span>
+              <button
+                onClick={() => handleDelete(pb)}
+                aria-label={`${t('suppliers.pb_row_delete')}: ${pb.sku}`}
+                style={{ all: 'unset', cursor: 'pointer', width: 44, height: 44, borderRadius: 10, color: C.dim,
+                         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
@@ -191,30 +219,30 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
       )}
 
       {/* Add-tier form */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 0.8fr 1.4fr auto', gap: 8, alignItems: 'end' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : '1.2fr 0.8fr 0.8fr 1.4fr auto', gap: 8, alignItems: 'end' }}>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_sku_label')}
           </label>
-          <input style={inputS} name="pricebreak_sku" aria-label={t('suppliers.pb_form_sku_label')} placeholder={t('suppliers.pb_form_sku_placeholder')} value={sku} onChange={e => setSku(e.target.value)} />
+          <input style={fieldS} name="pricebreak_sku" aria-label={t('suppliers.pb_form_sku_label')} placeholder={t('suppliers.pb_form_sku_placeholder')} value={sku} onChange={e => setSku(e.target.value)} />
         </div>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_min_qty_label')}
           </label>
-          <input style={inputS} name="pricebreak_min_qty" type="number" min={0} step="any" value={minQty} onChange={e => setMinQty(e.target.value)} aria-label={t('suppliers.pb_form_min_qty_label')} />
+          <input style={fieldS} inputMode="decimal" name="pricebreak_min_qty" type="number" min={0} step="any" value={minQty} onChange={e => setMinQty(e.target.value)} aria-label={t('suppliers.pb_form_min_qty_label')} />
         </div>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_unit_price_label')}
           </label>
-          <input style={inputS} name="pricebreak_unit_price" type="number" min={0} step="any" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} aria-label={t('suppliers.pb_form_unit_price_label')} />
+          <input style={fieldS} inputMode="decimal" name="pricebreak_unit_price" type="number" min={0} step="any" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} aria-label={t('suppliers.pb_form_unit_price_label')} />
         </div>
         <div>
           <label style={{ fontSize: 9, fontWeight: 600, color: C.dim, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('suppliers.pb_form_notes_label')}
           </label>
-          <input style={inputS} name="pricebreak_notes" aria-label={t('suppliers.pb_form_notes_label')} placeholder={t('suppliers.pb_form_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
+          <input style={fieldS} name="pricebreak_notes" aria-label={t('suppliers.pb_form_notes_label')} placeholder={t('suppliers.pb_form_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
         <button
           onClick={handleAdd}
@@ -225,6 +253,7 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
             padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
             background: C.indigo, color: '#fff', opacity: canAdd && !saving ? 1 : 0.5,
             whiteSpace: 'nowrap',
+            ...(narrow ? { gridColumn: '1 / -1', minHeight: 44, fontSize: 15, borderRadius: 10 } : {}),
           }}
         >
           {saving ? <Spinner size={11} /> : <Plus size={11} aria-hidden="true" />}

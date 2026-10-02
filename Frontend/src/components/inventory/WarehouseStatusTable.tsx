@@ -11,6 +11,7 @@ import SignalBadge from '@/components/ui/SignalBadge'
 import { coverageUnitShort } from '@/lib/period'
 import { transferReasonText } from '@/lib/transferReason'
 import { ArrowLeftRight } from 'lucide-react'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -23,6 +24,8 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
   onTransferCreated?: () => void
 }) {
   const { t } = useLanguage()
+  // Phone: one card per SKU instead of a five-column table.
+  const narrow = useIsNarrow()
   const [items, setItems] = useState<WarehouseStatusItem[] | null>(null)
   const [coverageUnit, setCoverageUnit] = useState<CoverageUnit>('day')
   const [error, setError] = useState<unknown>(null)
@@ -100,29 +103,33 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
 
   const th: React.CSSProperties = { textAlign: 'left', fontSize: 10.5, color: C.dim,
     fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '6px 10px' }
-  const td: React.CSSProperties = { fontSize: 12.5, color: C.text, padding: '8px 10px',
-    borderTop: `1px solid ${C.border}` }
+  // On a phone each row is a small grid card: name across the top, stock
+  // input and coverage side by side, then the signal and the action.
+  const td: React.CSSProperties = narrow
+    ? { display: 'block', padding: 0, border: 0, fontSize: 13, color: C.text, minWidth: 0, gridColumn: '1 / -1' }
+    : { fontSize: 12.5, color: C.text, padding: '8px 10px', borderTop: `1px solid ${C.border}` }
+  const tdHalf: React.CSSProperties = narrow ? { ...td, gridColumn: 'auto', alignSelf: 'center' } : td
 
   return (
-    <div style={{ overflowX: 'auto', border: `1px solid ${C.border}`, borderRadius: 10 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', background: C.surface }}>
-        <thead><tr>
+    <div style={{ overflowX: narrow ? 'visible' : 'auto', border: `1px solid ${C.border}`, borderRadius: narrow ? 14 : 10, background: narrow ? C.surface : undefined }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', background: C.surface, display: narrow ? 'block' : undefined }}>
+        <thead style={narrow ? { display: 'none' } : undefined}><tr>
           <th style={th}>SKU</th>
           <th style={th}>{t('inventory.wh_col_stock')}</th>
           <th style={th}>{t('inventory.wh_col_coverage')}</th>
           <th style={th}>{t('inventory.wh_col_signal')}</th>
           <th style={th}>{t('inventory.wh_col_action')}</th>
         </tr></thead>
-        <tbody>
+        <tbody style={narrow ? { display: 'block' } : undefined}>
           {rows.map(row => {
             const ts = row.transfer_suggestion
             const key = `${row.sku}|${row.warehouse}`
             const sent = sentSkus.has(key)
             const rejected = transferReasonText(row.transfer_rejected_reason, t)
             return (
-              <tr key={key}>
-                <td style={td}>{row.display_name || row.sku}</td>
-                <td style={td}>
+              <tr key={key} style={narrow ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '6px 12px', padding: '12px 14px', borderTop: `1px solid ${C.border}` } : undefined}>
+                <td style={narrow ? { gridColumn: '1 / -1', fontSize: 15, fontWeight: 600, color: C.text, minWidth: 0 } : td}>{row.display_name || row.sku}</td>
+                <td style={tdHalf}>
                   <input
                     type="number" min={0}
                     name={`wh-stock-${row.sku}`}
@@ -137,12 +144,16 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                     onBlur={e => {
                       if (drafts[row.sku] !== undefined) void saveStock(row.sku, e.target.value)
                     }}
+                    inputMode="decimal"
                     style={{ width: 92, background: 'var(--bg)', border: `1px solid ${C.border}`,
                              borderRadius: 6, padding: '4px 7px', fontSize: 12, color: C.text,
-                             outline: 'none' }}
+                             outline: 'none',
+                             ...(narrow ? { width: 120, minHeight: 44, fontSize: 16, borderRadius: 10, padding: '8px 10px', boxSizing: 'border-box' } : {}) }}
                   />
                 </td>
-                <td style={td}>{row.coverage_days != null
+                <td style={narrow ? { ...tdHalf, textAlign: 'right' } : td}>
+                  {narrow && <span style={{ display: 'block', fontSize: 11.5, color: C.dim }}>{t('inventory.wh_col_coverage')}</span>}
+                  {row.coverage_days != null
                   ? `${row.coverage_days} ${coverageUnitShort(coverageUnit, t)}` : '—'}</td>
                 <td style={td}>
                   {/* Shared badge: icon + translated label + WCAG palette —
@@ -171,7 +182,8 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                               disabled={sendingSku === key}
                               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
                                        alignItems: 'center', gap: 6, color: C.indigo,
-                                       fontSize: 12, fontWeight: 600 }}>
+                                       fontSize: 12, fontWeight: 600,
+                                       ...(narrow ? { minHeight: 44, fontSize: 14 } : {}) }}>
                         <ArrowLeftRight size={13} />
                         {t('inventory.wh_transfer_btn')
                           .replace('{qty}', String(ts.qty))
@@ -196,7 +208,8 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                                 disabled={sendingSku === key}
                                 style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
                                          alignItems: 'center', gap: 6, marginTop: 4,
-                                         color: C.indigo, fontSize: 12, fontWeight: 600 }}>
+                                         color: C.indigo, fontSize: 12, fontWeight: 600,
+                                         ...(narrow ? { minHeight: 44, fontSize: 14 } : {}) }}>
                           <ArrowLeftRight size={13} />
                           {t('inventory.wh_partial_transfer_btn')
                             .replace('{qty}', String(row.partial_transfer.qty))

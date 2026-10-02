@@ -1140,3 +1140,88 @@
 @keyframes sb-unfold { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sb-unfold { animation: none; } }
 .intro-playing .sb-unfold { animation-play-state: paused; }
+
+/* ── Mobile shell (components/mobile/, AppShell narrow branch) ──────────────
+   The same 768px line as hooks/useIsNarrow.ts. `--mobile-nav-h` is the bottom
+   tab bar's height INCLUDING the home-indicator inset; everything that sits at
+   the bottom of a phone screen (StickyActionBar, toasts, the /compras cart
+   bar) offsets by it, and the scroll container is padded by it, so nothing is
+   ever hidden behind the tabs. Outside the app shell no tab bar renders, and
+   nothing reads the variable. */
+@media (max-width: 768px) {
+  :root { --mobile-nav-h: calc(56px + env(safe-area-inset-bottom, 0px)); }
+
+  /* 100vh on a phone includes the area behind the browser's toolbars, which
+     put the bottom of every screen under them. dvh is the visible height. */
+  .app-shell-mobile { height: 100vh; height: 100dvh; }
+
+  /* Toasts float above the tab bar, full width, instead of bottom-right. */
+  .toast-stack {
+    left: 12px !important; right: 12px !important;
+    bottom: calc(var(--mobile-nav-h, 0px) + 12px) !important;
+    align-items: stretch;
+  }
+}
+
+/* The shared <Button> (components/ui/Button, class `.btn`) is 30px tall at
+   size "sm" — fine for a mouse, under the 44px a thumb needs. On phones every
+   one of them grows to 44px; the inline styles set no min-height, so this
+   wins without touching desktop. */
+@media (max-width: 768px) {
+  .btn { min-height: 44px; box-sizing: border-box; justify-content: center; }
+  /* Same for the shared <Input>/<Select>/<Textarea> (`.form-input`): 44px,
+     and 16px text — below 16px iOS zooms the whole page on focus. The
+     font-size is set inline by controlStyle(), hence !important. */
+  .form-input { min-height: 44px; box-sizing: border-box; font-size: 16px !important; }
+  /* ConfirmDialog's two answers share the row at thumb height. */
+  .confirm-btn { min-height: 44px; flex: 1; }
+}
+
+/* Dividers between cards in a MobileList. */
+.mobile-list-item + .mobile-list-item { border-top: 1px solid var(--border); }
+
+/* Press feedback on touch: a brief dim, like a native list row or tab. Only
+   where hover does not exist, so desktop pointers never see it. */
+@media (hover: none) {
+  .tap-feedback { -webkit-tap-highlight-color: transparent; transition: opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out); }
+  .tap-feedback:active { opacity: 0.6; }
+}
+
+/* MobileTabs: a strip that scrolls, without a scrollbar painted over it. */
+.mobile-tabs-scroller { scrollbar-width: none; }
+.mobile-tabs-scroller::-webkit-scrollbar { display: none; }
+
+/* The header title swaps with a short fade when the screen changes. */
+.mobile-title-enter { animation: mobileTitleEnter var(--dur-3) var(--ease-out); }
+@keyframes mobileTitleEnter {
+  from { opacity: 0; transform: translateX(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* In-route navigation on a phone (a list opening one item, and back): the new
+   view slides in from the side it came from, like a pushed/popped native
+   screen. Panels switched by tabs only fade. Transform/opacity only; the global
+   reduced-motion rule turns all three off. */
+.mobile-push-enter { animation: mobilePushEnter var(--dur-3) var(--ease-out); }
+.mobile-pop-enter  { animation: mobilePopEnter  var(--dur-3) var(--ease-out); }
+.mobile-fade-enter { animation: mobileFadeEnter var(--dur-2) var(--ease-out); }
+@keyframes mobilePushEnter { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes mobilePopEnter  { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes mobileFadeEnter { from { opacity: 0; } to { opacity: 1; } }
+
+/* Buttons for phone screens (StickyActionBar, sheets): 48px, sharing the row,
+   one primary. */
+.mobile-btn {
+  all: unset; box-sizing: border-box; cursor: pointer; flex: 1; min-width: 0;
+  min-height: 48px; padding: 0 16px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 15px; font-weight: 700; text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+.mobile-btn:active { transform: scale(0.98); }
+.mobile-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mobile-btn:disabled, .mobile-btn[aria-disabled="true"] { opacity: 0.45; cursor: default; transform: none; }
+.mobile-btn-primary { background: var(--accent); color: #fff; }
+.mobile-btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.mobile-btn-danger { background: var(--signal-order-now-fg); color: #fff; }

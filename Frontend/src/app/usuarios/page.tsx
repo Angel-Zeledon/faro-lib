@@ -18,6 +18,8 @@ import { thStyle } from '@/components/ui/Table'
 import Input, { Field, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import UsersMobile from './UsersMobile'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -616,6 +618,7 @@ function StatusDropdown({
 
 export default function UsersPage() {
   const { t, lang } = useLanguage()
+  const narrow = useIsNarrow()
   const currentUser = getUser()
 
   const [users,        setUsers]        = useState<AdminUser[]>([])
@@ -654,6 +657,20 @@ export default function UsersPage() {
         <XCircle size={32} color="#ef4444" />
         <p style={{ fontSize: 14, color: 'var(--dim)' }}>{t('users.no_permission')}</p>
       </div>
+    )
+  }
+
+  // Phones get a list of cards with every action in a sheet — see UsersMobile.
+  if (narrow) {
+    return (
+      <UsersMobile
+        users={users} total={total} loading={loading} loadError={loadError}
+        search={search} setSearch={setSearch}
+        filterStatus={filterStatus} setFilterStatus={setFilterStatus}
+        filterRole={filterRole} setFilterRole={setFilterRole}
+        offset={offset} setOffset={setOffset} limit={limit}
+        load={load} currentUser={currentUser}
+      />
     )
   }
 

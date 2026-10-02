@@ -18,7 +18,7 @@ import { LANDING, type LandingCopy } from '@/i18n/landing'
 import { T } from '@/components/landing/theme'
 import { LandingStyles, Section, Tag, H2, Lead, useScrollReveal } from '@/components/landing/primitives'
 import { Nav, Footer, type ChromeProps } from '@/components/landing/chrome'
-import { DecideSection, PricingSection, TrustSection, FinalSection } from '@/components/landing/sections'
+import { DecideSection, PricingSection, TrustSection, FinalSection, MorningSection, FeaturesSection } from '@/components/landing/sections'
 import { EngineFlow, ModelsSection, ENGINE_CSS } from '@/components/landing/engine'
 import { PricingCalculator, ApiPricing, CALC_CSS } from '@/components/landing/PricingCalculator'
 import { GUIDE_CSS, TourChapters } from '@/components/landing/ScreenGuide'
@@ -40,7 +40,7 @@ const SUB_CSS = `
 .sub-h1 {
  font-family: var(--font-brand), system-ui, sans-serif;
  font-size: clamp(32px, 4.6vw, 54px); font-weight: 600; line-height: 1.06;
- letter-spacing: -0.04em; color: var(--lp-text); margin: 0 0 20px; max-width: 22ch; text-wrap: balance;
+ letter-spacing: -0.04em; color: var(--lp-text); margin: 0 0 20px; max-width: 14em; text-wrap: balance;
 }
 .sub-intro { font-size: clamp(16px, 1.5vw, 18px); color: var(--lp-body); line-height: 1.65; max-width: 62ch; margin: 0; text-wrap: pretty; }
 .sub-toc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 32px; }
@@ -153,10 +153,12 @@ function RelatedPages({ current, L }: { current: PageKey; L: LandingCopy }) {
 // ── /precios ──────────────────────────────────────────────────────────────────
 export function PricingPage() {
   return (
-    <SubpageShell page="pricing" chrome={{ onHome: false, localAnchors: ['precio', 'contacto'] }}>
+    <SubpageShell page="pricing" chrome={{ onHome: false, localAnchors: ['precio', 'funciones', 'contacto'] }}>
       <style dangerouslySetInnerHTML={{ __html: CALC_CSS }} />
       <PricingSection calcHref="#calculadora" />
       <PricingCalculator />
+      {/* What every tier gets — the whole list, since no feature is gated. */}
+      <FeaturesSection />
       <ApiPricing />
     </SubpageShell>
   )
@@ -171,11 +173,12 @@ export function HowItWorksPage() {
     ['#pasos', L.how.tag],
     ['#motor', L.engine.tag],
     ['#como-decide', L.decide.tag],
+    ['#tu-manana', L.morning.tag],
     ...L.tour.chapters.map((c, i) => [`#guia-capitulo-${i + 1}`, c.chapter] as [string, string]),
   ]
   const pdfHref = `/stockai-manual-${lang}.pdf`
   return (
-    <SubpageShell page="how" chrome={{ onHome: false, localAnchors: ['como-decide', 'motor', 'contacto'] }} toc={toc}>
+    <SubpageShell page="how" chrome={{ onHome: false, localAnchors: ['como-decide', 'motor', 'tu-manana', 'contacto'] }} toc={toc}>
       <style dangerouslySetInnerHTML={{ __html: ENGINE_CSS }} />
       <Section id="pasos">
         <Tag>{L.how.tag}</Tag>
@@ -187,6 +190,8 @@ export function HowItWorksPage() {
       <ModelsSection />
 
       <DecideSection alt={false} />
+
+      <MorningSection alt />
 
       <Section id="guia">
         <style dangerouslySetInnerHTML={{ __html: GUIDE_CSS }} />

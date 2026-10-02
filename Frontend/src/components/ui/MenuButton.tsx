@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import BottomSheet from '@/components/mobile/BottomSheet'
 
 export interface MenuItem {
   label: string
@@ -39,6 +41,9 @@ export default function MenuButton({
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  // On a phone the menu is an action sheet: thumb-sized rows from the bottom
+  // edge instead of a 12px dropdown anchored to a 34px trigger.
+  const narrow = useIsNarrow()
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -72,6 +77,7 @@ export default function MenuButton({
           borderRadius: 8, fontSize: 12, fontWeight: 600,
           border: '1px solid var(--border)', color: 'var(--muted)',
           opacity: disabled || usable.length === 0 ? 0.5 : 1,
+          ...(narrow ? { minHeight: 44, minWidth: 44, boxSizing: 'border-box', justifyContent: 'center', fontSize: 14, borderRadius: 10 } : {}),
         }}
       >
         {icon}
@@ -79,7 +85,33 @@ export default function MenuButton({
         {label && <ChevronDown size={11} style={{ color: 'var(--dim)' }} />}
       </button>
 
-      {open && (
+      {narrow && (
+        <BottomSheet open={open} onClose={() => setOpen(false)} title={label || title || ''}>
+          <div role="menu" style={{ display: 'flex', flexDirection: 'column' }}>
+            {items.map((item, i) => (
+              <button
+                key={item.label}
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => { setOpen(false); item.onSelect() }}
+                className="tap-feedback"
+                style={{
+                  all: 'unset', boxSizing: 'border-box', minHeight: 52, width: '100%',
+                  cursor: item.disabled ? 'default' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '0 4px', fontSize: 16,
+                  color: item.danger ? 'var(--signal-order-now-fg)' : 'var(--text)',
+                  opacity: item.disabled ? 0.45 : 1,
+                  borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none',
+                }}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
+      {open && !narrow && (
         <>
           {/* Click-away. Fixed, so it also catches clicks on scrolled content. */}
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />

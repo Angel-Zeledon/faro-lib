@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Sparkles, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 type Urgency = 'critical' | 'warning' | 'ok'
@@ -89,6 +90,11 @@ export default function NarrativeCard({
   analytistLink, compact = false, onRefresh,
 }: NarrativeCardProps) {
   const { t } = useLanguage()
+  // Its two footer buttons are 20px tall on desktop; 44px on a phone.
+  const narrow = useIsNarrow()
+  const tap: React.CSSProperties = narrow
+    ? { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', padding: '0 12px', fontSize: 13, borderRadius: 10 }
+    : {}
   const [expanded, setExpanded] = useState(!compact)
   const [visible,  setVisible]  = useState(false)
   const cfg  = URGENCY_CFG[urgency]
@@ -180,7 +186,7 @@ export default function NarrativeCard({
           <RenderNarrative text={narrative} />
 
           {/* Footer */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 10, borderTop: `1px solid ${cfg.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 10, borderTop: `1px solid ${cfg.border}`, ...(narrow ? { flexWrap: 'wrap', gap: 10 } : {}) }}>
             <div style={{ fontSize: 10, color: 'var(--dim)', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Sparkles size={9} color="var(--dim)" />
               {fallback
@@ -189,7 +195,7 @@ export default function NarrativeCard({
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {onRefresh && (
-                <button onClick={e => { e.stopPropagation(); onRefresh() }} style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)', padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)' }}>
+                <button onClick={e => { e.stopPropagation(); onRefresh() }} style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)', padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)', ...tap }}>
                   {copy('narrative.refresh', 'Refresh')}
                 </button>
               )}
@@ -200,6 +206,7 @@ export default function NarrativeCard({
                   padding: '2px 8px', borderRadius: 5,
                   border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
                   background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+                  ...tap,
                 }}>
                   <ExternalLink size={9} aria-hidden="true" /> {t('narrative.ask_analyst')}
                 </Link>

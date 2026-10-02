@@ -1,6 +1,8 @@
-// PRICES — confirmed by the owner on 2026-10-01 (the agent's proposal, with
-// 50,000 API calls a month included so the full plan never includes fewer
-// than the free plan's 500 a day).
+// PRICES — premium revision confirmed by the owner 2026-10-02. The
+// owner asked for a premium position ("inflate the prices a little"); these
+// replace the 2026-10-01 set ($39 base; $10 / $5 / $8 / $2 add-ons). The base
+// still includes 50,000 API calls a month so the full plan never includes
+// fewer than the free plan's 500 a day.
 //
 // Every number the pricing calculator shows lives in this file, and nowhere
 // else. The landing renders an ESTIMATE from it: there is still no checkout,
@@ -24,7 +26,7 @@ export const FREE_PLAN = {
 
 // ── Full: a monthly base plus what goes past what the base includes ──────────
 export const FULL_PLAN = {
-  baseMonthly: 39,
+  baseMonthly: 59,
   included: {
     skus: 1_000,
     users: 5,
@@ -34,10 +36,10 @@ export const FULL_PLAN = {
   // Each add-on is priced per block: `price` for every started `per` units
   // above what the base includes.
   addOns: {
-    skus: { per: 500, price: 10 },
-    users: { per: 1, price: 5 },
-    warehouses: { per: 1, price: 8 },
-    apiCalls: { per: 1_000, price: 2 },
+    skus: { per: 500, price: 12 },
+    users: { per: 1, price: 7 },
+    warehouses: { per: 1, price: 10 },
+    apiCalls: { per: 1_000, price: 2.5 },
   },
 } as const
 

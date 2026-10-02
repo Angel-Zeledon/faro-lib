@@ -15,7 +15,7 @@ export function LandingStyles() {
 export function Section({ id, children, alt, className, style }: { id?: string; children: React.ReactNode; alt?: boolean; className?: string; style?: React.CSSProperties }) {
  return (
  <section id={id} className={`sec${alt ? ' sec-alt' : ''}${className ? ` ${className}` : ''}`} style={style}>
- <div className="sec-inner" data-reveal>{children}</div>
+ <div className="sec-inner" data-reveal-group>{children}</div>
  </section>
  )
 }
@@ -84,7 +84,28 @@ export function useScrollReveal() {
  const armed: HTMLElement[] = []
  const seenPerParent = new Map<Element, number>()
 
- document.querySelectorAll<HTMLElement>('[data-reveal]').forEach(el => {
+ // What gets revealed. A section used to fade in as ONE block — its whole
+ // inner column, up to a few thousand pixels tall — which made the
+ // compositor carry a layer the size of the section for the length of the
+ // transition, and then the cards inside it faded in again on top. Now a
+ // section is a group (`data-reveal-group`): its direct children (the tag,
+ // the heading, the lead, the table, the grid…) reveal one by one with the
+ // same short stagger, and a child that holds its own [data-reveal] cards is
+ // left to them instead of animating twice.
+ const targets: HTMLElement[] = []
+ document.querySelectorAll<HTMLElement>('[data-reveal-group]').forEach(group => {
+ Array.from(group.children).forEach(child => {
+ if (!(child instanceof HTMLElement) || child.tagName === 'STYLE' || child.tagName === 'DIALOG') return
+ // `data-reveal-skip`: blocks that run their own entrance (the engine
+ // diagram plays a sequence of its own — engine.tsx).
+ if (child.hasAttribute('data-reveal-skip')) return
+ if (child.hasAttribute('data-reveal') || child.querySelector('[data-reveal]')) return
+ targets.push(child)
+ })
+ })
+ document.querySelectorAll<HTMLElement>('[data-reveal]').forEach(el => targets.push(el))
+
+ targets.forEach(el => {
  if (el.getBoundingClientRect().top < window.innerHeight) return
  // Small stagger between siblings, capped so the last card in a row is not late.
  const parent = el.parentElement
@@ -115,9 +136,12 @@ export function useScrollReveal() {
  obs.unobserve(entry.target) // reveal once; never re-animate on the way back up
  })
  }, {
- threshold: 0.04,
- // Bottom is pulled in slightly so a block reveals just after it enters rather
- // than the instant its first pixel shows.
+ threshold: 0,
+ // The bottom edge is the viewport's own: a block starts settling the
+ // moment its first pixel enters, so by the time the eye reaches it the
+ // movement is nearly over and scrolling never waits on the page. (It used
+ // to be pulled in by 6%, which held blocks back until they were well on
+ // screen.)
  //
  // The top is expanded by the whole document, which makes "already scrolled
  // past" count as intersecting. This is not padding for looks: a fast scroll —
@@ -127,7 +151,7 @@ export function useScrollReveal() {
  // Two cards in the "qué incluye" grid did exactly that, reproducibly, and a
  // single fling past the whole page left twenty behind. The document's own
  // height is the largest jump that can exist, so nothing can outrun it.
- rootMargin: `${Math.ceil(document.documentElement.scrollHeight)}px 0px -6% 0px`,
+ rootMargin: `${Math.ceil(document.documentElement.scrollHeight)}px 0px 0px 0px`,
  })
 
  armed.forEach(el => observer.observe(el))
