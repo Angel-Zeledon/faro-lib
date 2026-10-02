@@ -113,10 +113,19 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 - **Notifications**: `backend/notifications/email.py` (Resend primary via RESEND_API_KEY, SMTP fallback) and `whatsapp.py` (Twilio). Daily inventory alert loop fires at 8:00 UTC from `backend/workers/worker.py`.
 - **AI features** (narrative, RAG analyst, chat, data-quality diagnosis): all go through the single factory `get_local_llm_client()` in `backend/ai/local_llm.py`, and there is exactly **one** backend behind it: **DeepSeek** (`DEEPSEEK_API_KEY`, `settings.deepseek_model`, default `deepseek-chat`), spoken over plain httpx because the API is OpenAI-shaped and needs no SDK. Anthropic and the local Ollama fallback were removed 2026-08-23 — **do not reintroduce a second provider or a fallback chain**: "whichever key is set" meant a missing or mistyped `DEEPSEEK_API_KEY` silently answered from somewhere else, and the only symptom was a different bill. With no key the factory raises `LLMNotConfigured` at the call site; every consumer already degrades to its rule-based text on an exception. `conftest.py` patches the factory session-wide, so tests never bill a real key.
 - **Storage**: Postgres for all metadata/results; binary files (datasets, artifacts, documents) on local disk under `storage/` (gitignored, never version it).
-- **Public surface**: `backend/api/public_surface.py` is the list of routes a
-  customer's own system is invited to call — 8 REST endpoints plus the MCP
-  endpoint (`POST`/`GET /api/v1/mcp`). `PUBLIC_API_ONLY=true` prunes the app to
-  exactly that list; `test_public_api_surface.py` fails if one stops existing.
+- **Public surface** (2026-10-02): an `sk_live_*` key can call every route
+  whose router tag is in `EXPOSED_TAGS` of `backend/api/public_surface.py`
+  (~211 operations), never auth/users/keys/config/admin routes; every tag must
+  be in `EXPOSED_TAGS` or `INTERNAL_TAGS` or `test_public_api_surface.py`
+  goes red. Keys carry a scope: `read` acts as viewer, `write` as analyst.
+  Every key call is metered in `api_usage_daily`. The docs at /desarrolladores
+  render `Frontend/src/data/public-api.json`, exported by
+  `backend/scripts/export_public_api.py` (a test fails when it is stale).
+  `PUBLIC_API_ONLY=true` prunes the app to the key-callable routes.
+- **Social login** (Google/Apple/Facebook, `backend/auth/social/`): OFF by
+  default — the source-code distribution shows only email+password. Enabled
+  per installation by `SOCIAL_LOGIN_ENABLED` + each provider's credentials in
+  /instalacion. Never make it on by default.
 - **MCP**: `backend/mcp/` — a stateless Streamable-HTTP JSON-RPC server over
   **five read-only tools** (`catalog.py`), authenticated with the same
   `sk_live_*` key and the same rate limit. Hand-rolled rather than the `mcp`
