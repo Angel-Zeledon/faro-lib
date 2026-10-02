@@ -22,6 +22,18 @@
   .m-tap-min button { min-height: 44px; box-sizing: border-box; }
   .m-tap-min input[type="file"] { min-height: 44px; }
 
+  /* Auth screens ((auth)/layout.tsx). */
+  .m-auth .auth-tool { min-width: 44px; min-height: 44px; }
+  .m-auth form button[type="submit"] { min-height: 48px; }
+  .m-auth p > a { display: inline-flex; align-items: center; min-height: 44px; }
+  .m-auth main button, .m-auth .auth-back-btn { min-height: 44px !important; box-sizing: border-box; }
+  .m-auth .auth-eye {
+    width: 44px !important; height: 44px !important; right: 0 !important;
+    /* !important throughout: the button's inline `all: unset` would win. */
+    display: flex !important; align-items: center !important; justify-content: center !important;
+  }
+  .m-auth .auth-resend-row { flex-direction: column; }
+
   .m-tap44 button, .m-tap44 a {
     min-height: 44px; box-sizing: border-box;
     flex: 1 1 100%; justify-content: center;
