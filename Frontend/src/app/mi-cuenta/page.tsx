@@ -30,8 +30,11 @@ import {
   requestPasswordChange, confirmPasswordChange,
   linkWhatsappNumber, confirmWhatsappNumber,
   getPlanning, setPlanning,
+  getMyIdentities, unlinkIdentity,
   isApiError,
+  type LinkedIdentity, type SocialProvider,
 } from '@/lib/api'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
 import type { ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
 
@@ -1004,7 +1007,111 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
           {t('pw_updated')}
         </div>
       )}
+
+      <LinkedAccounts />
     </Card>
+  )
+}
+
+// ── Linked sign-in providers (Google / Apple / Facebook) ─────────────────────
+//
+// Shown only when this installation offers social sign-in, or when the person
+// already has a linked provider (so they can still remove it after the
+// operator turned the feature off). Otherwise this block does not exist and
+// Security looks as it always did.
+
+const PROVIDER_NAME: Record<SocialProvider, string> = {
+  google: 'Google', apple: 'Apple', facebook: 'Facebook',
+}
+
+function LinkedAccounts() {
+  const { t, lang } = useLanguage()
+  const confirm = useConfirm()
+  const { addToast } = useToast()
+  const errorDetail = useErrorDetail()
+  const drill = useContext(DrillIn)
+  const [data, setData] = useState<{
+    identities: LinkedIdentity[]; has_password: boolean; providers_enabled: SocialProvider[]
+  } | null>(null)
+  const [busy, setBusy] = useState<SocialProvider | null>(null)
+
+  const load = useCallback(() => {
+    getMyIdentities().then(setData).catch(() => setData(null))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (!data) return null
+  if (data.identities.length === 0 && data.providers_enabled.length === 0) return null
+
+  async function handleUnlink(provider: SocialProvider) {
+    const name = PROVIDER_NAME[provider] ?? provider
+    const ok = await confirm({
+      title: t('security.confirm_unlink_title', { provider: name }),
+      message: t('security.confirm_unlink_body', { provider: name }),
+      confirmLabel: t('security.unlink'),
+      danger: true,
+    })
+    if (!ok) return
+    setBusy(provider)
+    try {
+      await unlinkIdentity(provider)
+      addToast(t('security.unlinked_ok'), '', 'success')
+      load()
+    } catch (e: unknown) {
+      addToast(errorDetail(e) || t('security.unlink'), '', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{t('security.linked_title')}</div>
+      <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, marginBottom: 10 }}>
+        {data.identities.length ? t('security.linked_desc') : t('security.linked_none')}
+      </div>
+      {!data.has_password && (
+        <div style={{
+          fontSize: 12, color: '#b45309', background: 'rgba(245,158,11,0.08)',
+          border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8,
+          padding: '8px 12px', marginBottom: 10, lineHeight: 1.5,
+        }}>
+          {t('security.no_password_note')}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {data.identities.map(id => (
+          <div key={id.provider} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            flexWrap: drill ? 'wrap' : undefined,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                {PROVIDER_NAME[id.provider] ?? id.provider}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--dim)', overflowWrap: 'anywhere' }}>
+                {id.email}
+                {id.created_at && ` · ${t('security.linked_since', { date: formatDate(id.created_at, lang) })}`}
+              </div>
+            </div>
+            <button
+              onClick={() => handleUnlink(id.provider)}
+              disabled={busy !== null}
+              style={{
+                all: 'unset', cursor: busy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                border: '1px solid var(--border)', color: 'var(--muted)',
+                ...tap(drill),
+              }}
+            >
+              {busy === id.provider ? <Spinner size={12} /> : <Unlink size={12} aria-hidden="true" />}
+              {t('security.unlink')}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

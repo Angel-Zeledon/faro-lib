@@ -7,6 +7,7 @@ import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import TermsSentence from '@/components/legal/TermsSentence'
+import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
 
 // Composition, deliberately NOT a mirror of /login: this screen carries more
 // fields, so the heading is lifted OUT of the card and set as an editorial
@@ -72,7 +73,11 @@ function SignupPageContent() {
   const [termsMissing, setTermsMissing] = useState(false)
   const [showPw,  setShowPw]  = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
+  // A refused provider sign-in comes back as `?oauth_error=<code>`.
+  const oauthError = searchParams.get('oauth_error')
+  const [error,   setError]   = useState<string | null>(
+    oauthError ? socialErrorText(t, oauthError) : null,
+  )
   const [done,    setDone]    = useState(false)
   // Set only when the backend tells us the verification mail did NOT leave.
   // Then the link goes on screen — sending someone to check an inbox we know
@@ -196,6 +201,10 @@ function SignupPageContent() {
               ...cardStyle,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) 0.08s both',
             }}>
+              {/* Social sign-in: renders nothing unless the installation
+                  enabled a provider. Above the form, additive. */}
+              <SocialButtons intent="signup" />
+
               {error && (
                 <div style={{
                   display: 'flex', gap: 8, alignItems: 'center',

@@ -279,7 +279,35 @@ def probe_secret_storage(tenant_id: str | None = None) -> ProbeResult:
         )
 
 
+def probe_social_login(tenant_id: str | None = None) -> ProbeResult:
+    """Each configured provider is asked whether it recognises our client.
+
+    Google and Apple get a deliberately bogus authorization code: a known
+    client is answered `invalid_grant`, an unknown one `invalid_client`.
+    Facebook issues an app access token for a correct id/secret pair. Nobody
+    is signed in and nothing is sent to anyone. `extra.providers` carries the
+    per-provider verdict; the service is `ok` only if every configured one is.
+    """
+    from backend.auth.social import providers as social
+
+    verdicts = {p: social.probe_provider(p) for p in social.PROVIDERS}
+    configured = {p: v for p, v in verdicts.items() if v != "not_configured"}
+    if not configured:
+        return ProbeResult(False, "not_configured", "No provider is fully configured.",
+                           extra={"providers": verdicts})
+    failing = {p: v for p, v in configured.items() if v != "ok"}
+    if not failing:
+        return ProbeResult(True, "ok", "Every configured provider accepted the client.",
+                           extra={"providers": verdicts})
+    # The worst code wins, so the panel names the action that is needed.
+    order = ("auth_failed", "rejected", "unreachable", "timeout")
+    code = next((c for c in order if c in failing.values()), "unexpected")
+    detail = ", ".join(f"{p}: {v}" for p, v in failing.items())
+    return ProbeResult(False, code, detail, extra={"providers": verdicts})
+
+
 PROBES = {
+    "probe_social_login": probe_social_login,
     "probe_llm": probe_llm,
     "probe_email": probe_email,
     "probe_twilio": probe_twilio,

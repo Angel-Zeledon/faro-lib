@@ -201,6 +201,18 @@ EVENTS: dict[str, EventSpec] = {
     "account.api_key_revoked": EventSpec(
         kind="account", severity=WARNING, detail_keys=("key_name",),
     ),
+    # Social sign-in (backend/auth/social/). A new way into an account is a
+    # warning, not history: "I did not link Google" is something only the owner
+    # can notice, and only if it is put where they look.
+    "account.signed_up_with_provider": EventSpec(
+        kind="account", severity=INFO, detail_keys=("provider", "email"),
+    ),
+    "account.provider_linked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("provider", "email"),
+    ),
+    "account.provider_unlinked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("provider", "email"),
+    ),
 }
 
 
@@ -226,6 +238,12 @@ REASONS: tuple[str, ...] = (
     # is that a person with admin rights did it. Said out loud, because the
     # only useful reaction to "I did not do that" is to look at who has access.
     "changed_by_an_account_admin",
+    # social sign-in: the provider vouched for the address, so the account
+    # gained that way in; and the variant where the password nobody had
+    # verified was dropped because the provider proved the mailbox.
+    "linked_at_provider_sign_in",
+    "linked_unverified_password_removed",
+    "unlinked_by_the_account_owner",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",

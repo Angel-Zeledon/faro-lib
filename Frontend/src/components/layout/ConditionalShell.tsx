@@ -5,7 +5,7 @@ import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 import { LEGAL_PATHS } from '@/components/landing/legalPaths'
 import StorageNotice from '@/components/legal/StorageNotice'
 
-const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba']
+const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback']
 // The landing and its public subpages: no app shell, no sign-in.
 // /desarrolladores: the API reference, a landing page with its own chrome.
 // The legal documents are public too: they must open for somebody who has no
