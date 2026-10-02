@@ -1622,6 +1622,26 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "ALTER TABLE stock_defaults ADD CONSTRAINT stock_defaults_signal_factors_check "
      "CHECK (order_now_factor IS NULL OR overstock_factor IS NULL OR "
      "(order_now_factor > 0 AND order_now_factor < overstock_factor))"),
+
+    # Idempotent purchase-order creation. A second tap on "Descargar orden de
+    # compra" (or a client retrying a request whose answer it never saw) used
+    # to write a second, identical order: OC-000003 and OC-000004, 5 s apart,
+    # same SKU and quantity — and both then counted as stock on its way.
+    # The client sends one key per cart submission; the PARTIAL unique index
+    # is what makes a replay resolve to the first order even when the two
+    # requests race (the loser hits the index, not a read-then-write window).
+    # Nullable: API callers that send no key keep today's behaviour.
+    # `idempotency_fingerprint` is a hash of what was ordered, so a key reused
+    # for a DIFFERENT order is refused instead of silently answered with the
+    # wrong PO.
+    ("add_po_log_idempotency_key",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS idempotency_key TEXT"),
+    ("add_po_log_idempotency_fingerprint",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS idempotency_fingerprint TEXT"),
+    ("create_po_log_idempotency_uniq",
+     "CREATE UNIQUE INDEX IF NOT EXISTS po_log_tenant_idempotency_key_uniq "
+     "ON inventory_po_log (tenant_id, idempotency_key) "
+     "WHERE idempotency_key IS NOT NULL"),
 ]
 
 

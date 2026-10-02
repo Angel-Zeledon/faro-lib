@@ -1163,6 +1163,10 @@ export interface InventoryStatusItem extends InventoryStock {
    *  again every day until they landed. Show it wherever the quantity is shown,
    *  or a drop to 0 looks like the app forgetting. */
   incoming_qty?:        number
+  /** Which open orders / transfers make up `incoming_qty`, so the screen can
+   *  say "426 on the way (OC-000001, OC-000002)". `reference` is the order
+   *  number for a PO and the origin warehouse for a transfer. */
+  incoming_sources?:    IncomingSource[]
   inventory_value:     number | null
   n_models:             number
   abc:                  string
@@ -1403,6 +1407,12 @@ export interface ROIMonthReport {
   capital_freed_status:    CapitalFreedStatus
 }
 
+export interface IncomingSource {
+  kind:      'po' | 'transfer'
+  reference: string
+  qty:       number
+}
+
 export interface POLogEntry {
   id:                string
   po_number?:        number | null
@@ -1424,10 +1434,14 @@ export interface POLogEntry {
   // Reception (feature 1.4): pending | partial | received | not_received
   reception_status?: 'pending' | 'partial' | 'received' | 'not_received'
   /** When the order was sent to the supplier; null if it never was.
-   *  The payables calendar and `incoming_qty` both read it, which is
-   *  why undoing a send is a real action and not a cosmetic flag. */
+   *  The payables calendar reads it, which is why undoing a send is a real
+   *  action and not a cosmetic flag. (`incoming_qty` does not: every open
+   *  order counts as on its way, sent from here or not.) */
   sent_at?: string | null
   received_at?:      string | null
+  /** True when the server answered an `Idempotency-Key` it had already seen:
+   *  this is the order the FIRST request created, nothing new was written. */
+  replayed?: boolean
 }
 
 // A line of a PO as stored server-side, with reception progress.

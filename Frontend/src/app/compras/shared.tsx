@@ -11,10 +11,11 @@
  * screen where a confident green over month-old stock does the most damage.
  */
 import Link from 'next/link'
-import { Info, ArrowRight, Monitor } from 'lucide-react'
+import { Info, ArrowRight, Monitor, Truck, Check } from 'lucide-react'
 import { isMobileReady } from '@/components/mobile/DesktopOnlyNotice'
 import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
-import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit } from '@/lib/types'
+import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit, IncomingSource } from '@/lib/types'
+import { incomingText } from '@/lib/incomingCopy'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -35,7 +36,12 @@ export const C = {
 }
 
 // ── Cart types ────────────────────────────────────────────────────────────────
-export type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected'
+// 'ordered' = this line is already on a purchase order generated from this
+// screen. Terminal for the session: it leaves the cart, cannot be approved,
+// edited or ordered again, and is never re-sent as a decision. Before it
+// existed the line stayed 'approved' after "Descargar orden de compra", the
+// cart bar stayed up, and a second tap wrote an identical second PO.
+export type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected' | 'ordered'
 
 export interface ActionItem {
  sku:            string
@@ -88,6 +94,15 @@ export interface ActionItem {
  unit_margin:  number | null   // null = SKU sin price o sin cost
  reason:         string
  status:         ActionStatus
+ /** PO number (OC-000123) once the line was ordered from this screen. */
+ ordered_ref?:   string | null
+ /** The decision (approve/modify/reject) already went out on a PO, so the
+  *  next order from this screen must not log it again. */
+ decision_logged?: boolean
+ /** Units already on open orders / transfers, and which ones — the reason
+  *  the quantity is lower than the gap suggests (or 0). */
+ incoming_qty?:     number
+ incoming_sources?: IncomingSource[]
 }
 
 // `t` returns the key itself when the catalog has no entry for it; printing
@@ -324,3 +339,54 @@ export function AllClear({ stale, unmeasured = false }: {
   </div>
  )
 }
+
+// ── What is already on its way, and on which order ──────────────────────────
+// The quantity on a card is NET of open purchase orders and transfers. Without
+// this line a drop to 0 (or to less than the gap) reads as the app forgetting;
+// with it the buyer sees exactly which order already covers the units.
+export function IncomingNote({ item }: { item: ActionItem }) {
+ const { t } = useLanguage()
+ const text = incomingText(t, item.incoming_qty, item.incoming_sources)
+ if (!text) return null
+ return (
+  <div style={{
+   display: 'flex', alignItems: 'center', gap: 6, marginTop: 6,
+   fontSize: 12, color: 'var(--accent)', overflowWrap: 'anywhere',
+  }}>
+   <Truck size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
+   <span>{text}</span>
+  </div>
+ )
+}
+
+/** Replaces the decision controls once the line is on a purchase order. */
+export function OrderedNote({ item }: { item: ActionItem }) {
+ const { t } = useLanguage()
+ if (item.status !== 'ordered') return null
+ const ref = item.ordered_ref ?? ''
+ return (
+  <div style={{ marginTop: 10 }}>
+   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+    <span style={{
+     display: 'inline-flex', alignItems: 'center', gap: 5,
+     fontSize: 12, fontWeight: 700, color: '#22c55e',
+     background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 20,
+    }}>
+     <Check size={12} aria-hidden="true" />
+     {tOr(t, 'hoy.line_ordered_badge', `Ordered on ${ref}`, { ref })}
+    </span>
+    <Link href="/pedidos" style={{
+     display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32,
+     fontSize: 12, color: 'var(--accent)', textDecoration: 'none',
+    }}>
+     {tOr(t, 'hoy.toast_view_orders', 'View orders')} <ArrowRight size={12} aria-hidden="true" />
+    </Link>
+   </div>
+   <div style={{ fontSize: 11.5, color: 'var(--dim)', marginTop: 4, lineHeight: 1.45 }}>
+    {tOr(t, 'hoy.line_ordered_hint',
+     'It is already on a purchase order. It counts as on the way until you record the reception in Orders.')}
+   </div>
+  </div>
+ )
+}
+

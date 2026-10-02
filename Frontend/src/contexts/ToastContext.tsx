@@ -12,8 +12,9 @@ export interface ToastAction {
   label: string
   onClick: () => void
   /** 'undo' (the default) is what Ctrl/Cmd-Z triggers; 'report' opens an
-   *  error report and must never fire from a keyboard shortcut meant to undo. */
-  kind?: 'undo' | 'report'
+   *  error report and 'link' navigates somewhere — neither may ever fire from
+   *  a keyboard shortcut meant to undo. */
+  kind?: 'undo' | 'report' | 'link'
 }
 
 export interface ToastOptions {
@@ -35,7 +36,7 @@ export interface ToastItem {
   type: ToastType
   /** Present when the toast carries an action; the handler lives in a ref. */
   actionLabel?: string
-  actionKind?: 'undo' | 'report'
+  actionKind?: 'undo' | 'report' | 'link'
   exiting?: boolean
 }
 
@@ -159,7 +160,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
-      const newest = [...toasts].reverse().find(t => !t.exiting && t.actionLabel && t.actionKind !== 'report' && actions.current.has(t.id))
+      const newest = [...toasts].reverse().find(t => !t.exiting && t.actionLabel && t.actionKind === 'undo' && actions.current.has(t.id))
       if (!newest) return
       e.preventDefault()
       runAction(newest.id)

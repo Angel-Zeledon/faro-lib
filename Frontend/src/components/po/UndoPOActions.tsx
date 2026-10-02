@@ -5,7 +5,8 @@
  * Both write real state — an un-receive takes units back out of stock and
  * removes the lead-time observation that reception taught the supplier's
  * scorecard; an un-send returns the order to "not sent", which the payables
- * calendar and `incoming_qty` both read. So both confirm first and both say
+ * calendar reads (`incoming_qty` does not: an open order counts as on its way
+ * whether or not it was sent from here). So both confirm first and both say
  * plainly what will happen, rather than asking "are you sure?" about a verb.
  *
  * They refuse rather than guess, and the refusal is the useful part: the

@@ -591,14 +591,15 @@ def unsend_po(tenant_id: str, po_log_id: str, user_id: str) -> dict:
     docs/assistant-actions.md, class C.1: "it left the system"). This reverses
     only StockAI's OWN bookkeeping about the order.
 
-    **Why clearing the column is the whole fix.** Nothing downstream stores a
-    second copy of "this order is in transit": `service.get_incoming_qty`
-    (units on the way, which feeds the purchase recommendation) and
-    `cash_service`'s payables calendar both filter live on
-    `inventory_po_log.sent_at IS NOT NULL` — neither caches or snapshots that
-    state anywhere else. Clearing `sent_at` here means the very next read of
-    either screen already stops counting this order as sent; there is nothing
-    else to chase down or go stale.
+    **Why clearing the column is the whole fix.** `cash_service`'s payables
+    calendar filters live on `inventory_po_log.sent_at IS NOT NULL` and keeps
+    no copy, so the very next read stops counting this order as a payable.
+
+    It does NOT take the order out of "units on the way": since 2026-10-01
+    `service.get_incoming_detail` counts every open PO whether or not it was
+    sent through StockAI (a downloaded PO the buyer mailed themselves is just
+    as much on its way), so un-sending leaves the purchase recommendation
+    exactly where it was.
 
     **Refuses once a reception exists.** A reception recorded against this PO
     (`reception_status != 'pending'`) is physical evidence the order DID reach

@@ -46,6 +46,7 @@ import {
 import { fmtNum } from '@/lib/numberLocale'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import MobileTabs from '@/components/mobile/MobileTabs'
+import { incomingText } from '@/lib/incomingCopy'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
@@ -2941,7 +2942,7 @@ export default function InventoryPage() {
      are already on a truck. Without this the drop reads as a bug. */}
  {(item.incoming_qty ?? 0) > 0 && (
  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>
- {t('inventory.incoming_on_the_way', { qty: fmt(item.incoming_qty!, 0) })}
+ {incomingText(t, item.incoming_qty, item.incoming_sources)}
  </div>
  )}
  </div>
