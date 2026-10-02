@@ -1,14 +1,18 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, ChevronLeft } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import AlertBell from '@/components/alerts/AlertBell'
 import MessagesBadge from '@/components/messages/MessagesBadge'
 import TourLauncher from '@/components/tour/TourLauncher'
 import ReportProblemButton from './ReportProblemButton'
+import TopBarOverflowMenu from './TopBarOverflowMenu'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { useMobileHeaderOverride } from '@/components/mobile/MobileHeaderContext'
+import { NAV, navItemMatches } from './navItems'
 import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
@@ -43,6 +47,9 @@ const PATHS_WITH_OWN_SESSION_PICKER = ['/pronosticos']
 export default function TopBar() {
   const path    = usePathname()
   const { t }   = useLanguage()
+  const narrow  = useIsNarrow()
+  const router  = useRouter()
+  const headerOverride = useMobileHeaderOverride()
   const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'StockAI'
   const { addToast } = useToast()
   // Active-session badge source of truth.
@@ -144,6 +151,70 @@ export default function TopBar() {
   const sessionLabel = activeSession && grainLabel && suffix && activeSession.name.endsWith(suffix)
     ? activeSession.name.slice(0, -suffix.length)
     : activeSession?.name ?? ''
+
+  // Narrow screens: the desktop bar measured 409–461px on a 360px phone, so
+  // the bell and "report a problem" sat past the right edge and the clock
+  // wrapped onto two lines. Here it is title + "⋯" + bell, every control
+  // 44px: the clock goes (the phone shows the time already), the active-session
+  // crumb goes (it only links to /historial, reachable from the nav), and the
+  // secondary actions move into the overflow menu — none of them removed.
+  if (narrow) {
+    // Title: a screen's own override, then the desktop title map, then the
+    // nav label for the route (so /inventario reads "Inventario", not the
+    // brand), then the brand.
+    const navItem = NAV.find(item => navItemMatches(item, path))
+    const mobileTitle = headerOverride?.title
+      ?? (PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : navItem ? t(navItem.labelKey) : 'StockAI')
+    // Back: a screen's in-page detail view, or a nested route
+    // (/proveedores/scorecard → /proveedores). Top-level screens have the tab
+    // bar instead.
+    const segments = path.split('/').filter(Boolean)
+    const parentHref = segments.length > 1 ? `/${segments.slice(0, -1).join('/')}` : null
+    const onBack = headerOverride?.onBack
+      ?? (headerOverride?.backHref ? () => router.push(headerOverride.backHref!) : null)
+      ?? (parentHref ? () => router.push(parentHref) : null)
+    return (
+      <header style={{
+        height: 'calc(52px + env(safe-area-inset-top, 0px))',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', gap: 2,
+        paddingLeft: onBack ? 0 : 16, paddingRight: 4,
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)',
+        flexShrink: 0, position: 'relative', zIndex: 20, minWidth: 0,
+      }}>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={t('mobile.back')}
+            className="tap-feedback"
+            style={{
+              all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
+              width: 44, height: 44, marginLeft: 2, borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text)',
+            }}
+          >
+            <ChevronLeft size={24} aria-hidden="true" />
+          </button>
+        )}
+        <h1 key={mobileTitle} className="mobile-title-enter" style={{
+          flex: 1, minWidth: 0, margin: 0,
+          fontSize: 17, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {mobileTitle}
+        </h1>
+        <TopBarOverflowMenu />
+        <AlertBell
+          localNotices={notifs}
+          onLocalRead={markLocalRead}
+          onClearLocal={clearLocal}
+        />
+      </header>
+    )
+  }
 
   return (
     <header style={{

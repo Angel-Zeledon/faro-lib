@@ -25,7 +25,8 @@ import VerifyEmailBanner from './VerifyEmailBanner'
 import TrialBanner from './TrialBanner'
 import AppIntro from './AppIntro'
 import { PwaRegister } from './InstallAppButton'
-import MobileNavButton from '@/components/mobile/MobileNavButton'
+import MobileTabBar from '@/components/mobile/MobileTabBar'
+import { MobileHeaderProvider } from '@/components/mobile/MobileHeaderContext'
 import DesktopOnlyNotice from '@/components/mobile/DesktopOnlyNotice'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
@@ -44,7 +45,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarProvider>
             <SkuSearchProvider>
               <TourProvider>
-                <Shell>{children}</Shell>
+                <MobileHeaderProvider>
+                  <Shell>{children}</Shell>
+                </MobileHeaderProvider>
                 <ToastContainer />
                 <ApiErrorBridge />
                 <SkuSearchOverlay />
@@ -71,13 +74,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
  * has to run *inside* `SidebarProvider`, since the drawer trigger it renders
  * reads that context.
  *
- * Narrow viewports get exactly two changes here:
- *   · a 44px hamburger beside the top bar, because the sidebar has become an
- *     off-canvas drawer and would otherwise be unreachable;
+ * Narrow viewports (≤768px) get the mobile shell instead of the desktop one:
+ *   · no sidebar — a fixed bottom tab bar (components/mobile/MobileTabBar)
+ *     carries the four daily screens, and its "Más" sheet everything else;
+ *   · TopBar renders its compact mobile header (title, back, ⋯, bell);
+ *   · `.app-shell-mobile` (globals.css) sizes the shell to the dynamic
+ *     viewport and pads the scroll container by `--mobile-nav-h`, so the last
+ *     row of any screen clears the tab bar;
  *   · `overflowX: hidden` on the scroll container, so one over-wide table
- *     cannot turn every vertical swipe on every page into a fight with a
- *     horizontal scrollbar.
- * `TopBar` itself is untouched — it is shared with four other screens.
+ *     cannot turn every vertical swipe into a fight with a sideways scroll.
+ * Desktop renders exactly what it always has.
  */
 /**
  * Loads the tenant's currency once, for the whole app.
@@ -104,21 +110,20 @@ function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   return (
-    <div className="app-shell">
+    <div className={narrow ? 'app-shell app-shell-mobile' : 'app-shell'}>
       <CurrencyBoot />
       <AppIntro />
       <PwaRegister />
-      <Sidebar />
+      {!narrow && <Sidebar />}
       <div className="main-content" style={narrow ? { minWidth: 0 } : undefined}>
         <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, minWidth: 0 }}>
-          {narrow && <MobileNavButton />}
           <div style={{ flex: 1, minWidth: 0 }}>
             <TopBar />
           </div>
         </div>
         <div
           className="page-content"
-          style={narrow ? { overflowX: 'hidden', padding: 12 } : undefined}
+          style={narrow ? { overflowX: 'hidden', padding: '12px 12px calc(var(--mobile-nav-h, 0px) + 16px)' } : undefined}
         >
           <TrialBanner />
           <ReadOnlyBanner />
@@ -132,6 +137,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <div key={pathname} className="page-enter">{children}</div>
         </div>
       </div>
+      {narrow && <MobileTabBar />}
     </div>
   )
 }

@@ -1140,3 +1140,63 @@
 @keyframes sb-unfold { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sb-unfold { animation: none; } }
 .intro-playing .sb-unfold { animation-play-state: paused; }
+
+/* ── Mobile shell (components/mobile/, AppShell narrow branch) ──────────────
+   The same 768px line as hooks/useIsNarrow.ts. `--mobile-nav-h` is the bottom
+   tab bar's height INCLUDING the home-indicator inset; everything that sits at
+   the bottom of a phone screen (StickyActionBar, toasts, the /compras cart
+   bar) offsets by it, and the scroll container is padded by it, so nothing is
+   ever hidden behind the tabs. Outside the app shell no tab bar renders, and
+   nothing reads the variable. */
+@media (max-width: 768px) {
+  :root { --mobile-nav-h: calc(56px + env(safe-area-inset-bottom, 0px)); }
+
+  /* 100vh on a phone includes the area behind the browser's toolbars, which
+     put the bottom of every screen under them. dvh is the visible height. */
+  .app-shell-mobile { height: 100vh; height: 100dvh; }
+
+  /* Toasts float above the tab bar, full width, instead of bottom-right. */
+  .toast-stack {
+    left: 12px !important; right: 12px !important;
+    bottom: calc(var(--mobile-nav-h, 0px) + 12px) !important;
+    align-items: stretch;
+  }
+}
+
+/* Dividers between cards in a MobileList. */
+.mobile-list-item + .mobile-list-item { border-top: 1px solid var(--border); }
+
+/* Press feedback on touch: a brief dim, like a native list row or tab. Only
+   where hover does not exist, so desktop pointers never see it. */
+@media (hover: none) {
+  .tap-feedback { -webkit-tap-highlight-color: transparent; transition: opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out); }
+  .tap-feedback:active { opacity: 0.6; }
+}
+
+/* MobileTabs: a strip that scrolls, without a scrollbar painted over it. */
+.mobile-tabs-scroller { scrollbar-width: none; }
+.mobile-tabs-scroller::-webkit-scrollbar { display: none; }
+
+/* The header title swaps with a short fade when the screen changes. */
+.mobile-title-enter { animation: mobileTitleEnter var(--dur-3) var(--ease-out); }
+@keyframes mobileTitleEnter {
+  from { opacity: 0; transform: translateX(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Buttons for phone screens (StickyActionBar, sheets): 48px, sharing the row,
+   one primary. */
+.mobile-btn {
+  all: unset; box-sizing: border-box; cursor: pointer; flex: 1; min-width: 0;
+  min-height: 48px; padding: 0 16px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 15px; font-weight: 700; text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+.mobile-btn:active { transform: scale(0.98); }
+.mobile-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mobile-btn:disabled, .mobile-btn[aria-disabled="true"] { opacity: 0.45; cursor: default; transform: none; }
+.mobile-btn-primary { background: var(--accent); color: #fff; }
+.mobile-btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.mobile-btn-danger { background: var(--signal-order-now-fg); color: #fff; }

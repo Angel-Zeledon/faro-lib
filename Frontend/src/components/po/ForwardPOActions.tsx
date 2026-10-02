@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { sendPOToSelf } from '@/lib/api'
 import { useErrorDetail } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { Check, Copy, MessageCircle, Smartphone } from 'lucide-react'
 
 const C = {
@@ -24,6 +25,12 @@ const btn: React.CSSProperties = {
 
 export function ForwardPOActions({ poLogId }: { poLogId: string }) {
   const { t } = useLanguage()
+  // These were 25px tall on a phone. 44px there; the desktop row is unchanged.
+  const narrow = useIsNarrow()
+  const btnStyle: React.CSSProperties = narrow
+    ? { ...btn, boxSizing: 'border-box', minHeight: 48, padding: '0 14px', fontSize: 14, gap: 8,
+        width: '100%', justifyContent: 'center', borderRadius: 12, background: 'var(--surface)' }
+    : btn
   const errorDetail = useErrorDetail()
   const [busy,    setBusy]    = useState(false)
   const [payload, setPayload] = useState<{ text: string; url: string } | null>(null)
@@ -69,21 +76,23 @@ export function ForwardPOActions({ poLogId }: { poLogId: string }) {
   }
 
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      <button onClick={fetchMessage} disabled={busy} style={btn} title={t('po.forward_to_me_title')}>
+    <span style={narrow
+      ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8 }
+      : { display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <button onClick={fetchMessage} disabled={busy} style={btnStyle} title={t('po.forward_to_me_title')}>
         <Smartphone size={11} aria-hidden="true" />
         {busy ? t('po.forward_sending') : t('po.forward_to_me')}
       </button>
-      <button onClick={openWhatsApp} disabled={busy} style={btn}>
+      <button onClick={openWhatsApp} disabled={busy} style={btnStyle}>
         <MessageCircle size={11} aria-hidden="true" />
         {t('po.forward_open_whatsapp')}
       </button>
-      <button onClick={copyText} disabled={busy} style={btn}>
+      <button onClick={copyText} disabled={busy} style={btnStyle}>
         {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
         {copied ? t('po.forward_copied') : t('po.forward_copy')}
       </button>
       {note && (
-        <span style={{ fontSize: 11, fontWeight: 600, color: note.ok ? C.green : C.red }}>
+        <span role="status" style={{ fontSize: narrow ? 13 : 11, fontWeight: 600, color: note.ok ? C.green : C.red }}>
           {note.msg}
         </span>
       )}
