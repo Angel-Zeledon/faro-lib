@@ -38,7 +38,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle, Clock, Truck, ArrowRight, Minus, Plus, Check, RefreshCw, Send,
-  ChevronRight, ChevronUp, ShoppingCart, RotateCcw,
+  ChevronRight, ChevronUp, RotateCcw,
 } from 'lucide-react'
 import type {
   MorningBriefing, POLogEntry, OverdueReception, Supplier, SupplierContactHealthRow,
@@ -232,7 +232,10 @@ export default function HoyMobile(props: HoyMobileProps) {
             <p style={{ fontSize: 12, color: C.dim, margin: '0 0 10px', lineHeight: 1.55 }}>
               {(nothingCounted ? t('hoy.kpi_nothing_counted') : t('hoy.kpi_partially_counted'))
                 .replace('{count}', String(uncounted))
-                .replace('{total}', String(kpis.total_skus))}
+                .replace('{total}', String(kpis.total_skus))}{' '}
+              <Link href="/inventario" style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                {t('hoy.needs_stock_cta')}
+              </Link>
             </p>
           )}
 
@@ -336,13 +339,11 @@ export default function HoyMobile(props: HoyMobileProps) {
                 {briefing.session_name && <> · {t('hoy.footer_session')}: {briefing.session_name}</>}
               </p>
             )}
+            {/* No "Inventario" button beside it: the tab bar right below has it. */}
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="mobile-btn mobile-btn-secondary" onClick={onRetry}>
                 <RefreshCw size={16} aria-hidden="true" /> {t('hoy.btn_refresh_data')}
               </button>
-              <Link href="/inventario" className="mobile-btn mobile-btn-secondary" style={{ textDecoration: 'none' }}>
-                <ShoppingCart size={16} aria-hidden="true" /> {tOr(t, 'mobile.hoy_inventory_link', 'Inventory')}
-              </Link>
             </div>
           </div>
         </>
@@ -487,7 +488,6 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
   const isRejected = item.status === 'rejected'
   const value      = item.qty * (item.unit_cost ?? 0)
   const canOrder   = item.qty > 0
-  const coverage   = item.days != null ? Math.round(item.days) : null
 
   // "Estimado" on the card front, not only inside the detail sheet: most
   // buyers will never open it, so the fact that this quantity rests on values
@@ -581,12 +581,10 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         </div>
 
         <div style={{ fontSize: 13, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+          {/* The reason already opens with the coverage ("Te quedan 2 días…"),
+              so it is not repeated as a "Cobertura actual: 2 días" suffix. The
+              figure stays in the "why" sheet. */}
           {item.reason}
-          {coverage != null && (
-            <> · {t('hoy.why_coverage_label')}: <strong style={{ color: C.text }}>
-              {coverage} {coverageUnitLabel(briefing.coverage_unit, coverage, t)}
-            </strong></>
-          )}
         </div>
         <IncomingNote item={item} />
         <OrderedNote item={item} />

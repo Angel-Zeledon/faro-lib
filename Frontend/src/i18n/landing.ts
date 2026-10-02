@@ -39,8 +39,6 @@ export interface Compare { feature: string; excel: string; gut: string; stockai:
 // One moment of the buyer's day. A real sequence, so it is numbered.
 export interface MorningStep { when: string; title: string; desc: string }
 export interface FeatureGroup { name: string; items: string[] }
-export interface Role { role: string; pain: string; gain: string }
-export interface Include { title: string; desc: string; isNew: boolean }
 export interface Signal { signal: string; rule: string; example: string }
 export interface Faq { q: string; a: string }
 export interface TourScreen { img: string; name: string; does: string; finds: string[]; alt: string }
@@ -168,12 +166,6 @@ export interface LandingCopy {
     reach: string
     madeIn: string
   }
-  benefits: { tag: string; title: string; lead: string; items: string[] }
-  includes:{ tag: string; title: string; lead: string; rolesTitle: string; roles: Role[]; itemsTitle: string; items: Include[]; isNew: string; tail: string; tailLink: string }
-  // The one place the technical capabilities are named. Deliberately below the
-  // fold and compact: the page speaks to the buyer (owner's call, 2026-09-30);
-  // this block exists for whoever the buyer forwards the link to.
-  tech: { tag: string; title: string; lead: string; items: Titled[]; devLink: string }
   // The screen guide is an opt-in deep dive, not part of the main read: the
   // page shows a teaser (`teaser*`) and the chapters open in a dialog.
   // `count` takes {n} screens and {c} chapters, both computed from `chapters`.
@@ -249,7 +241,7 @@ const es: LandingCopy = {
   },
   heroPills: ['Distribución', 'Retail', 'Manufactura', 'Mayoristas', 'E-commerce'],
   footerLinks: {
-    product: [['/como-funciona', 'Cómo funciona'], ['#motor', 'Los modelos'], ['#funciones', 'Funciones'], ['#tu-manana', 'Tu mañana con StockAI'], ['#casos', 'Industrias'], ['#incluye', 'Qué incluye'], ['/precios', 'Precio'], ['/desarrolladores', 'API para desarrolladores'], ['#comparacion', 'vs Excel']],
+    product: [['/como-funciona', 'Cómo funciona'], ['#motor', 'Los modelos'], ['#funciones', 'Funciones'], ['#tu-manana', 'Tu mañana con StockAI'], ['#casos', 'Industrias'], ['/precios', 'Precio'], ['/desarrolladores', 'API para desarrolladores'], ['#comparacion', 'vs Excel']],
     company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['/seguridad', 'Seguridad'], ['/preguntas-frecuentes', 'Preguntas frecuentes'], ['#contacto', 'Contacto']],
   },
   hero: {
@@ -277,8 +269,6 @@ const es: LandingCopy = {
       { title: 'Ruptura de stock en temporadas clave', desc: 'En retail y distribución, un quiebre durante temporada alta no es solo una venta perdida — el cliente va a la competencia y no regresa. La demanda no espera al próximo ciclo de reposición.' },
       { title: 'Capital atrapado en sobreinventario', desc: 'Para mayoristas y manufactureros, el exceso de inventario ocupa bodega, consume línea de crédito y en categorías perecederas o de moda, termina en pérdida directa por liquidación.' },
       { title: 'Compras reactivas en lugar de planificadas', desc: 'Comprar cuando el inventario ya está crítico obliga a aceptar condiciones desfavorables: precios spot, fletes de emergencia y tiempos de entrega fuera del ciclo normal.' },
-      { title: 'Conocimiento concentrado en una sola persona', desc: 'El comprador más experimentado lleva en la cabeza la estacionalidad, los ciclos del proveedor y las anomalías históricas de cada producto. Ese conocimiento no está en ningún sistema.' },
-      { title: 'Una hoja de cálculo no alcanza para todo el catálogo', desc: 'Con pocos productos, revisar fila por fila funciona. Cuando el catálogo llega a cientos o miles de códigos, la mayoría se termina pidiendo por costumbre: lo mismo del mes pasado, más un poco.' },
     ],
   },
   how: {
@@ -310,12 +300,13 @@ const es: LandingCopy = {
   features: {
     tag: 'Funciones',
     title: 'Un software de inventario y compras completo, también en el plan gratis.',
-    lead: 'Todo lo que hace StockAI, agrupado como lo piensa quien compra. Ninguna de estas funciones se desbloquea pagando: el plan Completo solo amplía cuánto cabe.',
+    lead: 'Todo lo que hace StockAI, agrupado como lo piensa quien compra.',
     groups: [
       { name: 'Compras', items: [
         'Lista de qué pedir hoy, ordenada por urgencia',
         'Cantidad sugerida por producto, descontando lo que ya viene en camino',
         'Órdenes de compra armadas por proveedor, con el motivo de cada línea',
+        'Resumen diario de los productos en riesgo, por correo y WhatsApp',
         'Envío al proveedor por WhatsApp o correo; exportación en CSV o PDF',
         'Optimizador del pedido de menor costo total, con el flete fijo incluido',
         'Escalas de precio por volumen: cuánto falta para el siguiente escalón',
@@ -326,7 +317,8 @@ const es: LandingCopy = {
         'Los días de quiebre no se aprenden como falta de demanda',
         'Feriados y días del mes de tu país como variables del modelo',
         'Diario, semanal, mensual o trimestral',
-        'Simulador de escenarios: promociones, atrasos y más demanda',
+        'Simulador de escenarios: promociones, atrasos y más demanda, hasta 50 reglas por escenario',
+        'Recálculo programado: cada lunes, a diario, en días hábiles, cada hora o el primero de mes',
       ] },
       { name: 'Inventario y bodegas', items: [
         'Semáforo por producto: PEDIR YA, PEDIR PRONTO, OK y SOBRESTOCK',
@@ -650,7 +642,6 @@ const es: LandingCopy = {
       { title: 'Cada quien con su permiso', desc: 'Administrador, analista o solo lectura. Quien solo mira, solo mira: no puede crear pedidos ni cambiar datos.' },
       { title: 'Credenciales cifradas', desc: 'Lo que conectas — como el acceso a tu base de datos — se guarda cifrado. Las contraseñas de tu equipo se guardan con hash bcrypt: nadie puede leerlas, tampoco nosotros.' },
       { title: 'Te llevas tus datos, o los borramos del todo', desc: 'Si un día te vas, te entregamos todos tus datos en un archivo ZIP y borramos la cuenta completa: cada tabla y cada archivo, no solo el registro principal.' },
-      { title: 'Nada bloqueado detrás de un pago', desc: 'El plan gratis trae todas las funciones. Pagar solo amplía cuánto cabe: productos, usuarios, bodegas.' },
       { title: 'No es una caja negra', desc: 'La regla que pone un producto en rojo está publicada en esta página, y la puedes hacer a mano para comprobar que da lo mismo.' },
     ],
     decideLink: 'Ver la regla',
@@ -668,81 +659,11 @@ const es: LandingCopy = {
     reach: 'Ventas y contacto: {email}. Teléfono: {phone}.',
     madeIn: 'Hecho en Costa Rica para distribuidores de Latinoamérica.',
   },
-  benefits: {
-    tag: 'Cada mañana',
-    title: 'Abres StockAI y ya sabes qué comprar, cuánto y a quién.',
-    lead: 'Sin armar reportes ni cruzar hojas de cálculo. Está en pantalla cuando llegas, y el resumen de lo urgente ya te llegó al correo y al WhatsApp.',
-    items: [
-      'Qué pedir hoy, ordenado por urgencia',
-      'Cuántas unidades pedir de cada producto',
-      'La orden de compra armada por proveedor',
-      'Qué pedidos vienen en camino y cuáles ya debían haber llegado',
-      'Cuánto tarda de verdad cada proveedor, medido en tus recepciones',
-      'Cuánto dinero está parado en productos que no rotan',
-      'Qué productos entran en riesgo, por correo y WhatsApp',
-      'Qué pasa si una promoción duplica la venta, antes de comprometer el dinero',
-      'Todo el catálogo, no una muestra — se pone a prueba con más de 5.000 productos',
-      'Los reportes en Excel y PDF, listos para compartir',
-    ],
-  },
-  includes: {
-    tag: 'Qué incluye',
-    title: 'Todo lo que resuelve, sin activar nada.',
-    lead: 'Dos problemas aparecen apenas la operación crece: no poder mirar todos los productos, y tener el inventario repartido en varios lugares. Esto es lo que StockAI pone del lado de ambos — y no hay que activar nada, viene incluido.',
-    rolesTitle: 'A quién le resuelve algo, y qué',
-    roles: [
-      {
-        role: 'Dueño o gerente general',
-        pain: 'Te enteras del quiebre cuando te llama el vendedor, y del sobrestock cuando ves cuánta plata hay parada en bodega.',
-        gain: 'Un resumen diario de los productos en rojo, al correo y al WhatsApp. Y un simulador para probar «¿qué pasa si la promoción duplica la venta de esta categoría?» antes de comprometer el dinero.',
-      },
-      {
-        role: 'Encargado de compras',
-        pain: 'Revisas miles de códigos en una hoja de cálculo y terminas comprando por costumbre: lo mismo del mes pasado, más un poco.',
-        gain: 'La lista llega ordenada por urgencia, con la cantidad sugerida por proveedor. El optimizador arma el pedido tomando en cuenta lo que cuesta tener inventario parado, lo que cuesta quedarse sin producto y el flete fijo del camión.',
-      },
-      {
-        role: 'Jefe de bodega',
-        pain: 'Anotas las recepciones en un cuaderno, y nadie en la empresa sabe cuánto tarda de verdad cada proveedor.',
-        gain: 'Cada recepción que registras se vuelve dato. A partir de la tercera entrega de un proveedor, StockAI deja de usar el plazo que te prometieron y empieza a usar el que cumplen.',
-      },
-      {
-        role: 'Administración y finanzas',
-        pain: 'Sabes cuánto vale el inventario, pero no cuánto de eso es capital atrapado en productos que no rotan.',
-        gain: 'StockAI separa lo que mueve tu venta de lo que solo ocupa espacio, y los reportes que exportas a Excel y PDF salen con esa marca en cada producto.',
-      },
-    ],
-    itemsTitle: 'Qué incluye, concretamente',
-    items: [
-      { title: 'Dónde poner el colchón de seguridad', desc: 'StockAI separa los productos que concentran el 80 % de tu venta de la cola larga, y los de venta estable de los erráticos. Donde se juntan mucha venta y demanda impredecible es donde conviene el stock de seguridad, en vez de repartirlo parejo en todo el catálogo.', isNew: false },
-      { title: 'Mover entre bodegas antes de comprar', desc: 'Las ubicaciones que necesites, con rutas entre ellas: días de tránsito y costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI propone mover en vez de comprar — y solo lo propone si a la bodega que presta le quedan al menos 30 días de cobertura.', isNew: false },
-      { title: 'El pedido más barato, no el más chico', desc: 'Arma el pedido buscando el menor costo total, no la menor cantidad de unidades: suma el costo de mantener inventario, la penalización por quedarse sin producto, el costo de compra, el costo por unidad transferida y el costo fijo del envío, que se paga una sola vez aunque el camión lleve veinte productos.', isNew: false },
-      { title: 'Prueba la decisión antes de pagarla', desc: 'Hasta 50 reglas por escenario: multiplicar la demanda, marcar una promoción, atrasar a un proveedor o cambiar el stock de seguridad, filtrando por producto, categoría, proveedor o rango de fechas. Compara el escenario contra la base sin tocar nada de lo real, y lo puedes guardar para volver a correrlo.', isNew: false },
-      { title: 'Lo urgente llega a tu teléfono', desc: 'El mismo resumen diario de productos en riesgo que llega por correo, ahora al teléfono de quien decide. Cada persona vincula y verifica su propio número desde su configuración.', isNew: false },
-      { title: 'Pregúntale a tu inventario', desc: 'Preguntas en español sobre tus propios datos — «¿por qué subió la demanda de esta categoría?», «¿qué proveedores me están atrasando?» — y cada respuesta viene marcada con de dónde salió, para que sepas cuándo se apoya en tus datos y cuándo no.', isNew: false },
-      { title: 'La lista se actualiza sola', desc: 'En vez de acordarte de recalcular, lo dejas corriendo solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes. La pantalla te muestra cuándo corrió, cuándo vuelve a correr y si falló.', isNew: false },
-      { title: 'Tu equipo habla al lado del inventario', desc: 'Conversaciones uno a uno entre las personas de tu empresa, dentro de StockAI, al lado del inventario del que están hablando. Si la otra persona no está conectada, le llega un aviso a su WhatsApp para que no se pierda el mensaje.', isNew: true },
-    ],
-    isNew: 'Nuevo',
-    tail: 'Todo lo anterior va además de la base: el semáforo, las órdenes de compra, las recepciones que aprenden el plazo del proveedor, los reportes y las alertas por correo — todo eso también en el plan gratis. ',
-    tailLink: 'Hablemos del precio →',
-  },
   manual: {
     title: 'O léelo entero, con calma.',
     body: 'El manual de usuario cubre las diecinueve pantallas con el mismo detalle: para qué sirve cada una, qué significa cada dato, cómo hacer las cosas concretas y lo que suele confundir. Es el mismo producto de estas capturas, no una versión resumida.',
     cta: 'Descargar el manual (PDF)',
     note: 'PDF · español · 59 páginas',
-  },
-  tech: {
-    tag: 'Para tu equipo técnico',
-    title: 'Lo que hay debajo, en corto.',
-    lead: 'Nada de esto hace falta para comprar mejor. Está aquí para quien quiera revisarlo.',
-    devLink: 'Documentación de la API',
-    items: [
-      { title: 'Clasificación ABC-XYZ', desc: 'ABC por peso en la venta, XYZ por estabilidad de la demanda. Es lo que ubica el colchón de seguridad.' },
-      { title: 'API pública y servidor MCP', desc: 'API REST con llaves por empresa, y un servidor MCP de solo lectura para asistentes de IA. Mismas llaves y mismos límites.' },
-      { title: 'El calendario de tu país', desc: 'Los feriados de tu país y el día del mes entran como variables del pronóstico, para que el modelo pueda separar un puente o la quincena de un cambio de tendencia.' },
-    ],
   },
   tour: {
     title: 'Pantalla por pantalla.',
@@ -901,7 +822,7 @@ const en: LandingCopy = {
   },
   heroPills: ['Distribution', 'Retail', 'Manufacturing', 'Wholesale', 'E-commerce'],
   footerLinks: {
-    product: [['/como-funciona', 'How it works'], ['#motor', 'The models'], ['#funciones', 'Features'], ['#tu-manana', 'Your morning with StockAI'], ['#casos', 'Industries'], ['#incluye', "What's included"], ['/precios', 'Pricing'], ['/desarrolladores', 'Developer API'], ['#comparacion', 'vs Excel']],
+    product: [['/como-funciona', 'How it works'], ['#motor', 'The models'], ['#funciones', 'Features'], ['#tu-manana', 'Your morning with StockAI'], ['#casos', 'Industries'], ['/precios', 'Pricing'], ['/desarrolladores', 'Developer API'], ['#comparacion', 'vs Excel']],
     company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['/seguridad', 'Security'], ['/preguntas-frecuentes', 'FAQ'], ['#contacto', 'Contact']],
   },
   hero: {
@@ -928,8 +849,6 @@ const en: LandingCopy = {
       { title: 'Stockouts in the season that matters', desc: 'In retail and distribution, running out during peak season is not just a lost sale — the customer goes to the competition and does not come back. Demand does not wait for your next replenishment cycle.' },
       { title: 'Capital trapped in overstock', desc: 'For wholesalers and manufacturers, excess inventory fills the warehouse, eats the credit line, and in perishable or seasonal categories ends as a straight loss at clearance.' },
       { title: 'Reactive buying instead of planned buying', desc: 'Ordering once stock is already critical means accepting bad terms: spot prices, emergency freight and lead times outside the normal cycle.' },
-      { title: 'Knowledge held by one person', desc: 'Your most experienced buyer carries the seasonality, the supplier cycles and every product’s history in their head. None of that is in a system.' },
-      { title: 'A spreadsheet cannot cover the whole catalogue', desc: 'With a few products, checking row by row works. Once the catalogue reaches hundreds or thousands of codes, most of it ends up ordered out of habit: the same as last month, plus a bit.' },
     ],
   },
   how: {
@@ -954,12 +873,13 @@ const en: LandingCopy = {
   features: {
     tag: 'Features',
     title: 'Complete inventory and purchasing software, on the free plan too.',
-    lead: 'Everything StockAI does, grouped the way a buyer thinks about it. None of it unlocks by paying: the Full plan only lifts how much fits.',
+    lead: 'Everything StockAI does, grouped the way a buyer thinks about it.',
     groups: [
       { name: 'Purchasing', items: [
         'A list of what to order today, sorted by urgency',
         'A suggested quantity per product, net of what is already on its way',
         'Purchase orders grouped by supplier, with the reason for every line',
+        'A daily summary of the products at risk, by email and WhatsApp',
         'Sent to the supplier by WhatsApp or email; exported as CSV or PDF',
         'An optimiser for the lowest-total-cost order, fixed freight included',
         'Volume price breaks: how far the next tier is',
@@ -970,7 +890,8 @@ const en: LandingCopy = {
         'Stockout days are not learned as missing demand',
         'Your country’s holidays and days of the month as model variables',
         'Daily, weekly, monthly or quarterly',
-        'Scenario simulator: promotions, delays and higher demand',
+        'Scenario simulator: promotions, delays and higher demand, up to 50 rules per scenario',
+        'Scheduled recalculation: every Monday, daily, on business days, hourly or on the 1st of the month',
       ] },
       { name: 'Inventory and warehouses', items: [
         'A signal per product: ORDER NOW, ORDER SOON, OK and OVERSTOCK',
@@ -1275,7 +1196,6 @@ const en: LandingCopy = {
       { title: 'Everyone with their own permission', desc: 'Administrator, analyst or read-only. Whoever only looks, only looks: they cannot create orders or change data.' },
       { title: 'Encrypted credentials', desc: 'What you connect — such as access to your database — is stored encrypted. Your team’s passwords are stored as bcrypt hashes: nobody can read them, us included.' },
       { title: 'Take your data with you, or have it fully erased', desc: 'If you ever leave, we hand you all your data in a ZIP file and erase the whole account: every table and every file, not just the main record.' },
-      { title: 'Nothing locked behind a payment', desc: 'The free plan has every feature. Paying only changes how much fits: products, users, warehouses.' },
       { title: 'Not a black box', desc: 'The rule that puts a product in the red is published on this page, and you can do it by hand to check it gives the same answer.' },
     ],
     decideLink: 'See the rule',
@@ -1293,81 +1213,11 @@ const en: LandingCopy = {
     reach: 'Sales and contact: {email}. Phone: {phone}.',
     madeIn: 'Made in Costa Rica for distributors across Latin America.',
   },
-  benefits: {
-    tag: 'Every morning',
-    title: 'You open StockAI and already know what to buy, how much and from whom.',
-    lead: 'No reports to build, no spreadsheets to cross-check. It is on screen when you arrive, and the summary of what is urgent has already reached your inbox and WhatsApp.',
-    items: [
-      'What to order today, sorted by urgency',
-      'How many units of each product to order',
-      'The purchase order, grouped by supplier',
-      'Which orders are on their way, and which should have arrived already',
-      'How long each supplier really takes, measured on your receptions',
-      'How much money is sitting in products that do not turn',
-      'Which products are moving into risk, by email and WhatsApp',
-      'What happens if a promotion doubles sales, before committing the money',
-      'The whole catalogue, not a sample — tested with over 5,000 products',
-      'Reports in Excel and PDF, ready to share',
-    ],
-  },
-  includes: {
-    tag: "What's included",
-    title: 'Everything it solves, nothing to switch on.',
-    lead: 'Two problems appear as soon as an operation grows: not being able to look at every product, and having inventory spread across several places. This is what StockAI puts on both sides — and nothing has to be switched on, it comes included.',
-    rolesTitle: 'Who it solves something for, and what',
-    roles: [
-      {
-        role: 'Owner or general manager',
-        pain: 'You find out about the stockout when the salesperson calls, and about the overstock when you see how much money is sitting in the warehouse.',
-        gain: 'A daily summary of the products in the red, by email and WhatsApp. Plus a simulator to test "what happens if the promotion doubles this category’s sales?" before committing the money.',
-      },
-      {
-        role: 'Purchasing manager',
-        pain: 'You scan thousands of codes in a spreadsheet and end up buying out of habit: the same as last month, plus a bit.',
-        gain: 'The list arrives ordered by urgency, with the suggested quantity per supplier. The optimiser builds the order weighing what it costs to hold inventory, what it costs to run out, and the fixed freight of the truck.',
-      },
-      {
-        role: 'Warehouse lead',
-        pain: 'You write receptions in a notebook, and nobody in the company knows how long each supplier really takes.',
-        gain: 'Every reception you record becomes data. From a supplier’s third delivery, StockAI stops using the lead time they promised and starts using the one they keep.',
-      },
-      {
-        role: 'Finance and admin',
-        pain: 'You know what the inventory is worth, but not how much of it is capital trapped in products that do not turn.',
-        gain: 'StockAI separates what drives your sales from what only takes up space, and the reports you export to Excel and PDF carry that mark on every product.',
-      },
-    ],
-    itemsTitle: 'What is included, concretely',
-    items: [
-      { title: 'Where the safety buffer goes', desc: 'StockAI separates the products that make up 80% of your sales from the long tail, and steady sellers from erratic ones. Where high sales meet unpredictable demand is where safety stock belongs, instead of spreading it evenly across the catalogue.', isNew: false },
-      { title: 'Move between warehouses before buying', desc: 'As many locations as you need, with routes between them: transit days and cost. When a product is short in one warehouse and long in another, StockAI proposes moving instead of buying — and only proposes it if the lending warehouse keeps at least 30 days of coverage.', isNew: false },
-      { title: 'The cheapest order, not the smallest', desc: 'It builds the order for the lowest total cost, not the fewest units: holding cost, the penalty for running out, purchase cost, the per-unit transfer cost and the fixed shipping cost, which is paid once even if the truck carries twenty products.', isNew: false },
-      { title: 'Test the decision before you pay for it', desc: 'Up to 50 rules per scenario: multiply demand, mark a promotion, delay a supplier or change safety stock, filtering by product, category, supplier or date range. It compares the scenario against the baseline without touching anything real, and you can save it to run again.', isNew: false },
-      { title: 'What is urgent reaches your phone', desc: 'The same daily summary of at-risk products that goes out by email, now to the phone of whoever decides. Each person links and verifies their own number from their settings.', isNew: false },
-      { title: 'Ask your inventory', desc: 'You ask about your own data in plain language — "why did demand for this category go up?", "which suppliers are running late?" — and every answer is marked with where it came from, so you know when it is standing on your data and when it is not.', isNew: false },
-      { title: 'The list updates itself', desc: 'Instead of remembering to recalculate, you leave it running: every Monday at 6, every day, weekdays only, hourly, or the first of each month. The screen shows when it ran, when it runs next, and whether it failed.', isNew: false },
-      { title: 'Your team talks next to the inventory', desc: 'One-to-one conversations between the people in your company, inside StockAI, next to the inventory they are talking about. If the other person is not connected, a heads-up reaches their WhatsApp so the message is not missed.', isNew: true },
-    ],
-    isNew: 'New',
-    tail: 'All of that comes on top of the base: the signal, purchase orders, receptions that learn your supplier’s lead time, the reports and the email alerts — all of it on the free plan too. ',
-    tailLink: "Let's talk about pricing →",
-  },
   manual: {
     title: 'Or read the whole thing, unhurried.',
     body: 'The user manual covers all nineteen screens at the same depth: what each one is for, what every figure means, how to do the concrete things, and what tends to confuse people. Same product as these captures, not a shortened version.',
     cta: 'Download the manual (PDF)',
     note: 'PDF · English · 59 pages',
-  },
-  tech: {
-    tag: 'For your technical team',
-    title: 'What is underneath, briefly.',
-    lead: 'None of this is needed to buy better. It is here for whoever wants to check it.',
-    devLink: 'API documentation',
-    items: [
-      { title: 'ABC-XYZ classification', desc: 'ABC by weight in sales, XYZ by how steady demand is. It is what places the safety buffer.' },
-      { title: 'Public API and MCP server', desc: 'A REST API with per-company keys, and a read-only MCP server for AI assistants. Same keys, same limits.' },
-      { title: 'Your country’s calendar', desc: 'Your country’s public holidays and the day of the month go into the forecast as variables, so the model can tell a long weekend or payday from a change in trend.' },
-    ],
   },
   tour: {
     title: 'Screen by screen.',

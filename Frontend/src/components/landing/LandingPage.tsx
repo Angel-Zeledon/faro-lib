@@ -10,10 +10,12 @@
 // those subpages — see components/landing/{theme,primitives,chrome,sections}.
 //
 // Order since 2026-10-02 (owner: "sell it as a great product"): outcome first
-// (what you know every morning), then the problem, then the AI engine as the
-// centrepiece, then proof of fit (industries, roles, vs Excel), then the rule
-// and what you need, then price and trust. The honest limits now close the
-// FAQ instead of interrupting the engine.
+// (your morning with StockAI), then the problem, then the AI engine as the
+// centrepiece, then proof of fit (industries, vs Excel), then the rule and
+// what you need, then price and trust. The honest limits now close the FAQ
+// instead of interrupting the engine. Later the same day ("elimina elementos
+// redundantes") the sections that said the same thing twice went: the
+// "Cada mañana" bullets, "Qué incluye" and "Para tu equipo técnico".
 import Link from 'next/link'
 import { appHref } from '@/lib/siteUrls'
 import { useState } from 'react'
@@ -58,10 +60,7 @@ export default function LandingPage() {
 
   const PROBLEMS   = L.problem.items
   const CASES      = L.cases.items
-  const BENEFITS   = L.benefits.items
   const COMPARE    = L.compare.rows
-  const ROLES      = L.includes.roles
-  const INCLUDES   = L.includes.items
   const NEED       = L.start.need
   const NOT_NEED   = L.start.notNeed
   // The hero frame IS the first screen of the tour, so it follows the
@@ -174,26 +173,13 @@ export default function LandingPage() {
  </div>
  </div>
 
- {/* ── EVERY MORNING (the outcome, first) ───────────────────────────── */}
- <Section>
- <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 72, alignItems: 'start' }}>
- <div>
- <Tag>{L.benefits.tag}</Tag>
- <H2>{L.benefits.title}</H2>
- <Lead>
- {L.benefits.lead}
- </Lead>
- </div>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px' }}>
- {BENEFITS.map(b => (
- <div key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ marginTop: 1 }}><Check /></div>
- <span style={{ fontSize: 14, color: T.body, lineHeight: 1.5 }}>{b}</span>
- </div>
- ))}
- </div>
- </div>
- </Section>
+ {/* ── YOUR MORNING WITH STOCKAI (the outcome, first) ──────────────── */}
+ {/* This slot used to hold a second "every morning" block — ten bullets
+     ("Cada mañana") that repeated, item for item, the steps of the
+     morning walk-through further down, the features grid and the stats
+     strip. One morning section now, kept where the outcome-first order
+     put the first one. */}
+ <MorningSection />
 
  {/* ── THE PROBLEM ──────────────────────────────────────────────────── */}
  <Section id="problema" alt>
@@ -234,14 +220,11 @@ export default function LandingPage() {
  {/* ── THE MODELS ───────────────────────────────────────────────────── */}
  <ModelsSection />
 
- {/* ── YOUR MORNING WITH STOCKAI ────────────────────────────────────── */}
- <MorningSection />
-
  {/* ── EVERY FEATURE, GROUPED ───────────────────────────────────────── */}
- <FeaturesSection alt />
+ <FeaturesSection />
 
  {/* ── INDUSTRIES ───────────────────────────────────────────────────── */}
- <Section id="casos">
+ <Section id="casos" alt>
  <Tag>{L.cases.tag}</Tag>
  <H2>{L.cases.title}</H2>
  <Lead>
@@ -275,46 +258,11 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── WHAT'S INCLUDED (ROLES) ──────────────────────────────────────── */}
- <Section id="incluye" alt>
- <Tag>{L.includes.tag}</Tag>
- <H2>{L.includes.title}</H2>
- <Lead maxWidth={700}>
- {L.includes.lead}
- </Lead>
-
- <H3>{L.includes.rolesTitle}</H3>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 56 }}>
- {ROLES.map(({ role, pain, gain }) => (
- <div key={role} data-reveal className="lp-card">
- <div className="lp-card-title" style={{ marginBottom: 16 }}>{role}</div>
- <div className="lp-label" style={{ marginBottom: 6 }}>{L.misc.roleToday}</div>
- <div className="lp-card-body" style={{ marginBottom: 16 }}>{pain}</div>
- <div className="lp-label" style={{ color: T.accent, marginBottom: 6 }}>{L.misc.roleWith}</div>
- <div className="lp-card-body">{gain}</div>
- </div>
- ))}
- </div>
-
- <H3>{L.includes.itemsTitle}</H3>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
- {INCLUDES.map(({ title, desc, isNew }) => (
- <div key={title} data-reveal className="lp-card">
- <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
- <span className="lp-card-title" style={{ marginBottom: 0 }}>{title}</span>
- {isNew && (
- <span style={{ fontSize: 11, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px' }}>{L.includes.isNew}</span>
- )}
- </div>
- <div className="lp-card-body">{desc}</div>
- </div>
- ))}
- </div>
-
- <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '28px 0 0', maxWidth: 760 }}>
- {L.includes.tail}
- </p>
- </Section>
+ {/* "Qué incluye" (four roles and eight feature cards) was removed on
+     2026-10-02: every card restated a line of the features grid above, the
+     roles' "today" column restated the problem section word for word
+     ("lo mismo del mes pasado, más un poco"), and their "with StockAI"
+     column restated the morning section. */}
 
  {/* ── VS EXCEL ─────────────────────────────────────────────────────── */}
  <Section id="comparacion">
@@ -397,31 +345,14 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── FOR YOUR TECHNICAL TEAM ──────────────────────────────────────── */}
- {/* The integration details for whoever the buyer forwards the link to.
-     The model competition moved up into its own section (#motor) on
-     2026-10-01; what stays here is ABC-XYZ, the API/MCP and the calendar. */}
- <Section id="tecnico" style={{ padding: '64px 0' }}>
- <Tag>{L.tech.tag}</Tag>
- <h2 className="lp-h3">{L.tech.title}</h2>
- <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '0 0 22px', maxWidth: 640 }}>
- {L.tech.lead}
- </p>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
- {L.tech.items.map(({ title, desc }) => (
- <div key={title} className="lp-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
- <h3 style={{ fontSize: 13.5, fontWeight: 700, color: T.text, margin: '0 0 4px' }}>{title}</h3>
- <div style={{ fontSize: 13, color: T.body, lineHeight: 1.6 }}>{desc}</div>
- </div>
- ))}
- </div>
- <a href="/desarrolladores" className="trust-link" style={{ marginTop: 16 }}>{L.tech.devLink}</a>
- </Section>
+ {/* "Para tu equipo técnico" was removed on 2026-10-02: its three cards
+     (ABC-XYZ, API + MCP, the country calendar) are lines of the features
+     grid, and its link to /desarrolladores is in the menu and the footer. */}
 
  {/* ── FAQ ──────────────────────────────────────────────────────────── */}
  {/* Ends with "What doesn't StockAI do?" — the honest limits, moved here
      from the models section on 2026-10-02. */}
- <FaqAccordion alt />
+ <FaqAccordion />
 
  {/* ── CLOSING BAND: the three ways forward ─────────────────────────── */}
  <FinalSection />

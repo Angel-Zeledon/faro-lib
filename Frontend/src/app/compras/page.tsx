@@ -155,6 +155,18 @@ function recAction(
   return text === key ? rec.action : text
 }
 
+// The "order X today" / "order X this week" recommendations are the action
+// cards at the top of the page, said a second time further down: same SKU,
+// same coverage, same lead time — and only the card can be acted on. Those are
+// left out of the recommendations list whenever the SKU already has its card.
+// A recommendation for a SKU without a card (and every other kind) still shows.
+function recommendationsNotOnCards(b: MorningBriefing): BriefingRecommendation[] {
+ const carded = new Set([...(b.risks ?? []), ...(b.warnings ?? [])].map(i => i.sku))
+ return b.recommendations.filter(rec =>
+  !((rec.rec_type === 'STOCKOUT_RISK' || rec.rec_type === 'REORDER_SOON') && carded.has(rec.sku)),
+ )
+}
+
 function RecIcon({ rec_type }: { rec_type: BriefingRecommendation['rec_type'] }) {
  switch (rec_type) {
   case 'STOCKOUT_RISK': return <AlertTriangle size={16} color={C.red} />
@@ -309,10 +321,14 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
       {/* El borde de color solo no dice en qué estado está el SKU: el badge
           añade icono + etiqueta (WCAG 1.4.1). */}
       <SignalBadge signal={item.signal} />
-      <span style={{
-       fontSize: 10, fontFamily: 'monospace', color: 'var(--dim)',
-       background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 4,
-      }}>{item.sku}</span>
+      {/* The code only when the name is not already the code — "SKU-005
+          SKU-005" said the same thing twice. Same rule as the phone card. */}
+      {item.name !== item.sku && (
+       <span style={{
+        fontSize: 10, fontFamily: 'monospace', color: 'var(--dim)',
+        background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 4,
+       }}>{item.sku}</span>
+      )}
       {isApproved && (
        <span style={{
         fontSize: 10, fontWeight: 700, color: '#22c55e',
@@ -1771,11 +1787,18 @@ export default function HoyPage() {
            it is "no idea" — and ₡0 in the warehouse reads as "you have nothing"
            when the truth is that nothing was measured. The uncounted share of
            the catalogue decides how much of this row can be believed. */}
+       {/* The one place the uncounted products are named on this screen: the
+           optimizer's "Faltan N por contar" card below repeated the same count
+           and is now shown only when its number differs. Its call to action
+           lives here instead. */}
        {uncounted > 0 && (
         <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
          {(nothingCounted ? t('hoy.kpi_nothing_counted') : t('hoy.kpi_partially_counted'))
            .replace('{count}', String(uncounted))
-           .replace('{total}', String(kpis!.total_skus))}
+           .replace('{total}', String(kpis!.total_skus))}{' '}
+         <Link href="/inventario" style={{ fontWeight: 600, color: 'var(--accent)' }}>
+          {t('hoy.needs_stock_cta')}
+         </Link>
         </div>
        )}
 
@@ -2118,7 +2141,8 @@ export default function HoyPage() {
           is nothing else to show: "no suggestions" and "no suggestions BECAUSE
           nobody recorded the stock" look identical on screen, and only one of
           them is the user's to fix. */}
-      {optimization && (optimization.needs_stock?.length ?? 0) > 0 && (
+      {optimization && (optimization.needs_stock?.length ?? 0) > 0
+        && optimization.needs_stock!.length !== uncounted && (
        <section style={{
         marginTop: 32, padding: '12px 14px', borderRadius: 10,
         border: '1px solid var(--border)', borderLeft: '4px solid #f59e0b',
@@ -2316,13 +2340,13 @@ export default function HoyPage() {
         </section>
        )}
 
-       {briefing.recommendations.length > 0 && (
+       {recommendationsNotOnCards(briefing).length > 0 && (
         <section style={{ marginBottom: 28 }}>
          <h2 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: '0 0 14px' }}>
           {t('hoy.section_system_recommendations')}
          </h2>
          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {briefing.recommendations.slice(0, 8).map((rec, idx) => (
+          {recommendationsNotOnCards(briefing).slice(0, 8).map((rec, idx) => (
            <div
             key={idx}
             style={{
@@ -2401,8 +2425,9 @@ export default function HoyPage() {
         flexWrap: 'wrap', gap: 12,
        }}>
         <div style={{ fontSize: 12, color: C.dim }}>
+         {/* The session name is in the header ("Actualización en uso"); it is
+             not repeated here. */}
          {loadedAt && <>{t('hoy.footer_last_update')}: {timeSince(loadedAt, t)}</>}
-         {briefing.session_name && <> &nbsp;|&nbsp; {t('hoy.footer_session')}: {briefing.session_name}</>}
         </div>
         <button
          onClick={() => load(sessionId)}
@@ -2417,18 +2442,8 @@ export default function HoyPage() {
         </button>
        </div>
 
-       {/* Inventory link */}
-       <div style={{ marginTop: 8 }}>
-        <Link
-         href="/inventario"
-         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          fontSize: 13, color: C.indigo, textDecoration: 'none',
-         }}
-        >
-         {t('hoy.link_view_all_inventory')} <ArrowRight size={13} />
-        </Link>
-       </div>
+       {/* No "Ver todos en Inventario" link here: Inventario is in the sidebar
+           beside it, and the uncounted-products caption above links there too. */}
       </>
      )}
     </>
@@ -2488,7 +2503,10 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
     <p style={{ fontSize: 12.5, color: C.dim, margin: 0 }}>{t('hoy.optimizer_loading')}</p>
    )}
 
-   {optimization && (optimization.needs_stock?.length ?? 0) > 0 && (
+   {/* Same rule as the desktop: the KPI caption already names this count and
+       carries the link, so the card only appears when its number differs. */}
+   {optimization && (optimization.needs_stock?.length ?? 0) > 0
+     && optimization.needs_stock!.length !== (briefing.kpis?.sin_datos ?? 0) && (
     <section style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, borderLeft: '4px solid #f59e0b', background: C.surface }}>
      <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: C.text }}>
       {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
@@ -2597,11 +2615,11 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
     </section>
    )}
 
-   {briefing.recommendations.length > 0 && (
+   {recommendationsNotOnCards(briefing).length > 0 && (
     <section>
      <h2 style={{ ...sectionTitle, marginBottom: 10 }}>{t('hoy.section_system_recommendations')}</h2>
      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {briefing.recommendations.slice(0, 8).map((rec, idx) => (
+      {recommendationsNotOnCards(briefing).slice(0, 8).map((rec, idx) => (
        <div key={idx} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
          <div style={{ flexShrink: 0, marginTop: 2 }}><RecIcon rec_type={rec.rec_type} /></div>

@@ -1351,9 +1351,8 @@ function QuickStartPageContent() {
  {/* ── Step 1 ──────────────────────────────────────────────────────── */}
  {step === 1 && (
  <div>
- <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
- {t('qs.upload_title')}
- </h2>
+ {/* No "Sube tus ventas" heading here: the page title above says it and
+ the step bar's first label says it again. */}
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
  {t('qs.upload_desc')}
  {' '}<strong style={{ color: 'var(--text)' }}>{t('qs.upload_desc_bold')}</strong>

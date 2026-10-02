@@ -336,7 +336,8 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
 
       <div data-tour="config.appearance" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-        {/* Language */}
+        {/* Language. No "Español" caption under the label: the pressed button
+            beside it already says which one is on (same for the theme). */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '14px 0', borderBottom: '1px solid var(--border)',
@@ -351,7 +352,6 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('language')}</div>
-              <div style={{ fontSize: 11, color: 'var(--dim)' }}>{lang === 'es' ? t('spanish') : t('english')}</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -392,7 +392,6 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('theme')}</div>
-              <div style={{ fontSize: 11, color: 'var(--dim)' }}>{theme === 'dark' ? t('dark') : t('light')}</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>

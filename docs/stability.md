@@ -4582,6 +4582,42 @@ is capped at 0.95 (at 1.0+ an urgent row could carry a zero quantity).
 
 ---
 
+## 22. Redundant elements removed (2026-10-02)
+
+**Owner's request:** "elimina elementos redundantes". Rule applied: remove the
+second copy, never the capability; where two places showed the same thing, the
+one the user acts on stayed. Walked at 1440 and 390 in a browser.
+
+**Removed — app:** `/compras` "Recomendaciones del sistema" entries for SKUs
+that already have their action card (STOCKOUT_RISK / REORDER_SOON — other
+kinds still show); the "Faltan N por contar" card when its count equals the
+KPI caption's (the caption now carries its link); the SKU code chip when the
+name is the code; the session name in the footer (header has it); "Ver todos en
+Inventario" (sidebar / tab bar); the phone card's "Cobertura actual" suffix
+(the reason line opens with it). `/archivos`: the empty panel's second "Nueva
+fuente de datos" button (the list's button, renamed from "Nuevo elemento",
+stays). `/ventas`: step 1's "Sube tus ventas" heading under the page title.
+`/impacto`: "Volver a Inventario" and the adoption footnote the adoption card
+already states. `/mi-cuenta`: the WhatsApp/email buttons beside "Necesito más
+espacio" (its dialog shows both); the "Español"/"Claro" captions beside the
+pressed toggle. `/proveedores`: the header "Agregar proveedor" while the empty
+state shows "Agregar primer proveedor".
+
+**Removed — landing:** "Cada mañana" (the morning walk-through moved into its
+slot), "Qué incluye" (roles + 8 cards), "Para tu equipo técnico", two problem
+cards the vs-Excel table answers row for row, the trust card "Nada bloqueado"
+(pricing's first promise), the features lead's "nothing unlocks" sentence, the
+footer's `#incluye`. Three lines moved into the features grid so nothing was
+lost: 50 rules per scenario, scheduled recalculation, the daily risk summary.
+
+**Seen and left, owner's call:** the home page's screen-guide dialog next to
+the `/como-funciona` link (same chapters twice, but the dialog was the owner's
+2026-10-01 design); the morning section's last two steps restate the engine
+flow's last two; the language switch in both the sidebar and `/mi-cuenta`; the
+top bar and the page header both naming the page (app-wide pattern).
+
+---
+
 ## What was deleted on 2026-08-11, and why
 
 Seven documents of plans, proposals and audits already executed or superseded.

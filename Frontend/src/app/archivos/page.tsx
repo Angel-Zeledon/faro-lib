@@ -2145,7 +2145,10 @@ function NewSourcePanel({ onCreated, onCancel }:
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────
-function EmptyRight({ onCreate }: { onCreate: () => void }) {
+// No button here: "Nueva fuente de datos" already sits at the top of the list
+// on the left, and two buttons for one action on one screen made the user
+// wonder whether they did different things. The hint points at that one.
+function EmptyRight() {
  const { t } = useLanguage()
  return (
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -2162,12 +2165,6 @@ function EmptyRight({ onCreate }: { onCreate: () => void }) {
  <p style={{ color: C.muted, fontSize: 13.5, margin: '0 0 28px', maxWidth: 340, lineHeight: 1.6 }}>
  {t('data.no_source_selected_hint')}
  </p>
- <button className="btn" onClick={onCreate}
- style={{ padding: '11px 22px', borderRadius: 10, background: C.greenDim,
- border: `1px solid ${alpha(C.green, 45)}`, color: C.green, fontWeight: 700, cursor: 'pointer',
- display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}>
- <Plus size={16} /> {t('data.new_data_source')}
- </button>
  </div>
  )
 }
@@ -2362,7 +2359,7 @@ export default function DataPage() {
  fontSize: 12, fontWeight: 600,
  }}
  >
- <Plus size={13} /> {t('data.btn_new_item')}
+ <Plus size={13} /> {t('data.new_data_source')}
  </button>
  </div>
 
@@ -2466,7 +2463,7 @@ export default function DataPage() {
  onDatasetCreated={ds => setSources(prev => [ds, ...prev])}
  />
  ) : (
- <EmptyRight onCreate={() => { setCreating('new'); setSelected(null) }} />
+ <EmptyRight />
  )}
  </div>
  </div>

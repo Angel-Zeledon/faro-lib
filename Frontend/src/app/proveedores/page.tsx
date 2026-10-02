@@ -651,7 +651,9 @@ function SuppliersPageInner() {
           }}>
             <BarChart3 size={13} aria-hidden="true" /> {t('suppliers.scorecard_link')}
           </Link>
-          {!isFormOpen && !narrow && (
+          {/* Hidden while the list is empty: the empty state below carries the
+              same "add" button, and the phone already works this way. */}
+          {!isFormOpen && !narrow && !(suppliers.length === 0 && !loading && !loadError) && (
             <button
               data-tour="sup.add"
               onClick={() => { setEditing(null); setShowForm(true) }}
@@ -694,6 +696,9 @@ function SuppliersPageInner() {
         <ErrorState error={loadError} onRetry={load} />
       ) : suppliers.length === 0 && !isFormOpen ? (
         /* ── Empty state: names the payoff, then opens the form ──── */
+        /* The wrapper carries the tour's "add" anchor while the header button
+           is hidden, so that step still lands on the button that opens the form. */
+        <div data-tour="sup.add">
         <EmptyState
           icon={<Truck size={22} />}
           title={t('suppliers.empty_title')}
@@ -709,6 +714,7 @@ function SuppliersPageInner() {
             onClick: () => { setEditing(null); setShowForm(true) },
           }]}
         />
+        </div>
       ) : suppliers.length > 0 && narrow ? (
         /* ── Phone: one card per supplier, details in a sheet ─────── */
         <MobileList ariaLabel={t('suppliers.page_title')}>
