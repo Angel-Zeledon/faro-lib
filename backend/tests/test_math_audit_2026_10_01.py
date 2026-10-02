@@ -406,8 +406,12 @@ class TestBreakdownAddsUp:
         session_store.set_forecasts(tid, sid, {"MA-BRK": {"lightgbm": {"forecast": [
             {"date": f"2026-01-{i + 1:02d}", "value": 10.0, "lower": 10.0, "upper": 10.0}
             for i in range(14)]}}})
-        monkeypatch.setattr(inv_svc, "get_incoming_qty",
-                            lambda tid: {("MA-BRK", "principal"): 60.0})
+        # get_incoming_detail is the single definition the status view loads
+        # (get_incoming_qty is its per-key sum).
+        monkeypatch.setattr(inv_svc, "get_incoming_detail",
+                            lambda tid: [{"sku": "MA-BRK", "warehouse": "principal",
+                                          "qty": 60.0, "kind": "po",
+                                          "reference": "OC-000001", "source_id": "x"}])
         item = next(i for i in inv_svc.get_inventory_status(tid, sid) if i["sku"] == "MA-BRK")
         calc = item["calc_explanation"]
         assert calc["incoming"] == pytest.approx(60.0)

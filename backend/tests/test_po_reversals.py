@@ -8,7 +8,8 @@ file. Nothing here re-enables them.
 Pins: what each inverse restores, what it refuses to do when stock already
 moved on, that reversing twice does not double-reverse, the permission pair
 on both new endpoints, and that the reversal leaves a trail in
-`activity_logs` and clears what `get_incoming_qty` / `get_payables` read live.
+`activity_logs` and clears what `get_payables` reads live (an un-sent order
+still counts as on its way: every open PO does, sent or not).
 """
 
 import uuid
@@ -235,7 +236,7 @@ class TestUnsend:
         assert resp.status_code == 403
         assert _po_row(po_id)["sent_at"] is not None
 
-    def test_analyst_can_unsend_and_it_clears_incoming_and_payables(
+    def test_analyst_can_unsend_and_it_clears_payables_but_not_incoming(
         self, client, auth_headers, test_tenant,
     ):
         from backend.inventory.cash_service import get_payables
@@ -246,7 +247,7 @@ class TestUnsend:
         po_id = self._sent_po(client, auth_headers, tid, sku=sku)
 
         # Before: this PO's units count as incoming and its invoice is on the
-        # payables calendar — both read `sent_at` live, no separate flag.
+        # payables calendar (which reads `sent_at` live, no separate flag).
         assert any(k[0] == sku for k in get_incoming_qty(tid))
         payables_before = get_payables(tid)
         assert any(p["po_log_id"] == po_id
@@ -259,9 +260,12 @@ class TestUnsend:
         row = _po_row(po_id)
         assert row["sent_at"] is None
 
-        # After: neither screen still treats it as sent, with no extra write —
-        # both simply stopped matching `sent_at IS NOT NULL`.
-        assert not any(k[0] == sku for k in get_incoming_qty(tid))
+        # After: the payables calendar stopped matching `sent_at IS NOT NULL`.
+        # The units are still on their way — an open order counts whether or
+        # not it was sent through StockAI (2026-10-01: a downloaded PO the
+        # buyer mailed themselves never stamps sent_at, and leaving it out
+        # re-ordered the same units). Un-sending must not re-open that hole.
+        assert get_incoming_qty(tid).get((sku, "principal")) == 10.0
         payables = get_payables(tid)
         assert not any(p["po_log_id"] == po_id
                        for p in payables["due_items"] + payables["unknown_terms"])

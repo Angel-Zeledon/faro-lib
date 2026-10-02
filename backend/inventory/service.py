@@ -383,66 +383,126 @@ def delete_stock(tenant_id: str, sku: str) -> None:
     )
 
 
-def get_incoming_qty(tenant_id: str) -> dict[tuple[str, str], float]:
-    """Units already on their way, per (sku, warehouse). Two sources:
+def get_incoming_detail(tenant_id: str) -> list[dict]:
+    """THE definition of "stock already on its way" — one row per open source.
 
-      · purchase orders the buyer has SENT and not fully received, and
-      · transfers in transit from another of the tenant's own warehouses.
+    Every consumer (the semáforo's recommended quantity, /compras, /inventario,
+    the optimizer's opening position, the daily alerts and the exports) reads
+    this through `get_incoming_qty`, so there is exactly one rule:
 
-    `sent_at IS NOT NULL` is the load-bearing half of the PO condition. A PO the
-    buyer generated and never sent means nothing is coming, and counting it
-    would silence a real stockout alarm — the one direction this must never err
-    in. A generated-but-unsent order is a draft, not stock.
+      · Purchase orders: every line the buyer ordered ('approved'/'modified')
+        on a PO that can still take goods in (`RECEIVABLE_STATES`: pending,
+        partial, not_received), counting only what has NOT arrived yet
+        (final_qty − received_qty, never below 0 per line).
+      · Transfers in transit from another of the tenant's own warehouses,
+        credited to the DESTINATION only (the origin already lost the units at
+        send time inside `transfer_service.create_transfer`'s transaction).
 
-    Transfers are credited to the DESTINATION only. The origin already lost the
-    units at send time (`transfer_service.create_transfer` decrements it inside
-    the same transaction), so crediting the origin too would invent stock.
+    Whether the PO was ever *sent through StockAI* (`sent_at`) is deliberately
+    NOT part of the rule. It used to be: only POs stamped by the in-app send
+    counted. But the everyday path is "Descargar orden de compra" — a CSV the
+    buyer mails or WhatsApps from their own phone — which never stamps
+    `sent_at`. Mobile QA, 2026-10-01: 426 units of SKU-001 on OC-000001/2,
+    downloaded and pending, and the panel still said "Pedir pronto, 63
+    unidades". The buyer orders the same units twice, which is real money.
+    /pedidos, the reception nudge and the overdue list (`get_overdue_receptions`)
+    already treated a generated PO as a commitment — this was the one reader
+    that disagreed with them.
 
-    Only lines the buyer stands behind count: 'approved'/'modified' on the PO
-    side, and on the transfer side whatever was actually dispatched minus what
-    has already been received.
+    `not_received` stays included: it means "nothing had arrived when I
+    looked", not "this will never arrive".
+
+    Known gap (docs/stability.md): there is no "cancelled" state for a PO, so an
+    order the buyer abandons keeps counting until it is received. A cancel
+    action is a new capability and was left to the owner.
+
+    Rows: {sku, warehouse, qty, kind: 'po'|'transfer', reference, source_id}.
+    `reference` is the human order number (OC-000123) for a PO and the origin
+    warehouse for a transfer.
     """
+    from backend.inventory.reception_service import RECEIVABLE_STATES
+    from backend.inventory.roi_service import format_po_number
     from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
 
-    incoming: dict[tuple[str, str], float] = {}
+    out: list[dict] = []
 
     for r in query(
-        """SELECT poi.sku, poi.warehouse,
-                  SUM(poi.final_qty - COALESCE(poi.received_qty, 0)) AS qty
+        """SELECT poi.sku, poi.warehouse, pol.id AS po_log_id, pol.po_number,
+                  SUM(GREATEST(poi.final_qty - COALESCE(poi.received_qty, 0), 0)) AS qty
              FROM inventory_po_items poi
              JOIN inventory_po_log pol ON pol.id = poi.po_log_id
             WHERE poi.tenant_id = %s
-              AND pol.sent_at IS NOT NULL
-              -- `not_received` is included on purpose: it means "nothing had
-              -- arrived when I looked", not "this will never arrive". Excluding
-              -- it made the units vanish from incoming stock the moment the
-              -- buyer recorded a no-show, so the semaforo ordered them again.
-              AND pol.reception_status IN ('pending', 'partial', 'not_received')
+              AND pol.tenant_id = %s
+              AND pol.reception_status IN %s
               AND poi.status IN ('approved', 'modified')
-            GROUP BY poi.sku, poi.warehouse""",
-        (tenant_id,),
+            GROUP BY poi.sku, poi.warehouse, pol.id, pol.po_number
+            ORDER BY pol.po_number NULLS LAST, pol.id""",
+        (tenant_id, tenant_id, tuple(RECEIVABLE_STATES)),
     ):
         qty = float(r["qty"] or 0)
         if qty > 0:
-            key = (r["sku"], r["warehouse"] or DEFAULT_WAREHOUSE)
-            incoming[key] = incoming.get(key, 0.0) + qty
+            out.append({
+                "sku": r["sku"],
+                "warehouse": r["warehouse"] or DEFAULT_WAREHOUSE,
+                "qty": qty,
+                "kind": "po",
+                "reference": format_po_number(r["po_number"], str(r["po_log_id"])),
+                "source_id": str(r["po_log_id"]),
+            })
 
     for r in query(
-        """SELECT tri.sku, trl.to_warehouse AS warehouse,
-                  SUM(tri.qty_sent - COALESCE(tri.qty_received, 0)) AS qty
+        """SELECT tri.sku, trl.to_warehouse AS warehouse, trl.id AS transfer_id,
+                  trl.from_warehouse,
+                  SUM(GREATEST(tri.qty_sent - COALESCE(tri.qty_received, 0), 0)) AS qty
              FROM inventory_transfer_items tri
              JOIN inventory_transfer_log trl ON trl.id = tri.transfer_id
             WHERE tri.tenant_id = %s
               AND trl.status IN ('in_transit', 'partial')
-            GROUP BY tri.sku, trl.to_warehouse""",
+            GROUP BY tri.sku, trl.to_warehouse, trl.id, trl.from_warehouse
+            ORDER BY trl.id""",
         (tenant_id,),
     ):
         qty = float(r["qty"] or 0)
         if qty > 0:
-            key = (r["sku"], r["warehouse"] or DEFAULT_WAREHOUSE)
-            incoming[key] = incoming.get(key, 0.0) + qty
+            out.append({
+                "sku": r["sku"],
+                "warehouse": r["warehouse"] or DEFAULT_WAREHOUSE,
+                "qty": qty,
+                "kind": "transfer",
+                "reference": r["from_warehouse"],
+                "source_id": str(r["transfer_id"]),
+            })
 
+    return out
+
+
+def sum_incoming(detail: list[dict]) -> dict[tuple[str, str], float]:
+    """Collapse `get_incoming_detail` rows to {(sku, warehouse): qty}."""
+    incoming: dict[tuple[str, str], float] = {}
+    for d in detail:
+        key = (d["sku"], d["warehouse"])
+        incoming[key] = incoming.get(key, 0.0) + float(d["qty"])
     return incoming
+
+
+def incoming_sources_by_key(
+    detail: list[dict],
+) -> dict[tuple[str, str], list[dict]]:
+    """{(sku, warehouse): [{kind, reference, qty}, ...]} — what the screen
+    prints next to the quantity ("426 en camino: OC-000001, OC-000002")."""
+    out: dict[tuple[str, str], list[dict]] = {}
+    for d in detail:
+        out.setdefault((d["sku"], d["warehouse"]), []).append({
+            "kind": d["kind"], "reference": d["reference"],
+            "qty": round(float(d["qty"]), 2),
+        })
+    return out
+
+
+def get_incoming_qty(tenant_id: str) -> dict[tuple[str, str], float]:
+    """Units already on their way, per (sku, warehouse). The rule lives in
+    `get_incoming_detail`; this is its per-key total."""
+    return sum_incoming(get_incoming_detail(tenant_id))
 
 
 # Dataset columns we recognize as inventory data when present in an uploaded file.
@@ -1868,10 +1928,16 @@ def _compute_inventory_status(
         stock_rows, _wh.get_default_warehouse_name(tenant_id),
     )
 
-    # What is already on its way: sent purchase orders and transfers in transit.
-    # One query pair for the whole tenant, never inside the SKU loop.
+    # What is already on its way: open purchase orders and transfers in
+    # transit (see get_incoming_detail for the one rule). One query pair for
+    # the whole tenant, never inside the SKU loop. The per-order breakdown is
+    # only known when we load it here; a caller that preloaded the totals (the
+    # alert loop) prints no references and loses nothing it would show.
+    incoming_sources: dict = {}
     if incoming_qty is None:
-        incoming_qty = get_incoming_qty(tenant_id)
+        _incoming_detail = get_incoming_detail(tenant_id)
+        incoming_qty = sum_incoming(_incoming_detail)
+        incoming_sources = incoming_sources_by_key(_incoming_detail)
 
     # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
     # tenant-wide table (no session_id column) that accumulates rows from every
@@ -2262,10 +2328,13 @@ def _compute_inventory_status(
             "coverage_days":     round(coverage_days, 1) if coverage_days is not None and coverage_days < 9990 else None,
             "signal":             signal,
             "recommended_qty": recommended,
-            # Already on its way: sent POs + transfers in transit. Exposed so the
-            # UI can say "N units arriving" instead of leaving the buyer to
-            # wonder why the quantity dropped.
+            # Already on its way: open POs + transfers in transit. Exposed so
+            # the UI can say "N units arriving (OC-000123)" instead of leaving
+            # the buyer to wonder why the quantity dropped.
             "incoming_qty": round(float(sku_incoming), 2),
+            "incoming_sources": [
+                src for (i_sku, _wh), srcs in incoming_sources.items()
+                if i_sku == sku for src in srcs],
             "inventory_value":   inventory_value,
             "n_models":           len(model_forecasts),
             "xyz":               _classify_xyz(cv_by_sku.get(sku)),
@@ -2412,8 +2481,11 @@ def get_inventory_status_by_warehouse(
     except Exception as e:
         log.debug("best_model lookup failed for session=%s: %s", session_id, e)
 
+    incoming_sources: dict = {}
     if incoming_qty is None:
-        incoming_qty = get_incoming_qty(tenant_id)
+        _incoming_detail = get_incoming_detail(tenant_id)
+        incoming_qty = sum_incoming(_incoming_detail)
+        incoming_sources = incoming_sources_by_key(_incoming_detail)
 
     warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
                   or [wh_svc.DEFAULT_WAREHOUSE])
@@ -2638,10 +2710,11 @@ def get_inventory_status_by_warehouse(
                 # just on the aggregate row. Empty when none apply.
                 "events_applied": events_applied,
                 "recommended_qty": recommended,
-                # Already on its way: sent POs + transfers in transit. Exposed so the
-                # UI can say "N units arriving" instead of leaving the buyer to
-                # wonder why the quantity dropped.
+                # Already on its way: open POs + transfers in transit. Exposed so
+                # the UI can say "N units arriving (OC-000123)" instead of
+                # leaving the buyer to wonder why the quantity dropped.
                 "incoming_qty": round(float(wh_incoming), 2),
+                "incoming_sources": incoming_sources.get((sku, wh), []),
                 "recommended_action": None,
                 "transfer_suggestion": None,
                 # Why a possible transfer LOST against buying (structured

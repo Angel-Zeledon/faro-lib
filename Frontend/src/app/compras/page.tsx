@@ -1,7 +1,8 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { renderExplanation } from '@/lib/explanationCopy'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
@@ -51,7 +52,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 // narrow-screen card list below makes exactly the same promises as this table.
 import {
   C, AllClear, AssumptionsBanner, SourceBadge, provenanceText, summarizeAssumptions,
-  tOr, type ActionItem, type ActionStatus,
+  tOr, type ActionItem, type ActionStatus, IncomingNote, OrderedNote,
 } from './shared'
 import HoyMobile from './HoyMobile'
 import { fmtNum } from '@/lib/numberLocale'
@@ -276,6 +277,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
  const accent    = isUrgent ? 'var(--signal-order-now-fg)' : 'var(--signal-order-soon-fg)'
  const isApproved = item.status === 'approved' || item.status === 'modified'
  const isRejected = item.status === 'rejected'
+ const isOrdered  = item.status === 'ordered'
 
  const estimatedValue = item.qty * (item.unit_cost ?? 0)
  const canOrder = item.qty > 0
@@ -319,12 +321,13 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
       )}
      </div>
      <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3 }}>{item.reason}</div>
+     <IncomingNote item={item} />
      {/* Supplier is a decision, not a label: the buyer can send this line to
          whoever they want before the order is generated. Which is exactly why
          it is a picker only for a role that can generate one — re-pointing a
          line also flips it to `modified` and fills the cart. A viewer gets the
          same read-only label a tenant with no suppliers loaded already sees. */}
-     {suppliers.length > 0 && canDecide ? (
+     {suppliers.length > 0 && canDecide && !isOrdered ? (
       <label data-tour={tourAnchors?.supplier} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('hoy.cart_supplier_label')}</span>
        <select
@@ -494,8 +497,12 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
     </div>
    )}
 
+   {/* Once the line is on a PO it is done for this screen: no quantity to
+       edit and no button that could put it on a second order. */}
+   {isOrdered && <OrderedNote item={item} />}
+
    {/* Quantity + Value + Actions */}
-   {!isRejected && (
+   {!isRejected && !isOrdered && (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
      <div data-tour={tourAnchors?.qty} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.label_order_qty')}</span>
@@ -566,7 +573,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
         </>
        ) : (
         <span style={{ fontSize: 12, color: 'var(--dim)', fontStyle: 'italic' }}>
-         {t('hoy.enough_stock')}
+         {(item.incoming_qty ?? 0) > 0 ? t('hoy.covered_by_incoming') : t('hoy.enough_stock')}
         </span>
        )}
       </div>
@@ -697,6 +704,8 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    explanation_code:   risk.explanation_code ?? null,
    explanation_params: risk.explanation_params ?? null,
    unit_margin:  risk.unit_margin ?? null,
+   incoming_qty:     risk.incoming_qty ?? 0,
+   incoming_sources: risk.incoming_sources ?? [],
    reason,
    status:      'pending',
   })
@@ -737,6 +746,8 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    explanation_code:   w.explanation_code ?? null,
    explanation_params: w.explanation_params ?? null,
    unit_margin:  w.unit_margin ?? null,
+   incoming_qty:     w.incoming_qty ?? 0,
+   incoming_sources: w.incoming_sources ?? [],
    reason:      `${d != null ? d + ' ' + coverageUnitLabel(cu, d, t) + ' ' + t('hoy.reason_coverage_suffix') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
   })
@@ -865,6 +876,7 @@ export default function HoyPage() {
  // shape as /inventario, /escenarios and /historial.
  const canEdit = user?.role === 'admin' || user?.role === 'analyst'
  const { addToast } = useToast()
+ const router = useRouter()
 
  // How old the two inputs behind the semáforo are. When either has gone blind
  // the page stops presenting the traffic light as trustworthy (see
@@ -1027,7 +1039,7 @@ export default function HoyPage() {
  // ── Cart helpers ─────────────────────────────────────────────────────────
  function approveItem(sku: string) {
   setCart(prev => prev.map(i =>
-   i.sku === sku
+   i.sku === sku && i.status !== 'ordered'
     ? { ...i, status: (i.status === 'approved' ? 'pending' : 'approved') as ActionStatus }
     : i,
   ))
@@ -1042,22 +1054,22 @@ export default function HoyPage() {
  // is undoing their own tap, not telling us the recommendation was bad, and
  // rejections are logged as adoption feedback.
  function unapproveItem(sku: string) {
-  setCart(prev => prev.map(i => i.sku === sku ? { ...i, status: 'pending' as ActionStatus } : i))
+  setCart(prev => prev.map(i => i.sku === sku && i.status !== 'ordered' ? { ...i, status: 'pending' as ActionStatus } : i))
  }
 
  function rejectItem(sku: string) {
-  setCart(prev => prev.map(i => i.sku === sku ? { ...i, status: 'rejected' as ActionStatus } : i))
+  setCart(prev => prev.map(i => i.sku === sku && i.status !== 'ordered' ? { ...i, status: 'rejected' as ActionStatus } : i))
  }
 
  function changeQty(sku: string, qty: number) {
-  setCart(prev => prev.map(i => i.sku === sku ? { ...i, qty, status: 'modified' as ActionStatus } : i))
+  setCart(prev => prev.map(i => i.sku === sku && i.status !== 'ordered' ? { ...i, qty, status: 'modified' as ActionStatus } : i))
  }
 
  // Re-pointing a line at a different supplier is a buyer decision, so the line
  // counts as modified for adoption tracking just like a quantity change.
  function changeSupplier(sku: string, supplierId: string) {
   const picked = suppliers.find(s => s.id === supplierId) || null
-  setCart(prev => prev.map(i => i.sku === sku
+  setCart(prev => prev.map(i => i.sku === sku && i.status !== 'ordered'
    ? {
      ...i,
      supplier_id: picked?.id ?? null,
@@ -1174,7 +1186,37 @@ export default function HoyPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [cashBudget, approvedKey])
 
+ // One cart submission = one purchase order. `submittingRef` is the
+ // synchronous guard (state updates land a render later, so a fast double
+ // tap would read a stale `submitting`); `submitting` drives the button.
+ // The idempotency key is the server-side half: it survives a FAILED attempt
+ // as long as the cart is unchanged, so a retry after a dropped connection
+ // — where the first request may have been written — returns that order
+ // instead of creating a second one (OC-000003/OC-000004, mobile QA).
+ const submittingRef = useRef(false)
+ const [submitting, setSubmitting] = useState(false)
+ const pendingSubmission = useRef<{ key: string; signature: string } | null>(null)
+
+ function newIdempotencyKey(): string {
+  try {
+   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  } catch { /* fall through */ }
+  return `po-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+ }
+
  async function downloadOC() {
+  if (submittingRef.current || approved.length === 0) return
+  submittingRef.current = true
+  setSubmitting(true)
+  try {
+   await submitOrder()
+  } finally {
+   submittingRef.current = false
+   setSubmitting(false)
+  }
+ }
+
+ async function submitOrder() {
   // Written through lib/csvWriter: quotes escaped, formula prefixes
   // neutralised and a UTF-8 BOM — the same three things the backend writer of
   // this exact filename already did. An unpriced line exports an EMPTY value
@@ -1195,8 +1237,11 @@ export default function HoyPage() {
   // Log the buyer's actual decisions (approved / modified / rejected) so we can
   // track adoption — "you followed N of M recommendations". Untouched 'pending'
   // items are excluded: the buyer never acted on them.
+  // 'ordered' lines are already on a PO, and a decision that already went
+  // out on one (a rejection logged with the previous order) must not be
+  // counted twice in adoption.
   const decisions = cart
-   .filter(i => i.status !== 'pending')
+   .filter(i => i.status !== 'pending' && i.status !== 'ordered' && !i.decision_logged)
    .filter(i => i.status === 'rejected' || i.qty > 0)
    .map(i => ({
     sku:                  i.sku,
@@ -1212,15 +1257,50 @@ export default function HoyPage() {
 
   // Feature: generate→send in one flow. Capture the logged PO so we can offer
   // "send to suppliers now" right here, instead of sending the buyer to /orders.
+  const destination = multi ? destWarehouse || undefined : undefined
+  const signature = JSON.stringify([sessionId, destination, decisions])
+  if (!pendingSubmission.current || pendingSubmission.current.signature !== signature) {
+   pendingSubmission.current = { key: newIdempotencyKey(), signature }
+  }
+  const orderedSkus = new Set(approved.map(i => i.sku))
+  const loggedSkus  = new Set(decisions.map(d => d.sku))
+
   try {
    const entry = await logPOGeneration(
-    sessionId, decisions, multi ? destWarehouse || undefined : undefined,
-    { silent: true },
+    sessionId, decisions, destination,
+    { silent: true, headers: { 'Idempotency-Key': pendingSubmission.current.key } },
    )
+   pendingSubmission.current = null
+   const ref = entry.po_number ? `OC-${String(entry.po_number).padStart(6, '0')}` : entry.id
+   // The lines just ordered leave the cart for good: the bar disappears with
+   // them, and each card says which order it is on instead of offering the
+   // same "add to order" again.
+   setCart(prev => prev.map(i => {
+    if (orderedSkus.has(i.sku)) {
+     return { ...i, status: 'ordered' as ActionStatus, ordered_ref: ref, decision_logged: true }
+    }
+    if (loggedSkus.has(i.sku)) return { ...i, decision_logged: true }
+    return i
+   }))
    setGeneratedPO(entry)
    setGeneratedLines(approved)
    setSendState('idle')
    setSendResult(null)
+   addToast(
+    t('hoy.toast_po_saved_title', { ref }),
+    entry.replayed
+     ? t('hoy.toast_po_replayed_body')
+     : orderedSkus.size === 1 ? t('hoy.toast_po_saved_body_one') : t('hoy.toast_po_saved_body', { count: orderedSkus.size }),
+    'success',
+    { duration: 8000, action: { label: t('hoy.toast_view_orders'), kind: 'link', onClick: () => router.push('/pedidos') } },
+   )
+   // Refresh the optimizer plan: its opening position now includes this order.
+   optimizeInventory(sessionId).then(setOptimization).catch(() => {})
+   // And the "N orders on the way" nudge, which now has one more.
+   getPOHistory(20)
+    .then(list => setPendingPOs(list.filter(p =>
+     ['pending', 'partial'].includes(p.reception_status ?? 'pending'))))
+    .catch(() => {})
   } catch (e) {
    // This call is not just the inline send panel — it is what makes the order
    // EXIST: /pedidos lists it, reception is tracked against it, and supplier
@@ -1235,6 +1315,10 @@ export default function HoyPage() {
    // another session.
    if (e instanceof ApiError && e.kind === 'permission') {
     addToast(t('states.err_permission_title'), t('states.err_permission_body'), 'error')
+   } else if (e instanceof ApiError && e.code === 'po_idempotency_key_reused') {
+    // The key belongs to a different cart: a fresh one next time.
+    pendingSubmission.current = null
+    addToast(t('inventory.toast_po_not_logged_title'), errorDetail(e), 'error')
    } else {
     addToast(t('inventory.toast_po_not_logged_title'),
         t('inventory.toast_po_not_logged_body'), 'error')
@@ -1266,7 +1350,22 @@ export default function HoyPage() {
 
  // Converts a single optimizer-suggested order line straight into a logged PO,
  // without going through the manual approve/reject work-queue cart.
+ // Same double-tap hole as the cart: one in-flight conversion per line, and
+ // a key so a retry of the same line returns the order already written.
+ const convertingRef = useRef<Map<string, string>>(new Map())
  async function convertOrderToPO(order: OptimizationOrder) {
+  if (!sessionId) return
+  const lineKey = `${order.sku}|${order.warehouse}|${order.qty}`
+  if (convertingRef.current.has(lineKey)) return
+  convertingRef.current.set(lineKey, newIdempotencyKey())
+  try {
+   await convertOrderToPOOnce(order, convertingRef.current.get(lineKey)!)
+  } finally {
+   convertingRef.current.delete(lineKey)
+  }
+ }
+
+ async function convertOrderToPOOnce(order: OptimizationOrder, key: string) {
   if (!sessionId) return
   const decision: POLineDecision = {
    sku:                  order.sku,
@@ -1277,7 +1376,8 @@ export default function HoyPage() {
    supplier:            order.supplier,
    warehouse:               order.warehouse,
   }
-  await logPOGeneration(sessionId, [decision], multi ? destWarehouse || undefined : undefined)
+  await logPOGeneration(sessionId, [decision], multi ? destWarehouse || undefined : undefined,
+   { headers: { 'Idempotency-Key': key } })
   addToast(t('hoy.optimizer_po_created'), `${order.sku} — ${order.warehouse}`, 'success')
   setOptimization(prev => prev
    ? { ...prev, orders: prev.orders.filter(o => !(o.sku === order.sku && o.warehouse === order.warehouse)) }
@@ -1353,6 +1453,7 @@ export default function HoyPage() {
       : i,
     ))}
     onGenerate={downloadOC}
+    generating={submitting}
     canDecide={canEdit}
     generatedPO={generatedPO}
     onDismissGenerated={dismissGeneratedPO}
@@ -1804,12 +1905,13 @@ export default function HoyPage() {
             </select>
            </label>
           )}
-          <button data-tour="hoy.download" onClick={downloadOC} style={{
-           all: 'unset', cursor: 'pointer', padding: '10px 20px', borderRadius: 8,
+          <button data-tour="hoy.download" onClick={downloadOC} disabled={submitting}
+           aria-busy={submitting} style={{
+           all: 'unset', cursor: submitting ? 'wait' : 'pointer', padding: '10px 20px', borderRadius: 8,
            background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 700,
-           display: 'flex', alignItems: 'center', gap: 8,
+           display: 'flex', alignItems: 'center', gap: 8, opacity: submitting ? 0.6 : 1,
           }}>
-           {t('hoy.btn_download_po')}
+           {submitting ? t('hoy.btn_download_po_busy') : t('hoy.btn_download_po')}
           </button>
          </div>
         )}

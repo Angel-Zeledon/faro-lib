@@ -89,15 +89,20 @@ class TestASentPurchaseOrderStopsTheRepeatOrder:
             "StockAI asked again for units it had already been told were ordered: "
             f"{after['recommended_qty']}")
 
-    def test_a_purchase_order_that_was_never_sent_does_not_count(self, scenario):
-        """The load-bearing half. A generated-but-unsent PO is a draft: nothing
-        is coming, and counting it would silence a real stockout alarm."""
+    def test_a_downloaded_order_never_sent_through_stockai_counts(self, scenario):
+        """Reversed 2026-10-01. This test used to pin the opposite ("an unsent
+        PO is a draft"), but the everyday path is "Descargar orden de compra":
+        the buyer mails the CSV from their own phone and `sent_at` is never
+        stamped. Mobile QA had 426 units pending on OC-000001/2 and was told to
+        order 63 more. A PO the buyer generated is a commitment — /pedidos and
+        the overdue list already treated it as one."""
         from backend.db.connection import execute, query_one
 
         before = _row(scenario)
+        assert before["recommended_qty"] > 0
         po = query_one(
-            """INSERT INTO inventory_po_log (tenant_id, reception_status, sent_at)
-               VALUES (%s, 'pending', NULL) RETURNING id""",
+            """INSERT INTO inventory_po_log (tenant_id, reception_status, sent_at, po_number)
+               VALUES (%s, 'pending', NULL, 9001) RETURNING id""",
             (scenario["tid"],))
         execute(
             """INSERT INTO inventory_po_items
@@ -106,8 +111,70 @@ class TestASentPurchaseOrderStopsTheRepeatOrder:
             (po["id"], scenario["tid"], scenario["sku"]))
 
         after = _row(scenario)
+        assert after["incoming_qty"] == 500
+        assert after["recommended_qty"] == 0
+        # The quantity explains itself: which order the units are on.
+        assert after["incoming_sources"] == [
+            {"kind": "po", "reference": "OC-009001", "qty": 500.0}]
+
+    def test_an_order_reported_as_not_received_still_counts(self, scenario):
+        """'not_received' means "nothing had arrived when I looked", not "this
+        will never arrive" — dropping it would re-order the same units."""
+        from backend.db.connection import execute, query_one
+
+        po = query_one(
+            """INSERT INTO inventory_po_log (tenant_id, reception_status)
+               VALUES (%s, 'not_received') RETURNING id""",
+            (scenario["tid"],))
+        execute(
+            """INSERT INTO inventory_po_items
+                   (po_log_id, tenant_id, sku, final_qty, received_qty, status, warehouse)
+               VALUES (%s, %s, %s, 80, 0, 'approved', 'principal')""",
+            (po["id"], scenario["tid"], scenario["sku"]))
+
+        assert _row(scenario)["incoming_qty"] == 80
+
+    def test_a_line_the_buyer_rejected_does_not_count(self, scenario):
+        """A rejected line is on the PO for adoption tracking only; nothing was
+        ordered, so nothing is coming."""
+        from backend.db.connection import execute, query_one
+
+        before = _row(scenario)
+        po = query_one(
+            """INSERT INTO inventory_po_log (tenant_id, reception_status)
+               VALUES (%s, 'pending') RETURNING id""",
+            (scenario["tid"],))
+        execute(
+            """INSERT INTO inventory_po_items
+                   (po_log_id, tenant_id, sku, recommended_qty, final_qty, status, warehouse)
+               VALUES (%s, %s, %s, 300, 300, 'rejected', 'principal')""",
+            (po["id"], scenario["tid"], scenario["sku"]))
+
+        after = _row(scenario)
         assert after["incoming_qty"] == 0
         assert after["recommended_qty"] == before["recommended_qty"]
+
+    def test_an_over_received_line_does_not_cancel_another_orders_remainder(self, scenario):
+        """Per-line clamp: 120 received on a 100-unit line is not "-20 coming"
+        that eats the 50 still open on a different order."""
+        from backend.db.connection import execute, query_one
+
+        tid, sku = scenario["tid"], scenario["sku"]
+        a = query_one("INSERT INTO inventory_po_log (tenant_id, reception_status) "
+                      "VALUES (%s, 'partial') RETURNING id", (tid,))
+        execute("""INSERT INTO inventory_po_items
+                       (po_log_id, tenant_id, sku, final_qty, received_qty, status, warehouse)
+                   VALUES (%s, %s, %s, 100, 120, 'approved', 'principal'),
+                          (%s, %s, %s, 10, 0, 'approved', 'principal')""",
+                (a["id"], tid, sku, a["id"], tid, f"{sku}_other"))
+        b = query_one("INSERT INTO inventory_po_log (tenant_id, reception_status) "
+                      "VALUES (%s, 'pending') RETURNING id", (tid,))
+        execute("""INSERT INTO inventory_po_items
+                       (po_log_id, tenant_id, sku, final_qty, status, warehouse)
+                   VALUES (%s, %s, %s, 50, 'approved', 'principal')""",
+                (b["id"], tid, sku))
+
+        assert _row(scenario)["incoming_qty"] == 50
 
     def test_a_received_order_stops_counting(self, scenario):
         """Otherwise the units would be counted twice: once as incoming and
