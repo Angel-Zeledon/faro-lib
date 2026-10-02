@@ -2076,6 +2076,12 @@ def _compute_inventory_status(
             # only strengthens once the reorder point also carries the review
             # period — see `_calc_signal`'s docstring.
             signal = _calc_signal(coverage_days, lt_periods, reorder_point_days)
+            # Math audit 2026-10-01: no stock and no forecast demand is an
+            # empty shelf nobody is selling from, not overstock. The 9999
+            # coverage sentinel means "dead SKU WITH stock"; without stock there
+            # is nothing to order and nothing tied up, so the signal is OK.
+            if avg_daily_eff <= 0 and current_stock <= 0:
+                signal = "OK"
             recommended = _calc_recommended(
                 current_stock, avg_daily_eff, avg_std, lt_periods, moq,
                 sku_service_level, risk=sku_risk, incoming=sku_incoming,
@@ -2596,6 +2602,10 @@ def get_inventory_status_by_warehouse(
                 # `lt_periods` (plain lead time), not the protection interval —
                 # see the identical comment at the aggregated call site.
                 signal = _calc_signal(coverage_days, lt_periods, reorder_point_days)
+                # Empty shelf with no demand: OK, not SOBRESTOCK (see the
+                # aggregated call site).
+                if avg_daily_eff <= 0 and current_stock <= 0:
+                    signal = "OK"
                 recommended = _calc_recommended(
                     current_stock, avg_daily_eff, avg_std, lt_periods, moq,
                     sku_service_level, risk=sku_risk, risk_scale=share,

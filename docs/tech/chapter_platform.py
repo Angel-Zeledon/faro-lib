@@ -36,7 +36,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-tenancy",
-                "where": "backend/auth/guards.py:148 · get_current_user",
+                "where": "backend/auth/guards.py:175 · get_current_user",
                 "what": (
                     "El tenant viaja en el JWT y se hace cumplir consulta por "
                     "consulta. Cada función de servicio recibe `tenant_id` como primer "
@@ -135,11 +135,15 @@ CHAPTER = {
             },
             {
                 "name": "Superficie pública y forma de los errores",
-                "where": "backend/api/public_surface.py:25 · PUBLIC_ENDPOINTS",
+                "where": "backend/api/public_surface.py:43 · EXPOSED_TAGS",
                 "what": (
-                    "El contrato publicado son diez pares (método, ruta): ocho REST más "
-                    "el endpoint MCP. Todo lo demás —261 rutas— es alcanzable con una "
-                    "llave pero nadie prometió mantenerlo."
+                    "Una llave de API alcanza solo las rutas expuestas a propósito: cada "
+                    "tag de router está declarado como expuesto o interno (un tag sin "
+                    "declarar se rechaza y un test falla), las rutas de autenticación, "
+                    "usuarios, llaves y configuración nunca, y una ruta solo de admin "
+                    "tampoco. La llave de lectura actúa como viewer y la de escritura "
+                    "como analista. Al 2026-10-02: 211 operaciones (134 de lectura, 77 "
+                    "de escritura) más el endpoint MCP, documentadas en /desarrolladores."
                 ),
                 "formulas": [
                     ("Envoltura de éxito", '{"success": true, "data": …, "meta": {"timestamp": …}}', "En 33 de 35 módulos."),
@@ -147,7 +151,7 @@ CHAPTER = {
                      "El frontend renderiza `errors.<error_code>` interpolando los params; `detail` es el respaldo."),
                 ],
                 "table": [
-                    ("PUBLIC_API_ONLY", "Monta toda la app y después PODA las rutas a la lista pública más /health. Podar después de montar es deliberado: elegir routers dejaría colarse a un vecino interno. Medido: 15 de 277 rutas."),
+                    ("PUBLIC_API_ONLY", "Monta toda la app y después PODA las rutas a las que una llave puede llamar más /health. Podar después de montar es deliberado: elegir routers dejaría colarse a un vecino interno."),
                     ("POST /api/v1/mcp", "Servidor MCP sin estado (JSON-RPC sobre Streamable HTTP), misma llave sk_live_ y mismo limitador. Cinco herramientas, TODAS de lectura: backend/mcp/catalog.py. El GET contesta 405 a propósito — no hay stream que ofrecer."),
                     ("400 malformed_path", "Un NUL en la ruta se rechaza de entrada; antes llegaba a psycopg2 y salía como 500."),
                     ("503 server_busy", "Pool de conexiones agotado, con Retry-After. Ocupado no es roto."),
@@ -209,7 +213,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-tenancy",
-                "where": "backend/auth/guards.py:148 · get_current_user",
+                "where": "backend/auth/guards.py:175 · get_current_user",
                 "what": (
                     "The tenant travels in the JWT and is enforced query by query. "
                     "Every service function takes `tenant_id` as its first argument "
@@ -308,11 +312,15 @@ CHAPTER = {
             },
             {
                 "name": "Public surface and the shape of errors",
-                "where": "backend/api/public_surface.py:25 · PUBLIC_ENDPOINTS",
+                "where": "backend/api/public_surface.py:43 · EXPOSED_TAGS",
                 "what": (
-                    "The published contract is ten (method, path) pairs: eight REST "
-                    "plus the MCP endpoint. Everything else — 261 routes — is reachable "
-                    "with a key but nobody promised to keep it."
+                    "An API key reaches only the routes deliberately exposed: every "
+                    "router tag is declared exposed or internal (an undeclared tag is "
+                    "refused and a test fails), authentication, user, key and "
+                    "configuration routes never are, and neither is an admin-only "
+                    "route. A read key acts as a viewer, a write key as an analyst. As "
+                    "of 2026-10-02: 211 operations (134 read, 77 write) plus the MCP "
+                    "endpoint, documented at /desarrolladores."
                 ),
                 "formulas": [
                     ("Success envelope", '{"success": true, "data": …, "meta": {"timestamp": …}}', "In 33 of 35 modules."),
@@ -320,7 +328,7 @@ CHAPTER = {
                      "The frontend renders `errors.<error_code>` interpolating the params; `detail` is the fallback."),
                 ],
                 "table": [
-                    ("PUBLIC_API_ONLY", "Mounts the whole app and then PRUNES the routes to the public list plus /health. Pruning after mounting is deliberate: picking routers would let an internal neighbour ride along. Measured: 15 of 277 routes."),
+                    ("PUBLIC_API_ONLY", "Mounts the whole app and then PRUNES the routes to the ones a key may call plus /health. Pruning after mounting is deliberate: picking routers would let an internal neighbour ride along."),
                     ("POST /api/v1/mcp", "Stateless MCP server (JSON-RPC over Streamable HTTP), same sk_live_ key and same limiter. Five tools, ALL reads: backend/mcp/catalog.py. The GET answers 405 on purpose — there is no stream to offer."),
                     ("400 malformed_path", "A NUL in the path is refused up front; it used to reach psycopg2 and surface as a 500."),
                     ("503 server_busy", "Connection pool exhausted, with Retry-After. Busy is not broken."),

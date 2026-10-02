@@ -1,11 +1,9 @@
 """
-Math audit 2026-10-01 — findings INSIDE the semáforo threshold logic.
+Math audit 2026-10-01 — findings inside the semáforo threshold logic.
 
-Another workstream owns `_calc_signal` and the coverage sentinel around it
-(the lead-time alert multipliers / threshold configuration), so these defects
-are written down here as failing tests and in docs/stability.md, and the code
-is deliberately NOT changed by the audit. This file is red until that work
-decides the answer; see "Mathematical audit (2026-10-01)" in stability.md.
+Written as failing tests while another workstream owned `_calc_signal`; fixed
+2026-10-02 at the call sites in backend/inventory/service.py (an empty shelf
+with no demand is OK, not SOBRESTOCK). Kept as the regression guard.
 """
 
 from backend.db import session_store
