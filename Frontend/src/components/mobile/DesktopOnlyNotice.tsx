@@ -27,7 +27,13 @@ import { useLanguage } from '@/contexts/LanguageContext'
  *  `/mensajes` switches between a conversation list and a single thread with
  *  a back button on a narrow screen — see the `narrow` branch in
  *  app/mensajes/page.tsx — rather than laying out a two-pane table. */
-export const MOBILE_READY = ['/compras', '/pedidos', '/mensajes']
+export const MOBILE_READY = [
+  '/compras',
+  '/pedidos',
+  '/mensajes',
+  // Cards per SKU, detail + editor + stock count in sheets (app/inventario/InventoryMobile.tsx).
+  '/inventario',
+]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen
  *  into one that does not use this to say so BEFORE the tap (see

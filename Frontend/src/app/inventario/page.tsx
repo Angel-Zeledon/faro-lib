@@ -46,6 +46,12 @@ import {
 import { fmtNum } from '@/lib/numberLocale'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import MobileTabs from '@/components/mobile/MobileTabs'
+import { BottomSheet, MobileList, MobileCard, StatusBadge, signalTone } from '@/components/mobile'
+import {
+ MobileMetricGrid, MobileStockCards, MobileProviderGroups, MobileSkuSheet, MobileEditSheet,
+ MobileStockEntry, MobileControls, MField, mInput, signalLabel, moneyOr,
+} from './InventoryMobile'
+import StickyActionBar from '@/components/mobile/StickyActionBar'
 import { incomingText } from '@/lib/incomingCopy'
 import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
@@ -699,9 +705,11 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
   finally { setBusy(false) }
  }
 
+ const narrow = useIsNarrow()
  const inputS3: React.CSSProperties = {
   background: C.card, border: `1px solid ${C.border}`, borderRadius: 6,
   color: C.text, fontSize: 11, outline: 'none', padding: '5px 8px',
+  ...(narrow ? { fontSize: 16, minHeight: 44, boxSizing: 'border-box', borderRadius: 10 } : {}),
  }
 
  return (
@@ -731,7 +739,8 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
     <button
      onClick={() => setOpen(v => !v)}
      aria-expanded={open}
-     style={{ all: 'unset', cursor: 'pointer', flexShrink: 0, fontSize: 11, fontWeight: 600, color: C.indigo, padding: '2px 4px' }}
+     style={{ all: 'unset', cursor: 'pointer', flexShrink: 0, fontSize: 11, fontWeight: 600, color: C.indigo, padding: '2px 4px',
+      ...(narrow ? { minHeight: 44, display: 'inline-flex', alignItems: 'center', fontSize: 13, padding: '0 6px' } : {}) }}
     >
      {open ? t('inventory.mult_btn_hide') : t('inventory.mult_btn_adjust')}
     </button>
@@ -801,7 +810,8 @@ function MultiplierExplainer({ result, eventId, onEdited }: {
       <button
        onClick={save}
        disabled={busy || !form.value.trim()}
-       style={{ all: 'unset', cursor: busy || !form.value.trim() ? 'not-allowed' : 'pointer', padding: '5px 12px', borderRadius: 6, background: C.indigo, color: '#fff', fontSize: 11, fontWeight: 600, opacity: busy || !form.value.trim() ? 0.5 : 1 }}
+       style={{ all: 'unset', cursor: busy || !form.value.trim() ? 'not-allowed' : 'pointer', padding: '5px 12px', borderRadius: 6, background: C.indigo, color: '#fff', fontSize: 11, fontWeight: 600, opacity: busy || !form.value.trim() ? 0.5 : 1,
+       ...(narrow ? { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', fontSize: 14, borderRadius: 10, padding: '0 16px' } : {}) }}
       >
        {t('inventory.mult_btn_apply')}
       </button>
@@ -834,6 +844,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  onReload: () => void
 }) {
  const { t, lang } = useLanguage()
+ const narrow = useIsNarrow()
  const [result, setResult] = useState<EventSimulationResult | null>(null)
  const [error, setError] = useState<string | null>(null)
 
@@ -893,10 +904,23 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
        .sort()[0] ?? null
    : null
 
- return (
- <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
- <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 640, maxHeight: '85vh', overflowY: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+ // A render function, not a component: a component declared here would be a
+ // new type every render and remount the multiplier editor under the user.
+ const frame = (children: React.ReactNode) => narrow ? (
+  <BottomSheet open onClose={onClose} maxHeight="92dvh"
+   title={tOr(t, 'inventory.sim_modal_title', `Simulation: ${ev.name}`, { event: ev.name })}>
+   <div style={{ minWidth: 0 }}>{children}</div>
+  </BottomSheet>
+ ) : (
+  <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+   <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 640, maxHeight: '85vh', overflowY: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+    {children}
+   </div>
+  </div>
+ )
+
+ return frame(<>
+ <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
  <Zap size={16} color={C.amber} />
  <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
  {tOr(t, 'inventory.sim_modal_title', `Simulation: ${ev.name}`, { event: ev.name })}
@@ -973,6 +997,27 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  onEdited={() => { onReload(); runSimulation() }}
  />
 
+ {narrow ? (
+ <MobileList ariaLabel={t('inventory.sim_col_product')}>
+ {result.items.map(r => (
+  <MobileCard key={r.sku}
+   title={r.display_name || r.sku}
+   subtitle={`${t('inventory.sim_col_event_demand')} ${r.event_units.toLocaleString()} (+${r.extra_units.toLocaleString()}) · ${t('inventory.sim_col_stock_at_start')} ${r.stock_al_inicio != null ? r.stock_al_inicio.toLocaleString() : '—'}`}
+   value={r.qty_to_order ? r.qty_to_order.toLocaleString() : '—'}
+   valueCaption={t('inventory.sim_col_order')}
+   status={r.en_risk ? { label: r.deficit != null && r.deficit > 0 ? `${t('inventory.sim_col_shortfall')} ${r.deficit.toLocaleString()}` : t('inventory.sim_col_shortfall'), tone: 'danger' } : undefined}>
+   <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+    <MultiplierChip value={r.multiplier} origin={r.multiplier_source} />
+    {r.en_risk && (
+     <span style={{ color: r.llega_tarde ? C.red : C.muted, fontWeight: r.llega_tarde ? 700 : 400 }}>
+      {t('inventory.sim_col_order_before')}: {r.llega_tarde ? tOr(t, 'inventory.sim_order_today', 'today!') : fmtD(r.order_by)}
+     </span>
+    )}
+   </span>
+  </MobileCard>
+ ))}
+ </MobileList>
+ ) : (
  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
  <thead>
  <tr>
@@ -1011,6 +1056,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  ))}
  </tbody>
  </table>
+ )}
  <p style={{ margin: '14px 0 0', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
  {tOr(t, 'inventory.sim_footer_note',
   `Calculation: forecast daily demand × ${result.event_days} days × ${uniformMult != null ? uniformMult.toFixed(1) : "each product's own multiplier"}, against the stock projected at the start of the event. Quantities respect each product's MOQ. Nothing is saved — this is only a simulation.`,
@@ -1024,9 +1070,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  </p>
  </>
  )}
- </div>
- </div>
- )
+ </>)
 }
 
 // ── Shrinkage modal (record a non-sale stock-out: breakage/expiry/self-consumption/gift) ──
@@ -1053,6 +1097,7 @@ function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved 
 }) {
  const { t } = useLanguage()
  const { addToast } = useToast()
+ const narrow = useIsNarrow()
  const [sku, setSku] = useState('')
  const [quantity, setQuantity] = useState('')
  const [reason, setReason] = useState<ShrinkageReason>('breakage')
@@ -1090,6 +1135,59 @@ function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved 
    setSaving(false)
   }
  }
+
+ // Phone: the same form, one field per row, in a sheet with the submit
+ // pinned under it. Same fields, same validation, same call.
+ if (narrow) return (
+  <BottomSheet open onClose={onClose} title={t('inventory.shrinkage_title_register')}
+   footer={(
+    <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+     <button type="button" className="mobile-btn mobile-btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
+     <button type="button" className="mobile-btn mobile-btn-danger" onClick={handleSubmit} disabled={saving}>
+      {saving && <Spinner size={14} />} {saving ? t('inventory.shrinkage_btn_submitting') : t('inventory.shrinkage_btn_submit')}
+     </button>
+    </div>
+   )}>
+   <form onSubmit={e => { e.preventDefault(); void handleSubmit() }} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <p style={{ margin: 0, fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.shrinkage_subtitle')}</p>
+    <MField label={t('inventory.shrinkage_field_sku')}
+     hint={selected ? <>{t('inventory.shrinkage_current_stock_prefix')} <strong style={{ color: C.text }}>{fmt(selected.current_stock, 0)}</strong></> : undefined}>
+     <input name="shrinkage_sku" list="shrinkage-sku-options-m" style={mInput} autoComplete="off"
+      placeholder={t('inventory.shrinkage_sku_placeholder')} value={sku} onChange={e => setSku(e.target.value)} />
+    </MField>
+    <datalist id="shrinkage-sku-options-m">
+     {items.map(i => <option key={i.sku} value={i.sku}>{i.display_name || i.sku}</option>)}
+    </datalist>
+    {warehouses.length > 1 && (
+     <MField label={t('inventory.shrinkage_field_warehouse')}>
+      <select name="shrinkage_warehouse" style={mInput} value={warehouse} onChange={e => setWarehouse(e.target.value)}>
+       {warehouses.map(w => <option key={w} value={w}>{w}</option>)}
+      </select>
+     </MField>
+    )}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+     <MField label={t('inventory.shrinkage_field_quantity')}>
+      <input name="shrinkage_quantity" type="number" inputMode="decimal" min={0} step="any" style={mInput} value={quantity} onChange={e => setQuantity(e.target.value)} />
+     </MField>
+     <MField label={t('inventory.shrinkage_field_reason')}>
+      <select name="shrinkage_reason" style={mInput} value={reason} onChange={e => setReason(e.target.value as ShrinkageReason)}>
+       {SHRINKAGE_REASONS.map(r => <option key={r} value={r}>{t(`inventory.shrinkage_reason_${r}`)}</option>)}
+      </select>
+     </MField>
+    </div>
+    <MField label={t('inventory.shrinkage_field_notes')}>
+     <input name="shrinkage_notes" style={mInput} placeholder={t('inventory.shrinkage_notes_placeholder')} value={notes} onChange={e => setNotes(e.target.value)} enterKeyHint="done" />
+    </MField>
+    {estCost != null && (
+     <div style={{ fontSize: 13, color: C.dim }}>
+      {t('inventory.shrinkage_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
+     </div>
+    )}
+    {error && <div role="alert" style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
+    <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
+   </form>
+  </BottomSheet>
+ )
 
  return (
   <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -1196,6 +1294,7 @@ const COUNTRY_NAMES: Record<string, string> = { CR: 'Costa Rica', CO: 'Colombia'
 // shows its state and switches each event on/off.
 function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
  const { t, lang } = useLanguage()
+ const narrow = useIsNarrow()
  const [entries, setEntries] = useState<CalendarCatalogEntry[] | null>(null)
  const [countries, setCountries] = useState<string[]>([])
  const [country, setCountry] = useState('')   // '' = default del backend (CR)
@@ -1239,8 +1338,8 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
 
  return (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-    <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: narrow ? 'wrap' : undefined }}>
+    <div style={{ fontSize: narrow ? 13 : 11, color: C.dim, lineHeight: 1.5 }}>
      {t('inventory.calendar_intro')}
      {countries.length > 1 && (
       <>
@@ -1250,7 +1349,8 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
         id="cal-country"
         value={country}
         onChange={e => { setEntries(null); setCountry(e.target.value) }}
-        style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 5, color: C.text, fontSize: 11, padding: '2px 5px' }}
+        style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 5, color: C.text, fontSize: 11, padding: '2px 5px',
+         ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, marginTop: 6 } : {}) }}
        >
         {countries.map(c => <option key={c} value={c}>{COUNTRY_NAMES[c] ?? c}</option>)}
        </select>
@@ -1261,7 +1361,8 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
      <button
       onClick={handleSeed}
       disabled={busy === '__seed__'}
-      style={{ all: 'unset', cursor: busy ? 'wait' : 'pointer', flexShrink: 0, padding: '6px 12px', borderRadius: 7, background: C.indigo, color: '#fff', fontSize: 12, fontWeight: 600, opacity: busy === '__seed__' ? 0.6 : 1 }}
+      style={{ all: 'unset', cursor: busy ? 'wait' : 'pointer', flexShrink: 0, padding: '6px 12px', borderRadius: 7, background: C.indigo, color: '#fff', fontSize: 12, fontWeight: 600, opacity: busy === '__seed__' ? 0.6 : 1,
+       ...(narrow ? { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', fontSize: 14, borderRadius: 10, padding: '0 16px' } : {}) }}
      >
       {busy === '__seed__' ? t('inventory.calendar_seeding') : t('inventory.calendar_btn_load')}
      </button>
@@ -1297,6 +1398,7 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
         width: 38, height: 21, borderRadius: 11, position: 'relative',
         background: on ? C.indigo : C.border,
         transition: 'background 0.15s',
+        ...(narrow ? { outline: '12px solid transparent', outlineOffset: 0, margin: '0 4px' } : {}),
        }}
       >
        <span style={{
@@ -1317,7 +1419,8 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
     <button
      onClick={handleSeed}
      disabled={busy === '__seed__'}
-     style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: C.dim, padding: '5px 0', textAlign: 'center' }}
+     style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: C.dim, padding: '5px 0', textAlign: 'center',
+      ...(narrow ? { minHeight: 44, fontSize: 13 } : {}) }}
     >
      {t('inventory.calendar_btn_refresh')}
     </button>
@@ -1335,6 +1438,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  onCatalogChange: () => void
 }) {
  const { t, lang } = useLanguage()
+ const narrow = useIsNarrow()
  const [adding, setAdding] = useState(false)
  const [tab, setTab] = useState<'mine' | 'catalog'>('mine')
  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', multiplier: '1.5', notes: '' })
@@ -1350,7 +1454,10 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  setAdding(false)
  }
 
- const inputS2: React.CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 12, outline: 'none', padding: '6px 9px', width: '100%', boxSizing: 'border-box' }
+ const inputS2: React.CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 12, outline: 'none', padding: '6px 9px', width: '100%', boxSizing: 'border-box',
+  ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, padding: '8px 10px' } : {}) }
+ // Phone: 44px buttons for the event actions.
+ const tapS: React.CSSProperties = narrow ? { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } : {}
 
  const TODAY_LABEL = t('inventory.day_today')
  const TOMORROW_LABEL = t('inventory.day_tomorrow')
@@ -1367,6 +1474,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
   fontSize: 11.5, fontWeight: 600,
   background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
   color: active ? C.indigo : C.dim,
+  ...(narrow ? { ...tapS, flex: 1, fontSize: 14, borderRadius: 10 } : {}),
  })
 
  return (
@@ -1387,9 +1495,9 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  const until = daysUntil(ev.start_date)
  const isClose = until && ![TODAY_LABEL, TOMORROW_LABEL].includes(until) ? parseInt(until) <= 14 : !!until
  return (
- <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: isClose ? 'rgba(245,158,11,0.06)' : C.card, border: `1px solid ${isClose ? 'rgba(245,158,11,0.25)' : C.border}` }}>
+ <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: isClose ? 'rgba(245,158,11,0.06)' : C.card, border: `1px solid ${isClose ? 'rgba(245,158,11,0.25)' : C.border}`, ...(narrow ? { flexWrap: 'wrap', gap: 8, padding: '12px', borderRadius: 12 } : {}) }}>
  <Calendar size={14} color={isClose ? C.amber : C.dim} style={{ flexShrink: 0 }} />
- <div style={{ flex: 1, minWidth: 0 }}>
+ <div style={{ flex: 1, minWidth: narrow ? 'calc(100% - 90px)' : 0 }}>
  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ev.name}</div>
  <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>
  {dayOf(ev.start_date).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' })}
@@ -1404,7 +1512,8 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  onClick={() => onSimulate(ev)}
  title={t('inventory.events_simulate_tooltip')}
  aria-label={`${t('inventory.events_btn_simulate')}: ${ev.name}`}
- style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-order-soon-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0 }}
+ style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-order-soon-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0,
+  ...(narrow ? { ...tapS, flex: 1, fontSize: 14, borderRadius: 10, gap: 6 } : {}) }}
  >
  <Zap size={11} aria-hidden="true" /> {t('inventory.events_btn_simulate')}
  </button>
@@ -1412,11 +1521,12 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  onClick={() => onDelete(ev.id)}
  aria-label={`${t('inventory.events_btn_delete')}: ${ev.name}`}
  title={t('inventory.events_btn_delete')}
- style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4 }}
+ style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', padding: 4,
+  ...(narrow ? { ...tapS, minWidth: 44, border: `1px solid ${C.border}`, borderRadius: 10 } : {}) }}
  onMouseEnter={e => (e.currentTarget.style.color = C.red)}
  onMouseLeave={e => (e.currentTarget.style.color = C.dim)}
  >
- <Trash2 size={12} aria-hidden="true" />
+ <Trash2 size={narrow ? 16 : 12} aria-hidden="true" />
  </button>
  </div>
  )
@@ -1432,7 +1542,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  {adding ? (
  <div style={{ padding: '12px 14px', borderRadius: 8, background: C.card, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
  <input style={inputS2} name="event_name" aria-label={t('inventory.events_name_placeholder')} placeholder={t('inventory.events_name_placeholder')} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus />
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+ <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : '1fr 1fr 1fr', gap: 8 }}>
  <div>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>{t('inventory.events_start_date')}</div>
  <input style={inputS2} name="event_start_date" aria-label={t('inventory.events_start_date')} type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
@@ -1441,7 +1551,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>{t('inventory.events_end_date')}</div>
  <input style={inputS2} name="event_end_date" aria-label={t('inventory.events_end_date')} type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
  </div>
- <div>
+ <div style={narrow ? { gridColumn: '1 / -1' } : undefined}>
  <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>{t('inventory.events_multiplier')}</div>
  <select style={inputS2} name="event_multiplier" aria-label={t('inventory.events_multiplier')} value={form.multiplier} onChange={e => setForm(f => ({ ...f, multiplier: e.target.value }))}>
  <option value="1.2">×1.2 — {t('inventory.events_mult_mild')} (+20%)</option>
@@ -1454,12 +1564,12 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  </div>
  <input style={inputS2} name="event_notes" aria-label={t('inventory.events_notes_placeholder')} placeholder={t('inventory.events_notes_placeholder')} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
- <button onClick={() => setAdding(false)} style={{ all: 'unset', cursor: 'pointer', padding: '6px 12px', borderRadius: 6, border: `1px solid ${C.border}`, color: C.dim, fontSize: 12 }}>{t('common.cancel')}</button>
- <button onClick={handleAdd} disabled={!form.name || !form.start_date || !form.end_date} style={{ all: 'unset', cursor: 'pointer', padding: '6px 14px', borderRadius: 6, background: C.indigo, color: '#fff', fontSize: 12, fontWeight: 600, opacity: !form.name || !form.start_date || !form.end_date ? 0.5 : 1 }}>{t('inventory.events_btn_save')}</button>
+ <button onClick={() => setAdding(false)} className={narrow ? 'mobile-btn mobile-btn-secondary' : undefined} style={narrow ? undefined : { all: 'unset', cursor: 'pointer', padding: '6px 12px', borderRadius: 6, border: `1px solid ${C.border}`, color: C.dim, fontSize: 12 }}>{t('common.cancel')}</button>
+ <button onClick={handleAdd} disabled={!form.name || !form.start_date || !form.end_date} className={narrow ? 'mobile-btn mobile-btn-primary' : undefined} style={narrow ? undefined : { all: 'unset', cursor: 'pointer', padding: '6px 14px', borderRadius: 6, background: C.indigo, color: '#fff', fontSize: 12, fontWeight: 600, opacity: !form.name || !form.start_date || !form.end_date ? 0.5 : 1 }}>{t('inventory.events_btn_save')}</button>
  </div>
  </div>
  ) : (
- <button onClick={() => setAdding(true)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: `1px dashed ${C.border}`, color: C.dim, fontSize: 12, justifyContent: 'center' }}>
+ <button onClick={() => setAdding(true)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: `1px dashed ${C.border}`, color: C.dim, fontSize: 12, justifyContent: 'center', ...(narrow ? { ...tapS, fontSize: 14, borderRadius: 12 } : {}) }}>
  <Plus size={12} /> {t('inventory.events_btn_add')}
  </button>
  )}
@@ -1580,6 +1690,9 @@ function simulateRecommendation(
 
 function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const { t } = useLanguage()
+ // Inside the phone's detail sheet the three sliders stack: a third of 328px
+ // is not a slider a thumb can hold.
+ const narrow = useIsNarrow()
  const exp = item.calc_explanation
  if (!exp || !item.daily_demand || item.daily_demand <= 0) return null
 
@@ -1611,7 +1724,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const delta          = simRecommended - originalRec
  const deltaColor     = delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.muted
 
- const sliderS: React.CSSProperties = { width: '100%', cursor: 'pointer', accentColor: 'var(--accent)' }
+ const sliderS: React.CSSProperties = { width: '100%', cursor: 'pointer', accentColor: 'var(--accent)', ...(narrow ? { height: 36, margin: 0 } : {}) }
 
  return (
   <div style={{
@@ -1623,7 +1736,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     {t('inventory.sim_title')}
    </div>
 
-   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+   <div style={{ display: 'grid', gridTemplateColumns: narrow ? '1fr' : '1fr 1fr 1fr', gap: narrow ? 20 : 16 }}>
     {/* Lead time slider */}
     <div>
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
@@ -1679,13 +1792,13 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
    <div style={{
     marginTop: 16, padding: '12px 16px', borderRadius: 8,
     background: 'var(--surface)', border: `1px solid ${C.border}`,
-    display: 'flex', alignItems: 'center', gap: 16,
+    display: 'flex', alignItems: 'center', gap: 16, flexWrap: narrow ? 'wrap' : undefined,
    }}>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_original_rec')}</div>
      <div style={{ fontSize: 20, fontWeight: 800, color: C.muted }}>{fmtNum(originalRec)} {t('inventory.unit_und')}</div>
     </div>
-    <div style={{ fontSize: 20, color: C.dim }}>→</div>
+    <div style={{ fontSize: 20, color: C.dim, display: narrow ? 'none' : undefined }}>→</div>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_with_changes')}</div>
      <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
@@ -1699,7 +1812,8 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     )}
     <button onClick={() => { setLtDelta(0); setDemandMult(100); setStockDelta(0) }}
      style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', fontSize: 11,
-      color: C.dim, padding: '4px 10px', border: `1px solid ${C.border}`, borderRadius: 6 }}>
+      color: C.dim, padding: '4px 10px', border: `1px solid ${C.border}`, borderRadius: 6,
+      ...(narrow ? { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', fontSize: 14, padding: '0 16px', borderRadius: 10 } : {}) }}>
      {t('inventory.btn_reset')}
     </button>
    </div>
@@ -1908,6 +2022,8 @@ export default function InventoryPage() {
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
  const [expandedSku, setExpandedSku] = useState<string | null>(null)
+ // Phone only: the SKU whose detail sheet is open (the desktop expands a row).
+ const [detailSku, setDetailSku] = useState<string | null>(null)
  const [editId, setEditId] = useState<string | null>(null)
  const [editState, setEditState] = useState<EditState | null>(null)
  const [saving, setSaving] = useState(false)
@@ -2436,7 +2552,8 @@ export default function InventoryPage() {
 
  {/* Header */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
- <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+ {/* On a phone the compact header already names the screen. */}
+ <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 10 }}>
  <div style={{ width: 36, height: 36, borderRadius: 9, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
  <ShoppingCart size={17} color="#fff" strokeWidth={2.5} />
  </div>
@@ -2594,8 +2711,21 @@ export default function InventoryPage() {
  )}
 
  {/* KPIs — skeleton first so the row does not pop in. */}
- {loading && !summary && <SkeletonCards count={6} height={74} />}
- {summary && (
+ {loading && !summary && <SkeletonCards count={narrow ? 4 : 6} height={74} />}
+ {summary && narrow && (
+ <div data-tour="inv.filters" className="page-enter">
+ <MobileMetricGrid ariaLabel={t('inventory.m_filters_aria')} metrics={[
+  { label: t('inventory.kpi_total_skus'), value: summary.total_skus, color: C.indigo, onClick: () => setSignalFilter(''), active: !signalFilter },
+  { label: t('inventory.signal_order_now'), value: summary.order_now, color: C.red, onClick: () => setSignalFilter(signalFilter === 'PEDIR_YA' ? '' : 'PEDIR_YA'), active: signalFilter === 'PEDIR_YA', sub: summary.order_now > 0 ? t('inventory.kpi_sub_order_now') : undefined },
+  { label: t('inventory.signal_order_soon'), value: summary.order_soon, color: C.amber, onClick: () => setSignalFilter(signalFilter === 'PEDIR_PRONTO' ? '' : 'PEDIR_PRONTO'), active: signalFilter === 'PEDIR_PRONTO', sub: summary.order_soon > 0 ? t('inventory.kpi_sub_order_soon') : undefined },
+  { label: t('inventory.signal_ok'), value: summary.ok, color: C.green, onClick: () => setSignalFilter(signalFilter === 'OK' ? '' : 'OK'), active: signalFilter === 'OK' },
+  { label: t('inventory.signal_overstock'), value: summary.overstock, color: C.blue, onClick: () => setSignalFilter(signalFilter === 'SOBRESTOCK' ? '' : 'SOBRESTOCK'), active: signalFilter === 'SOBRESTOCK', sub: summary.overstock > 0 ? t('inventory.kpi_sub_overstock') : undefined },
+  // Compact money: the full figure of a real inventory does not fit half a phone.
+  { label: t('inventory.kpi_inventory_value'), value: summary.total_inventory_value > 0 ? formatMoneyCompact(summary.total_inventory_value) : '—', color: C.indigo, sub: t('inventory.kpi_skus_with_cost') },
+ ]} />
+ </div>
+ )}
+ {summary && !narrow && (
  // Fades in over the skeleton cards it replaces: same shape, so the
  // transition reads as the placeholders resolving into numbers.
  <div data-tour="inv.filters" className="page-enter" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
@@ -2635,7 +2765,8 @@ export default function InventoryPage() {
  </span>
  <button onClick={() => importRef.current?.click()} disabled={importing}
          style={{ all: 'unset', cursor: importing ? 'default' : 'pointer',
-                  fontSize: 12, fontWeight: 600, color: C.indigo }}>
+                  fontSize: 12, fontWeight: 600, color: C.indigo,
+                  ...(narrow ? { minHeight: 44, display: 'inline-flex', alignItems: 'center', fontSize: 14 } : {}) }}>
  {importing ? t('common.saving') : t('inventory.btn_import_csv_arrow')}
  </button>
  </div>
@@ -2647,13 +2778,18 @@ export default function InventoryPage() {
  </>
  ) : (
  <>
- {/* Main table / view */}
- <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+ {/* Main table / view. On a phone the cards bring their own surface, so the
+     framing box and the toolbar band are dropped. */}
+ <div style={narrow
+  ? { minWidth: 0 }
+  : { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
 
  {/* Toolbar */}
- <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
- <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none' }} />
- {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex' }}><X size={13} aria-hidden="true" /></button>}
+ <div style={narrow
+  ? { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, minWidth: 0 }
+  : { padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
+ <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, minWidth: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none', ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, boxSizing: 'border-box' } : {}) }} />
+ {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', ...(narrow ? { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' } : {}) }}><X size={narrow ? 18 : 13} aria-hidden="true" /></button>}
  <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }}>{items.length} SKU{items.length !== 1 ? 's' : ''}</span>
  </div>
 
@@ -2723,11 +2859,75 @@ export default function InventoryPage() {
  />
  )}
  </div>
+ ) : viewMode === 'provider' && narrow ? (
+ <>
+ <MobileProviderGroups groups={byProvider} render={provItems => (
+  <MobileStockCards items={provItems} coverageUnit={data?.coverage_unit} mode="simple"
+   effectiveQty={effectiveQty} editedQty={editedQty} notYet={i => notYetLabel(i, t)}
+   onOpen={i => setDetailSku(i.sku)} ariaLabel={t('inventory.view_provider')} />
+ )} />
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
+ </>
  ) : viewMode === 'provider' ? (
  <>
  <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} coverageUnit={data?.coverage_unit} />)}</div>
  <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </>
+
+ ) : viewMode === 'update' && narrow ? (
+ /* ── Quick update view, phone: one card per product, the save pinned
+    above the tab bar. Same draft, same per-row Enter, same save-all. */
+ <div>
+ <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+  <span style={{ fontSize: 13, color: C.dim, flex: 1, minWidth: 180, lineHeight: 1.45 }}>
+   {isNetworkStockView
+    ? tOr(t, 'inventory.bulk_network_readonly', 'These figures add up every warehouse. Pick one above to edit its stock.')
+    : t('inventory.m_update_hint')}
+  </span>
+  <button onClick={() => importRef.current?.click()} disabled={importing} className="mobile-btn mobile-btn-secondary" style={{ flex: '0 0 auto', fontSize: 14 }}>
+   <Upload size={15} aria-hidden="true" /> {t('inventory.btn_import_csv_arrow')}
+  </button>
+ </div>
+ <div aria-live="polite" className="sr-only">
+ {rowStatus && (
+  rowStatus.kind === 'saved'
+   ? tOr(t, 'inventory.bulk_row_saved', `Row ${rowStatus.sku} saved`, { sku: rowStatus.sku })
+   : rowStatus.kind === 'discarded'
+    ? tOr(t, 'inventory.bulk_row_discarded', `Changes to row ${rowStatus.sku} discarded`, { sku: rowStatus.sku })
+    : tOr(t, 'inventory.bulk_row_error', `Row ${rowStatus.sku} could not be saved`, { sku: rowStatus.sku })
+ )}
+ </div>
+ <MobileStockEntry
+  items={pageItems}
+  draft={updateDraft}
+  modified={updatedSkus}
+  readOnly={isNetworkStockView}
+  savingRow={savingRow}
+  onChange={(sku, field, value) => handleDraftChange(sku, field, value)}
+  onKeyDown={handleRowKeyDown}
+ />
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
+ <StickyActionBar hidden={updatedSkus.size === 0}>
+  <button type="button" className="mobile-btn mobile-btn-secondary" style={{ flex: '0 0 auto' }}
+   onClick={() => {
+    if (data) {
+     const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
+     data.items.forEach(item => {
+      draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), supplier: item.supplier ?? '' }
+     })
+     setUpdateDraft(draft)
+     setRowBaseline(draft)
+     setUpdatedSkus(new Set())
+    }
+   }}>
+   {t('inventory.btn_discard')}
+  </button>
+  <button type="button" data-tour="inv.save" className="mobile-btn mobile-btn-primary" onClick={handleSaveAll} disabled={updateSaving}>
+   {updateSaving ? <Spinner size={14} /> : <Save size={16} aria-hidden="true" />}
+   {updateSaving ? t('inventory.saving_ellipsis') : `${t('inventory.btn_save_prefix')} ${updatedSkus.size} ${updatedSkus.size !== 1 ? t('inventory.changes_plural') : t('inventory.changes_singular')}`}
+  </button>
+ </StickyActionBar>
+ </div>
 
  ) : viewMode === 'update' ? (
  /* ── Quick update view ────────────────────────────────────── */
@@ -2918,6 +3118,39 @@ export default function InventoryPage() {
  <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </div>
 
+ ) : (viewMode === 'simple' || viewMode === 'table') && narrow ? (
+ /* ── Simple / full table, phone: one card per SKU, the rest of the
+    columns and the calculation in a sheet. The full view keeps its sort. */
+ <div className="page-enter">
+ {viewMode === 'table' && (
+  <div style={{ marginBottom: 10 }}>
+   <MField label={t('inventory.m_sort_label')}>
+    <select style={mInput} name="inventory_mobile_sort" value={sort ? `${sort.key}:${sort.dir}` : ''}
+     onChange={e => {
+      const v = e.target.value
+      if (!v) { setSort(null); return }
+      const [key, dir] = v.split(':') as [SortKey, SortDir]
+      setSort({ key, dir })
+     }}>
+     <option value="">{t('inventory.m_sort_default')}</option>
+     {([
+      ['signal', t('inventory.col_signal')], ['sku', t('inventory.col_sku_name')], ['stock', t('inventory.col_stock')],
+      ['coverage', t('inventory.wh_col_coverage')], ['qty', t('inventory.col_qty_to_order')],
+      ['lead_time', t('inventory.col_lead_time')], ['value', t('inventory.col_warehouse_value')],
+     ] as [SortKey, string][]).flatMap(([k, label]) => [
+      <option key={`${k}:asc`} value={`${k}:asc`}>{label} ↑</option>,
+      <option key={`${k}:desc`} value={`${k}:desc`}>{label} ↓</option>,
+     ])}
+    </select>
+   </MField>
+  </div>
+ )}
+ <MobileStockCards items={pageItems} coverageUnit={data?.coverage_unit} mode={viewMode === 'table' ? 'table' : 'simple'}
+  effectiveQty={effectiveQty} editedQty={editedQty} notYet={i => notYetLabel(i, t)}
+  onOpen={i => setDetailSku(i.sku)} ariaLabel={t('inventory.title')} />
+ <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
+ </div>
+
  ) : viewMode === 'simple' ? (
  /* ── Simple view ──────────────────────────────────────────── */
  /* One of the two views the page can land on, so it is what replaces the
@@ -2950,6 +3183,60 @@ export default function InventoryPage() {
  </div>
  ))}
  <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
+ </div>
+
+ ) : viewMode === 'capital' && narrow ? (
+ /* ── Money not moving, phone ── */
+ <div>
+  <p style={{ margin: '0 0 12px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.deadcap_intro', { days: deadCapitalWindow })}</p>
+  <MobileControls>
+   <MField label={t('inventory.deadcap_window_label')}>
+    <input type="number" inputMode="numeric" min={7} max={365} value={deadCapitalWindow} name="m_deadcap_window" style={mInput}
+     onChange={e => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 7 && v <= 365) setDeadCapitalWindow(v) }} />
+   </MField>
+  </MobileControls>
+  {loadingDeadCapital ? (
+   <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !deadCapital ? null : deadCapital.sku_count === 0 ? (
+   <div style={{ padding: '32px 8px', textAlign: 'center' }}>
+    <div style={{ fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 8 }}>{t('inventory.deadcap_none')}</div>
+    <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.deadcap_none_desc', { days: deadCapital.window_days })}</div>
+   </div>
+  ) : (
+   <>
+    <div style={{ marginBottom: 12 }}>
+     <MobileMetricGrid metrics={[
+      { label: t('inventory.deadcap_kpi_total'), value: formatMoneyCompact(deadCapital.total_value), color: C.red },
+      { label: t('inventory.deadcap_kpi_skus'), value: deadCapital.sku_count, color: C.amber },
+      ...(deadCapital.unpriced_sku_count > 0 ? [{ label: t('inventory.deadcap_kpi_unpriced'), value: deadCapital.unpriced_sku_count, color: C.dim }] : []),
+     ]} />
+    </div>
+    {deadCapital.unpriced_sku_count > 0 && (
+     <div style={{ padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.45, background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim, marginBottom: 12 }}>{t('inventory.deadcap_unpriced_banner', { count: deadCapital.unpriced_sku_count })}</div>
+    )}
+    <MobileList ariaLabel={t('inventory.view_dead_capital')}>
+     {deadCapitalPaged.rows.map(item => (
+      <MobileCard key={item.sku}
+       title={item.display_name || item.sku}
+       subtitle={[item.display_name ? item.sku : null, item.category, item.supplier].filter(Boolean).join(' · ') || undefined}
+       status={item.signal ? { label: signalLabel(t, item.signal), tone: signalTone(item.signal) } : undefined}
+       value={<span style={{ color: item.value === null ? C.dim : C.red }}>{item.value === null ? t('inventory.deadcap_value_unknown_short') : formatMoneyCompact(item.value)}</span>}
+       valueCaption={`${fmtNum(item.current_stock)} ${t('inventory.unit_und')}`}>
+       <span style={{ fontSize: 12.5, fontWeight: 600, color: C.red }}>
+        {t(item.days_still_exact ? 'inventory.deadcap_days_still_exact' : 'inventory.deadcap_days_still_approx', { days: item.days_still })}
+       </span>
+       {item.value === null && <span style={{ display: 'block', fontSize: 12, color: C.dim, marginTop: 2 }}>{t('inventory.deadcap_value_unknown')}</span>}
+      </MobileCard>
+     ))}
+    </MobileList>
+    <Pagination page={deadCapitalPaged.page} pageCount={deadCapitalPaged.pageCount} offset={deadCapitalPaged.offset} total={deadCapitalPaged.total} rowsOnPage={deadCapitalPaged.rows.length} onPage={setDeadCapitalPage} label="SKU" />
+    {(deadCapital.excluded_no_history > 0 || deadCapital.excluded_too_recent > 0) && (
+     <div style={{ marginTop: 12, fontSize: 12, color: C.dim, lineHeight: 1.45 }}>
+      {t('inventory.deadcap_footer_excluded', { noHistory: deadCapital.excluded_no_history, tooRecent: deadCapital.excluded_too_recent, days: deadCapital.window_days })}
+     </div>
+    )}
+   </>
+  )}
  </div>
 
  ) : viewMode === 'capital' ? (
@@ -3098,6 +3385,55 @@ export default function InventoryPage() {
   )}
  </div>
 
+ ) : viewMode === 'inflation' && narrow ? (
+ /* ── Supplier cost inflation, phone ── */
+ <div>
+  <p style={{ margin: '0 0 12px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.inflation_intro', { days: costInflationWindow })}</p>
+  <MobileControls>
+   <MField label={t('inventory.inflation_window_label')}>
+    <input type="number" inputMode="numeric" min={30} max={1095} value={costInflationWindow} name="m_inflation_window" style={mInput}
+     onChange={e => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 30 && v <= 1095) setCostInflationWindow(v) }} />
+   </MField>
+  </MobileControls>
+  {loadingCostInflation ? (
+   <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !costInflation ? null : costInflation.supplier_count === 0 ? (
+   <div style={{ padding: '32px 8px', textAlign: 'center' }}>
+    <div style={{ fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 8 }}>{t('inventory.inflation_none')}</div>
+    <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.inflation_none_desc', { days: costInflation.window_days })}</div>
+   </div>
+  ) : (
+   <>
+    <div style={{ marginBottom: 12 }}>
+     <MobileMetricGrid metrics={[{ label: t('inventory.inflation_kpi_suppliers'), value: costInflation.supplier_count, color: C.red }]} />
+    </div>
+    <MobileList ariaLabel={t('inventory.view_cost_inflation')}>
+     {costInflationPaged.rows.map(sp => (
+      <MobileCard key={sp.supplier}
+       title={sp.supplier}
+       subtitle={`${t('inventory.inflation_col_increases')}: ${sp.increases_count}`}
+       value={<span style={{ color: C.red }}>+{sp.cumulative_pct}%</span>}
+       valueCaption={t('inventory.inflation_col_cumulative')}>
+       {sp.worst_products.map(p => (
+        <span key={p.sku} style={{ display: 'block', fontSize: 12.5, color: C.muted, lineHeight: 1.45, marginTop: 2, whiteSpace: 'normal' }}>
+         <strong style={{ color: C.text }}>{p.display_name || p.sku}</strong>{' — '}
+         {t('inventory.inflation_product_change', { first: p.first_cost, last: p.last_cost, pct: p.cumulative_pct })}
+        </span>
+       ))}
+      </MobileCard>
+     ))}
+    </MobileList>
+    <Pagination page={costInflationPaged.page} pageCount={costInflationPaged.pageCount} offset={costInflationPaged.offset} total={costInflationPaged.total} rowsOnPage={costInflationPaged.rows.length} onPage={setCostInflationPage} label={t('inventory.inflation_col_supplier')} />
+    <div style={{ marginTop: 12, fontSize: 12, color: C.dim, lineHeight: 1.45 }}>{t('inventory.inflation_footer_note')}</div>
+    {(costInflation.skus_single_observation > 0 || costInflation.lines_excluded_no_supplier > 0) && (
+     <div style={{ marginTop: 4, fontSize: 12, color: C.dim, lineHeight: 1.45 }}>
+      {t('inventory.inflation_excluded_note', { single: costInflation.skus_single_observation, noSupplier: costInflation.lines_excluded_no_supplier })}
+     </div>
+    )}
+   </>
+  )}
+ </div>
+
  ) : viewMode === 'inflation' ? (
  /* ── Supplier cost inflation (stability.md #20 item 5) ───────────
     Suppliers who raised a SKU's cost at least once in the window, from
@@ -3194,6 +3530,57 @@ export default function InventoryPage() {
        single: costInflation.skus_single_observation,
        noSupplier: costInflation.lines_excluded_no_supplier,
       })}
+     </div>
+    )}
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'erosion' && narrow ? (
+ /* ── Margin erosion, phone ── */
+ <div>
+  <p style={{ margin: '0 0 12px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.erosion_intro')}</p>
+  <MobileControls>
+   <MField label={t('inventory.erosion_window_label')}>
+    <input type="number" inputMode="numeric" min={30} max={1095} value={marginErosionWindow} name="m_erosion_window" style={mInput}
+     onChange={e => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 30 && v <= 1095) setMarginErosionWindow(v) }} />
+   </MField>
+   <MField label={t('inventory.erosion_min_pts_label')}>
+    <input type="number" inputMode="decimal" min={0} max={100} step={0.5} value={marginErosionMinPts} name="m_erosion_min_pts" style={mInput}
+     onChange={e => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 100) setMarginErosionMinPts(v) }} />
+   </MField>
+  </MobileControls>
+  <div style={{ padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.45, background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim, marginBottom: 12 }}>{t('inventory.erosion_disclaimer')}</div>
+  {loadingMarginErosion ? (
+   <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !marginErosion ? null : marginErosion.sku_count === 0 ? (
+   <div style={{ padding: '32px 8px', textAlign: 'center' }}>
+    <div style={{ fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 8 }}>{t('inventory.erosion_none')}</div>
+    <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.erosion_none_desc', { pts: marginErosionMinPts, days: marginErosion.window_days })}</div>
+   </div>
+  ) : (
+   <>
+    <div style={{ marginBottom: 12 }}>
+     <MobileMetricGrid metrics={[{ label: t('inventory.erosion_kpi_count'), value: marginErosion.sku_count, color: C.red }]} />
+    </div>
+    <MobileList ariaLabel={t('inventory.view_margin_erosion')}>
+     {marginErosionPaged.rows.map(item => (
+      <MobileCard key={item.sku}
+       title={item.display_name || item.sku}
+       subtitle={`${t('inventory.erosion_col_cost_then')} ${formatMoneyCompact(item.cost_then)} → ${formatMoneyCompact(item.cost_now)}`}
+       value={<span style={{ color: C.red }}>-{item.erosion_pts} pts</span>}
+       valueCaption={t('inventory.erosion_col_erosion')}>
+       <span style={{ fontSize: 12.5, color: C.muted }}>
+        {t('inventory.erosion_col_margin_then')} {item.margin_pct_then}% → <strong style={{ color: item.margin_pct_now < 0 ? C.red : C.text }}>{item.margin_pct_now}%</strong>
+       </span>
+       {item.margin_pct_now < 0 && <span style={{ display: 'block', fontSize: 12, color: C.red, marginTop: 2 }}>{t('inventory.erosion_margin_negative')}</span>}
+      </MobileCard>
+     ))}
+    </MobileList>
+    <Pagination page={marginErosionPaged.page} pageCount={marginErosionPaged.pageCount} offset={marginErosionPaged.offset} total={marginErosionPaged.total} rowsOnPage={marginErosionPaged.rows.length} onPage={setMarginErosionPage} label="SKU" />
+    {(marginErosion.excluded_no_sale_price > 0 || marginErosion.excluded_no_cost_history > 0) && (
+     <div style={{ marginTop: 12, fontSize: 12, color: C.dim, lineHeight: 1.45 }}>
+      {t('inventory.erosion_excluded_note', { noPrice: marginErosion.excluded_no_sale_price, noHistory: marginErosion.excluded_no_cost_history })}
      </div>
     )}
    </>
@@ -3319,6 +3706,63 @@ export default function InventoryPage() {
       })}
      </div>
     )}
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'money' && narrow ? (
+ /* ── The forecast in money, phone ── */
+ <div>
+  {loadingForecastMoney ? (
+   <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !forecastMoney ? (
+   <div style={{ padding: 32, textAlign: 'center', color: C.dim, fontSize: 14 }}>{t('inventory.money_select_session')}</div>
+  ) : forecastMoney.sku_count === 0 ? (
+   <div style={{ padding: '32px 8px', textAlign: 'center' }}>
+    <div style={{ fontSize: 15, fontWeight: 600, color: C.dim, marginBottom: 8 }}>{t('inventory.money_none')}</div>
+    <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.money_none_desc')}</div>
+   </div>
+  ) : (
+   <>
+    <p style={{ margin: '0 0 12px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>
+     {t('inventory.money_intro', { days: forecastMoney.horizon_days, start: forecastMoney.horizon_start ?? '—', end: forecastMoney.horizon_end ?? '—' })}
+    </p>
+    <div style={{ padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.45, background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim, marginBottom: 12 }}>{t('inventory.money_price_caveat')}</div>
+    <div style={{ marginBottom: 12 }}>
+     <MobileMetricGrid metrics={[
+      { label: t('inventory.money_kpi_revenue'), value: formatMoneyCompact(forecastMoney.total_revenue), color: C.text },
+      { label: `${t('inventory.money_kpi_margin')}${forecastMoney.total_margin_pct != null ? ` (${forecastMoney.total_margin_pct}%)` : ''}`, value: formatMoneyCompact(forecastMoney.total_margin), color: forecastMoney.total_margin < 0 ? C.red : C.green },
+      { label: t('inventory.money_kpi_skus'), value: forecastMoney.sku_count, color: C.amber },
+     ]} />
+    </div>
+    {forecastMoney.top10_margin_share_pct != null && (
+     <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.45, background: 'color-mix(in srgb, var(--accent) 8%, transparent)', color: C.text }}>
+      {t('inventory.money_top_contributors_note', { n: forecastMoney.top_contributors, pct: forecastMoney.top10_margin_share_pct })}
+     </div>
+    )}
+    {(forecastMoney.excluded_no_price_count > 0 || forecastMoney.excluded_no_cost_count > 0) && (
+     <div style={{ padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.45, background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim, marginBottom: 12 }}>{t('inventory.money_excluded_note', { noPrice: forecastMoney.excluded_no_price_count, noCost: forecastMoney.excluded_no_cost_count })}</div>
+    )}
+    <MobileList ariaLabel={t('inventory.view_forecast_money')}>
+     {forecastMoneyPaged.rows.map(item => (
+      <MobileCard key={item.sku}
+       title={item.display_name || item.sku}
+       subtitle={`${fmtNum(item.units_forecast)} ${t('inventory.unit_und')} · ${t('inventory.money_col_revenue')} ${moneyOr(item.revenue, t('inventory.money_value_unknown_short'))}`}
+       value={<span style={{ color: item.margin === null ? C.dim : item.margin < 0 ? C.red : C.green }}>{moneyOr(item.margin, t('inventory.money_value_unknown_short'))}</span>}
+       valueCaption={item.margin_pct === null ? t('inventory.money_col_margin') : `${t('inventory.money_col_margin')} ${item.margin_pct}%`}>
+       <span style={{ fontSize: 12.5, color: C.muted }}>
+        {t('inventory.money_col_cost')} {moneyOr(item.cost, t('inventory.money_value_unknown_short'))}
+        {item.contribution_pct !== null && ` · ${t('inventory.money_col_contribution')} ${item.contribution_pct}%`}
+       </span>
+       {(item.revenue === null || item.cost === null) && (
+        <span style={{ display: 'block', fontSize: 12, color: C.dim, marginTop: 2, whiteSpace: 'normal' }}>
+         {t('inventory.money_value_unknown', { reason: t(`inventory.money_reason_${item.revenue === null ? item.revenue_unknown_reason : item.cost_unknown_reason}`) })}
+        </span>
+       )}
+      </MobileCard>
+     ))}
+    </MobileList>
+    <Pagination page={forecastMoneyPaged.page} pageCount={forecastMoneyPaged.pageCount} offset={forecastMoneyPaged.offset} total={forecastMoneyPaged.total} rowsOnPage={forecastMoneyPaged.rows.length} onPage={setForecastMoneyPage} label="SKU" />
    </>
   )}
  </div>
@@ -3483,6 +3927,78 @@ export default function InventoryPage() {
     </div>
 
     <Pagination page={forecastMoneyPaged.page} pageCount={forecastMoneyPaged.pageCount} offset={forecastMoneyPaged.offset} total={forecastMoneyPaged.total} rowsOnPage={forecastMoneyPaged.rows.length} onPage={setForecastMoneyPage} label="SKU" />
+   </>
+  )}
+ </div>
+
+ ) : viewMode === 'ignored' && narrow ? (
+ /* ── Cost of ignoring, phone ── */
+ <div>
+  <p style={{ margin: '0 0 12px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.ignoring_intro')}</p>
+  <MobileControls>
+   <MField label={t('inventory.ignoring_from_label')}>
+    <input type="date" value={ignoringFromDate} max={ignoringToDate} name="m_ignoring_from" style={mInput}
+     onChange={e => e.target.value && setIgnoringFromDate(e.target.value)} />
+   </MField>
+   <MField label={t('inventory.ignoring_to_label')}>
+    <input type="date" value={ignoringToDate} min={ignoringFromDate} max={todayIso} name="m_ignoring_to" style={mInput}
+     onChange={e => e.target.value && setIgnoringToDate(e.target.value)} />
+   </MField>
+   <MField label={t('inventory.ignoring_po_window_label')}>
+    <input type="number" inputMode="numeric" min={1} max={90} value={ignoringPoWindow} name="m_ignoring_po_window" style={mInput}
+     onChange={e => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 1 && v <= 90) setIgnoringPoWindow(v) }} />
+   </MField>
+  </MobileControls>
+  {loadingCostOfIgnoring ? (
+   <div style={{ padding: 40, display: 'flex', justifyContent: 'center' }}><Spinner /></div>
+  ) : !costOfIgnoring ? null : costOfIgnoring.summary.skus_flagged === 0 ? (
+   <div style={{ padding: '32px 8px', textAlign: 'center' }}>
+    <div style={{ fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 8 }}>{t('inventory.ignoring_none')}</div>
+    <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('inventory.ignoring_none_desc', { from: costOfIgnoring.from_date, to: costOfIgnoring.to_date })}</div>
+   </div>
+  ) : (
+   <>
+    <div style={{ marginBottom: 12 }}>
+     <MobileMetricGrid metrics={[
+      { label: t('inventory.ignoring_kpi_flagged'), value: costOfIgnoring.summary.skus_flagged, color: C.text },
+      { label: t('inventory.ignoring_kpi_ordered'), value: costOfIgnoring.summary.skus_ordered, color: C.green },
+      { label: t('inventory.ignoring_kpi_stockout'), value: costOfIgnoring.summary.skus_likely_stockout, color: C.red },
+      { label: t('inventory.ignoring_kpi_unclear'), value: costOfIgnoring.summary.skus_unclear, color: C.dim },
+      { label: t('inventory.ignoring_kpi_lost_units'), value: costOfIgnoring.summary.total_estimated_lost_units == null ? '—' : fmtNum(costOfIgnoring.summary.total_estimated_lost_units), color: C.amber },
+      { label: t('inventory.ignoring_kpi_lost_value'), value: costOfIgnoring.summary.total_estimated_lost_value == null ? t('inventory.ignoring_kpi_lost_value_none') : formatMoneyCompact(costOfIgnoring.summary.total_estimated_lost_value), color: costOfIgnoring.summary.total_estimated_lost_value == null ? C.dim : C.red },
+     ]} />
+    </div>
+    {costOfIgnoring.summary.skus_with_lost_units_but_unknown_value > 0 && (
+     <div style={{ padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.45, background: 'color-mix(in srgb, var(--dim) 10%, transparent)', color: C.dim, marginBottom: 12 }}>{t('inventory.ignoring_unknown_value_note', { n: costOfIgnoring.summary.skus_with_lost_units_but_unknown_value })}</div>
+    )}
+    <MobileList ariaLabel={t('inventory.view_cost_of_ignoring')}>
+     {costOfIgnoringPaged.rows.map(row => {
+      const outcome = row.outcome === 'ordered'
+       ? <span style={{ color: C.green, fontWeight: 600 }}>{t('inventory.ignoring_outcome_ordered')}{row.po_generated_at ? ` · ${new Date(row.po_generated_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CR')}` : ''}</span>
+       : row.outcome === 'likely_stockout'
+        ? <span style={{ color: C.red, fontWeight: 600 }}>{t('inventory.ignoring_outcome_stockout')}{row.partial_window ? ' *' : ''}</span>
+        : <span style={{ color: C.dim, fontWeight: 600 }}>{t('inventory.ignoring_outcome_unclear')}</span>
+      return (
+       <MobileCard key={row.sku}
+        title={skuDisplayName[row.sku] || row.sku}
+        subtitle={`${t('inventory.ignoring_col_flagged_since')} ${row.first_flagged_on}`}
+        status={{ label: signalLabel(t, row.latest_signal), tone: signalTone(row.latest_signal) }}
+        value={row.lost_value != null
+         ? <span style={{ color: C.red }}>{formatMoneyCompact(row.lost_value)}</span>
+         : <span style={{ fontSize: 12, fontWeight: 500, color: C.dim }}>{row.lost_value_reason === 'sale_price_unknown' || row.lost_value_reason === 'no_demand_rate_recorded' ? t('inventory.ignoring_value_unknown_short') : '—'}</span>}
+        valueCaption={row.lost_units != null ? `${row.lost_units} ${t('inventory.unit_und')}` : undefined}>
+        <span style={{ fontSize: 12.5 }}>{outcome}</span>
+        {row.days_out_of_stock != null && (
+         <span style={{ display: 'block', fontSize: 12, color: C.muted, marginTop: 2 }}>{t('inventory.ignoring_col_days_out')}: {row.days_out_of_stock}</span>
+        )}
+        {row.partial_window && row.outcome === 'likely_stockout' && (
+         <span style={{ display: 'block', fontSize: 12, color: C.dim, marginTop: 2, whiteSpace: 'normal' }}>* {t('inventory.ignoring_partial_window')}</span>
+        )}
+       </MobileCard>
+      )
+     })}
+    </MobileList>
+    <Pagination page={costOfIgnoringPaged.page} pageCount={costOfIgnoringPaged.pageCount} offset={costOfIgnoringPaged.offset} total={costOfIgnoringPaged.total} rowsOnPage={costOfIgnoringPaged.rows.length} onPage={setIgnoringPage} label="SKU" />
    </>
   )}
  </div>
@@ -3899,7 +4415,8 @@ export default function InventoryPage() {
  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
  <button
  onClick={() => setShowEvents(v => !v)}
- style={{ all: 'unset', cursor: 'pointer', width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', boxSizing: 'border-box' }}
+ aria-expanded={showEvents}
+ style={{ all: 'unset', cursor: 'pointer', width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: narrow ? '12px 14px' : '14px 20px', boxSizing: 'border-box', minHeight: narrow ? 52 : undefined }}
  >
  <Calendar size={14} color={C.indigo} />
  <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{t('inventory.events_section_title')}</span>
@@ -3907,7 +4424,7 @@ export default function InventoryPage() {
  <ChevronDown size={13} color={C.dim} style={{ transform: showEvents ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }} />
  </button>
  {showEvents && (
- <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${C.border}` }}>
+ <div style={{ padding: narrow ? '0 12px 14px' : '0 20px 20px', borderTop: `1px solid ${C.border}` }}>
  <div style={{ fontSize: 12, color: C.dim, marginBottom: 14, marginTop: 12, lineHeight: 1.6 }}>
  {t('inventory.events_section_desc')}
  </div>
@@ -3932,7 +4449,59 @@ export default function InventoryPage() {
  />
  )}
 
- {deleteTarget && (
+ {/* Phone: the SKU detail sheet and the product editor. The desktop table
+     expands a row and edits in place; neither fits a 360px screen. */}
+ {narrow && (() => {
+  const detail = detailSku ? data?.items.find(i => i.sku === detailSku) ?? null : null
+  return (
+   <MobileSkuSheet
+    item={detail && !editId ? detail : null}
+    coverageUnit={data?.coverage_unit}
+    onClose={() => setDetailSku(null)}
+    canEdit={canEdit}
+    onEdit={i => startEdit(i)}
+    // One sheet at a time: the confirmation replaces the detail.
+    onDelete={sku => { setDetailSku(null); handleDelete(sku) }}
+    qty={detail ? effectiveQty(detail) : 0}
+    onQtyChange={(sku, n) => setEditedQty(prev => ({ ...prev, [sku]: n }))}
+    notYet={i => notYetLabel(i, t)}
+    calc={detail?.calc_explanation ? (
+     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <CalcExplainer exp={detail.calc_explanation} moq={detail.moq} />
+      <WhyChangedPanel sku={detail.sku} />
+      <PlanningValues item={detail} />
+      <SimulatorPanel item={detail} />
+     </div>
+    ) : undefined}
+   />
+  )
+ })()}
+ {narrow && (
+  <MobileEditSheet
+   sku={editId}
+   state={editState}
+   setState={fn => setEditState(prev => fn(prev))}
+   suppliers={suppliers}
+   onSave={() => editId && commitEdit(editId)}
+   onCancel={cancelEdit}
+   saving={saving}
+  />
+ )}
+
+ {deleteTarget && narrow && (
+  <BottomSheet open onClose={() => setDeleteTarget(null)}
+   title={`${t('inventory.confirm_delete_prefix')} ${deleteTarget}?`}
+   footer={(
+    <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+     <button type="button" className="mobile-btn mobile-btn-secondary" onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</button>
+     <button type="button" className="mobile-btn mobile-btn-danger" onClick={() => { void confirmDelete() }}>{t('inventory.btn_delete_confirm')}</button>
+    </div>
+   )}>
+   <p style={{ margin: 0, fontSize: 14, color: C.dim, lineHeight: 1.5 }}>{t('inventory.confirm_delete_hint')}</p>
+  </BottomSheet>
+ )}
+
+ {deleteTarget && !narrow && (
  <div onClick={() => setDeleteTarget(null)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
  <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
  <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>
@@ -3962,7 +4531,7 @@ export default function InventoryPage() {
  { signal: t('inventory.signal_sin_datos'), desc: t('inventory.legend_sin_datos') },
  ].map(({ signal, desc }) => <span key={signal}><strong>{signal}</strong> — {desc}</span>)}
  {signalRules && (
- <Link href="/configurar-inventario#reglas-semaforo" style={{ color: C.indigo, textDecoration: 'none' }}>
+ <Link href="/configurar-inventario#reglas-semaforo" style={{ color: C.indigo, textDecoration: 'none', ...(narrow ? { minHeight: 44, display: 'inline-flex', alignItems: 'center', fontSize: 13 } : {}) }}>
  {signalRules.overrides.length === 0
  ? t('inventory.thresholds_legend_adjust')
  : signalRules.overrides.length === 1
