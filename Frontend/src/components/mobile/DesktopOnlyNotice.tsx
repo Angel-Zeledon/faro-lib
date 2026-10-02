@@ -33,6 +33,16 @@ export const MOBILE_READY = [
   '/pedidos',
   '/mensajes',
   '/asistente',
+  // Cards per SKU, detail + editor + stock count in sheets (app/inventario/InventoryMobile.tsx).
+  '/inventario',
+  // Setup gaps as cards with inline boxes; semáforo rules save from a sticky bar.
+  '/configurar-inventario',
+  // Supplier cards + detail/form sheets; also covers /proveedores/scorecard (cards).
+  '/proveedores',
+  // Upload wizard: stacked mapping, sticky confirm, wrapping step bar.
+  '/ventas',
+  // Source list ⇄ full-screen source detail; result sets as record cards.
+  '/archivos',
 ]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen

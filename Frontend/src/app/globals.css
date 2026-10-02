@@ -1163,6 +1163,20 @@
   }
 }
 
+/* The shared <Button> (components/ui/Button, class `.btn`) is 30px tall at
+   size "sm" — fine for a mouse, under the 44px a thumb needs. On phones every
+   one of them grows to 44px; the inline styles set no min-height, so this
+   wins without touching desktop. */
+@media (max-width: 768px) {
+  .btn { min-height: 44px; box-sizing: border-box; justify-content: center; }
+  /* Same for the shared <Input>/<Select>/<Textarea> (`.form-input`): 44px,
+     and 16px text — below 16px iOS zooms the whole page on focus. The
+     font-size is set inline by controlStyle(), hence !important. */
+  .form-input { min-height: 44px; box-sizing: border-box; font-size: 16px !important; }
+  /* ConfirmDialog's two answers share the row at thumb height. */
+  .confirm-btn { min-height: 44px; flex: 1; }
+}
+
 /* Dividers between cards in a MobileList. */
 .mobile-list-item + .mobile-list-item { border-top: 1px solid var(--border); }
 

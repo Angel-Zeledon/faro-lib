@@ -86,6 +86,7 @@ export default function DataFreshness({ currentSession, loading }: {
           display: 'inline-flex', alignItems: 'center', gap: 4,
           ...(narrow ? { minHeight: 44 } : {}),
           color: 'var(--accent)', fontWeight: 600, textDecoration: 'none',
+          ...(narrow ? { minHeight: 44, margin: '-12px 0' } : {}),
         }}>
           <Upload size={11} /> {t('freshness.upload_new')}
         </Link>

@@ -16,8 +16,12 @@ import Input, { Field, Select, Textarea } from '@/components/ui/Input'
 import Table, { Th, Td } from '@/components/ui/Table'
 import Tooltip from '@/components/ui/Tooltip'
 import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { BottomSheet, MobileList, MobileCard } from '@/components/mobile'
+import StickyActionBar from '@/components/mobile/StickyActionBar'
 import {
   Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, ChevronRight, BarChart3, Tag,
+  Mail, Phone, MessageCircle,
 } from 'lucide-react'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -170,17 +174,35 @@ function SupplierFormPanel({
   saving: boolean
 }) {
   const { t } = useLanguage()
+  // Phone: the same form in a bottom sheet, one field per row, the save
+  // pinned under it.
+  const narrow = useIsNarrow()
+  const pair: React.CSSProperties = { display: 'grid', gridTemplateColumns: narrow ? '1fr' : '1fr 1fr', gap: 12 }
   const [form, setForm] = useState<SupplierForm>(initial ? supplierToForm(initial) : blankForm(prefillName))
   const set = (k: keyof SupplierForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
   const canSave = form.name.trim().length > 0
 
-  return (
-    <Card tone="inset" padding="20px 24px" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
-        {initial ? t('suppliers.form_edit_title') : t('suppliers.form_new_title')}
-      </div>
+  const title = initial ? t('suppliers.form_edit_title') : t('suppliers.form_new_title')
+  const submit = (
+    <button
+      onClick={() => canSave && onSave(form)}
+      disabled={!canSave || saving}
+      className={narrow ? 'mobile-btn mobile-btn-primary' : undefined}
+      style={narrow ? undefined : {
+        all: 'unset', cursor: canSave && !saving ? 'pointer' : 'default',
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600,
+        background: C.indigo, color: '#fff', opacity: canSave && !saving ? 1 : 0.5,
+      }}
+    >
+      {saving ? <Spinner size={12} /> : <Save size={narrow ? 16 : 12} aria-hidden="true" />}
+      {initial ? t('suppliers.form_submit_update') : t('suppliers.form_submit_create')}
+    </button>
+  )
+  const fields = (
+    <>
 
       {/* Name */}
       <Field label={`${t('suppliers.form_name_label')} *`} labelStyle={FORM_LABEL_STYLE}>
@@ -188,19 +210,19 @@ function SupplierFormPanel({
       </Field>
 
       {/* Email + Phone */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={pair}>
         <Field label={t('suppliers.form_email_label')} labelStyle={FORM_LABEL_STYLE}>
-          <Input name="supplier_email" aria-label={t('suppliers.form_email_label')} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
+          <Input name="supplier_email" inputMode="email" autoComplete="email" aria-label={t('suppliers.form_email_label')} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
         </Field>
         <Field label={t('suppliers.form_phone_label')} labelStyle={FORM_LABEL_STYLE}>
-          <Input name="supplier_phone" aria-label={t('suppliers.form_phone_label')} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
+          <Input name="supplier_phone" type="tel" inputMode="tel" aria-label={t('suppliers.form_phone_label')} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
         </Field>
       </div>
 
       {/* WhatsApp + Payment Terms */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={pair}>
         <Field label={t('suppliers.form_whatsapp_label')} labelStyle={FORM_LABEL_STYLE}>
-          <Input name="supplier_whatsapp" aria-label={t('suppliers.form_whatsapp_label')} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
+          <Input name="supplier_whatsapp" type="tel" inputMode="tel" aria-label={t('suppliers.form_whatsapp_label')} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
         </Field>
         <Field label={t('suppliers.form_payment_terms_label')} labelStyle={FORM_LABEL_STYLE}>
           {/* The chevron is drawn here rather than via `chevron`, because it has
@@ -216,7 +238,7 @@ function SupplierFormPanel({
       </div>
 
       {/* Lead time + Variability */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={pair}>
         {/* The hint below this field states the precedence explicitly (the lesson
             from the event multipliers): this value governs every SKU of the
             supplier that has no lead time of its own — a distributor has 12
@@ -234,7 +256,7 @@ function SupplierFormPanel({
         >
           {/* Placeholder, not a value: it shows what StockAI will assume while
               leaving the field empty, so nothing is recorded as declared. */}
-          <Input name="supplier_lead_time_days" type="number" min={1} max={365}
+          <Input name="supplier_lead_time_days" type="number" inputMode="numeric" min={1} max={365}
                  value={form.lead_time_days} onChange={set('lead_time_days')}
                  placeholder={t('suppliers.form_lead_time_placeholder', { days: DEFAULT_LEAD_TIME_DAYS })}
                  aria-label={t('suppliers.form_lead_time_label')} />
@@ -284,6 +306,28 @@ function SupplierFormPanel({
         />
       </Field>
 
+    </>
+  )
+
+  if (narrow) return (
+    <BottomSheet open onClose={onCancel} title={title} maxHeight="92dvh"
+      footer={(
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <button type="button" className="mobile-btn mobile-btn-secondary" onClick={onCancel} style={{ flex: '0 0 auto' }}>{t('common.cancel')}</button>
+          {submit}
+        </div>
+      )}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>{fields}</div>
+    </BottomSheet>
+  )
+
+  return (
+    <Card tone="inset" padding="20px 24px" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+        {title}
+      </div>
+      {fields}
+
       {/* Actions */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button
@@ -292,21 +336,65 @@ function SupplierFormPanel({
         >
           {t('common.cancel')}
         </button>
-        <button
-          onClick={() => canSave && onSave(form)}
-          disabled={!canSave || saving}
-          style={{
-            all: 'unset', cursor: canSave && !saving ? 'pointer' : 'default',
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 600,
-            background: C.indigo, color: '#fff', opacity: canSave && !saving ? 1 : 0.5,
-          }}
-        >
-          {saving ? <Spinner size={12} /> : <Save size={12} aria-hidden="true" />}
-          {initial ? t('suppliers.form_submit_update') : t('suppliers.form_submit_create')}
-        </button>
+        {submit}
       </div>
     </Card>
+  )
+}
+
+// ── Phone: supplier detail sheet ──────────────────────────────────────────────
+function SupplierSheet({ supplier, onClose, onEdit, onDelete }: {
+  supplier: SupplierWithLearning | null
+  onClose: () => void
+  onEdit: (s: Supplier) => void
+  onDelete: (id: string) => void
+}) {
+  const { t } = useLanguage()
+  const s = supplier
+  const linkS: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, color: C.indigo,
+    textDecoration: 'none', fontSize: 15, overflowWrap: 'anywhere',
+  }
+  const factLabel: React.CSSProperties = { fontSize: 12, color: C.dim }
+  const factValue: React.CSSProperties = { fontSize: 15, fontWeight: 600, color: C.text, marginTop: 2 }
+  return (
+    <BottomSheet open={!!s} onClose={onClose} title={s?.name ?? ''} maxHeight="92dvh"
+      footer={s ? (
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <button type="button" className="mobile-btn mobile-btn-secondary" onClick={() => onDelete(s.id)}
+                  aria-label={`${t('suppliers.row_delete')}: ${s.name}`}
+                  style={{ flex: '0 0 auto', color: 'var(--signal-order-now-fg)' }}>
+            <Trash2 size={16} aria-hidden="true" />
+          </button>
+          <button type="button" className="mobile-btn mobile-btn-primary" onClick={() => onEdit(s)}>
+            <Edit2 size={16} aria-hidden="true" /> {t('suppliers.row_edit')}
+          </button>
+        </div>
+      ) : undefined}>
+      {s && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px 12px' }}>
+            <div><div style={factLabel}>{t('suppliers.table_lead_time')}</div><div style={{ ...factValue, color: C.indigo }}>{s.lead_time_days}d</div></div>
+            <div><div style={factLabel}>{t('suppliers.table_variability')}</div><div style={factValue}>±{s.lead_time_std}d</div></div>
+            <div><div style={factLabel}>{t('suppliers.table_payment_terms')}</div><div style={factValue}>{s.payment_terms || '—'}</div></div>
+            <div><div style={factLabel}>{t('suppliers.form_review_period_label')}</div><div style={factValue}>{s.review_period_days ? `${s.review_period_days}d` : '—'}</div></div>
+          </div>
+          <div style={{ fontSize: 13.5, lineHeight: 1.5, padding: '10px 12px', borderRadius: 10, background: C.card, border: `1px solid ${C.border}` }}>
+            <LeadTimeLearning supplier={s} />
+          </div>
+          {(s.email || s.phone || s.whatsapp) && (
+            <div>
+              <div style={factLabel}>{t('suppliers.table_contact')}</div>
+              {s.email && <a href={`mailto:${s.email}`} style={linkS}><Mail size={16} aria-hidden="true" />{s.email}</a>}
+              {s.phone && <a href={`tel:${s.phone.replace(/\s+/g, '')}`} style={linkS}><Phone size={16} aria-hidden="true" />{s.phone}</a>}
+              {s.whatsapp && <a href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" style={linkS}><MessageCircle size={16} aria-hidden="true" />{s.whatsapp}</a>}
+            </div>
+          )}
+          {s.notes && <p style={{ margin: 0, fontSize: 13.5, color: C.muted, lineHeight: 1.5 }}>{s.notes}</p>}
+          <PriceBreakManager supplier={s} />
+        </div>
+      )}
+    </BottomSheet>
   )
 }
 
@@ -424,6 +512,10 @@ function SuppliersPageInner() {
 
   const { t } = useLanguage()
   const confirm = useConfirm()
+  // Phone: cards + a detail sheet instead of the 8-column table, and the add
+  // action pinned above the tab bar.
+  const narrow = useIsNarrow()
+  const [detailId, setDetailId] = useState<string | null>(null)
   // Typed with the learning counters the list endpoint now ships alongside each
   // supplier; they are optional so an older backend simply renders no state.
   const [suppliers, setSuppliers] = useState<SupplierWithLearning[]>([])
@@ -509,6 +601,8 @@ function SuppliersPageInner() {
 
   async function handleDelete(id: string) {
     const s = suppliers.find(x => x.id === id)
+    // One sheet at a time on a phone: the confirmation replaces the detail.
+    setDetailId(null)
     if (!(await confirm({
       title: `${t('suppliers.delete_confirm_q')} "${s?.name}"?`,
       message: t('suppliers.delete_confirm_warn'),
@@ -519,7 +613,7 @@ function SuppliersPageInner() {
     catch (e: unknown) { setActionError(errorDetail(e) || t('suppliers.err_deleting')) }
   }
 
-  function handleEdit(s: Supplier) { setEditing(s); setShowForm(true) }
+  function handleEdit(s: Supplier) { setDetailId(null); setEditing(s); setShowForm(true) }
   function handleCancel() { setShowForm(false); setEditing(null); setPrefillName(undefined) }
   function handleToggleExpand(id: string) { setExpandedId(cur => (cur === id ? null : id)) }
 
@@ -530,7 +624,7 @@ function SuppliersPageInner() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 9,
             background: 'linear-gradient(135deg, var(--accent), var(--accent))',
@@ -553,10 +647,11 @@ function SuppliersPageInner() {
             display: 'flex', alignItems: 'center', gap: 6,
             fontSize: 12, color: C.dim, textDecoration: 'none',
             padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8,
+            ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14, borderRadius: 10 } : {}),
           }}>
             <BarChart3 size={13} aria-hidden="true" /> {t('suppliers.scorecard_link')}
           </Link>
-          {!isFormOpen && (
+          {!isFormOpen && !narrow && (
             <button
               data-tour="sup.add"
               onClick={() => { setEditing(null); setShowForm(true) }}
@@ -614,6 +709,19 @@ function SuppliersPageInner() {
             onClick: () => { setEditing(null); setShowForm(true) },
           }]}
         />
+      ) : suppliers.length > 0 && narrow ? (
+        /* ── Phone: one card per supplier, details in a sheet ─────── */
+        <MobileList ariaLabel={t('suppliers.page_title')}>
+          {suppliers.map(s => (
+            <MobileCard key={s.id}
+              title={s.name}
+              subtitle={[s.payment_terms, s.email || s.phone || s.whatsapp].filter(Boolean).join(' · ') || undefined}
+              value={<span style={{ color: C.indigo }}>{s.lead_time_days}d</span>}
+              valueCaption={`±${s.lead_time_std}d`}
+              onClick={() => setDetailId(s.id)}
+            />
+          ))}
+        </MobileList>
       ) : suppliers.length > 0 ? (
         /* ── Table ───────────────────────────────────────────────── */
         <Card padding={0} overflow="hidden">
@@ -659,6 +767,23 @@ function SuppliersPageInner() {
           </Table>
         </Card>
       ) : null}
+
+      {narrow && (
+        <SupplierSheet
+          supplier={detailId && !isFormOpen ? suppliers.find(s => s.id === detailId) ?? null : null}
+          onClose={() => setDetailId(null)}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
+      )}
+      {narrow && !loading && !loadError && suppliers.length > 0 && (
+        <StickyActionBar hidden={isFormOpen}>
+          <button type="button" data-tour="sup.add" className="mobile-btn mobile-btn-primary"
+                  onClick={() => { setEditing(null); setShowForm(true) }}>
+            <Plus size={18} aria-hidden="true" /> {t('suppliers.add_supplier')}
+          </button>
+        </StickyActionBar>
+      )}
 
     </div>
   )

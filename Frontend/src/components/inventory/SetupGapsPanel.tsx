@@ -24,6 +24,7 @@ import { getSetupGaps, patchInventoryStock, upsertInventoryStock } from '@/lib/a
 import type { SetupGapItem, SetupGapsResponse } from '@/lib/stockSetupTypes'
 import type { InventoryStock } from '@/lib/types'
 import { fmtNum } from '@/lib/numberLocale'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const GREEN = '#22c55e'
 const AMBER = '#f59e0b'
@@ -47,6 +48,9 @@ export default function SetupGapsPanel({
   onChanged?: () => void
 }) {
   const c = useSetupCopy()
+  // Phone: the 8-column table (720px minimum) becomes one card per product
+  // with the three boxes stacked under it — same rows, same save.
+  const narrow = useIsNarrow()
   const [data, setData]       = useState<SetupGapsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed]   = useState(false)
@@ -146,7 +150,7 @@ export default function SetupGapsPanel({
   return (
     <section style={{
       border: '1px solid var(--border)', borderRadius: 12,
-      background: 'var(--surface)', padding: '18px 20px',
+      background: 'var(--surface)', padding: narrow ? '16px 14px' : '18px 20px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0, flex: 1 }}>
@@ -219,7 +223,84 @@ export default function SetupGapsPanel({
         </div>
       )}
 
-      {data.items.length > 0 && (
+      {data.items.length > 0 && narrow && (
+        <ol aria-label={c('setupStock.gaps.title')} style={{ listStyle: 'none', margin: '14px -14px 0', padding: 0 }}>
+          {data.items.map(item => {
+            const state = rows[item.sku] ?? emptyRow()
+            const withinTarget = item.rank <= data.recommended_count
+            const set = (patch: Partial<RowState>) => setRows(r => ({ ...r, [item.sku]: { ...state, ...patch } }))
+            const label = (k: string) => (
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>{c(k)}</span>
+            )
+            return (
+              <li key={item.sku} style={{
+                borderTop: '1px solid var(--border)', padding: '14px',
+                background: withinTarget ? 'rgba(34,197,94,0.05)' : 'transparent',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, color: 'var(--dim)', flexShrink: 0 }}>{item.rank}.</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.display_name || item.sku}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: withinTarget ? GREEN : 'var(--dim)', flexShrink: 0 }}
+                        title={c('setupStock.gaps.col_cumulative_tip')}>
+                    {item.cumulative_pct.toFixed(1)}%
+                  </span>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 3, lineHeight: 1.45 }}>
+                  {item.display_name ? `${item.sku} · ` : ''}
+                  {fmtNum(Math.round(item.projected_demand))} {c('setupStock.gaps.units_suffix')}
+                  {isMoney ? ` · ${money(item.projected_spend)}` : ''}
+                  {` · ${c('setupStock.gaps.col_share')} ${item.share_pct.toFixed(1)}%`}
+                </div>
+                <div style={{ fontSize: 12.5, color: AMBER, marginTop: 2 }}>
+                  {c('setupStock.gaps.col_missing')}: {item.missing.map(f => c(`setupStock.gaps.missing.${f}`)).join(', ')}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    {label('setupStock.gaps.field_stock')}
+                    <input value={state.stock} inputMode="decimal" enterKeyHint="next"
+                           onChange={e => set({ stock: e.target.value, saved: false, needsStock: false })}
+                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_stock')}`}
+                           aria-required={!item.has_row} style={inputStyleNarrow} />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    {label('setupStock.gaps.field_cost')}
+                    <input value={state.cost} inputMode="decimal" enterKeyHint="next"
+                           onChange={e => set({ cost: e.target.value, saved: false })}
+                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_cost')}`} style={inputStyleNarrow} />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    {label('setupStock.gaps.field_lead_time')}
+                    <input value={state.lead} inputMode="numeric" enterKeyHint="done"
+                           onChange={e => set({ lead: e.target.value, saved: false })}
+                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void save(item) } }}
+                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_lead_time')}`} style={inputStyleNarrow} />
+                  </label>
+                </div>
+                <button type="button" className="mobile-btn mobile-btn-secondary" disabled={state.saving}
+                        onClick={() => void save(item)} style={{ width: '100%', marginTop: 10 }}>
+                  {state.saving ? <Spinner size={14} /> : state.saved
+                    ? <><Check size={16} color={GREEN} /> {c('setupStock.gaps.saved')}</>
+                    : c('setupStock.gaps.save')}
+                </button>
+                {state.needsStock && (
+                  <div role="alert" style={{ color: AMBER, fontSize: 12.5, marginTop: 6, lineHeight: 1.45 }}>
+                    {c('setupStock.gaps.stock_required')}
+                  </div>
+                )}
+                {state.failed && (
+                  <div role="alert" style={{ color: '#ef4444', fontSize: 12.5, marginTop: 6 }}>
+                    {c('setupStock.gaps.save_error')}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      )}
+
+      {data.items.length > 0 && !narrow && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 720 }}>
             <thead>
@@ -374,6 +455,12 @@ export default function SetupGapsPanel({
       )}
     </section>
   )
+}
+
+const inputStyleNarrow: React.CSSProperties = {
+  boxSizing: 'border-box', width: '100%', minWidth: 0, minHeight: 44,
+  padding: '8px 10px', fontSize: 16, borderRadius: 10,
+  border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)',
 }
 
 const inputStyle: React.CSSProperties = {

@@ -12,6 +12,12 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight, Settings2 } from 'lucide-react'
 import MenuButton from '@/components/ui/MenuButton'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+
+/** Phone sizing for the inline controls here: 44px tall targets, and 16px
+ *  text in fields so iOS does not zoom the page when one takes focus. */
+const TAP: React.CSSProperties = { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center' }
+const TAP_FIELD: React.CSSProperties = { minHeight: 44, fontSize: 16, boxSizing: 'border-box', borderRadius: 10, padding: '8px 10px' }
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -120,6 +126,7 @@ function AddWarehouse({ onCreated, subtle, open, onOpenChange }: {
   // could never START using multi-warehouse. For mono-warehouse tenants this
   // renders as one subtle pill — the only multi-warehouse affordance they see.
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const [addingLocal, setAddingLocal] = useState(false)
   const controlled = open !== undefined
   const adding = controlled ? open : addingLocal
@@ -157,27 +164,32 @@ function AddWarehouse({ onCreated, subtle, open, onOpenChange }: {
               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
                        alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 7,
                        fontSize: 11.5, fontWeight: 600,
-                       color: subtle ? 'var(--dim)' : C.indigo }}>
+                       color: subtle ? 'var(--dim)' : C.indigo,
+                       ...(narrow ? { ...TAP, fontSize: 14 } : {}) }}>
         <Plus size={12} /> {t('inventory.wh_add_btn')}
       </button>
     )
   }
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...(narrow ? { width: '100%', gap: 10 } : {}) }}>
       <input autoFocus value={name}
              name="warehouse_name" aria-label={t('inventory.wh_add_placeholder')}
              placeholder={t('inventory.wh_add_placeholder')}
              onChange={e => setName(e.target.value)}
              onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setAdding(false) }}
+             enterKeyHint="done"
              style={{ width: 140, background: 'transparent', border: `1px solid ${C.border}`,
-                      borderRadius: 6, color: C.text, fontSize: 12, padding: '4px 8px' }} />
+                      borderRadius: 6, color: C.text, fontSize: 12, padding: '4px 8px',
+                      ...(narrow ? { ...TAP_FIELD, flex: 1, minWidth: 0 } : {}) }} />
       <button onClick={save} disabled={saving || !name.trim()}
-              style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo }}>
+              style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo,
+                       ...(narrow ? { ...TAP, fontSize: 14 } : {}) }}>
         {saving ? t('common.saving') : t('common.save')}
       </button>
       <button onClick={() => setAdding(false)} aria-label={t('common.cancel')}
-              style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
-        <X size={13} color={C.dim} />
+              style={{ all: 'unset', cursor: 'pointer', display: 'flex',
+                       ...(narrow ? { ...TAP, minWidth: 44, justifyContent: 'center' } : {}) }}>
+        <X size={narrow ? 18 : 13} color={C.dim} />
       </button>
     </span>
   )
@@ -189,6 +201,7 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
   // stock actually beats buying it. Unconfigured pairs use the backend default
   // (1 day, free) — the empty state says so instead of pretending it's broken.
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const [lanes, setLanes] = useState<TransferLane[] | null>(null)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -233,7 +246,12 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
   const field: React.CSSProperties = {
     background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6,
     color: C.text, fontSize: 12, padding: '3px 6px',
+    ...(narrow ? { ...TAP_FIELD, width: '100%' } : {}),
   }
+  // Phone: each lane field on its own labelled cell of a two-column grid.
+  const lbl: React.CSSProperties = narrow
+    ? { fontSize: 12, color: C.dim, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }
+    : { fontSize: 11, color: C.dim }
 
   return (
     <div style={{
@@ -259,21 +277,24 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
           </span>
           <button onClick={() => remove(lane)}
                   aria-label={`${t('transfers.lanes_delete')} ${lane.from_warehouse} ${lane.to_warehouse}`}
-                  style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
-            <X size={12} color={C.dim} />
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex',
+                           ...(narrow ? { ...TAP, minWidth: 44, justifyContent: 'center', flexShrink: 0 } : {}) }}>
+            <X size={narrow ? 16 : 12} color={C.dim} />
           </button>
         </div>
       ))}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 11, color: C.dim }}>
+      <div style={narrow
+        ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }
+        : { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <label style={lbl}>
           {t('transfers.lanes_from')}{' '}
           <select name="lane_from" value={effectiveFrom}
                   onChange={e => setFrom(e.target.value)} style={field}>
             {names.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_to')}{' '}
           <select name="lane_to" value={effectiveTo}
                   onChange={e => setTo(e.target.value)} style={field}>
@@ -281,27 +302,28 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
                   .map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_days')}{' '}
-          <input type="number" min={0} name="lane_days" value={days}
+          <input type="number" inputMode="numeric" min={0} name="lane_days" value={days}
                  onChange={e => setDays(e.target.value)}
-                 style={{ ...field, width: 56 }} />
+                 style={{ ...field, width: narrow ? '100%' : 56 }} />
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_cost_per_unit')}{' '}
-          <input type="number" min={0} step="0.01" name="lane_cost_per_unit"
+          <input type="number" inputMode="decimal" min={0} step="0.01" name="lane_cost_per_unit"
                  value={costPerUnit} onChange={e => setCostPerUnit(e.target.value)}
-                 style={{ ...field, width: 72 }} />
+                 style={{ ...field, width: narrow ? '100%' : 72 }} />
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_fixed_cost')}{' '}
-          <input type="number" min={0} step="0.01" name="lane_fixed_cost"
+          <input type="number" inputMode="decimal" min={0} step="0.01" name="lane_fixed_cost"
                  value={fixedCost} onChange={e => setFixedCost(e.target.value)}
-                 style={{ ...field, width: 72 }} />
+                 style={{ ...field, width: narrow ? '100%' : 72 }} />
         </label>
         <button onClick={save} disabled={saving || effectiveFrom === effectiveTo}
                 style={{ all: 'unset', cursor: 'pointer', fontSize: 12,
-                         fontWeight: 600, color: C.indigo }}>
+                         fontWeight: 600, color: C.indigo,
+                         ...(narrow ? { ...TAP, fontSize: 14, alignSelf: 'end', justifyContent: 'center' } : {}) }}>
           {saving ? t('common.saving') : t('transfers.lanes_add')}
         </button>
       </div>
@@ -318,6 +340,7 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   onCreated?: () => void
 }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   // Warehouse mutations refresh the shared state directly; the optional
   // callbacks are for page-specific side effects (e.g. reloading status).
   const { reload } = useWarehouses()
@@ -392,13 +415,17 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
     fontSize: 11.5, fontWeight: 600,
     background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
     color: active ? C.indigo : C.dim,
+    ...(narrow ? { ...TAP, fontSize: 14, padding: '0 14px', borderRadius: 999, flexShrink: 0, whiteSpace: 'nowrap',
+                   border: `1px solid ${active ? 'var(--accent)' : C.border}` } : {}),
   })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div role="tablist" aria-label={t('inventory.wh_selector_aria')}
-           style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-        <WarehouseIcon size={14} color={C.dim} />
+           className={narrow ? 'mobile-tabs-scroller' : undefined}
+           style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 4,
+                    ...(narrow ? { flexWrap: 'nowrap', overflowX: 'auto', minWidth: 0, paddingBottom: 2 } : { flexWrap: 'wrap' }) }}>
+        <WarehouseIcon size={14} color={C.dim} style={{ flexShrink: 0 }} />
         <button role="tab" aria-selected={value === null}
                 onClick={() => onChange(null)} style={pill(value === null)}>
           {t('inventory.wh_all')}
@@ -451,25 +478,29 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
         }}>
           <span style={{ fontSize: 11, color: C.dim }}>{t('inventory.wh_shares_label')}</span>
           {warehouses.map(w => (
-            <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.text }}>
+            <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.text, ...(narrow ? { fontSize: 14, gap: 6 } : {}) }}>
               {w.name}
               <input
                 type="number" min={0} max={100}
                 name={`demand-share-${w.name}`}
                 defaultValue={w.demand_share ?? ''}
                 onChange={e => setDraft(d => ({ ...d, [w.name]: e.target.value }))}
+                inputMode="decimal"
                 style={{ width: 56, background: 'transparent', border: `1px solid ${C.border}`,
-                         borderRadius: 6, color: C.text, fontSize: 12, padding: '3px 6px' }}
+                         borderRadius: 6, color: C.text, fontSize: 12, padding: '3px 6px',
+                         ...(narrow ? { ...TAP_FIELD, width: 72 } : {}) }}
               />%
             </label>
           ))}
           <button onClick={saveShares} disabled={saving}
-                  style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo }}>
+                  style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo,
+                           ...(narrow ? { ...TAP, fontSize: 14 } : {}) }}>
             {saving ? t('common.saving') : t('common.save')}
           </button>
           <button onClick={() => setEditingShares(false)} aria-label={t('common.cancel')}
-                  style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
-            <X size={13} color={C.dim} />
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex',
+                           ...(narrow ? { ...TAP, minWidth: 44, justifyContent: 'center' } : {}) }}>
+            <X size={narrow ? 18 : 13} color={C.dim} />
           </button>
 
           {/* What these numbers will ACTUALLY do. The backend normalises over
