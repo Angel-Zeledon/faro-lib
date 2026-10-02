@@ -1998,6 +1998,22 @@ export interface ForecastExplanation {
   fallback:    boolean
 }
 
+/** GET /analyst/welcome — the assistant screen's personal opening. */
+export interface AssistantWelcome {
+  first_name: string
+  company: string
+  has_forecast: boolean
+  summary: {
+    order_now: number
+    order_soon: number
+    overstock: number
+    no_stock_data: number
+    overdue_orders: number
+  } | null
+  /** `code` selects `analyst.suggest.<code>`; `params` fill its placeholders. */
+  suggestions: { code: string; params: Record<string, string | number> }[]
+}
+
 export interface SuggestedQuestion {
   // Clicking one puts it in the composer and sends it, so it has to be in the
   // reader's language: `analyst.q.<code>` is what gets rendered, `text` is the

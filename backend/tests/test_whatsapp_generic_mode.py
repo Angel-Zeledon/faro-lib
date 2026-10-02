@@ -22,9 +22,9 @@ def test_generic_mode_replies_without_calling_the_llm(monkeypatch):
     monkeypatch.setattr("backend.config.settings.whatsapp_bot_generic_mode", True)
 
     def _boom(*a, **k):
-        raise AssertionError("the LLM router must NOT be called in generic mode")
+        raise AssertionError("the assistant core must NOT be called in generic mode")
 
-    monkeypatch.setattr(A, "_route", _boom)
+    monkeypatch.setattr(A, "_answer", _boom)
 
     reply, history, pending = A.run_turn(
         _ctx(), "dame el semaforo de inventario",
@@ -40,7 +40,7 @@ def test_generic_mode_replies_without_calling_the_llm(monkeypatch):
 def test_generic_mode_still_executes_a_confirmation(monkeypatch):
     monkeypatch.setattr("backend.config.settings.whatsapp_bot_generic_mode", True)
     # LLM must not be involved even when confirming.
-    monkeypatch.setattr(A, "_route", lambda *a, **k: (_ for _ in ()).throw(
+    monkeypatch.setattr(A, "_answer", lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("no LLM on a confirmation turn")))
     monkeypatch.setattr(wt, "execute_pending_action", lambda ctx, action: "DONE ✓")
 
@@ -57,16 +57,16 @@ def test_generic_mode_still_executes_a_confirmation(monkeypatch):
 
 
 def test_smart_mode_is_the_default_off(monkeypatch):
-    """With the flag off (the test default), the bot routes via the LLM — the
+    """With the flag off (the test default), the bot answers through the assistant core — the
     generic branch must not swallow the turn."""
     # conftest resets the flag to False; prove routing is reached.
     called = {}
 
-    def _fake_route(ctx, text, history):
+    def _fake_answer(ctx, text, history):
         called["yes"] = True
-        return {"tool": None, "args": {}, "reply": "hola"}
+        return "hola"
 
-    monkeypatch.setattr(A, "_route", _fake_route)
+    monkeypatch.setattr(A, "_answer", _fake_answer)
     reply, _h, _p = A.run_turn(_ctx(), "hola", {"history": [], "pending_action": None})
     assert called.get("yes") is True
     assert reply == "hola"

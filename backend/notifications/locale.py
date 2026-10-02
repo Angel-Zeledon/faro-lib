@@ -316,6 +316,51 @@ _ES: dict[str, str] = {
     "month_name_october":   "octubre",
     "month_name_november":  "noviembre",
     "month_name_december":  "diciembre",
+    # ── The assistant, when it answers WITHOUT the model ──────────────────────
+    # `backend/assistant/core.py` writes these when there is no DEEPSEEK_API_KEY
+    # or the model failed / ran out of time, and when a reply carries figures
+    # the grounding guard could not find in the account's data. Stored as a
+    # chat message or sent over WhatsApp, so the frontend's i18n never sees
+    # them. The web chat is read in either UI language, so these keys also
+    # exist in `_EN` below.
+    "assistant_greeting":             "Hola {name}. ",
+    "assistant_intro_not_configured": "El asistente con IA no está activado en esta instalación, así que te respondo directo con tus datos:",
+    "assistant_intro_failed":         "No pude generar una respuesta con IA en este momento, así que te dejo lo que dicen tus datos ahora:",
+    "assistant_no_forecast":          "Todavía no hay un pronóstico entrenado, así que no puedo decirte qué pedir. Sube tus ventas en /ventas para empezar.",
+    "assistant_counts":               "Hoy tienes {order_now} producto(s) para pedir ya, {order_soon} para pedir pronto y {overstock} con sobrestock.",
+    "assistant_nothing_urgent":       "No tienes productos en rojo hoy.",
+    "assistant_risk_line":            "• {name}: quedan {stock} ({cover} {unit}) — pedir {qty}",
+    "assistant_risk_supplier":        " a {supplier}",
+    "assistant_overdue_line":         "• La orden {reference} de {supplier} va {days} días atrasada.",
+    "assistant_sin_datos":            "{n} producto(s) no tienen stock registrado: cárgalo en /inventario para que el semáforo pueda evaluarlos.",
+    "assistant_stale":                "Ojo: tus datos están desactualizados; súbelos de nuevo en /ventas para que esto sea confiable.",
+    "assistant_footer":               "El detalle completo está en /compras.",
+    "assistant_unverified":           "⚠️ No pude verificar estas cifras contra tus datos: {numbers}. Confírmalas en la app antes de decidir.",
+    "assistant_unit_day":             "días",
+    "assistant_unit_week":            "semanas",
+    "assistant_unit_month":           "meses",
+}
+
+# English values for the few keys a channel can read in English. Only the
+# assistant's rule-based replies need this today (the web chat follows the UI
+# language); every other backend-only channel is Spanish-only.
+_EN: dict[str, str] = {
+    "assistant_greeting":             "Hi {name}. ",
+    "assistant_intro_not_configured": "The AI assistant is not enabled on this installation, so here is what your data says directly:",
+    "assistant_intro_failed":         "I could not produce an AI answer right now, so here is what your data says at the moment:",
+    "assistant_no_forecast":          "There is no trained forecast yet, so I cannot tell you what to order. Upload your sales at /ventas to start.",
+    "assistant_counts":               "Today you have {order_now} product(s) to order now, {order_soon} to order soon and {overstock} overstocked.",
+    "assistant_nothing_urgent":       "Nothing is in the red today.",
+    "assistant_risk_line":            "• {name}: {stock} left ({cover} {unit}) — order {qty}",
+    "assistant_risk_supplier":        " from {supplier}",
+    "assistant_overdue_line":         "• Order {reference} from {supplier} is {days} days late.",
+    "assistant_sin_datos":            "{n} product(s) have no stock on record: load it at /inventario so the stock signal can judge them.",
+    "assistant_stale":                "Heads-up: your data is out of date; upload it again at /ventas so this is reliable.",
+    "assistant_footer":               "Full detail is at /compras.",
+    "assistant_unverified":           "⚠️ I could not verify these figures against your data: {numbers}. Check them in the app before deciding.",
+    "assistant_unit_day":             "days",
+    "assistant_unit_week":            "weeks",
+    "assistant_unit_month":           "months",
 }
 
 
@@ -345,6 +390,17 @@ def render_es(key: str, **params: object) -> str:
     programming error that must fail loudly in tests, not ship a blank.
     """
     return _ES[key].format(**params)
+
+
+def render(language: str, key: str, **params: object) -> str:
+    """`render_es`, in `language` when the catalog has that key in it.
+
+    English exists only for the keys listed in `_EN`; any other language, or a
+    key with no English value, renders the Spanish — never a blank.
+    """
+    if language == "en" and key in _EN:
+        return _EN[key].format(**params)
+    return render_es(key, **params)
 
 
 def render_month(year: int, month: int) -> str:

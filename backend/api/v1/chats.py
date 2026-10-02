@@ -10,7 +10,10 @@ Routes:
   PATCH  /analyst/chats/{chat_id}             — update title / favorite / sources
   DELETE /analyst/chats/{chat_id}             — delete chat + all messages
   GET    /analyst/chats/{chat_id}/messages    — paginated messages
-  POST   /analyst/chats/{chat_id}/messages    — send message, get AI response
+  POST   /analyst/chats/{chat_id}/messages    — send message, get the assistant's answer
+  GET    /analyst/welcome                     — first name, today's counts, suggested questions
+
+Answers come from the one assistant core, `backend/assistant/` (channel "web").
 """
 
 import logging
@@ -18,10 +21,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.ai import rag
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.config import settings
-from backend.errors import AppError
 from backend.db import chat_store
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
@@ -66,20 +67,6 @@ DATA_SOURCE_TYPES = [
     {"id": "config",           "label": "Configuration"},
     {"id": "forecast_summary", "label": "Forecast Trends"},
 ]
-
-_GENERAL_SYSTEM = """\
-You are an AI analyst assistant for Forecasting CR, an enterprise SaaS platform \
-for demand forecasting and supply chain intelligence built for logistics companies.
-
-Help users with:
-- Understanding forecasting concepts (MAE, RMSE, WAPE, bias, confidence intervals)
-- Interpreting model performance results
-- Supply chain and inventory strategy
-- Platform workflow guidance (data upload → inspection → configuration → training → results)
-- Time series analysis concepts
-
-Be concise, professional, and actionable. Use bullet points for lists."""
-
 
 def _auth_chat(tenant_id: str, chat_id: str):
     chat = chat_store.get_chat(tenant_id, chat_id)
@@ -178,18 +165,29 @@ def get_messages(
 # ── Send message ───────────────────────────────────────────────────────────────
 
 @router.post("/analyst/chats/{chat_id}/messages")
-async def send_message(
+def send_message(
     chat_id: str,
     body: dict,
     user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Send a user message and get an AI response.
+    Send a user message and get the assistant's answer.
 
     Body:
       question     str   — the user's message
-      session_id   str?  — override the chat's session (optional)
-      sku          str?  — focus on a specific SKU
+      language     str?  — the UI language ("es" | "en"); the answer is written in it
+      sku          str?  — a product the question is about (added to the question)
+
+    Every message goes through the one assistant core (`backend/assistant/`),
+    which answers from this account's live data. `session_id` and the chat's
+    `data_sources` are still accepted and stored for old clients but no longer
+    steer the answer: they selected RAG chunks of ONE session, while the
+    assistant reads the account the way the screens do (the active session at
+    the tenant's planning grain).
+
+    A plain `def`, not `async def`: the LLM call and the account reads block,
+    and inside an async endpoint they blocked the whole event loop — every
+    other request to the API waited for this chat's answer.
     """
     chat = _auth_chat(user.tenant_id, chat_id)
 
@@ -211,12 +209,11 @@ async def send_message(
                        f"{RATE_LIMIT_WINDOW_SECONDS}s per organization. Please wait and try again.",
             )
 
-    sku        = body.get("sku") or None
-    session_id = body.get("session_id") or chat.get("session_id")
-    sources    = chat.get("data_sources") or []
+    sku      = (body.get("sku") or "").strip() or None
+    language = body.get("language") if body.get("language") in ("es", "en") else None
 
-    # Build history from last 6 messages in DB
-    history = chat_store.get_history_for_context(chat_id, user.tenant_id, n_turns=6)
+    # The last turns, read BEFORE this message is stored so it is not doubled.
+    history = chat_store.get_history_for_context(chat_id, user.tenant_id, n_turns=8)
 
     # ── Save user message ──────────────────────────────────────────────
     user_msg = chat_store.add_message(
@@ -235,47 +232,46 @@ async def send_message(
         except Exception as exc:
             log.warning("Auto-title failed: %s", exc)
 
-    # ── Get AI response ────────────────────────────────────────────────
-    ai_source       = "general"
-    ai_answer       = ""
-    retrieved_count = 0
-
-    if session_id:
-        # Session-linked chat: use RAG (or its fallback chain)
-        s = session_svc.get_session(user.tenant_id, session_id)
-        if s and s["status"] == "COMPLETED":
-            result = rag.query(
-                tenant_id=user.tenant_id,
-                session_id=session_id,
-                question=question,
-                user_id=user.user_id,
-                sku=sku,
-                history=history,
-                chunk_types=sources if sources else None,
-            )
-            ai_answer       = result["answer"]
-            ai_source       = result.get("source", "rag")
-            retrieved_count = len(result.get("retrieved", []))
-        else:
-            # Session not completed — use general fallback
-            ai_answer = _general_answer(question, history)
-            ai_source = "general"
-    else:
-        ai_answer = _general_answer(question, history)
-        ai_source = "general"
+    # ── The assistant's answer ─────────────────────────────────────────
+    # Never raises for a missing key, a slow model or a failed call: the core
+    # answers from the data by rules instead, and says so in the reply.
+    from backend.assistant import answer as assistant_answer
+    message = f"{question}\n\n(About product: {sku})" if sku else question
+    reply = assistant_answer(
+        user.tenant_id, user.user_id, "web", message, history,
+        role=user.role, language=language, budget_s=LLM_BUDGET_S,
+    )
+    # `source` is what the screen labels the bubble with: "assistant" for a
+    # model answer whose every figure was verified, "assistant_unverified" when
+    # the reply carries the guard's warning, "rules" when no model answered.
+    source = "rules" if reply.source == "rules" else (
+        "assistant" if reply.grounded else "assistant_unverified")
 
     # ── Save AI message ────────────────────────────────────────────────
     ai_msg = chat_store.add_message(
         chat_id=chat_id,
         tenant_id=user.tenant_id,
         role="assistant",
-        content=ai_answer,
-        source=ai_source,
-        retrieved_count=retrieved_count or None,
+        content=reply.text,
+        source=source,
+        retrieved_count=len(reply.tools_used) or None,
     )
     chat_store.touch_chat(chat_id, user.tenant_id)
 
-    return ok({"user_message": user_msg, "ai_message": ai_msg})
+    return ok({"user_message": user_msg, "ai_message": ai_msg,
+               "assistant": {"source": reply.source, "reason": reply.reason,
+                             "grounded": reply.grounded, "unverified": reply.unverified,
+                             "tools_used": reply.tools_used}})
+
+
+# ── The assistant's opening ────────────────────────────────────────────────────
+
+@router.get("/analyst/welcome")
+def assistant_welcome(user: CurrentUser = Depends(get_current_user)):
+    """First name, company, today's counts and suggested questions built from
+    this account's own top risks (codes + params; the frontend writes them)."""
+    from backend.assistant.welcome import build_welcome
+    return ok(build_welcome(user))
 
 
 # ── Data source types reference ────────────────────────────────────────────────
@@ -306,33 +302,3 @@ def _auto_title(question: str) -> str:
         return msg.content[0].text.strip() or question[:40].strip()
     except Exception:
         return question[:40].strip()
-
-
-def _general_answer(question: str, history: list[dict]) -> str:
-    """General LLM response for chats without a session context (local LLM)."""
-    try:
-        from backend.ai.local_llm import get_local_llm_client
-        client = get_local_llm_client(timeout=LLM_BUDGET_S)
-        messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in (history or [])[-6:]
-        ]
-        messages.append({"role": "user", "content": question})
-        response = client.messages.create(
-            max_tokens=800,
-            system=_GENERAL_SYSTEM,
-            messages=messages,
-        )
-        return response.content[0].text
-    except Exception as exc:
-        log.warning("General answer failed: %s", exc)
-        # A code, not prose, and certainly not English prose presented as the
-        # analyst's own answer — which is what this returned. The frontend
-        # renders `errors.ai_unavailable` and keeps the question in the thread so
-        # the buyer can retry it instead of retyping it.
-        raise AppError(
-            "ai_unavailable",
-            f"The AI service did not answer within {LLM_BUDGET_S:.0f}s: {exc}",
-            status_code=503,
-            params={"budget_seconds": int(LLM_BUDGET_S)},
-        )
