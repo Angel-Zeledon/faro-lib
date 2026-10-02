@@ -26,8 +26,15 @@ const KEYS: Key[] = ['skus', 'users', 'warehouses', 'apiCalls']
 export function fmtNum(n: number, lang: 'es' | 'en') {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, lang === 'es' ? '.' : ',')
 }
+// Whole dollars print as "$59"; anything with cents keeps them ("$2,50" /
+// "$2.50"). Rounding to the dollar would advertise the $2.50 API block as $3,
+// and a total of 3 blocks as $8 instead of $7.50.
 export function fmtMoney(n: number, lang: 'es' | 'en') {
-  return `$${fmtNum(n, lang)}`
+  const cents = Math.round(n * 100)
+  if (cents % 100 === 0) return `$${fmtNum(cents / 100, lang)}`
+  const whole = Math.trunc(cents / 100)
+  const frac = String(Math.abs(cents % 100)).padStart(2, '0')
+  return `$${fmtNum(whole, lang)}${lang === 'es' ? ',' : '.'}${frac}`
 }
 export function fill(template: string, params: Record<string, string>) {
   return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in params ? params[k] : m))

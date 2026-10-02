@@ -47,7 +47,7 @@ export const GUIDE_CSS = `
 .sg-thumb-img {
  position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 10;
  border: 1px solid var(--lp-border); background: var(--lp-surface);
- transition: border-color 200ms ease, transform 260ms cubic-bezier(0.16,1,0.3,1);
+ transition: border-color 200ms ease, transform 260ms var(--lp-ease);
 }
 .sg-thumb-img img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 0 0; }
 .sg-thumb-cap { font-size: 12.5px; font-weight: 600; color: var(--lp-body); line-height: 1.35; }
@@ -63,7 +63,7 @@ export const GUIDE_CSS = `
  box-shadow: 0 40px 100px -30px rgba(0,0,0,0.5);
 }
 .sg-dialog::backdrop { background: rgba(10,21,23,0.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
-.sg-dialog[open] { display: flex; flex-direction: column; animation: sg-in 360ms cubic-bezier(0.16,1,0.3,1) both; }
+.sg-dialog[open] { display: flex; flex-direction: column; animation: sg-in 360ms var(--lp-ease) both; }
 @keyframes sg-in { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.985); } to { opacity: 1; transform: none; } }
 .sg-head { flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 14px 18px 14px 28px; border-bottom: 1px solid var(--lp-border); background: var(--lp-bg); }
 .sg-head h2 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0; white-space: nowrap; }

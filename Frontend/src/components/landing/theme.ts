@@ -49,6 +49,10 @@ export const DISPLAY = 'var(--font-brand), system-ui, sans-serif'
 // sweep across the screenshot, the glow under it, the pill-and-dot section
 // tags and the radial washes on the dark bands.
 export const LANDING_CSS = `
+/* One easing for every movement on the landing (load, reveal, hover, dialogs),
+   so nothing on the page moves with a different feel from its neighbour: a
+   fast start that settles softly. Theme-independent, hence on :root alone. */
+:root { --lp-ease: cubic-bezier(0.16, 1, 0.3, 1); }
 :root, [data-theme="light"] {
  --lp-bg: #ffffff;
  --lp-bg2: #F5F7F6;
@@ -130,14 +134,20 @@ section[id], #demo { scroll-margin-top: 88px; }
  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
  display: flex; align-items: center; justify-content: space-between;
  padding: 0 48px; height: 64px;
- background: transparent; border-bottom: 1px solid transparent;
- transition: background-color 240ms ease, border-color 240ms ease, backdrop-filter 240ms ease;
+ background: transparent; isolation: isolate;
 }
-.nav-shell.is-scrolled {
- background: var(--lp-nav);
+/* The glass lives on a layer of its own, always blurred, and only its
+   OPACITY changes when the page starts to move. Transitioning
+   backdrop-filter itself (what this used to do) re-renders the blur on every
+   frame of the fade — measured: the nav was the one element animating a
+   non-composited property during scroll. */
+.nav-shell::before {
+ content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+ background: var(--lp-nav); border-bottom: 1px solid var(--lp-border);
  backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
- border-bottom-color: var(--lp-border);
+ opacity: 0; transition: opacity 240ms ease;
 }
+.nav-shell.is-scrolled::before { opacity: 1; }
 .nav-links { display: flex; align-items: center; gap: 4px; }
 .nav-link {
  font-size: 13.5px; color: var(--lp-muted); text-decoration: none; font-weight: 500;
@@ -172,7 +182,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
  padding: 13px 24px; border-radius: 12px; cursor: pointer; text-decoration: none;
  font-size: 14.5px; font-weight: 700; letter-spacing: -0.005em; white-space: nowrap;
- transition: transform 200ms cubic-bezier(0.16,1,0.3,1), background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 200ms ease;
+ transition: transform 200ms var(--lp-ease), background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 200ms ease;
 }
 .btn-primary {
  border: none; color: var(--lp-cta-fg); background: var(--lp-cta-bg);
@@ -181,7 +191,6 @@ section[id], #demo { scroll-margin-top: 88px; }
 .btn-primary:hover { background: var(--lp-cta-hover); transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 14px 30px -12px var(--lp-shadow); }
 .btn-ghost {
  color: var(--lp-text); border: 1px solid var(--lp-border-strong); background: var(--lp-glass);
- backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
 .btn-ghost:hover { border-color: var(--lp-accent); color: var(--lp-accent); transform: translateY(-1px); }
 .btn-primary:active, .btn-ghost:active { transform: translateY(0); }
@@ -190,9 +199,17 @@ section[id], #demo { scroll-margin-top: 88px; }
 /* ── Type ── */
 .lp-h1 {
  font-family: var(--font-brand), system-ui, sans-serif;
- font-size: clamp(38px, 6.2vw, 72px); font-weight: 600; line-height: 1.02;
- letter-spacing: -0.045em; color: var(--lp-text); margin: 0 0 22px; max-width: 920px;
+ font-size: clamp(40px, 5.4vw, 66px); font-weight: 600; line-height: 1.02;
+ letter-spacing: -0.045em; color: var(--lp-text); margin: 0 0 22px; max-width: 920px; text-wrap: balance;
 }
+/* Sized so the headline breaks into the SAME number of lines with the
+   fallback face as with Space Grotesk, at every width from 320 to 1440 in
+   both languages (measured 2026-10-02 by blocking the font file and
+   comparing). A different line count when the brand font swaps in is a
+   layout shift of the whole page below the fold line: at 360px the old
+   sizing went from five lines to six and moved everything ~40px (CLS 0.05).
+   If the headline copy changes, re-check this. */
+@media (max-width: 640px) { .lp-h1 { font-size: clamp(30px, 8.4vw, 54px); } }
 .lp-h2 {
  font-family: var(--font-brand), system-ui, sans-serif;
  font-size: clamp(28px, 3.6vw, 42px); font-weight: 600; line-height: 1.1;
@@ -218,14 +235,18 @@ section[id], #demo { scroll-margin-top: 88px; }
 .lp-card {
  position: relative; background: var(--lp-bg); border: 1px solid var(--lp-border);
  border-radius: 14px; padding: 24px 26px;
- transition: transform 260ms cubic-bezier(0.16,1,0.3,1), border-color 200ms ease;
+ transition: transform 260ms var(--lp-ease), border-color 200ms ease;
 }
 .lp-card::after {
  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
  box-shadow: 0 18px 40px -22px var(--lp-shadow); opacity: 0; transition: opacity 260ms ease;
 }
-.lp-card:hover { transform: translateY(-2px); border-color: var(--lp-border-strong); }
-.lp-card:hover::after { opacity: 1; }
+/* Only with a real pointer. On touch, :hover sticks to whatever the thumb
+   last landed on, and a card that stays lifted mid-scroll reads as a glitch. */
+@media (hover: hover) and (pointer: fine) {
+ .lp-card:hover { transform: translateY(-2px); border-color: var(--lp-border-strong); }
+ .lp-card:hover::after { opacity: 1; }
+}
 .lp-card-soft { background: var(--lp-bg2); }
 .sec-alt .lp-card { background: var(--lp-bg); }
 .lp-card-title { font-size: 15px; font-weight: 700; color: var(--lp-text); margin-bottom: 8px; line-height: 1.4; letter-spacing: -0.01em; }
@@ -265,7 +286,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  transform-origin: 50% 0;
 }
 .lp-frame-in { border-radius: 17px; overflow: hidden; background: var(--lp-bg2); position: relative; }
-.lp-chrome { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--lp-border); background: var(--lp-glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.lp-chrome { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--lp-border); background: var(--lp-bg); }
 .lp-chrome i { width: 10px; height: 10px; border-radius: 50%; background: var(--lp-border-strong); display: block; }
 .lp-chrome span { margin-left: 10px; font-size: 12px; color: var(--lp-dim); font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .lp-frame img { display: block; width: 100%; height: auto; }
@@ -279,16 +300,16 @@ section[id], #demo { scroll-margin-top: 88px; }
    the clip from shaving the g and the q without moving the line. Then the
    lead, the buttons and the note follow. Word delays are counted via --i. */
 .lp-h1 .lp-w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.12em; margin-bottom: -0.12em; }
-.lp-h1 .lp-wi { display: inline-block; animation: lp-word 900ms cubic-bezier(0.16,1,0.3,1) both; animation-delay: calc(60ms + var(--i) * 60ms); }
+.lp-h1 .lp-wi { display: inline-block; animation: lp-word 800ms var(--lp-ease) both; animation-delay: calc(60ms + var(--i) * 45ms); }
 @keyframes lp-word { from { transform: translate3d(0, 108%, 0); } to { transform: none; } }
-.lp-rise { animation: lp-rise 760ms cubic-bezier(0.16,1,0.3,1) both; }
-.lp-d1 { animation-delay: 0ms; } .lp-d2 { animation-delay: 520ms; } .lp-d3 { animation-delay: 620ms; } .lp-d4 { animation-delay: 700ms; } .lp-d5 { animation-delay: 900ms; }
+.lp-rise { animation: lp-rise 760ms var(--lp-ease) both; }
+.lp-d1 { animation-delay: 0ms; } .lp-d2 { animation-delay: 420ms; } .lp-d3 { animation-delay: 500ms; } .lp-d4 { animation-delay: 580ms; } .lp-d5 { animation-delay: 760ms; }
 @keyframes lp-rise { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
 /* The screenshot is the largest thing on the first screen, so it is never
    hidden: it starts fully opaque and only settles from a slight tilt. An
    element at opacity 0 does not count as painted, and the old fade-in held
    back the page's largest paint. */
-.lp-frame.lp-land { animation: lp-land 1300ms cubic-bezier(0.16,1,0.3,1) 120ms both; }
+.lp-frame.lp-land { animation: lp-land 1300ms var(--lp-ease) 120ms both; }
 @keyframes lp-land { from { transform: translate3d(0, 36px, 0) rotateX(10deg) scale(0.97); } to { transform: none; } }
 
 /* ── Stats strip ── */
@@ -308,7 +329,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  box-shadow: 0 24px 50px -30px var(--lp-shadow);
 }
 .tour-shot-in { border-radius: 13px; overflow: hidden; background: var(--lp-bg2); }
-.tour-shot img { display: block; width: 100%; height: auto; transition: transform 700ms cubic-bezier(0.16,1,0.3,1); transform-origin: 50% 30%; }
+.tour-shot img { display: block; width: 100%; height: auto; transition: transform 700ms var(--lp-ease); transform-origin: 50% 30%; }
 .tour-row:hover .tour-shot img { transform: scale(1.015); }
 .tour-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--lp-accent); margin-top: 8px; }
 
@@ -331,12 +352,34 @@ section[id], #demo { scroll-margin-top: 88px; }
 .case-tab:hover { color: var(--lp-text); }
 .case-tab.is-on { background: var(--lp-bg); color: var(--lp-accent); box-shadow: 0 1px 2px rgba(12,58,64,0.10), 0 0 0 1px var(--lp-border); }
 .case-tab:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 2px; }
-.lp-swap { animation: lp-swap 420ms cubic-bezier(0.16,1,0.3,1) both; }
+.lp-swap { animation: lp-swap 420ms var(--lp-ease) both; }
 @keyframes lp-swap { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
 
 /* ── Pricing ── */
+.price-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 16px; max-width: 920px; margin-bottom: 20px; align-items: stretch; }
 .price-card { padding: 30px 28px; border-radius: 16px; }
-.price-card.is-paid { border-color: var(--lp-accent-bd); background: linear-gradient(180deg, var(--lp-accent-bg), var(--lp-bg) 55%); }
+/* The full plan: petroleum, white type, a beam-coloured rule on top. Same
+   surface in both themes (like the closing band), so it reads as the
+   premium object on the page either way. */
+.sec-alt .lp-card.price-card.is-paid, .lp-card.price-card.is-paid {
+ background: var(--lp-strip); border-color: rgba(76,195,181,0.35); color: #fff; padding: 34px 32px;
+ box-shadow: 0 30px 60px -34px rgba(12,58,64,0.55);
+}
+.price-card.is-paid::before { content: ''; position: absolute; top: -1px; left: 32px; right: 32px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--lp-beam), transparent); }
+.price-card.is-paid .price-amount { color: #fff; font-size: 44px; }
+.price-card.is-paid .price-per { color: rgba(231,240,239,0.7); }
+.price-card.is-paid .price-row { color: rgba(231,240,239,0.78); border-bottom-color: rgba(255,255,255,0.12); }
+.price-paid-label { font-size: 13px; font-weight: 700; color: var(--lp-beam); margin-bottom: 10px; }
+.price-paid-note { font-size: 14px; color: rgba(231,240,239,0.8); line-height: 1.7; margin-bottom: 12px; }
+.price-paid-link { display: inline-flex; align-items: center; min-height: 32px; margin-bottom: 14px; font-size: 13.5px; font-weight: 700; color: #fff; text-decoration: underline; text-decoration-color: var(--lp-beam); text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.price-paid-link:hover { color: var(--lp-beam); }
+.lp .price-paid-link:focus-visible { outline-color: var(--lp-beam); }
+.price-paid-val { font-weight: 700; color: #fff; white-space: nowrap; }
+.value-list { list-style: none; margin: 0 0 48px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; max-width: 1020px; }
+@media (max-width: 900px) {
+ .price-grid { grid-template-columns: minmax(0, 1fr); }
+ .value-list { grid-template-columns: minmax(0, 1fr); margin-bottom: 36px; }
+}
 .price-per { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--lp-muted); }
 .price-amount { font-family: var(--font-brand), system-ui, sans-serif; font-size: 34px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.03em; margin-bottom: 6px; line-height: 1.1; }
 .price-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--lp-body); border-bottom: 1px solid var(--lp-border); padding-bottom: 9px; }
@@ -353,10 +396,10 @@ section[id], #demo { scroll-margin-top: 88px; }
 .faq-icon {
  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--lp-surface); border: 1px solid var(--lp-border);
  display: flex; align-items: center; justify-content: center; font-size: 17px; color: var(--lp-muted); line-height: 1;
- transition: transform 320ms cubic-bezier(0.16,1,0.3,1), background-color 200ms ease, color 200ms ease;
+ transition: transform 320ms var(--lp-ease), background-color 200ms ease, color 200ms ease;
 }
 .faq-icon.is-open { transform: rotate(45deg); background: var(--lp-accent-bg); color: var(--lp-accent); }
-.faq-a { font-size: 14.5px; color: var(--lp-body); line-height: 1.72; padding-bottom: 22px; max-width: 64ch; animation: lp-swap 360ms cubic-bezier(0.16,1,0.3,1) both; }
+.faq-a { font-size: 14.5px; color: var(--lp-body); line-height: 1.72; padding-bottom: 22px; max-width: 64ch; animation: lp-swap 360ms var(--lp-ease) both; }
 
 /* ── Footer ── */
 .foot-head { font-size: 13px; font-weight: 700; color: var(--lp-text); margin-bottom: 14px; }
@@ -364,11 +407,13 @@ section[id], #demo { scroll-margin-top: 88px; }
 .foot-link:hover { color: var(--lp-accent); }
 
 /* Scroll reveal. The resting state is visible; useScrollReveal adds
-   .reveal-armed only after it confirms it can also remove it. */
-.reveal-armed { opacity: 0; transform: translate3d(0, 22px, 0); }
+   .reveal-armed only after it confirms it can also remove it. A short
+   travel and a quick settle: the block is already in place by the time the
+   eye gets to it, so scrolling never feels like waiting for the page. */
+.reveal-armed { opacity: 0; transform: translate3d(0, 14px, 0); }
 .reveal-in {
  opacity: 1; transform: none;
- transition: opacity 720ms cubic-bezier(0.16, 1, 0.3, 1), transform 820ms cubic-bezier(0.16, 1, 0.3, 1);
+ transition: opacity 560ms var(--lp-ease), transform 640ms var(--lp-ease);
 }
 
 /* Narrow viewports: collapse the fixed grid columns instead of overflowing.
@@ -414,7 +459,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  padding: 8px 20px 20px;
  display: flex; flex-direction: column;
  box-shadow: 0 18px 40px -24px rgba(10,21,23,0.45);
- animation: nav-sheet-slide 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+ animation: nav-sheet-slide 260ms var(--lp-ease) both;
  }
  .nav-sheet-inner a {
  display: flex; align-items: center; min-height: 48px;
@@ -489,6 +534,41 @@ section[id], #demo { scroll-margin-top: 88px; }
 .sec-alt .upg-step .lp-step { background: var(--lp-bg); }
 .upg-foot { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 22px; border-top: 1px solid var(--lp-border); }
 
+/* ── Your morning: the day as a numbered sequence ── */
+.day-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 36px; counter-reset: none; }
+.day-step { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; align-items: start; }
+.day-num {
+ width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+ font-family: var(--font-brand), system-ui, sans-serif; font-size: 15px; font-weight: 700;
+ color: var(--lp-cta-fg); background: var(--lp-cta-bg);
+}
+.day-when { margin: 8px 0 6px; font-size: 13px; font-weight: 600; color: var(--lp-accent); }
+.day-title { font-family: var(--font-brand), system-ui, sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.3; color: var(--lp-text); margin: 0 0 8px; }
+.day-desc { font-size: 14px; color: var(--lp-body); line-height: 1.68; margin: 0; }
+
+/* ── Features, grouped ── */
+.feat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px 40px; }
+.feat-group { border-top: 2px solid var(--lp-text); padding-top: 18px; }
+.feat-name { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--lp-text); margin: 0 0 14px; }
+.feat-items { list-style: none; margin: 0; padding: 0; }
+.feat-items li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--lp-body); line-height: 1.55; padding: 7px 0; }
+.feat-items li svg { margin-top: 2px; }
+.lp-more { display: inline-flex; align-items: center; min-height: 44px; margin-top: 8px; font-size: 14.5px; font-weight: 700; color: var(--lp-accent); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+
+/* The Excel / gut / StockAI table: four columns that hold on a phone by
+   scrolling inside their own box (Scroller), never the page. */
+.cmp-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px 160px; gap: 8px; }
+
+@media (max-width: 900px) {
+ .day-list { grid-template-columns: minmax(0, 1fr); gap: 28px; position: relative; }
+ .day-list::before { content: ''; position: absolute; left: 19px; top: 20px; bottom: 20px; width: 2px; background: linear-gradient(180deg, var(--lp-accent-bd), var(--lp-border)); }
+ .day-num { position: relative; z-index: 1; }
+ .feat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 28px; }
+}
+@media (max-width: 600px) {
+ .feat-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ── Trust ── */
 .trust-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; }
 .trust-item { padding: 22px 0 24px; border-top: 1px solid var(--lp-border); position: relative; }
@@ -512,7 +592,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border-radius: 11px;
  font-size: 13.5px; font-weight: 700; text-decoration: none; color: #fff;
  border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.04);
- transition: background-color 160ms ease, border-color 160ms ease, transform 200ms cubic-bezier(0.16,1,0.3,1);
+ transition: background-color 160ms ease, border-color 160ms ease, transform 200ms var(--lp-ease);
 }
 .final-btn:hover { border-color: #4CC3B5; background: rgba(76,195,181,0.12); transform: translateY(-1px); }
 .final-btn.is-main { background: #fff; color: #0C3A40; border-color: #fff; }
