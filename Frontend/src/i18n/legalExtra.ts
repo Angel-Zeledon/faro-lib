@@ -1,9 +1,10 @@
 /**
- * The six legal documents added on 2026-10-02, in both languages: acceptable
+ * The legal documents added on 2026-10-02, in both languages: acceptable
  * use, the data processing agreement (DPA), how StockAI uses AI, the
- * vulnerability disclosure policy, the accessibility statement and the
- * commercial conditions (/uso-aceptable, /procesamiento-de-datos, /ia,
- * /divulgacion-responsable, /accesibilidad, /condiciones-comerciales).
+ * vulnerability disclosure policy, the accessibility statement, the
+ * commercial conditions and the source-code licence (/uso-aceptable,
+ * /procesamiento-de-datos, /ia, /divulgacion-responsable, /accesibilidad,
+ * /condiciones-comerciales, /licencia).
  *
  * DRAFT — TO BE REVIEWED BY A LAWYER BEFORE IT IS RELIED ON. Same status and
  * same rules as ./legal.ts, which spreads these into its `docs`: written by
@@ -29,12 +30,15 @@
  *   accessibility measures                  globals.css (reduced motion, :focus-visible), ConfirmDialog.tsx
  *                                           (focus trap), components/mobile/README.md (44px), layout.tsx
  *                                           (lang, zoom not blocked), SignalBadge.tsx (icon + label)
+ *   source-code licence                     root LICENSE (proprietary since 2026-10-02; MIT before),
+ *                                           THIRD_PARTY_NOTICES.md (scripts/gen_third_party_notices.py),
+ *                                           provider keys are the operator's own (/instalacion, service_config)
  *   accessibility gaps                      echarts canvas charts (ChartPanel, SalesPatternPanel) have no
  *                                           text alternative; <html lang> stays "es" in English mode
  */
 import type { LegalDoc } from './legal'
 
-type ExtraKey = 'acceptableUse' | 'dpa' | 'ai' | 'disclosure' | 'accessibility' | 'commercial'
+type ExtraKey = 'acceptableUse' | 'dpa' | 'ai' | 'disclosure' | 'accessibility' | 'commercial' | 'license'
 
 const MAIL = '[contacto@stockai.es](mailto:contacto@stockai.es)'
 
@@ -684,6 +688,141 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
       },
     ],
   },
+  // ── Licencia de código fuente ─────────────────────────────────────────────
+  license: {
+    label: 'Licencia de código fuente',
+    title: 'Licencia de código fuente de StockAI',
+    intro: 'Las condiciones con las que una organización puede instalar, usar y modificar su propia copia del código de StockAI.',
+    summary: [
+      'Es una **licencia comercial y privada**, no de código abierto. Solo tiene derechos quien firmó un contrato de licencia con nosotros.',
+      'Puedes instalar StockAI, usarlo, modificarlo para uso interno y alojarlo para tu propio negocio.',
+      '**No puedes** revenderlo, redistribuirlo, sublicenciarlo ni ofrecerlo como servicio a terceros sin un acuerdo escrito.',
+      'El código sigue siendo nuestro y es confidencial. Los componentes de código abierto que incluye conservan sus propias licencias.',
+    ],
+    sections: [
+      {
+        id: 'scope',
+        title: 'Qué es y a quién se aplica',
+        blocks: [
+          'Estas condiciones rigen la copia del código fuente de StockAI que [NOMBRE DEL LICENCIANTE] (en adelante, «el licenciante», «nosotros») entrega a una organización que la contrata (en adelante, «el licenciatario», «tú»). Se aplican junto con el contrato de licencia que firmamos contigo; **si el contrato dice algo distinto, prevalece el contrato**.',
+          'El «software» es el código fuente y el código compilado de StockAI —la aplicación web, la API, el motor de pronóstico—, su documentación y las actualizaciones que te entreguemos. Estas condiciones no se aplican al servicio alojado en app.stockai.es, que se rige por los [términos del servicio](/terminos).',
+          'Sin un contrato de licencia firmado no tienes ningún derecho sobre el software, aunque hayas obtenido una copia.',
+        ],
+      },
+      {
+        id: 'grant',
+        title: 'Lo que puedes hacer',
+        blocks: [
+          'Mientras el contrato esté vigente y cumplas estas condiciones, te damos una licencia **no exclusiva, intransferible y para tu organización** para:',
+          {
+            list: [
+              '**instalar y ejecutar** el software en servidores tuyos o de un proveedor de alojamiento que contrates y controles;',
+              '**modificarlo** para adaptarlo a tus necesidades internas;',
+              '**alojarlo para tu propio negocio**, para que lo usen tus empleados y colaboradores;',
+              'hacer las copias que necesites para lo anterior, incluidas copias de seguridad y entornos de prueba.',
+            ],
+          },
+          'Si así lo acordamos por escrito, la licencia puede extenderse a tus sociedades filiales o subsidiarias. El número de instalaciones, organizaciones o usuarios, el precio y la duración son los del contrato: [PRECIO/VIGENCIA según contrato].',
+        ],
+      },
+      {
+        id: 'restrictions',
+        title: 'Lo que no puedes hacer',
+        blocks: [
+          'Salvo que lo acordemos por escrito, no puedes:',
+          {
+            list: [
+              'vender, revender, alquilar, prestar o ceder el software o tu licencia;',
+              'redistribuirlo o publicarlo, completo o en parte, con o sin cambios, incluso en repositorios públicos;',
+              'sublicenciarlo o permitir que lo use otra organización;',
+              'ofrecerlo a terceros como servicio alojado o en la nube (SaaS), ni operarlo por cuenta de clientes tuyos;',
+              'usarlo, o usar lo que aprendas de él, para crear un producto que compita con StockAI;',
+              'quitar o cambiar los avisos de copyright, licencia o marca del software;',
+              'usar o compartir las claves, credenciales o cuentas de nuestros servicios. Para el asistente, el correo o WhatsApp debes contratar y configurar tus propias cuentas con esos proveedores.',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'ownership',
+        title: 'Propiedad',
+        blocks: [
+          'El software, sus copias y la marca StockAI son y siguen siendo del licenciante. Te licenciamos el software, no te lo vendemos, y no adquieres ningún derecho que no esté escrito aquí o en el contrato.',
+          'Las modificaciones que hagas solo puedes usarlas junto con el software y dentro de esta licencia. [TITULARIDAD DE LAS MODIFICACIONES DEL LICENCIATARIO — confirmar con un abogado]',
+          'Si nos envías sugerencias o correcciones, podemos usarlas sin obligación hacia ti.',
+        ],
+      },
+      {
+        id: 'updates',
+        title: 'Actualizaciones y soporte',
+        blocks: [
+          'Solo te entregamos actualizaciones, correcciones o soporte si el contrato lo prevé, y en los términos que diga. Sin eso, recibes el software en la versión entregada y no tenemos obligación de mantenerlo. Las actualizaciones que te entreguemos quedan cubiertas por esta misma licencia.',
+        ],
+      },
+      {
+        id: 'confidentiality',
+        title: 'Confidencialidad del código',
+        blocks: [
+          'El código fuente es información confidencial nuestra. Debes protegerlo al menos con el mismo cuidado que tu propia información confidencial, y solo pueden acceder a él tus empleados y contratistas que lo necesiten para los usos permitidos y que estén obligados a guardar confidencialidad.',
+          'Esta obligación sigue vigente después de que termine la licencia. [PLAZO DE CONFIDENCIALIDAD TRAS LA TERMINACIÓN — confirmar]',
+        ],
+      },
+      {
+        id: 'third-party',
+        title: 'Componentes de código abierto',
+        blocks: [
+          'El software usa componentes de código abierto de terceros (por ejemplo, Next.js, React, FastAPI, pandas, LightGBM o Prophet). **Esos componentes no son nuestros ni están cubiertos por esta licencia**: cada uno sigue bajo su propia licencia (MIT, BSD, Apache 2.0 y otras), y sus condiciones prevalecen sobre estas para ese componente.',
+          'La lista de componentes directos y su licencia está en el archivo `THIRD_PARTY_NOTICES.md` que se entrega con el código. Si la necesitas antes, pídela a [contacto@stockai.es](mailto:contacto@stockai.es).',
+        ],
+      },
+      {
+        id: 'warranty',
+        title: 'Garantía',
+        blocks: [
+          'Salvo lo que diga expresamente el contrato, el software se entrega **«tal cual»**, sin garantías de ningún tipo, expresas o implícitas, incluidas las de comerciabilidad, idoneidad para un fin concreto y no infracción. Los pronósticos que produce son estimaciones y las decisiones que tomes con ellos son tuyas.',
+          'Tú eres responsable de instalar, operar, respaldar y asegurar tu copia, y de la configuración y los proveedores que elijas.',
+        ],
+      },
+      {
+        id: 'liability',
+        title: 'Límite de responsabilidad',
+        blocks: [
+          'En la medida en que la ley lo permita, no respondemos por daños indirectos, lucro cesante, pérdida de datos o de ventas, ni por decisiones comerciales tomadas con el software, y nuestra responsabilidad total por esta licencia queda limitada a lo que nos pagaste por ella en los 12 meses anteriores al hecho que la origina.',
+          'Nada de esto limita la responsabilidad que la ley aplicable no permita limitar.',
+        ],
+      },
+      {
+        id: 'audit',
+        title: 'Verificación del cumplimiento',
+        blocks: [
+          'Con un aviso razonable de [PREAVISO — confirmar], podemos pedirte una declaración escrita de que cumples esta licencia (por ejemplo, cuántas instalaciones tienes y quién las usa) y, si hay motivos fundados, verificarlo nosotros o un auditor obligado a confidencialidad, en horario laboral y sin interferir de más en tu operación. [FRECUENCIA, COSTO Y CONDICIONES DE LA VERIFICACIÓN — confirmar]',
+        ],
+      },
+      {
+        id: 'termination',
+        title: 'Terminación',
+        blocks: [
+          'La licencia termina al vencer el plazo del contrato si no se renueva, o antes si incumples estas condiciones o el contrato y no lo corriges dentro de [PLAZO DE SUBSANACIÓN — confirmar] desde que te avisemos. Un incumplimiento grave de las restricciones o de la confidencialidad la termina sin necesidad de plazo.',
+          'Al terminar, debes **dejar de usar el software y borrar todas sus copias**, incluidas las modificadas y las de respaldo, y confirmarnos por escrito que lo hiciste. Los datos de tu negocio que estén en tu instalación son tuyos: expórtalos antes de borrarla.',
+          'Las secciones sobre propiedad, confidencialidad, garantía, responsabilidad y ley aplicable siguen vigentes después de la terminación.',
+        ],
+      },
+      {
+        id: 'earlier-versions',
+        title: 'Versiones anteriores',
+        blocks: [
+          'Algunas versiones anteriores de este código se distribuyeron con la licencia MIT. Quien recibió esas copias conserva los derechos de la licencia MIT sobre ellas. Las versiones distribuidas desde el 2 de octubre de 2026 se rigen por esta licencia.',
+        ],
+      },
+      {
+        id: 'law',
+        title: 'Ley aplicable',
+        blocks: [
+          'Esta licencia se rige por las leyes de [JURISDICCIÓN], y cualquier disputa se resolverá ante los tribunales que indique el contrato o, en su defecto, los de [JURISDICCIÓN].',
+        ],
+      },
+    ],
+  },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1328,6 +1467,141 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
           'You can leave the full plan at the end of the agreed period. [CONDICIONES DE CANCELACIÓN Y REEMBOLSO — confirmar con el propietario]',
           'If your account goes back to the free plan with more than fits — for example, 300 products — **we delete nothing**: everything stays visible and usable, but you cannot add more of whatever is over the limit until you are back under it or return to the full plan. The daily API call limit, on the other hand, applies from the moment the plan changes.',
           `If you would rather close the account, you can ask us for a complete copy of your data and its deletion, as the [terms](/terminos#after) explain. Write to us at ${MAIL}.`,
+        ],
+      },
+    ],
+  },
+  // ── Source-code licence ───────────────────────────────────────────────────
+  license: {
+    label: 'Source-code licence',
+    title: 'StockAI source-code licence',
+    intro: 'The terms under which an organisation may install, use and modify its own copy of the StockAI code.',
+    summary: [
+      'This is a **commercial, proprietary licence**, not an open-source one. Only those who have signed a licence agreement with us have any rights.',
+      'You may install StockAI, use it, modify it for internal use and host it for your own business.',
+      'You **may not** resell, redistribute, sublicense or offer it as a service to third parties without a written agreement.',
+      'The code remains ours and is confidential. The open-source components it includes keep their own licences.',
+    ],
+    sections: [
+      {
+        id: 'scope',
+        title: 'What it is and who it applies to',
+        blocks: [
+          'These terms govern the copy of the StockAI source code that [NOMBRE DEL LICENCIANTE] ("the licensor", "we") delivers to an organisation that contracts it ("the licensee", "you"). They apply together with the licence agreement we sign with you; **where the agreement says something different, the agreement prevails**.',
+          'The "software" is the source and compiled code of StockAI — the web application, the API, the forecasting engine — its documentation and the updates we deliver to you. These terms do not apply to the hosted service at app.stockai.es, which is governed by the [terms of service](/terminos).',
+          'Without a signed licence agreement you have no rights to the software, even if you have obtained a copy.',
+        ],
+      },
+      {
+        id: 'grant',
+        title: 'What you may do',
+        blocks: [
+          'While the agreement is in force and you comply with these terms, we grant you a **non-exclusive, non-transferable licence for your organisation** to:',
+          {
+            list: [
+              '**install and run** the software on your own servers or those of a hosting provider you contract and control;',
+              '**modify it** to fit your internal needs;',
+              '**host it for your own business**, for use by your employees and collaborators;',
+              'make the copies you need for the above, including backups and test environments.',
+            ],
+          },
+          'If we agree so in writing, the licence may extend to your affiliates or subsidiaries. The number of installations, organisations or users, the price and the term are those in the agreement: [PRECIO/VIGENCIA según contrato].',
+        ],
+      },
+      {
+        id: 'restrictions',
+        title: 'What you may not do',
+        blocks: [
+          'Unless we agree otherwise in writing, you may not:',
+          {
+            list: [
+              'sell, resell, rent, lend or assign the software or your licence;',
+              'redistribute or publish it, in whole or in part, with or without changes, including in public repositories;',
+              'sublicense it or let another organisation use it;',
+              'offer it to third parties as a hosted or cloud service (SaaS), or operate it on behalf of your customers;',
+              'use it, or what you learn from it, to build a product that competes with StockAI;',
+              'remove or alter the copyright, licence or trademark notices in the software;',
+              'use or share the keys, credentials or accounts of our services. For the assistant, email or WhatsApp you must contract and configure your own accounts with those providers.',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'ownership',
+        title: 'Ownership',
+        blocks: [
+          'The software, its copies and the StockAI brand are and remain the licensor\'s. We license the software to you, we do not sell it, and you acquire no right that is not written here or in the agreement.',
+          'You may use your modifications only together with the software and within this licence. [TITULARIDAD DE LAS MODIFICACIONES DEL LICENCIATARIO — confirmar con un abogado]',
+          'If you send us suggestions or fixes, we may use them without obligation to you.',
+        ],
+      },
+      {
+        id: 'updates',
+        title: 'Updates and support',
+        blocks: [
+          'We deliver updates, fixes or support only if the agreement provides for them, and on the terms it sets. Without that, you receive the software in the version delivered and we have no obligation to maintain it. Updates we deliver are covered by this same licence.',
+        ],
+      },
+      {
+        id: 'confidentiality',
+        title: 'Confidentiality of the code',
+        blocks: [
+          'The source code is our confidential information. You must protect it with at least the care you give your own confidential information, and only your employees and contractors who need it for the permitted uses, and who are bound to confidentiality, may access it.',
+          'This obligation survives the end of the licence. [PLAZO DE CONFIDENCIALIDAD TRAS LA TERMINACIÓN — confirmar]',
+        ],
+      },
+      {
+        id: 'third-party',
+        title: 'Open-source components',
+        blocks: [
+          'The software uses third-party open-source components (for example, Next.js, React, FastAPI, pandas, LightGBM or Prophet). **Those components are not ours and are not covered by this licence**: each remains under its own licence (MIT, BSD, Apache 2.0 and others), and its terms prevail over these for that component.',
+          'The list of direct components and their licences is in the `THIRD_PARTY_NOTICES.md` file delivered with the code. If you need it before then, ask for it at [contacto@stockai.es](mailto:contacto@stockai.es).',
+        ],
+      },
+      {
+        id: 'warranty',
+        title: 'Warranty',
+        blocks: [
+          'Except as the agreement expressly states, the software is provided **"as is"**, without warranties of any kind, express or implied, including those of merchantability, fitness for a particular purpose and non-infringement. The forecasts it produces are estimates, and the decisions you make with them are yours.',
+          'You are responsible for installing, operating, backing up and securing your copy, and for the configuration and providers you choose.',
+        ],
+      },
+      {
+        id: 'liability',
+        title: 'Limitation of liability',
+        blocks: [
+          'To the extent the law allows, we are not liable for indirect damages, lost profits, loss of data or sales, or business decisions made with the software, and our total liability under this licence is limited to what you paid us for it in the 12 months before the event giving rise to it.',
+          'Nothing here limits liability that applicable law does not allow to be limited.',
+        ],
+      },
+      {
+        id: 'audit',
+        title: 'Verifying compliance',
+        blocks: [
+          'With reasonable notice of [PREAVISO — confirmar], we may ask you for a written statement that you comply with this licence (for example, how many installations you have and who uses them) and, if there are well-founded reasons, verify it ourselves or through an auditor bound to confidentiality, during business hours and without undue interference with your operations. [FRECUENCIA, COSTO Y CONDICIONES DE LA VERIFICACIÓN — confirmar]',
+        ],
+      },
+      {
+        id: 'termination',
+        title: 'Termination',
+        blocks: [
+          'The licence ends when the agreement\'s term expires and is not renewed, or earlier if you breach these terms or the agreement and do not cure it within [PLAZO DE SUBSANACIÓN — confirmar] of our notice. A serious breach of the restrictions or of confidentiality ends it without any cure period.',
+          'When it ends, you must **stop using the software and delete all copies of it**, including modified ones and backups, and confirm to us in writing that you did. Your business data in your installation is yours: export it before deleting the installation.',
+          'The sections on ownership, confidentiality, warranty, liability and governing law survive termination.',
+        ],
+      },
+      {
+        id: 'earlier-versions',
+        title: 'Earlier versions',
+        blocks: [
+          'Some earlier versions of this code were distributed under the MIT License. Whoever received those copies keeps the MIT License rights over them. Versions distributed from 2 October 2026 onward are governed by this licence.',
+        ],
+      },
+      {
+        id: 'law',
+        title: 'Governing law',
+        blocks: [
+          'This licence is governed by the laws of [JURISDICCIÓN], and any dispute will be resolved before the courts named in the agreement or, failing that, those of [JURISDICCIÓN].',
         ],
       },
     ],

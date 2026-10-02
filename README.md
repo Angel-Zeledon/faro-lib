@@ -242,4 +242,7 @@ tag: the suite says the backend behaves, not that the product works).
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+Proprietary. Use requires a written licence agreement; see [`LICENSE`](LICENSE)
+and the terms at <https://stockai.es/licencia>. Versions distributed earlier under
+the MIT License stay under it for those recipients. Third-party components keep
+their own licences: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
