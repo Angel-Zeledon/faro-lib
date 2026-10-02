@@ -1,6 +1,7 @@
 'use client'
-// The four legal documents — /terminos, /privacidad, /cookies, /aviso-legal —
-// in one reading shell. Same nav and footer as the rest of the landing, but
+// The legal documents — /terminos, /privacidad, /cookies, /aviso-legal and the
+// rest listed in legalPaths.ts — in one reading shell, plus the /legal hub
+// that lists them all (LegalHub below). Same nav and footer as the rest of the landing, but
 // none of the sales furniture the marketing subpages close with: somebody who
 // opened the privacy policy came to read, and a "create your account" band in
 // the middle of it reads as not taking the question seriously.
@@ -18,7 +19,7 @@ import { LEGAL, type LegalBlock, type LegalDoc } from '@/i18n/legal'
 import { LANDING } from '@/i18n/landing'
 import { LandingStyles } from '@/components/landing/primitives'
 import { Nav, Footer, type ChromeProps } from '@/components/landing/chrome'
-import { LEGAL_ORDER, LEGAL_PATHS, type LegalKey } from '@/components/landing/legalPaths'
+import { LEGAL_GROUPS, LEGAL_HUB_PATH, LEGAL_ORDER, LEGAL_PATHS, type LegalKey } from '@/components/landing/legalPaths'
 
 const CHROME: ChromeProps = { onHome: false, localAnchors: [] }
 
@@ -95,6 +96,12 @@ const LEGAL_CSS = `
 .lg-others-desc { display: block; font-size: 13.5px; color: var(--lp-muted); line-height: 1.5; }
 .lg-others a:hover .lg-others-label { color: var(--lp-accent); }
 
+.lg-hub-group { margin: 0 0 44px; }
+.lg-hub-group h2 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; color: var(--lp-text); margin: 0 0 6px; }
+.lg-hub-group ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+.lg-hub-group a { display: block; padding: 16px 0; border-top: 1px solid var(--lp-border); text-decoration: none; }
+.lg-hub-group a:hover .lg-others-label { color: var(--lp-accent); }
+
 @media (max-width: 1000px) {
  .lg-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
  .lg-toc { display: none; }
@@ -103,6 +110,7 @@ const LEGAL_CSS = `
  .lg-toc-fold ol { list-style: none; margin: 0; padding: 0 8px 10px; }
  .lg-toc-fold a { display: grid; grid-template-columns: 26px 1fr; align-items: center; min-height: 44px; padding: 0 8px; color: var(--lp-body); text-decoration: none; font-size: 14.5px; }
  .lg-others ul { grid-template-columns: minmax(0, 1fr); }
+ .lg-hub-group ul { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
  .lg-hero { padding: 96px 0 32px; }
@@ -291,9 +299,68 @@ export function LegalPage({ doc: key }: { doc: LegalKey }) {
                   </Link>
                 </li>
               ))}
+              <li>
+                <Link href={LEGAL_HUB_PATH}>
+                  <span className="lg-others-label">{C.hub.allLink}</span>
+                  <span className="lg-others-desc">{C.hub.intro}</span>
+                </Link>
+              </li>
             </ul>
           </div>
         </section>
+      </main>
+      <Footer {...CHROME} />
+    </div>
+  )
+}
+
+// /legal: every document, grouped, with its one-line description. Same hero
+// and reading width as a document, no table of contents (it IS one).
+export function LegalHub() {
+  const { lang } = useLanguage()
+  const C = LEGAL[lang]
+  const L = LANDING[lang]
+
+  return (
+    <div className="lp" id="top">
+      <LandingStyles />
+      <style dangerouslySetInnerHTML={{ __html: LEGAL_CSS }} />
+      <Nav {...CHROME} />
+      <main>
+        <header className="lg-hero">
+          <div className="lg-inner">
+            <nav aria-label={L.pages.breadcrumb} className="lg-crumbs">
+              <ol>
+                <li><Link href="/">{L.pages.home}</Link></li>
+                <li><span aria-current="page">{C.hub.label}</span></li>
+              </ol>
+            </nav>
+            <h1 className="lg-h1">{C.hub.title}</h1>
+            <p className="lg-intro">{C.hub.intro}</p>
+            <p className="lg-updated">{C.updated}</p>
+          </div>
+        </header>
+
+        <div className="lg-body">
+          <div className="lg-inner">
+            {LEGAL_GROUPS.map(g => (
+              <section key={g.id} className="lg-hub-group" aria-labelledby={`lg-hub-${g.id}`}>
+                <h2 id={`lg-hub-${g.id}`}>{C.hub.groups[g.id]}</h2>
+                <ul>
+                  {g.keys.map(k => (
+                    <li key={k}>
+                      <Link href={LEGAL_PATHS[k]}>
+                        <span className="lg-others-label">{C.docs[k].title}</span>
+                        <span className="lg-others-desc">{C.docs[k].intro}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+            <p className="lg-questions" style={{ maxWidth: '68ch' }}><LegalText text={C.questions} /></p>
+          </div>
+        </div>
       </main>
       <Footer {...CHROME} />
     </div>
